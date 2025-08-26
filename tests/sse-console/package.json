@@ -1,0 +1,28 @@
+{
+  "name": "sse-console",
+  "version": "1.0.0",
+  "description": "Simple SSE console test app for Drasi Server debugging",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node index.ts",
+    "start:ticker": "ts-node index.ts price-ticker",
+    "start:portfolio": "ts-node index.ts portfolio",
+    "start:watchlist": "ts-node index.ts watchlist",
+    "start:gainers": "ts-node index.ts top-gainers",
+    "start:losers": "ts-node index.ts top-losers",
+    "start:volume": "ts-node index.ts high-volume",
+    "start:test": "ts-node index.ts test-simple",
+    "list": "ts-node index.ts --list",
+    "build": "tsc",
+    "clean": "rm -f *.log *.js"
+  },
+  "dependencies": {
+    "eventsource": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/eventsource": "^1.1.15",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

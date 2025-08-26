@@ -1,0 +1,52 @@
+server:
+  host: 0.0.0.0
+  port: 18080
+  log_level: drasi_server=info,drasi_core=warn
+  max_connections: 1000
+  shutdown_timeout_seconds: 30
+  disable_persistence: true
+sources:
+- id: facilities-db
+  source_type: internal.grpc
+  auto_start: true
+  properties:
+    keepalive_interval_seconds: 10
+    keepalive_timeout_seconds: 10
+    host: 0.0.0.0
+    port: 50051
+    max_message_size: 8388608
+    max_connections: 100
+queries:
+- id: building-comfort
+  query: |
+    MATCH
+      (r:Room)
+    RETURN
+      elementId(r) AS RoomId,
+      r.temperature, r.humidity, r.co2
+  sources:
+  - facilities-db
+  auto_start: true
+  properties: {}
+reactions:
+- id: rooms-grpc
+  reaction_type: grpc
+  queries:
+  - building-comfort
+  auto_start: true
+  properties:
+    endpoint: http://127.0.0.1:50052
+    batch_flush_timeout_ms: 100
+    compression: false
+    batch_size: 1000
+    keepalive:
+      interval_seconds: 10
+      timeout_seconds: 10
+    metadata:
+      x-api-key: test-key-12345
+      x-client-id: drasi-test
+    max_retries: 3
+    timeout_ms: 5000
+    retry_delay_ms: 500
+    tls:
+      enabled: false

@@ -1,0 +1,71 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[package]
+name = "drasi-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["Drasi Project"]
+description = "Standalone Drasi server for data change processing"
+license = "Apache-2.0"
+repository = "https:#github.com/drasi-project/drasi-server"
+default-run = "drasi-server"
+
+[lib]
+name = "drasi_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "drasi-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "basic_setup"
+path = "src/bin/basic_setup.rs"
+
+[dependencies]
+# Drasi Server Core dependencies via submodules
+drasi-server-core = { path = "drasi-server-core" }
+
+# Server-specific dependencies
+tokio = { version = "1.0", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+tower-http = { version = "0.5", features = ["cors"] }
+clap = { version = "4.0", features = ["derive"] }
+utoipa = { version = "4", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+[dev-dependencies]
+# Testing utilities
+tempfile = "3.8"
+mockall = "0.12"
+tokio-test = "0.4"
+assert_matches = "1.5"
+serial_test = "3.0"
+pretty_assertions = "1.4"
+test-case = "3.3"
+wiremock = "0.6"
+
+# Additional testing dependencies
+futures = "0.3"
+tower = { version = "0.4", features = ["util"] }
+hyper = { version = "1.0", features = ["full"] }
+rstest = "0.18"
