@@ -34,9 +34,12 @@ Get DrasiServer running in under 5 minutes:
 # Ensure Rust is installed (1.70+)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone the repository with submodules
-git clone --recursive https://github.com/drasi-project/drasi-server.git
+# Clone the repository with all submodules (including nested ones)
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
 cd drasi-server
+
+# If you already cloned without submodules, initialize them:
+git submodule update --init --recursive
 ```
 
 ### 2. Create a Configuration
@@ -136,13 +139,22 @@ Automated responses triggered by query results:
 
 ### Build Steps
 
+#### Important: Submodule Initialization
+This project uses nested Git submodules (drasi-server-core contains drasi-core as a submodule).
+You must initialize all submodules recursively for the build to work.
+
 ```bash
-# Clone with submodules
-git clone --recursive https://github.com/drasi-project/drasi-server.git
+# Method 1: Clone with all submodules in one command
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# If you already cloned without --recursive
+# Method 2: If you already cloned without submodules
+git clone https://github.com/drasi-project/drasi-server.git
+cd drasi-server
 git submodule update --init --recursive
+
+# Verify submodules are initialized (should show drasi-server-core and drasi-server-core/drasi-core)
+git submodule status --recursive
 
 # Build debug version
 cargo build
@@ -359,9 +371,28 @@ GET /metrics
 
 ### Common Issues
 
-**Submodule errors during build:**
+**Build fails with "failed to get `drasi-core` as a dependency":**
+This error occurs when nested submodules aren't initialized. DrasiServer uses nested submodules:
+- `drasi-server-core` is a submodule of `drasi-server`
+- `drasi-core` is a submodule of `drasi-server-core`
+
+Solution:
 ```bash
+# Initialize all submodules recursively
 git submodule update --init --recursive
+
+# Verify both submodules are present
+ls -la drasi-server-core/         # Should exist
+ls -la drasi-server-core/drasi-core/  # Should also exist
+
+# If issues persist, force update
+git submodule update --init --recursive --force
+```
+
+**Submodule shows as modified after build:**
+This is normal if the submodule was updated. To reset:
+```bash
+git submodule update --recursive
 ```
 
 **Port already in use:**
