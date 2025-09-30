@@ -18,7 +18,7 @@ mod api_query_joins_tests {
     use drasi_server_core::{
         channels::EventChannels,
         QueryConfig, QueryManager, SourceManager,
-        config::{QueryJoinConfig, QueryJoinKeyConfig},
+        config::{QueryJoinConfig, QueryJoinKeyConfig, QueryLanguage},
         routers::{DataRouter, BootstrapRouter}
     };
     use axum::{Extension, Json};
@@ -82,6 +82,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            query_language: QueryLanguage::default(),
         };
 
         // Call the API handler
@@ -158,6 +159,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![restaurant_join.clone(), driver_join.clone()]),
+            query_language: QueryLanguage::default(),
         };
 
         // Call the API handler
@@ -223,6 +225,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            query_language: QueryLanguage::default(),
         };
 
         // Create the query
@@ -242,6 +245,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            query_language: QueryLanguage::default(),
         };
 
         // Call the update API handler
@@ -282,6 +286,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
 
         // Call the API handler
@@ -317,6 +322,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![]), // Empty joins array
+            query_language: QueryLanguage::default(),
         };
 
         // Call the API handler
@@ -366,6 +372,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            query_language: QueryLanguage::default(),
         };
 
         // Create the query
@@ -425,6 +432,7 @@ mod api_query_joins_tests {
             auto_start: true,
             properties: HashMap::new(),
             joins: Some(vec![join_config]),
+            query_language: QueryLanguage::default(),
         };
 
         // Serialize to JSON
@@ -483,6 +491,7 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config]),
+            query_language: QueryLanguage::default(),
         };
 
         // Try to create query in read-only mode

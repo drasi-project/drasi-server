@@ -3,6 +3,7 @@ use drasi_server::{
     DrasiServerCore, RuntimeConfig, ComponentStatus,
     ServerSettings, SourceConfig, QueryConfig, ReactionConfig,
 };
+use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -36,6 +37,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
                     props.insert("interval_ms".to_string(), serde_json::json!(500));
                     props
                 },
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -46,6 +48,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![
@@ -132,6 +135,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                     props.insert("interval_ms".to_string(), serde_json::json!(1000));
                     props
                 },
+                bootstrap_provider: None,
             },
             SourceConfig {
                 id: "vehicles-source".to_string(),
@@ -143,6 +147,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                     props.insert("interval_ms".to_string(), serde_json::json!(2000));
                     props
                 },
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -153,6 +158,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
             QueryConfig {
                 id: "vehicle-tracking".to_string(),
@@ -161,6 +167,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
             QueryConfig {
                 id: "combined-view".to_string(),
@@ -169,6 +176,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![
@@ -258,6 +266,7 @@ async fn test_component_failure_recovery() -> Result<()> {
                 source_type: "internal.mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -269,6 +278,7 @@ async fn test_component_failure_recovery() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![
@@ -338,6 +348,7 @@ async fn test_concurrent_operations() -> Result<()> {
                 source_type: "internal.mock".to_string(),
                 auto_start: false, // Manual start
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
         ],
         queries: vec![],
