@@ -80,6 +80,7 @@ async fn test_dynamic_component_management() {
         source_type: "internal.mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
+        bootstrap_provider: None,
     };
     
     server.source_manager()
@@ -172,6 +173,7 @@ async fn test_concurrent_operations() {
                 source_type: "internal.mock".to_string(),
                 auto_start: false,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             };
             source_manager.add_source(config).await
         });

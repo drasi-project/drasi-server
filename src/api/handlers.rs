@@ -153,14 +153,23 @@ pub async fn create_source(
     }
     
     let source_id = config.id.clone();
-    
+    let bootstrap_provider_config = config.bootstrap_provider.clone();
+
     // Use source manager's add_source which handles auto-start internally
     match source_manager.add_source(config).await {
         Ok(_) => {
             // Register with bootstrap router
-            if let Some(source) = source_manager.get_source_instance(&source_id).await {
-                bootstrap_router.register_source(source_id.clone(), source).await;
-                log::info!("Registered source '{}' with bootstrap router", source_id);
+            if let Some(source_config) = source_manager.get_source_config(&source_id).await {
+                let source_config_arc = Arc::new(source_config);
+                let source_change_tx = source_manager.get_source_change_sender();
+                if let Err(e) = bootstrap_router
+                    .register_provider(source_config_arc, bootstrap_provider_config, source_change_tx)
+                    .await
+                {
+                    log::warn!("Failed to register bootstrap provider for source '{}': {}", source_id, e);
+                } else {
+                    log::info!("Registered bootstrap provider for source '{}'", source_id);
+                }
             }
             
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -391,7 +400,7 @@ pub async fn create_query(
 
     // Pre-flight join validation/logging (non-fatal warnings)
     if join_count > 0 {
-        match LabelExtractor::extract_labels(&config.query) {
+        match LabelExtractor::extract_labels(&config.query, &config.query_language) {
             Ok(labels) => {
                 let rel_labels: std::collections::HashSet<String> = labels.relation_labels.into_iter().collect();
                 for j in config.joins.as_ref().unwrap() {

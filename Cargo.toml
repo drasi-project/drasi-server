@@ -69,3 +69,8 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
+
+# Patch section to use local development copy instead of submodule
+[patch."file:///Users/allenjones/dev/agentofreality/drasi/drasi-server/drasi-server-core"]
+drasi-server-core = { path = "../drasi-server-core" }
+

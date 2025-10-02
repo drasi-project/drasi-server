@@ -13,7 +13,7 @@ use drasi_server::api;
 use drasi_server_core::{
     ComponentStatus, QueryConfig, RuntimeConfig, SourceConfig,
     DrasiServerCoreConfig as ServerConfig,
-    config::DrasiServerCoreSettings as ServerSettings,
+    config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
     QueryManager, ReactionManager, SourceManager,
     channels::EventChannels,
     routers::{BootstrapRouter, DataRouter, SubscriptionRouter},
@@ -264,6 +264,7 @@ async fn test_query_lifecycle_via_api() {
         source_type: "internal.mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
+        bootstrap_provider: None,
     };
     source_manager.add_source(source_config).await.unwrap();
 
@@ -358,6 +359,7 @@ async fn test_reaction_lifecycle_via_api() {
         sources: vec!["source1".to_string()],
         auto_start: false,
         properties: HashMap::new(),
+        query_language: QueryLanguage::default(),
         joins: None,
     };
     query_manager.add_query(query_config).await.unwrap();
@@ -719,6 +721,7 @@ async fn test_query_results_endpoint() {
         sources: vec!["source1".to_string()],
         auto_start: false,
         properties: HashMap::new(),
+        query_language: QueryLanguage::default(),
         joins: None,
     };
     query_manager.add_query(query_config).await.unwrap();

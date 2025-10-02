@@ -23,6 +23,8 @@ sources:
 - id: postgres-stocks
   source_type: internal.postgres_replication
   auto_start: true
+  bootstrap_provider:
+    type: postgres
   properties:
     keepalive_idle_secs: 30
     batch_size: 100

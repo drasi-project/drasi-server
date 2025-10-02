@@ -1,5 +1,6 @@
 use anyhow::Result;
 use drasi_server::{DrasiServerCore, RuntimeConfig, ComponentStatus, ServerSettings};
+use drasi_server_core::config::QueryLanguage;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -77,6 +78,7 @@ async fn test_auto_start_components() -> Result<()> {
                 source_type: "internal.mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -87,6 +89,7 @@ async fn test_auto_start_components() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![
@@ -188,12 +191,14 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
                 source_type: "internal.mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
             SourceConfig {
                 id: "manual-source".to_string(),
                 source_type: "internal.mock".to_string(),
                 auto_start: false,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -204,6 +209,7 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
             QueryConfig {
                 id: "manual-query".to_string(),
@@ -212,6 +218,7 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
                 auto_start: false,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![],
@@ -312,12 +319,14 @@ async fn test_component_startup_sequence() -> Result<()> {
                 source_type: "internal.mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
             SourceConfig {
                 id: "source2".to_string(),
                 source_type: "internal.mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
+                bootstrap_provider: None,
             },
         ],
         queries: vec![
@@ -328,6 +337,7 @@ async fn test_component_startup_sequence() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
             QueryConfig {
                 id: "query2".to_string(),
@@ -336,6 +346,7 @@ async fn test_component_startup_sequence() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                query_language: QueryLanguage::default(),
             },
         ],
         reactions: vec![

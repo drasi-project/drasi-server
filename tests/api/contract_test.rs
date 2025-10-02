@@ -1,10 +1,11 @@
 //! API Contract Tests
-//! 
+//!
 //! These tests validate that the REST API contracts remain stable over time.
 //! They test request/response formats, status codes, and data schemas.
 
 use drasi_server::api::handlers::ApiResponse;
 use drasi_server_core::{ComponentStatus, QueryConfig, ReactionConfig, SourceConfig};
+use drasi_server_core::config::QueryLanguage;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -82,6 +83,7 @@ mod contract_tests {
             source_type: "internal.mock".to_string(),
             auto_start: true,
             properties,
+            bootstrap_provider: None,
         };
         
         let json = serde_json::to_value(&config).unwrap();
@@ -120,6 +122,7 @@ mod contract_tests {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
         
         let json = serde_json::to_value(&config).unwrap();
@@ -337,6 +340,7 @@ mod edge_case_tests {
             source_type: "internal.mock".to_string(),
             auto_start: false,
             properties: HashMap::new(),
+            bootstrap_provider: None,
         };
         
         let json = serde_json::to_value(&config).unwrap();
@@ -357,6 +361,7 @@ mod edge_case_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
         
         let json = serde_json::to_value(&config).unwrap();
@@ -374,6 +379,7 @@ mod edge_case_tests {
             source_type: "internal.mock".to_string(),
             auto_start: false,
             properties,
+            bootstrap_provider: None,
         };
         
         let json = serde_json::to_value(&config).unwrap();
@@ -416,6 +422,7 @@ mod edge_case_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
         
         let json = serde_json::to_value(&config).unwrap();

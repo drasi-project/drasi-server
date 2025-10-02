@@ -1,7 +1,7 @@
 use drasi_server_core::{
     QueryConfig, QueryManager, ComponentStatus, QueryResult, ComponentEvent,
     channels::BootstrapRequest,
-    config::{QueryJoinConfig, QueryJoinKeyConfig},
+    config::{QueryJoinConfig, QueryJoinKeyConfig, QueryLanguage},
     routers::{DataRouter, BootstrapRouter}
 };
 use axum::Extension;
@@ -23,6 +23,7 @@ fn build_query_config() -> QueryConfig {
                 QueryJoinKeyConfig { label: "stock_prices".to_string(), property: "symbol".to_string() },
             ],
         }]),
+        query_language: QueryLanguage::default(),
     }
 }
 
