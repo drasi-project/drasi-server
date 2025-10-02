@@ -14,7 +14,7 @@
 
 use drasi_server_core::{
     QueryConfig, ReactionConfig, SourceConfig, RuntimeConfig,
-    config::DrasiServerCoreSettings as ServerSettings,
+    config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
     DrasiError, DrasiServerCore, ApplicationHandle
 };
 use std::sync::Arc;
@@ -95,6 +95,7 @@ impl DrasiServerBuilder {
             source_type: source_type.into(),
             auto_start: true,
             properties: std::collections::HashMap::new(),
+            bootstrap_provider: None,
         });
         self
     }
@@ -115,6 +116,7 @@ impl DrasiServerBuilder {
         self.query_configs.push(QueryConfig {
             id: id.into(),
             query: query.into(),
+            query_language: QueryLanguage::default(),
             sources,
             auto_start: true,
             properties: std::collections::HashMap::new(),
@@ -182,6 +184,7 @@ impl DrasiServerBuilder {
             source_type: "internal.application".to_string(),
             auto_start: true,
             properties: HashMap::new(),
+            bootstrap_provider: None,
         });
         self
     }

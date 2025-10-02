@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use drasi_server::{ServerConfig, ServerSettings, SourceConfig, QueryConfig, ReactionConfig};
+use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -44,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     props.insert("description".to_string(), serde_json::json!("Mock vehicle location data"));
                     props
                 },
+                bootstrap_provider: None,
             },
             SourceConfig {
                 id: "order-status-source".to_string(),
@@ -56,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     props.insert("description".to_string(), serde_json::json!("Mock order status updates"));
                     props
                 },
+                bootstrap_provider: None,
             }
         ],
         queries: vec![
@@ -64,9 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query: r#"
                     MATCH (d:Driver {status: 'available'})
                     WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
-                    RETURN elementId(d) AS driverId, d.driver_name AS driverName, 
+                    RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                            d.latitude AS lat, d.longitude AS lng, d.status AS status
                 "#.to_string(),
+                query_language: QueryLanguage::default(),
                 auto_start: true,
                 sources: vec![source_name.clone()],
                 properties: {
@@ -81,9 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query: r#"
                     MATCH (o:Order)
                     WHERE o.status IN ['pending', 'preparing', 'ready']
-                    RETURN elementId(o) AS orderId, o.status AS status, 
+                    RETURN elementId(o) AS orderId, o.status AS status,
                            o.restaurant AS restaurant, o.delivery_address AS address
                 "#.to_string(),
+                query_language: QueryLanguage::default(),
                 auto_start: true,
                 sources: vec![source_name.clone()],
                 properties: {

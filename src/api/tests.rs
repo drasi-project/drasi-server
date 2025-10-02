@@ -19,7 +19,8 @@ mod handler_tests {
         SourceManager, QueryManager, ReactionManager,
         channels::EventChannels,
         ComponentStatus,
-        SourceConfig, QueryConfig, ReactionConfig
+        SourceConfig, QueryConfig, ReactionConfig,
+        config::QueryLanguage
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -85,6 +86,7 @@ mod handler_tests {
             source_type: "internal.mock".to_string(),
             auto_start: false,
             properties: std::collections::HashMap::new(),
+            bootstrap_provider: None,
         };
         
         let result = source_manager.add_source(config.clone()).await;
@@ -123,6 +125,7 @@ mod handler_tests {
             auto_start: false,
             properties: std::collections::HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
         
         let result = query_manager.add_query(config.clone()).await;
@@ -175,7 +178,7 @@ mod handler_tests {
 
 #[cfg(test)]
 mod serialization_tests {
-    use drasi_server_core::{SourceConfig, QueryConfig, ReactionConfig};
+    use drasi_server_core::{SourceConfig, QueryConfig, ReactionConfig, config::QueryLanguage};
     use serde_json::json;
     
     #[test]
@@ -184,6 +187,7 @@ mod serialization_tests {
             id: "test-source".to_string(),
             source_type: "internal.mock".to_string(),
             auto_start: true,
+            bootstrap_provider: None,
             properties: std::collections::HashMap::from([
                 ("key".to_string(), json!("value"))
             ]),
@@ -209,6 +213,7 @@ mod serialization_tests {
             auto_start: false,
             properties: std::collections::HashMap::new(),
             joins: None,
+            query_language: QueryLanguage::default(),
         };
         
         let json = serde_json::to_value(&config).unwrap();
