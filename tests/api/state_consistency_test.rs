@@ -41,7 +41,7 @@ async fn test_source_state_transitions() {
     
     let source_config = SourceConfig {
         id: "state-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -160,7 +160,7 @@ async fn test_data_router_registration_cleanup() {
     // Create and register a source
     let source_config = SourceConfig {
         id: "router-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -244,7 +244,7 @@ async fn test_bootstrap_router_registration() {
     // Create a source
     let source_config = SourceConfig {
         id: "bootstrap-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -283,7 +283,7 @@ async fn test_concurrent_state_operations() {
         let handle = tokio::spawn(async move {
             let config = SourceConfig {
                 id: format!("concurrent-source-{}", i),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
@@ -337,7 +337,7 @@ async fn test_update_preserves_state() {
 
     let initial_config = SourceConfig {
         id: "update-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::from([("interval_ms".to_string(), serde_json::json!(1000))]),
         bootstrap_provider: None,
@@ -357,7 +357,7 @@ async fn test_update_preserves_state() {
     // Update configuration (should restart the source)
     let updated_config = SourceConfig {
         id: "update-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::from([("interval_ms".to_string(), serde_json::json!(2000))]),
         bootstrap_provider: None,
@@ -433,7 +433,7 @@ async fn test_dependency_ordering() {
 
     let source_config = SourceConfig {
         id: "dep-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -455,7 +455,7 @@ async fn test_cascading_cleanup() {
     // Create complete pipeline
     let source_config = SourceConfig {
         id: "cascade-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,

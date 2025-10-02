@@ -84,7 +84,7 @@ cargo tarpaulin --test api --out Html --output-dir target/coverage
 fn test_new_field_serialization() {
     let config = SourceConfig {
         id: "test".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         // new_field: "value".to_string(), // Add new field

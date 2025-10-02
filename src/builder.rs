@@ -316,7 +316,7 @@ mod tests {
     fn test_builder_fluent_api() {
         let builder = DrasiServerBuilder::new()
             .with_log_level("debug")
-            .with_simple_source("test_source", "internal.mock")
+            .with_simple_source("test_source", "mock")
             .with_simple_query("test_query", "MATCH (n) RETURN n", vec!["test_source".to_string()])
             .with_log_reaction("test_reaction", vec!["test_query".to_string()])
             .enable_api_with_port(9090)

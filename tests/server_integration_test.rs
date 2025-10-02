@@ -29,7 +29,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "counter-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();
@@ -127,7 +127,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "sensors-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();
@@ -139,7 +139,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
             },
             SourceConfig {
                 id: "vehicles-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();
@@ -263,7 +263,7 @@ async fn test_component_failure_recovery() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "test-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
@@ -345,7 +345,7 @@ async fn test_concurrent_operations() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "concurrent-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: false, // Manual start
                 properties: HashMap::new(),
                 bootstrap_provider: None,
