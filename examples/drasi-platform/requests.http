@@ -1,0 +1,121 @@
+# Drasi Platform Example - HTTP Requests
+# Use with VSCode REST Client extension: https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+@baseUrl = http://localhost:8080
+@sourceId = platform-redis-source
+@queryId = hello-world-from
+@reactionId = log-hello-world
+
+### Health Check
+# Check if the Drasi server is running
+GET {{baseUrl}}/health
+
+### Get OpenAPI Specification
+# View the complete API documentation
+GET {{baseUrl}}/openapi.json
+
+### Swagger UI
+# Interactive API documentation
+GET {{baseUrl}}/swagger-ui/
+
+###############################################################################
+# Sources
+###############################################################################
+
+### Get All Sources
+GET {{baseUrl}}/sources
+
+### Get Platform Source Status
+# Check the status of the platform Redis source
+GET {{baseUrl}}/sources/{{sourceId}}
+
+### Stop Platform Source
+# Stop consuming events from Redis
+POST {{baseUrl}}/sources/{{sourceId}}/stop
+
+### Start Platform Source
+# Resume consuming events from Redis
+POST {{baseUrl}}/sources/{{sourceId}}/start
+
+###############################################################################
+# Queries
+###############################################################################
+
+### Get All Queries
+GET {{baseUrl}}/queries
+
+### Get Query Status
+# Check the status of the hello-world query
+GET {{baseUrl}}/queries/{{queryId}}
+
+### Get Query Results
+# Retrieve current query results
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+### Stop Query
+# Stop processing events for this query
+POST {{baseUrl}}/queries/{{queryId}}/stop
+
+### Start Query
+# Resume processing events for this query
+POST {{baseUrl}}/queries/{{queryId}}/start
+
+###############################################################################
+# Reactions
+###############################################################################
+
+### Get All Reactions
+GET {{baseUrl}}/reactions
+
+### Get Log Reaction Status
+# Check the status of the log reaction
+GET {{baseUrl}}/reactions/{{reactionId}}
+
+### Stop Log Reaction
+# Stop logging query results
+POST {{baseUrl}}/reactions/{{reactionId}}/stop
+
+### Start Log Reaction
+# Resume logging query results
+POST {{baseUrl}}/reactions/{{reactionId}}/start
+
+###############################################################################
+# Testing Workflow
+###############################################################################
+
+### 1. Check All Components Are Running
+# @name checkHealth
+GET {{baseUrl}}/health
+
+### 2. Verify Source Is Active
+# @name checkSource
+GET {{baseUrl}}/sources/{{sourceId}}
+
+### 3. View Current Results (Empty Initially)
+# @name initialResults
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+### 4. Publish Event Using Script
+# Run in terminal: ./examples/drasi-platform/scripts/publish-event.sh Alice
+
+### 5. View Updated Results
+# @name updatedResults
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+###############################################################################
+# Advanced: Component Lifecycle Management
+###############################################################################
+
+### Stop All Components (Source → Query → Reaction)
+POST {{baseUrl}}/reactions/{{reactionId}}/stop
+###
+POST {{baseUrl}}/queries/{{queryId}}/stop
+###
+POST {{baseUrl}}/sources/{{sourceId}}/stop
+
+### Start All Components (Source → Query → Reaction)
+POST {{baseUrl}}/sources/{{sourceId}}/start
+###
+POST {{baseUrl}}/queries/{{queryId}}/start
+###
+POST {{baseUrl}}/reactions/{{reactionId}}/start

@@ -1,0 +1,63 @@
+# Drasi Platform Example - Redis Stream Integration
+# This example demonstrates using the platform source to consume events from Redis Streams
+
+# Server configuration
+server:
+  host: 0.0.0.0
+  port: 8080
+  log_level: info
+  disable_persistence: true
+
+# Sources: Define where data comes from
+sources:
+  # Platform source - connects to Redis Stream to consume events
+  - id: platform-redis-source
+    source_type: platform
+    auto_start: true
+    properties:
+      # Redis connection URL
+      redis_url: "redis://localhost:6379"
+
+      # Redis stream key to read from
+      stream_key: "hello-world-change"
+
+      # Consumer group name for Redis Streams consumer group
+      consumer_group: "drasi-core"
+
+      # Unique consumer name within the consumer group
+      consumer_name: "consumer-1"
+
+      # Number of events to read per batch (default: 10)
+      batch_size: 10
+
+      # Milliseconds to block waiting for new events (default: 5000)
+      block_ms: 5000
+
+      # Stream position: ">" for new events, "0" to replay all (default: ">")
+      start_id: ">"
+
+# Queries: Continuous Cypher queries that process incoming data
+queries:
+  # Query to filter "Hello World" messages and return MessageId and From fields
+  - id: hello-world-from
+    auto_start: true
+    # Cypher query: Match nodes with label "Message" and property Message="Hello World"
+    query: |
+      MATCH
+        (m:Message {Message: 'Hello World'})
+      RETURN
+        m.MessageId AS MessageId,
+        m.From AS MessageFrom
+    # Sources this query subscribes to
+    sources:
+      - platform-redis-source
+
+# Reactions: Define what happens with query results
+reactions:
+  # Log reaction - prints query results to console
+  - id: log-hello-world
+    reaction_type: log
+    auto_start: true
+    # Queries this reaction subscribes to
+    queries:
+      - hello-world-from
