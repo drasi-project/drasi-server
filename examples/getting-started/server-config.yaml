@@ -1,0 +1,50 @@
+# Getting Started Example - Drasi Server Configuration
+# This minimal configuration demonstrates core Drasi concepts using a simple product catalog
+
+# Server: Runtime configuration
+server:
+  host: 0.0.0.0
+  port: 8080
+  log_level: info
+  disable_persistence: true
+
+# Sources: Define where data comes from
+sources:
+  # HTTP Source: Receives product data via HTTP API
+  - id: products-source
+    source_type: http
+    auto_start: true
+    # Bootstrap: Load initial data from a file when starting
+    bootstrap_provider:
+      type: scriptfile
+      # Path to JSONL file with initial product catalog
+      file_paths:
+        - examples/getting-started/data/products.jsonl
+    properties:
+      # HTTP server will listen on port 9000
+      port: 9000
+      host: 0.0.0.0
+
+# Queries: Continuous Cypher queries that process data
+queries:
+  # Query: Find all products priced over $50
+  - id: expensive-products
+    auto_start: true
+    # Cypher query: Match Product nodes where price > 50, return all properties
+    query: |
+      MATCH (p:Product)
+      WHERE p.price > 50
+      RETURN p.id, p.name, p.price, p.category, p.in_stock
+    sources:
+      # Subscribe to data from products-source
+      - products-source
+
+# Reactions: Define what happens with query results
+reactions:
+  # Log Reaction: Print query results to console
+  - id: log-results
+    reaction_type: log
+    auto_start: true
+    queries:
+      # Subscribe to results from expensive-products query
+      - expensive-products

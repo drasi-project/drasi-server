@@ -1,0 +1,127 @@
+### Getting Started - Sample HTTP Requests
+### Use with VS Code REST Client extension or as curl reference
+
+@apiUrl = http://localhost:8080
+@sourceUrl = http://localhost:9000/sources/products-source/events
+
+### Health Check
+GET {{apiUrl}}/health
+
+### Get Source Status
+GET {{apiUrl}}/sources/products-source
+
+### Get Query Status
+GET {{apiUrl}}/queries/expensive-products
+
+### Get Query Results
+GET {{apiUrl}}/queries/expensive-products/results
+
+### Add New Product (Direct Format)
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "insert",
+  "element": {
+    "type": "node",
+    "id": "prod-009",
+    "labels": ["Product"],
+    "properties": {
+      "id": "prod-009",
+      "name": "Gaming Mouse",
+      "price": 69.99,
+      "category": "Electronics",
+      "in_stock": true
+    }
+  }
+}
+
+### Add Another Product - Mechanical Keyboard
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "insert",
+  "element": {
+    "type": "node",
+    "id": "prod-010",
+    "labels": ["Product"],
+    "properties": {
+      "id": "prod-010",
+      "name": "Mechanical Keyboard",
+      "price": 149.99,
+      "category": "Electronics",
+      "in_stock": true
+    }
+  }
+}
+
+### Update Existing Product (Price Change)
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "update",
+  "element": {
+    "type": "node",
+    "id": "prod-001",
+    "labels": ["Product"],
+    "properties": {
+      "id": "prod-001",
+      "name": "Wireless Headphones Pro",
+      "price": 99.99,
+      "category": "Electronics",
+      "in_stock": true
+    }
+  }
+}
+
+### Update Product Availability (Stock Change)
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "update",
+  "element": {
+    "type": "node",
+    "id": "prod-002",
+    "labels": ["Product"],
+    "properties": {
+      "id": "prod-002",
+      "name": "Coffee Maker",
+      "price": 129.99,
+      "category": "Appliances",
+      "in_stock": false
+    }
+  }
+}
+
+### Delete Product
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "delete",
+  "id": "prod-009",
+  "labels": ["Product"]
+}
+
+### Add Low-Priced Product (Won't match query - price <= $50)
+POST {{sourceUrl}}
+Content-Type: application/json
+
+{
+  "operation": "insert",
+  "element": {
+    "type": "node",
+    "id": "prod-011",
+    "labels": ["Product"],
+    "properties": {
+      "id": "prod-011",
+      "name": "USB Cable",
+      "price": 9.99,
+      "category": "Accessories",
+      "in_stock": true
+    }
+  }
+}

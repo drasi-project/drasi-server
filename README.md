@@ -418,6 +418,32 @@ RUST_LOG=debug cargo run
 RUST_LOG=drasi_server=debug,drasi_server_core::queries=trace cargo run
 ```
 
+## Examples
+
+Learn Drasi through practical examples:
+
+### Getting Started Example
+**[`examples/getting-started/`](examples/getting-started/)**
+
+A minimal, beginner-friendly example perfect for first-time users:
+- Single HTTP source for data ingestion
+- Script file bootstrap provider for initial data
+- Simple Cypher query filtering products over $50
+- Log reaction for viewing results
+- Complete with helper scripts and curl examples
+
+**Start here** if you're new to Drasi Server!
+
+### Trading Demo
+**[`examples/trading/`](examples/trading/)**
+
+A comprehensive real-world example demonstrating advanced features:
+- PostgreSQL replication source with bootstrap
+- HTTP and gRPC sources for live data
+- Complex multi-source queries with joins
+- Multiple reaction types (webhooks, SSE, logs)
+- Full production-like configuration
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
