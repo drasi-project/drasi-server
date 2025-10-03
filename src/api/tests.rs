@@ -83,12 +83,12 @@ mod handler_tests {
         // Test adding a source
         let config = SourceConfig {
             id: "test-source".to_string(),
-            source_type: "internal.mock".to_string(),
+            source_type: "mock".to_string(),
             auto_start: false,
             properties: std::collections::HashMap::new(),
             bootstrap_provider: None,
         };
-        
+
         let result = source_manager.add_source(config.clone()).await;
         assert!(result.is_ok());
         
@@ -185,7 +185,7 @@ mod serialization_tests {
     fn test_source_config_json_serialization() {
         let config = SourceConfig {
             id: "test-source".to_string(),
-            source_type: "internal.mock".to_string(),
+            source_type: "mock".to_string(),
             auto_start: true,
             bootstrap_provider: None,
             properties: std::collections::HashMap::from([
@@ -195,7 +195,7 @@ mod serialization_tests {
         
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
-        assert_eq!(json["source_type"], "internal.mock");
+        assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
         assert_eq!(json["properties"]["key"], "value");
         

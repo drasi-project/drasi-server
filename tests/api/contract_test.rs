@@ -80,7 +80,7 @@ mod contract_tests {
         
         let config = SourceConfig {
             id: "test-source".to_string(),
-            source_type: "internal.mock".to_string(),
+            source_type: "mock".to_string(),
             auto_start: true,
             properties,
             bootstrap_provider: None,
@@ -88,7 +88,7 @@ mod contract_tests {
         
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
-        assert_eq!(json["source_type"], "internal.mock");
+        assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
         assert_eq!(json["properties"]["interval_ms"], 1000);
         assert_eq!(json["properties"]["data_type"], "counter");
@@ -98,7 +98,7 @@ mod contract_tests {
     fn test_source_config_deserialization() {
         let json = json!({
             "id": "test-source",
-            "source_type": "internal.mock",
+            "source_type": "mock",
             "auto_start": false,
             "properties": {
                 "interval_ms": 2000,
@@ -108,7 +108,7 @@ mod contract_tests {
         
         let config: SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type, "internal.mock");
+        assert_eq!(config.source_type, "mock");
         assert_eq!(config.auto_start, false);
         assert_eq!(config.properties.get("interval_ms").unwrap(), &json!(2000));
     }
@@ -337,7 +337,7 @@ mod edge_case_tests {
     fn test_special_characters_in_ids() {
         let config = SourceConfig {
             id: "source-with-dashes_and_underscores.123".to_string(),
-            source_type: "internal.mock".to_string(),
+            source_type: "mock".to_string(),
             auto_start: false,
             properties: HashMap::new(),
             bootstrap_provider: None,
@@ -376,7 +376,7 @@ mod edge_case_tests {
         
         let config = SourceConfig {
             id: "unicode-source".to_string(),
-            source_type: "internal.mock".to_string(),
+            source_type: "mock".to_string(),
             auto_start: false,
             properties,
             bootstrap_provider: None,
@@ -490,7 +490,7 @@ mod validation_tests {
         // Additional fields should be ignored (forward compatibility)
         let json_with_extra = json!({
             "id": "test-source",
-            "source_type": "internal.mock",
+            "source_type": "mock",
             "auto_start": false,
             "properties": {},
             "future_field": "ignored", // Extra field
@@ -499,6 +499,6 @@ mod validation_tests {
         
         let config: SourceConfig = serde_json::from_value(json_with_extra).unwrap();
         assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type, "internal.mock");
+        assert_eq!(config.source_type, "mock");
     }
 }

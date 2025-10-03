@@ -28,7 +28,7 @@ async fn test_basic_server_lifecycle() {
 async fn test_server_with_components() {
     // Create server with components
     let mut server = DrasiServerBuilder::new()
-        .with_simple_source("test_source", "internal.mock")
+        .with_simple_source("test_source", "mock")
         .with_simple_query(
             "test_query",
             "MATCH (n) RETURN n",
@@ -77,7 +77,7 @@ async fn test_dynamic_component_management() {
     // Add source dynamically
     let source_config = SourceConfig {
         id: "dynamic_source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -139,7 +139,7 @@ async fn test_config_persistence() {
     
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
-        .with_simple_source("persist_source", "internal.mock")
+        .with_simple_source("persist_source", "mock")
         .enable_config_persistence(config_file)
         .build()
         .await
@@ -170,7 +170,7 @@ async fn test_concurrent_operations() {
         let task = tokio::spawn(async move {
             let config = SourceConfig {
                 id: format!("concurrent_source_{}", i),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
@@ -195,7 +195,7 @@ async fn test_concurrent_operations() {
 #[tokio::test] 
 async fn test_graceful_shutdown_timeout() {
     let mut server = DrasiServerBuilder::new()
-        .with_simple_source("timeout_source", "internal.mock")
+        .with_simple_source("timeout_source", "mock")
         .build_core()
         .await
         .expect("Failed to build server");

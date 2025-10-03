@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sources: vec![
             SourceConfig {
                 id: source_name.clone(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             SourceConfig {
                 id: "order-status-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();

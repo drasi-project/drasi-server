@@ -21,7 +21,7 @@ server:
   disable_persistence: true
 sources:
 - id: postgres-stocks
-  source_type: internal.postgres_replication
+  source_type: postgres
   auto_start: true
   bootstrap_provider:
     type: postgres
@@ -41,7 +41,7 @@ sources:
     bootstrap_batch_size: 500
     keepalive_interval_secs: 10
 - id: price-feed
-  source_type: internal.http
+  source_type: http
   auto_start: true
   properties:
     port: 9000

@@ -123,7 +123,7 @@ async fn test_source_lifecycle_via_api() {
     // Create a source
     let source_config = json!({
         "id": "test-source",
-        "source_type": "internal.mock",
+        "source_type": "mock",
         "auto_start": false,
         "properties": {
             "interval_ms": 1000,
@@ -153,7 +153,7 @@ async fn test_source_lifecycle_via_api() {
     // Verify source was created in manager
     let source = source_manager.get_source("test-source".to_string()).await.unwrap();
     assert_eq!(source.id, "test-source");
-    assert_eq!(source.source_type, "internal.mock");
+    assert_eq!(source.source_type, "mock");
     assert_eq!(source.status, ComponentStatus::Stopped);
 
     // List sources
@@ -261,7 +261,7 @@ async fn test_query_lifecycle_via_api() {
     // First create a source for the query
     let source_config = SourceConfig {
         id: "query-source".to_string(),
-        source_type: "internal.mock".to_string(),
+        source_type: "mock".to_string(),
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
@@ -438,7 +438,7 @@ async fn test_auto_start_behavior() {
     // Create source with auto_start=true
     let source_config = json!({
         "id": "auto-source",
-        "source_type": "internal.mock",
+        "source_type": "mock",
         "auto_start": true,
         "properties": {
             "interval_ms": 1000
@@ -534,7 +534,7 @@ async fn test_idempotent_create_operations() {
 
     let source_config = json!({
         "id": "idempotent-source",
-        "source_type": "internal.mock",
+        "source_type": "mock",
         "auto_start": false,
         "properties": {}
     });
@@ -624,7 +624,7 @@ async fn test_read_only_mode() {
     // Try to create a source in read-only mode
     let source_config = json!({
         "id": "readonly-test",
-        "source_type": "internal.mock",
+        "source_type": "mock",
         "auto_start": false,
         "properties": {}
     });
@@ -670,7 +670,7 @@ async fn test_error_handling() {
     // Try to update with mismatched ID
     let config = json!({
         "id": "different-id",
-        "source_type": "internal.mock",
+        "source_type": "mock",
         "auto_start": false,
         "properties": {}
     });

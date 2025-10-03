@@ -134,7 +134,7 @@ echo ""
 echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamically)..."
 
 cd "$DRASI_SERVER_ROOT"
-RUST_LOG=info,drasi_server::sources::internal::postgres_replication=debug \
+RUST_LOG=info,drasi_server::sources::postgres=debug \
     ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > /tmp/drasi-server.log 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
