@@ -36,7 +36,7 @@ path = "src/bin/basic_setup.rs"
 
 [dependencies]
 # Drasi Server Core dependencies via submodules
-drasi-server-core = { path = "drasi-server-core" }
+drasi-server-core = { git = "https://github.com/drasi-project/drasi-server-core.git", branch = "main" }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -62,7 +62,7 @@ assert_matches = "1.5"
 serial_test = "3.0"
 pretty_assertions = "1.4"
 test-case = "3.3"
-wiremock = "0.6"
+wiremock = "0.5"
 
 # Additional testing dependencies
 futures = "0.3"
@@ -71,6 +71,6 @@ hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
 
 # Patch section to use local development copy instead of submodule
-[patch."file:///Users/allenjones/dev/agentofreality/drasi/drasi-server/drasi-server-core"]
+[patch."https://github.com/drasi-project/drasi-server-core.git"]
 drasi-server-core = { path = "../drasi-server-core" }
 

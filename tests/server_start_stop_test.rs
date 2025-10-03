@@ -75,7 +75,7 @@ async fn test_auto_start_components() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "test-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
@@ -188,14 +188,14 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "auto-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
             },
             SourceConfig {
                 id: "manual-source".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
@@ -316,14 +316,14 @@ async fn test_component_startup_sequence() -> Result<()> {
         sources: vec![
             SourceConfig {
                 id: "source1".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
             },
             SourceConfig {
                 id: "source2".to_string(),
-                source_type: "internal.mock".to_string(),
+                source_type: "mock".to_string(),
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
