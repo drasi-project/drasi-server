@@ -1,5 +1,6 @@
-# Drasi Platform Example - Redis Stream Integration
+# Drasi Platform Example - Redis Stream Integration with Platform Bootstrap
 # This example demonstrates using the platform source to consume events from Redis Streams
+# with bootstrap data from a Query API service
 
 # Server configuration
 server:
@@ -10,10 +11,15 @@ server:
 
 # Sources: Define where data comes from
 sources:
-  # Platform source - connects to Redis Stream to consume events
+  # Platform source - connects to Redis Stream to consume events with platform bootstrap
   - id: platform-redis-source
     source_type: platform
     auto_start: true
+    # Platform bootstrap provider - fetches initial data from Query API
+    bootstrap_provider:
+      type: platform
+      query_api_url: "http://localhost:8082"
+      timeout_seconds: 300
     properties:
       # Redis connection URL
       redis_url: "redis://localhost:6379"

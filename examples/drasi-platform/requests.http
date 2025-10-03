@@ -12,11 +12,11 @@ GET {{baseUrl}}/health
 
 ### Get OpenAPI Specification
 # View the complete API documentation
-GET {{baseUrl}}/openapi.json
+GET {{baseUrl}}/api-docs/openapi.json
 
 ### Swagger UI
 # Interactive API documentation
-GET {{baseUrl}}/swagger-ui/
+GET {{baseUrl}}/docs/
 
 ###############################################################################
 # Sources
