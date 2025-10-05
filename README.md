@@ -53,7 +53,7 @@ server:
 
 sources:
   - id: inventory-db
-    source_type: internal.postgres
+    source_type: postgres
     auto_start: true
     properties:
       host: localhost
@@ -72,7 +72,7 @@ queries:
 
 reactions:
   - id: alert-webhook
-    reaction_type: internal.http
+    reaction_type: http
     auto_start: true
     properties:
       endpoint: https://alerts.example.com/webhook
@@ -109,10 +109,13 @@ DrasiServer orchestrates three types of components that work together to create 
 
 ### Sources
 Data ingestion points that connect to your systems:
-- **PostgreSQL** - Monitor table changes via WAL replication
-- **HTTP Endpoints** - Poll REST APIs for updates
-- **gRPC Streams** - Subscribe to real-time data feeds
-- **Application Sources** - Programmatically inject events
+- **PostgreSQL** (`postgres`) - Monitor table changes via WAL replication
+- **HTTP Endpoints** (`http`) - Poll REST APIs for updates
+- **HTTP Adaptive** (`http_adaptive`) - Adaptive HTTP polling with batching
+- **gRPC Streams** (`grpc`) - Subscribe to real-time data feeds
+- **Platform** (`platform`) - Redis Streams integration for Drasi Platform
+- **Mock** (`mock`) - Test data generation
+- **Application** (`application`) - Programmatically inject events in embedded usage
 
 ### Continuous Queries
 Cypher-based queries that continuously evaluate incoming changes:
@@ -126,10 +129,14 @@ RETURN order.id, item.sku, item.quantity - item.inventory_count as shortage
 
 ### Reactions
 Automated responses triggered by query results:
-- **HTTP Webhooks** - Call external APIs
-- **Server-Sent Events (SSE)** - Stream to browsers
-- **gRPC Streams** - Push to services
-- **Application Reactions** - Custom code handlers
+- **HTTP Webhooks** (`http`) - Call external APIs
+- **HTTP Adaptive** (`http_adaptive`) - Adaptive HTTP webhooks with retry logic
+- **Server-Sent Events** (`sse`) - Stream to browsers
+- **gRPC Streams** (`grpc`) - Push to services
+- **gRPC Adaptive** (`grpc_adaptive`) - Adaptive gRPC streams with retry logic
+- **Log** (`log`) - Console logging for debugging
+- **Platform** (`platform`) - Platform-specific reactions
+- **Application** (`application`) - Custom code handlers for embedded usage
 
 ## Building from Source
 
@@ -188,7 +195,7 @@ server:
 # Data sources
 sources:
   - id: unique-source-id
-    source_type: internal.postgres  # Source type
+    source_type: postgres  # Source type
     auto_start: true               # Start automatically
     properties:                    # Source-specific properties
       host: localhost
@@ -213,7 +220,7 @@ queries:
 # Reactions
 reactions:
   - id: unique-reaction-id
-    reaction_type: internal.http   # Reaction type
+    reaction_type: http   # Reaction type
     queries: [query-id]            # Query subscriptions
     auto_start: true
     properties:                    # Reaction-specific properties
@@ -279,7 +286,7 @@ POST /sources
 Content-Type: application/json
 {
   "id": "new-source",
-  "source_type": "internal.postgres",
+  "source_type": "postgres",
   "properties": {...}
 }
 

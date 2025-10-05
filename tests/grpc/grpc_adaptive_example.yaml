@@ -7,7 +7,7 @@ server:
   disable_persistence: true
 sources:
 - id: facilities-db
-  source_type: internal.grpc
+  source_type: grpc
   auto_start: true
   properties:
     keepalive_timeout_seconds: 10
