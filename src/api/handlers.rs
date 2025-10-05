@@ -22,12 +22,16 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use drasi_server_core::{
-    ComponentStatus,
-    SourceConfig, QueryConfig, ReactionConfig,
-    config::{SourceRuntime, QueryRuntime, ReactionRuntime},
-    SourceManager, QueryManager, ReactionManager,
+    config::{QueryRuntime, ReactionRuntime, SourceRuntime},
     queries::LabelExtractor, // For join validation
-    routers::{BootstrapRouter, DataRouter, SubscriptionRouter}
+    routers::{BootstrapRouter, DataRouter, SubscriptionRouter},
+    ComponentStatus,
+    QueryConfig,
+    QueryManager,
+    ReactionConfig,
+    ReactionManager,
+    SourceConfig,
+    SourceManager,
 };
 
 #[derive(Serialize, ToSchema)]
@@ -82,7 +86,7 @@ impl<T> ApiResponse<T> {
             error: None,
         }
     }
-    
+
     pub fn error(message: String) -> Self {
         Self {
             success: false,
@@ -125,7 +129,7 @@ pub async fn list_sources(
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
         .collect();
-    
+
     Json(ApiResponse::success(items))
 }
 
@@ -148,10 +152,10 @@ pub async fn create_source(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create sources.".to_string()
+            "Server is in read-only mode. Cannot create sources.".to_string(),
         )));
     }
-    
+
     let source_id = config.id.clone();
     let bootstrap_provider_config = config.bootstrap_provider.clone();
 
@@ -163,19 +167,27 @@ pub async fn create_source(
                 let source_config_arc = Arc::new(source_config);
                 let source_change_tx = source_manager.get_source_change_sender();
                 if let Err(e) = bootstrap_router
-                    .register_provider(source_config_arc, bootstrap_provider_config, source_change_tx)
+                    .register_provider(
+                        source_config_arc,
+                        bootstrap_provider_config,
+                        source_change_tx,
+                    )
                     .await
                 {
-                    log::warn!("Failed to register bootstrap provider for source '{}': {}", source_id, e);
+                    log::warn!(
+                        "Failed to register bootstrap provider for source '{}': {}",
+                        source_id,
+                        e
+                    );
                 } else {
                     log::info!("Registered bootstrap provider for source '{}'", source_id);
                 }
             }
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Source created successfully".to_string(),
             })))
-        },
+        }
         Err(e) => {
             // Check if the source already exists
             if e.to_string().contains("already exists") {
@@ -185,7 +197,7 @@ pub async fn create_source(
                     message: format!("Source '{}' already exists", source_id),
                 })));
             }
-            
+
             log::error!("Failed to create source: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -238,14 +250,14 @@ pub async fn update_source(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update sources.".to_string()
+            "Server is in read-only mode. Cannot update sources.".to_string(),
         )));
     }
-    
+
     if config.id != id {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     match source_manager.update_source(id, config).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source updated successfully".to_string(),
@@ -276,10 +288,10 @@ pub async fn delete_source(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete sources.".to_string()
+            "Server is in read-only mode. Cannot delete sources.".to_string(),
         )));
     }
-    
+
     match source_manager.delete_source(id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source deleted successfully".to_string(),
@@ -365,7 +377,7 @@ pub async fn list_queries(
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
         .collect();
-    
+
     Json(ApiResponse::success(items))
 }
 
@@ -389,10 +401,10 @@ pub async fn create_query(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create queries.".to_string()
+            "Server is in read-only mode. Cannot create queries.".to_string(),
         )));
     }
-    
+
     let query_id = config.id.clone();
     let should_auto_start = config.auto_start;
     let sources = config.sources.clone();
@@ -402,7 +414,8 @@ pub async fn create_query(
     if join_count > 0 {
         match LabelExtractor::extract_labels(&config.query, &config.query_language) {
             Ok(labels) => {
-                let rel_labels: std::collections::HashSet<String> = labels.relation_labels.into_iter().collect();
+                let rel_labels: std::collections::HashSet<String> =
+                    labels.relation_labels.into_iter().collect();
                 for j in config.joins.as_ref().unwrap() {
                     if !rel_labels.contains(&j.id) {
                         log::warn!("[JOIN-VALIDATION] Query '{}' defines join id '{}' which does not appear as a relationship label in the Cypher pattern.", query_id, j.id);
@@ -413,39 +426,48 @@ pub async fn create_query(
                         }
                     }
                 }
-                log::info!("Registering query '{}' with {} synthetic join(s)", query_id, join_count);
+                log::info!(
+                    "Registering query '{}' with {} synthetic join(s)",
+                    query_id,
+                    join_count
+                );
             }
             Err(e) => {
-                log::warn!("[JOIN-VALIDATION] Failed to parse query '{}' for join validation: {}", query_id, e);
+                log::warn!(
+                    "[JOIN-VALIDATION] Failed to parse query '{}' for join validation: {}",
+                    query_id,
+                    e
+                );
             }
         }
     } else {
         log::debug!("Registering query '{}' with no synthetic joins", query_id);
     }
-    
+
     match query_manager.add_query(config).await {
         Ok(_) => {
             // Register with bootstrap router
             let bootstrap_senders = query_manager.get_bootstrap_response_senders().await;
             if let Some(sender) = bootstrap_senders.get(&query_id) {
-                bootstrap_router.register_query(query_id.clone(), sender.clone()).await;
+                bootstrap_router
+                    .register_query(query_id.clone(), sender.clone())
+                    .await;
                 log::info!("Registered query '{}' with bootstrap router", query_id);
             }
-            
+
             // Auto-start if configured
             if should_auto_start {
                 log::info!("Auto-starting query: {}", query_id);
-                let rx = data_router.add_query_subscription(
-                    query_id.clone(),
-                    sources
-                ).await;
-                
+                let rx = data_router
+                    .add_query_subscription(query_id.clone(), sources)
+                    .await;
+
                 if let Err(e) = query_manager.start_query(query_id.clone(), rx).await {
                     log::error!("Failed to auto-start query {}: {}", query_id, e);
                     // Don't fail the add operation, just log the error
                 }
             }
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query created successfully".to_string(),
             })))
@@ -459,7 +481,7 @@ pub async fn create_query(
                     message: format!("Query '{}' already exists", query_id),
                 })));
             }
-            
+
             log::error!("Failed to create query: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -512,14 +534,14 @@ pub async fn update_query(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update queries.".to_string()
+            "Server is in read-only mode. Cannot update queries.".to_string(),
         )));
     }
-    
+
     if config.id != id {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     match query_manager.update_query(id, config).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query updated successfully".to_string(),
@@ -551,19 +573,19 @@ pub async fn delete_query(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete queries.".to_string()
+            "Server is in read-only mode. Cannot delete queries.".to_string(),
         )));
     }
-    
+
     match query_manager.delete_query(id.clone()).await {
         Ok(_) => {
             // Remove the query's subscription from the data router
             data_router.remove_query_subscription(&id).await;
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query deleted successfully".to_string(),
             })))
-        },
+        }
         Err(e) => {
             log::error!("Failed to delete query: {}", e);
             Ok(Json(ApiResponse::error(e.to_string())))
@@ -593,15 +615,16 @@ pub async fn start_query(
         Ok(runtime) => {
             // Check if query is already running
             if matches!(runtime.status, ComponentStatus::Running) {
-                return Json(ApiResponse::error("Component is already running".to_string()));
+                return Json(ApiResponse::error(
+                    "Component is already running".to_string(),
+                ));
             }
-            
+
             // Get a receiver connected to the data router
-            let rx = data_router.add_query_subscription(
-                id.clone(),
-                runtime.sources.clone()
-            ).await;
-            
+            let rx = data_router
+                .add_query_subscription(id.clone(), runtime.sources.clone())
+                .await;
+
             // Start the query with the receiver
             match query_manager.start_query(id.clone(), rx).await {
                 Ok(_) => Json(ApiResponse::success(StatusResponse {
@@ -636,11 +659,11 @@ pub async fn stop_query(
         Ok(_) => {
             // Remove the query's subscription from the data router
             data_router.remove_query_subscription(&id).await;
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query stopped successfully".to_string(),
             })))
-        },
+        }
         Err(e) => {
             log::error!("Failed to stop query: {}", e);
             Ok(Json(ApiResponse::error(e.to_string())))
@@ -698,7 +721,7 @@ pub async fn list_reactions(
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
         .collect();
-    
+
     Json(ApiResponse::success(items))
 }
 
@@ -721,30 +744,32 @@ pub async fn create_reaction(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create reactions.".to_string()
+            "Server is in read-only mode. Cannot create reactions.".to_string(),
         )));
     }
-    
+
     let reaction_id = config.id.clone();
     let should_auto_start = config.auto_start;
     let queries = config.queries.clone();
-    
+
     match reaction_manager.add_reaction(config).await {
         Ok(_) => {
             // Auto-start if configured
             if should_auto_start {
                 log::info!("Auto-starting reaction: {}", reaction_id);
-                let rx = subscription_router.add_reaction_subscription(
-                    reaction_id.clone(),
-                    queries
-                ).await;
-                
-                if let Err(e) = reaction_manager.start_reaction(reaction_id.clone(), rx).await {
+                let rx = subscription_router
+                    .add_reaction_subscription(reaction_id.clone(), queries)
+                    .await;
+
+                if let Err(e) = reaction_manager
+                    .start_reaction(reaction_id.clone(), rx)
+                    .await
+                {
                     log::error!("Failed to auto-start reaction {}: {}", reaction_id, e);
                     // Don't fail the add operation, just log the error
                 }
             }
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction created successfully".to_string(),
             })))
@@ -752,13 +777,16 @@ pub async fn create_reaction(
         Err(e) => {
             // Check if the reaction already exists
             if e.to_string().contains("already exists") {
-                log::info!("Reaction '{}' already exists, skipping creation", reaction_id);
+                log::info!(
+                    "Reaction '{}' already exists, skipping creation",
+                    reaction_id
+                );
                 // Return success since the reaction exists (idempotent behavior)
                 return Ok(Json(ApiResponse::success(StatusResponse {
                     message: format!("Reaction '{}' already exists", reaction_id),
                 })));
             }
-            
+
             log::error!("Failed to create reaction: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -811,14 +839,14 @@ pub async fn update_reaction(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update reactions.".to_string()
+            "Server is in read-only mode. Cannot update reactions.".to_string(),
         )));
     }
-    
+
     if config.id != id {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     match reaction_manager.update_reaction(id, config).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction updated successfully".to_string(),
@@ -850,19 +878,19 @@ pub async fn delete_reaction(
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete reactions.".to_string()
+            "Server is in read-only mode. Cannot delete reactions.".to_string(),
         )));
     }
-    
+
     match reaction_manager.delete_reaction(id.clone()).await {
         Ok(_) => {
             // Remove the reaction's subscription from the subscription router
             subscription_router.remove_reaction_subscription(&id).await;
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction deleted successfully".to_string(),
             })))
-        },
+        }
         Err(e) => {
             log::error!("Failed to delete reaction: {}", e);
             Ok(Json(ApiResponse::error(e.to_string())))
@@ -893,15 +921,16 @@ pub async fn start_reaction(
             // Check if the reaction is already running
             if runtime.status == ComponentStatus::Running {
                 log::info!("Reaction '{}' is already running", id);
-                return Json(ApiResponse::error("Component is already running".to_string()));
+                return Json(ApiResponse::error(
+                    "Component is already running".to_string(),
+                ));
             }
-            
+
             // Get a receiver connected to the subscription router
-            let rx = subscription_router.add_reaction_subscription(
-                id.clone(),
-                runtime.queries.clone()
-            ).await;
-            
+            let rx = subscription_router
+                .add_reaction_subscription(id.clone(), runtime.queries.clone())
+                .await;
+
             // Start the reaction with the receiver
             match reaction_manager.start_reaction(id.clone(), rx).await {
                 Ok(_) => Json(ApiResponse::success(StatusResponse {
@@ -936,11 +965,11 @@ pub async fn stop_reaction(
         Ok(_) => {
             // Remove the reaction's subscription from the subscription router
             subscription_router.remove_reaction_subscription(&id).await;
-            
+
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction stopped successfully".to_string(),
             })))
-        },
+        }
         Err(e) => {
             log::error!("Failed to stop reaction: {}", e);
             Ok(Json(ApiResponse::error(e.to_string())))

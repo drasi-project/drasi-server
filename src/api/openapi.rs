@@ -14,15 +14,14 @@
 
 use utoipa::OpenApi;
 
-use crate::api::handlers::{HealthResponse, ComponentListItem, StatusResponse, ApiResponseSchema};
+use crate::api::handlers::{ApiResponseSchema, ComponentListItem, HealthResponse, StatusResponse};
 // Note: Config types from drasi_server_core are imported but not used in schema
 // as they don't implement ToSchema trait
 #[allow(unused_imports)]
 use drasi_server_core::{
-    SourceConfig, QueryConfig, ReactionConfig,
-    config::{SourceRuntime, QueryRuntime, ReactionRuntime, QueryJoinConfig, QueryJoinKeyConfig},
     channels::ComponentType,
-    ComponentStatus
+    config::{QueryJoinConfig, QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime},
+    ComponentStatus, QueryConfig, ReactionConfig, SourceConfig,
 };
 
 #[derive(OpenApi)]

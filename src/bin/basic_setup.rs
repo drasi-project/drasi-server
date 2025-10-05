@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server::{ServerConfig, ServerSettings, SourceConfig, QueryConfig, ReactionConfig};
+use drasi_server::{QueryConfig, ReactionConfig, ServerConfig, ServerSettings, SourceConfig};
 use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_name = "vehicle-location-source".to_string();
     let query_name = "available-drivers-query".to_string();
     let reaction_name = "driver-availability-logger".to_string();
-    
+
     // Create a basic server configuration with real Drasi patterns
     let config = ServerConfig {
         server: ServerSettings {
@@ -40,9 +40,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 auto_start: true,
                 properties: {
                     let mut props = HashMap::new();
-                    props.insert("data_type".to_string(), serde_json::json!("vehicle_location"));
+                    props.insert(
+                        "data_type".to_string(),
+                        serde_json::json!("vehicle_location"),
+                    );
                     props.insert("interval_seconds".to_string(), serde_json::json!(5));
-                    props.insert("description".to_string(), serde_json::json!("Mock vehicle location data"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Mock vehicle location data"),
+                    );
                     props
                 },
                 bootstrap_provider: None,
@@ -55,11 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut props = HashMap::new();
                     props.insert("data_type".to_string(), serde_json::json!("order_status"));
                     props.insert("interval_seconds".to_string(), serde_json::json!(3));
-                    props.insert("description".to_string(), serde_json::json!("Mock order status updates"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Mock order status updates"),
+                    );
                     props
                 },
                 bootstrap_provider: None,
-            }
+            },
         ],
         queries: vec![
             QueryConfig {
@@ -69,13 +78,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
                     RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                            d.latitude AS lat, d.longitude AS lng, d.status AS status
-                "#.to_string(),
+                "#
+                .to_string(),
                 query_language: QueryLanguage::default(),
                 auto_start: true,
                 sources: vec![source_name.clone()],
                 properties: {
                     let mut props = HashMap::new();
-                    props.insert("description".to_string(), serde_json::json!("Find all available drivers with location data"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Find all available drivers with location data"),
+                    );
                     props
                 },
                 joins: None,
@@ -87,17 +100,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     WHERE o.status IN ['pending', 'preparing', 'ready']
                     RETURN elementId(o) AS orderId, o.status AS status,
                            o.restaurant AS restaurant, o.delivery_address AS address
-                "#.to_string(),
+                "#
+                .to_string(),
                 query_language: QueryLanguage::default(),
                 auto_start: true,
                 sources: vec![source_name.clone()],
                 properties: {
                     let mut props = HashMap::new();
-                    props.insert("description".to_string(), serde_json::json!("Track orders that need processing"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Track orders that need processing"),
+                    );
                     props
                 },
                 joins: None,
-            }
+            },
         ],
         reactions: vec![
             ReactionConfig {
@@ -108,32 +125,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 properties: {
                     let mut props = HashMap::new();
                     props.insert("log_level".to_string(), serde_json::json!("info"));
-                    props.insert("description".to_string(), serde_json::json!("Log driver availability changes"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Log driver availability changes"),
+                    );
                     props
                 },
             },
             ReactionConfig {
                 id: "order-notification-handler".to_string(),
-                reaction_type: "webhook".to_string(),
+                reaction_type: "http".to_string(),
                 auto_start: true,
                 queries: vec![query_name.clone()],
                 properties: {
                     let mut props = HashMap::new();
-                    props.insert("endpoint".to_string(), serde_json::json!("http://localhost:9000/notifications"));
+                    props.insert(
+                        "endpoint".to_string(),
+                        serde_json::json!("http://localhost:9000/notifications"),
+                    );
                     props.insert("method".to_string(), serde_json::json!("POST"));
-                    props.insert("description".to_string(), serde_json::json!("Send notifications for query results"));
+                    props.insert(
+                        "description".to_string(),
+                        serde_json::json!("Send notifications for query results"),
+                    );
                     props
                 },
-            }
+            },
         ],
     };
-    
+
     // Validate the configuration
     config.validate()?;
-    
+
     // Save it to a file
     config.save_to_file("config/example.yaml")?;
-    
+
     println!("✅ Example configuration created successfully!");
     println!("📝 Configuration saved to: config/example.yaml");
     println!("🚀 You can now run the server with: cargo run -- --config config/example.yaml");
@@ -143,6 +169,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Two Cypher queries (available drivers and pending orders)");
     println!("  • Two reactions (logging and webhook notifications)");
     println!("  • Real-time data processing using Drasi continuous queries");
-    
+
     Ok(())
 }

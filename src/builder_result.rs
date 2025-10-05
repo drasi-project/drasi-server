@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server_core::{DrasiServerCore, ApplicationHandle};
+use drasi_server_core::{ApplicationHandle, DrasiServerCore};
 use std::collections::HashMap;
 use std::sync::Arc;
 

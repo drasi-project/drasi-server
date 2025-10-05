@@ -14,9 +14,9 @@
 
 use anyhow::Result;
 use clap::Parser;
-use log::{info, warn, debug};
-use std::path::PathBuf;
+use log::{debug, info, warn};
 use std::fs;
+use std::path::PathBuf;
 
 use drasi_server::{DrasiServer, ServerConfig};
 
@@ -26,7 +26,7 @@ use drasi_server::{DrasiServer, ServerConfig};
 struct Cli {
     #[arg(short, long, default_value = "config/server.yaml")]
     config: PathBuf,
-    
+
     #[arg(short, long)]
     port: Option<u16>,
 }
@@ -34,7 +34,7 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Check if config file exists, create default if it doesn't
     let config = if !cli.config.exists() {
         // Initialize basic logging first since we don't have a config yet
@@ -42,35 +42,41 @@ async fn main() -> Result<()> {
             std::env::set_var("RUST_LOG", "info");
         }
         env_logger::init();
-        
-        println!("Config file '{}' not found. Creating default configuration.", cli.config.display());
-        warn!("Config file '{}' not found. Creating default configuration.", cli.config.display());
-        
+
+        println!(
+            "Config file '{}' not found. Creating default configuration.",
+            cli.config.display()
+        );
+        warn!(
+            "Config file '{}' not found. Creating default configuration.",
+            cli.config.display()
+        );
+
         // Create parent directories if they don't exist
         if let Some(parent) = cli.config.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         // Create default config with command line port if specified
         let mut default_config = ServerConfig::default();
-        
+
         // Use CLI port if provided
         if let Some(port) = cli.port {
             default_config.server.port = port;
             info!("Using command line port {} in default configuration", port);
         }
-        
+
         default_config.save_to_file(&cli.config)?;
-        
+
         info!("Default configuration created at: {}", cli.config.display());
         info!("Please edit the configuration file to add sources, queries, and reactions.");
-        
+
         default_config
     } else {
         // Load config first to get log level
         ServerConfig::load_from_file(&cli.config)?
     };
-    
+
     // Set log level from config if RUST_LOG wasn't explicitly set by user
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", &config.server.log_level);
@@ -80,17 +86,17 @@ async fn main() -> Result<()> {
         // User explicitly set RUST_LOG, so just init with their setting
         env_logger::init();
     }
-    
+
     info!("Starting Drasi Server");
     debug!("Debug logging is enabled");
     info!("Config file: {}", cli.config.display());
-    
+
     let final_port = cli.port.unwrap_or(config.server.port);
     info!("Port: {}", final_port);
     debug!("Server configuration: {:?}", config.server);
-    
+
     let server = DrasiServer::new(cli.config, final_port).await?;
     server.run().await?;
-    
+
     Ok(())
 }

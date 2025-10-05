@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod server;
+pub mod api;
 pub mod builder;
 pub mod builder_result;
-pub mod api;
+pub mod server;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
@@ -24,36 +24,39 @@ pub use server::DrasiServer;
 
 // Re-export from drasi-server-core
 pub use drasi_server_core::{
-    DrasiServerCore,
-    // Config types
-    SourceConfig, QueryConfig, ReactionConfig, RuntimeConfig,
-    DrasiServerCoreConfig as ServerConfig,
-    // Core components
-    Source, SourceManager, ApplicationSourceHandle,
-    Query, QueryManager,
-    Reaction, ReactionManager,
-    ApplicationReactionHandle,
     // Application types
     ApplicationHandle,
-    PropertyMapBuilder,
-    SubscriptionOptions,
+    ApplicationReactionHandle,
+    ApplicationSourceHandle,
+    ComponentEvent,
     // Channel types
-    ComponentStatus, ComponentEvent, QueryResult,
+    ComponentStatus,
     // Error types
     DrasiError,
+    DrasiServerCore,
+    DrasiServerCoreConfig as ServerConfig,
+    PropertyMapBuilder,
+    Query,
+    QueryConfig,
+    QueryManager,
+    QueryResult,
+    Reaction,
+    ReactionConfig,
+    ReactionManager,
+    RuntimeConfig,
+    // Core components
+    Source,
+    // Config types
+    SourceConfig,
+    SourceManager,
+    SubscriptionOptions,
 };
 
 // Re-export from submodules in drasi_server_core that aren't in main lib
+pub use drasi_server_core::channels::{BootstrapRequest, ComponentType, EventChannels};
 pub use drasi_server_core::config::{
-    DrasiServerCoreSettings as ServerSettings,
-    ConfigPersistence,
-    QueryJoinConfig, QueryJoinKeyConfig,
-    SourceRuntime, QueryRuntime, ReactionRuntime,
-};
-pub use drasi_server_core::channels::{
-    ComponentType, EventChannels, BootstrapRequest,
-};
-pub use drasi_server_core::routers::{
-    DataRouter, BootstrapRouter, SubscriptionRouter,
+    ConfigPersistence, DrasiServerCoreSettings as ServerSettings, QueryJoinConfig,
+    QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime,
 };
 pub use drasi_server_core::queries::LabelExtractor;
+pub use drasi_server_core::routers::{BootstrapRouter, DataRouter, SubscriptionRouter};

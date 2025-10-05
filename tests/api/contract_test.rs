@@ -4,8 +4,8 @@
 //! They test request/response formats, status codes, and data schemas.
 
 use drasi_server::api::handlers::ApiResponse;
-use drasi_server_core::{ComponentStatus, QueryConfig, ReactionConfig, SourceConfig};
 use drasi_server_core::config::QueryLanguage;
+use drasi_server_core::{ComponentStatus, QueryConfig, ReactionConfig, SourceConfig};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ mod contract_tests {
     fn test_api_response_success_format() {
         let response: ApiResponse<String> = ApiResponse::success("test data".to_string());
         let json = serde_json::to_value(&response).unwrap();
-        
+
         assert_eq!(json["success"], true);
         assert_eq!(json["data"], "test data");
         assert!(json["error"].is_null());
@@ -27,7 +27,7 @@ mod contract_tests {
     fn test_api_response_error_format() {
         let response: ApiResponse<String> = ApiResponse::error("test error".to_string());
         let json = serde_json::to_value(&response).unwrap();
-        
+
         assert_eq!(json["success"], false);
         assert!(json["data"].is_null());
         assert_eq!(json["error"], "test error");
@@ -40,11 +40,11 @@ mod contract_tests {
             "status": "ok",
             "timestamp": chrono::Utc::now().to_rfc3339()
         });
-        
+
         // Verify the shape of the JSON
         assert!(json["status"].is_string());
         assert!(json["timestamp"].is_string());
-        
+
         // Verify timestamp is parseable
         let timestamp_str = json["timestamp"].as_str().unwrap();
         chrono::DateTime::parse_from_rfc3339(timestamp_str).unwrap();
@@ -57,7 +57,7 @@ mod contract_tests {
             "id": "test-component",
             "status": "Running"
         });
-        
+
         assert_eq!(json["id"], "test-component");
         assert_eq!(json["status"], "Running");
     }
@@ -68,7 +68,7 @@ mod contract_tests {
         let json = json!({
             "message": "Operation successful"
         });
-        
+
         assert_eq!(json["message"], "Operation successful");
     }
 
@@ -77,7 +77,7 @@ mod contract_tests {
         let mut properties = HashMap::new();
         properties.insert("interval_ms".to_string(), json!(1000));
         properties.insert("data_type".to_string(), json!("counter"));
-        
+
         let config = SourceConfig {
             id: "test-source".to_string(),
             source_type: "mock".to_string(),
@@ -85,7 +85,7 @@ mod contract_tests {
             properties,
             bootstrap_provider: None,
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
         assert_eq!(json["source_type"], "mock");
@@ -105,11 +105,11 @@ mod contract_tests {
                 "data_type": "sensor"
             }
         });
-        
+
         let config: SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-source");
         assert_eq!(config.source_type, "mock");
-        assert_eq!(config.auto_start, false);
+        assert!(!config.auto_start);
         assert_eq!(config.properties.get("interval_ms").unwrap(), &json!(2000));
     }
 
@@ -124,7 +124,7 @@ mod contract_tests {
             joins: None,
             query_language: QueryLanguage::default(),
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
         assert_eq!(json["query"], "MATCH (n:Node) RETURN n");
@@ -140,27 +140,27 @@ mod contract_tests {
             "sources": ["postgres-db"],
             "auto_start": false
         });
-        
+
         let config: QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-query");
         assert_eq!(config.query, "MATCH (p:Person) WHERE p.age > 21 RETURN p");
         assert_eq!(config.sources, vec!["postgres-db"]);
-        assert_eq!(config.auto_start, false);
+        assert!(!config.auto_start);
     }
 
     #[test]
     fn test_reaction_config_serialization() {
         let mut properties = HashMap::new();
         properties.insert("url".to_string(), json!("http://example.com/webhook"));
-        
+
         let config = ReactionConfig {
             id: "test-reaction".to_string(),
             reaction_type: "http".to_string(),
             queries: vec!["query1".to_string(), "query2".to_string()],
             auto_start: true,
-            properties: properties,
+            properties,
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-reaction");
         assert_eq!(json["reaction_type"], "http");
@@ -177,7 +177,7 @@ mod contract_tests {
             "queries": ["query1"],
             "auto_start": true
         });
-        
+
         let config: ReactionConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "log-reaction");
         assert_eq!(config.reaction_type, "log");
@@ -194,7 +194,7 @@ mod contract_tests {
             ComponentStatus::Stopped,
             ComponentStatus::Error,
         ];
-        
+
         for status in statuses {
             let json = serde_json::to_value(&status).unwrap();
             match status {
@@ -220,10 +220,10 @@ mod contract_tests {
                 "status": "Stopped"
             }),
         ];
-        
+
         let response: ApiResponse<Vec<serde_json::Value>> = ApiResponse::success(json_items);
         let json = serde_json::to_value(&response).unwrap();
-        
+
         assert_eq!(json["success"], true);
         assert!(json["data"].is_array());
         assert_eq!(json["data"][0]["id"], "source1");
@@ -237,11 +237,11 @@ mod contract_tests {
             "Invalid configuration",
             "Internal server error",
         ];
-        
+
         for error_msg in test_cases {
             let response: ApiResponse<()> = ApiResponse::error(error_msg.to_string());
             let json = serde_json::to_value(&response).unwrap();
-            
+
             assert_eq!(json["success"], false);
             assert!(json["data"].is_null());
             assert_eq!(json["error"], error_msg);
@@ -255,10 +255,10 @@ mod contract_tests {
             json!({"id": 1, "name": "Alice"}),
             json!({"id": 2, "name": "Bob"}),
         ];
-        
+
         let response: ApiResponse<Vec<serde_json::Value>> = ApiResponse::success(results);
         let json = serde_json::to_value(&response).unwrap();
-        
+
         assert_eq!(json["success"], true);
         assert!(json["data"].is_array());
         assert_eq!(json["data"][0]["name"], "Alice");
@@ -271,7 +271,7 @@ mod contract_tests {
         let empty_sources: Vec<serde_json::Value> = vec![];
         let response: ApiResponse<Vec<serde_json::Value>> = ApiResponse::success(empty_sources);
         let json = serde_json::to_value(&response).unwrap();
-        
+
         assert_eq!(json["success"], true);
         assert!(json["data"].is_array());
         assert_eq!(json["data"].as_array().unwrap().len(), 0);
@@ -287,7 +287,7 @@ mod contract_tests {
             auto_start: false,
             properties: HashMap::from([("key".to_string(), json!("value"))]),
         };
-        
+
         let config_without_props = ReactionConfig {
             id: "r2".to_string(),
             reaction_type: "log".to_string(),
@@ -295,11 +295,11 @@ mod contract_tests {
             auto_start: true,
             properties: HashMap::new(),
         };
-        
+
         // Both should serialize successfully
         let json1 = serde_json::to_value(&config_with_props).unwrap();
         let json2 = serde_json::to_value(&config_without_props).unwrap();
-        
+
         assert!(json1["properties"].is_object());
         assert!(json2["properties"].is_object());
     }
@@ -311,18 +311,20 @@ mod contract_tests {
             "message": "Source 'test-source' already exists"
         });
         let response: ApiResponse<serde_json::Value> = ApiResponse::success(status_json);
-        
+
         let json = serde_json::to_value(&response).unwrap();
         assert_eq!(json["success"], true);
-        assert!(json["data"]["message"].as_str().unwrap().contains("already exists"));
+        assert!(json["data"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already exists"));
     }
 
     #[test]
     fn test_read_only_mode_response() {
-        let response: ApiResponse<serde_json::Value> = ApiResponse::error(
-            "Server is in read-only mode. Cannot create sources.".to_string()
-        );
-        
+        let response: ApiResponse<serde_json::Value> =
+            ApiResponse::error("Server is in read-only mode. Cannot create sources.".to_string());
+
         let json = serde_json::to_value(&response).unwrap();
         assert_eq!(json["success"], false);
         assert!(json["error"].as_str().unwrap().contains("read-only mode"));
@@ -342,10 +344,10 @@ mod edge_case_tests {
             properties: HashMap::new(),
             bootstrap_provider: None,
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "source-with-dashes_and_underscores.123");
-        
+
         // Should deserialize back correctly
         let deserialized: SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.id, config.id);
@@ -363,7 +365,7 @@ mod edge_case_tests {
             joins: None,
             query_language: QueryLanguage::default(),
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["query"], long_query);
     }
@@ -373,7 +375,7 @@ mod edge_case_tests {
         let mut properties = HashMap::new();
         properties.insert("message".to_string(), json!("Hello 世界 🌍"));
         properties.insert("emoji".to_string(), json!("🚀✨💻"));
-        
+
         let config = SourceConfig {
             id: "unicode-source".to_string(),
             source_type: "mock".to_string(),
@@ -381,7 +383,7 @@ mod edge_case_tests {
             properties,
             bootstrap_provider: None,
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["properties"]["message"], "Hello 世界 🌍");
         assert_eq!(json["properties"]["emoji"], "🚀✨💻");
@@ -390,26 +392,35 @@ mod edge_case_tests {
     #[test]
     fn test_nested_json_in_properties() {
         let mut properties = HashMap::new();
-        properties.insert("nested".to_string(), json!({
-            "level1": {
-                "level2": {
-                    "value": 42,
-                    "array": [1, 2, 3]
+        properties.insert(
+            "nested".to_string(),
+            json!({
+                "level1": {
+                    "level2": {
+                        "value": 42,
+                        "array": [1, 2, 3]
+                    }
                 }
-            }
-        }));
-        
+            }),
+        );
+
         let config = ReactionConfig {
             id: "nested-reaction".to_string(),
             reaction_type: "custom".to_string(),
             queries: vec!["q1".to_string()],
             auto_start: false,
-            properties: properties,
+            properties,
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["properties"]["nested"]["level1"]["level2"]["value"], 42);
-        assert_eq!(json["properties"]["nested"]["level1"]["level2"]["array"], json!([1, 2, 3]));
+        assert_eq!(
+            json["properties"]["nested"]["level1"]["level2"]["value"],
+            42
+        );
+        assert_eq!(
+            json["properties"]["nested"]["level1"]["level2"]["array"],
+            json!([1, 2, 3])
+        );
     }
 
     #[test]
@@ -424,7 +435,7 @@ mod edge_case_tests {
             joins: None,
             query_language: QueryLanguage::default(),
         };
-        
+
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["query"], "");
         assert_eq!(json["sources"], json!([]));
@@ -440,17 +451,17 @@ mod edge_case_tests {
             "auto_start": false,
             "properties": null
         });
-        
+
         let json_without_field = json!({
             "id": "reaction2",
             "reaction_type": "log",
             "queries": ["q1"],
             "auto_start": false
         });
-        
+
         let config1: ReactionConfig = serde_json::from_value(json_with_null).unwrap();
         let config2: ReactionConfig = serde_json::from_value(json_without_field).unwrap();
-        
+
         assert!(config1.properties.is_empty());
         assert!(config2.properties.is_empty());
     }
@@ -467,7 +478,7 @@ mod validation_tests {
             // Missing required field: source_type
             "auto_start": true
         });
-        
+
         let result: Result<SourceConfig, _> = serde_json::from_value(invalid_source);
         assert!(result.is_err());
     }
@@ -480,7 +491,7 @@ mod validation_tests {
             "sources": "should-be-array", // Wrong type
             "auto_start": false
         });
-        
+
         let result: Result<QueryConfig, _> = serde_json::from_value(invalid_query);
         assert!(result.is_err());
     }
@@ -496,7 +507,7 @@ mod validation_tests {
             "future_field": "ignored", // Extra field
             "another_field": 123       // Another extra field
         });
-        
+
         let config: SourceConfig = serde_json::from_value(json_with_extra).unwrap();
         assert_eq!(config.id, "test-source");
         assert_eq!(config.source_type, "mock");
