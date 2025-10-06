@@ -5,32 +5,60 @@ This example demonstrates how to use the **platform source** in Drasi Server to 
 ## Overview
 
 This example shows:
-- How to configure a platform source to connect to Redis Streams
-- Real-time event processing without bootstrap data
+- How to configure a **platform source** to connect to Redis Streams
+- How to use a **platform reaction** to publish query results back to Redis Streams
+- Real-time event processing with platform bootstrap support
 - Continuous Cypher query filtering
-- Log-based output of query results
+- Dual-reaction pattern: console logging + Redis stream publishing
+- CloudEvent format for standards-based integration
 
-The example consumes messages from a Redis stream, filters them using a Cypher query, and outputs matching results to the console.
+The example demonstrates a complete Drasi Platform integration: consuming events from a Redis stream, filtering them with a Cypher query, and publishing results to another Redis stream in CloudEvent format for downstream consumption.
 
 ## Architecture
 
 ```
-┌─────────────┐       ┌──────────────────┐       ┌─────────────┐       ┌──────────────┐
-│   Redis     │       │  Platform Source │       │    Query    │       │     Log      │
-│   Stream    │──────▶│  (Redis Client)  │──────▶│  (Cypher)   │──────▶│   Reaction   │
-│             │       │                  │       │             │       │              │
-│ hello-world │       │  Consumes from   │       │  Filters    │       │  Outputs to  │
-│  -change    │       │  stream with     │       │  "Hello     │       │  console     │
-│             │       │  consumer group  │       │  World"     │       │              │
-└─────────────┘       └──────────────────┘       └─────────────┘       └──────────────┘
+                                                    ┌──────────────────┐
+                                              ┌────▶│   Log Reaction   │
+                                              │     │  (Console Output)│
+┌─────────────┐      ┌──────────────────┐    │     └──────────────────┘
+│   Redis     │      │  Platform Source │    │
+│   Stream    │─────▶│  (Redis Client)  │────┤     ┌──────────────────┐       ┌─────────────┐
+│             │      │                  │    │     │    Platform      │       │   Redis     │
+│ hello-world │      │  Consumes from   │    └────▶│    Reaction      │──────▶│   Stream    │
+│  -change    │      │  stream with     │          │  (CloudEvents)   │       │             │
+│  (INPUT)    │      │  consumer group  │          │                  │       │ hello-world │
+│             │      │                  │          └──────────────────┘       │ -from       │
+└─────────────┘      └──────────────────┘                                     │ -results    │
+                              │                                               │  (OUTPUT)   │
+                              │                                               └─────────────┘
+                              ▼
+                     ┌─────────────────┐
+                     │      Query      │
+                     │    (Cypher)     │
+                     │                 │
+                     │  Filters for    │
+                     │  "Hello World"  │
+                     │  messages       │
+                     └─────────────────┘
 ```
 
 ### Data Flow
 
-1. **Redis Stream**: Events are published to the `hello-world-change` stream
-2. **Platform Source**: Consumes events using Redis consumer groups
-3. **Query**: Filters nodes with label `Message` and property `Message: "Hello World"`
-4. **Reaction**: Logs matching results with `MessageId` and `From` fields
+1. **Input Stream**: External events published to `hello-world-change` Redis stream
+2. **Platform Source**: Consumes events using Redis consumer groups with platform bootstrap
+3. **Query**: Continuous Cypher query filters nodes with label `Message` and property `Message: "Hello World"`
+4. **Dual Reactions**:
+   - **Log Reaction**: Outputs matching results to console for debugging
+   - **Platform Reaction**: Publishes results to `hello-world-from-results` stream in CloudEvent format
+5. **Output Stream**: Downstream consumers read CloudEvents from `hello-world-from-results`
+
+### Why Dual Reactions?
+
+This example uses **both** log and platform reactions to demonstrate a real-world pattern:
+- **Log Reaction**: Provides immediate visibility into query results (development/debugging)
+- **Platform Reaction**: Enables downstream integration and microservices architecture (production)
+
+Both reactions process the same query results simultaneously with minimal overhead.
 
 ## Prerequisites
 
@@ -90,13 +118,26 @@ cd examples/drasi-platform/scripts
 ./publish-event.sh Alice
 ```
 
-You should see the event logged in the Drasi server terminal, showing:
+You should see the event logged in the Drasi server terminal (log reaction), showing:
 ```
 MessageId: msg-1234567890
 MessageFrom: Alice
 ```
 
-### 4. View Query Results via API
+### 4. Consume Results from Redis Stream
+
+View the CloudEvent-formatted results published by the platform reaction:
+
+```bash
+cd examples/drasi-platform/scripts
+./consume-results.sh
+```
+
+This will display all CloudEvents from the `hello-world-from-results` stream, including:
+- Control events (BootstrapStarted, Running)
+- Data change events with query results
+
+### 5. View Query Results via API
 
 ```bash
 cd examples/drasi-platform/scripts
@@ -163,9 +204,13 @@ This query:
 - Filters for property `Message` equal to `'Hello World'`
 - Returns `MessageId` and `From` properties
 
-### Reaction
+### Reactions
 
-The log reaction outputs results to the console:
+This example uses **two reactions** to demonstrate the dual-reaction pattern:
+
+#### 1. Log Reaction (Development/Debugging)
+
+Outputs query results to the console for immediate visibility:
 
 ```yaml
 reactions:
@@ -175,6 +220,107 @@ reactions:
     queries:
       - hello-world-from
 ```
+
+#### 2. Platform Reaction (Production Integration)
+
+Publishes query results to a Redis stream in CloudEvent format for downstream consumption:
+
+```yaml
+  - id: platform-hello-world-results
+    reaction_type: platform
+    auto_start: true
+    queries:
+      - hello-world-from
+    properties:
+      redis_url: "redis://localhost:6379"
+      pubsub_name: "drasi-pubsub"
+      source_name: "drasi-core"
+      max_stream_length: 10000
+      emit_control_events: true
+```
+
+**Key Properties:**
+- `redis_url`: Redis connection URL (same instance as platform source)
+- `pubsub_name`: Dapr pubsub component name (default: "drasi-pubsub")
+- `source_name`: CloudEvent source identifier (default: "drasi-core")
+- `max_stream_length`: Maximum messages in results stream (uses MAXLEN ~)
+- `emit_control_events`: Publish lifecycle events (default: true)
+
+**Output Stream Naming:**
+Results are automatically published to a stream named: `{query-id}-results`
+
+For the `hello-world-from` query, results go to: `hello-world-from-results`
+
+### Platform Reaction Output Format
+
+The platform reaction publishes query results in **Dapr CloudEvent** format:
+
+```json
+{
+  "data": {
+    "addedResults": [
+      {
+        "MessageId": "msg-001",
+        "MessageFrom": "Alice"
+      }
+    ],
+    "updatedResults": [],
+    "deletedResults": [],
+    "kind": "change",
+    "queryId": "hello-world-from",
+    "sequence": 1,
+    "sourceTimeMs": 1759716317494,
+    "metadata": {
+      "tracking": {
+        "query": {
+          "dequeue_ns": 1759503510251715012,
+          "enqueue_ns": 1759503510250255429,
+          "queryEnd_ns": 1759503510254644804,
+          "queryStart_ns": 1759503510251874804
+        }
+      }
+    }
+  },
+  "datacontenttype": "application/json",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "pubsubname": "drasi-pubsub",
+  "source": "drasi-core",
+  "specversion": "1.0",
+  "time": "2021-01-01T00:00:00.000Z",
+  "topic": "hello-world-from-results",
+  "type": "com.dapr.event.sent"
+}
+```
+
+**CloudEvent Fields:**
+- `data.addedResults`: Array of newly matched results (always present, may be empty)
+- `data.updatedResults`: Array of modified results (always present, may be empty)
+- `data.deletedResults`: Array of removed results (always present, may be empty)
+- `data.kind`: Event type (`"change"` for query result changes, `"control"` for lifecycle events)
+- `data.queryId`: Source query identifier
+- `data.sequence`: Monotonic sequence number for ordering
+- `data.sourceTimeMs`: Source timestamp in milliseconds (from the original event)
+- `data.metadata.tracking`: Performance tracking information with query execution times
+- `pubsubname`: Dapr pubsub component name
+- `source`: Event source identifier
+- `topic`: Stream/topic name (derived from query ID)
+
+**Important Notes:**
+- The `addedResults`, `updatedResults`, and `deletedResults` arrays are **always present** in change events, even if empty
+- Results contain only the fields specified in the query's `RETURN` clause
+- The `metadata.tracking` object provides query execution timing for performance monitoring
+
+### Control Events
+
+When `emit_control_events: true`, the platform reaction publishes lifecycle events:
+
+- **BootstrapStarted**: Bootstrap phase begins
+- **BootstrapCompleted**: Bootstrap phase completes
+- **Running**: Reaction is actively processing query results
+- **Stopped**: Reaction has been stopped
+- **Deleted**: Reaction has been deleted
+
+Control events use `data.kind: "control"` and include a `controlEvent` field instead of result arrays.
 
 ## Platform Event Format
 
@@ -218,7 +364,18 @@ Publish an event that matches the query:
 ./scripts/publish-event.sh Charlie
 ```
 
-All these events should appear in the Drasi server logs.
+All these events should appear in:
+1. Drasi server console logs (log reaction)
+2. Results stream (platform reaction)
+
+Verify both reactions are working:
+
+```bash
+# Check console logs (you should see MessageFrom: Alice, Bob, Charlie)
+
+# Check results stream
+./scripts/consume-results.sh
+```
 
 ### Test Non-Matching Events
 
@@ -241,7 +398,29 @@ docker exec -it drasi-redis redis-cli XADD hello-world-change '*' event '{
 }'
 ```
 
-This event should NOT appear in the logs because `Message` is not `"Hello World"`.
+This event should NOT appear in the logs or results stream because `Message` is not `"Hello World"`.
+
+### Verify Platform Reaction Output
+
+Check that the platform reaction is publishing CloudEvents to Redis:
+
+```bash
+# Check if results stream exists
+docker exec drasi-redis redis-cli EXISTS hello-world-from-results
+
+# Check message count
+docker exec drasi-redis redis-cli XLEN hello-world-from-results
+
+# View all CloudEvents
+docker exec drasi-redis redis-cli XRANGE hello-world-from-results - +
+
+# Or use the convenience script
+./scripts/consume-results.sh
+```
+
+Expected output includes:
+- Control events: `BootstrapStarted`, `BootstrapCompleted`, `Running`
+- Data change events with `addedResults`, `updatedResults`, `deletedResults`
 
 ### View Current Results
 
@@ -285,14 +464,19 @@ GET http://localhost:8080/api/sources/platform-redis-source
 # Get query status
 GET http://localhost:8080/api/queries/hello-world-from
 
-# Get reaction status
+# Get log reaction status
 GET http://localhost:8080/api/reactions/log-hello-world
 
-# Stop a component
-POST http://localhost:8080/api/sources/platform-redis-source/stop
+# Get platform reaction status
+GET http://localhost:8080/api/reactions/platform-hello-world-results
 
-# Start a component
-POST http://localhost:8080/api/sources/platform-redis-source/start
+# Stop a reaction
+POST http://localhost:8080/api/reactions/log-hello-world/stop
+POST http://localhost:8080/api/reactions/platform-hello-world-results/stop
+
+# Start a reaction
+POST http://localhost:8080/api/reactions/log-hello-world/start
+POST http://localhost:8080/api/reactions/platform-hello-world-results/start
 ```
 
 See `requests.http` for more examples using VSCode REST Client.
@@ -335,6 +519,61 @@ To reset the consumer group (re-process all events):
 ```bash
 docker exec -it drasi-redis redis-cli XGROUP DESTROY hello-world-change drasi-core
 ```
+
+### Results Stream is Empty
+
+**Problem**: Platform reaction is running but results stream has no messages
+
+**Checklist**:
+1. Verify platform reaction is running:
+   ```bash
+   curl http://localhost:8080/api/reactions/platform-hello-world-results
+   ```
+2. Check that query has results:
+   ```bash
+   curl http://localhost:8080/api/queries/hello-world-from/results
+   ```
+3. Verify results stream exists:
+   ```bash
+   docker exec drasi-redis redis-cli EXISTS hello-world-from-results
+   ```
+4. Check stream length:
+   ```bash
+   docker exec drasi-redis redis-cli XLEN hello-world-from-results
+   ```
+5. Look for control events (should appear even if no data events):
+   ```bash
+   docker exec drasi-redis redis-cli XRANGE hello-world-from-results - + | grep -i running
+   ```
+
+### CloudEvents Not Formatted Correctly
+
+**Problem**: Events in results stream don't match CloudEvent spec
+
+**Solution**:
+1. Verify you're using the platform reaction (not log reaction)
+2. Check platform reaction configuration has correct properties
+3. Ensure drasi-server-core is up to date
+4. View raw stream data:
+   ```bash
+   docker exec drasi-redis redis-cli XRANGE hello-world-from-results - +
+   ```
+
+### Stream Growing Too Large
+
+**Problem**: Results stream consuming too much memory
+
+**Solutions**:
+1. Configure `max_stream_length` in platform reaction:
+   ```yaml
+   properties:
+     max_stream_length: 10000  # Keep last 10,000 messages
+   ```
+2. Implement a consumer to process and archive messages
+3. Manually trim the stream:
+   ```bash
+   docker exec drasi-redis redis-cli XTRIM hello-world-from-results MAXLEN ~ 1000
+   ```
 
 ### Build Errors
 
@@ -397,34 +636,44 @@ docker exec -it drasi-redis redis-cli XPENDING hello-world-change drasi-core
 
 After running this example, explore:
 
-1. **Different Reactions**: Replace the log reaction with:
+1. **Consume Results in Your Application**:
+   - Build a microservice that reads from `hello-world-from-results` stream
+   - Process CloudEvents in your application code
+   - Integrate with Dapr for pub/sub across languages
+   - Use the standard CloudEvent format for interoperability
+
+2. **Different Reactions**: Add or replace reactions:
    - `sse` (Server-Sent Events) for web clients
    - `http` (webhooks) to call external APIs
    - `grpc` for gRPC streaming
+   - Multiple reactions on the same query
 
-2. **Complex Queries**: Modify the query to:
+3. **Complex Queries**: Modify the query to:
    - Join multiple node types using relationships
    - Aggregate data (COUNT, SUM, AVG)
    - Filter with complex WHERE clauses
+   - Use graph patterns for complex matching
 
-3. **Multiple Sources**: Add additional sources:
+4. **Multiple Sources**: Add additional sources:
    - PostgreSQL for relational data
    - HTTP polling for REST APIs
    - gRPC for streaming services
+   - Combine multiple platform sources
 
-4. **Bootstrap Data**: Add a bootstrap provider to load initial data:
-   ```yaml
-   bootstrap_provider:
-     type: scriptfile
-     file_paths:
-       - examples/drasi-platform/data/initial-messages.jsonl
-   ```
+5. **Production Deployment**:
+   - Use Redis Cluster for high availability
+   - Configure multiple consumers for horizontal scaling
+   - Set `max_stream_length` to prevent unbounded growth
+   - Implement monitoring and alerting on control events
+   - Archive CloudEvents for long-term storage
 
 ## Learn More
 
 - **Drasi Server Documentation**: See `CLAUDE.md` in the repository root
 - **Cypher Query Language**: https://neo4j.com/docs/cypher-manual/current/
 - **Redis Streams**: https://redis.io/docs/data-types/streams/
+- **CloudEvents Specification**: https://cloudevents.io/
+- **Dapr Pub/Sub**: https://docs.dapr.io/developing-applications/building-blocks/pubsub/
 
 ## Files in This Example
 
@@ -436,7 +685,17 @@ examples/drasi-platform/
 └── scripts/
     ├── setup-redis.sh           # Start Redis container
     ├── start-server.sh          # Build and start Drasi server
-    ├── publish-event.sh         # Publish test events to Redis
+    ├── publish-event.sh         # Publish test events to Redis input stream
+    ├── consume-results.sh       # Consume CloudEvents from results stream (NEW)
     ├── view-results.sh          # Query results via API
     └── cleanup.sh               # Stop server and remove Redis
 ```
+
+### Script Descriptions
+
+- **setup-redis.sh**: Starts a Redis Docker container for event streaming
+- **start-server.sh**: Builds and starts the Drasi server with platform configuration
+- **publish-event.sh**: Publishes test events to the `hello-world-change` input stream
+- **consume-results.sh**: Reads CloudEvent-formatted query results from `hello-world-from-results`
+- **view-results.sh**: Queries current results via the Drasi REST API
+- **cleanup.sh**: Stops the server and removes the Redis container

@@ -13,12 +13,12 @@
 // limitations under the License.
 
 use drasi_server_core::{
-    QueryConfig, ReactionConfig, SourceConfig, RuntimeConfig,
     config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
-    DrasiError, DrasiServerCore, ApplicationHandle
+    ApplicationHandle, DrasiError, DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig,
+    SourceConfig,
 };
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
@@ -80,8 +80,8 @@ impl DrasiServerBuilder {
 
     /// Add a source configuration
     pub fn with_source(mut self, config: SourceConfig) -> Self {
-        // Track application sources
-        if config.source_type == "internal.application" {
+        // Track application sources (both new and legacy formats)
+        if config.source_type == "application" {
             self.application_source_names.push(config.id.clone());
         }
         self.source_configs.push(config);
@@ -89,7 +89,11 @@ impl DrasiServerBuilder {
     }
 
     /// Add a source with name and type, using default properties
-    pub fn with_simple_source(mut self, id: impl Into<String>, source_type: impl Into<String>) -> Self {
+    pub fn with_simple_source(
+        mut self,
+        id: impl Into<String>,
+        source_type: impl Into<String>,
+    ) -> Self {
         self.source_configs.push(SourceConfig {
             id: id.into(),
             source_type: source_type.into(),
@@ -127,8 +131,8 @@ impl DrasiServerBuilder {
 
     /// Add a reaction configuration
     pub fn with_reaction(mut self, config: ReactionConfig) -> Self {
-        // Track application reactions
-        if config.reaction_type == "internal.application" {
+        // Track application reactions (both new and legacy formats)
+        if config.reaction_type == "application" {
             self.application_reaction_names.push(config.id.clone());
         }
         self.reaction_configs.push(config);
@@ -174,28 +178,32 @@ impl DrasiServerBuilder {
         self.config_file_path = Some(file_path.into());
         self
     }
-    
+
     /// Add an application source that can be programmatically controlled
     pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.application_source_names.push(id.clone());
         self.source_configs.push(SourceConfig {
             id,
-            source_type: "internal.application".to_string(),
+            source_type: "application".to_string(),
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
         });
         self
     }
-    
+
     /// Add an application reaction that sends results to the application
-    pub fn with_application_reaction(mut self, id: impl Into<String>, queries: Vec<String>) -> Self {
+    pub fn with_application_reaction(
+        mut self,
+        id: impl Into<String>,
+        queries: Vec<String>,
+    ) -> Self {
         let id = id.into();
         self.application_reaction_names.push(id.clone());
         self.reaction_configs.push(ReactionConfig {
             id,
-            reaction_type: "internal.application".to_string(),
+            reaction_type: "application".to_string(),
             queries,
             auto_start: true,
             properties: HashMap::new(),
@@ -215,7 +223,7 @@ impl DrasiServerBuilder {
 
         // Create server core
         let mut server_core = DrasiServerCore::new(Arc::new(runtime_config));
-        
+
         // Initialize components
         server_core.initialize().await?;
 
@@ -225,7 +233,10 @@ impl DrasiServerBuilder {
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
-        let api_host = self.api_host.clone().unwrap_or_else(|| self.server_settings.host.clone());
+        let api_host = self
+            .api_host
+            .clone()
+            .unwrap_or_else(|| self.server_settings.host.clone());
         let api_port = self.api_port.unwrap_or(self.server_settings.port);
         let config_persistence = self.enable_config_persistence;
         let config_file = self.config_file_path.clone();
@@ -245,38 +256,48 @@ impl DrasiServerBuilder {
 
         Ok(server)
     }
-    
+
     /// Build a DrasiServerCore instance and return application handles
-    pub async fn build_with_handles(self) -> Result<crate::builder_result::DrasiServerWithHandles, DrasiError> {
+    pub async fn build_with_handles(
+        self,
+    ) -> Result<crate::builder_result::DrasiServerWithHandles, DrasiError> {
         let app_source_names = self.application_source_names.clone();
         let app_reaction_names = self.application_reaction_names.clone();
-        
+
         // Build the core server
         let mut core = self.build_core().await?;
-        
+
         // Initialize the core
         core.initialize().await?;
-        
+
         // Convert to Arc and start
         let core = Arc::new(core);
         core.start().await?;
-        
+
         // Collect application handles
         let mut handles = HashMap::new();
-        
+
         // Get source handles
         for source_name in app_source_names {
-            if let Some(source_handle) = core.source_manager().get_application_handle(&source_name).await {
+            if let Some(source_handle) = core
+                .source_manager()
+                .get_application_handle(&source_name)
+                .await
+            {
                 handles.insert(
                     source_name.clone(),
                     ApplicationHandle::source_only(source_handle),
                 );
             }
         }
-        
+
         // Get reaction handles
         for reaction_name in app_reaction_names {
-            if let Some(reaction_handle) = core.reaction_manager().get_application_handle(&reaction_name).await {
+            if let Some(reaction_handle) = core
+                .reaction_manager()
+                .get_application_handle(&reaction_name)
+                .await
+            {
                 if let Some(existing) = handles.get_mut(&reaction_name) {
                     // If we already have a source handle with the same name, combine them
                     if let Some(source) = existing.source.clone() {
@@ -290,7 +311,7 @@ impl DrasiServerBuilder {
                 }
             }
         }
-        
+
         Ok(crate::builder_result::DrasiServerWithHandles {
             server: core,
             handles,
@@ -317,7 +338,11 @@ mod tests {
         let builder = DrasiServerBuilder::new()
             .with_log_level("debug")
             .with_simple_source("test_source", "mock")
-            .with_simple_query("test_query", "MATCH (n) RETURN n", vec!["test_source".to_string()])
+            .with_simple_query(
+                "test_query",
+                "MATCH (n) RETURN n",
+                vec!["test_source".to_string()],
+            )
             .with_log_reaction("test_reaction", vec!["test_query".to_string()])
             .enable_api_with_port(9090)
             .enable_config_persistence("test.yaml");

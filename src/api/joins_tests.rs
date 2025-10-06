@@ -15,13 +15,13 @@
 #[cfg(test)]
 mod api_query_joins_tests {
     use crate::api::handlers::*;
+    use axum::{Extension, Json};
     use drasi_server_core::{
         channels::EventChannels,
-        QueryConfig, QueryManager, SourceManager,
         config::{QueryJoinConfig, QueryJoinKeyConfig, QueryLanguage},
-        routers::{DataRouter, BootstrapRouter}
+        routers::{BootstrapRouter, DataRouter},
+        QueryConfig, QueryManager, SourceManager,
     };
-    use axum::{Extension, Json};
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -34,30 +34,36 @@ mod api_query_joins_tests {
         Arc<bool>,
     ) {
         let (channels, _receivers) = EventChannels::new();
-        
+
         let source_manager = Arc::new(SourceManager::new(
             channels.source_change_tx.clone(),
             channels.component_event_tx.clone(),
         ));
-        
+
         let query_manager = Arc::new(QueryManager::new(
             channels.query_result_tx.clone(),
             channels.component_event_tx.clone(),
             channels.bootstrap_request_tx.clone(),
         ));
-        
+
         let data_router = Arc::new(DataRouter::new());
-        
+
         let bootstrap_router = Arc::new(BootstrapRouter::new());
-        
+
         let read_only = Arc::new(false);
-        
-        (query_manager, source_manager, data_router, bootstrap_router, read_only)
+
+        (
+            query_manager,
+            source_manager,
+            data_router,
+            bootstrap_router,
+            read_only,
+        )
     }
 
     #[tokio::test]
     async fn test_create_query_with_single_join_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create a query config with a single join
@@ -77,7 +83,9 @@ mod api_query_joins_tests {
 
         let query_config = QueryConfig {
             id: "vehicle-driver-query".to_string(),
-            query: "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate".to_string(),
+            query:
+                "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate"
+                    .to_string(),
             sources: vec!["vehicles".to_string(), "drivers".to_string()],
             auto_start: false,
             properties: HashMap::new(),
@@ -92,7 +100,8 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config.clone()),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -103,11 +112,11 @@ mod api_query_joins_tests {
         // Verify the query was added with joins
         let retrieved = query_manager.get_query_config("vehicle-driver-query").await;
         assert!(retrieved.is_some());
-        
+
         let retrieved_config = retrieved.unwrap();
         assert_eq!(retrieved_config.id, "vehicle-driver-query");
         assert!(retrieved_config.joins.is_some());
-        
+
         let joins = retrieved_config.joins.unwrap();
         assert_eq!(joins.len(), 1);
         assert_eq!(joins[0].id, "VEHICLE_TO_DRIVER");
@@ -120,7 +129,7 @@ mod api_query_joins_tests {
 
     #[tokio::test]
     async fn test_create_query_with_multiple_joins_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create multiple joins
@@ -169,27 +178,31 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config.clone()),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
-        
+
         // Verify the query was added with multiple joins
         let retrieved = query_manager.get_query_config("full-order-query").await;
         assert!(retrieved.is_some());
-        
+
         let retrieved_config = retrieved.unwrap();
         assert!(retrieved_config.joins.is_some());
-        
+
         let joins = retrieved_config.joins.unwrap();
         assert_eq!(joins.len(), 2);
-        
+
         // Verify first join
-        let first_join = joins.iter().find(|j| j.id == "ORDER_TO_RESTAURANT").unwrap();
+        let first_join = joins
+            .iter()
+            .find(|j| j.id == "ORDER_TO_RESTAURANT")
+            .unwrap();
         assert_eq!(first_join.keys[0].label, "Order");
         assert_eq!(first_join.keys[0].property, "restaurantId");
         assert_eq!(first_join.keys[1].label, "Restaurant");
         assert_eq!(first_join.keys[1].property, "id");
-        
+
         // Verify second join
         let second_join = joins.iter().find(|j| j.id == "ORDER_TO_DRIVER").unwrap();
         assert_eq!(second_join.keys[0].label, "Order");
@@ -200,7 +213,7 @@ mod api_query_joins_tests {
 
     #[tokio::test]
     async fn test_update_query_preserves_joins_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create initial query with joins
@@ -235,7 +248,9 @@ mod api_query_joins_tests {
             Extension(bootstrap_router.clone()),
             Extension(read_only.clone()),
             Json(initial_config.clone()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Update the query (change the query string but keep joins)
         let updated_config = QueryConfig {
@@ -254,28 +269,29 @@ mod api_query_joins_tests {
             Extension(Arc::new(false)), // not read-only
             axum::extract::Path("user-posts-query".to_string()),
             Json(updated_config.clone()),
-        ).await;
+        )
+        .await;
 
         assert!(update_result.is_ok());
 
         // Verify the joins are preserved
         let retrieved = query_manager.get_query_config("user-posts-query").await;
         assert!(retrieved.is_some());
-        
+
         let retrieved_config = retrieved.unwrap();
         assert!(retrieved_config.joins.is_some());
-        
+
         let joins = retrieved_config.joins.unwrap();
         assert_eq!(joins.len(), 1);
         assert_eq!(joins[0].id, "USER_POST");
-        
+
         // Verify the query string was updated
         assert!(retrieved_config.query.contains("WHERE p.published = true"));
     }
 
     #[tokio::test]
     async fn test_query_with_no_joins_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create a query without joins
@@ -296,14 +312,15 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config.clone()),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
 
         // Verify the query was added without joins
         let retrieved = query_manager.get_query_config("simple-query").await;
         assert!(retrieved.is_some());
-        
+
         let retrieved_config = retrieved.unwrap();
         assert_eq!(retrieved_config.id, "simple-query");
         assert!(retrieved_config.joins.is_none());
@@ -311,7 +328,7 @@ mod api_query_joins_tests {
 
     #[tokio::test]
     async fn test_query_with_empty_joins_array_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create a query with empty joins array
@@ -332,14 +349,15 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config.clone()),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
 
         // Verify the query was added
         let retrieved = query_manager.get_query_config("empty-joins-query").await;
         assert!(retrieved.is_some());
-        
+
         let retrieved_config = retrieved.unwrap();
         assert!(retrieved_config.joins.is_some());
         assert_eq!(retrieved_config.joins.unwrap().len(), 0);
@@ -347,7 +365,7 @@ mod api_query_joins_tests {
 
     #[tokio::test]
     async fn test_get_query_returns_joins_via_api() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, read_only) =
             create_test_environment().await;
 
         // Create a query with joins
@@ -367,7 +385,8 @@ mod api_query_joins_tests {
 
         let query_config = QueryConfig {
             id: "product-category-query".to_string(),
-            query: "MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name".to_string(),
+            query: "MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name"
+                .to_string(),
             sources: vec!["products".to_string(), "categories".to_string()],
             auto_start: false,
             properties: HashMap::new(),
@@ -382,27 +401,30 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config.clone()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Call the get_query API handler
         let get_result = get_query(
             Extension(query_manager.clone()),
             axum::extract::Path("product-category-query".to_string()),
-        ).await;
+        )
+        .await;
 
         assert!(get_result.is_ok());
-        
+
         let response = get_result.unwrap();
         // Verify the response contains joins
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], true);
         assert!(json_response["data"].is_object());
-        
+
         let data = &json_response["data"];
         // The structure is data.id, data.query, data.sources, data.joins
         assert_eq!(data["id"], "product-category-query");
         assert!(data["joins"].is_array());
-        
+
         let joins = data["joins"].as_array().unwrap();
         assert_eq!(joins.len(), 1);
         assert_eq!(joins[0]["id"], "PRODUCT_CATEGORY");
@@ -437,17 +459,20 @@ mod api_query_joins_tests {
 
         // Serialize to JSON
         let json = serde_json::to_value(&query_config).unwrap();
-        
+
         // Verify JSON structure
         assert_eq!(json["id"], "test-query");
-        assert_eq!(json["query"], "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b");
+        assert_eq!(
+            json["query"],
+            "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b"
+        );
         assert_eq!(json["sources"], json!(["source1", "source2"]));
         assert_eq!(json["auto_start"], true);
-        
+
         assert!(json["joins"].is_array());
         let joins_array = json["joins"].as_array().unwrap();
         assert_eq!(joins_array.len(), 1);
-        
+
         let first_join = &joins_array[0];
         assert_eq!(first_join["id"], "TEST_JOIN");
         assert_eq!(first_join["keys"].as_array().unwrap().len(), 2);
@@ -455,7 +480,7 @@ mod api_query_joins_tests {
         assert_eq!(first_join["keys"][0]["property"], "propA");
         assert_eq!(first_join["keys"][1]["label"], "NodeB");
         assert_eq!(first_join["keys"][1]["property"], "propB");
-        
+
         // Deserialize back
         let deserialized: QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.id, query_config.id);
@@ -465,9 +490,9 @@ mod api_query_joins_tests {
 
     #[tokio::test]
     async fn test_read_only_mode_blocks_query_creation_with_joins() {
-        let (query_manager, _source_manager, data_router, bootstrap_router, _) = 
+        let (query_manager, _source_manager, data_router, bootstrap_router, _) =
             create_test_environment().await;
-        
+
         let read_only = Arc::new(true); // Set read-only mode
 
         let join_config = QueryJoinConfig {
@@ -501,7 +526,8 @@ mod api_query_joins_tests {
             Extension(bootstrap_router),
             Extension(read_only),
             Json(query_config),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -509,7 +535,10 @@ mod api_query_joins_tests {
         let json_response = serde_json::to_value(&response.0).unwrap();
         assert_eq!(json_response["success"], false);
         assert!(json_response["error"].is_string());
-        assert!(json_response["error"].as_str().unwrap().contains("read-only mode"));
+        assert!(json_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("read-only mode"));
 
         // Verify the query was NOT created
         let retrieved = query_manager.get_query_config("readonly-test-query").await;
