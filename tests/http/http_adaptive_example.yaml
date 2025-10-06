@@ -6,7 +6,7 @@ server:
   shutdown_timeout_seconds: 30
 sources:
 - id: events-http
-  source_type: internal.http_adaptive
+  source_type: http_adaptive
   auto_start: true
   properties:
     adaptive_enabled: true

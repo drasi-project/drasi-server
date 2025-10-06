@@ -6,7 +6,7 @@ server:
   shutdown_timeout_seconds: 30
 sources:
 - id: facilities-db
-  source_type: internal.http
+  source_type: http
   auto_start: true
   properties:
     port: 9000
