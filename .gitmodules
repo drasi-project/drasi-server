@@ -1,0 +1,3 @@
+[submodule "drasi-core"]
+	path = drasi-core
+	url = https://github.com/drasi-project/drasi-core
