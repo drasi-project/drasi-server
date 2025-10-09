@@ -35,8 +35,7 @@ name = "basic_setup"
 path = "src/bin/basic_setup.rs"
 
 [dependencies]
-# Drasi Server Core dependencies via submodules
-drasi-server-core = { git = "https://github.com/drasi-project/drasi-server-core.git", branch = "main" }
+drasi-server-core = { path = "./drasi-core/server-core" }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -69,8 +68,3 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-
-# Patch section to use local development copy instead of submodule
-[patch."https://github.com/drasi-project/drasi-server-core.git"]
-drasi-server-core = { path = "../drasi-server-core" }
-
