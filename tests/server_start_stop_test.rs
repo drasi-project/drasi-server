@@ -1,6 +1,6 @@
 use anyhow::Result;
-use drasi_server::{ComponentStatus, DrasiServerCore, RuntimeConfig, ServerSettings};
-use drasi_server_core::config::QueryLanguage;
+use drasi_server::{ComponentStatus, DrasiServerCore, RuntimeConfig};
+use drasi_server_core::config::{DrasiServerCoreSettings, QueryLanguage};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -8,13 +8,8 @@ use tokio::time::{sleep, Duration};
 async fn test_server_start_stop_cycle() -> Result<()> {
     // Create a minimal runtime config
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![],
         queries: vec![],
@@ -64,13 +59,8 @@ async fn test_auto_start_components() -> Result<()> {
 
     // Create config with auto-start components
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
             id: "test-source".to_string(),
@@ -191,13 +181,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
 
     // Create config with mixed auto-start settings
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![
             SourceConfig {
@@ -339,13 +324,8 @@ async fn test_component_startup_sequence() -> Result<()> {
 
     // Create config with components that have dependencies
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![
             SourceConfig {

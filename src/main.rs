@@ -18,7 +18,7 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 
-use drasi_server::{DrasiServer, ServerConfig};
+use drasi_server::{DrasiServer, DrasiServerConfig};
 
 #[derive(Parser)]
 #[command(name = "drasi-server")]
@@ -58,11 +58,11 @@ async fn main() -> Result<()> {
         }
 
         // Create default config with command line port if specified
-        let mut default_config = ServerConfig::default();
+        let mut default_config = DrasiServerConfig::default();
 
         // Use CLI port if provided
         if let Some(port) = cli.port {
-            default_config.server.port = port;
+            default_config.api.port = port;
             info!("Using command line port {} in default configuration", port);
         }
 
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         default_config
     } else {
         // Load config first to get log level
-        ServerConfig::load_from_file(&cli.config)?
+        DrasiServerConfig::load_from_file(&cli.config)?
     };
 
     // Set log level from config if RUST_LOG wasn't explicitly set by user
@@ -91,8 +91,9 @@ async fn main() -> Result<()> {
     debug!("Debug logging is enabled");
     info!("Config file: {}", cli.config.display());
 
-    let final_port = cli.port.unwrap_or(config.server.port);
+    let final_port = cli.port.unwrap_or(config.api.port);
     info!("Port: {}", final_port);
+    debug!("API configuration: {:?}", config.api);
     debug!("Server configuration: {:?}", config.server);
 
     let server = DrasiServer::new(cli.config, final_port).await?;

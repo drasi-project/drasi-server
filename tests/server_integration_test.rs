@@ -1,9 +1,9 @@
 use anyhow::Result;
 use drasi_server::{
-    ComponentStatus, DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig, ServerSettings,
+    ComponentStatus, DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig,
     SourceConfig,
 };
-use drasi_server_core::config::QueryLanguage;
+use drasi_server_core::config::{DrasiServerCoreSettings, QueryLanguage};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -18,13 +18,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Create configuration
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
             id: "counter-source".to_string(),
@@ -120,13 +115,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_sources_and_queries() -> Result<()> {
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![
             SourceConfig {
@@ -272,13 +262,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 #[tokio::test]
 async fn test_component_failure_recovery() -> Result<()> {
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
             id: "test-source".to_string(),
@@ -356,13 +341,8 @@ async fn test_component_failure_recovery() -> Result<()> {
 #[tokio::test]
 async fn test_concurrent_operations() -> Result<()> {
     let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
+        server: DrasiServerCoreSettings {
+            id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
             id: "concurrent-source".to_string(),

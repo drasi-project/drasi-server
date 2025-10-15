@@ -1,10 +1,13 @@
 # Getting Started Example - Drasi Server Configuration
 # This minimal configuration demonstrates core Drasi concepts using a simple product catalog
 
-# Server: Runtime configuration
-server:
+# API: Drasi Server API configuration
+api:
   host: 0.0.0.0
   port: 8080
+
+# Server: Drasi Server wrapper runtime configuration
+server:
   log_level: info
   disable_persistence: true
 

@@ -7,7 +7,6 @@ use tokio::time::{timeout, Duration};
 async fn test_basic_server_lifecycle() {
     // Create a basic server
     let mut server = DrasiServerBuilder::new()
-        .with_log_level("info")
         .build_core()
         .await
         .expect("Failed to build server");

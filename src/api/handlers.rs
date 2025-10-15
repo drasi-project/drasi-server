@@ -168,6 +168,7 @@ pub async fn create_source(
                 let source_change_tx = source_manager.get_source_change_sender();
                 if let Err(e) = bootstrap_router
                     .register_provider(
+                        source_id.clone(),
                         source_config_arc,
                         bootstrap_provider_config,
                         source_change_tx,

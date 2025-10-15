@@ -866,6 +866,7 @@ dependencies = [
  "tower-http",
  "utoipa",
  "utoipa-swagger-ui",
+ "uuid",
  "wiremock",
 ]
 

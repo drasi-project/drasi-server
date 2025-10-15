@@ -15,11 +15,15 @@
 pub mod api;
 pub mod builder;
 pub mod builder_result;
+pub mod config;
+pub mod persistence;
 pub mod server;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
+pub use config::{ApiSettings, ServerSettings, DrasiServerConfig};
+pub use persistence::ConfigPersistence;
 pub use server::DrasiServer;
 
 // Re-export from drasi-server-core
@@ -55,7 +59,7 @@ pub use drasi_server_core::{
 // Re-export from submodules in drasi_server_core that aren't in main lib
 pub use drasi_server_core::channels::{BootstrapRequest, ComponentType, EventChannels};
 pub use drasi_server_core::config::{
-    ConfigPersistence, DrasiServerCoreSettings as ServerSettings, QueryJoinConfig,
+    DrasiServerCoreSettings, QueryJoinConfig,
     QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime,
 };
 pub use drasi_server_core::queries::LabelExtractor;

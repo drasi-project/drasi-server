@@ -15,14 +15,10 @@ server:
 # Sources: Define where data comes from
 sources:
   # Platform source - connects to Redis Stream to consume events with platform bootstrap
-  - id: platform-redis-source
+  - id: facilities-db
     source_type: platform
     auto_start: true
     # Platform bootstrap provider - fetches initial data from Query API
-    bootstrap_provider:
-      type: platform
-      query_api_url: "http://localhost:8082"
-      timeout_seconds: 300
     properties:
       # Redis connection URL
       redis_url: "redis://localhost:6379"
@@ -31,7 +27,7 @@ sources:
       stream_key: "facilities-db-change"
 
       # Consumer group name for Redis Streams consumer group
-      consumer_group: "drasi-core"
+      consumer_group: "drasi-server"
 
       # Unique consumer name within the consumer group
       consumer_name: "consumer-1"
@@ -43,60 +39,33 @@ sources:
       block_ms: 5000
 
       # Stream position: ">" for new events, "0" to replay all (default: ">")
-      start_id: ">"
+      start_id: "0"
 
       # Always recreate consumer group on startup (default: false)
       # If true, deletes and recreates the consumer group using start_id
       # If false, uses existing group position (ignores start_id if group exists)
-      # always_create_consumer_group: false
+      always_create_consumer_group: true
 
 # Queries: Continuous Cypher queries that process incoming data
 queries:
-  # Query to filter "Hello World" messages and return MessageId and From fields
-  - id: hello-world-from
+  - id: room-comfort-level
     auto_start: true
-    # Cypher query: Match nodes with label "Message" and property Message="Hello World"
     query: |
       MATCH
-        (m:Message {Message: 'Hello World'})
+        (r:Room)
       RETURN
-        m.MessageId AS MessageId,
-        m.From AS MessageFrom
+        elementId(r) AS RoomId,
+        50 + (r.temperature - 72) + (r.humidity - 42) + (r.co2 / 25) AS ComfortLevel
     # Sources this query subscribes to
     sources:
-      - platform-redis-source
+      - facilities-db
 
 # Reactions: Define what happens with query results
 reactions:
   # Log reaction - prints query results to console for debugging
-  - id: log-hello-world
+  - id: log-room-comfort-level
     reaction_type: log
     auto_start: true
     # Queries this reaction subscribes to
     queries:
-      - hello-world-from
-
-  # Platform reaction - publishes query results to Redis stream in CloudEvent format
-  # Results are published to: hello-world-from-results (stream name = query-id + "-results")
-  - id: platform-hello-world-results
-    reaction_type: platform
-    auto_start: true
-    # Queries this reaction subscribes to
-    queries:
-      - hello-world-from
-    properties:
-      # Redis connection URL (same Redis instance as platform source)
-      redis_url: "redis://localhost:6379"
-
-      # Dapr pubsub component name (used in CloudEvent metadata)
-      pubsub_name: "drasi-pubsub"
-
-      # Event source identifier (used in CloudEvent source field)
-      source_name: "drasi-core"
-
-      # Maximum number of messages to retain in the results stream
-      # Uses Redis MAXLEN with approximate trimming (~)
-      max_stream_length: 10000
-
-      # Emit lifecycle control events (BootstrapStarted, Running, Stopped, etc.)
-      emit_control_events: true
+      - room-comfort-level

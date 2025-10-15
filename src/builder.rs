@@ -19,6 +19,7 @@ use drasi_server_core::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use uuid;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
@@ -39,19 +40,14 @@ impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
             server_settings: ServerSettings {
-                host: "127.0.0.1".to_string(),
-                port: 8080,
-                log_level: "info".to_string(),
-                max_connections: 100,
-                shutdown_timeout_seconds: 30,
-                disable_persistence: false,
+                id: uuid::Uuid::new_v4().to_string(),
             },
             source_configs: Vec::new(),
             query_configs: Vec::new(),
             reaction_configs: Vec::new(),
             enable_api: false,
-            api_port: None,
-            api_host: None,
+            api_port: Some(8080),
+            api_host: Some("127.0.0.1".to_string()),
             enable_config_persistence: false,
             config_file_path: None,
             application_source_names: Vec::new(),
@@ -64,18 +60,6 @@ impl DrasiServerBuilder {
     /// Create a new DrasiServerBuilder with default settings
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Set the server log level
-    pub fn with_log_level(mut self, level: impl Into<String>) -> Self {
-        self.server_settings.log_level = level.into();
-        self
-    }
-
-    /// Disable persistence of configuration changes
-    pub fn disable_persistence(mut self) -> Self {
-        self.server_settings.disable_persistence = true;
-        self
     }
 
     /// Add a source configuration
@@ -233,11 +217,8 @@ impl DrasiServerBuilder {
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
-        let api_host = self
-            .api_host
-            .clone()
-            .unwrap_or_else(|| self.server_settings.host.clone());
-        let api_port = self.api_port.unwrap_or(self.server_settings.port);
+        let api_host = self.api_host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+        let api_port = self.api_port.unwrap_or(8080);
         let config_persistence = self.enable_config_persistence;
         let config_file = self.config_file_path.clone();
 
@@ -326,9 +307,8 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         let builder = DrasiServerBuilder::new();
-        assert_eq!(builder.server_settings.host, "127.0.0.1");
-        assert_eq!(builder.server_settings.port, 8080);
-        assert_eq!(builder.server_settings.log_level, "info");
+        assert_eq!(builder.api_host, Some("127.0.0.1".to_string()));
+        assert_eq!(builder.api_port, Some(8080));
         assert!(!builder.enable_api);
         assert!(!builder.enable_config_persistence);
     }
@@ -336,7 +316,6 @@ mod tests {
     #[test]
     fn test_builder_fluent_api() {
         let builder = DrasiServerBuilder::new()
-            .with_log_level("debug")
             .with_simple_source("test_source", "mock")
             .with_simple_query(
                 "test_query",
@@ -347,7 +326,6 @@ mod tests {
             .enable_api_with_port(9090)
             .enable_config_persistence("test.yaml");
 
-        assert_eq!(builder.server_settings.log_level, "debug");
         assert_eq!(builder.source_configs.len(), 1);
         assert_eq!(builder.query_configs.len(), 1);
         assert_eq!(builder.reaction_configs.len(), 1);

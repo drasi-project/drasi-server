@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server::{QueryConfig, ReactionConfig, ServerConfig, ServerSettings, SourceConfig};
+use drasi_server::{ApiSettings, ServerSettings, DrasiServerConfig, QueryConfig, ReactionConfig, SourceConfig};
 use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 
@@ -24,13 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reaction_name = "driver-availability-logger".to_string();
 
     // Create a basic server configuration with real Drasi patterns
-    let config = ServerConfig {
-        server: ServerSettings {
+    let config = DrasiServerConfig {
+        api: ApiSettings {
             host: "127.0.0.1".to_string(),
             port: 8080,
+        },
+        server: ServerSettings {
             log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 10,
             disable_persistence: false,
         },
         sources: vec![
