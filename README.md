@@ -199,9 +199,13 @@ server:
 # Data sources
 sources:
   - id: unique-source-id
-    source_type: postgres  # Source type
-    auto_start: true               # Start automatically
-    properties:                    # Source-specific properties
+    source_type: postgres           # Source type
+    auto_start: true                # Start automatically
+    bootstrap_provider:             # Optional: Load initial data
+      type: scriptfile              # Bootstrap provider type
+      file_paths:
+        - path/to/data.jsonl        # Path to initial data file
+    properties:                     # Source-specific properties
       host: localhost
       database: mydb
 
@@ -231,6 +235,23 @@ reactions:
       endpoint: https://example.com
 ```
 
+### Configuration Validation
+
+DrasiServer validates all configuration on startup and when creating components via API:
+
+**API Settings Validation:**
+- Port must be non-zero (1-65535)
+- Host must be a valid IP address, hostname, "localhost", "0.0.0.0", or "*"
+- Hostnames are validated per RFC 1123 standards
+
+**Component Validation:**
+- All component IDs must be unique within their type
+- Source types must be valid and supported
+- Query Cypher syntax is validated
+- Reaction types must be valid and supported
+- All referenced sources/queries in subscriptions must exist
+- Component configuration is delegated to DrasiServerCore for detailed validation
+
 ### Configuration Persistence
 
 DrasiServer supports automatic persistence of runtime configuration changes made through the REST API:
@@ -245,11 +266,16 @@ DrasiServer supports automatic persistence of runtime configuration changes made
 - Config file is read-only
 - `disable_persistence: true` in server settings
 
+**Read-Only Mode:**
+- Enabled ONLY when the config file is not writable (file permissions)
+- Blocks all API mutations (create/delete operations)
+- Different from `disable_persistence: true` which allows mutations but doesn't save them
+
 **Behavior:**
-- When enabled, all API mutations (create/delete sources/queries/reactions) are automatically saved to the config file
+- When persistence enabled: all API mutations are automatically saved to the config file
 - Uses atomic writes (temp file + rename) to prevent corruption
-- If disabled, changes are lost on restart
-- Read-only mode prevents all create/delete operations via API
+- When persistence disabled: changes work but are lost on restart
+- When read-only: all create/delete operations via API are rejected with an error
 
 **Example Configuration:**
 ```yaml
@@ -306,11 +332,22 @@ async fn main() -> Result<()> {
 
 DrasiServer provides a comprehensive REST API for runtime control:
 
-### Component Management
+### Health Check
+
+```bash
+# Check server health
+GET /health
+# Returns: {"status": "ok", "timestamp": "2025-01-15T12:00:00Z"}
+```
+
+### Sources API
 
 ```bash
 # List all sources
 GET /sources
+
+# Get source details
+GET /sources/{id}
 
 # Create a new source
 POST /sources
@@ -318,15 +355,80 @@ Content-Type: application/json
 {
   "id": "new-source",
   "source_type": "postgres",
+  "auto_start": true,
   "properties": {...}
 }
 
-# Start/stop components
-POST /sources/{id}/start
-POST /sources/{id}/stop
+# Delete a source
+DELETE /sources/{id}
 
-# Get query results
+# Start a source
+POST /sources/{id}/start
+
+# Stop a source
+POST /sources/{id}/stop
+```
+
+### Queries API
+
+```bash
+# List all queries
+GET /queries
+
+# Get query details
+GET /queries/{id}
+
+# Create a new query
+POST /queries
+Content-Type: application/json
+{
+  "id": "new-query",
+  "query": "MATCH (n:Node) RETURN n",
+  "sources": ["source-id"],
+  "auto_start": true
+}
+
+# Delete a query
+DELETE /queries/{id}
+
+# Start a query
+POST /queries/{id}/start
+
+# Stop a query
+POST /queries/{id}/stop
+
+# Get current query results
 GET /queries/{id}/results
+```
+
+### Reactions API
+
+```bash
+# List all reactions
+GET /reactions
+
+# Get reaction details
+GET /reactions/{id}
+
+# Create a new reaction
+POST /reactions
+Content-Type: application/json
+{
+  "id": "new-reaction",
+  "reaction_type": "http",
+  "queries": ["query-id"],
+  "auto_start": true,
+  "properties": {...}
+}
+
+# Delete a reaction
+DELETE /reactions/{id}
+
+# Start a reaction
+POST /reactions/{id}/start
+
+# Stop a reaction
+POST /reactions/{id}/stop
 ```
 
 ### API Documentation
@@ -334,6 +436,28 @@ GET /queries/{id}/results
 Interactive API documentation is available at:
 - Swagger UI: `http://localhost:8080/docs`
 - OpenAPI spec: `http://localhost:8080/api-docs/openapi.json`
+
+### API Response Format
+
+All API responses use a consistent format:
+
+```json
+{
+  "success": true,
+  "data": {...},
+  "error": null
+}
+```
+
+Error responses:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Error message"
+}
+```
 
 ## Use Cases
 
