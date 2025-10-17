@@ -193,6 +193,43 @@ Component management:
 - Sources filter bootstrap data by labels from Cypher queries
 - Bootstrap completes before normal data flow begins
 
+### Logging Conventions
+
+**Use log macros for operational logging:**
+- `error!()` - For errors that require attention
+- `warn!()` - For warnings and non-fatal issues
+- `info!()` - For important operational information
+- `debug!()` - For detailed debugging information
+
+**When to use `println!`:**
+- CLI help output and usage messages
+- Setup scripts (like `basic_setup.rs`)
+- Direct user interaction in binaries
+- Server startup banners in `main.rs` and `server.rs` (user-facing CLI output)
+
+**Never use `println!` for:**
+- Operational logging in library code
+- Error messages
+- Debugging output
+- Progress updates
+
+**Example:**
+```rust
+// Good: Use log macros for operational logging
+info!("Server starting on port {}", port);
+warn!("Config file not found, using defaults");
+error!("Failed to connect to database: {}", err);
+debug!("Processing message: {:?}", msg);
+
+// Good: Use println! for CLI user output
+println!("Starting Drasi Server");
+println!("  API Port: {}", port);
+
+// Bad: Don't use println! for operational logging
+// println!("Error: Connection failed"); // Use error!() instead
+// println!("Debug: Processing message"); // Use debug!() instead
+```
+
 ## Library Usage
 
 The server can be used as a library in other Rust projects:
