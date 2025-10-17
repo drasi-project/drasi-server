@@ -273,9 +273,7 @@ async fn test_query_lifecycle_via_api() {
         properties: HashMap::new(),
         bootstrap_provider: None,
     };
-    core.add_source_runtime(source_config.clone())
-        .await
-        .unwrap();
+    core.create_source(source_config.clone()).await.unwrap();
 
     // Create a query
     let query_config = json!({
@@ -334,7 +332,7 @@ async fn test_reaction_lifecycle_via_api() {
         query_language: QueryLanguage::default(),
         joins: None,
     };
-    core.add_query_runtime(query_config.clone()).await.unwrap();
+    core.create_query(query_config.clone()).await.unwrap();
 
     // Create a reaction
     let reaction_config = json!({
@@ -643,7 +641,7 @@ async fn test_query_results_endpoint() {
         query_language: QueryLanguage::default(),
         joins: None,
     };
-    core.add_query_runtime(query_config.clone()).await.unwrap();
+    core.create_query(query_config.clone()).await.unwrap();
 
     // Try to get results - should return error (not exposed in public API)
     let response = router

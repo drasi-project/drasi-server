@@ -188,7 +188,8 @@ async fn test_reaction_state_transitions() {
     // Start reaction - should transition to starting/running
     let rx = subscription_router
         .add_reaction_subscription("state-reaction".to_string(), vec!["query1".to_string()])
-        .await;
+        .await
+        .expect("Should create subscription");
     reaction_manager
         .start_reaction("state-reaction".to_string(), rx)
         .await
@@ -637,7 +638,8 @@ async fn test_cascading_cleanup() {
             "cascade-reaction".to_string(),
             vec!["cascade-query".to_string()],
         )
-        .await;
+        .await
+        .expect("Should create subscription");
     reaction_manager
         .start_reaction("cascade-reaction".to_string(), rx)
         .await

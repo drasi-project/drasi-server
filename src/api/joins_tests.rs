@@ -25,7 +25,11 @@ mod api_query_joins_tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    async fn create_test_environment() -> (Arc<DrasiServerCore>, Arc<bool>, Option<Arc<ConfigPersistence>>) {
+    async fn create_test_environment() -> (
+        Arc<DrasiServerCore>,
+        Arc<bool>,
+        Option<Arc<ConfigPersistence>>,
+    ) {
         // Create a minimal DrasiServerCore using the builder
         let core = DrasiServerCore::builder()
             .with_id("test-server")

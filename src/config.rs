@@ -13,29 +13,24 @@
 // limitations under the License.
 
 use anyhow::Result;
-use drasi_server_core::config::{
-    DrasiServerCoreSettings, QueryConfig, ReactionConfig, SourceConfig,
-};
+use drasi_server_core::config::DrasiServerCoreConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-/// DrasiServer configuration that wraps API settings and Server settings
+/// DrasiServer configuration that composes core config with API settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DrasiServerConfig {
     #[serde(default)]
     pub api: ApiSettings,
     #[serde(default)]
     pub server: ServerSettings,
-    #[serde(default)]
-    pub sources: Vec<SourceConfig>,
-    #[serde(default)]
-    pub queries: Vec<QueryConfig>,
-    #[serde(default)]
-    pub reactions: Vec<ReactionConfig>,
+    /// Core configuration (sources, queries, reactions)
+    #[serde(flatten)]
+    pub core_config: DrasiServerCoreConfig,
 }
 
-/// Server settings for DrasiServer wrapper (not DrasiServerCore library)
+/// Server settings for DrasiServer
 /// These control DrasiServer's operational behavior like logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
@@ -125,7 +120,10 @@ impl DrasiServerConfig {
     pub fn validate(&self) -> Result<()> {
         // Validate wrapper-specific settings
         if self.api.port == 0 {
-            return Err(anyhow::anyhow!("Invalid API port: {} (cannot be 0)", self.api.port));
+            return Err(anyhow::anyhow!(
+                "Invalid API port: {} (cannot be 0)",
+                self.api.port
+            ));
         }
 
         if self.api.host.is_empty() {
@@ -133,18 +131,6 @@ impl DrasiServerConfig {
         }
 
         // Delegate core configuration validation to Core
-        self.to_core_config().validate()
-    }
-
-    /// Convert to DrasiServerCoreConfig (for compatibility with the core library)
-    pub fn to_core_config(&self) -> drasi_server_core::config::DrasiServerCoreConfig {
-        drasi_server_core::config::DrasiServerCoreConfig {
-            server: DrasiServerCoreSettings {
-                id: uuid::Uuid::new_v4().to_string(),
-            },
-            sources: self.sources.clone(),
-            queries: self.queries.clone(),
-            reactions: self.reactions.clone(),
-        }
+        self.core_config.validate()
     }
 }

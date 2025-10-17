@@ -15,7 +15,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Create configuration
     let config = RuntimeConfig {
-        server: DrasiServerCoreSettings {
+        server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
@@ -49,7 +49,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     };
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server.id);
+    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
 
     for source in config.sources {
         builder = builder.add_source(source);
@@ -104,7 +104,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_sources_and_queries() -> Result<()> {
     let config = RuntimeConfig {
-        server: DrasiServerCoreSettings {
+        server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![
@@ -172,7 +172,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     };
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server.id);
+    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
 
     for source in config.sources {
         builder = builder.add_source(source);
@@ -212,7 +212,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 #[tokio::test]
 async fn test_component_failure_recovery() -> Result<()> {
     let config = RuntimeConfig {
-        server: DrasiServerCoreSettings {
+        server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
@@ -242,7 +242,7 @@ async fn test_component_failure_recovery() -> Result<()> {
     };
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server.id);
+    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
 
     for source in config.sources {
         builder = builder.add_source(source);
@@ -280,7 +280,7 @@ async fn test_component_failure_recovery() -> Result<()> {
 #[tokio::test]
 async fn test_concurrent_operations() -> Result<()> {
     let config = RuntimeConfig {
-        server: DrasiServerCoreSettings {
+        server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
         },
         sources: vec![SourceConfig {
@@ -295,7 +295,7 @@ async fn test_concurrent_operations() -> Result<()> {
     };
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server.id);
+    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
 
     for source in config.sources {
         builder = builder.add_source(source);
@@ -321,7 +321,7 @@ async fn test_concurrent_operations() -> Result<()> {
                     properties: HashMap::new(),
                     bootstrap_provider: None,
                 };
-                core_clone.add_source_runtime(new_source).await
+                core_clone.create_source(new_source).await
             } else {
                 sleep(Duration::from_millis(10)).await;
                 core_clone

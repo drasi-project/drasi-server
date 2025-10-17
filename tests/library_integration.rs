@@ -72,7 +72,7 @@ async fn test_dynamic_component_management() {
     };
 
     server
-        .add_source_runtime(source_config)
+        .create_source(source_config)
         .await
         .expect("Failed to add source");
 
@@ -150,7 +150,7 @@ async fn test_concurrent_operations() {
                 properties: HashMap::new(),
                 bootstrap_provider: None,
             };
-            server_clone.add_source_runtime(config).await
+            server_clone.create_source(config).await
         });
         tasks.push(task);
     }

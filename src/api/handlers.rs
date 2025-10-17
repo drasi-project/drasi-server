@@ -32,6 +32,20 @@ use drasi_server_core::{
     SourceConfig,
 };
 
+/// Helper function to persist configuration after a successful operation.
+/// Logs errors but does not fail the request - persistence failures are non-fatal.
+async fn persist_after_operation(
+    config_persistence: &Option<Arc<ConfigPersistence>>,
+    operation: &str,
+) {
+    if let Some(persistence) = config_persistence {
+        if let Err(e) = persistence.save().await {
+            log::error!("Failed to persist configuration after {}: {}", operation, e);
+            // Don't fail the request, just log the error
+        }
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     /// Health status of the server
@@ -156,18 +170,11 @@ pub async fn create_source(
 
     let source_id = config.id.clone();
 
-    // Use DrasiServerCore's public API to add source at runtime
-    match core.add_source_runtime(config.clone()).await {
+    // Use DrasiServerCore's public API to create source
+    match core.create_source(config.clone()).await {
         Ok(_) => {
             log::info!("Source '{}' created successfully", source_id);
-
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after creating source: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "creating source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Source created successfully".to_string(),
@@ -239,13 +246,7 @@ pub async fn delete_source(
 
     match core.remove_source(&id).await {
         Ok(_) => {
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after deleting source: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "deleting source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Source deleted successfully".to_string(),
@@ -406,18 +407,11 @@ pub async fn create_query(
         log::debug!("Registering query '{}' with no synthetic joins", query_id);
     }
 
-    // Use DrasiServerCore's public API to add query at runtime
-    match core.add_query_runtime(config.clone()).await {
+    // Use DrasiServerCore's public API to create query
+    match core.create_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{}' created successfully", query_id);
-
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after creating query: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query created successfully".to_string(),
@@ -489,13 +483,7 @@ pub async fn delete_query(
 
     match core.remove_query(&id).await {
         Ok(_) => {
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after deleting query: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "deleting query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query deleted successfully".to_string(),
@@ -652,18 +640,11 @@ pub async fn create_reaction(
 
     let reaction_id = config.id.clone();
 
-    // Use DrasiServerCore's public API to add reaction at runtime
-    match core.add_reaction_runtime(config.clone()).await {
+    // Use DrasiServerCore's public API to create reaction
+    match core.create_reaction(config.clone()).await {
         Ok(_) => {
             log::info!("Reaction '{}' created successfully", reaction_id);
-
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after creating reaction: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "creating reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction created successfully".to_string(),
@@ -738,13 +719,7 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id).await {
         Ok(_) => {
-            // Save configuration if persistence is enabled
-            if let Some(persistence) = config_persistence {
-                if let Err(e) = persistence.save().await {
-                    log::error!("Failed to persist configuration after deleting reaction: {}", e);
-                    // Don't fail the request, just log the error
-                }
-            }
+            persist_after_operation(&config_persistence, "deleting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction deleted successfully".to_string(),

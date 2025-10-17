@@ -54,7 +54,7 @@ impl DrasiServer {
         let file_writable = Self::check_write_access(&config_path);
         let persistence_disabled = config.server.disable_persistence;
         let _persistence_enabled = file_writable && !persistence_disabled;
-        let read_only = !file_writable;  // Only read-only if file is not writable
+        let read_only = !file_writable; // Only read-only if file is not writable
 
         if !file_writable {
             warn!("Config file is not writable. API in READ-ONLY mode.");
