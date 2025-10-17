@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server::{ApiSettings, ServerSettings, DrasiServerConfig, QueryConfig, ReactionConfig, SourceConfig};
+use drasi_server::{
+    ApiSettings, DrasiServerConfig, QueryConfig, ReactionConfig, ServerSettings, SourceConfig,
+};
 use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 

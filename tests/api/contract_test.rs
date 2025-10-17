@@ -4,8 +4,9 @@
 //! They test request/response formats, status codes, and data schemas.
 
 use drasi_server::api::handlers::ApiResponse;
+use drasi_server_core::channels::ComponentStatus;
 use drasi_server_core::config::QueryLanguage;
-use drasi_server_core::{ComponentStatus, QueryConfig, ReactionConfig, SourceConfig};
+use drasi_server_core::{QueryConfig, ReactionConfig, SourceConfig};
 use serde_json::json;
 use std::collections::HashMap;
 

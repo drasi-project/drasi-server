@@ -31,6 +31,13 @@ sources:
     tables:
     - stocks
     - portfolio
+    table_keys:
+      - table: stocks
+        key_columns:
+          - id
+      - table: portfolio
+        key_columns:
+          - id
     host: localhost
     port: 5432
     slot_name: drasi_trading_slot
@@ -46,4 +53,19 @@ sources:
     port: 9000
     host: 0.0.0.0
 queries: []
+# queries:
+#   - id: all-stocks
+#     query: |
+#       MATCH (s:stocks)
+#       RETURN s.id AS id, s.symbol AS symbol, s.name AS name, s.sector AS sector, s.market_cap AS market_cap
+#     sources:
+#       - postgres-stocks
+#     auto_start: true
+#   - id: stock-prices
+#     query: |
+#       MATCH (s:stock_prices)
+#       RETURN s.symbol AS id, s.price AS price
+#     sources:
+#       - price-feed
+#     auto_start: true  
 reactions: []

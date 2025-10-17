@@ -19,9 +19,9 @@ use crate::api::handlers::{ApiResponseSchema, ComponentListItem, HealthResponse,
 // as they don't implement ToSchema trait
 #[allow(unused_imports)]
 use drasi_server_core::{
-    channels::ComponentType,
+    channels::{ComponentStatus, ComponentType},
     config::{QueryJoinConfig, QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime},
-    ComponentStatus, QueryConfig, ReactionConfig, SourceConfig,
+    QueryConfig, ReactionConfig, SourceConfig,
 };
 
 #[derive(OpenApi)]
@@ -31,14 +31,12 @@ use drasi_server_core::{
         crate::api::handlers::list_sources,
         crate::api::handlers::create_source,
         crate::api::handlers::get_source,
-        crate::api::handlers::update_source,
         crate::api::handlers::delete_source,
         crate::api::handlers::start_source,
         crate::api::handlers::stop_source,
         crate::api::handlers::list_queries,
         crate::api::handlers::create_query,
         crate::api::handlers::get_query,
-        crate::api::handlers::update_query,
         crate::api::handlers::delete_query,
         crate::api::handlers::start_query,
         crate::api::handlers::stop_query,
@@ -46,7 +44,6 @@ use drasi_server_core::{
         crate::api::handlers::list_reactions,
         crate::api::handlers::create_reaction,
         crate::api::handlers::get_reaction,
-        crate::api::handlers::update_reaction,
         crate::api::handlers::delete_reaction,
         crate::api::handlers::start_reaction,
         crate::api::handlers::stop_reaction,

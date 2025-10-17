@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server_core::{ApplicationReactionHandle, ApplicationSourceHandle, DrasiServerCore};
-use std::collections::HashMap;
-use std::sync::Arc;
+//! Test support utilities for integration tests
 
-/// Result of building a DrasiServer with application integration
-pub struct DrasiServerWithHandles {
-    /// The server core for controlling the server
-    pub server: Arc<DrasiServerCore>,
-    /// Map of application source handles by name
-    pub source_handles: HashMap<String, ApplicationSourceHandle>,
-    /// Map of application reaction handles by name
-    pub reaction_handles: HashMap<String, ApplicationReactionHandle>,
-}
+pub mod redis_helpers;
+
+// Re-export commonly used helpers
+pub use redis_helpers::*;

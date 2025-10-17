@@ -14,8 +14,7 @@
 
 use drasi_server_core::{
     config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
-    ApplicationHandle, DrasiError, DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig,
-    SourceConfig,
+    DrasiError, DrasiServerCore, QueryConfig, ReactionConfig, SourceConfig,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +29,6 @@ pub struct DrasiServerBuilder {
     enable_api: bool,
     api_port: Option<u16>,
     api_host: Option<String>,
-    enable_config_persistence: bool,
     config_file_path: Option<String>,
     application_source_names: Vec<String>,
     application_reaction_names: Vec<String>,
@@ -48,7 +46,6 @@ impl Default for DrasiServerBuilder {
             enable_api: false,
             api_port: Some(8080),
             api_host: Some("127.0.0.1".to_string()),
-            enable_config_persistence: false,
             config_file_path: None,
             application_source_names: Vec::new(),
             application_reaction_names: Vec::new(),
@@ -156,12 +153,6 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Enable configuration persistence to a file
-    pub fn enable_config_persistence(mut self, file_path: impl Into<String>) -> Self {
-        self.enable_config_persistence = true;
-        self.config_file_path = Some(file_path.into());
-        self
-    }
 
     /// Add an application source that can be programmatically controlled
     pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
@@ -197,29 +188,42 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiServerCore instance
     pub async fn build_core(self) -> Result<DrasiServerCore, DrasiError> {
-        // Create RuntimeConfig from builder settings
-        let runtime_config = RuntimeConfig {
-            server: self.server_settings,
-            sources: self.source_configs,
-            queries: self.query_configs,
-            reactions: self.reaction_configs,
-        };
+        // Use the public builder API from drasi-server-core
+        let mut builder = DrasiServerCore::builder().with_id(&self.server_settings.id);
 
-        // Create server core
-        let mut server_core = DrasiServerCore::new(Arc::new(runtime_config));
+        // Add all sources
+        for source_config in self.source_configs {
+            builder = builder.add_source(source_config);
+        }
 
-        // Initialize components
-        server_core.initialize().await?;
+        // Add all queries
+        for query_config in self.query_configs {
+            builder = builder.add_query(query_config);
+        }
 
-        Ok(server_core)
+        // Add all reactions
+        for reaction_config in self.reaction_configs {
+            builder = builder.add_reaction(reaction_config);
+        }
+
+        // Build and initialize (the builder does both)
+        builder.build().await
+    }
+
+    /// Set the config file path for persistence
+    pub fn with_config_file(mut self, path: impl Into<String>) -> Self {
+        self.config_file_path = Some(path.into());
+        self
     }
 
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
-        let api_host = self.api_host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+        let api_host = self
+            .api_host
+            .clone()
+            .unwrap_or_else(|| "127.0.0.1".to_string());
         let api_port = self.api_port.unwrap_or(8080);
-        let config_persistence = self.enable_config_persistence;
         let config_file = self.config_file_path.clone();
 
         // Build the core server
@@ -231,7 +235,6 @@ impl DrasiServerBuilder {
             api_enabled,
             api_host,
             api_port,
-            config_persistence,
             config_file,
         );
 
@@ -245,49 +248,40 @@ impl DrasiServerBuilder {
         let app_source_names = self.application_source_names.clone();
         let app_reaction_names = self.application_reaction_names.clone();
 
-        // Build the core server
-        let mut core = self.build_core().await?;
-
-        // Initialize the core
-        core.initialize().await?;
+        // Build the core server (already initialized by builder)
+        let core = self.build_core().await?;
 
         // Convert to Arc and start
         let core = Arc::new(core);
         core.start().await?;
 
-        // Collect application handles
-        let mut handles = HashMap::new();
+        // Collect application handles using the new public API
+        let mut source_handles = HashMap::new();
+        let mut reaction_handles = HashMap::new();
 
-        // Get source handles
+        // Get source handles using the new source_handle() method
         for source_name in app_source_names {
-            if let Some(source_handle) = core
-                .source_manager()
-                .get_application_handle(&source_name)
-                .await
-            {
-                handles.insert(
-                    source_name.clone(),
-                    ApplicationHandle::source_only(source_handle),
-                );
+            match core.source_handle(&source_name) {
+                Ok(handle) => {
+                    source_handles.insert(source_name, handle);
+                }
+                Err(e) => {
+                    log::warn!("Failed to get handle for source '{}': {}", source_name, e);
+                }
             }
         }
 
-        // Get reaction handles
+        // Get reaction handles using the new reaction_handle() method
         for reaction_name in app_reaction_names {
-            if let Some(reaction_handle) = core
-                .reaction_manager()
-                .get_application_handle(&reaction_name)
-                .await
-            {
-                if let Some(existing) = handles.get_mut(&reaction_name) {
-                    // If we already have a source handle with the same name, combine them
-                    if let Some(source) = existing.source.clone() {
-                        *existing = ApplicationHandle::new(source, reaction_handle);
-                    }
-                } else {
-                    handles.insert(
-                        reaction_name.clone(),
-                        ApplicationHandle::reaction_only(reaction_handle),
+            match core.reaction_handle(&reaction_name) {
+                Ok(handle) => {
+                    reaction_handles.insert(reaction_name, handle);
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to get handle for reaction '{}': {}",
+                        reaction_name,
+                        e
                     );
                 }
             }
@@ -295,7 +289,8 @@ impl DrasiServerBuilder {
 
         Ok(crate::builder_result::DrasiServerWithHandles {
             server: core,
-            handles,
+            source_handles,
+            reaction_handles,
         })
     }
 }
@@ -310,7 +305,6 @@ mod tests {
         assert_eq!(builder.api_host, Some("127.0.0.1".to_string()));
         assert_eq!(builder.api_port, Some(8080));
         assert!(!builder.enable_api);
-        assert!(!builder.enable_config_persistence);
     }
 
     #[test]
@@ -323,15 +317,12 @@ mod tests {
                 vec!["test_source".to_string()],
             )
             .with_log_reaction("test_reaction", vec!["test_query".to_string()])
-            .enable_api_with_port(9090)
-            .enable_config_persistence("test.yaml");
+            .enable_api_with_port(9090);
 
         assert_eq!(builder.source_configs.len(), 1);
         assert_eq!(builder.query_configs.len(), 1);
         assert_eq!(builder.reaction_configs.len(), 1);
         assert!(builder.enable_api);
         assert_eq!(builder.api_port, Some(9090));
-        assert!(builder.enable_config_persistence);
-        assert_eq!(builder.config_file_path, Some("test.yaml".to_string()));
     }
 }

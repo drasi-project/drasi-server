@@ -46,10 +46,13 @@ git submodule update --init --recursive
 
 ```yaml
 # config/server.yaml
-server:
-  host: 127.0.0.1
+api:
+  host: 0.0.0.0
   port: 8080
+
+server:
   log_level: info
+  disable_persistence: false
 
 sources:
   - id: inventory-db
@@ -183,14 +186,15 @@ RUST_LOG=debug cargo run
 DrasiServer uses YAML configuration files with the following structure:
 
 ```yaml
-# Server settings
-server:
+# API server settings
+api:
   host: 0.0.0.0              # Bind address
   port: 8080                 # API port
+
+# Server settings
+server:
   log_level: info            # Log level (trace, debug, info, warn, error)
-  max_connections: 100       # Max concurrent connections
-  shutdown_timeout_seconds: 30  # Graceful shutdown timeout
-  disable_persistence: false    # Disable config persistence
+  disable_persistence: false # Disable automatic config file persistence
 
 # Data sources
 sources:
@@ -227,17 +231,44 @@ reactions:
       endpoint: https://example.com
 ```
 
+### Configuration Persistence
+
+DrasiServer supports automatic persistence of runtime configuration changes made through the REST API:
+
+**Persistence is enabled when:**
+- A config file is provided on startup (`--config path/to/config.yaml`)
+- The config file has write permissions
+- `disable_persistence: false` in server settings (default)
+
+**Persistence is disabled when:**
+- No config file is provided (server starts with empty configuration)
+- Config file is read-only
+- `disable_persistence: true` in server settings
+
+**Behavior:**
+- When enabled, all API mutations (create/delete sources/queries/reactions) are automatically saved to the config file
+- Uses atomic writes (temp file + rename) to prevent corruption
+- If disabled, changes are lost on restart
+- Read-only mode prevents all create/delete operations via API
+
+**Example Configuration:**
+```yaml
+api:
+  host: 0.0.0.0
+  port: 8080
+server:
+  log_level: info
+  disable_persistence: false  # Enable persistence (default)
+sources: []
+queries: []
+reactions: []
+```
+
 ### Environment Variables
 
 ```bash
-# Override config file location
-DRASI_CONFIG=/path/to/config.yaml
-
 # Set log level
 RUST_LOG=drasi_server=debug
-
-# Override port
-DRASI_PORT=9000
 ```
 
 ## Library Usage
@@ -345,25 +376,13 @@ queries:
 ### Health Checks
 
 ```bash
-# Liveness probe
+# Health check endpoint
 GET /health
 
-# Readiness probe (checks component status)
-GET /health/ready
-```
-
-### Monitoring
-
-DrasiServer exposes metrics and status information:
-
-```bash
-# Component status
-GET /sources/{id}/status
-GET /queries/{id}/status
-GET /reactions/{id}/status
-
-# Runtime metrics
-GET /metrics
+# Component status checks
+GET /sources/{id}
+GET /queries/{id}
+GET /reactions/{id}
 ```
 
 ### Security Considerations
@@ -409,7 +428,7 @@ cargo run -- --port 9090
 ```
 
 **Query not receiving data:**
-- Verify source is running: `GET /sources/{id}/status`
+- Verify source is running: `GET /sources/{id}`
 - Check source subscription: `GET /queries/{id}`
 - Review logs: `RUST_LOG=debug cargo run`
 
@@ -441,14 +460,23 @@ A minimal, beginner-friendly example perfect for first-time users:
 
 **Start here** if you're new to Drasi Server!
 
+### Platform Integration Examples
+**[`examples/drasi-platform/`](examples/drasi-platform/)** and **[`examples/drasi-platform-read/`](examples/drasi-platform-read/)**
+
+Demonstrates integration with Drasi Platform via Redis Streams:
+- Platform source consuming from Redis Streams
+- Platform bootstrap provider for initial data loading
+- Platform reaction publishing results to Redis in CloudEvent format
+- Consumer group management for horizontal scaling
+- Examples show both bootstrap-enabled and read-only modes
+
 ### Trading Demo
 **[`examples/trading/`](examples/trading/)**
 
 A comprehensive real-world example demonstrating advanced features:
 - PostgreSQL replication source with bootstrap
-- HTTP and gRPC sources for live data
+- HTTP sources for live data
 - Complex multi-source queries with joins
-- Multiple reaction types (webhooks, SSE, logs)
 - Full production-like configuration
 
 ## Contributing

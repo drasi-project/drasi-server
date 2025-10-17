@@ -29,17 +29,16 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::config::DrasiServerConfig;
 use crate::persistence::ConfigPersistence;
-use drasi_server_core::{DrasiServerCore, RuntimeConfig};
+use drasi_server_core::DrasiServerCore;
 
 pub struct DrasiServer {
     core: Option<DrasiServerCore>,
     enable_api: bool,
     api_host: String,
     api_port: u16,
-    #[allow(dead_code)]
-    enable_config_persistence: bool,
     config_file_path: Option<String>,
     read_only: Arc<bool>,
+    #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
 }
 
@@ -49,48 +48,38 @@ impl DrasiServer {
         let config = DrasiServerConfig::load_from_file(&config_path)?;
         config.validate()?;
 
-        // Check if we have write access to the config file
-        let read_only = !Self::check_write_access(&config_path);
-        if read_only {
-            warn!("Config file is not writable. Server running in READ-ONLY mode.");
-            warn!("API modifications (create/update/delete) will be disabled.");
-        } else if config.server.disable_persistence {
-            info!("Config persistence is disabled. Changes will not be saved to the config file.");
-            info!("API modifications are allowed but will not persist across restarts.");
+        // Determine persistence and read-only status
+        // Read-only mode is ONLY enabled when the config file is not writable
+        // disable_persistence just means "don't save changes" but still allows API mutations
+        let file_writable = Self::check_write_access(&config_path);
+        let persistence_disabled = config.server.disable_persistence;
+        let _persistence_enabled = file_writable && !persistence_disabled;
+        let read_only = !file_writable;  // Only read-only if file is not writable
+
+        if !file_writable {
+            warn!("Config file is not writable. API in READ-ONLY mode.");
+            warn!("Cannot create or delete components via API.");
+        } else if persistence_disabled {
+            info!("Persistence disabled by configuration (disable_persistence: true).");
+            warn!("API modifications will not persist across restarts.");
         } else {
-            info!("Config file is writable. Server running in normal mode.");
+            info!("Persistence ENABLED. API modifications will be saved to config file.");
         }
 
-        // Convert to RuntimeConfig (for drasi-core)
-        let core_config = config.to_core_config();
-        let runtime_config = Arc::new(RuntimeConfig::from(core_config.clone()));
-
-        // Create core server
-        let core = DrasiServerCore::new(runtime_config);
-
-        // Set up config persistence
-        // Note: ConfigPersistence takes a DrasiServerCoreSettings which only has an ID
-        let core_settings_for_persistence = drasi_server_core::config::DrasiServerCoreSettings {
-            id: uuid::Uuid::new_v4().to_string(),
-        };
-        let config_persistence = Arc::new(ConfigPersistence::new(
-            config_path.clone(),
-            core_settings_for_persistence,
-            core.source_manager().clone(),
-            core.query_manager().clone(),
-            core.reaction_manager().clone(),
-            read_only || config.server.disable_persistence, // Don't persist if read-only OR disable_persistence is true
-        ));
+        // Create core server using the public API
+        // The from_config_file method loads and initializes the core
+        let core = DrasiServerCore::from_config_file(&config_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create DrasiServerCore: {}", e))?;
 
         Ok(Self {
             core: Some(core),
             enable_api: true,
-            api_host: config.api.host,
+            api_host: config.api.host.clone(),
             api_port: port,
-            enable_config_persistence: true,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
-            config_persistence: Some(config_persistence),
+            config_persistence: None, // Will be set after core is started
         })
     }
 
@@ -100,7 +89,6 @@ impl DrasiServer {
         enable_api: bool,
         api_host: String,
         api_port: u16,
-        enable_config_persistence: bool,
         config_file_path: Option<String>,
     ) -> Self {
         Self {
@@ -108,10 +96,9 @@ impl DrasiServer {
             enable_api,
             api_host,
             api_port,
-            enable_config_persistence,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
-            config_persistence: None,   // No persistence in programmatic mode
+            config_persistence: None,   // Will be set up if config file is provided
         }
     }
 
@@ -134,20 +121,50 @@ impl DrasiServer {
         info!("Initializing Drasi Server");
 
         // Take the core out of self
-        let mut core = self.core.take().expect("Core should be initialized");
+        let core = self.core.take().expect("Core should be initialized");
 
-        // Initialize the core
-        core.initialize().await?;
-
+        // Core is already initialized by from_config_file or builder
         // Convert to Arc for sharing
         let core = Arc::new(core);
 
         // Start the core server
         core.start().await?;
 
+        // Initialize persistence if config file is provided and persistence is enabled
+        let config_persistence = if let Some(config_file) = &self.config_file_path {
+            if !*self.read_only {
+                // Need to reload config to check disable_persistence flag
+                let config = DrasiServerConfig::load_from_file(&PathBuf::from(config_file))?;
+                let persistence_disabled = config.server.disable_persistence;
+
+                if !persistence_disabled {
+                    // Persistence is enabled - create ConfigPersistence instance
+                    let persistence = Arc::new(ConfigPersistence::new(
+                        PathBuf::from(config_file),
+                        core.clone(),
+                        self.api_host.clone(),
+                        self.api_port,
+                        config.server.log_level.clone(),
+                        false,
+                    ));
+                    info!("Configuration persistence enabled");
+                    Some(persistence)
+                } else {
+                    info!("Configuration persistence disabled (disable_persistence: true)");
+                    None
+                }
+            } else {
+                info!("Configuration persistence disabled (read-only mode)");
+                None
+            }
+        } else {
+            info!("No config file provided - persistence disabled");
+            None
+        };
+
         // Start web API if enabled
         if self.enable_api {
-            self.start_api(&core).await?;
+            self.start_api(&core, config_persistence.clone()).await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.api_port
@@ -165,7 +182,11 @@ impl DrasiServer {
         Ok(())
     }
 
-    async fn start_api(&self, core: &Arc<DrasiServerCore>) -> Result<()> {
+    async fn start_api(
+        &self,
+        core: &Arc<DrasiServerCore>,
+        config_persistence: Option<Arc<ConfigPersistence>>,
+    ) -> Result<()> {
         // Create OpenAPI documentation
         let openapi = api::ApiDoc::openapi();
         let app = Router::new()
@@ -173,14 +194,12 @@ impl DrasiServer {
             .route("/sources", get(api::list_sources))
             .route("/sources", post(api::create_source))
             .route("/sources/:id", get(api::get_source))
-            .route("/sources/:id", axum::routing::put(api::update_source))
             .route("/sources/:id", axum::routing::delete(api::delete_source))
             .route("/sources/:id/start", post(api::start_source))
             .route("/sources/:id/stop", post(api::stop_source))
             .route("/queries", get(api::list_queries))
             .route("/queries", post(api::create_query))
             .route("/queries/:id", get(api::get_query))
-            .route("/queries/:id", axum::routing::put(api::update_query))
             .route("/queries/:id", axum::routing::delete(api::delete_query))
             .route("/queries/:id/start", post(api::start_query))
             .route("/queries/:id/stop", post(api::stop_query))
@@ -188,7 +207,6 @@ impl DrasiServer {
             .route("/reactions", get(api::list_reactions))
             .route("/reactions", post(api::create_reaction))
             .route("/reactions/:id", get(api::get_reaction))
-            .route("/reactions/:id", axum::routing::put(api::update_reaction))
             .route(
                 "/reactions/:id",
                 axum::routing::delete(api::delete_reaction),
@@ -197,14 +215,10 @@ impl DrasiServer {
             .route("/reactions/:id/stop", post(api::stop_reaction))
             .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi.clone()))
             .layer(CorsLayer::permissive())
-            .layer(Extension(core.source_manager().clone()))
-            .layer(Extension(core.query_manager().clone()))
-            .layer(Extension(core.reaction_manager().clone()))
-            .layer(Extension(core.data_router().clone()))
-            .layer(Extension(core.subscription_router().clone()))
-            .layer(Extension(core.bootstrap_router().clone()))
+            // Inject DrasiServerCore for handlers to use
+            .layer(Extension(core.clone()))
             .layer(Extension(self.read_only.clone()))
-            .layer(Extension(self.config_persistence.clone()));
+            .layer(Extension(config_persistence));
 
         let addr = format!("{}:{}", self.api_host, self.api_port);
         info!("Starting web API on {}", addr);
