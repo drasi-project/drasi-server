@@ -72,9 +72,57 @@ All components communicate through async channels:
 
 The server uses YAML configuration files (default: `config/server.yaml`):
 - Sources defined under `sources:`
-- Queries defined under `queries:` 
+- Queries defined under `queries:`
 - Reactions defined under `reactions:`
-- Runtime settings under `runtime:`
+- API settings under `api:` (host, port)
+- Server settings under `server:` (log_level, disable_persistence)
+
+### Configuration Persistence
+
+DrasiServer separates two independent concepts:
+
+1. **Persistence** - Whether API changes are saved to the config file
+2. **Read-Only Mode** - Whether API changes are allowed at all
+
+**Persistence is enabled when:**
+- Config file is provided on startup (`--config path/to/config.yaml`)
+- Config file is writable
+- `disable_persistence: false` in server settings (default)
+
+**Persistence is disabled when:**
+- No config file provided (server starts with empty configuration)
+- Config file is read-only
+- `disable_persistence: true` in server settings
+
+**Read-Only mode is enabled ONLY when:**
+- Config file is not writable (file permissions prevent writing)
+
+**Important distinction:**
+- `disable_persistence: true` → API mutations are allowed but NOT saved to config file
+- Read-only config file → API mutations are blocked entirely
+- This allows dynamic query/reaction creation without persistence (useful for programmatic usage)
+
+**Behavior:**
+- When persistence enabled: all API mutations (create/delete sources/queries/reactions) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
+- When persistence disabled: API mutations work but changes are lost on restart
+- When read-only: all create/delete operations via API are rejected
+
+**Example Configuration:**
+```yaml
+api:
+  host: "0.0.0.0"
+  port: 8080
+server:
+  log_level: "info"
+  disable_persistence: false  # Enable persistence (default)
+sources:
+  - id: my-source
+    source_type: mock
+    auto_start: true
+    properties: {}
+queries: []
+reactions: []
+```
 
 ### Component Types
 

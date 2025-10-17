@@ -7,9 +7,13 @@ use drasi_server_core::{
     channels::EventChannels,
     config::QueryLanguage,
     routers::{BootstrapRouter, DataRouter, SubscriptionRouter},
-    ComponentStatus, QueryConfig, QueryManager, ReactionConfig, ReactionManager, SourceConfig,
-    SourceManager,
+    QueryConfig, ReactionConfig, SourceConfig,
 };
+// Import managers from internal modules
+use drasi_server_core::channels::ComponentStatus;
+use drasi_server_core::queries::QueryManager;
+use drasi_server_core::reactions::ReactionManager;
+use drasi_server_core::sources::SourceManager;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -19,7 +23,7 @@ fn create_test_managers() -> (Arc<SourceManager>, Arc<QueryManager>, Arc<Reactio
     let (channels, _receivers) = EventChannels::new();
 
     let source_manager = Arc::new(SourceManager::new(
-        channels.source_change_tx.clone(),
+        channels.source_event_tx.clone(),
         channels.component_event_tx.clone(),
     ));
     let query_manager = Arc::new(QueryManager::new(
@@ -117,7 +121,8 @@ async fn test_query_state_transitions() {
     // Start query - should transition to starting/running
     let rx = data_router
         .add_query_subscription("state-query".to_string(), vec!["source1".to_string()])
-        .await;
+        .await
+        .expect("Should create subscription");
     query_manager
         .start_query("state-query".to_string(), rx)
         .await
@@ -620,7 +625,8 @@ async fn test_cascading_cleanup() {
             "cascade-query".to_string(),
             vec!["cascade-source".to_string()],
         )
-        .await;
+        .await
+        .expect("Should create subscription");
     query_manager
         .start_query("cascade-query".to_string(), rx)
         .await

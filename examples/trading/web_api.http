@@ -18,18 +18,15 @@
 
 @hostname = localhost
 @port = 8080
-@source_id = price-feed
 
-### GET LIST of all sources
+### Health Check
+GET http://{{hostname}}:{{port}}/health
+
+### GET LIST of all Source
 GET http://{{hostname}}:{{port}}/sources
 
-### GET STATE of a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}
+### GET LIST of all Queries
+GET http://{{hostname}}:{{port}}/queries
 
-### START a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/start
-Content-Type: application/json
-
-### STOP a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/stop
-Content-Type: application/json
+### GET LIST of all Reactions
+GET http://{{hostname}}:{{port}}/reactions

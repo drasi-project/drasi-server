@@ -18,15 +18,14 @@
 
 @hostname = localhost
 @port = 8080
-@query_id = watchlist-query
+# @query_id = all-stocks
+# @query_id = watchlist-query
 # @query_id = portfolio-query
+@query_id = stock-prices
 # @query_id = top-gainers-query
 # @query_id = top-losers-query
 # @query_id = high-volume-query
 # @query_id = sector-performance-query
-
-### Homepage
-GET http://{{hostname}}:{{port}}/
 
 ### GET LIST of all queries
 GET http://{{hostname}}:{{port}}/queries
@@ -39,10 +38,6 @@ GET http://{{hostname}}:{{port}}/queries/{{query_id}}/results
 
 ### START a specific query
 GET http://{{hostname}}:{{port}}/queries/{{query_id}}/start
-Content-Type: application/json
-
-### PAUSE a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/pause
 Content-Type: application/json
 
 ### STOP a specific query

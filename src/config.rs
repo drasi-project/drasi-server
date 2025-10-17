@@ -21,9 +21,11 @@ use std::fs;
 use std::path::Path;
 
 /// DrasiServer configuration that wraps API settings and Server settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DrasiServerConfig {
+    #[serde(default)]
     pub api: ApiSettings,
+    #[serde(default)]
     pub server: ServerSettings,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
@@ -33,20 +35,8 @@ pub struct DrasiServerConfig {
     pub reactions: Vec<ReactionConfig>,
 }
 
-impl Default for DrasiServerConfig {
-    fn default() -> Self {
-        Self {
-            api: ApiSettings::default(),
-            server: ServerSettings::default(),
-            sources: Vec::new(),
-            queries: Vec::new(),
-            reactions: Vec::new(),
-        }
-    }
-}
-
 /// Server settings for DrasiServer wrapper (not DrasiServerCore library)
-/// These control DrasiServer's operational behavior like logging and persistence
+/// These control DrasiServer's operational behavior like logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
     #[serde(default = "default_log_level")]
@@ -133,57 +123,17 @@ impl DrasiServerConfig {
     }
 
     pub fn validate(&self) -> Result<()> {
-        // Validate unique source ids
-        let mut source_ids = std::collections::HashSet::new();
-        for source in &self.sources {
-            if !source_ids.insert(&source.id) {
-                return Err(anyhow::anyhow!("Duplicate source id: '{}'", source.id));
-            }
+        // Validate wrapper-specific settings
+        if self.api.port == 0 {
+            return Err(anyhow::anyhow!("Invalid API port: {} (cannot be 0)", self.api.port));
         }
 
-        // Validate unique query ids
-        let mut query_ids = std::collections::HashSet::new();
-        for query in &self.queries {
-            if !query_ids.insert(&query.id) {
-                return Err(anyhow::anyhow!("Duplicate query id: '{}'", query.id));
-            }
+        if self.api.host.is_empty() {
+            return Err(anyhow::anyhow!("API host cannot be empty"));
         }
 
-        // Validate unique reaction ids
-        let mut reaction_ids = std::collections::HashSet::new();
-        for reaction in &self.reactions {
-            if !reaction_ids.insert(&reaction.id) {
-                return Err(anyhow::anyhow!("Duplicate reaction id: '{}'", reaction.id));
-            }
-        }
-
-        // Validate source references in queries
-        for query in &self.queries {
-            for source_id in &query.sources {
-                if !source_ids.contains(source_id) {
-                    return Err(anyhow::anyhow!(
-                        "Query '{}' references unknown source: '{}'",
-                        query.id,
-                        source_id
-                    ));
-                }
-            }
-        }
-
-        // Validate query references in reactions
-        for reaction in &self.reactions {
-            for query_id in &reaction.queries {
-                if !query_ids.contains(query_id) {
-                    return Err(anyhow::anyhow!(
-                        "Reaction '{}' references unknown query: '{}'",
-                        reaction.id,
-                        query_id
-                    ));
-                }
-            }
-        }
-
-        Ok(())
+        // Delegate core configuration validation to Core
+        self.to_core_config().validate()
     }
 
     /// Convert to DrasiServerCoreConfig (for compatibility with the core library)

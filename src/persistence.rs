@@ -12,252 +12,291 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::config::DrasiServerConfig;
 use anyhow::Result;
-use drasi_server_core::config::DrasiServerCoreConfig;
-use drasi_server_core::{QueryManager, ReactionManager, SourceManager};
-use log::{error, info, warn};
-use std::path::PathBuf;
+use log::{debug, error, info};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-/// Manages configuration persistence for the Drasi server
-#[derive(Clone)]
+/// Handles persistence of DrasiServerConfig to a YAML file.
+/// Uses atomic writes (temp file + rename) to prevent corruption.
 pub struct ConfigPersistence {
-    config_path: PathBuf,
-    server_settings: Arc<RwLock<drasi_server_core::config::DrasiServerCoreSettings>>,
-    source_manager: Arc<SourceManager>,
-    query_manager: Arc<QueryManager>,
-    reaction_manager: Arc<ReactionManager>,
-    skip_save: bool, // Skip saving to disk if true (either read-only file or disable_persistence)
+    config_file_path: PathBuf,
+    core: Arc<drasi_server_core::DrasiServerCore>,
+    api_host: String,
+    api_port: u16,
+    log_level: String,
+    disable_persistence: bool,
 }
 
 impl ConfigPersistence {
+    /// Create a new ConfigPersistence instance
     pub fn new(
-        config_path: PathBuf,
-        server_settings: drasi_server_core::config::DrasiServerCoreSettings,
-        source_manager: Arc<SourceManager>,
-        query_manager: Arc<QueryManager>,
-        reaction_manager: Arc<ReactionManager>,
-        skip_save: bool, // Skip saving to disk if true (either read-only file or disable_persistence)
+        config_file_path: PathBuf,
+        core: Arc<drasi_server_core::DrasiServerCore>,
+        api_host: String,
+        api_port: u16,
+        log_level: String,
+        disable_persistence: bool,
     ) -> Self {
         Self {
-            config_path,
-            server_settings: Arc::new(RwLock::new(server_settings)),
-            source_manager,
-            query_manager,
-            reaction_manager,
-            skip_save,
+            config_file_path,
+            core,
+            api_host,
+            api_port,
+            log_level,
+            disable_persistence,
         }
     }
 
-    /// Save the current configuration to disk
+    /// Save the current configuration to the config file using atomic writes.
+    /// Uses Core's public API to get current configuration snapshot.
     pub async fn save(&self) -> Result<()> {
-        if self.skip_save {
-            warn!("Skipping config save - either file is read-only or persistence is disabled");
+        if self.disable_persistence {
+            debug!("Persistence disabled, skipping save");
             return Ok(());
         }
 
-        // Build the complete configuration from all managers
-        let config = self.build_current_config().await?;
+        info!("Saving configuration to {}", self.config_file_path.display());
 
-        // Save to a temporary file first for atomicity
-        let temp_path = self.config_path.with_extension("tmp");
+        // Get current configuration from Core using public API
+        let core_config = self.core.get_current_config().await.map_err(|e| {
+            anyhow::anyhow!("Failed to get current config from DrasiServerCore: {}", e)
+        })?;
 
-        match config.save_to_file(&temp_path) {
-            Ok(_) => {
-                // Atomically rename the temp file to the actual config file
-                match std::fs::rename(&temp_path, &self.config_path) {
-                    Ok(_) => {
-                        info!(
-                            "Configuration saved successfully to: {}",
-                            self.config_path.display()
-                        );
-                        Ok(())
-                    }
-                    Err(e) => {
-                        error!("Failed to rename temp config file: {}", e);
-                        // Try to clean up the temp file
-                        let _ = std::fs::remove_file(&temp_path);
-                        Err(anyhow::anyhow!("Failed to save configuration: {}", e))
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to write configuration to temp file: {}", e);
-                // Try to clean up the temp file if it exists
-                let _ = std::fs::remove_file(&temp_path);
-                Err(anyhow::anyhow!("Failed to save configuration: {}", e))
-            }
-        }
+        // Wrap Core config with wrapper settings
+        let wrapper_config = DrasiServerConfig {
+            api: crate::config::ApiSettings {
+                host: self.api_host.clone(),
+                port: self.api_port,
+            },
+            server: crate::config::ServerSettings {
+                log_level: self.log_level.clone(),
+                disable_persistence: self.disable_persistence,
+            },
+            sources: core_config.sources,
+            queries: core_config.queries,
+            reactions: core_config.reactions,
+        };
+
+        // Validate before saving
+        wrapper_config.validate()?;
+
+        // Use atomic write: write to temp file, then rename
+        let temp_path = self.config_file_path.with_extension("tmp");
+
+        // Serialize to YAML
+        let yaml_content = serde_yaml::to_string(&wrapper_config)?;
+
+        // Write to temp file
+        std::fs::write(&temp_path, yaml_content).map_err(|e| {
+            error!(
+                "Failed to write temp config file {}: {}",
+                temp_path.display(),
+                e
+            );
+            anyhow::anyhow!("Failed to write temp config file: {}", e)
+        })?;
+
+        // Atomically rename temp file to actual config file
+        std::fs::rename(&temp_path, &self.config_file_path).map_err(|e| {
+            error!(
+                "Failed to rename temp config file {} to {}: {}",
+                temp_path.display(),
+                self.config_file_path.display(),
+                e
+            );
+            // Clean up temp file if rename fails
+            let _ = std::fs::remove_file(&temp_path);
+            anyhow::anyhow!("Failed to rename config file: {}", e)
+        })?;
+
+        info!(
+            "Configuration saved successfully to {}",
+            self.config_file_path.display()
+        );
+        Ok(())
     }
 
-    /// Build the current configuration from all managers
-    async fn build_current_config(&self) -> Result<DrasiServerCoreConfig> {
-        // Get all source configs
-        let source_names = self.source_manager.list_sources().await;
-        let mut sources = Vec::new();
-        for (name, _) in source_names {
-            if let Some(config) = self.source_manager.get_source_config(&name).await {
-                sources.push(config);
-            }
-        }
+    /// Check if the config file is writable
+    pub fn is_writable(&self) -> bool {
+        Self::check_write_access(&self.config_file_path)
+    }
 
-        // Get all query configs
-        let query_names = self.query_manager.list_queries().await;
-        let mut queries = Vec::new();
-        for (name, _) in query_names {
-            if let Some(config) = self.query_manager.get_query_config(&name).await {
-                queries.push(config);
-            }
-        }
-
-        // Get all reaction configs
-        let reaction_names = self.reaction_manager.list_reactions().await;
-        let mut reactions = Vec::new();
-        for (name, _) in reaction_names {
-            if let Some(config) = self.reaction_manager.get_reaction_config(&name).await {
-                reactions.push(config);
-            }
-        }
-
-        // Sort by id for consistent ordering in the config file
-        sources.sort_by(|a, b| a.id.cmp(&b.id));
-        queries.sort_by(|a, b| a.id.cmp(&b.id));
-        reactions.sort_by(|a, b| a.id.cmp(&b.id));
-
-        Ok(DrasiServerCoreConfig {
-            server: self.server_settings.read().await.clone(),
-            sources,
-            queries,
-            reactions,
-        })
+    /// Check if we have write access to a file
+    fn check_write_access(path: &Path) -> bool {
+        use std::fs::OpenOptions;
+        OpenOptions::new().append(true).open(path).is_ok()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server_core::channels::EventChannels;
-    use tempfile::NamedTempFile;
+    use drasi_server_core::config::{QueryConfig, QueryLanguage, SourceConfig};
+    use std::collections::HashMap;
+    use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn test_config_persistence_save() {
-        // Create a temporary file for testing
-        let temp_file = NamedTempFile::new().unwrap();
-        let config_path = temp_file.path().to_path_buf();
-
-        // Create test server settings
-        let server_settings = drasi_server_core::config::DrasiServerCoreSettings {
-            id: "test-server".to_string(),
-        };
-
-        // Create managers (we'll use mock implementations for testing)
-        let (channels, _receivers) = EventChannels::new();
-        let source_manager = Arc::new(SourceManager::new(
-            channels.source_change_tx.clone(),
-            channels.component_event_tx.clone(),
-        ));
-        let query_manager = Arc::new(QueryManager::new(
-            channels.query_result_tx.clone(),
-            channels.component_event_tx.clone(),
-            channels.bootstrap_request_tx.clone(),
-        ));
-        let reaction_manager = Arc::new(ReactionManager::new(
-            channels.component_event_tx.clone(),
-        ));
-
-        // Create config persistence
-        let config_persistence = ConfigPersistence::new(
-            config_path.clone(),
-            server_settings.clone(),
-            source_manager.clone(),
-            query_manager.clone(),
-            reaction_manager.clone(),
-            false, // not skip_save (should save)
-        );
-
-        // Add a test source
-        let source_config = drasi_server_core::config::SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            bootstrap_provider: None,
-        };
-        source_manager
-            .add_source(source_config.clone())
+    async fn create_test_core() -> Arc<drasi_server_core::DrasiServerCore> {
+        let core = drasi_server_core::DrasiServerCore::builder()
+            .with_id("test-server")
+            .add_source(SourceConfig {
+                id: "test-source".to_string(),
+                source_type: "mock".to_string(),
+                auto_start: false,
+                properties: HashMap::new(),
+                bootstrap_provider: None,
+            })
+            .add_query(QueryConfig {
+                id: "test-query".to_string(),
+                query: "MATCH (n) RETURN n".to_string(),
+                query_language: QueryLanguage::default(),
+                sources: vec!["test-source".to_string()],
+                auto_start: false,
+                properties: HashMap::new(),
+                joins: None,
+            })
+            .build()
             .await
-            .unwrap();
+            .expect("Failed to build test core");
 
-        // Save the configuration
-        config_persistence.save().await.unwrap();
-
-        // Load the saved configuration
-        let loaded_config =
-            DrasiServerCoreConfig::load_from_file(&config_path).unwrap();
-
-        // Verify the configuration was saved correctly
-        assert_eq!(loaded_config.server.id, "test-server");
-        assert_eq!(loaded_config.sources.len(), 1);
-        assert_eq!(loaded_config.sources[0].id, "test-source");
-        assert_eq!(loaded_config.queries.len(), 0);
-        assert_eq!(loaded_config.reactions.len(), 0);
+        Arc::new(core)
     }
 
     #[tokio::test]
-    async fn test_config_persistence_read_only() {
-        // Create a temporary file for testing
-        let temp_file = NamedTempFile::new().unwrap();
-        let config_path = temp_file.path().to_path_buf();
+    async fn test_persistence_saves_config() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
 
-        // Write initial config
-        let initial_config = DrasiServerCoreConfig::default();
-        initial_config.save_to_file(&config_path).unwrap();
+        // Create a test file
+        std::fs::write(&config_path, "").expect("Failed to create test file");
 
-        // Create managers
-        let (channels, _receivers) = EventChannels::new();
-        let source_manager = Arc::new(SourceManager::new(
-            channels.source_change_tx.clone(),
-            channels.component_event_tx.clone(),
-        ));
-        let query_manager = Arc::new(QueryManager::new(
-            channels.query_result_tx.clone(),
-            channels.component_event_tx.clone(),
-            channels.bootstrap_request_tx.clone(),
-        ));
-        let reaction_manager = Arc::new(ReactionManager::new(
-            channels.component_event_tx.clone(),
-        ));
+        let core = create_test_core().await;
 
-        // Create config persistence in skip_save mode
-        let config_persistence = ConfigPersistence::new(
+        let persistence = ConfigPersistence::new(
             config_path.clone(),
-            drasi_server_core::config::DrasiServerCoreSettings::default(),
-            source_manager.clone(),
-            query_manager.clone(),
-            reaction_manager.clone(),
-            true, // skip_save (don't write to disk)
+            core,
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false,
         );
 
-        // Add a test source
-        let source_config = drasi_server_core::config::SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            bootstrap_provider: None,
-        };
-        source_manager
-            .add_source(source_config.clone())
-            .await
-            .unwrap();
+        // Save should succeed
+        persistence.save().await.expect("Save failed");
 
-        // Try to save the configuration (should succeed but not write)
-        config_persistence.save().await.unwrap();
+        // Verify file was written
+        assert!(config_path.exists());
 
-        // Load the saved configuration - should still be empty
-        let loaded_config =
-            DrasiServerCoreConfig::load_from_file(&config_path).unwrap();
-        assert_eq!(loaded_config.sources.len(), 0); // Should still be empty
+        // Verify content is valid YAML
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            serde_yaml::from_str(&content).expect("Failed to parse saved config");
+
+        // Verify wrapper settings
+        assert_eq!(loaded_config.api.host, "127.0.0.1");
+        assert_eq!(loaded_config.api.port, 8080);
+        assert_eq!(loaded_config.server.log_level, "info");
+        assert!(!loaded_config.server.disable_persistence);
+
+        // Verify components
+        assert_eq!(loaded_config.sources.len(), 1);
+        assert_eq!(loaded_config.sources[0].id, "test-source");
+        assert_eq!(loaded_config.queries.len(), 1);
+        assert_eq!(loaded_config.queries[0].id, "test-query");
+    }
+
+    #[tokio::test]
+    async fn test_persistence_skips_when_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        let core = create_test_core().await;
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            core,
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true, // disable_persistence = true
+        );
+
+        // Save should succeed but not write anything
+        persistence.save().await.expect("Save failed");
+
+        // File should not exist
+        assert!(!config_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_persistence_atomic_write() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create initial file with some content
+        std::fs::write(&config_path, "initial content")
+            .expect("Failed to create initial file");
+
+        let core = create_test_core().await;
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            core,
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false,
+        );
+
+        // Save should succeed
+        persistence.save().await.expect("Save failed");
+
+        // Verify temp file doesn't exist (was renamed)
+        let temp_path = config_path.with_extension("tmp");
+        assert!(!temp_path.exists());
+
+        // Verify main file exists with valid content
+        assert!(config_path.exists());
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        assert!(content.contains("api:"));
+        assert!(!content.contains("initial content"));
+    }
+
+    #[tokio::test]
+    async fn test_is_writable() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create a writable file
+        std::fs::write(&config_path, "test").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            core,
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false,
+        );
+
+        // Should be writable
+        assert!(persistence.is_writable());
+
+        // Test non-existent file
+        let non_existent = temp_dir.path().join("does-not-exist.yaml");
+        let persistence_non_existent = ConfigPersistence::new(
+            non_existent,
+            create_test_core().await,
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false,
+        );
+
+        // Should not be writable
+        assert!(!persistence_non_existent.is_writable());
     }
 }

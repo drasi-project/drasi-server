@@ -69,3 +69,8 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
+
+# Integration testing with testcontainers
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["redis"] }
+redis = { version = "0.24", features = ["tokio-comp", "streams"] }
