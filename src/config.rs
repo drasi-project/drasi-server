@@ -16,7 +16,9 @@ use anyhow::Result;
 use drasi_server_core::config::DrasiServerCoreConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
+use std::str::FromStr;
 
 /// DrasiServer configuration that composes core config with API settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -83,6 +85,51 @@ fn default_port() -> u16 {
     8080
 }
 
+/// Validate hostname format according to RFC 1123
+/// Hostnames can contain:
+/// - letters (a-z, A-Z)
+/// - digits (0-9)
+/// - hyphens (-)
+/// - dots (.) as separators
+/// Each label (part between dots) must:
+/// - start and end with alphanumeric character
+/// - be 1-63 characters long
+/// Total length must be <= 253 characters
+fn is_valid_hostname(hostname: &str) -> bool {
+    if hostname.is_empty() || hostname.len() > 253 {
+        return false;
+    }
+
+    // Special case: wildcard hostname for binding to all interfaces
+    if hostname == "*" {
+        return true;
+    }
+
+    // Split by dots and validate each label
+    let labels: Vec<&str> = hostname.split('.').collect();
+
+    for label in labels {
+        if label.is_empty() || label.len() > 63 {
+            return false;
+        }
+
+        // Check if label starts and ends with alphanumeric
+        let chars: Vec<char> = label.chars().collect();
+        if !chars[0].is_ascii_alphanumeric() || !chars[chars.len() - 1].is_ascii_alphanumeric() {
+            return false;
+        }
+
+        // Check all characters are valid
+        for c in chars {
+            if !c.is_ascii_alphanumeric() && c != '-' {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 impl DrasiServerConfig {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_ref = path.as_ref();
@@ -128,6 +175,19 @@ impl DrasiServerConfig {
 
         if self.api.host.is_empty() {
             return Err(anyhow::anyhow!("API host cannot be empty"));
+        }
+
+        // Validate host format (IP address or hostname)
+        // Special cases: localhost, 0.0.0.0 (all interfaces)
+        if self.api.host != "localhost"
+            && self.api.host != "0.0.0.0"
+            && IpAddr::from_str(&self.api.host).is_err()
+            && !is_valid_hostname(&self.api.host)
+        {
+            return Err(anyhow::anyhow!(
+                "Invalid API host '{}': must be a valid IP address or hostname",
+                self.api.host
+            ));
         }
 
         // Delegate core configuration validation to Core

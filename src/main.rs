@@ -43,10 +43,6 @@ async fn main() -> Result<()> {
         }
         env_logger::init();
 
-        println!(
-            "Config file '{}' not found. Creating default configuration.",
-            cli.config.display()
-        );
         warn!(
             "Config file '{}' not found. Creating default configuration.",
             cli.config.display()

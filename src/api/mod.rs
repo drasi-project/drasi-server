@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod error;
 pub mod handlers;
 pub mod openapi;
 
@@ -21,5 +22,6 @@ mod tests;
 #[cfg(test)]
 mod joins_tests;
 
+pub use error::*;
 pub use handlers::*;
 pub use openapi::ApiDoc;
