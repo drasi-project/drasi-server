@@ -57,7 +57,10 @@ impl ConfigPersistence {
             return Ok(());
         }
 
-        info!("Saving configuration to {}", self.config_file_path.display());
+        info!(
+            "Saving configuration to {}",
+            self.config_file_path.display()
+        );
 
         // Get current configuration from Core using public API
         let core_config = self.core.get_current_config().await.map_err(|e| {
@@ -74,9 +77,7 @@ impl ConfigPersistence {
                 log_level: self.log_level.clone(),
                 disable_persistence: self.disable_persistence,
             },
-            sources: core_config.sources,
-            queries: core_config.queries,
-            reactions: core_config.reactions,
+            core_config,
         };
 
         // Validate before saving
@@ -200,10 +201,10 @@ mod tests {
         assert!(!loaded_config.server.disable_persistence);
 
         // Verify components
-        assert_eq!(loaded_config.sources.len(), 1);
-        assert_eq!(loaded_config.sources[0].id, "test-source");
-        assert_eq!(loaded_config.queries.len(), 1);
-        assert_eq!(loaded_config.queries[0].id, "test-query");
+        assert_eq!(loaded_config.core_config.sources.len(), 1);
+        assert_eq!(loaded_config.core_config.sources[0].id, "test-source");
+        assert_eq!(loaded_config.core_config.queries.len(), 1);
+        assert_eq!(loaded_config.core_config.queries[0].id, "test-query");
     }
 
     #[tokio::test]
@@ -235,8 +236,7 @@ mod tests {
         let config_path = temp_dir.path().join("test-config.yaml");
 
         // Create initial file with some content
-        std::fs::write(&config_path, "initial content")
-            .expect("Failed to create initial file");
+        std::fs::write(&config_path, "initial content").expect("Failed to create initial file");
 
         let core = create_test_core().await;
 

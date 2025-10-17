@@ -153,7 +153,6 @@ impl DrasiServerBuilder {
         self
     }
 
-
     /// Add an application source that can be programmatically controlled
     pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
         let id = id.into();

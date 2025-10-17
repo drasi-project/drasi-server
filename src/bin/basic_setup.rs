@@ -35,125 +35,130 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log_level: "info".to_string(),
             disable_persistence: false,
         },
-        sources: vec![
-            SourceConfig {
-                id: source_name.clone(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert(
-                        "data_type".to_string(),
-                        serde_json::json!("vehicle_location"),
-                    );
-                    props.insert("interval_seconds".to_string(), serde_json::json!(5));
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Mock vehicle location data"),
-                    );
-                    props
-                },
-                bootstrap_provider: None,
+        core_config: drasi_server_core::config::DrasiServerCoreConfig {
+            server_core: drasi_server_core::config::DrasiServerCoreSettings {
+                id: uuid::Uuid::new_v4().to_string(),
             },
-            SourceConfig {
-                id: "order-status-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert("data_type".to_string(), serde_json::json!("order_status"));
-                    props.insert("interval_seconds".to_string(), serde_json::json!(3));
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Mock order status updates"),
-                    );
-                    props
+            sources: vec![
+                SourceConfig {
+                    id: source_name.clone(),
+                    source_type: "mock".to_string(),
+                    auto_start: true,
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "data_type".to_string(),
+                            serde_json::json!("vehicle_location"),
+                        );
+                        props.insert("interval_seconds".to_string(), serde_json::json!(5));
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Mock vehicle location data"),
+                        );
+                        props
+                    },
+                    bootstrap_provider: None,
                 },
-                bootstrap_provider: None,
-            },
-        ],
-        queries: vec![
-            QueryConfig {
-                id: query_name.clone(),
-                query: r#"
+                SourceConfig {
+                    id: "order-status-source".to_string(),
+                    source_type: "mock".to_string(),
+                    auto_start: true,
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert("data_type".to_string(), serde_json::json!("order_status"));
+                        props.insert("interval_seconds".to_string(), serde_json::json!(3));
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Mock order status updates"),
+                        );
+                        props
+                    },
+                    bootstrap_provider: None,
+                },
+            ],
+            queries: vec![
+                QueryConfig {
+                    id: query_name.clone(),
+                    query: r#"
                     MATCH (d:Driver {status: 'available'})
                     WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
                     RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                            d.latitude AS lat, d.longitude AS lng, d.status AS status
                 "#
-                .to_string(),
-                query_language: QueryLanguage::default(),
-                auto_start: true,
-                sources: vec![source_name.clone()],
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Find all available drivers with location data"),
-                    );
-                    props
+                    .to_string(),
+                    query_language: QueryLanguage::default(),
+                    auto_start: true,
+                    sources: vec![source_name.clone()],
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Find all available drivers with location data"),
+                        );
+                        props
+                    },
+                    joins: None,
                 },
-                joins: None,
-            },
-            QueryConfig {
-                id: "pending-orders-query".to_string(),
-                query: r#"
+                QueryConfig {
+                    id: "pending-orders-query".to_string(),
+                    query: r#"
                     MATCH (o:Order)
                     WHERE o.status IN ['pending', 'preparing', 'ready']
                     RETURN elementId(o) AS orderId, o.status AS status,
                            o.restaurant AS restaurant, o.delivery_address AS address
                 "#
-                .to_string(),
-                query_language: QueryLanguage::default(),
-                auto_start: true,
-                sources: vec![source_name.clone()],
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Track orders that need processing"),
-                    );
-                    props
+                    .to_string(),
+                    query_language: QueryLanguage::default(),
+                    auto_start: true,
+                    sources: vec![source_name.clone()],
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Track orders that need processing"),
+                        );
+                        props
+                    },
+                    joins: None,
                 },
-                joins: None,
-            },
-        ],
-        reactions: vec![
-            ReactionConfig {
-                id: reaction_name.clone(),
-                reaction_type: "log".to_string(),
-                auto_start: true,
-                queries: vec![query_name.clone()],
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert("log_level".to_string(), serde_json::json!("info"));
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Log driver availability changes"),
-                    );
-                    props
+            ],
+            reactions: vec![
+                ReactionConfig {
+                    id: reaction_name.clone(),
+                    reaction_type: "log".to_string(),
+                    auto_start: true,
+                    queries: vec![query_name.clone()],
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert("log_level".to_string(), serde_json::json!("info"));
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Log driver availability changes"),
+                        );
+                        props
+                    },
                 },
-            },
-            ReactionConfig {
-                id: "order-notification-handler".to_string(),
-                reaction_type: "http".to_string(),
-                auto_start: true,
-                queries: vec![query_name.clone()],
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert(
-                        "endpoint".to_string(),
-                        serde_json::json!("http://localhost:9000/notifications"),
-                    );
-                    props.insert("method".to_string(), serde_json::json!("POST"));
-                    props.insert(
-                        "description".to_string(),
-                        serde_json::json!("Send notifications for query results"),
-                    );
-                    props
+                ReactionConfig {
+                    id: "order-notification-handler".to_string(),
+                    reaction_type: "http".to_string(),
+                    auto_start: true,
+                    queries: vec![query_name.clone()],
+                    properties: {
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "endpoint".to_string(),
+                            serde_json::json!("http://localhost:9000/notifications"),
+                        );
+                        props.insert("method".to_string(), serde_json::json!("POST"));
+                        props.insert(
+                            "description".to_string(),
+                            serde_json::json!("Send notifications for query results"),
+                        );
+                        props
+                    },
                 },
-            },
-        ],
+            ],
+        },
     };
 
     // Validate the configuration
