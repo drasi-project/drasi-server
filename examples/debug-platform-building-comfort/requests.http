@@ -2,9 +2,9 @@
 # Use with VSCode REST Client extension: https://marketplace.visualstudio.com/items?itemName=humao.rest-client
 
 @baseUrl = http://localhost:8080
-@sourceId = platform-redis-source
+@sourceId = facilities-db
 @queryId = room-comfort-level
-@logReactionId = log-hello-world
+@logReactionId = log-room-comfort-level
 @platformReactionId = platform-hello-world-results
 
 ### Health Check

@@ -9,7 +9,7 @@ api:
 
 # Server: Drasi Server wrapper runtime configuration
 server:
-  log_level: info
+  log_level: debug
   disable_persistence: true
 
 # Sources: Define where data comes from
@@ -65,7 +65,38 @@ reactions:
   # Log reaction - prints query results to console for debugging
   - id: log-room-comfort-level
     reaction_type: log
+    log_level: error
     auto_start: true
     # Queries this reaction subscribes to
     queries:
       - room-comfort-level
+
+  - id: profiler-room-comfort-level
+    reaction_type: profiler
+    auto_start: true
+    # Queries this reaction subscribes to
+    queries:
+      - room-comfort-level
+
+  - id: platform-room-comfort-level
+    reaction_type: platform
+    auto_start: true
+    # Queries this reaction subscribes to
+    queries:
+      - room-comfort-level
+    properties:
+      # Redis connection URL (same Redis instance as platform source)
+      redis_url: "redis://localhost:6379"
+
+      # Dapr pubsub component name (used in CloudEvent metadata)
+      pubsub_name: "drasi-pubsub"
+
+      # Event source identifier (used in CloudEvent source field)
+      source_name: "drasi-core"
+
+      # Maximum number of messages to retain in the results stream
+      # Uses Redis MAXLEN with approximate trimming (~)
+      max_stream_length: 10000
+
+      # Emit lifecycle control events (BootstrapStarted, Running, Stopped, etc.)
+      emit_control_events: true
