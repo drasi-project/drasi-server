@@ -70,6 +70,8 @@ async fn test_auto_start_components() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         })
         .add_reaction(ReactionConfig {
@@ -142,6 +144,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         })
         .add_query(QueryConfig {
@@ -151,6 +155,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         })
         .build()
@@ -212,6 +218,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         })
         .add_query(QueryConfig {
@@ -221,6 +229,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         })
         .add_reaction(ReactionConfig {

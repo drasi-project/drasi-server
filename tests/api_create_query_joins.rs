@@ -29,6 +29,8 @@ fn build_query_config() -> QueryConfig {
             ],
         }]),
         query_language: QueryLanguage::default(),
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
     }
 }
 

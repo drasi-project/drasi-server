@@ -98,6 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     joins: None,
+                    enable_bootstrap: true,
+                    bootstrap_buffer_size: 10000,
                 },
                 QueryConfig {
                     id: "pending-orders-query".to_string(),
@@ -120,6 +122,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     joins: None,
+                    enable_bootstrap: true,
+                    bootstrap_buffer_size: 10000,
                 },
             ],
             reactions: vec![

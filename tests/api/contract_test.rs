@@ -123,6 +123,8 @@ mod contract_tests {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -364,6 +366,8 @@ mod edge_case_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -434,6 +438,8 @@ mod edge_case_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
