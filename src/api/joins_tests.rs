@@ -76,6 +76,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -135,6 +137,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![restaurant_join.clone(), driver_join.clone()]),
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -166,6 +170,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -197,6 +203,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![]), // Empty joins array
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -243,6 +251,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config.clone()]),
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -305,6 +315,8 @@ mod api_query_joins_tests {
             auto_start: true,
             properties: HashMap::new(),
             joins: Some(vec![join_config]),
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 
@@ -366,6 +378,8 @@ mod api_query_joins_tests {
             auto_start: false,
             properties: HashMap::new(),
             joins: Some(vec![join_config]),
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 

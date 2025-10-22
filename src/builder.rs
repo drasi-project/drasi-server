@@ -106,6 +106,8 @@ impl DrasiServerBuilder {
             auto_start: true,
             properties: std::collections::HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
         });
         self
     }

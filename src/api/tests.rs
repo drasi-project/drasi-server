@@ -83,6 +83,8 @@ mod serialization_tests {
             auto_start: false,
             properties: std::collections::HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         };
 

@@ -37,6 +37,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         }],
         reactions: vec![ReactionConfig {
@@ -141,6 +143,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                enable_bootstrap: true,
+                bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
             },
             QueryConfig {
@@ -150,6 +154,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                enable_bootstrap: true,
+                bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
             },
             QueryConfig {
@@ -159,6 +165,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
+                enable_bootstrap: true,
+                bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
             },
         ],
@@ -230,6 +238,8 @@ async fn test_component_failure_recovery() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
         }],
         reactions: vec![ReactionConfig {

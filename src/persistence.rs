@@ -156,6 +156,8 @@ mod tests {
                 auto_start: false,
                 properties: HashMap::new(),
                 joins: None,
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
             })
             .build()
             .await
