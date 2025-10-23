@@ -79,6 +79,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Call the API handler
@@ -140,6 +141,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Call the API handler
@@ -173,6 +175,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Call the API handler
@@ -206,6 +209,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Call the API handler
@@ -254,6 +258,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Create the query
@@ -318,6 +323,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Serialize to JSON
@@ -381,6 +387,7 @@ mod api_query_joins_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         // Try to create query in read-only mode

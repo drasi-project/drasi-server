@@ -72,6 +72,8 @@ queries:
       RETURN p.id, p.name, p.quantity, p.reorder_threshold
     sources: [inventory-db]
     auto_start: true
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
 
 reactions:
   - id: alert-webhook
@@ -114,7 +116,6 @@ DrasiServer orchestrates three types of components that work together to create 
 Data ingestion points that connect to your systems:
 - **PostgreSQL** (`postgres`) - Monitor table changes via WAL replication
 - **HTTP Endpoints** (`http`) - Poll REST APIs for updates
-- **HTTP Adaptive** (`http_adaptive`) - Adaptive HTTP polling with batching
 - **gRPC Streams** (`grpc`) - Subscribe to real-time data feeds
 - **Platform** (`platform`) - Redis Streams integration for Drasi Platform
 - **Mock** (`mock`) - Test data generation
@@ -133,12 +134,13 @@ RETURN order.id, item.sku, item.quantity - item.inventory_count as shortage
 ### Reactions
 Automated responses triggered by query results:
 - **HTTP Webhooks** (`http`) - Call external APIs
-- **HTTP Adaptive** (`http_adaptive`) - Adaptive HTTP webhooks with retry logic
+- **HTTP Adaptive** (`http_adaptive` or `adaptive_http`) - Adaptive HTTP webhooks with retry logic
 - **Server-Sent Events** (`sse`) - Stream to browsers
 - **gRPC Streams** (`grpc`) - Push to services
-- **gRPC Adaptive** (`grpc_adaptive`) - Adaptive gRPC streams with retry logic
+- **gRPC Adaptive** (`grpc_adaptive` or `adaptive_grpc`) - Adaptive gRPC streams with retry logic
 - **Log** (`log`) - Console logging for debugging
-- **Platform** (`platform`) - Platform-specific reactions
+- **Platform** (`platform`) - Redis Streams publishing with CloudEvent format
+- **Profiler** (`profiler`) - Performance profiling for queries
 - **Application** (`application`) - Custom code handlers for embedded usage
 
 ## Building from Source
@@ -196,28 +198,38 @@ server:
   log_level: info            # Log level (trace, debug, info, warn, error)
   disable_persistence: false # Disable automatic config file persistence
 
+# Server core settings (optional)
+server_core:
+  id: my-server-id                    # Unique server ID (auto-generated if not set)
+  priority_queue_capacity: 10000      # Default capacity for query/reaction priority queues
+
 # Data sources
 sources:
   - id: unique-source-id
-    source_type: postgres           # Source type
+    source_type: postgres           # Source type (postgres, http, grpc, platform, mock, application)
     auto_start: true                # Start automatically
-    bootstrap_provider:             # Optional: Load initial data
-      type: scriptfile              # Bootstrap provider type
-      file_paths:
-        - path/to/data.jsonl        # Path to initial data file
+    bootstrap_provider:             # Optional: Load initial data (see Bootstrap Providers section)
+      type: scriptfile              # Provider type: postgres, application, scriptfile, platform, noop
+      file_paths:                   # For scriptfile provider
+        - path/to/data.jsonl
     properties:                     # Source-specific properties
       host: localhost
       database: mydb
 
-# Continuous queries  
+# Continuous queries
 queries:
   - id: unique-query-id
-    query: |                       # Cypher query
+    query: |                       # Cypher or GQL query
       MATCH (n:Node)
       RETURN n
+    queryLanguage: Cypher          # Query language (Cypher or GQL, default: Cypher)
     sources: [source-id]           # Source subscriptions
-    auto_start: true
-    joins:                         # Optional joins
+    auto_start: true               # Start automatically (default: true)
+    enableBootstrap: true          # Enable bootstrap data (default: true)
+    bootstrapBufferSize: 10000     # Buffer size during bootstrap (default: 10000)
+    priority_queue_capacity: 5000  # Override default priority queue capacity (optional)
+    properties: {}                 # Query-specific properties
+    joins:                         # Optional synthetic joins
       - id: RELATIONSHIP_TYPE
         keys:
           - label: Node1
@@ -228,9 +240,10 @@ queries:
 # Reactions
 reactions:
   - id: unique-reaction-id
-    reaction_type: http   # Reaction type
+    reaction_type: http            # Reaction type (http, grpc, sse, log, platform, profiler, etc.)
     queries: [query-id]            # Query subscriptions
-    auto_start: true
+    auto_start: true               # Start automatically (default: true)
+    priority_queue_capacity: 5000  # Override default priority queue capacity (optional)
     properties:                    # Reaction-specific properties
       endpoint: https://example.com
 ```
@@ -434,7 +447,7 @@ POST /reactions/{id}/stop
 ### API Documentation
 
 Interactive API documentation is available at:
-- Swagger UI: `http://localhost:8080/docs`
+- Swagger UI: `http://localhost:8080/docs/`
 - OpenAPI spec: `http://localhost:8080/api-docs/openapi.json`
 
 ### API Response Format
@@ -493,6 +506,73 @@ queries:
       WHERE s.status = 'healthy'
         AND d.status = 'unhealthy'
       RETURN s.name, collect(d.name) as affected_dependencies
+```
+
+## Bootstrap Providers
+
+DrasiServer supports pluggable bootstrap providers that supply initial data to queries independently from source streaming. Any source can use any bootstrap provider, enabling powerful patterns like "bootstrap from database, stream changes from HTTP."
+
+### Available Bootstrap Providers
+
+#### PostgreSQL Provider (`postgres`)
+Loads initial data from PostgreSQL using snapshot-based bootstrap with LSN coordination:
+```yaml
+bootstrap_provider:
+  type: postgres
+  # Uses source properties for connection details
+```
+
+#### Script File Provider (`scriptfile`)
+Loads initial data from JSONL (JSON Lines) files, useful for testing and development:
+```yaml
+bootstrap_provider:
+  type: scriptfile
+  file_paths:
+    - /path/to/initial_data.jsonl
+    - /path/to/more_data.jsonl  # Multiple files processed in order
+```
+
+#### Platform Provider (`platform`)
+Fetches initial data from a Query API service in a remote Drasi environment:
+```yaml
+bootstrap_provider:
+  type: platform
+  query_api_url: http://remote-drasi:8080  # Query API endpoint
+  timeout_seconds: 300                      # Request timeout (default: 300)
+```
+
+#### Application Provider (`application`)
+Replays stored insert events for application sources:
+```yaml
+bootstrap_provider:
+  type: application
+  # Automatically used for application sources
+```
+
+#### No-Op Provider (`noop`)
+Returns no bootstrap data (useful for streaming-only sources):
+```yaml
+bootstrap_provider:
+  type: noop
+```
+
+### Script File Format
+
+Script files use JSONL format with these record types:
+- **Header** (required first): Metadata about the script
+- **Node**: Graph nodes with labels and properties
+- **Relation**: Relationships between nodes
+- **Comment**: Filtered out during processing
+- **Label**: Checkpoint markers
+- **Finish** (optional): Marks end of data
+
+Example script file:
+```jsonl
+{"type": "Header", "version": "1.0", "description": "Initial product data"}
+{"type": "Node", "id": "1", "labels": ["Product"], "properties": {"name": "Widget", "price": 99.99}}
+{"type": "Node", "id": "2", "labels": ["Category"], "properties": {"name": "Hardware"}}
+{"type": "Relation", "id": "r1", "startId": "1", "endId": "2", "type": "IN_CATEGORY", "properties": {}}
+{"type": "Finish"}
 ```
 
 ## Production Deployment
@@ -602,6 +682,12 @@ A comprehensive real-world example demonstrating advanced features:
 - HTTP sources for live data
 - Complex multi-source queries with joins
 - Full production-like configuration
+
+## Important Limitations
+
+- **Query Language**: Drasi Core does not support Cypher and GQL queries with `ORDER BY`, `TOP`, and `LIMIT` clauses
+- **Nested Submodules**: The project uses nested Git submodules which must be initialized recursively
+- **Bootstrap Providers**: Not all sources may work correctly with all bootstrap providers - refer to the examples for tested combinations
 
 ## Contributing
 

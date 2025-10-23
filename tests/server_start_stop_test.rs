@@ -73,6 +73,7 @@ async fn test_auto_start_components() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -80,6 +81,7 @@ async fn test_auto_start_components() -> Result<()> {
             queries: vec!["test-query".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .build()
         .await?;
@@ -147,6 +149,7 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         })
         .add_query(QueryConfig {
             id: "manual-query".to_string(),
@@ -158,6 +161,7 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         })
         .build()
         .await?;
@@ -221,6 +225,7 @@ async fn test_component_startup_sequence() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         })
         .add_query(QueryConfig {
             id: "query2".to_string(),
@@ -232,6 +237,7 @@ async fn test_component_startup_sequence() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "reaction1".to_string(),
@@ -239,6 +245,7 @@ async fn test_component_startup_sequence() -> Result<()> {
             queries: vec!["query1".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "reaction2".to_string(),
@@ -246,6 +253,7 @@ async fn test_component_startup_sequence() -> Result<()> {
             queries: vec!["query2".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .build()
         .await?;
