@@ -69,6 +69,7 @@ async fn test_dynamic_component_management() {
         auto_start: true,
         properties: HashMap::new(),
         bootstrap_provider: None,
+        broadcast_channel_capacity: None,
     };
 
     server
@@ -95,7 +96,7 @@ async fn test_dynamic_component_management() {
 async fn test_server_with_api() {
     // Create server with API
     let _server = DrasiServerBuilder::new()
-        .enable_api_with_port(0) // Use port 0 for random available port
+        .with_port(0) // Use port 0 for random available port
         .build()
         .await
         .expect("Failed to build server");
@@ -149,6 +150,7 @@ async fn test_concurrent_operations() {
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
+                broadcast_channel_capacity: None,
             };
             server_clone.create_source(config).await
         });

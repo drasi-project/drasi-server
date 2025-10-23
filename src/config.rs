@@ -20,11 +20,9 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 
-/// DrasiServer configuration that composes core config with API settings
+/// DrasiServer configuration that composes core config with server settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DrasiServerConfig {
-    #[serde(default)]
-    pub api: ApiSettings,
     #[serde(default)]
     pub server: ServerSettings,
     /// Core configuration (sources, queries, reactions)
@@ -33,9 +31,13 @@ pub struct DrasiServerConfig {
 }
 
 /// Server settings for DrasiServer
-/// These control DrasiServer's operational behavior like logging
+/// These control DrasiServer's operational behavior including network binding
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
+    #[serde(default = "default_host")]
+    pub host: String,
+    #[serde(default = "default_port")]
+    pub port: u16,
     #[serde(default = "default_log_level")]
     pub log_level: String,
     #[serde(default = "default_disable_persistence")]
@@ -45,34 +47,10 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
-            log_level: "info".to_string(),
-            disable_persistence: false,
-        }
-    }
-}
-
-fn default_log_level() -> String {
-    "info".to_string()
-}
-
-fn default_disable_persistence() -> bool {
-    false
-}
-
-/// API server settings for Drasi Server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiSettings {
-    #[serde(default = "default_host")]
-    pub host: String,
-    #[serde(default = "default_port")]
-    pub port: u16,
-}
-
-impl Default for ApiSettings {
-    fn default() -> Self {
-        Self {
             host: "0.0.0.0".to_string(),
             port: 8080,
+            log_level: "info".to_string(),
+            disable_persistence: false,
         }
     }
 }
@@ -85,15 +63,25 @@ fn default_port() -> u16 {
     8080
 }
 
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_disable_persistence() -> bool {
+    false
+}
+
 /// Validate hostname format according to RFC 1123
 /// Hostnames can contain:
 /// - letters (a-z, A-Z)
 /// - digits (0-9)
 /// - hyphens (-)
 /// - dots (.) as separators
+///
 /// Each label (part between dots) must:
 /// - start and end with alphanumeric character
 /// - be 1-63 characters long
+///
 /// Total length must be <= 253 characters
 fn is_valid_hostname(hostname: &str) -> bool {
     if hostname.is_empty() || hostname.len() > 253 {
@@ -166,27 +154,27 @@ impl DrasiServerConfig {
 
     pub fn validate(&self) -> Result<()> {
         // Validate wrapper-specific settings
-        if self.api.port == 0 {
+        if self.server.port == 0 {
             return Err(anyhow::anyhow!(
-                "Invalid API port: {} (cannot be 0)",
-                self.api.port
+                "Invalid server port: {} (cannot be 0)",
+                self.server.port
             ));
         }
 
-        if self.api.host.is_empty() {
-            return Err(anyhow::anyhow!("API host cannot be empty"));
+        if self.server.host.is_empty() {
+            return Err(anyhow::anyhow!("Server host cannot be empty"));
         }
 
         // Validate host format (IP address or hostname)
         // Special cases: localhost, 0.0.0.0 (all interfaces)
-        if self.api.host != "localhost"
-            && self.api.host != "0.0.0.0"
-            && IpAddr::from_str(&self.api.host).is_err()
-            && !is_valid_hostname(&self.api.host)
+        if self.server.host != "localhost"
+            && self.server.host != "0.0.0.0"
+            && IpAddr::from_str(&self.server.host).is_err()
+            && !is_valid_hostname(&self.server.host)
         {
             return Err(anyhow::anyhow!(
-                "Invalid API host '{}': must be a valid IP address or hostname",
-                self.api.host
+                "Invalid server host '{}': must be a valid IP address or hostname",
+                self.server.host
             ));
         }
 

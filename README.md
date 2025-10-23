@@ -46,11 +46,9 @@ git submodule update --init --recursive
 
 ```yaml
 # config/server.yaml
-api:
+server:
   host: 0.0.0.0
   port: 8080
-
-server:
   log_level: info
   disable_persistence: false
 
@@ -188,13 +186,10 @@ RUST_LOG=debug cargo run
 DrasiServer uses YAML configuration files with the following structure:
 
 ```yaml
-# API server settings
-api:
-  host: 0.0.0.0              # Bind address
-  port: 8080                 # API port
-
 # Server settings
 server:
+  host: 0.0.0.0              # Bind address
+  port: 8080                 # API port
   log_level: info            # Log level (trace, debug, info, warn, error)
   disable_persistence: false # Disable automatic config file persistence
 
@@ -252,7 +247,7 @@ reactions:
 
 DrasiServer validates all configuration on startup and when creating components via API:
 
-**API Settings Validation:**
+**Server Settings Validation:**
 - Port must be non-zero (1-65535)
 - Host must be a valid IP address, hostname, "localhost", "0.0.0.0", or "*"
 - Hostnames are validated per RFC 1123 standards
@@ -292,10 +287,9 @@ DrasiServer supports automatic persistence of runtime configuration changes made
 
 **Example Configuration:**
 ```yaml
-api:
+server:
   host: 0.0.0.0
   port: 8080
-server:
   log_level: info
   disable_persistence: false  # Enable persistence (default)
 sources: []
@@ -321,14 +315,14 @@ use drasi_server::{DrasiServerBuilder, DrasiServer};
 async fn main() -> Result<()> {
     // Using builder pattern
     let server = DrasiServerBuilder::new()
-        .with_api_port(8080)
+        .with_port(8080)
         .with_log_level("info")
         .with_source("my-source", source_config)
         .with_query("my-query", "MATCH (n) RETURN n", vec!["my-source"])
         .with_reaction("my-reaction", reaction_config)
         .build()
         .await?;
-    
+
     server.run().await?;
     
     // Or load from config file

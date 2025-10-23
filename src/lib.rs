@@ -22,7 +22,7 @@ pub mod server;
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
-pub use config::{ApiSettings, DrasiServerConfig, ServerSettings};
+pub use config::{DrasiServerConfig, ServerSettings};
 pub use server::DrasiServer;
 
 // Re-export from drasi-server-core (public API only)

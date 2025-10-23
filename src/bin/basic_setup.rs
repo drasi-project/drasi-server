@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server::{
-    ApiSettings, DrasiServerConfig, QueryConfig, ReactionConfig, ServerSettings, SourceConfig,
-};
+use drasi_server::{DrasiServerConfig, QueryConfig, ReactionConfig, ServerSettings, SourceConfig};
 use drasi_server_core::config::QueryLanguage;
 use std::collections::HashMap;
 
@@ -27,18 +25,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a basic server configuration with real Drasi patterns
     let config = DrasiServerConfig {
-        api: ApiSettings {
+        server: ServerSettings {
             host: "127.0.0.1".to_string(),
             port: 8080,
-        },
-        server: ServerSettings {
             log_level: "info".to_string(),
             disable_persistence: false,
         },
         core_config: drasi_server_core::config::DrasiServerCoreConfig {
             server_core: drasi_server_core::config::DrasiServerCoreSettings {
                 id: uuid::Uuid::new_v4().to_string(),
-                priority_queue_capacity: None
+                priority_queue_capacity: None,
+                broadcast_channel_capacity: None,
             },
             sources: vec![
                 SourceConfig {
@@ -59,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     bootstrap_provider: None,
+                    broadcast_channel_capacity: None,
                 },
                 SourceConfig {
                     id: "order-status-source".to_string(),
@@ -75,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     bootstrap_provider: None,
+                    broadcast_channel_capacity: None,
                 },
             ],
             queries: vec![
@@ -101,7 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     joins: None,
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
-                    priority_queue_capacity: None
+                    priority_queue_capacity: None,
+                    broadcast_channel_capacity: None,
                 },
                 QueryConfig {
                     id: "pending-orders-query".to_string(),
@@ -126,7 +126,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     joins: None,
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
-                    priority_queue_capacity: None
+                    priority_queue_capacity: None,
+                    broadcast_channel_capacity: None,
                 },
             ],
             reactions: vec![

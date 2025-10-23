@@ -23,8 +23,8 @@ use std::sync::Arc;
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
     core: Arc<drasi_server_core::DrasiServerCore>,
-    api_host: String,
-    api_port: u16,
+    host: String,
+    port: u16,
     log_level: String,
     disable_persistence: bool,
 }
@@ -34,16 +34,16 @@ impl ConfigPersistence {
     pub fn new(
         config_file_path: PathBuf,
         core: Arc<drasi_server_core::DrasiServerCore>,
-        api_host: String,
-        api_port: u16,
+        host: String,
+        port: u16,
         log_level: String,
         disable_persistence: bool,
     ) -> Self {
         Self {
             config_file_path,
             core,
-            api_host,
-            api_port,
+            host,
+            port,
             log_level,
             disable_persistence,
         }
@@ -69,11 +69,9 @@ impl ConfigPersistence {
 
         // Wrap Core config with wrapper settings
         let wrapper_config = DrasiServerConfig {
-            api: crate::config::ApiSettings {
-                host: self.api_host.clone(),
-                port: self.api_port,
-            },
             server: crate::config::ServerSettings {
+                host: self.host.clone(),
+                port: self.port,
                 log_level: self.log_level.clone(),
                 disable_persistence: self.disable_persistence,
             },
@@ -147,6 +145,7 @@ mod tests {
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
+                broadcast_channel_capacity: None,
             })
             .add_query(QueryConfig {
                 id: "test-query".to_string(),
@@ -159,6 +158,7 @@ mod tests {
                 enable_bootstrap: true,
                 bootstrap_buffer_size: 10000,
                 priority_queue_capacity: None,
+                broadcast_channel_capacity: None,
             })
             .build()
             .await
@@ -198,8 +198,8 @@ mod tests {
             serde_yaml::from_str(&content).expect("Failed to parse saved config");
 
         // Verify wrapper settings
-        assert_eq!(loaded_config.api.host, "127.0.0.1");
-        assert_eq!(loaded_config.api.port, 8080);
+        assert_eq!(loaded_config.server.host, "127.0.0.1");
+        assert_eq!(loaded_config.server.port, 8080);
         assert_eq!(loaded_config.server.log_level, "info");
         assert!(!loaded_config.server.disable_persistence);
 
@@ -262,7 +262,7 @@ mod tests {
         // Verify main file exists with valid content
         assert!(config_path.exists());
         let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
-        assert!(content.contains("api:"));
+        assert!(content.contains("server:"));
         assert!(!content.contains("initial content"));
     }
 

@@ -3,22 +3,11 @@
 //! These tests ensure API operations maintain consistent state across components,
 //! testing the public API for component lifecycle management.
 
-use drasi_server_core::{config::QueryLanguage, DrasiServerCore, QueryConfig, ReactionConfig, SourceConfig};
+use drasi_server_core::{
+    config::QueryLanguage, DrasiServerCore, QueryConfig, ReactionConfig, SourceConfig,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-
-/// Helper function to create test DrasiServerCore with empty config
-async fn create_test_core() -> Arc<DrasiServerCore> {
-    let core = DrasiServerCore::builder()
-        .with_id("test-server")
-        .build()
-        .await
-        .expect("Failed to build test core");
-
-    let core = Arc::new(core);
-    core.start().await.expect("Failed to start core");
-    core
-}
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() {
@@ -58,6 +47,7 @@ async fn test_components_with_auto_start() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "test-query".to_string(),
@@ -70,6 +60,7 @@ async fn test_components_with_auto_start() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -110,6 +101,7 @@ async fn test_components_without_auto_start() {
             auto_start: false,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "test-query".to_string(),
@@ -122,6 +114,7 @@ async fn test_components_without_auto_start() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -160,6 +153,7 @@ async fn test_restart_with_components() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "restart-query".to_string(),
@@ -172,6 +166,7 @@ async fn test_restart_with_components() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .build()
         .await
@@ -213,6 +208,7 @@ async fn test_multiple_query_sources() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_source(SourceConfig {
             id: "source2".to_string(),
@@ -220,6 +216,7 @@ async fn test_multiple_query_sources() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "multi-source-query".to_string(),
@@ -232,6 +229,7 @@ async fn test_multiple_query_sources() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .build()
         .await
@@ -261,6 +259,7 @@ async fn test_multiple_reaction_queries() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "query1".to_string(),
@@ -273,6 +272,7 @@ async fn test_multiple_reaction_queries() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "query2".to_string(),
@@ -285,6 +285,7 @@ async fn test_multiple_reaction_queries() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "multi-query-reaction".to_string(),
@@ -322,6 +323,7 @@ async fn test_query_with_joins() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_source(SourceConfig {
             id: "join-source2".to_string(),
@@ -329,6 +331,7 @@ async fn test_query_with_joins() {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         })
         .add_query(QueryConfig {
             id: "join-query".to_string(),
@@ -353,6 +356,7 @@ async fn test_query_with_joins() {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         })
         .build()
         .await

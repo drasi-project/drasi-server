@@ -74,8 +74,7 @@ The server uses YAML configuration files (default: `config/server.yaml`):
 - Sources defined under `sources:`
 - Queries defined under `queries:`
 - Reactions defined under `reactions:`
-- API settings under `api:` (host, port)
-- Server settings under `server:` (log_level, disable_persistence)
+- Server settings under `server:` (host, port, log_level, disable_persistence)
 
 ### Configuration Persistence
 
@@ -109,10 +108,9 @@ DrasiServer separates two independent concepts:
 
 **Example Configuration:**
 ```yaml
-api:
+server:
   host: "0.0.0.0"
   port: 8080
-server:
   log_level: "info"
   disable_persistence: false  # Enable persistence (default)
 sources:

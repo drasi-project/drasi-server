@@ -2,13 +2,10 @@
 # This example demonstrates using the platform source to consume events from Redis Streams
 # with bootstrap data from a Query API service
 
-# API: Drasi Server API configuration
-api:
+# Server: Drasi Server configuration
+server:
   host: 0.0.0.0
   port: 8080
-
-# Server: Drasi Server wrapper runtime configuration
-server:
   log_level: debug
   disable_persistence: true
 

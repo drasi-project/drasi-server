@@ -27,8 +27,8 @@ pub struct DrasiServerBuilder {
     query_configs: Vec<QueryConfig>,
     reaction_configs: Vec<ReactionConfig>,
     enable_api: bool,
-    api_port: Option<u16>,
-    api_host: Option<String>,
+    port: Option<u16>,
+    host: Option<String>,
     config_file_path: Option<String>,
     application_source_names: Vec<String>,
     application_reaction_names: Vec<String>,
@@ -39,14 +39,15 @@ impl Default for DrasiServerBuilder {
         Self {
             server_settings: ServerSettings {
                 id: uuid::Uuid::new_v4().to_string(),
-                priority_queue_capacity: None
+                priority_queue_capacity: None,
+                broadcast_channel_capacity: None,
             },
             source_configs: Vec::new(),
             query_configs: Vec::new(),
             reaction_configs: Vec::new(),
             enable_api: false,
-            api_port: Some(8080),
-            api_host: Some("127.0.0.1".to_string()),
+            port: Some(8080),
+            host: Some("127.0.0.1".to_string()),
             config_file_path: None,
             application_source_names: Vec::new(),
             application_reaction_names: Vec::new(),
@@ -82,6 +83,7 @@ impl DrasiServerBuilder {
             auto_start: true,
             properties: std::collections::HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         });
         self
     }
@@ -109,7 +111,8 @@ impl DrasiServerBuilder {
             joins: None,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None
+            priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         });
         self
     }
@@ -144,17 +147,17 @@ impl DrasiServerBuilder {
     }
 
     /// Enable the REST API on a specific port
-    pub fn enable_api_with_port(mut self, port: u16) -> Self {
+    pub fn with_port(mut self, port: u16) -> Self {
         self.enable_api = true;
-        self.api_port = Some(port);
+        self.port = Some(port);
         self
     }
 
     /// Enable the REST API on a specific host and port
-    pub fn enable_api_with_host_port(mut self, host: impl Into<String>, port: u16) -> Self {
+    pub fn with_host_port(mut self, host: impl Into<String>, port: u16) -> Self {
         self.enable_api = true;
-        self.api_host = Some(host.into());
-        self.api_port = Some(port);
+        self.host = Some(host.into());
+        self.port = Some(port);
         self
     }
 
@@ -168,6 +171,7 @@ impl DrasiServerBuilder {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
+            broadcast_channel_capacity: None,
         });
         self
     }
@@ -224,24 +228,16 @@ impl DrasiServerBuilder {
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
-        let api_host = self
-            .api_host
-            .clone()
-            .unwrap_or_else(|| "127.0.0.1".to_string());
-        let api_port = self.api_port.unwrap_or(8080);
+        let host = self.host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = self.port.unwrap_or(8080);
         let config_file = self.config_file_path.clone();
 
         // Build the core server
         let core = self.build_core().await?;
 
         // Create the full server with optional features
-        let server = crate::server::DrasiServer::from_core(
-            core,
-            api_enabled,
-            api_host,
-            api_port,
-            config_file,
-        );
+        let server =
+            crate::server::DrasiServer::from_core(core, api_enabled, host, port, config_file);
 
         Ok(server)
     }
@@ -307,8 +303,8 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         let builder = DrasiServerBuilder::new();
-        assert_eq!(builder.api_host, Some("127.0.0.1".to_string()));
-        assert_eq!(builder.api_port, Some(8080));
+        assert_eq!(builder.host, Some("127.0.0.1".to_string()));
+        assert_eq!(builder.port, Some(8080));
         assert!(!builder.enable_api);
     }
 
@@ -322,12 +318,12 @@ mod tests {
                 vec!["test_source".to_string()],
             )
             .with_log_reaction("test_reaction", vec!["test_query".to_string()])
-            .enable_api_with_port(9090);
+            .with_port(9090);
 
         assert_eq!(builder.source_configs.len(), 1);
         assert_eq!(builder.query_configs.len(), 1);
         assert_eq!(builder.reaction_configs.len(), 1);
         assert!(builder.enable_api);
-        assert_eq!(builder.api_port, Some(9090));
+        assert_eq!(builder.port, Some(9090));
     }
 }

@@ -272,6 +272,7 @@ async fn test_query_lifecycle_via_api() {
         auto_start: false,
         properties: HashMap::new(),
         bootstrap_provider: None,
+        broadcast_channel_capacity: None,
     };
     core.create_source(source_config.clone()).await.unwrap();
 
@@ -334,6 +335,7 @@ async fn test_reaction_lifecycle_via_api() {
         enable_bootstrap: true,
         bootstrap_buffer_size: 10000,
         priority_queue_capacity: None,
+        broadcast_channel_capacity: None,
     };
     core.create_query(query_config.clone()).await.unwrap();
 
@@ -646,6 +648,7 @@ async fn test_query_results_endpoint() {
         enable_bootstrap: true,
         bootstrap_buffer_size: 10000,
         priority_queue_capacity: None,
+        broadcast_channel_capacity: None,
     };
     core.create_query(query_config.clone()).await.unwrap();
 

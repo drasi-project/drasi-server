@@ -61,6 +61,7 @@ mod serialization_tests {
             auto_start: true,
             bootstrap_provider: None,
             properties: std::collections::HashMap::from([("key".to_string(), json!("value"))]),
+            broadcast_channel_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -87,6 +88,7 @@ mod serialization_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
+            broadcast_channel_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();

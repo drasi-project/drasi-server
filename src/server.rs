@@ -34,8 +34,8 @@ use drasi_server_core::DrasiServerCore;
 pub struct DrasiServer {
     core: Option<DrasiServerCore>,
     enable_api: bool,
-    api_host: String,
-    api_port: u16,
+    host: String,
+    port: u16,
     config_file_path: Option<String>,
     read_only: Arc<bool>,
     #[allow(dead_code)]
@@ -75,8 +75,8 @@ impl DrasiServer {
         Ok(Self {
             core: Some(core),
             enable_api: true,
-            api_host: config.api.host.clone(),
-            api_port: port,
+            host: config.server.host.clone(),
+            port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
             config_persistence: None, // Will be set after core is started
@@ -87,15 +87,15 @@ impl DrasiServer {
     pub fn from_core(
         core: DrasiServerCore,
         enable_api: bool,
-        api_host: String,
-        api_port: u16,
+        host: String,
+        port: u16,
         config_file_path: Option<String>,
     ) -> Self {
         Self {
             core: Some(core),
             enable_api,
-            api_host,
-            api_port,
+            host,
+            port,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
             config_persistence: None,   // Will be set up if config file is provided
@@ -113,7 +113,7 @@ impl DrasiServer {
         if let Some(config_file) = &self.config_file_path {
             println!("  Config file: {}", config_file);
         }
-        println!("  API Port: {}", self.api_port);
+        println!("  API Port: {}", self.port);
         println!(
             "  Log level: {}",
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string())
@@ -134,7 +134,7 @@ impl DrasiServer {
         let config_persistence = if let Some(config_file) = &self.config_file_path {
             if !*self.read_only {
                 // Need to reload config to check disable_persistence flag
-                let config = DrasiServerConfig::load_from_file(&PathBuf::from(config_file))?;
+                let config = DrasiServerConfig::load_from_file(PathBuf::from(config_file))?;
                 let persistence_disabled = config.server.disable_persistence;
 
                 if !persistence_disabled {
@@ -142,8 +142,8 @@ impl DrasiServer {
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
                         core.clone(),
-                        self.api_host.clone(),
-                        self.api_port,
+                        self.host.clone(),
+                        self.port,
                         config.server.log_level.clone(),
                         false,
                     ));
@@ -167,7 +167,7 @@ impl DrasiServer {
             self.start_api(&core, config_persistence.clone()).await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
-                self.api_port
+                self.port
             );
         } else {
             info!("Drasi Server started successfully (API disabled)");
@@ -220,7 +220,7 @@ impl DrasiServer {
             .layer(Extension(self.read_only.clone()))
             .layer(Extension(config_persistence));
 
-        let addr = format!("{}:{}", self.api_host, self.api_port);
+        let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {}", addr);
         info!("Swagger UI available at http://{}/docs/", addr);
 
