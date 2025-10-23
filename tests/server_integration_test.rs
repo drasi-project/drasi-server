@@ -17,6 +17,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     let config = RuntimeConfig {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
+            priority_queue_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "counter-source".to_string(),
@@ -40,6 +41,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         }],
         reactions: vec![ReactionConfig {
             id: "counter-reaction".to_string(),
@@ -47,6 +49,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
             queries: vec!["counter-query".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         }],
     };
 
@@ -108,6 +111,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     let config = RuntimeConfig {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
+            priority_queue_capacity: None,
         },
         sources: vec![
             SourceConfig {
@@ -146,6 +150,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 enable_bootstrap: true,
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
+                priority_queue_capacity: None,
             },
             QueryConfig {
                 id: "vehicle-tracking".to_string(),
@@ -157,6 +162,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 enable_bootstrap: true,
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
+                priority_queue_capacity: None,
             },
             QueryConfig {
                 id: "combined-view".to_string(),
@@ -168,6 +174,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 enable_bootstrap: true,
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
+                priority_queue_capacity: None,
             },
         ],
         reactions: vec![ReactionConfig {
@@ -176,6 +183,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
             queries: vec!["sensor-alerts".to_string(), "combined-view".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         }],
     };
 
@@ -222,6 +230,7 @@ async fn test_component_failure_recovery() -> Result<()> {
     let config = RuntimeConfig {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
+            priority_queue_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "test-source".to_string(),
@@ -241,6 +250,7 @@ async fn test_component_failure_recovery() -> Result<()> {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         }],
         reactions: vec![ReactionConfig {
             id: "test-reaction".to_string(),
@@ -248,6 +258,7 @@ async fn test_component_failure_recovery() -> Result<()> {
             queries: vec!["test-query".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         }],
     };
 
@@ -292,6 +303,7 @@ async fn test_concurrent_operations() -> Result<()> {
     let config = RuntimeConfig {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
+            priority_queue_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "concurrent-source".to_string(),

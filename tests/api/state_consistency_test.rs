@@ -69,6 +69,7 @@ async fn test_components_with_auto_start() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -76,6 +77,7 @@ async fn test_components_with_auto_start() {
             queries: vec!["test-query".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .build()
         .await
@@ -119,6 +121,7 @@ async fn test_components_without_auto_start() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -126,6 +129,7 @@ async fn test_components_without_auto_start() {
             queries: vec!["test-query".to_string()],
             auto_start: false,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .build()
         .await
@@ -167,6 +171,7 @@ async fn test_restart_with_components() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .build()
         .await
@@ -226,6 +231,7 @@ async fn test_multiple_query_sources() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .build()
         .await
@@ -266,6 +272,7 @@ async fn test_multiple_reaction_queries() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .add_query(QueryConfig {
             id: "query2".to_string(),
@@ -277,6 +284,7 @@ async fn test_multiple_reaction_queries() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .add_reaction(ReactionConfig {
             id: "multi-query-reaction".to_string(),
@@ -284,6 +292,7 @@ async fn test_multiple_reaction_queries() {
             queries: vec!["query1".to_string(), "query2".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         })
         .build()
         .await
@@ -343,6 +352,7 @@ async fn test_query_with_joins() {
             query_language: QueryLanguage::default(),
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None,
         })
         .build()
         .await

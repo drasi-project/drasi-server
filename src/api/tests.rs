@@ -86,6 +86,7 @@ mod serialization_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -106,6 +107,7 @@ mod serialization_tests {
             queries: vec!["query1".to_string()],
             auto_start: true,
             properties: std::collections::HashMap::from([("log_level".to_string(), json!("info"))]),
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();

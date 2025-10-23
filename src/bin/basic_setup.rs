@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         core_config: drasi_server_core::config::DrasiServerCoreConfig {
             server_core: drasi_server_core::config::DrasiServerCoreSettings {
                 id: uuid::Uuid::new_v4().to_string(),
+                priority_queue_capacity: None
             },
             sources: vec![
                 SourceConfig {
@@ -100,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     joins: None,
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
+                    priority_queue_capacity: None
                 },
                 QueryConfig {
                     id: "pending-orders-query".to_string(),
@@ -124,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     joins: None,
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
+                    priority_queue_capacity: None
                 },
             ],
             reactions: vec![
@@ -132,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     reaction_type: "log".to_string(),
                     auto_start: true,
                     queries: vec![query_name.clone()],
+                    priority_queue_capacity: None,
                     properties: {
                         let mut props = HashMap::new();
                         props.insert("log_level".to_string(), serde_json::json!("info"));
@@ -147,6 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     reaction_type: "http".to_string(),
                     auto_start: true,
                     queries: vec![query_name.clone()],
+                    priority_queue_capacity: None,
                     properties: {
                         let mut props = HashMap::new();
                         props.insert(

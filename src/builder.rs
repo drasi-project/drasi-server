@@ -39,6 +39,7 @@ impl Default for DrasiServerBuilder {
         Self {
             server_settings: ServerSettings {
                 id: uuid::Uuid::new_v4().to_string(),
+                priority_queue_capacity: None
             },
             source_configs: Vec::new(),
             query_configs: Vec::new(),
@@ -108,6 +109,7 @@ impl DrasiServerBuilder {
             joins: None,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
+            priority_queue_capacity: None
         });
         self
     }
@@ -129,6 +131,7 @@ impl DrasiServerBuilder {
             reaction_type: "log".to_string(),
             queries,
             auto_start: true,
+            priority_queue_capacity: None,
             properties: std::collections::HashMap::new(),
         });
         self
@@ -182,6 +185,7 @@ impl DrasiServerBuilder {
             reaction_type: "application".to_string(),
             queries,
             auto_start: true,
+            priority_queue_capacity: None,
             properties: HashMap::new(),
         });
         self

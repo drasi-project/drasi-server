@@ -331,8 +331,9 @@ async fn test_reaction_lifecycle_via_api() {
         properties: HashMap::new(),
         query_language: QueryLanguage::default(),
         joins: None,
-    enable_bootstrap: true,
-    bootstrap_buffer_size: 10000,
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        priority_queue_capacity: None,
     };
     core.create_query(query_config.clone()).await.unwrap();
 
@@ -642,8 +643,9 @@ async fn test_query_results_endpoint() {
         properties: HashMap::new(),
         query_language: QueryLanguage::default(),
         joins: None,
-    enable_bootstrap: true,
-    bootstrap_buffer_size: 10000,
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        priority_queue_capacity: None,
     };
     core.create_query(query_config.clone()).await.unwrap();
 

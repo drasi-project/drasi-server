@@ -126,6 +126,7 @@ mod contract_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -162,6 +163,7 @@ mod contract_tests {
             queries: vec!["query1".to_string(), "query2".to_string()],
             auto_start: true,
             properties,
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -289,6 +291,7 @@ mod contract_tests {
             queries: vec!["q1".to_string()],
             auto_start: false,
             properties: HashMap::from([("key".to_string(), json!("value"))]),
+            priority_queue_capacity: None,
         };
 
         let config_without_props = ReactionConfig {
@@ -297,6 +300,7 @@ mod contract_tests {
             queries: vec!["q2".to_string()],
             auto_start: true,
             properties: HashMap::new(),
+            priority_queue_capacity: None,
         };
 
         // Both should serialize successfully
@@ -369,6 +373,7 @@ mod edge_case_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -415,6 +420,7 @@ mod edge_case_tests {
             queries: vec!["q1".to_string()],
             auto_start: false,
             properties,
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -441,6 +447,7 @@ mod edge_case_tests {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
+            priority_queue_capacity: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
