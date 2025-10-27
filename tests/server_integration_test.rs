@@ -18,7 +18,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "counter-source".to_string(),
@@ -31,7 +31,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
                 props
             },
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         }],
         queries: vec![QueryConfig {
             id: "counter-query".to_string(),
@@ -44,7 +45,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         }],
         reactions: vec![ReactionConfig {
             id: "counter-reaction".to_string(),
@@ -115,7 +117,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
         },
         sources: vec![
             SourceConfig {
@@ -129,7 +131,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                     props
                 },
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
             SourceConfig {
                 id: "vehicles-source".to_string(),
@@ -142,7 +145,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                     props
                 },
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
         ],
         queries: vec![
@@ -157,7 +161,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
             QueryConfig {
                 id: "vehicle-tracking".to_string(),
@@ -170,7 +175,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
             QueryConfig {
                 id: "combined-view".to_string(),
@@ -183,7 +189,8 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
                 bootstrap_buffer_size: 10000,
                 query_language: QueryLanguage::default(),
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
         ],
         reactions: vec![ReactionConfig {
@@ -240,7 +247,7 @@ async fn test_component_failure_recovery() -> Result<()> {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "test-source".to_string(),
@@ -248,7 +255,8 @@ async fn test_component_failure_recovery() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         }],
         queries: vec![QueryConfig {
             id: "test-query".to_string(),
@@ -262,7 +270,8 @@ async fn test_component_failure_recovery() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         }],
         reactions: vec![ReactionConfig {
             id: "test-reaction".to_string(),
@@ -316,7 +325,7 @@ async fn test_concurrent_operations() -> Result<()> {
         server_core: DrasiServerCoreSettings {
             id: uuid::Uuid::new_v4().to_string(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
         },
         sources: vec![SourceConfig {
             id: "concurrent-source".to_string(),
@@ -324,7 +333,8 @@ async fn test_concurrent_operations() -> Result<()> {
             auto_start: false, // Manual start
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         }],
         queries: vec![],
         reactions: vec![],
@@ -356,7 +366,8 @@ async fn test_concurrent_operations() -> Result<()> {
                     auto_start: false,
                     properties: HashMap::new(),
                     bootstrap_provider: None,
-                    broadcast_channel_capacity: None,
+                    dispatch_buffer_capacity: None,
+            dispatch_mode: None,
                 };
                 core_clone.create_source(new_source).await
             } else {

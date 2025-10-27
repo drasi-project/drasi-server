@@ -109,7 +109,8 @@ async fn test_persistence_saves_complete_configuration() {
                     props
                 },
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
             SourceConfig {
                 id: "test-source-2".to_string(),
@@ -117,7 +118,8 @@ async fn test_persistence_saves_complete_configuration() {
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
         ],
         queries: vec![
@@ -221,7 +223,8 @@ async fn test_persistence_atomic_write() {
                 auto_start: true,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             },
         ],
         queries: vec![],

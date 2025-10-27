@@ -21,6 +21,7 @@ sources:
 - id: postgres-stocks
   source_type: postgres
   auto_start: true
+  dispatch_mode: channel
   bootstrap_provider:
     type: postgres
   properties:

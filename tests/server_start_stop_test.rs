@@ -62,7 +62,8 @@ async fn test_auto_start_components() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_query(QueryConfig {
             id: "test-query".to_string(),
@@ -75,7 +76,8 @@ async fn test_auto_start_components() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_reaction(ReactionConfig {
             id: "test-reaction".to_string(),
@@ -133,7 +135,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_source(SourceConfig {
             id: "manual-source".to_string(),
@@ -141,7 +144,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             auto_start: false,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_query(QueryConfig {
             id: "auto-query".to_string(),
@@ -154,7 +158,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_query(QueryConfig {
             id: "manual-query".to_string(),
@@ -167,7 +172,8 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .build()
         .await?;
@@ -213,7 +219,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_source(SourceConfig {
             id: "source2".to_string(),
@@ -221,7 +228,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_query(QueryConfig {
             id: "query1".to_string(),
@@ -234,7 +242,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_query(QueryConfig {
             id: "query2".to_string(),
@@ -247,7 +256,8 @@ async fn test_component_startup_sequence() -> Result<()> {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         })
         .add_reaction(ReactionConfig {
             id: "reaction1".to_string(),

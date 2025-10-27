@@ -40,7 +40,7 @@ impl Default for DrasiServerBuilder {
             server_settings: ServerSettings {
                 id: uuid::Uuid::new_v4().to_string(),
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
             },
             source_configs: Vec::new(),
             query_configs: Vec::new(),
@@ -83,7 +83,8 @@ impl DrasiServerBuilder {
             auto_start: true,
             properties: std::collections::HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         });
         self
     }
@@ -112,7 +113,8 @@ impl DrasiServerBuilder {
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         });
         self
     }
@@ -171,7 +173,8 @@ impl DrasiServerBuilder {
             auto_start: true,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         });
         self
     }
