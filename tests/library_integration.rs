@@ -69,7 +69,8 @@ async fn test_dynamic_component_management() {
         auto_start: true,
         properties: HashMap::new(),
         bootstrap_provider: None,
-        broadcast_channel_capacity: None,
+        dispatch_buffer_capacity: None,
+            dispatch_mode: None,
     };
 
     server
@@ -150,7 +151,8 @@ async fn test_concurrent_operations() {
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+            dispatch_mode: None,
             };
             server_clone.create_source(config).await
         });

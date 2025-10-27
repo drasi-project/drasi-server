@@ -145,7 +145,8 @@ mod tests {
                 auto_start: false,
                 properties: HashMap::new(),
                 bootstrap_provider: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+                dispatch_mode: None,
             })
             .add_query(QueryConfig {
                 id: "test-query".to_string(),
@@ -158,7 +159,8 @@ mod tests {
                 enable_bootstrap: true,
                 bootstrap_buffer_size: 10000,
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
+                dispatch_mode: None,
             })
             .build()
             .await

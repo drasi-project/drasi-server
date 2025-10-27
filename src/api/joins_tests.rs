@@ -80,7 +80,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Call the API handler
@@ -143,7 +144,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Call the API handler
@@ -178,7 +180,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Call the API handler
@@ -213,7 +216,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Call the API handler
@@ -263,7 +267,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Create the query
@@ -329,7 +334,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Serialize to JSON
@@ -394,7 +400,8 @@ mod api_query_joins_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         // Try to create query in read-only mode

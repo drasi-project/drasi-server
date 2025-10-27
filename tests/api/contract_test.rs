@@ -85,7 +85,8 @@ mod contract_tests {
             auto_start: true,
             properties,
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -128,7 +129,8 @@ mod contract_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -352,7 +354,8 @@ mod edge_case_tests {
             auto_start: false,
             properties: HashMap::new(),
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -377,7 +380,8 @@ mod edge_case_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -396,7 +400,8 @@ mod edge_case_tests {
             auto_start: false,
             properties,
             bootstrap_provider: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();
@@ -453,7 +458,8 @@ mod edge_case_tests {
             bootstrap_buffer_size: 10000,
             query_language: QueryLanguage::default(),
             priority_queue_capacity: None,
-            broadcast_channel_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
         };
 
         let json = serde_json::to_value(&config).unwrap();

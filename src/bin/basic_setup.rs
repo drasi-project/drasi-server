@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             server_core: drasi_server_core::config::DrasiServerCoreSettings {
                 id: uuid::Uuid::new_v4().to_string(),
                 priority_queue_capacity: None,
-                broadcast_channel_capacity: None,
+                dispatch_buffer_capacity: None,
             },
             sources: vec![
                 SourceConfig {
@@ -56,7 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     bootstrap_provider: None,
-                    broadcast_channel_capacity: None,
+                    dispatch_buffer_capacity: None,
+                    dispatch_mode: None,
                 },
                 SourceConfig {
                     id: "order-status-source".to_string(),
@@ -73,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         props
                     },
                     bootstrap_provider: None,
-                    broadcast_channel_capacity: None,
+                    dispatch_buffer_capacity: None,
+                    dispatch_mode: None,
                 },
             ],
             queries: vec![
@@ -101,7 +103,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
                     priority_queue_capacity: None,
-                    broadcast_channel_capacity: None,
+                    dispatch_buffer_capacity: None,
+                    dispatch_mode: None,
                 },
                 QueryConfig {
                     id: "pending-orders-query".to_string(),
@@ -127,7 +130,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     enable_bootstrap: true,
                     bootstrap_buffer_size: 10000,
                     priority_queue_capacity: None,
-                    broadcast_channel_capacity: None,
+                    dispatch_buffer_capacity: None,
+                    dispatch_mode: None,
                 },
             ],
             reactions: vec![
