@@ -132,36 +132,25 @@ impl ConfigPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server_core::config::{QueryConfig, QueryLanguage, SourceConfig};
-    use std::collections::HashMap;
     use tempfile::TempDir;
 
     async fn create_test_core() -> Arc<drasi_server_core::DrasiServerCore> {
+        use drasi_server_core::{Source, Query};
+
         let core = drasi_server_core::DrasiServerCore::builder()
             .with_id("test-server")
-            .add_source(SourceConfig {
-                id: "test-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: false,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-                dispatch_buffer_capacity: None,
-                dispatch_mode: None,
-            })
-            .add_query(QueryConfig {
-                id: "test-query".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                query_language: QueryLanguage::default(),
-                sources: vec!["test-source".to_string()],
-                auto_start: false,
-                properties: HashMap::new(),
-                joins: None,
-                enable_bootstrap: true,
-                bootstrap_buffer_size: 10000,
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-                dispatch_mode: None,
-            })
+            .add_source(
+                Source::mock("test-source")
+                    .auto_start(false)
+                    .build()
+            )
+            .add_query(
+                Query::cypher("test-query")
+                    .query("MATCH (n) RETURN n")
+                    .from_source("test-source")
+                    .auto_start(false)
+                    .build()
+            )
             .build()
             .await
             .expect("Failed to build test core");

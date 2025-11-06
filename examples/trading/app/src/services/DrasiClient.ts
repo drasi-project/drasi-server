@@ -257,12 +257,11 @@ export class DrasiClient {
           reaction_type: 'sse',
           queries: Array.from(this.queries.keys()), // This will include price-ticker-query
           auto_start: true,
-          properties: {
-            host: '0.0.0.0',
-            port: 50051,
-            sse_path: '/events',
-            heartbeat_interval_ms: 15000
-          }
+          // SSE reaction config fields (flattened, not in properties)
+          host: '0.0.0.0',
+          port: 50051,
+          sse_path: '/events',
+          heartbeat_interval_ms: 15000
         };
 
         const createResponse = await fetch(`${this.baseUrl}/reactions`, {

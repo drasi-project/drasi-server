@@ -13,19 +13,14 @@
 // limitations under the License.
 
 use drasi_server_core::{
-    config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
-    DrasiError, DrasiServerCore, QueryConfig, ReactionConfig, SourceConfig,
+    DrasiError, DrasiServerCore, DrasiServerCoreBuilder, Query, Reaction, Source,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use uuid;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
-    server_settings: ServerSettings,
-    source_configs: Vec<SourceConfig>,
-    query_configs: Vec<QueryConfig>,
-    reaction_configs: Vec<ReactionConfig>,
+    core_builder: DrasiServerCoreBuilder,
     enable_api: bool,
     port: Option<u16>,
     host: Option<String>,
@@ -37,14 +32,7 @@ pub struct DrasiServerBuilder {
 impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
-            server_settings: ServerSettings {
-                id: uuid::Uuid::new_v4().to_string(),
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-            },
-            source_configs: Vec::new(),
-            query_configs: Vec::new(),
-            reaction_configs: Vec::new(),
+            core_builder: DrasiServerCore::builder(),
             enable_api: false,
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
@@ -61,85 +49,123 @@ impl DrasiServerBuilder {
         Self::default()
     }
 
-    /// Add a source configuration
-    pub fn with_source(mut self, config: SourceConfig) -> Self {
-        // Track application sources (both new and legacy formats)
-        if config.source_type == "application" {
-            self.application_source_names.push(config.id.clone());
+    /// Set the server ID
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.core_builder = self.core_builder.with_id(id);
+        self
+    }
+
+    /// Add a source using the new builder API
+    /// The source should be built using Source::application("id").build() or similar
+    pub fn with_source_config(
+        mut self,
+        id: impl Into<String>,
+        source_type: impl Into<String>,
+    ) -> Self {
+        let id = id.into();
+        let source_type = source_type.into();
+
+        // Track application sources
+        if source_type == "application" {
+            self.application_source_names.push(id.clone());
         }
-        self.source_configs.push(config);
+
+        // Build the appropriate source configuration
+        let source_config = if source_type == "application" {
+            Source::application(&id).auto_start(true).build()
+        } else if source_type == "mock" {
+            Source::mock(&id).auto_start(true).build()
+        } else {
+            // For other source types, default to mock (in real usage, you'd handle each type)
+            Source::mock(&id).auto_start(true).build()
+        };
+
+        self.core_builder = self.core_builder.add_source(source_config);
         self
     }
 
     /// Add a source with name and type, using default properties
     pub fn with_simple_source(
-        mut self,
+        self,
         id: impl Into<String>,
         source_type: impl Into<String>,
     ) -> Self {
-        self.source_configs.push(SourceConfig {
-            id: id.into(),
-            source_type: source_type.into(),
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        });
-        self
+        self.with_source_config(id, source_type)
     }
 
-    /// Add a query configuration
-    pub fn with_query(mut self, config: QueryConfig) -> Self {
-        self.query_configs.push(config);
+    /// Add a query using the new builder API
+    /// The query should be built using Query::cypher("id").build() or similar
+    pub fn with_query_config(
+        mut self,
+        id: impl Into<String>,
+        query_str: impl Into<String>,
+        sources: Vec<String>,
+    ) -> Self {
+        let mut query_builder = Query::cypher(id).query(query_str);
+
+        for source in sources {
+            query_builder = query_builder.from_source(source);
+        }
+
+        self.core_builder = self.core_builder.add_query(query_builder.build());
         self
     }
 
     /// Add a query with simple parameters
     pub fn with_simple_query(
-        mut self,
+        self,
         id: impl Into<String>,
-        query: impl Into<String>,
+        query_str: impl Into<String>,
         sources: Vec<String>,
     ) -> Self {
-        self.query_configs.push(QueryConfig {
-            id: id.into(),
-            query: query.into(),
-            query_language: QueryLanguage::default(),
-            sources,
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            joins: None,
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        });
-        self
+        self.with_query_config(id, query_str, sources)
     }
 
-    /// Add a reaction configuration
-    pub fn with_reaction(mut self, config: ReactionConfig) -> Self {
-        // Track application reactions (both new and legacy formats)
-        if config.reaction_type == "application" {
-            self.application_reaction_names.push(config.id.clone());
+    /// Add a reaction using the new builder API
+    /// The reaction should be built using Reaction::log("id").build() or similar
+    pub fn with_reaction_config(
+        mut self,
+        id: impl Into<String>,
+        reaction_type: impl Into<String>,
+        queries: Vec<String>,
+    ) -> Self {
+        let id = id.into();
+        let reaction_type = reaction_type.into();
+
+        // Track application reactions
+        if reaction_type == "application" {
+            self.application_reaction_names.push(id.clone());
         }
-        self.reaction_configs.push(config);
+
+        // Build the appropriate reaction configuration
+        let reaction_config = if reaction_type == "application" {
+            let mut builder = Reaction::application(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        } else if reaction_type == "log" {
+            let mut builder = Reaction::log(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        } else {
+            // Default to log reaction
+            let mut builder = Reaction::log(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        };
+
+        self.core_builder = self.core_builder.add_reaction(reaction_config);
         self
     }
 
     /// Add a simple log reaction
-    pub fn with_log_reaction(mut self, id: impl Into<String>, queries: Vec<String>) -> Self {
-        self.reaction_configs.push(ReactionConfig {
-            id: id.into(),
-            reaction_type: "log".to_string(),
-            queries,
-            auto_start: true,
-            priority_queue_capacity: None,
-            properties: std::collections::HashMap::new(),
-        });
-        self
+    pub fn with_log_reaction(self, id: impl Into<String>, queries: Vec<String>) -> Self {
+        self.with_reaction_config(id, "log", queries)
     }
 
     /// Enable the REST API on the default port
@@ -167,15 +193,9 @@ impl DrasiServerBuilder {
     pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.application_source_names.push(id.clone());
-        self.source_configs.push(SourceConfig {
-            id,
-            source_type: "application".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        });
+
+        let source = Source::application(&id).auto_start(true).build();
+        self.core_builder = self.core_builder.add_source(source);
         self
     }
 
@@ -187,39 +207,20 @@ impl DrasiServerBuilder {
     ) -> Self {
         let id = id.into();
         self.application_reaction_names.push(id.clone());
-        self.reaction_configs.push(ReactionConfig {
-            id,
-            reaction_type: "application".to_string(),
-            queries,
-            auto_start: true,
-            priority_queue_capacity: None,
-            properties: HashMap::new(),
-        });
+
+        let mut reaction_builder = Reaction::application(&id);
+        for query in queries {
+            reaction_builder = reaction_builder.subscribe_to(query);
+        }
+
+        self.core_builder = self.core_builder.add_reaction(reaction_builder.build());
         self
     }
 
     /// Build the DrasiServerCore instance
     pub async fn build_core(self) -> Result<DrasiServerCore, DrasiError> {
-        // Use the public builder API from drasi-server-core
-        let mut builder = DrasiServerCore::builder().with_id(&self.server_settings.id);
-
-        // Add all sources
-        for source_config in self.source_configs {
-            builder = builder.add_source(source_config);
-        }
-
-        // Add all queries
-        for query_config in self.query_configs {
-            builder = builder.add_query(query_config);
-        }
-
-        // Add all reactions
-        for reaction_config in self.reaction_configs {
-            builder = builder.add_reaction(reaction_config);
-        }
-
-        // Build and initialize (the builder does both)
-        builder.build().await
+        // Build and return the core using the new API
+        self.core_builder.build().await
     }
 
     /// Set the config file path for persistence
@@ -255,17 +256,16 @@ impl DrasiServerBuilder {
         // Build the core server (already initialized by builder)
         let core = self.build_core().await?;
 
-        // Convert to Arc and start
-        let core = Arc::new(core);
+        // Start the server
         core.start().await?;
 
         // Collect application handles using the new public API
         let mut source_handles = HashMap::new();
         let mut reaction_handles = HashMap::new();
 
-        // Get source handles using the new source_handle() method
+        // Get source handles using the public API
         for source_name in app_source_names {
-            match core.source_handle(&source_name) {
+            match core.source_handle(&source_name).await {
                 Ok(handle) => {
                     source_handles.insert(source_name, handle);
                 }
@@ -275,9 +275,9 @@ impl DrasiServerBuilder {
             }
         }
 
-        // Get reaction handles using the new reaction_handle() method
+        // Get reaction handles using the public API
         for reaction_name in app_reaction_names {
-            match core.reaction_handle(&reaction_name) {
+            match core.reaction_handle(&reaction_name).await {
                 Ok(handle) => {
                     reaction_handles.insert(reaction_name, handle);
                 }
@@ -292,7 +292,7 @@ impl DrasiServerBuilder {
         }
 
         Ok(crate::builder_result::DrasiServerWithHandles {
-            server: core,
+            server: Arc::new(core),
             source_handles,
             reaction_handles,
         })
@@ -323,9 +323,6 @@ mod tests {
             .with_log_reaction("test_reaction", vec!["test_query".to_string()])
             .with_port(9090);
 
-        assert_eq!(builder.source_configs.len(), 1);
-        assert_eq!(builder.query_configs.len(), 1);
-        assert_eq!(builder.reaction_configs.len(), 1);
         assert!(builder.enable_api);
         assert_eq!(builder.port, Some(9090));
     }

@@ -14,7 +14,9 @@
 
 //! Test support utilities for integration tests
 
+pub mod config_helpers;
 pub mod redis_helpers;
 
 // Re-export commonly used helpers
+pub use config_helpers::*;
 pub use redis_helpers::*;
