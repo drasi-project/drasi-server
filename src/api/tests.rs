@@ -50,48 +50,36 @@ mod handler_tests {
 
 #[cfg(test)]
 mod serialization_tests {
-    use drasi_server_core::{config::QueryLanguage, QueryConfig, ReactionConfig, SourceConfig};
-    use serde_json::json;
+    use drasi_server_core::{Query, Reaction, Source};
 
     #[test]
     fn test_source_config_json_serialization() {
-        let config = SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            properties: std::collections::HashMap::from([("key".to_string(), json!("value"))]),
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let config = Source::mock("test-source")
+            .auto_start(true)
+            .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
         assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
-        assert_eq!(json["properties"]["key"], "value");
+        // Mock source has typed config fields, not arbitrary properties
+        assert!(json["data_type"].is_string());
+        assert!(json["interval_ms"].is_number());
 
         // Test deserialization
-        let deserialized: SourceConfig = serde_json::from_value(json).unwrap();
+        let deserialized: drasi_server_core::SourceConfig =
+            serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.id, config.id);
     }
 
     #[test]
     fn test_query_config_json_serialization() {
-        let config = QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["source1".to_string(), "source2".to_string()],
-            auto_start: false,
-            properties: std::collections::HashMap::new(),
-            joins: None,
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let config = Query::cypher("test-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("source1")
+            .from_source("source2")
+            .auto_start(false)
+            .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
@@ -99,25 +87,23 @@ mod serialization_tests {
         assert_eq!(json["sources"].as_array().unwrap().len(), 2);
 
         // Test deserialization
-        let deserialized: QueryConfig = serde_json::from_value(json).unwrap();
+        let deserialized: drasi_server_core::QueryConfig =
+            serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.sources.len(), 2);
     }
 
     #[test]
     fn test_reaction_config_json_serialization() {
-        let config = ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["query1".to_string()],
-            auto_start: true,
-            properties: std::collections::HashMap::from([("log_level".to_string(), json!("info"))]),
-            priority_queue_capacity: None,
-        };
+        let config = Reaction::log("test-reaction")
+            .subscribe_to("query1")
+            .auto_start(true)
+            .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-reaction");
         assert_eq!(json["reaction_type"], "log");
         assert_eq!(json["queries"].as_array().unwrap().len(), 1);
-        assert_eq!(json["properties"]["log_level"], "info");
+        // Log reaction has typed config fields
+        assert!(json["log_level"].is_string());
     }
 }

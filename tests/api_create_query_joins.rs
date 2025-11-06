@@ -1,21 +1,19 @@
 use axum::Extension;
 use drasi_server::api::handlers::create_query;
 use drasi_server_core::{
-    config::{QueryJoinConfig, QueryJoinKeyConfig, QueryLanguage},
-    DrasiServerCore, QueryConfig,
+    config::{QueryJoinConfig, QueryJoinKeyConfig},
+    DrasiServerCore, Query, QueryConfig,
 };
 use std::sync::Arc;
 
 // Helper to build a minimal QueryConfig with joins
 fn build_query_config() -> QueryConfig {
-    QueryConfig {
-        id: "watchlist-joined-query-test".to_string(),
-        query: "MATCH (s:stocks)<-[:HAS_PRICE]-(sp:stock_prices) RETURN s.symbol AS symbol"
-            .to_string(),
-        sources: vec!["postgres-stocks".to_string(), "price-feed".to_string()],
-        auto_start: false,
-        properties: Default::default(),
-        joins: Some(vec![QueryJoinConfig {
+    Query::cypher("watchlist-joined-query-test")
+        .query("MATCH (s:stocks)<-[:HAS_PRICE]-(sp:stock_prices) RETURN s.symbol AS symbol")
+        .from_source("postgres-stocks")
+        .from_source("price-feed")
+        .auto_start(false)
+        .with_joins(vec![QueryJoinConfig {
             id: "HAS_PRICE".to_string(),
             keys: vec![
                 QueryJoinKeyConfig {
@@ -27,14 +25,8 @@ fn build_query_config() -> QueryConfig {
                     property: "symbol".to_string(),
                 },
             ],
-        }]),
-        query_language: QueryLanguage::default(),
-        enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
-        priority_queue_capacity: None,
-        dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-    }
+        }])
+        .build()
 }
 
 #[tokio::test]

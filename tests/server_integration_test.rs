@@ -1,7 +1,7 @@
 use anyhow::Result;
-use drasi_server::{DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig, SourceConfig};
-use drasi_server_core::config::{DrasiServerCoreSettings, QueryLanguage};
-use std::collections::HashMap;
+use drasi_server::DrasiServerCore;
+use drasi_server_core::config::DrasiServerCoreSettings;
+use drasi_server_core::{Properties, Query, Reaction, Source};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -14,64 +14,38 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     let _counter_clone = result_counter.clone();
 
     // Create configuration
-    let config = RuntimeConfig {
-        server_core: DrasiServerCoreSettings {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-        },
-        sources: vec![SourceConfig {
-            id: "counter-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: {
-                let mut props = HashMap::new();
-                props.insert("data_type".to_string(), serde_json::json!("counter"));
-                props.insert("interval_ms".to_string(), serde_json::json!(500));
-                props
-            },
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        }],
-        queries: vec![QueryConfig {
-            id: "counter-query".to_string(),
-            query: "MATCH (n:Counter) RETURN n.value as value".to_string(),
-            sources: vec!["counter-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        }],
-        reactions: vec![ReactionConfig {
-            id: "counter-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["counter-query".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        }],
-    };
+    let server_id = uuid::Uuid::new_v4().to_string();
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
+    let source = Source::mock("counter-source")
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("data_type", "counter")
+                .with_int("interval_ms", 500),
+        )
+        .build();
 
-    for source in config.sources {
-        builder = builder.add_source(source);
-    }
-    for query in config.queries {
-        builder = builder.add_query(query);
-    }
-    for reaction in config.reactions {
-        builder = builder.add_reaction(reaction);
-    }
+    let query = Query::cypher("counter-query")
+        .query("MATCH (n:Counter) RETURN n.value as value")
+        .from_source("counter-source")
+        .auto_start(true)
+        .build();
 
-    let core = Arc::new(builder.build().await?);
+    let reaction = Reaction::log("counter-reaction")
+        .subscribe_to("counter-query")
+        .auto_start(true)
+        .build();
+
+    let core = Arc::new(
+        DrasiServerCore::builder()
+            .with_id(&server_id)
+            .add_source(source)
+            .add_query(query)
+            .add_reaction(reaction)
+            .build()
+            .await?,
+    );
 
     // Start the server
     core.start().await?;
@@ -113,110 +87,64 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 /// Integration test with multiple sources feeding into queries
 #[tokio::test]
 async fn test_multiple_sources_and_queries() -> Result<()> {
-    let config = RuntimeConfig {
-        server_core: DrasiServerCoreSettings {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-        },
-        sources: vec![
-            SourceConfig {
-                id: "sensors-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert("data_type".to_string(), serde_json::json!("sensor"));
-                    props.insert("interval_ms".to_string(), serde_json::json!(1000));
-                    props
-                },
-                bootstrap_provider: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            },
-            SourceConfig {
-                id: "vehicles-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: {
-                    let mut props = HashMap::new();
-                    props.insert("data_type".to_string(), serde_json::json!("generic"));
-                    props.insert("interval_ms".to_string(), serde_json::json!(2000));
-                    props
-                },
-                bootstrap_provider: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            },
-        ],
-        queries: vec![
-            QueryConfig {
-                id: "sensor-alerts".to_string(),
-                query: "MATCH (s:Sensor) RETURN s".to_string(),
-                sources: vec!["sensors-source".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                enable_bootstrap: true,
-                bootstrap_buffer_size: 10000,
-                query_language: QueryLanguage::default(),
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            },
-            QueryConfig {
-                id: "vehicle-tracking".to_string(),
-                query: "MATCH (v:Vehicle) RETURN v.id, v.location".to_string(),
-                sources: vec!["vehicles-source".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                enable_bootstrap: true,
-                bootstrap_buffer_size: 10000,
-                query_language: QueryLanguage::default(),
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            },
-            QueryConfig {
-                id: "combined-view".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                sources: vec!["sensors-source".to_string(), "vehicles-source".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                enable_bootstrap: true,
-                bootstrap_buffer_size: 10000,
-                query_language: QueryLanguage::default(),
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            },
-        ],
-        reactions: vec![ReactionConfig {
-            id: "alert-handler".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["sensor-alerts".to_string(), "combined-view".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        }],
-    };
+    let server_id = uuid::Uuid::new_v4().to_string();
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
+    let sensors_source = Source::mock("sensors-source")
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("data_type", "sensor")
+                .with_int("interval_ms", 1000),
+        )
+        .build();
 
-    for source in config.sources {
-        builder = builder.add_source(source);
-    }
-    for query in config.queries {
-        builder = builder.add_query(query);
-    }
-    for reaction in config.reactions {
-        builder = builder.add_reaction(reaction);
-    }
+    let vehicles_source = Source::mock("vehicles-source")
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("data_type", "generic")
+                .with_int("interval_ms", 2000),
+        )
+        .build();
 
-    let core = Arc::new(builder.build().await?);
+    let sensor_query = Query::cypher("sensor-alerts")
+        .query("MATCH (s:Sensor) RETURN s")
+        .from_source("sensors-source")
+        .auto_start(true)
+        .build();
+
+    let vehicle_query = Query::cypher("vehicle-tracking")
+        .query("MATCH (v:Vehicle) RETURN v.id, v.location")
+        .from_source("vehicles-source")
+        .auto_start(true)
+        .build();
+
+    let combined_query = Query::cypher("combined-view")
+        .query("MATCH (n) RETURN n")
+        .from_source("sensors-source")
+        .from_source("vehicles-source")
+        .auto_start(true)
+        .build();
+
+    let reaction = Reaction::log("alert-handler")
+        .subscribe_to("sensor-alerts")
+        .subscribe_to("combined-view")
+        .auto_start(true)
+        .build();
+
+    let core = Arc::new(
+        DrasiServerCore::builder()
+            .with_id(&server_id)
+            .add_source(sensors_source)
+            .add_source(vehicles_source)
+            .add_query(sensor_query)
+            .add_query(vehicle_query)
+            .add_query(combined_query)
+            .add_reaction(reaction)
+            .build()
+            .await?,
+    );
 
     // Start server
     core.start().await?;
@@ -243,60 +171,32 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 /// Integration test for error recovery scenarios
 #[tokio::test]
 async fn test_component_failure_recovery() -> Result<()> {
-    let config = RuntimeConfig {
-        server_core: DrasiServerCoreSettings {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-        },
-        sources: vec![SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        }],
-        queries: vec![QueryConfig {
-            id: "test-query".to_string(),
-            // This query references a non-existent property, but should still start
-            query: "MATCH (n) RETURN n.nonexistent as value".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        }],
-        reactions: vec![ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["test-query".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        }],
-    };
+    let server_id = uuid::Uuid::new_v4().to_string();
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
+    let source = Source::mock("test-source").auto_start(true).build();
 
-    for source in config.sources {
-        builder = builder.add_source(source);
-    }
-    for query in config.queries {
-        builder = builder.add_query(query);
-    }
-    for reaction in config.reactions {
-        builder = builder.add_reaction(reaction);
-    }
+    let query = Query::cypher("test-query")
+        // This query references a non-existent property, but should still start
+        .query("MATCH (n) RETURN n.nonexistent as value")
+        .from_source("test-source")
+        .auto_start(true)
+        .build();
 
-    let core = Arc::new(builder.build().await?);
+    let reaction = Reaction::log("test-reaction")
+        .subscribe_to("test-query")
+        .auto_start(true)
+        .build();
+
+    let core = Arc::new(
+        DrasiServerCore::builder()
+            .with_id(&server_id)
+            .add_source(source)
+            .add_query(query)
+            .add_reaction(reaction)
+            .build()
+            .await?,
+    );
 
     // Start server - all components should start even with the "bad" query
     core.start().await?;
@@ -321,33 +221,20 @@ async fn test_component_failure_recovery() -> Result<()> {
 /// Test concurrent operations on the server
 #[tokio::test]
 async fn test_concurrent_operations() -> Result<()> {
-    let config = RuntimeConfig {
-        server_core: DrasiServerCoreSettings {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-        },
-        sources: vec![SourceConfig {
-            id: "concurrent-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: false, // Manual start
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        }],
-        queries: vec![],
-        reactions: vec![],
-    };
+    let server_id = uuid::Uuid::new_v4().to_string();
 
     // Build the core using the new builder API
-    let mut builder = DrasiServerCore::builder().with_id(&config.server_core.id);
+    let source = Source::mock("concurrent-source")
+        .auto_start(false) // Manual start
+        .build();
 
-    for source in config.sources {
-        builder = builder.add_source(source);
-    }
-
-    let core = Arc::new(builder.build().await?);
+    let core = Arc::new(
+        DrasiServerCore::builder()
+            .with_id(&server_id)
+            .add_source(source)
+            .build()
+            .await?,
+    );
 
     // Start server
     core.start().await?;
@@ -360,15 +247,9 @@ async fn test_concurrent_operations() -> Result<()> {
         let handle = tokio::spawn(async move {
             // Alternate between adding and removing
             if i % 2 == 0 {
-                let new_source = SourceConfig {
-                    id: format!("concurrent-source-{}", i),
-                    source_type: "mock".to_string(),
-                    auto_start: false,
-                    properties: HashMap::new(),
-                    bootstrap_provider: None,
-                    dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-                };
+                let new_source = Source::mock(format!("concurrent-source-{}", i))
+                    .auto_start(false)
+                    .build();
                 core_clone.create_source(new_source).await
             } else {
                 sleep(Duration::from_millis(10)).await;

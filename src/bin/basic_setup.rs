@@ -12,173 +12,98 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server::{DrasiServerConfig, QueryConfig, ReactionConfig, ServerSettings, SourceConfig};
-use drasi_server_core::config::QueryLanguage;
-use std::collections::HashMap;
+use drasi_server_core::{Properties, Query, Reaction, Source};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create example names for linking components
-    let source_name = "vehicle-location-source".to_string();
-    let query_name = "available-drivers-query".to_string();
-    let reaction_name = "driver-availability-logger".to_string();
+    let source_name = "vehicle-location-source";
+    let query_name = "available-drivers-query";
+    let reaction_name = "driver-availability-logger";
 
-    // Create a basic server configuration with real Drasi patterns
-    let config = DrasiServerConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            disable_persistence: false,
-        },
-        core_config: drasi_server_core::config::DrasiServerCoreConfig {
-            server_core: drasi_server_core::config::DrasiServerCoreSettings {
-                id: uuid::Uuid::new_v4().to_string(),
-                priority_queue_capacity: None,
-                dispatch_buffer_capacity: None,
-            },
-            sources: vec![
-                SourceConfig {
-                    id: source_name.clone(),
-                    source_type: "mock".to_string(),
-                    auto_start: true,
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "data_type".to_string(),
-                            serde_json::json!("vehicle_location"),
-                        );
-                        props.insert("interval_seconds".to_string(), serde_json::json!(5));
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Mock vehicle location data"),
-                        );
-                        props
-                    },
-                    bootstrap_provider: None,
-                    dispatch_buffer_capacity: None,
-                    dispatch_mode: None,
-                },
-                SourceConfig {
-                    id: "order-status-source".to_string(),
-                    source_type: "mock".to_string(),
-                    auto_start: true,
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert("data_type".to_string(), serde_json::json!("order_status"));
-                        props.insert("interval_seconds".to_string(), serde_json::json!(3));
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Mock order status updates"),
-                        );
-                        props
-                    },
-                    bootstrap_provider: None,
-                    dispatch_buffer_capacity: None,
-                    dispatch_mode: None,
-                },
-            ],
-            queries: vec![
-                QueryConfig {
-                    id: query_name.clone(),
-                    query: r#"
-                    MATCH (d:Driver {status: 'available'})
-                    WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
-                    RETURN elementId(d) AS driverId, d.driver_name AS driverName,
-                           d.latitude AS lat, d.longitude AS lng, d.status AS status
-                "#
-                    .to_string(),
-                    query_language: QueryLanguage::default(),
-                    auto_start: true,
-                    sources: vec![source_name.clone()],
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Find all available drivers with location data"),
-                        );
-                        props
-                    },
-                    joins: None,
-                    enable_bootstrap: true,
-                    bootstrap_buffer_size: 10000,
-                    priority_queue_capacity: None,
-                    dispatch_buffer_capacity: None,
-                    dispatch_mode: None,
-                },
-                QueryConfig {
-                    id: "pending-orders-query".to_string(),
-                    query: r#"
-                    MATCH (o:Order)
-                    WHERE o.status IN ['pending', 'preparing', 'ready']
-                    RETURN elementId(o) AS orderId, o.status AS status,
-                           o.restaurant AS restaurant, o.delivery_address AS address
-                "#
-                    .to_string(),
-                    query_language: QueryLanguage::default(),
-                    auto_start: true,
-                    sources: vec![source_name.clone()],
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Track orders that need processing"),
-                        );
-                        props
-                    },
-                    joins: None,
-                    enable_bootstrap: true,
-                    bootstrap_buffer_size: 10000,
-                    priority_queue_capacity: None,
-                    dispatch_buffer_capacity: None,
-                    dispatch_mode: None,
-                },
-            ],
-            reactions: vec![
-                ReactionConfig {
-                    id: reaction_name.clone(),
-                    reaction_type: "log".to_string(),
-                    auto_start: true,
-                    queries: vec![query_name.clone()],
-                    priority_queue_capacity: None,
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert("log_level".to_string(), serde_json::json!("info"));
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Log driver availability changes"),
-                        );
-                        props
-                    },
-                },
-                ReactionConfig {
-                    id: "order-notification-handler".to_string(),
-                    reaction_type: "http".to_string(),
-                    auto_start: true,
-                    queries: vec![query_name.clone()],
-                    priority_queue_capacity: None,
-                    properties: {
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "endpoint".to_string(),
-                            serde_json::json!("http://localhost:9000/notifications"),
-                        );
-                        props.insert("method".to_string(), serde_json::json!("POST"));
-                        props.insert(
-                            "description".to_string(),
-                            serde_json::json!("Send notifications for query results"),
-                        );
-                        props
-                    },
-                },
-            ],
-        },
+    println!("🔧 Creating example Drasi configuration...");
+    println!();
+
+    // Build source configurations using the new API
+    let vehicle_source = Source::mock(source_name)
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("data_type", "vehicle_location")
+                .with_int("interval_seconds", 5)
+                .with_string("description", "Mock vehicle location data"),
+        )
+        .build();
+
+    let order_source = Source::mock("order-status-source")
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("data_type", "order_status")
+                .with_int("interval_seconds", 3)
+                .with_string("description", "Mock order status updates"),
+        )
+        .build();
+
+    // Build query configurations
+    let available_drivers_query = Query::cypher(query_name)
+        .query(
+            r#"
+            MATCH (d:Driver {status: 'available'})
+            WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
+            RETURN elementId(d) AS driverId, d.driver_name AS driverName,
+                   d.latitude AS lat, d.longitude AS lng, d.status AS status
+        "#,
+        )
+        .from_source(source_name)
+        .auto_start(true)
+        .build();
+
+    let pending_orders_query = Query::cypher("pending-orders-query")
+        .query(
+            r#"
+            MATCH (o:Order)
+            WHERE o.status IN ['pending', 'preparing', 'ready']
+            RETURN elementId(o) AS orderId, o.status AS status,
+                   o.restaurant AS restaurant, o.delivery_address AS address
+        "#,
+        )
+        .from_source(source_name)
+        .auto_start(true)
+        .build();
+
+    // Build reaction configurations
+    let log_reaction = Reaction::log(reaction_name)
+        .subscribe_to(query_name)
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("log_level", "info")
+                .with_string("description", "Log driver availability changes"),
+        )
+        .build();
+
+    let http_reaction = Reaction::http("order-notification-handler")
+        .subscribe_to(query_name)
+        .auto_start(true)
+        .with_properties(
+            Properties::new()
+                .with_string("endpoint", "http://localhost:9000/notifications")
+                .with_string("method", "POST")
+                .with_string("description", "Send notifications for query results"),
+        )
+        .build();
+
+    // Create the configuration structure
+    let config = drasi_server_core::config::DrasiServerCoreConfig {
+        server_core: drasi_server_core::config::DrasiServerCoreSettings::default(),
+        sources: vec![vehicle_source, order_source],
+        queries: vec![available_drivers_query, pending_orders_query],
+        reactions: vec![log_reaction, http_reaction],
     };
 
-    // Validate the configuration
-    config.validate()?;
-
-    // Save it to a file
+    // Save configuration to file
+    std::fs::create_dir_all("config")?;
     config.save_to_file("config/example.yaml")?;
 
     println!("✅ Example configuration created successfully!");

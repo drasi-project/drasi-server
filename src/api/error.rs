@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use axum::http::StatusCode;
-use drasi_server_core::error::DrasiError;
+use drasi_server_core::DrasiError;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -30,7 +30,7 @@ pub mod error_codes {
     pub const QUERY_START_FAILED: &str = "QUERY_START_FAILED";
     pub const QUERY_STOP_FAILED: &str = "QUERY_STOP_FAILED";
     pub const QUERY_DELETE_FAILED: &str = "QUERY_DELETE_FAILED";
-    pub const QUERY_RESULTS_FAILED: &str = "QUERY_RESULTS_FAILED";
+    pub const QUERY_RESULTS_UNAVAILABLE: &str = "QUERY_RESULTS_UNAVAILABLE";
 
     pub const REACTION_CREATE_FAILED: &str = "REACTION_CREATE_FAILED";
     pub const REACTION_NOT_FOUND: &str = "REACTION_NOT_FOUND";
@@ -38,145 +38,134 @@ pub mod error_codes {
     pub const REACTION_STOP_FAILED: &str = "REACTION_STOP_FAILED";
     pub const REACTION_DELETE_FAILED: &str = "REACTION_DELETE_FAILED";
 
-    pub const COMPONENT_ALREADY_EXISTS: &str = "COMPONENT_ALREADY_EXISTS";
-    pub const COMPONENT_NOT_FOUND: &str = "COMPONENT_NOT_FOUND";
-    pub const INVALID_STATE: &str = "INVALID_STATE";
-    pub const CONFIGURATION_ERROR: &str = "CONFIGURATION_ERROR";
+    pub const CONFIG_READ_ONLY: &str = "CONFIG_READ_ONLY";
+    pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
+    pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
-    pub const READ_ONLY_MODE: &str = "READ_ONLY_MODE";
-}
-
-/// Detailed error information
-#[derive(Serialize, ToSchema)]
-pub struct ErrorDetail {
-    /// Error code for programmatic error handling
-    pub code: String,
-    /// Human-readable error message
-    pub message: String,
-    /// Optional additional details
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
-    /// Component ID if applicable
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_id: Option<String>,
 }
 
 /// API error response structure
-#[derive(Serialize, ToSchema)]
-pub struct ApiErrorResponse {
-    /// Always false for error responses
-    pub success: bool,
-    /// Error details
-    pub error: ErrorDetail,
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    /// Error code for programmatic handling
+    pub code: String,
+    /// Human-readable error message
+    pub message: String,
+    /// Additional error details
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<ErrorDetail>,
 }
 
-impl ApiErrorResponse {
+/// Additional error details
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorDetail {
+    /// Component type if applicable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_type: Option<String>,
+    /// Component ID if applicable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_id: Option<String>,
+    /// Technical error details
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technical_details: Option<String>,
+}
+
+impl ErrorResponse {
     /// Create a new error response
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            success: false,
-            error: ErrorDetail {
-                code: code.into(),
-                message: message.into(),
-                details: None,
-                component_id: None,
-            },
+            code: code.into(),
+            message: message.into(),
+            details: None,
         }
     }
 
-    /// Create an error response with component ID
-    pub fn with_component(
-        code: impl Into<String>,
-        message: impl Into<String>,
-        component_id: impl Into<String>,
-    ) -> Self {
-        Self {
-            success: false,
-            error: ErrorDetail {
-                code: code.into(),
-                message: message.into(),
-                details: None,
-                component_id: Some(component_id.into()),
-            },
-        }
+    /// Add details to the error response
+    pub fn with_details(mut self, details: ErrorDetail) -> Self {
+        self.details = Some(details);
+        self
     }
 
-    /// Create an error response with details
-    pub fn with_details(
-        code: impl Into<String>,
-        message: impl Into<String>,
-        details: serde_json::Value,
-    ) -> Self {
-        Self {
-            success: false,
-            error: ErrorDetail {
-                code: code.into(),
-                message: message.into(),
-                details: Some(details),
-                component_id: None,
-            },
+    /// Convert to a specific status code
+    pub fn with_status(self) -> (StatusCode, axum::Json<Self>) {
+        let status = status_from_code(&self.code);
+        (status, axum::Json(self))
+    }
+}
+
+/// Convert an error code to an HTTP status code
+fn status_from_code(code: &str) -> StatusCode {
+    match code {
+        error_codes::SOURCE_NOT_FOUND
+        | error_codes::QUERY_NOT_FOUND
+        | error_codes::REACTION_NOT_FOUND => StatusCode::NOT_FOUND,
+
+        error_codes::CONFIG_READ_ONLY | error_codes::DUPLICATE_RESOURCE => StatusCode::CONFLICT,
+
+        error_codes::INVALID_REQUEST => StatusCode::BAD_REQUEST,
+
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+/// Convert DrasiError to ErrorResponse
+impl From<DrasiError> for ErrorResponse {
+    fn from(err: DrasiError) -> Self {
+        use DrasiError::*;
+
+        match err {
+            ComponentNotFound { ref kind, ref id } => {
+                let code = match kind.as_str() {
+                    "source" => error_codes::SOURCE_NOT_FOUND,
+                    "query" => error_codes::QUERY_NOT_FOUND,
+                    "reaction" => error_codes::REACTION_NOT_FOUND,
+                    _ => error_codes::INTERNAL_ERROR,
+                };
+
+                ErrorResponse::new(code, format!("{} '{}' not found", kind, id)).with_details(
+                    ErrorDetail {
+                        component_type: Some(kind.clone()),
+                        component_id: Some(id.clone()),
+                        technical_details: None,
+                    },
+                )
+            }
+            DuplicateComponent { ref kind, ref id } => ErrorResponse::new(
+                error_codes::DUPLICATE_RESOURCE,
+                format!("{} '{}' already exists", kind, id),
+            )
+            .with_details(ErrorDetail {
+                component_type: Some(kind.clone()),
+                component_id: Some(id.clone()),
+                technical_details: None,
+            }),
+            InvalidState(ref msg) => {
+                ErrorResponse::new(error_codes::INVALID_REQUEST, format!("Invalid state: {}", msg))
+            }
+            Configuration(ref msg) => ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Configuration error: {}", msg),
+            ),
+            Io(ref err) => {
+                ErrorResponse::new(error_codes::INTERNAL_ERROR, format!("I/O error: {}", err))
+            }
+            Serialization(ref msg) => ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Serialization error: {}", msg),
+            ),
+            _ => ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string()),
         }
     }
 }
 
-impl From<DrasiError> for ErrorDetail {
-    fn from(error: DrasiError) -> Self {
-        match error {
-            DrasiError::ComponentNotFound(name) => ErrorDetail {
-                code: error_codes::COMPONENT_NOT_FOUND.to_string(),
-                message: format!("Component not found: {}", name),
-                details: None,
-                component_id: Some(name),
-            },
-            DrasiError::ComponentAlreadyExists(name) => ErrorDetail {
-                code: error_codes::COMPONENT_ALREADY_EXISTS.to_string(),
-                message: format!("Component already exists: {}", name),
-                details: None,
-                component_id: Some(name),
-            },
-            DrasiError::InvalidState(msg) => ErrorDetail {
-                code: error_codes::INVALID_STATE.to_string(),
-                message: format!("Invalid state: {}", msg),
-                details: None,
-                component_id: None,
-            },
-            DrasiError::Configuration(msg) => ErrorDetail {
-                code: error_codes::CONFIGURATION_ERROR.to_string(),
-                message: format!("Configuration error: {}", msg),
-                details: None,
-                component_id: None,
-            },
-            DrasiError::IoError(err) => ErrorDetail {
-                code: error_codes::INTERNAL_ERROR.to_string(),
-                message: format!("IO error: {}", err),
-                details: None,
-                component_id: None,
-            },
-            DrasiError::SerializationError(err) => ErrorDetail {
-                code: error_codes::INTERNAL_ERROR.to_string(),
-                message: format!("Serialization error: {}", err),
-                details: None,
-                component_id: None,
-            },
-            DrasiError::Other(err) => ErrorDetail {
-                code: error_codes::INTERNAL_ERROR.to_string(),
-                message: format!("Error: {}", err),
-                details: None,
-                component_id: None,
-            },
-        }
-    }
-}
+/// Convert DrasiError to HTTP status code
+pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
+    use DrasiError::*;
 
-/// Helper to determine HTTP status code from DrasiError
-pub fn error_to_status_code(error: &DrasiError) -> StatusCode {
-    match error {
-        DrasiError::ComponentNotFound(_) => StatusCode::NOT_FOUND,
-        DrasiError::ComponentAlreadyExists(_) => StatusCode::CONFLICT,
-        DrasiError::Configuration(_) => StatusCode::BAD_REQUEST,
-        DrasiError::InvalidState(_) => StatusCode::BAD_REQUEST,
-        DrasiError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        DrasiError::SerializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        DrasiError::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    match err {
+        ComponentNotFound { .. } => StatusCode::NOT_FOUND,
+        DuplicateComponent { .. } => StatusCode::CONFLICT,
+        InvalidState(_) | Configuration(_) | Validation(_) => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

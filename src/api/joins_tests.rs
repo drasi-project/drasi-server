@@ -18,11 +18,10 @@ mod api_query_joins_tests {
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};
     use drasi_server_core::{
-        config::{QueryJoinConfig, QueryJoinKeyConfig, QueryLanguage},
-        DrasiServerCore, QueryConfig,
+        config::{QueryJoinConfig, QueryJoinKeyConfig},
+        DrasiServerCore, Query, QueryConfig,
     };
     use serde_json::json;
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     async fn create_test_environment() -> (
@@ -67,22 +66,13 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = QueryConfig {
-            id: "vehicle-driver-query".to_string(),
-            query:
-                "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate"
-                    .to_string(),
-            sources: vec!["vehicles".to_string(), "drivers".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: Some(vec![join_config.clone()]),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("vehicle-driver-query")
+            .query("MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate")
+            .from_source("vehicles")
+            .from_source("drivers")
+            .auto_start(false)
+            .with_joins(vec![join_config.clone()])
+            .build();
 
         // Call the API handler
         let result = create_query(
@@ -133,20 +123,14 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = QueryConfig {
-            id: "full-order-query".to_string(),
-            query: "MATCH (o:Order)-[:ORDER_TO_RESTAURANT]->(r:Restaurant), (o)-[:ORDER_TO_DRIVER]->(d:Driver) RETURN o.id, r.name, d.name".to_string(),
-            sources: vec!["orders".to_string(), "restaurants".to_string(), "drivers".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: Some(vec![restaurant_join.clone(), driver_join.clone()]),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("full-order-query")
+            .query("MATCH (o:Order)-[:ORDER_TO_RESTAURANT]->(r:Restaurant), (o)-[:ORDER_TO_DRIVER]->(d:Driver) RETURN o.id, r.name, d.name")
+            .from_source("orders")
+            .from_source("restaurants")
+            .from_source("drivers")
+            .auto_start(false)
+            .with_joins(vec![restaurant_join.clone(), driver_join.clone()])
+            .build();
 
         // Call the API handler
         let result = create_query(
@@ -169,20 +153,11 @@ mod api_query_joins_tests {
         let (core, read_only, config_persistence) = create_test_environment().await;
 
         // Create a query without joins
-        let query_config = QueryConfig {
-            id: "simple-query".to_string(),
-            query: "MATCH (n:Node) RETURN n".to_string(),
-            sources: vec!["source1".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: None,
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("simple-query")
+            .query("MATCH (n:Node) RETURN n")
+            .from_source("source1")
+            .auto_start(false)
+            .build();
 
         // Call the API handler
         let result = create_query(
@@ -205,20 +180,12 @@ mod api_query_joins_tests {
         let (core, read_only, config_persistence) = create_test_environment().await;
 
         // Create a query with empty joins array
-        let query_config = QueryConfig {
-            id: "empty-joins-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["source1".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: Some(vec![]), // Empty joins array
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("empty-joins-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("source1")
+            .auto_start(false)
+            .with_joins(vec![]) // Empty joins array
+            .build();
 
         // Call the API handler
         let result = create_query(
@@ -255,21 +222,13 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = QueryConfig {
-            id: "product-category-query".to_string(),
-            query: "MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name"
-                .to_string(),
-            sources: vec!["products".to_string(), "categories".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: Some(vec![join_config.clone()]),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("product-category-query")
+            .query("MATCH (p:Product)-[:PRODUCT_CATEGORY]->(c:Category) RETURN p.name, c.name")
+            .from_source("products")
+            .from_source("categories")
+            .auto_start(false)
+            .with_joins(vec![join_config.clone()])
+            .build();
 
         // Create the query
         let _ = create_query(
@@ -323,20 +282,13 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b".to_string(),
-            sources: vec!["source1".to_string(), "source2".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: Some(vec![join_config]),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("test-query")
+            .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
+            .from_source("source1")
+            .from_source("source2")
+            .auto_start(true)
+            .with_joins(vec![join_config])
+            .build();
 
         // Serialize to JSON
         let json = serde_json::to_value(&query_config).unwrap();
@@ -389,20 +341,12 @@ mod api_query_joins_tests {
             ],
         };
 
-        let query_config = QueryConfig {
-            id: "readonly-test-query".to_string(),
-            query: "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b".to_string(),
-            sources: vec!["source1".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: Some(vec![join_config]),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            query_language: QueryLanguage::default(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        };
+        let query_config = Query::cypher("readonly-test-query")
+            .query("MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b")
+            .from_source("source1")
+            .auto_start(false)
+            .with_joins(vec![join_config])
+            .build();
 
         // Try to create query in read-only mode
         let result = create_query(

@@ -3,10 +3,7 @@
 //! These tests ensure API operations maintain consistent state across components,
 //! testing the public API for component lifecycle management.
 
-use drasi_server_core::{
-    config::QueryLanguage, DrasiServerCore, QueryConfig, ReactionConfig, SourceConfig,
-};
-use std::collections::HashMap;
+use drasi_server_core::{DrasiServerCore, Query, Reaction, Source};
 use std::sync::Arc;
 
 #[tokio::test]
@@ -39,39 +36,22 @@ async fn test_server_start_stop_cycle() {
 
 #[tokio::test]
 async fn test_components_with_auto_start() {
+    let source = Source::mock("test-source").auto_start(true).build();
+    let query = Query::cypher("test-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("test-source")
+        .auto_start(true)
+        .build();
+    let reaction = Reaction::log("test-reaction")
+        .subscribe_to("test-query")
+        .auto_start(true)
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_reaction(ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["test-query".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        })
+        .add_source(source)
+        .add_query(query)
+        .add_reaction(reaction)
         .build()
         .await
         .expect("Failed to build test core");
@@ -95,39 +75,22 @@ async fn test_components_with_auto_start() {
 
 #[tokio::test]
 async fn test_components_without_auto_start() {
+    let source = Source::mock("test-source").auto_start(false).build();
+    let query = Query::cypher("test-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("test-source")
+        .auto_start(false)
+        .build();
+    let reaction = Reaction::log("test-reaction")
+        .subscribe_to("test-query")
+        .auto_start(false)
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: false,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_reaction(ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["test-query".to_string()],
-            auto_start: false,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        })
+        .add_source(source)
+        .add_query(query)
+        .add_reaction(reaction)
         .build()
         .await
         .expect("Failed to build test core");
@@ -149,31 +112,17 @@ async fn test_components_without_auto_start() {
 
 #[tokio::test]
 async fn test_restart_with_components() {
+    let source = Source::mock("restart-source").auto_start(true).build();
+    let query = Query::cypher("restart-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("restart-source")
+        .auto_start(true)
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "restart-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "restart-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["restart-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
+        .add_source(source)
+        .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -206,40 +155,20 @@ async fn test_restart_with_components() {
 
 #[tokio::test]
 async fn test_multiple_query_sources() {
+    let source1 = Source::mock("source1").auto_start(true).build();
+    let source2 = Source::mock("source2").auto_start(true).build();
+    let query = Query::cypher("multi-source-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("source1")
+        .from_source("source2")
+        .auto_start(true)
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "source1".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_source(SourceConfig {
-            id: "source2".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "multi-source-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["source1".to_string(), "source2".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
+        .add_source(source1)
+        .add_source(source2)
+        .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -260,53 +189,29 @@ async fn test_multiple_query_sources() {
 
 #[tokio::test]
 async fn test_multiple_reaction_queries() {
+    let source = Source::mock("test-source").auto_start(true).build();
+    let query1 = Query::cypher("query1")
+        .query("MATCH (n) RETURN n")
+        .from_source("test-source")
+        .auto_start(true)
+        .build();
+    let query2 = Query::cypher("query2")
+        .query("MATCH (m) RETURN m")
+        .from_source("test-source")
+        .auto_start(true)
+        .build();
+    let reaction = Reaction::log("multi-query-reaction")
+        .subscribe_to("query1")
+        .subscribe_to("query2")
+        .auto_start(true)
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "query1".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "query2".to_string(),
-            query: "MATCH (m) RETURN m".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_reaction(ReactionConfig {
-            id: "multi-query-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["query1".to_string(), "query2".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            priority_queue_capacity: None,
-        })
+        .add_source(source)
+        .add_query(query1)
+        .add_query(query2)
+        .add_reaction(reaction)
         .build()
         .await
         .expect("Failed to build test core");
@@ -327,52 +232,37 @@ async fn test_multiple_reaction_queries() {
 
 #[tokio::test]
 async fn test_query_with_joins() {
+    let source1 = Source::mock("join-source1").auto_start(true).build();
+    let source2 = Source::mock("join-source2").auto_start(true).build();
+
+    // For joins, we need to use the lower-level QueryConfig since the builder API
+    // may not support join configuration yet
+    use drasi_server_core::config::{QueryJoinConfig, QueryJoinKeyConfig};
+    let query = Query::cypher("join-query")
+        .query("MATCH (a:TypeA)<-[:LINKED]-(b:TypeB) RETURN a, b")
+        .from_source("join-source1")
+        .from_source("join-source2")
+        .auto_start(true)
+        .with_join(QueryJoinConfig {
+            id: "LINKED".to_string(),
+            keys: vec![
+                QueryJoinKeyConfig {
+                    label: "TypeA".to_string(),
+                    property: "id".to_string(),
+                },
+                QueryJoinKeyConfig {
+                    label: "TypeB".to_string(),
+                    property: "type_a_id".to_string(),
+                },
+            ],
+        })
+        .build();
+
     let core = DrasiServerCore::builder()
         .with_id("test-server")
-        .add_source(SourceConfig {
-            id: "join-source1".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_source(SourceConfig {
-            id: "join-source2".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
-        .add_query(QueryConfig {
-            id: "join-query".to_string(),
-            query: "MATCH (a:TypeA)<-[:LINKED]-(b:TypeB) RETURN a, b".to_string(),
-            sources: vec!["join-source1".to_string(), "join-source2".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: Some(vec![drasi_server_core::config::QueryJoinConfig {
-                id: "LINKED".to_string(),
-                keys: vec![
-                    drasi_server_core::config::QueryJoinKeyConfig {
-                        label: "TypeA".to_string(),
-                        property: "id".to_string(),
-                    },
-                    drasi_server_core::config::QueryJoinKeyConfig {
-                        label: "TypeB".to_string(),
-                        property: "type_a_id".to_string(),
-                    },
-                ],
-            }]),
-            query_language: QueryLanguage::default(),
-            enable_bootstrap: true,
-            bootstrap_buffer_size: 10000,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-        })
+        .add_source(source1)
+        .add_source(source2)
+        .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");

@@ -10,9 +10,8 @@ use axum::{
     Router,
 };
 use drasi_server::api;
-use drasi_server_core::{config::QueryLanguage, QueryConfig, SourceConfig};
+use drasi_server_core::{Query, QueryConfig, Source, SourceConfig};
 use serde_json::json;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -266,15 +265,7 @@ async fn test_query_lifecycle_via_api() {
     let (router, core) = create_test_router().await;
 
     // First create a source for the query
-    let source_config = SourceConfig {
-        id: "query-source".to_string(),
-        source_type: "mock".to_string(),
-        auto_start: false,
-        properties: HashMap::new(),
-        bootstrap_provider: None,
-        dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-    };
+    let source_config = Source::mock("query-source").auto_start(false).build();
     core.create_source(source_config.clone()).await.unwrap();
 
     // Create a query
@@ -325,20 +316,11 @@ async fn test_reaction_lifecycle_via_api() {
     let (router, core) = create_test_router().await;
 
     // First create a query for the reaction
-    let query_config = QueryConfig {
-        id: "reaction-query".to_string(),
-        query: "MATCH (n) RETURN n".to_string(),
-        sources: vec!["source1".to_string()],
-        auto_start: false,
-        properties: HashMap::new(),
-        query_language: QueryLanguage::default(),
-        joins: None,
-        enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
-        priority_queue_capacity: None,
-        dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-    };
+    let query_config = Query::cypher("reaction-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("source1")
+        .auto_start(false)
+        .build();
     core.create_query(query_config.clone()).await.unwrap();
 
     // Create a reaction
@@ -639,20 +621,11 @@ async fn test_query_results_endpoint() {
     let (router, core) = create_test_router().await;
 
     // Create a query
-    let query_config = QueryConfig {
-        id: "results-query".to_string(),
-        query: "MATCH (n) RETURN n".to_string(),
-        sources: vec!["source1".to_string()],
-        auto_start: false,
-        properties: HashMap::new(),
-        query_language: QueryLanguage::default(),
-        joins: None,
-        enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
-        priority_queue_capacity: None,
-        dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-    };
+    let query_config = Query::cypher("results-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("source1")
+        .auto_start(false)
+        .build();
     core.create_query(query_config.clone()).await.unwrap();
 
     // Try to get results - should return error (not exposed in public API)

@@ -1,5 +1,5 @@
-use drasi_server::{DrasiServerBuilder, SourceConfig};
-use std::collections::HashMap;
+use drasi_server::DrasiServerBuilder;
+use drasi_server_core::Source;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
@@ -63,15 +63,7 @@ async fn test_dynamic_component_management() {
     server.start().await.expect("Failed to start server");
 
     // Add source dynamically using the new runtime API
-    let source_config = SourceConfig {
-        id: "dynamic_source".to_string(),
-        source_type: "mock".to_string(),
-        auto_start: true,
-        properties: HashMap::new(),
-        bootstrap_provider: None,
-        dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-    };
+    let source_config = Source::mock("dynamic_source").auto_start(true).build();
 
     server
         .create_source(source_config)
@@ -145,15 +137,9 @@ async fn test_concurrent_operations() {
     for i in 0..5 {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
-            let config = SourceConfig {
-                id: format!("concurrent_source_{}", i),
-                source_type: "mock".to_string(),
-                auto_start: false,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-                dispatch_buffer_capacity: None,
-            dispatch_mode: None,
-            };
+            let config = Source::mock(format!("concurrent_source_{}", i))
+                .auto_start(false)
+                .build();
             server_clone.create_source(config).await
         });
         tasks.push(task);
