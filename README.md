@@ -56,11 +56,16 @@ sources:
   - id: inventory-db
     source_type: postgres
     auto_start: true
-    properties:
-      host: localhost
-      port: 5432
-      database: inventory
-      user: postgres
+    # PostgreSQL source configuration (flattened typed fields)
+    host: localhost
+    port: 5432
+    database: inventory
+    user: postgres
+    password: postgres
+    tables: [products]
+    slot_name: drasi_inventory_slot
+    publication_name: drasi_inventory_pub
+    ssl_mode: prefer
 
 queries:
   - id: low-stock-detector
@@ -68,6 +73,7 @@ queries:
       MATCH (p:Product)
       WHERE p.quantity < p.reorder_threshold
       RETURN p.id, p.name, p.quantity, p.reorder_threshold
+    queryLanguage: Cypher
     sources: [inventory-db]
     auto_start: true
     enableBootstrap: true
@@ -77,10 +83,14 @@ reactions:
   - id: alert-webhook
     reaction_type: http
     auto_start: true
-    properties:
-      endpoint: https://alerts.example.com/webhook
-      method: POST
     queries: [low-stock-detector]
+    # HTTP reaction configuration (flattened typed fields)
+    base_url: https://alerts.example.com
+    timeout_ms: 5000
+    routes:
+      low-stock-detector:
+        path: /webhook
+        method: POST
 ```
 
 ### 3. Run the Server
@@ -112,12 +122,14 @@ DrasiServer orchestrates three types of components that work together to create 
 
 ### Sources
 Data ingestion points that connect to your systems:
-- **PostgreSQL** (`postgres`) - Monitor table changes via WAL replication
+- **PostgreSQL** (`postgres`) - Monitor table changes via WAL replication (formerly `postgres_replication`)
 - **HTTP Endpoints** (`http`) - Poll REST APIs for updates
 - **gRPC Streams** (`grpc`) - Subscribe to real-time data feeds
 - **Platform** (`platform`) - Redis Streams integration for Drasi Platform
 - **Mock** (`mock`) - Test data generation
 - **Application** (`application`) - Programmatically inject events in embedded usage
+
+**Note:** Source configurations use strongly-typed fields that are flattened at the source level. Each source type has its own specific configuration fields. See the [Configuration](#configuration) section for details.
 
 ### Continuous Queries
 Cypher-based queries that continuously evaluate incoming changes:
@@ -195,36 +207,50 @@ server:
 
 # Server core settings (optional)
 server_core:
-  id: my-server-id                    # Unique server ID (auto-generated if not set)
-  priority_queue_capacity: 10000      # Default capacity for query/reaction priority queues
+  id: my-server-id                      # Unique server ID (auto-generated if not set)
+  priority_queue_capacity: 10000        # Default capacity for query/reaction priority queues
+  broadcast_channel_capacity: 1000      # Capacity for broadcast channels (optional)
 
 # Data sources
 sources:
   - id: unique-source-id
-    source_type: postgres           # Source type (postgres, http, grpc, platform, mock, application)
-    auto_start: true                # Start automatically
-    bootstrap_provider:             # Optional: Load initial data (see Bootstrap Providers section)
-      type: scriptfile              # Provider type: postgres, application, scriptfile, platform, noop
-      file_paths:                   # For scriptfile provider
+    source_type: postgres               # Source type (postgres, http, grpc, platform, mock, application)
+    auto_start: true                    # Start automatically
+
+    # Bootstrap provider (optional) - Load initial data independently from streaming
+    bootstrap_provider:
+      type: scriptfile                  # Provider type: postgres, application, scriptfile, platform, noop
+      file_paths:                       # For scriptfile provider
         - path/to/data.jsonl
-    properties:                     # Source-specific properties
-      host: localhost
-      database: mydb
+
+    # Source-specific configuration fields (flattened, not nested under "properties")
+    # Each source type has its own typed configuration fields
+    # Example for PostgreSQL source:
+    host: localhost
+    port: 5432
+    database: mydb
+    user: postgres
+    password: secret
+    tables: [table1, table2]
+    slot_name: drasi_slot
+    publication_name: drasi_pub
+    ssl_mode: prefer
+    dispatch_buffer_capacity: 1000      # Optional: Buffer size for dispatching
+    dispatch_mode: channel              # Optional: Dispatch mode (channel, direct)
 
 # Continuous queries
 queries:
   - id: unique-query-id
-    query: |                       # Cypher or GQL query
+    query: |                            # Cypher or GQL query
       MATCH (n:Node)
       RETURN n
-    queryLanguage: Cypher          # Query language (Cypher or GQL, default: Cypher)
-    sources: [source-id]           # Source subscriptions
-    auto_start: true               # Start automatically (default: true)
-    enableBootstrap: true          # Enable bootstrap data (default: true)
-    bootstrapBufferSize: 10000     # Buffer size during bootstrap (default: 10000)
-    priority_queue_capacity: 5000  # Override default priority queue capacity (optional)
-    properties: {}                 # Query-specific properties
-    joins:                         # Optional synthetic joins
+    queryLanguage: Cypher               # Query language (Cypher or GQL, default: Cypher)
+    sources: [source-id]                # Source subscriptions
+    auto_start: true                    # Start automatically (default: true)
+    enableBootstrap: true               # Enable bootstrap data (default: true)
+    bootstrapBufferSize: 10000          # Buffer size during bootstrap (default: 10000)
+    priority_queue_capacity: 5000       # Override default priority queue capacity (optional)
+    joins:                              # Optional synthetic joins
       - id: RELATIONSHIP_TYPE
         keys:
           - label: Node1
@@ -235,13 +261,143 @@ queries:
 # Reactions
 reactions:
   - id: unique-reaction-id
-    reaction_type: http            # Reaction type (http, grpc, sse, log, platform, profiler, etc.)
-    queries: [query-id]            # Query subscriptions
-    auto_start: true               # Start automatically (default: true)
-    priority_queue_capacity: 5000  # Override default priority queue capacity (optional)
-    properties:                    # Reaction-specific properties
-      endpoint: https://example.com
+    reaction_type: http                 # Reaction type (http, grpc, sse, log, platform, profiler, etc.)
+    queries: [query-id]                 # Query subscriptions
+    auto_start: true                    # Start automatically (default: true)
+    priority_queue_capacity: 5000       # Override default priority queue capacity (optional)
+
+    # Reaction-specific configuration fields (flattened, not nested under "properties")
+    # Each reaction type has its own typed configuration fields
+    # Example for HTTP reaction:
+    base_url: https://example.com
+    timeout_ms: 5000
+    token: optional-bearer-token
+    routes:
+      query-id:
+        path: /webhook
+        method: POST
 ```
+
+### Source Configuration Patterns
+
+DrasiServer supports **strongly-typed configuration** where each source type has its own specific configuration fields that are flattened at the source level (not nested under a `properties` key).
+
+**PostgreSQL Source Example:**
+```yaml
+sources:
+  - id: my-postgres
+    source_type: postgres
+    auto_start: true
+    # PostgreSQL-specific typed fields
+    host: localhost
+    port: 5432
+    database: mydb
+    user: postgres
+    password: secret
+    tables: [orders, customers]
+    slot_name: drasi_replication_slot
+    publication_name: drasi_publication
+    ssl_mode: prefer  # Options: disable, prefer, require
+```
+
+**HTTP Source Example:**
+```yaml
+sources:
+  - id: my-http-api
+    source_type: http
+    auto_start: true
+    # HTTP-specific typed fields
+    host: 0.0.0.0
+    port: 9000
+    timeout_ms: 10000
+```
+
+**Platform Source Example (Redis Streams):**
+```yaml
+sources:
+  - id: redis-stream
+    source_type: platform
+    auto_start: true
+    # Platform-specific typed fields
+    redis_url: redis://localhost:6379
+    stream_key: my-stream
+    consumer_group: my-consumer-group
+    batch_size: 10
+    block_ms: 1000
+```
+
+### Reaction Configuration Patterns
+
+Similar to sources, reactions use strongly-typed configuration fields:
+
+**HTTP Reaction Example:**
+```yaml
+reactions:
+  - id: webhook-reaction
+    reaction_type: http
+    queries: [my-query]
+    auto_start: true
+    # HTTP reaction typed fields
+    base_url: https://api.example.com
+    timeout_ms: 5000
+    token: my-bearer-token
+    routes:
+      my-query:
+        path: /events
+        method: POST
+```
+
+**Adaptive HTTP Reaction Example (with retry logic):**
+```yaml
+reactions:
+  - id: adaptive-webhook
+    reaction_type: http_adaptive  # or adaptive_http
+    queries: [my-query]
+    auto_start: true
+    base_url: https://api.example.com
+    timeout_ms: 5000
+    max_retries: 3
+    retry_delay_ms: 1000
+```
+
+**Platform Reaction Example (Redis Streams with CloudEvents):**
+```yaml
+reactions:
+  - id: redis-publisher
+    reaction_type: platform
+    queries: [my-query]
+    auto_start: true
+    redis_url: redis://localhost:6379
+    stream_key: output-stream
+```
+
+### Capacity Configuration
+
+DrasiServer supports hierarchical capacity configuration for query and reaction priority queues:
+
+```yaml
+server_core:
+  priority_queue_capacity: 10000  # Default for all queries and reactions
+
+queries:
+  - id: high-volume-query
+    priority_queue_capacity: 50000  # Override for this specific query
+    query: "MATCH (n) RETURN n"
+    sources: [my-source]
+
+reactions:
+  - id: high-volume-reaction
+    priority_queue_capacity: 50000  # Override for this specific reaction
+    reaction_type: http
+    queries: [high-volume-query]
+```
+
+**Capacity Settings:**
+- `server_core.priority_queue_capacity` - Default capacity for all query/reaction priority queues
+- `server_core.broadcast_channel_capacity` - Capacity for broadcast channels
+- `queries[].priority_queue_capacity` - Override default for a specific query
+- `reactions[].priority_queue_capacity` - Override default for a specific reaction
+- `sources[].dispatch_buffer_capacity` - Buffer size for source event dispatching
 
 ### Configuration Validation
 
@@ -295,6 +451,86 @@ server:
 sources: []
 queries: []
 reactions: []
+```
+
+### Configuration Migration Guide
+
+If you're upgrading from an older version of DrasiServer, you may need to update your configuration files:
+
+#### Source Type Renames (Breaking Change)
+
+**PostgreSQL sources:**
+```yaml
+# OLD (no longer supported)
+source_type: postgres_replication
+
+# NEW
+source_type: postgres
+```
+
+#### Flattened Source Configuration (Recommended)
+
+Source configurations now use strongly-typed fields flattened at the source level instead of nested under `properties`:
+
+**OLD pattern (still supported for backward compatibility):**
+```yaml
+sources:
+  - id: my-source
+    source_type: postgres
+    auto_start: true
+    properties:
+      host: localhost
+      port: 5432
+      database: mydb
+```
+
+**NEW pattern (recommended - provides better type safety):**
+```yaml
+sources:
+  - id: my-source
+    source_type: postgres
+    auto_start: true
+    # Flattened typed fields
+    host: localhost
+    port: 5432
+    database: mydb
+    user: postgres
+    password: secret
+    tables: [table1]
+    slot_name: drasi_slot
+    publication_name: drasi_pub
+    ssl_mode: prefer
+```
+
+**Note:** The flattened pattern is recommended as it provides compile-time type checking and validation. The nested `properties` pattern may be deprecated in future versions.
+
+#### Reaction Configuration
+
+Similar to sources, reactions should use flattened typed fields:
+
+**OLD pattern:**
+```yaml
+reactions:
+  - id: my-reaction
+    reaction_type: http
+    queries: [my-query]
+    properties:
+      endpoint: https://example.com
+      method: POST
+```
+
+**NEW pattern:**
+```yaml
+reactions:
+  - id: my-reaction
+    reaction_type: http
+    queries: [my-query]
+    base_url: https://example.com
+    timeout_ms: 5000
+    routes:
+      my-query:
+        path: /webhook
+        method: POST
 ```
 
 ### Environment Variables
@@ -363,7 +599,15 @@ Content-Type: application/json
   "id": "new-source",
   "source_type": "postgres",
   "auto_start": true,
-  "properties": {...}
+  "host": "localhost",
+  "port": 5432,
+  "database": "mydb",
+  "user": "postgres",
+  "password": "secret",
+  "tables": ["table1"],
+  "slot_name": "drasi_slot",
+  "publication_name": "drasi_pub",
+  "ssl_mode": "prefer"
 }
 
 # Delete a source
@@ -391,8 +635,11 @@ Content-Type: application/json
 {
   "id": "new-query",
   "query": "MATCH (n:Node) RETURN n",
+  "queryLanguage": "Cypher",
   "sources": ["source-id"],
-  "auto_start": true
+  "auto_start": true,
+  "enableBootstrap": true,
+  "bootstrapBufferSize": 10000
 }
 
 # Delete a query
@@ -425,7 +672,14 @@ Content-Type: application/json
   "reaction_type": "http",
   "queries": ["query-id"],
   "auto_start": true,
-  "properties": {...}
+  "base_url": "https://api.example.com",
+  "timeout_ms": 5000,
+  "routes": {
+    "query-id": {
+      "path": "/webhook",
+      "method": "POST"
+    }
+  }
 }
 
 # Delete a reaction
