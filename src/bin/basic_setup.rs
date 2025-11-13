@@ -100,6 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sources: vec![vehicle_source, order_source],
         queries: vec![available_drivers_query, pending_orders_query],
         reactions: vec![log_reaction, http_reaction],
+        storage_backends: vec![],
     };
 
     // Save configuration to file

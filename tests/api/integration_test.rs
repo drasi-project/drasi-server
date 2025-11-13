@@ -10,7 +10,7 @@ use axum::{
     Router,
 };
 use drasi_server::api;
-use drasi_server_core::{Query, QueryConfig, Source, SourceConfig};
+use drasi_server_core::{Query, Source};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
