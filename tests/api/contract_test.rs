@@ -126,7 +126,9 @@ mod contract_tests {
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
         assert_eq!(json["query"], "MATCH (n:Node) RETURN n");
-        assert_eq!(json["sources"], json!(["source1", "source2"]));
+        assert_eq!(json["source_subscriptions"].as_array().unwrap().len(), 2);
+        assert_eq!(json["source_subscriptions"][0]["source_id"], "source1");
+        assert_eq!(json["source_subscriptions"][1]["source_id"], "source2");
         assert_eq!(json["auto_start"], true);
     }
 
@@ -135,14 +137,20 @@ mod contract_tests {
         let json = json!({
             "id": "test-query",
             "query": "MATCH (p:Person) WHERE p.age > 21 RETURN p",
-            "sources": ["postgres-db"],
+            "source_subscriptions": [
+                {
+                    "source_id": "postgres-db",
+                    "pipeline": []
+                }
+            ],
             "auto_start": false
         });
 
         let config: QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-query");
         assert_eq!(config.query, "MATCH (p:Person) WHERE p.age > 21 RETURN p");
-        assert_eq!(config.sources, vec!["postgres-db"]);
+        assert_eq!(config.source_subscriptions.len(), 1);
+        assert_eq!(config.source_subscriptions[0].source_id, "postgres-db");
         assert!(!config.auto_start);
     }
 
@@ -414,7 +422,7 @@ mod edge_case_tests {
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["query"], "");
-        assert_eq!(json["sources"], json!([]));
+        assert_eq!(json["source_subscriptions"], json!([]));
     }
 
     #[test]

@@ -272,7 +272,12 @@ async fn test_query_lifecycle_via_api() {
     let query_config = json!({
         "id": "test-query",
         "query": "MATCH (n:Node) RETURN n",
-        "sources": ["query-source"],
+        "source_subscriptions": [
+            {
+                "source_id": "query-source",
+                "pipeline": []
+            }
+        ],
         "auto_start": false
     });
 
@@ -421,7 +426,12 @@ async fn test_auto_start_behavior() {
     let query_config = json!({
         "id": "auto-query",
         "query": "MATCH (n) RETURN n",
-        "sources": ["auto-source"],
+        "source_subscriptions": [
+            {
+                "source_id": "auto-source",
+                "pipeline": []
+            }
+        ],
         "auto_start": true
     });
 
