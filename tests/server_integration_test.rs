@@ -1,6 +1,5 @@
 use anyhow::Result;
 use drasi_server::DrasiServerCore;
-use drasi_server_core::config::DrasiServerCoreSettings;
 use drasi_server_core::{Properties, Query, Reaction, Source};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
