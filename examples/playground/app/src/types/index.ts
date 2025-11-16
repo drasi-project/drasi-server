@@ -115,7 +115,8 @@ export interface DataEvent {
 
 export interface DataTableProps {
   sourceId: string;
-  sourceName: string;
+  sourceName?: string;
+  client: any; // DrasiClient instance
 }
 
 export interface QueryResultsProps {

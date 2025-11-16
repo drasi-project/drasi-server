@@ -16,7 +16,12 @@ import { useState } from 'react';
 import { useSources } from '@/hooks/useDrasi';
 import { Source } from '@/types';
 
-export function SourceManager() {
+interface SourceManagerProps {
+  onSourceSelect?: (sourceId: string) => void;
+  selectedSourceId?: string | null;
+}
+
+export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManagerProps) {
   const { sources, loading, error, createSource, deleteSource } = useSources();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -140,7 +145,13 @@ export function SourceManager() {
               </tr>
             ) : (
               sources.map((source) => (
-                <tr key={source.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={source.id}
+                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                    selectedSourceId === source.id ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => onSourceSelect?.(source.id)}
+                >
                   <td className="px-6 py-4">
                     <span className="text-sm font-semibold text-slate-900 font-mono">{source.id}</span>
                   </td>

@@ -12,40 +12,100 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Database,
   Code,
-  Play,
-  Plus,
-  Upload,
-  Edit2,
-  Trash2,
-  Download,
+  Activity,
+  AlertCircle,
   CheckCircle2,
-  Clock
+  XCircle,
+  Loader2
 } from 'lucide-react';
+import { SourceManager } from './components/SourceManager';
+import { QueryManager } from './components/QueryManager';
+import { QueryResults } from './components/QueryResults';
+import { DataTable } from './components/DataTable';
+import { useDrasiClient, useConnectionStatus, useSources, useQueries } from './hooks/useDrasi';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'source' | 'query'>('source');
-  const [liveUpdates, setLiveUpdates] = useState(true);
+  const [activeTab, setActiveTab] = useState<'sources' | 'data' | 'queries'>('sources');
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
 
-  // Mock data for demonstration
-  const sourceData = [
-    { id: 1, name: 'Alice', age: 28, city: 'New York', department: 'Engineering' },
-    { id: 2, name: 'Bob', age: 35, city: 'San Francisco', department: 'Marketing' },
-    { id: 3, name: 'Charlie', age: 42, city: 'London', department: 'Sales' },
-  ];
+  // Initialize Drasi client
+  const { client, initialized, error: clientError } = useDrasiClient();
+  const connectionStatus = useConnectionStatus();
+  const { sources, loading: sourcesLoading } = useSources();
+  const { queries } = useQueries();
 
-  const queryResults = [
-    { name: 'Charlie', age: 42, department: 'Sales' },
-    { name: 'Bob', age: 35, department: 'Marketing' },
-  ];
+  // Auto-select first source when sources load
+  useEffect(() => {
+    if (sources.length > 0 && !selectedSourceId) {
+      setSelectedSourceId(sources[0].id);
+    }
+  }, [sources, selectedSourceId]);
 
-  const recentChanges = [
-    { type: 'update', message: "Charlie's age changed from 41 to 42", time: '5s ago' },
-    { type: 'add', message: 'New row added: ID #4', time: '12s ago' },
-  ];
+  // Auto-select first query when queries load
+  useEffect(() => {
+    if (queries.length > 0 && !selectedQueryId) {
+      setSelectedQueryId(queries[0].id);
+    }
+  }, [queries, selectedQueryId]);
+
+  // Connection status indicator
+  const getConnectionStatusIcon = () => {
+    if (connectionStatus.connected) {
+      return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+    } else if (connectionStatus.reconnecting) {
+      return <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />;
+    } else if (connectionStatus.error) {
+      return <XCircle className="w-4 h-4 text-red-500" />;
+    } else {
+      return <AlertCircle className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    if (connectionStatus.connected) {
+      return 'Connected';
+    } else if (connectionStatus.reconnecting) {
+      return 'Reconnecting...';
+    } else if (connectionStatus.error) {
+      return 'Disconnected';
+    } else {
+      return 'Connecting...';
+    }
+  };
+
+  // Show loading state while initializing
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Initializing Drasi Playground</h2>
+          <p className="text-sm text-gray-500">Connecting to Drasi server...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if initialization failed
+  if (clientError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Connection Error</h2>
+          <p className="text-sm text-gray-600 mb-4">{clientError}</p>
+          <p className="text-xs text-gray-500">
+            Please ensure the Drasi server is running on port 8080
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -62,12 +122,16 @@ function App() {
                 <p className="text-sm text-gray-500">Interactive continuous query experimentation</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
+              {/* Connection Status */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
+                {getConnectionStatusIcon()}
+                <span className="text-sm font-medium text-gray-700">
+                  {getConnectionStatusText()}
+                </span>
+              </div>
               <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-150 ease-out">
                 Documentation
-              </button>
-              <button className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-150 shadow-sm hover:shadow-md">
-                Share Sandbox
               </button>
             </div>
           </div>
@@ -81,229 +145,111 @@ function App() {
           {/* Tab Navigation */}
           <div className="flex border-b border-gray-200 bg-gray-50">
             <button
-              onClick={() => setActiveTab('source')}
+              onClick={() => setActiveTab('sources')}
               className={`flex-1 px-4 py-3 text-sm font-medium transition-all duration-150 ease-out ${
-                activeTab === 'source'
+                activeTab === 'sources'
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
               <div className="flex items-center justify-center gap-2">
                 <Database className="w-4 h-4" />
-                <span>Source Data</span>
+                <span>Sources</span>
               </div>
             </button>
             <button
-              onClick={() => setActiveTab('query')}
+              onClick={() => setActiveTab('data')}
               className={`flex-1 px-4 py-3 text-sm font-medium transition-all duration-150 ease-out ${
-                activeTab === 'query'
+                activeTab === 'data'
+                  ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+              disabled={!selectedSourceId}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Activity className="w-4 h-4" />
+                <span>Data</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('queries')}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-all duration-150 ease-out ${
+                activeTab === 'queries'
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
               <div className="flex items-center justify-center gap-2">
                 <Code className="w-4 h-4" />
-                <span>Query Editor</span>
+                <span>Queries</span>
               </div>
             </button>
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-auto">
-            {activeTab === 'source' ? (
-              <div className="h-full flex flex-col">
-                {/* Source Data Toolbar */}
-                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {activeTab === 'sources' && (
+              <div className="flex-1 overflow-auto">
+                <SourceManager
+                  onSourceSelect={(sourceId) => {
+                    setSelectedSourceId(sourceId);
+                    setActiveTab('data');
+                  }}
+                  selectedSourceId={selectedSourceId}
+                />
+              </div>
+            )}
+
+            {activeTab === 'data' && selectedSourceId && (
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                   <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
-                      <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-all duration-150 ease-out">
-                        <Plus className="w-4 h-4" />
-                        <span>Add Row</span>
-                      </button>
-                      <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 transition-all duration-150 ease-out">
-                        <Upload className="w-4 h-4" />
-                        <span>Import CSV</span>
-                      </button>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {sourceData.length} rows
-                    </div>
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      Source: {selectedSourceId}
+                    </h3>
+                    <span className="text-xs text-gray-500">
+                      Inject data into this source
+                    </span>
                   </div>
                 </div>
-
-                {/* Data Table */}
-                <div className="flex-1 overflow-auto p-4">
-                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">City</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {sourceData.map((row) => (
-                          <tr key={row.id} className="hover:bg-gray-50 transition-colors duration-150 ease-out">
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.id}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.age}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.city}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.department}</td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-1">
-                                <button className="p-1 text-gray-400 hover:text-blue-600 transition-colors duration-150 ease-out">
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button className="p-1 text-gray-400 hover:text-red-600 transition-colors duration-150 ease-out">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                <div className="flex-1 overflow-auto">
+                  <DataTable
+                    sourceId={selectedSourceId}
+                    client={client!}
+                  />
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-col h-full">
-                {/* Query Editor Toolbar */}
-                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
-                      <select className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-150">
-                        <option>Cypher</option>
-                        <option>GQL</option>
-                      </select>
-                      <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-all duration-150 ease-out">
-                        <Play className="w-4 h-4" />
-                        <span>Execute Query</span>
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-all duration-150">
-                        Format
-                      </button>
-                      <button className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-all duration-150">
-                        Examples
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            )}
 
-                {/* Query Editor */}
-                <div className="flex-1 p-4">
-                  <div className="h-full bg-gray-900 rounded-lg p-4 font-mono text-sm shadow-inner">
-                  <pre className="text-gray-300 leading-relaxed">
-<span className="text-purple-400">MATCH</span> <span className="text-yellow-300">(p:Person)</span>
-<span className="text-purple-400">WHERE</span> p.department <span className="text-purple-400">IN</span> <span className="text-orange-400">['Sales', 'Marketing']</span>
-<span className="text-purple-400">RETURN</span> p.name, p.age, p.department
-<span className="text-purple-400">ORDER BY</span> p.age <span className="text-purple-400">DESC</span>
-                    </pre>
-                  </div>
-                </div>
-
-                {/* Query Info */}
-                <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span>Valid Cypher syntax</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-gray-400" />
-                    <span>Last run: 2 seconds ago</span>
-                  </div>
-                  </div>
-                </div>
+            {activeTab === 'queries' && (
+              <div className="flex-1 overflow-hidden">
+                <QueryManager
+                  defaultSourceId={selectedSourceId}
+                  onQuerySelect={(queryId) => setSelectedQueryId(queryId)}
+                  selectedQueryId={selectedQueryId}
+                />
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Panel */}
+        {/* Right Panel - Query Results */}
         <div className="w-1/2 bg-gray-50 flex flex-col">
-          {/* Results Header */}
-          <div className="bg-white border-b border-gray-200 px-6 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-semibold text-gray-900">Query Results</h2>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span>Live Updates</span>
-                </div>
-              </div>
-              <button className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-150">
-                <Download className="w-4 h-4" />
-                <span>Export</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Query Status */}
-          <div className="bg-white px-6 py-4 border-b border-gray-200">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-gray-700">Query Status</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Last updated: <span className="font-medium text-gray-600">2 seconds ago</span> • <span className="font-medium text-gray-600">{queryResults.length} rows</span> returned
-                  </div>
-                </div>
-                <div className="px-2.5 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
-                  Active
-                </div>
+          {selectedQueryId ? (
+            <QueryResults queryId={selectedQueryId} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <Code className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-600 mb-2">
+                  No Query Selected
+                </h3>
+                <p className="text-sm text-gray-500 max-w-xs">
+                  Create or select a query to see results here
+                </p>
               </div>
             </div>
-          </div>
-
-          {/* Results Content */}
-          <div className="flex-1 overflow-auto p-6 bg-gray-50">
-            {/* Results Table */}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr className="border-b border-gray-200">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Age</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Department</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {queryResults.map((row, idx) => (
-                    <tr key={idx} className={`${idx === 0 ? 'bg-yellow-50 border-l-4 border-yellow-400' : 'hover:bg-gray-50'} transition-all duration-150 ease-out`}>
-                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.age}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.department}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Recent Changes */}
-            <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Recent Changes</h3>
-              <div className="space-y-2">
-                {recentChanges.map((change, idx) => (
-                  <div key={idx} className="flex items-start gap-2.5 text-sm p-2 hover:bg-gray-50 rounded transition-colors duration-150">
-                    <div className={`w-2 h-2 rounded-full mt-1.5 ${
-                      change.type === 'update' ? 'bg-blue-500 animate-pulse' : 'bg-green-500'
-                    }`} />
-                    <div className="flex-1">
-                      <span className="text-gray-700">{change.message}</span>
-                      <span className="text-gray-400 text-xs ml-2 font-medium">{change.time}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -25,12 +25,22 @@ import {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import { useForm } from 'react-hook-form';
-import { useDrasiClient, useQuery } from '@/hooks/useDrasi';
 import { DataTableProps, DataEvent } from '@/types';
 
-export function DataTable({ sourceId, sourceName }: DataTableProps) {
-  const { client } = useDrasiClient();
-  const { data, loading, error } = useQuery(`${sourceId}-data`);
+// Example data for demo
+const EXAMPLE_DATA = [
+  { id: 'prod-1', name: 'Laptop', category: 'Electronics', price: 999.99, stock: 15 },
+  { id: 'prod-2', name: 'Mouse', category: 'Electronics', price: 29.99, stock: 50 },
+  { id: 'prod-3', name: 'Keyboard', category: 'Electronics', price: 79.99, stock: 30 },
+  { id: 'prod-4', name: 'Monitor', category: 'Electronics', price: 299.99, stock: 8 },
+  { id: 'prod-5', name: 'Desk Chair', category: 'Furniture', price: 199.99, stock: 12 },
+];
+
+export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
+  // Use local state for data since we're managing it manually
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editData, setEditData] = useState<Record<string, any>>({});
@@ -156,12 +166,16 @@ export function DataTable({ sourceId, sourceName }: DataTableProps) {
         element: {
           type: 'node',
           id: originalRow.id,
-          labels: [sourceName],
+          labels: [sourceId], // Use sourceId as the label
           properties: editData,
         },
       };
 
       await client.injectData(sourceId, event);
+      // Update local state
+      setData(prevData =>
+        prevData.map(row => row.id === originalRow.id ? { ...editData } : row)
+      );
       setEditingRow(null);
       setEditData({});
     } catch (err: any) {
@@ -179,12 +193,14 @@ export function DataTable({ sourceId, sourceName }: DataTableProps) {
         element: {
           type: 'node',
           id: row.id,
-          labels: [sourceName],
+          labels: [sourceId], // Use sourceId as the label
           properties: row,
         },
       };
 
       await client.injectData(sourceId, event);
+      // Update local state
+      setData(prevData => prevData.filter(r => r.id !== row.id));
     } catch (err: any) {
       alert(`Failed to delete row: ${err.message}`);
     }
@@ -194,22 +210,51 @@ export function DataTable({ sourceId, sourceName }: DataTableProps) {
     if (!client) return;
 
     try {
-      const id = formData.id || `${sourceName}-${Date.now()}`;
+      const id = formData.id || `${sourceId}-${Date.now()}`;
       const event: DataEvent = {
         operation: 'insert',
         element: {
           type: 'node',
           id,
-          labels: [sourceName],
+          labels: [sourceId], // Use sourceId as the label
           properties: { ...formData, id },
         },
       };
 
       await client.injectData(sourceId, event);
+      // Update local state
+      setData(prevData => [...prevData, { ...formData, id }]);
       setShowAddForm(false);
       reset();
     } catch (err: any) {
       alert(`Failed to add row: ${err.message}`);
+    }
+  };
+
+  const loadExampleData = async () => {
+    if (!client) return;
+
+    setLoading(true);
+    try {
+      // Load example data
+      for (const item of EXAMPLE_DATA) {
+        const event: DataEvent = {
+          operation: 'insert',
+          element: {
+            type: 'node',
+            id: item.id,
+            labels: [sourceId],
+            properties: item,
+          },
+        };
+        await client.injectData(sourceId, event);
+      }
+      setData(EXAMPLE_DATA);
+      alert('Example data loaded successfully!');
+    } catch (err: any) {
+      alert(`Failed to load example data: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -264,6 +309,15 @@ export function DataTable({ sourceId, sourceName }: DataTableProps) {
         </div>
 
         <div className="flex gap-2">
+          {data.length === 0 && (
+            <button
+              onClick={loadExampleData}
+              className="px-2.5 py-1 bg-blue-600 text-white hover:bg-blue-700 rounded text-xs transition-colors"
+              disabled={loading}
+            >
+              Load Example Data
+            </button>
+          )}
           {data.length > 0 && (
             <button
               onClick={exportToCSV}

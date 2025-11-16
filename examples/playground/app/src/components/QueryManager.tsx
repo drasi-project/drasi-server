@@ -35,33 +35,39 @@ interface QueryFormData {
 
 const QUERY_TEMPLATES = [
   {
-    name: 'Match All Nodes',
-    query: 'MATCH (n) RETURN n',
-    description: 'Returns all nodes from all sources',
+    name: 'All Products',
+    query: 'MATCH (p) RETURN p.id, p.name, p.category, p.price, p.stock',
+    description: 'Returns all products from the source',
   },
   {
-    name: 'Match with Filter',
-    query: 'MATCH (n)\nWHERE n.status = "active"\nRETURN n',
-    description: 'Returns nodes matching a condition',
+    name: 'Low Stock Items',
+    query: 'MATCH (p)\nWHERE p.stock < 10\nRETURN p.name, p.stock, p.category',
+    description: 'Find products with low inventory',
   },
   {
-    name: 'Node Relationships',
-    query: 'MATCH (a)-[r]->(b)\nRETURN a, r, b',
-    description: 'Returns nodes and their relationships',
+    name: 'Products by Category',
+    query: "MATCH (p)\nWHERE p.category = 'Electronics'\nRETURN p.name, p.price, p.stock",
+    description: 'Filter products by category',
   },
   {
-    name: 'Aggregation',
-    query: 'MATCH (n)\nRETURN n.type, COUNT(n) as count\nORDER BY count DESC',
-    description: 'Groups and counts nodes by type',
+    name: 'Price Range',
+    query: 'MATCH (p)\nWHERE p.price >= 100 AND p.price <= 500\nRETURN p.name, p.price\nORDER BY p.price DESC',
+    description: 'Find products within a price range',
   },
   {
-    name: 'Pattern Match',
-    query: 'MATCH (a:User)-[:OWNS]->(b:Item)\nWHERE b.value > 100\nRETURN a.name, b.name, b.value',
-    description: 'Matches specific patterns with labels',
+    name: 'Category Summary',
+    query: 'MATCH (p)\nRETURN p.category, COUNT(p) as count, AVG(p.price) as avg_price\nORDER BY count DESC',
+    description: 'Aggregate products by category',
   },
 ];
 
-export function QueryManager() {
+interface QueryManagerProps {
+  defaultSourceId?: string | null;
+  onQuerySelect?: (queryId: string) => void;
+  selectedQueryId?: string | null;
+}
+
+export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }: QueryManagerProps) {
   const { queries, loading, error, createQuery, deleteQuery } = useQueries();
   const { sources } = useSources();
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -73,7 +79,7 @@ export function QueryManager() {
     defaultValues: {
       id: '',
       query: 'MATCH (n) RETURN n',
-      sources: [],
+      sources: defaultSourceId ? [defaultSourceId] : [],
       auto_start: true,
     },
   });
@@ -198,9 +204,13 @@ export function QueryManager() {
         auto_start: data.auto_start,
       };
 
-      await createQuery(queryConfig);
+      const newQuery = await createQuery(queryConfig);
       setShowCreateForm(false);
       reset();
+      // Auto-select the newly created query
+      if (onQuerySelect && newQuery) {
+        onQuerySelect(data.id);
+      }
     } catch (err: any) {
       alert(`Failed to create query: ${err.message}`);
     } finally {
