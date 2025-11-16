@@ -1,0 +1,102 @@
+{
+  "queries": [
+    {
+      "id": "products-query",
+      "name": "All Products",
+      "query": "MATCH (p:products) RETURN p.id AS id, p.name AS name, p.price AS price, p.category AS category, p.stock AS stock",
+      "description": "Returns all products in the catalog",
+      "sources": ["data-feed"]
+    },
+    {
+      "id": "low-stock-query",
+      "name": "Low Stock Products",
+      "query": "MATCH (p:products) WHERE p.stock < 10 RETURN p.id AS id, p.name AS name, p.stock AS stock, p.category AS category",
+      "description": "Finds products with low inventory (less than 10 units)",
+      "sources": ["data-feed"]
+    },
+    {
+      "id": "expensive-products-query",
+      "name": "Premium Products",
+      "query": "MATCH (p:products) WHERE p.price > 100 RETURN p.id AS id, p.name AS name, p.price AS price, p.category AS category ORDER BY p.price DESC",
+      "description": "Lists products priced over $100",
+      "sources": ["data-feed"]
+    }
+  ],
+  "sampleData": [
+    {
+      "operation": "insert",
+      "element": {
+        "type": "node",
+        "id": "product_1",
+        "labels": ["products"],
+        "properties": {
+          "id": 1,
+          "name": "Laptop",
+          "price": 999.99,
+          "category": "Electronics",
+          "stock": 15
+        }
+      }
+    },
+    {
+      "operation": "insert",
+      "element": {
+        "type": "node",
+        "id": "product_2",
+        "labels": ["products"],
+        "properties": {
+          "id": 2,
+          "name": "Keyboard",
+          "price": 79.99,
+          "category": "Electronics",
+          "stock": 5
+        }
+      }
+    },
+    {
+      "operation": "insert",
+      "element": {
+        "type": "node",
+        "id": "product_3",
+        "labels": ["products"],
+        "properties": {
+          "id": 3,
+          "name": "Mouse",
+          "price": 29.99,
+          "category": "Electronics",
+          "stock": 25
+        }
+      }
+    },
+    {
+      "operation": "insert",
+      "element": {
+        "type": "node",
+        "id": "product_4",
+        "labels": ["products"],
+        "properties": {
+          "id": 4,
+          "name": "Monitor",
+          "price": 299.99,
+          "category": "Electronics",
+          "stock": 8
+        }
+      }
+    },
+    {
+      "operation": "insert",
+      "element": {
+        "type": "node",
+        "id": "product_5",
+        "labels": ["products"],
+        "properties": {
+          "id": 5,
+          "name": "Desk",
+          "price": 199.99,
+          "category": "Furniture",
+          "stock": 12
+        }
+      }
+    }
+  ]
+}
