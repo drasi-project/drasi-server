@@ -267,7 +267,8 @@ export class DrasiClient {
   // ========== Data Injection ==========
 
   /**
-   * Inject data into an HTTP or application source
+   * Inject data into a source
+   * For now, we'll send everything through a proxy to avoid CORS issues
    */
   async injectData(sourceId: string, event: DataEvent): Promise<void> {
     // Add timestamp if not provided
@@ -275,7 +276,20 @@ export class DrasiClient {
       event.timestamp = Date.now() * 1000000; // Convert to nanoseconds
     }
 
-    await this.apiClient.post(`/sources/${sourceId}/events`, event);
+    // Transform to HTTP source format
+    const httpSourceEvent = {
+      operation: event.op?.toLowerCase() || 'insert',
+      element: {
+        type: 'node',
+        id: event.id,
+        labels: event.labels,
+        properties: event.properties
+      }
+    };
+
+    // Send through our proxy endpoint to avoid CORS issues
+    // We'll configure Vite to proxy this to the HTTP source
+    await axios.post(`/api/inject/${sourceId}`, httpSourceEvent);
   }
 
   // ========== SSE Management ==========

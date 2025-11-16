@@ -76,22 +76,40 @@ export function useQuery<T = any>(queryId: string | null) {
     client
       .getQueryResults(queryId)
       .then((results) => {
-        const transformedData = transformResults<T>(results);
-        setData(transformedData);
+        if (results && Array.isArray(results)) {
+          const transformedData = transformResults<T>(results);
+          setData(transformedData);
+        } else {
+          // No results yet, that's okay
+          setData([]);
+        }
         setLoading(false);
         setLastUpdate(Date.now());
       })
       .catch((err) => {
-        console.error(`Failed to fetch results for ${queryId}:`, err);
-        setError(err.message);
+        // For new queries, there might not be results yet, which is fine
+        console.log(`No initial results for ${queryId} (this is normal for new queries)`);
+        setData([]);
+        setError(null); // Don't show an error for empty results
         setLoading(false);
       });
 
     // Subscribe to real-time updates
     unsubscribe = client.subscribe(queryId, (result: QueryResult) => {
-      const transformedData = transformResults<T>(result.results.map(r => r.data));
+      // Handle different result structures
+      let rawData: any[] = [];
+      if (Array.isArray(result)) {
+        rawData = result;
+      } else if (result && Array.isArray(result.results)) {
+        rawData = result.results.map(r => r.data || r);
+      } else if (result && result.data) {
+        rawData = Array.isArray(result.data) ? result.data : [result.data];
+      }
+
+      const transformedData = transformResults<T>(rawData);
       setData(transformedData);
       setLastUpdate(Date.now());
+      setError(null); // Clear any previous errors
     });
 
     return () => {
@@ -231,7 +249,15 @@ function toCamelCase(str: string): string {
  * Transform query results from snake_case to camelCase
  */
 function transformResults<T>(results: any[]): T[] {
+  if (!results || !Array.isArray(results)) {
+    return [];
+  }
+
   return results.map((result) => {
+    if (!result || typeof result !== 'object') {
+      return result as T;
+    }
+
     const transformed: any = {};
     for (const [key, value] of Object.entries(result)) {
       const camelKey = toCamelCase(key);
