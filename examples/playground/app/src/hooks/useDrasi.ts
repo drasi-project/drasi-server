@@ -64,6 +64,7 @@ export function useQuery<T = any>(queryId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [lastSSEEvent, setLastSSEEvent] = useState<QueryResult | null>(null);
 
   useEffect(() => {
     if (!client || !initialized || !queryId) {
@@ -96,6 +97,9 @@ export function useQuery<T = any>(queryId: string | null) {
 
     // Subscribe to real-time updates
     unsubscribe = client.subscribe(queryId, (result: QueryResult) => {
+      // Store the raw SSE event
+      setLastSSEEvent(result);
+
       // SSE events contain change operations (ADD/UPDATE/DELETE)
       // We need to apply these to maintain an accumulated dataset
       if (result && Array.isArray(result.results)) {
@@ -162,7 +166,7 @@ export function useQuery<T = any>(queryId: string | null) {
     };
   }, [client, initialized, queryId]);
 
-  return { data, loading, error, lastUpdate };
+  return { data, loading, error, lastUpdate, lastSSEEvent };
 }
 
 /**

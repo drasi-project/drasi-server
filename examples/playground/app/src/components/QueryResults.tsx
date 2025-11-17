@@ -28,7 +28,7 @@ import { useQuery } from '@/hooks/useDrasi';
 import { QueryResultsProps } from '@/types';
 
 export function QueryResults({ queryId }: QueryResultsProps) {
-  const { data, loading, error, lastUpdate } = useQuery(queryId);
+  const { data, loading, error, lastUpdate, lastSSEEvent } = useQuery(queryId);
   const [flashKey, setFlashKey] = useState(0);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -380,6 +380,37 @@ export function QueryResults({ queryId }: QueryResultsProps) {
             <span className="text-green-700 text-sm font-medium">
               Real-time updates active - Last updated {formatTimestamp(lastUpdate)}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Latest SSE Event Panel */}
+      {lastSSEEvent && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Latest SSE Event</h3>
+                  <p className="text-sm text-slate-600">Raw data from Drasi Server</p>
+                </div>
+              </div>
+              {lastSSEEvent.sequence !== undefined && (
+                <div className="text-sm text-slate-600">
+                  <span className="font-medium">Sequence:</span> {lastSSEEvent.sequence}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="p-6">
+            <pre className="bg-slate-50 border border-slate-200 rounded-lg p-4 overflow-x-auto text-xs font-mono text-slate-800">
+              {JSON.stringify(lastSSEEvent, null, 2)}
+            </pre>
           </div>
         </div>
       )}
