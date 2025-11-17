@@ -9,27 +9,20 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Proxy data injection requests to HTTP sources
-      '/api/inject': {
+      // Support multiple source ports (9000-9009)
+      '/sources': {
         target: 'http://localhost:9000',
         changeOrigin: true,
-        bypass: (req, _res, options) => {
-          // Extract port from query parameter if provided
-          const url = new URL(req.url!, `http://${req.headers.host}`);
-          const port = url.searchParams.get('port');
-          if (port && port !== '9000') {
-            // If a different port is specified, update the target
-            (options as any).target = `http://localhost:${port}`;
-          }
-          return null; // Continue with proxy
+        ws: false,
+        router: (req) => {
+          // Extract port from query parameter
+          const url = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
+          const port = url.searchParams.get('port') || '9000';
+          return `http://localhost:${port}`;
         },
         rewrite: (path) => {
-          // Extract source ID from path like /api/inject/data-feed?port=9001
-          const match = path.match(/^\/api\/inject\/([^?]+)/);
-          if (match) {
-            // Forward to HTTP source endpoint (remove query params)
-            return `/sources/${match[1]}/events`;
-          }
-          return path;
+          // Remove query parameters from the path
+          return path.split('?')[0];
         },
       },
     },

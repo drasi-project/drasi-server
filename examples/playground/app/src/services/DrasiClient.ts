@@ -20,7 +20,8 @@ export class DrasiClient {
   private apiClient: AxiosInstance;
   private sseClient: DrasiSSEClient;
   private initialized = false;
-  private reactionId = 'playground-sse-stream';
+  private sseReactionBasePort = 50051;
+  private queryReactions: Map<string, string> = new Map(); // queryId -> reactionId
 
   constructor(baseUrl?: string) {
     const url = baseUrl || 'http://localhost:8080';
@@ -50,12 +51,10 @@ export class DrasiClient {
 
       console.log(`Found ${sources?.length || 0} sources, ${queries?.length || 0} queries, ${reactions?.length || 0} reactions`);
 
-      // Create SSE reaction if needed
-      const sseEndpoint = await this.ensureSSEReaction(queries.map(q => q.id));
-
-      // Connect to SSE stream
-      console.log('Connecting to SSE stream at', sseEndpoint);
-      await this.sseClient.connect(queries.map(q => q.id), sseEndpoint);
+      // Create SSE reaction for each query and connect
+      for (const query of queries) {
+        await this.ensureQuerySSEReaction(query.id);
+      }
 
       this.initialized = true;
       console.log('Drasi Client initialized successfully');
@@ -182,18 +181,15 @@ export class DrasiClient {
     };
     delete apiQuery.sources;
 
-    const response = await this.apiClient.post('/queries', apiQuery);
+    await this.apiClient.post('/queries', apiQuery);
 
-    // Update SSE reaction to include new query
-    await this.updateSSEReactionQueries();
+    // API doesn't return the query object, so fetch it
+    const createdQuery = await this.getQuery(query.id!);
 
-    const result = response.data.data || response.data;
-    return {
-      ...result,
-      sources: result.source_subscriptions?.map((sub: any) =>
-        typeof sub === 'string' ? sub : sub.source_id
-      ) || []
-    };
+    // Create SSE reaction for this query
+    await this.ensureQuerySSEReaction(createdQuery.id);
+
+    return createdQuery;
   }
 
   /**
@@ -202,8 +198,16 @@ export class DrasiClient {
   async deleteQuery(id: string): Promise<void> {
     await this.apiClient.delete(`/queries/${id}`);
 
-    // Update SSE reaction to remove query
-    await this.updateSSEReactionQueries();
+    // Delete the SSE reaction for this query
+    const reactionId = this.queryReactions.get(id);
+    if (reactionId) {
+      try {
+        await this.deleteReaction(reactionId);
+        this.queryReactions.delete(id);
+      } catch (error) {
+        console.warn(`Failed to delete SSE reaction ${reactionId}:`, error);
+      }
+    }
   }
 
   /**
@@ -300,14 +304,12 @@ export class DrasiClient {
    * Inject data into a source
    */
   async injectData(sourceId: string, event: DataEvent): Promise<void> {
-    // First, get the source configuration to find its port
-    const source = await this.getSource(sourceId);
+    // Fetch the source to get its port
+    const sourceResponse = await this.apiClient.get(`/sources/${sourceId}`);
+    const sourceData = sourceResponse.data.data || sourceResponse.data;
+    const port = sourceData.port || 9000;
 
-    // Only HTTP sources support data injection
-    if (source.source_type !== 'http') {
-      console.log(`Source ${sourceId} is not an HTTP source, skipping data injection`);
-      return;
-    }
+    console.log(`Injecting data to source ${sourceId} on port ${port}`);
 
     // Add timestamp if not provided
     if (!event.timestamp) {
@@ -315,73 +317,102 @@ export class DrasiClient {
     }
 
     // Transform to HTTP source format
-    const httpSourceEvent = {
-      operation: event.operation?.toLowerCase() || 'insert',
-      element: event.element
-    };
+    // DELETE has different structure: { operation, id, labels }
+    // INSERT/UPDATE have: { operation, element }
+    let httpSourceEvent: any;
+    if (event.operation?.toLowerCase() === 'delete') {
+      // DELETE: use flat structure with id and labels
+      httpSourceEvent = {
+        operation: 'delete',
+        id: (event as any).id,
+        labels: (event as any).labels,
+        timestamp: event.timestamp
+      };
+    } else {
+      // INSERT/UPDATE: use element structure
+      httpSourceEvent = {
+        operation: event.operation?.toLowerCase() || 'insert',
+        element: event.element
+      };
+    }
 
-    // Get the source port (default to 9000 if not specified)
-    const port = source.port || 9000;
-
-    // Send directly to the HTTP source endpoint
-    // Using localhost since HTTP sources bind to 0.0.0.0 but we access via localhost
-    const url = `http://localhost:${port}/sources/${sourceId}/events`;
+    // Always use the Vite proxy to avoid CORS issues
+    // The proxy will route to the correct HTTP source port
+    const url = `/sources/${sourceId}/events?port=${port}`;
 
     try {
+      console.log(`Sending to HTTP source:`, JSON.stringify(httpSourceEvent, null, 2));
       await axios.post(url, httpSourceEvent);
+      console.log(`Data injected successfully to ${sourceId} on port ${port}`);
     } catch (error: any) {
-      // Check if it's a CORS error
-      if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
-        // Try through proxy as fallback for CORS issues
-        console.log(`Direct injection failed (likely CORS), trying proxy for ${sourceId}`);
-        await axios.post(`/api/inject/${sourceId}?port=${port}`, httpSourceEvent);
-      } else {
-        throw error;
-      }
+      console.error(`Failed to inject data to ${sourceId}:`, error);
+      console.error(`Payload was:`, JSON.stringify(httpSourceEvent, null, 2));
+      throw error;
     }
   }
 
   // ========== SSE Management ==========
 
   /**
-   * Ensure SSE reaction exists and return its endpoint
+   * Ensure SSE reaction exists for a specific query
    */
-  private async ensureSSEReaction(queryIds: string[]): Promise<string> {
-    try {
-      const checkResponse = await this.apiClient.get(`/reactions/${this.reactionId}`);
+  private async ensureQuerySSEReaction(queryId: string): Promise<void> {
+    const reactionId = `sse-${queryId}`;
 
-      if (checkResponse.status === 200) {
-        // Reaction exists, ensure it's running
-        const reaction = checkResponse.data;
-        if (reaction.status !== 'Running') {
-          await this.startReaction(this.reactionId);
-        }
-        return this.buildSSEEndpoint(reaction);
-      }
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        // Reaction doesn't exist, create it
-        console.log('Creating SSE reaction...');
-
-        const reactionConfig: Partial<Reaction> = {
-          id: this.reactionId,
-          reaction_type: 'sse',
-          queries: queryIds,
-          auto_start: true,
-          host: '0.0.0.0',
-          port: 50051,
-          sse_path: '/events',
-          heartbeat_interval_ms: 15000,
-        };
-
-        await this.createReaction(reactionConfig);
-        await this.startReaction(this.reactionId);
-        return 'http://localhost:50051/events';
-      }
-      throw error;
+    // Check if we already have this reaction
+    if (this.queryReactions.has(queryId)) {
+      return;
     }
 
-    return 'http://localhost:50051/events';
+    try {
+      // Check if reaction already exists
+      const checkResponse = await this.apiClient.get(`/reactions/${reactionId}`);
+
+      if (checkResponse.status === 200) {
+        const reaction = checkResponse.data.data || checkResponse.data;
+        this.queryReactions.set(queryId, reactionId);
+
+        // Ensure it's running
+        if (reaction.status !== 'Running') {
+          await this.startReaction(reactionId);
+        }
+
+        // Connect SSE client to this reaction's endpoint
+        const endpoint = this.buildSSEEndpoint(reaction);
+        await this.sseClient.connect([queryId], endpoint);
+        console.log(`Connected to SSE reaction for query ${queryId} at ${endpoint}`);
+        return;
+      }
+    } catch (error: any) {
+      if (error.response?.status !== 404) {
+        throw error;
+      }
+    }
+
+    // Reaction doesn't exist, create it
+    console.log(`Creating SSE reaction for query: ${queryId}`);
+
+    // Use incrementing port numbers for each reaction
+    const port = this.sseReactionBasePort + this.queryReactions.size;
+
+    const reactionConfig: Partial<Reaction> = {
+      id: reactionId,
+      reaction_type: 'sse',
+      queries: [queryId],
+      auto_start: true,
+      host: '0.0.0.0',
+      port,
+      sse_path: '/events',
+      heartbeat_interval_ms: 15000,
+    };
+
+    await this.createReaction(reactionConfig);
+    this.queryReactions.set(queryId, reactionId);
+
+    // Connect SSE client to the new reaction's endpoint
+    const endpoint = `http://localhost:${port}/events`;
+    await this.sseClient.connect([queryId], endpoint);
+    console.log(`Created and connected to SSE reaction for query ${queryId} at ${endpoint}`);
   }
 
   /**
@@ -392,35 +423,6 @@ export class DrasiClient {
     const port = reaction.port || 50051;
     const path = reaction.sse_path || '/events';
     return `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${path}`;
-  }
-
-  /**
-   * Update SSE reaction with current list of queries
-   */
-  private async updateSSEReactionQueries(): Promise<void> {
-    try {
-      const queries = await this.listQueries();
-      const queryIds = queries.map(q => q.id);
-
-      // Check if reaction exists
-      try {
-        await this.getReaction(this.reactionId);
-
-        // Update reaction with new query list
-        await this.apiClient.put(`/reactions/${this.reactionId}`, {
-          queries: queryIds,
-        });
-
-        console.log('Updated SSE reaction with queries:', queryIds);
-      } catch (error: any) {
-        if (error.response?.status === 404) {
-          // Reaction doesn't exist yet, will be created on next ensureSSEReaction call
-          console.log('SSE reaction does not exist yet');
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update SSE reaction queries:', error);
-    }
   }
 
   /**

@@ -229,18 +229,14 @@ export function DataTable({ sourceId, typeLabel, sourceName, client }: DataTable
     if (!client) return;
     if (!confirm('Are you sure you want to delete this row?')) return;
 
-    // Get the original data for the before state
+    // Get the original data for the before state (for UI tracking)
     const beforeData = originalData.get(row.id) || row;
 
-    const event: DataEvent = {
+    // DELETE events don't use the 'element' structure - they just need id and labels
+    const event: any = {
       operation: 'delete',
-      element: {
-        type: 'node',
-        id: row.id,
-        labels: [typeLabel],
-        properties: {},       // Empty properties for delete
-        before: beforeData    // Include the before state
-      },
+      id: row.id,
+      labels: [typeLabel],
     };
 
     // Try to inject to server but don't fail if it doesn't work
