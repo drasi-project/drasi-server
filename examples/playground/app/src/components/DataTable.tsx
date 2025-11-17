@@ -328,12 +328,6 @@ export function DataTable({ sourceId, typeLabel, sourceName, client }: DataTable
     updateData(EXAMPLE_DATA);
     updateOriginalData(newOriginalData);
 
-    if (injectionFailed) {
-      alert('Note: Data injection to server may have failed (this is normal for mock sources), but data has been stored locally for UI simulation.');
-    } else {
-      alert(`Example data loaded successfully! The data has been injected with "${typeLabel}" labels.`);
-    }
-
     setLoading(false);
   };
 
