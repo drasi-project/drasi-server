@@ -227,7 +227,6 @@ export function DataTable({ sourceId, typeLabel, sourceName, client }: DataTable
 
   const handleDelete = async (row: any) => {
     if (!client) return;
-    if (!confirm('Are you sure you want to delete this row?')) return;
 
     // Get the original data for the before state (for UI tracking)
     const beforeData = originalData.get(row.id) || row;
