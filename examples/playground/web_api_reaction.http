@@ -18,21 +18,21 @@
 
 @hostname = localhost
 @port = 8080
-@query_id = all
+@reaction_id = all
 
-### GET LIST of all queries
-GET http://{{hostname}}:{{port}}/queries
+### GET LIST of all reactions
+GET http://{{hostname}}:{{port}}/reactions
 
-### GET STATE of a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}
+### GET STATE of a specific reaction
+GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}
 
-### GET RESULTS of a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/results
+### GET RESULTS of a specific reaction
+GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/results
 
-### START a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/start
+### START a specific reaction
+GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/start
 Content-Type: application/json
 
-### STOP a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/stop
+### STOP a specific reaction
+GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/stop
 Content-Type: application/json

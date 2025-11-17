@@ -133,9 +133,15 @@ export class DrasiSSEClient {
     }
 
     // Drasi Server SSE reaction format:
-    // { query_id: string, sequence: number, timestamp: string, results: [...] }
-    if (data.query_id) {
-      this.handleQueryResult(data);
+    // { queryId: string, timestamp: number, results: [{type: "ADD"|"UPDATE"|"DELETE", data: {...}}] }
+    // OR legacy format: { query_id: string, sequence: number, timestamp: string, results: [...] }
+    if (data.queryId || data.query_id) {
+      // Normalize to query_id for internal handling
+      const normalized = {
+        ...data,
+        query_id: data.queryId || data.query_id
+      };
+      this.handleQueryResult(normalized);
     } else {
       console.warn('Unrecognized SSE message format:', data);
     }

@@ -96,20 +96,63 @@ export function useQuery<T = any>(queryId: string | null) {
 
     // Subscribe to real-time updates
     unsubscribe = client.subscribe(queryId, (result: QueryResult) => {
-      // Handle different result structures
-      let rawData: any[] = [];
-      if (Array.isArray(result)) {
-        rawData = result;
-      } else if (result && Array.isArray(result.results)) {
-        rawData = result.results.map(r => r.data || r);
-      } else if (result && result.data) {
-        rawData = Array.isArray(result.data) ? result.data : [result.data];
-      }
+      // SSE events contain change operations (ADD/UPDATE/DELETE)
+      // We need to apply these to maintain an accumulated dataset
+      if (result && Array.isArray(result.results)) {
+        setData((currentData) => {
+          let newData = [...currentData];
 
-      const transformedData = transformResults<T>(rawData);
-      setData(transformedData);
-      setLastUpdate(Date.now());
-      setError(null); // Clear any previous errors
+          for (const changeEvent of result.results) {
+            const { type, data: itemData, before, after } = changeEvent;
+
+            if (type === 'ADD') {
+              // Add new item to dataset
+              if (itemData) {
+                const transformedItem = transformResults<T>([itemData])[0];
+                newData.push(transformedItem);
+              }
+            } else if (type === 'UPDATE') {
+              // Update existing item - match on "before" value, replace with "after"
+              if (before && after) {
+                const transformedBefore = transformResults<T>([before])[0];
+                const transformedAfter = transformResults<T>([after])[0];
+
+                // Find the item matching the "before" state
+                const index = newData.findIndex((existing: any) => {
+                  return JSON.stringify(existing) === JSON.stringify(transformedBefore);
+                });
+
+                if (index !== -1) {
+                  // Replace with the "after" state
+                  newData[index] = transformedAfter;
+                } else {
+                  // If not found, treat as ADD
+                  console.warn('UPDATE event but item not found, treating as ADD:', transformedBefore);
+                  newData.push(transformedAfter);
+                }
+              }
+            } else if (type === 'DELETE') {
+              // Remove item from dataset - match on "before" value
+              if (before) {
+                const transformedBefore = transformResults<T>([before])[0];
+                newData = newData.filter((existing: any) => {
+                  return JSON.stringify(existing) !== JSON.stringify(transformedBefore);
+                });
+              } else if (itemData) {
+                // Fallback to data field if before is not present
+                const transformedItem = transformResults<T>([itemData])[0];
+                newData = newData.filter((existing: any) => {
+                  return JSON.stringify(existing) !== JSON.stringify(transformedItem);
+                });
+              }
+            }
+          }
+
+          return newData;
+        });
+        setLastUpdate(Date.now());
+        setError(null); // Clear any previous errors
+      }
     });
 
     return () => {

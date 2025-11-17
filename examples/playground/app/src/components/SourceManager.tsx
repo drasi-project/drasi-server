@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSources } from '@/hooks/useDrasi';
 import { Source } from '@/types';
 
@@ -23,6 +23,32 @@ interface SourceManagerProps {
 
 export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManagerProps) {
   const { sources, loading, error, createSource, deleteSource } = useSources();
+  const [hasCreatedDemoSource, setHasCreatedDemoSource] = useState(false);
+
+  // Automatically create demo-source if it doesn't exist
+  useEffect(() => {
+    if (!loading && sources.length === 0 && !hasCreatedDemoSource && createSource) {
+      setHasCreatedDemoSource(true);
+      const createDemoSource = async () => {
+        try {
+          await createSource({
+            id: 'demo-source',
+            source_type: 'http',
+            auto_start: true,
+            host: '0.0.0.0',
+            port: 9000,  // First source gets port 9000
+            timeout_ms: 10000,
+            dispatch_buffer_capacity: 1000,
+          });
+          console.log('Created demo-source automatically');
+        } catch (err) {
+          console.error('Failed to auto-create demo-source:', err);
+        }
+      };
+      createDemoSource();
+    }
+  }, [loading, sources, hasCreatedDemoSource, createSource]);
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
     id: '',

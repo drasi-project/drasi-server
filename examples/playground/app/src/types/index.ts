@@ -57,7 +57,10 @@ export interface QueryResult {
   sequence?: number;
   timestamp?: string;
   results: Array<{
-    data: Record<string, any>;
+    type: 'ADD' | 'UPDATE' | 'DELETE';
+    data?: Record<string, any>;      // For ADD and DELETE
+    before?: Record<string, any>;    // For UPDATE
+    after?: Record<string, any>;     // For UPDATE
   }>;
 }
 
