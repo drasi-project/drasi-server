@@ -36,22 +36,22 @@ interface QueryFormData {
 const QUERY_TEMPLATES = [
   {
     name: 'All Products',
-    query: 'MATCH (p:Product) RETURN p.id AS id, p.name AS name, p.category AS category, p.price AS price, p.stock AS stock',
+    query: 'MATCH (p:Product)\nRETURN elementId(p) AS id, p.name AS name, p.category AS category, p.price AS price, p.stock AS stock',
     description: 'Returns all products from the source',
   },
   {
     name: 'Low Stock Items',
-    query: 'MATCH (p:Product)\nWHERE p.stock < 10\nRETURN p.id AS id, p.name AS name, p.stock AS stock, p.category AS category',
+    query: 'MATCH (p:Product)\nWHERE p.stock < 10\nRETURN elementId(p) AS id, p.name AS name, p.stock AS stock, p.category AS category',
     description: 'Find products with low inventory (stock < 10)',
   },
   {
     name: 'Electronics Category',
-    query: "MATCH (p:Product)\nWHERE p.category = 'Electronics'\nRETURN p.id AS id, p.name AS name, p.price AS price, p.stock AS stock",
+    query: "MATCH (p:Product)\nWHERE p.category = 'Electronics'\nRETURN elementId(p) AS id, p.name AS name, p.price AS price, p.stock AS stock",
     description: 'Filter products in Electronics category',
   },
   {
     name: 'Price Range $100-$500',
-    query: 'MATCH (p:Product)\nWHERE p.price >= 100 AND p.price <= 500\nRETURN p.id AS id, p.name AS name, p.price AS price\nORDER BY p.price DESC',
+    query: 'MATCH (p:Product)\nWHERE p.price >= 100 AND p.price <= 500\nRETURN elementId(p) AS id, p.name AS name, p.price AS price\nORDER BY p.price DESC',
     description: 'Find products priced between $100 and $500',
   },
   {
