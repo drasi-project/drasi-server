@@ -15,15 +15,18 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 interface SourceDataContextType {
-  // Store data for each source by sourceId
-  sourceData: Map<string, any[]>;
-  originalSourceData: Map<string, Map<string, any>>;
+  // Store data for each source and type: sourceId -> typeLabel -> data array
+  sourceData: Map<string, Map<string, any[]>>;
+  // Store original data: sourceId -> typeLabel -> recordId -> data
+  originalSourceData: Map<string, Map<string, Map<string, any>>>;
 
   // Methods to manage data
-  getSourceData: (sourceId: string) => any[];
-  setSourceData: (sourceId: string, data: any[]) => void;
-  getOriginalData: (sourceId: string) => Map<string, any>;
-  setOriginalData: (sourceId: string, data: Map<string, any>) => void;
+  getSourceTypeData: (sourceId: string, typeLabel: string) => any[];
+  setSourceTypeData: (sourceId: string, typeLabel: string, data: any[]) => void;
+  getOriginalData: (sourceId: string, typeLabel: string) => Map<string, any>;
+  setOriginalData: (sourceId: string, typeLabel: string, data: Map<string, any>) => void;
+  getSourceTypes: (sourceId: string) => string[];
+  clearSourceTypeData: (sourceId: string, typeLabel: string) => void;
   clearSourceData: (sourceId: string) => void;
   clearAllData: () => void;
 }
@@ -31,31 +34,68 @@ interface SourceDataContextType {
 const SourceDataContext = createContext<SourceDataContextType | undefined>(undefined);
 
 export function SourceDataProvider({ children }: { children: ReactNode }) {
-  // Map of sourceId -> array of current data
-  const [sourceData, setSourceDataMap] = useState<Map<string, any[]>>(new Map());
-  // Map of sourceId -> Map of recordId -> original data
-  const [originalSourceData, setOriginalSourceDataMap] = useState<Map<string, Map<string, any>>>(new Map());
+  // Map of sourceId -> typeLabel -> array of current data
+  const [sourceData, setSourceDataMap] = useState<Map<string, Map<string, any[]>>>(new Map());
+  // Map of sourceId -> typeLabel -> Map of recordId -> original data
+  const [originalSourceData, setOriginalSourceDataMap] = useState<Map<string, Map<string, Map<string, any>>>>(new Map());
 
-  const getSourceData = (sourceId: string): any[] => {
-    return sourceData.get(sourceId) || [];
+  const getSourceTypeData = (sourceId: string, typeLabel: string): any[] => {
+    const sourceMap = sourceData.get(sourceId);
+    if (!sourceMap) return [];
+    return sourceMap.get(typeLabel) || [];
   };
 
-  const setSourceData = (sourceId: string, data: any[]) => {
+  const setSourceTypeData = (sourceId: string, typeLabel: string, data: any[]) => {
     setSourceDataMap(prev => {
       const newMap = new Map(prev);
-      newMap.set(sourceId, data);
+      if (!newMap.has(sourceId)) {
+        newMap.set(sourceId, new Map());
+      }
+      const sourceMap = newMap.get(sourceId)!;
+      sourceMap.set(typeLabel, data);
       return newMap;
     });
   };
 
-  const getOriginalData = (sourceId: string): Map<string, any> => {
-    return originalSourceData.get(sourceId) || new Map();
+  const getOriginalData = (sourceId: string, typeLabel: string): Map<string, any> => {
+    const sourceMap = originalSourceData.get(sourceId);
+    if (!sourceMap) return new Map();
+    return sourceMap.get(typeLabel) || new Map();
   };
 
-  const setOriginalData = (sourceId: string, data: Map<string, any>) => {
+  const setOriginalData = (sourceId: string, typeLabel: string, data: Map<string, any>) => {
     setOriginalSourceDataMap(prev => {
       const newMap = new Map(prev);
-      newMap.set(sourceId, data);
+      if (!newMap.has(sourceId)) {
+        newMap.set(sourceId, new Map());
+      }
+      const sourceMap = newMap.get(sourceId)!;
+      sourceMap.set(typeLabel, data);
+      return newMap;
+    });
+  };
+
+  const getSourceTypes = (sourceId: string): string[] => {
+    const sourceMap = sourceData.get(sourceId);
+    if (!sourceMap) return [];
+    return Array.from(sourceMap.keys());
+  };
+
+  const clearSourceTypeData = (sourceId: string, typeLabel: string) => {
+    setSourceDataMap(prev => {
+      const newMap = new Map(prev);
+      const sourceMap = newMap.get(sourceId);
+      if (sourceMap) {
+        sourceMap.delete(typeLabel);
+      }
+      return newMap;
+    });
+    setOriginalSourceDataMap(prev => {
+      const newMap = new Map(prev);
+      const sourceMap = newMap.get(sourceId);
+      if (sourceMap) {
+        sourceMap.delete(typeLabel);
+      }
       return newMap;
     });
   };
@@ -83,10 +123,12 @@ export function SourceDataProvider({ children }: { children: ReactNode }) {
       value={{
         sourceData,
         originalSourceData,
-        getSourceData,
-        setSourceData,
+        getSourceTypeData,
+        setSourceTypeData,
         getOriginalData,
         setOriginalData,
+        getSourceTypes,
+        clearSourceTypeData,
         clearSourceData,
         clearAllData,
       }}

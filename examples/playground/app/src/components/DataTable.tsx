@@ -42,9 +42,9 @@ const EXAMPLE_DATA = [
   { id: 'prod-010', name: 'Pen Pack', category: 'Stationery', price: 9.99, stock: 200 },
 ];
 
-export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
+export function DataTable({ sourceId, typeLabel, sourceName, client }: DataTableProps) {
   // Use context for persistent data storage across tab switches
-  const { getSourceData, setSourceData, getOriginalData, setOriginalData } = useSourceData();
+  const { getSourceTypeData, setSourceTypeData, getOriginalData, setOriginalData } = useSourceData();
 
   // Initialize local state from context
   const [data, setData] = useState<any[]>([]);
@@ -58,25 +58,25 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
 
-  // Load data from context when component mounts or sourceId changes
+  // Load data from context when component mounts or sourceId/typeLabel changes
   useEffect(() => {
-    const contextData = getSourceData(sourceId);
-    const contextOriginalData = getOriginalData(sourceId);
-    console.log(`Loading data for source ${sourceId}:`, contextData.length, 'items');
+    const contextData = getSourceTypeData(sourceId, typeLabel);
+    const contextOriginalData = getOriginalData(sourceId, typeLabel);
+    console.log(`Loading data for source ${sourceId}/${typeLabel}:`, contextData.length, 'items');
     setData(contextData);
     setOriginalDataLocal(contextOriginalData);
-  }, [sourceId, getSourceData, getOriginalData]);
+  }, [sourceId, typeLabel, getSourceTypeData, getOriginalData]);
 
   // Helper to update both local and context data
   const updateData = (newData: any[]) => {
-    console.log(`Saving data for source ${sourceId}:`, newData.length, 'items');
+    console.log(`Saving data for source ${sourceId}/${typeLabel}:`, newData.length, 'items');
     setData(newData);
-    setSourceData(sourceId, newData);
+    setSourceTypeData(sourceId, typeLabel, newData);
   };
 
   const updateOriginalData = (newOriginalData: Map<string, any>) => {
     setOriginalDataLocal(newOriginalData);
-    setOriginalData(sourceId, newOriginalData);
+    setOriginalData(sourceId, typeLabel, newOriginalData);
   };
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<Record<string, any>>({
@@ -199,7 +199,7 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
       element: {
         type: 'node',
         id: originalRow.id,
-        labels: ['Product'], // Use Product label to match queries
+        labels: [typeLabel],
         properties: editData,
         before: beforeData,  // Include before state
         after: editData      // Include after state
@@ -237,7 +237,7 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
       element: {
         type: 'node',
         id: row.id,
-        labels: ['Product'], // Use Product label to match queries
+        labels: [typeLabel],
         properties: {},       // Empty properties for delete
         before: beforeData    // Include the before state
       },
@@ -270,7 +270,7 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
       element: {
         type: 'node',
         id,
-        labels: ['Product'], // Use Product label to match queries
+        labels: [typeLabel],
         properties: newRecord,
         after: newRecord     // Include after state for insert
       },
@@ -311,7 +311,7 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
         element: {
           type: 'node',
           id: item.id,
-          labels: ['Product'],
+          labels: [typeLabel],
           properties: item,
           after: item  // Include after state for insert
         },
@@ -335,7 +335,7 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
     if (injectionFailed) {
       alert('Note: Data injection to server may have failed (this is normal for mock sources), but data has been stored locally for UI simulation.');
     } else {
-      alert('Example data loaded successfully! The data has been injected with "Product" labels to match the example queries.');
+      alert(`Example data loaded successfully! The data has been injected with "${typeLabel}" labels.`);
     }
 
     setLoading(false);

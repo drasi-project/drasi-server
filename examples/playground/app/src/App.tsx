@@ -25,7 +25,7 @@ import {
 import { SourceManager } from './components/SourceManager';
 import { QueryManager } from './components/QueryManager';
 import { QueryResults } from './components/QueryResults';
-import { DataTable } from './components/DataTable';
+import { TypeManager } from './components/TypeManager';
 import { useDrasiClient, useConnectionStatus, useSources, useQueries } from './hooks/useDrasi';
 
 function App() {
@@ -201,23 +201,12 @@ function App() {
             )}
 
             {activeTab === 'data' && selectedSourceId && (
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-700">
-                      Source: {selectedSourceId}
-                    </h3>
-                    <span className="text-xs text-gray-500">
-                      Inject data into this source
-                    </span>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <DataTable
-                    sourceId={selectedSourceId}
-                    client={client!}
-                  />
-                </div>
+              <div className="flex-1 overflow-hidden">
+                <TypeManager
+                  sourceId={selectedSourceId}
+                  sourceName={sources.find(s => s.id === selectedSourceId)?.id || selectedSourceId}
+                  client={client!}
+                />
               </div>
             )}
 
