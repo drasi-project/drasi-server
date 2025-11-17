@@ -26,7 +26,6 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
     id: '',
-    source_type: 'http' as 'http' | 'mock' | 'application',
     auto_start: true,
   });
   const [creating, setCreating] = useState(false);
@@ -37,28 +36,20 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
     setCreating(true);
 
     try {
+      // Always create HTTP sources for the playground
       const sourceConfig: Partial<Source> = {
         id: formData.id,
-        source_type: formData.source_type,
+        source_type: 'http',
         auto_start: formData.auto_start,
+        host: '0.0.0.0',
+        port: 9000 + sources.length,
+        timeout_ms: 10000,
+        dispatch_buffer_capacity: 1000,
       };
-
-      if (formData.source_type === 'http') {
-        Object.assign(sourceConfig, {
-          host: '0.0.0.0',
-          port: 9000 + sources.length,
-          timeout_ms: 10000,
-          dispatch_buffer_capacity: 1000,
-        });
-      } else if (formData.source_type === 'mock') {
-        Object.assign(sourceConfig, {
-          dispatch_buffer_capacity: 1000,
-        });
-      }
 
       await createSource(sourceConfig);
       setShowCreateForm(false);
-      setFormData({ id: '', source_type: 'http', auto_start: true });
+      setFormData({ id: '', auto_start: true });
     } catch (err: any) {
       alert(`Failed to create source: ${err.message}`);
     } finally {
@@ -97,17 +88,50 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Data Sources</h2>
-          <p className="text-sm text-slate-600 mt-1">Manage and configure your data sources</p>
+          <p className="text-sm text-slate-600 mt-1">Create simulated data sources to test continuous queries</p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create Source
-        </button>
+        <div className="flex gap-2">
+          {sources.length === 0 && (
+            <button
+              onClick={async () => {
+                setCreating(true);
+                try {
+                  // Always create HTTP sources
+                  await createSource({
+                    id: 'product-catalog',
+                    source_type: 'http',
+                    auto_start: true,
+                    host: '0.0.0.0',
+                    port: 9000 + sources.length,
+                    timeout_ms: 10000,
+                    dispatch_buffer_capacity: 1000,
+                  });
+                  alert('Example source "product-catalog" created! Now go to the Data tab to load example products.');
+                } catch (err: any) {
+                  alert(`Failed to create example source: ${err.message}`);
+                } finally {
+                  setCreating(false);
+                }
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-green-500 text-white text-sm font-medium rounded-lg hover:bg-green-600 transition-colors shadow-sm"
+              disabled={creating}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Create Example Source
+            </button>
+          )}
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create Source
+          </button>
+        </div>
       </div>
 
       {/* Sources Table */}
@@ -117,9 +141,6 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                 Source ID
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Type
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                 Status
@@ -135,7 +156,7 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
           <tbody className="divide-y divide-gray-200">
             {sources.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center">
+                <td colSpan={4} className="px-6 py-12 text-center">
                   <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z" />
                   </svg>
@@ -154,14 +175,6 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
                 >
                   <td className="px-6 py-4">
                     <span className="text-sm font-semibold text-slate-900 font-mono">{source.id}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      {source.source_type || 'N/A'}
-                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <span
@@ -242,21 +255,6 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
                   placeholder="my-data-source"
                   required
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Source Type</label>
-                <select
-                  value={formData.source_type}
-                  onChange={(e) =>
-                    setFormData({ ...formData, source_type: e.target.value as 'http' | 'mock' | 'application' })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="http">HTTP</option>
-                  <option value="mock">Mock</option>
-                  <option value="application">Application</option>
-                </select>
               </div>
 
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">

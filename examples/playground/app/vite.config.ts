@@ -12,11 +12,21 @@ export default defineConfig({
       '/api/inject': {
         target: 'http://localhost:9000',
         changeOrigin: true,
+        bypass: (req, _res, options) => {
+          // Extract port from query parameter if provided
+          const url = new URL(req.url!, `http://${req.headers.host}`);
+          const port = url.searchParams.get('port');
+          if (port && port !== '9000') {
+            // If a different port is specified, update the target
+            (options as any).target = `http://localhost:${port}`;
+          }
+          return null; // Continue with proxy
+        },
         rewrite: (path) => {
-          // Extract source ID from path like /api/inject/data-feed
-          const match = path.match(/^\/api\/inject\/(.+)$/);
+          // Extract source ID from path like /api/inject/data-feed?port=9001
+          const match = path.match(/^\/api\/inject\/([^?]+)/);
           if (match) {
-            // Forward to HTTP source endpoint
+            // Forward to HTTP source endpoint (remove query params)
             return `/sources/${match[1]}/events`;
           }
           return path;

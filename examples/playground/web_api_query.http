@@ -18,14 +18,7 @@
 
 @hostname = localhost
 @port = 8080
-# @query_id = all-stocks
-# @query_id = watchlist-query
-# @query_id = portfolio-query
-@query_id = Q1
-# @query_id = top-gainers-query
-# @query_id = top-losers-query
-# @query_id = high-volume-query
-# @query_id = sector-performance-query
+@query_id = prod
 
 ### GET LIST of all queries
 GET http://{{hostname}}:{{port}}/queries

@@ -138,12 +138,20 @@ export class DrasiClient {
     const response = await this.apiClient.get('/queries');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
+    let queries = [];
     if (Array.isArray(data)) {
-      return data;
+      queries = data;
     } else if (data && Array.isArray(data.data)) {
-      return data.data;
+      queries = data.data;
     }
-    return [];
+
+    // Map API response to Query interface
+    return queries.map(q => ({
+      ...q,
+      sources: q.source_subscriptions?.map((sub: any) =>
+        typeof sub === 'string' ? sub : sub.source_id
+      ) || []
+    }));
   }
 
   /**
@@ -151,19 +159,41 @@ export class DrasiClient {
    */
   async getQuery(id: string): Promise<Query> {
     const response = await this.apiClient.get(`/queries/${id}`);
-    return response.data;
+    const q = response.data.data || response.data;
+    return {
+      ...q,
+      sources: q.source_subscriptions?.map((sub: any) =>
+        typeof sub === 'string' ? sub : sub.source_id
+      ) || []
+    };
   }
 
   /**
    * Create a new query
    */
   async createQuery(query: Partial<Query>): Promise<Query> {
-    const response = await this.apiClient.post('/queries', query);
+    // Convert sources to source_subscriptions for API
+    const apiQuery: any = {
+      ...query,
+      source_subscriptions: query.sources?.map(s => ({ source_id: s, enabled: true })) || [],
+      queryLanguage: 'Cypher',
+      enableBootstrap: true,
+      bootstrapBufferSize: 10000
+    };
+    delete apiQuery.sources;
+
+    const response = await this.apiClient.post('/queries', apiQuery);
 
     // Update SSE reaction to include new query
     await this.updateSSEReactionQueries();
 
-    return response.data;
+    const result = response.data.data || response.data;
+    return {
+      ...result,
+      sources: result.source_subscriptions?.map((sub: any) =>
+        typeof sub === 'string' ? sub : sub.source_id
+      ) || []
+    };
   }
 
   /**
@@ -268,9 +298,17 @@ export class DrasiClient {
 
   /**
    * Inject data into a source
-   * For now, we'll send everything through a proxy to avoid CORS issues
    */
   async injectData(sourceId: string, event: DataEvent): Promise<void> {
+    // First, get the source configuration to find its port
+    const source = await this.getSource(sourceId);
+
+    // Only HTTP sources support data injection
+    if (source.source_type !== 'http') {
+      console.log(`Source ${sourceId} is not an HTTP source, skipping data injection`);
+      return;
+    }
+
     // Add timestamp if not provided
     if (!event.timestamp) {
       event.timestamp = Date.now() * 1000000; // Convert to nanoseconds
@@ -278,18 +316,29 @@ export class DrasiClient {
 
     // Transform to HTTP source format
     const httpSourceEvent = {
-      operation: event.op?.toLowerCase() || 'insert',
-      element: {
-        type: 'node',
-        id: event.id,
-        labels: event.labels,
-        properties: event.properties
-      }
+      operation: event.operation?.toLowerCase() || 'insert',
+      element: event.element
     };
 
-    // Send through our proxy endpoint to avoid CORS issues
-    // We'll configure Vite to proxy this to the HTTP source
-    await axios.post(`/api/inject/${sourceId}`, httpSourceEvent);
+    // Get the source port (default to 9000 if not specified)
+    const port = source.port || 9000;
+
+    // Send directly to the HTTP source endpoint
+    // Using localhost since HTTP sources bind to 0.0.0.0 but we access via localhost
+    const url = `http://localhost:${port}/sources/${sourceId}/events`;
+
+    try {
+      await axios.post(url, httpSourceEvent);
+    } catch (error: any) {
+      // Check if it's a CORS error
+      if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        // Try through proxy as fallback for CORS issues
+        console.log(`Direct injection failed (likely CORS), trying proxy for ${sourceId}`);
+        await axios.post(`/api/inject/${sourceId}?port=${port}`, httpSourceEvent);
+      } else {
+        throw error;
+      }
+    }
   }
 
   // ========== SSE Management ==========

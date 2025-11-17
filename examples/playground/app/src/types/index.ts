@@ -107,6 +107,8 @@ export interface DataEvent {
     id: string;
     labels: string[];
     properties: Record<string, any>;
+    before?: Record<string, any>;  // For update/delete operations
+    after?: Record<string, any>;   // For insert/update operations
   };
   timestamp?: number;
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -26,19 +26,29 @@ import {
 } from '@tanstack/react-table';
 import { useForm } from 'react-hook-form';
 import { DataTableProps, DataEvent } from '@/types';
+import { useSourceData } from '@/contexts/SourceDataContext';
 
-// Example data for demo
+// Example data for demo - matches the query templates
 const EXAMPLE_DATA = [
-  { id: 'prod-1', name: 'Laptop', category: 'Electronics', price: 999.99, stock: 15 },
-  { id: 'prod-2', name: 'Mouse', category: 'Electronics', price: 29.99, stock: 50 },
-  { id: 'prod-3', name: 'Keyboard', category: 'Electronics', price: 79.99, stock: 30 },
-  { id: 'prod-4', name: 'Monitor', category: 'Electronics', price: 299.99, stock: 8 },
-  { id: 'prod-5', name: 'Desk Chair', category: 'Furniture', price: 199.99, stock: 12 },
+  { id: 'prod-001', name: 'Gaming Laptop', category: 'Electronics', price: 1299.99, stock: 5 },
+  { id: 'prod-002', name: 'Wireless Mouse', category: 'Electronics', price: 29.99, stock: 50 },
+  { id: 'prod-003', name: 'Mechanical Keyboard', category: 'Electronics', price: 149.99, stock: 25 },
+  { id: 'prod-004', name: '4K Monitor', category: 'Electronics', price: 399.99, stock: 8 },
+  { id: 'prod-005', name: 'USB-C Hub', category: 'Electronics', price: 49.99, stock: 3 },
+  { id: 'prod-006', name: 'Ergonomic Chair', category: 'Furniture', price: 299.99, stock: 12 },
+  { id: 'prod-007', name: 'Standing Desk', category: 'Furniture', price: 599.99, stock: 7 },
+  { id: 'prod-008', name: 'Desk Lamp', category: 'Furniture', price: 39.99, stock: 20 },
+  { id: 'prod-009', name: 'Notebook Set', category: 'Stationery', price: 19.99, stock: 100 },
+  { id: 'prod-010', name: 'Pen Pack', category: 'Stationery', price: 9.99, stock: 200 },
 ];
 
 export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
-  // Use local state for data since we're managing it manually
+  // Use context for persistent data storage across tab switches
+  const { getSourceData, setSourceData, getOriginalData, setOriginalData } = useSourceData();
+
+  // Initialize local state from context
   const [data, setData] = useState<any[]>([]);
+  const [originalData, setOriginalDataLocal] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -47,6 +57,27 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+
+  // Load data from context when component mounts or sourceId changes
+  useEffect(() => {
+    const contextData = getSourceData(sourceId);
+    const contextOriginalData = getOriginalData(sourceId);
+    console.log(`Loading data for source ${sourceId}:`, contextData.length, 'items');
+    setData(contextData);
+    setOriginalDataLocal(contextOriginalData);
+  }, [sourceId, getSourceData, getOriginalData]);
+
+  // Helper to update both local and context data
+  const updateData = (newData: any[]) => {
+    console.log(`Saving data for source ${sourceId}:`, newData.length, 'items');
+    setData(newData);
+    setSourceData(sourceId, newData);
+  };
+
+  const updateOriginalData = (newOriginalData: Map<string, any>) => {
+    setOriginalDataLocal(newOriginalData);
+    setOriginalData(sourceId, newOriginalData);
+  };
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<Record<string, any>>({
     defaultValues: {},
@@ -160,102 +191,154 @@ export function DataTable({ sourceId, sourceName, client }: DataTableProps) {
   const handleSaveEdit = async (originalRow: any) => {
     if (!client) return;
 
-    try {
-      const event: DataEvent = {
-        operation: 'update',
-        element: {
-          type: 'node',
-          id: originalRow.id,
-          labels: [sourceId], // Use sourceId as the label
-          properties: editData,
-        },
-      };
+    // Get the before data from our tracked original data
+    const beforeData = originalData.get(originalRow.id) || originalRow;
 
+    const event: DataEvent = {
+      operation: 'update',
+      element: {
+        type: 'node',
+        id: originalRow.id,
+        labels: ['Product'], // Use Product label to match queries
+        properties: editData,
+        before: beforeData,  // Include before state
+        after: editData      // Include after state
+      },
+    };
+
+    // Try to inject to server but don't fail if it doesn't work
+    try {
       await client.injectData(sourceId, event);
-      // Update local state
-      setData(prevData =>
-        prevData.map(row => row.id === originalRow.id ? { ...editData } : row)
-      );
-      setEditingRow(null);
-      setEditData({});
     } catch (err: any) {
-      alert(`Failed to update row: ${err.message}`);
+      console.warn(`Failed to inject update to source ${sourceId}:`, err.message);
     }
+
+    // Always update local state
+    const newData = data.map(row => row.id === originalRow.id ? { ...editData } : row);
+    updateData(newData);
+
+    const newOriginalData = new Map(originalData);
+    newOriginalData.set(originalRow.id, { ...editData });
+    updateOriginalData(newOriginalData);
+
+    setEditingRow(null);
+    setEditData({});
   };
 
   const handleDelete = async (row: any) => {
     if (!client) return;
     if (!confirm('Are you sure you want to delete this row?')) return;
 
-    try {
-      const event: DataEvent = {
-        operation: 'delete',
-        element: {
-          type: 'node',
-          id: row.id,
-          labels: [sourceId], // Use sourceId as the label
-          properties: row,
-        },
-      };
+    // Get the original data for the before state
+    const beforeData = originalData.get(row.id) || row;
 
+    const event: DataEvent = {
+      operation: 'delete',
+      element: {
+        type: 'node',
+        id: row.id,
+        labels: ['Product'], // Use Product label to match queries
+        properties: {},       // Empty properties for delete
+        before: beforeData    // Include the before state
+      },
+    };
+
+    // Try to inject to server but don't fail if it doesn't work
+    try {
       await client.injectData(sourceId, event);
-      // Update local state
-      setData(prevData => prevData.filter(r => r.id !== row.id));
     } catch (err: any) {
-      alert(`Failed to delete row: ${err.message}`);
+      console.warn(`Failed to inject delete to source ${sourceId}:`, err.message);
     }
+
+    // Always update local state
+    const newData = data.filter(r => r.id !== row.id);
+    updateData(newData);
+
+    const newOriginalData = new Map(originalData);
+    newOriginalData.delete(row.id);
+    updateOriginalData(newOriginalData);
   };
 
   const onSubmit = async (formData: Record<string, any>) => {
     if (!client) return;
 
-    try {
-      const id = formData.id || `${sourceId}-${Date.now()}`;
-      const event: DataEvent = {
-        operation: 'insert',
-        element: {
-          type: 'node',
-          id,
-          labels: [sourceId], // Use sourceId as the label
-          properties: { ...formData, id },
-        },
-      };
+    const id = formData.id || `prod-${Date.now()}`;
+    const newRecord = { ...formData, id };
 
+    const event: DataEvent = {
+      operation: 'insert',
+      element: {
+        type: 'node',
+        id,
+        labels: ['Product'], // Use Product label to match queries
+        properties: newRecord,
+        after: newRecord     // Include after state for insert
+      },
+    };
+
+    // Try to inject to server but don't fail if it doesn't work
+    try {
       await client.injectData(sourceId, event);
-      // Update local state
-      setData(prevData => [...prevData, { ...formData, id }]);
-      setShowAddForm(false);
-      reset();
     } catch (err: any) {
-      alert(`Failed to add row: ${err.message}`);
+      console.warn(`Failed to inject insert to source ${sourceId}:`, err.message);
     }
+
+    // Always update local state
+    const newData = [...data, newRecord];
+    updateData(newData);
+
+    const newOriginalData = new Map(originalData);
+    newOriginalData.set(id, newRecord);
+    updateOriginalData(newOriginalData);
+
+    setShowAddForm(false);
+    reset();
   };
 
   const loadExampleData = async () => {
     if (!client) return;
 
     setLoading(true);
-    try {
-      // Load example data
-      for (const item of EXAMPLE_DATA) {
-        const event: DataEvent = {
-          operation: 'insert',
-          element: {
-            type: 'node',
-            id: item.id,
-            labels: [sourceId],
-            properties: item,
-          },
-        };
+
+    // Track all example data as original
+    const newOriginalData = new Map<string, any>();
+    let injectionFailed = false;
+
+    // Try to inject data to server
+    for (const item of EXAMPLE_DATA) {
+      const event: DataEvent = {
+        operation: 'insert',
+        element: {
+          type: 'node',
+          id: item.id,
+          labels: ['Product'],
+          properties: item,
+          after: item  // Include after state for insert
+        },
+      };
+
+      try {
         await client.injectData(sourceId, event);
+      } catch (err: any) {
+        // Log error but continue - we'll still store data locally
+        console.warn(`Failed to inject data to source ${sourceId}:`, err.message);
+        injectionFailed = true;
       }
-      setData(EXAMPLE_DATA);
-      alert('Example data loaded successfully!');
-    } catch (err: any) {
-      alert(`Failed to load example data: ${err.message}`);
-    } finally {
-      setLoading(false);
+
+      newOriginalData.set(item.id, item);
     }
+
+    // Always update local state, even if injection failed
+    updateData(EXAMPLE_DATA);
+    updateOriginalData(newOriginalData);
+
+    if (injectionFailed) {
+      alert('Note: Data injection to server may have failed (this is normal for mock sources), but data has been stored locally for UI simulation.');
+    } else {
+      alert('Example data loaded successfully! The data has been injected with "Product" labels to match the example queries.');
+    }
+
+    setLoading(false);
   };
 
   const exportToCSV = () => {

@@ -36,28 +36,28 @@ interface QueryFormData {
 const QUERY_TEMPLATES = [
   {
     name: 'All Products',
-    query: 'MATCH (p) RETURN p.id, p.name, p.category, p.price, p.stock',
+    query: 'MATCH (p:Product) RETURN p.id AS id, p.name AS name, p.category AS category, p.price AS price, p.stock AS stock',
     description: 'Returns all products from the source',
   },
   {
     name: 'Low Stock Items',
-    query: 'MATCH (p)\nWHERE p.stock < 10\nRETURN p.name, p.stock, p.category',
-    description: 'Find products with low inventory',
+    query: 'MATCH (p:Product)\nWHERE p.stock < 10\nRETURN p.id AS id, p.name AS name, p.stock AS stock, p.category AS category',
+    description: 'Find products with low inventory (stock < 10)',
   },
   {
-    name: 'Products by Category',
-    query: "MATCH (p)\nWHERE p.category = 'Electronics'\nRETURN p.name, p.price, p.stock",
-    description: 'Filter products by category',
+    name: 'Electronics Category',
+    query: "MATCH (p:Product)\nWHERE p.category = 'Electronics'\nRETURN p.id AS id, p.name AS name, p.price AS price, p.stock AS stock",
+    description: 'Filter products in Electronics category',
   },
   {
-    name: 'Price Range',
-    query: 'MATCH (p)\nWHERE p.price >= 100 AND p.price <= 500\nRETURN p.name, p.price\nORDER BY p.price DESC',
-    description: 'Find products within a price range',
+    name: 'Price Range $100-$500',
+    query: 'MATCH (p:Product)\nWHERE p.price >= 100 AND p.price <= 500\nRETURN p.id AS id, p.name AS name, p.price AS price\nORDER BY p.price DESC',
+    description: 'Find products priced between $100 and $500',
   },
   {
     name: 'Category Summary',
-    query: 'MATCH (p)\nRETURN p.category, COUNT(p) as count, AVG(p.price) as avg_price\nORDER BY count DESC',
-    description: 'Aggregate products by category',
+    query: 'MATCH (p:Product)\nRETURN p.category AS category, COUNT(p) AS product_count, AVG(p.price) AS avg_price\nORDER BY product_count DESC',
+    description: 'Aggregate products by category with count and average price',
   },
 ];
 
@@ -113,7 +113,10 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
         accessorKey: 'sources',
         header: 'Sources',
         cell: ({ getValue }) => {
-          const sources = getValue() as string[];
+          const sources = getValue() as string[] | undefined;
+          if (!sources || sources.length === 0) {
+            return <span className="text-gray-400 text-sm">No sources</span>;
+          }
           return (
             <div className="flex flex-wrap gap-2">
               {sources.map((source) => (
