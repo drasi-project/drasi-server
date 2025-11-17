@@ -17,3 +17,16 @@ body {
 .font-mono {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
 }
+
+/* Flash animation for updated rows */
+@keyframes flash {
+  0% {
+    background-color: rgb(254 240 138); /* yellow-200 */
+  }
+  50% {
+    background-color: rgb(253 224 71); /* yellow-300 */
+  }
+  100% {
+    background-color: transparent;
+  }
+}

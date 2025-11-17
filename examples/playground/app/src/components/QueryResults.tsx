@@ -33,13 +33,39 @@ export function QueryResults({ queryId }: QueryResultsProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [flashingRows, setFlashingRows] = useState<Set<string>>(new Set());
 
-  // Trigger flash animation on updates
+  // Trigger flash animation on updates and track which rows changed
   useEffect(() => {
-    if (lastUpdate) {
+    if (lastUpdate && lastSSEEvent) {
       setFlashKey((prev) => prev + 1);
+
+      // Identify which rows were affected by this SSE event
+      const affectedRowIds = new Set<string>();
+
+      if (lastSSEEvent.results) {
+        for (const changeEvent of lastSSEEvent.results) {
+          // Try to extract an ID from the changed data
+          const rowData = changeEvent.data || changeEvent.after || changeEvent.before;
+          if (rowData) {
+            // Create a unique identifier for the row based on its content
+            const rowId = JSON.stringify(rowData);
+            affectedRowIds.add(rowId);
+          }
+        }
+      }
+
+      // Flash the affected rows
+      setFlashingRows(affectedRowIds);
+
+      // Clear the flash after animation completes
+      const timer = setTimeout(() => {
+        setFlashingRows(new Set());
+      }, 1000);
+
+      return () => clearTimeout(timer);
     }
-  }, [lastUpdate]);
+  }, [lastUpdate, lastSSEEvent]);
 
   // Extract columns from data
   const columns = useMemo<ColumnDef<any>[]>(() => {
@@ -301,20 +327,32 @@ export function QueryResults({ queryId }: QueryResultsProps) {
                   ))}
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {table.getRowModel().rows.map((row, idx) => (
-                    <tr
-                      key={row.id}
-                      className={`hover:bg-gray-50 transition-colors ${
-                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                      }`}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-6 py-4">
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {table.getRowModel().rows.map((row, idx) => {
+                    const rowId = JSON.stringify(row.original);
+                    const isFlashing = flashingRows.has(rowId);
+
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`${
+                          isFlashing
+                            ? ''
+                            : idx % 2 === 0
+                              ? 'bg-white hover:bg-gray-50 transition-colors'
+                              : 'bg-gray-50/50 hover:bg-gray-50 transition-colors'
+                        }`}
+                        style={isFlashing ? {
+                          animation: 'flash 1s ease-in-out'
+                        } : undefined}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className="px-6 py-4">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
