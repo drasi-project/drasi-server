@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server_core::{
-    DrasiError, DrasiServerCore, DrasiServerCoreBuilder, Query, Reaction, Source,
-};
+use drasi_lib::{DrasiError, DrasiServerCore, DrasiServerCoreBuilder, Query, Reaction, Source};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -85,11 +83,7 @@ impl DrasiServerBuilder {
     }
 
     /// Add a source with name and type, using default properties
-    pub fn with_simple_source(
-        self,
-        id: impl Into<String>,
-        source_type: impl Into<String>,
-    ) -> Self {
+    pub fn with_simple_source(self, id: impl Into<String>, source_type: impl Into<String>) -> Self {
         self.with_source_config(id, source_type)
     }
 

@@ -3,7 +3,7 @@
 //! These tests ensure API operations maintain consistent state across components,
 //! testing the public API for component lifecycle management.
 
-use drasi_server_core::{DrasiServerCore, Query, Reaction, Source};
+use drasi_lib::{DrasiServerCore, Query, Reaction, Source};
 use std::sync::Arc;
 
 #[tokio::test]
@@ -237,7 +237,7 @@ async fn test_query_with_joins() {
 
     // For joins, we need to use the lower-level QueryConfig since the builder API
     // may not support join configuration yet
-    use drasi_server_core::config::{QueryJoinConfig, QueryJoinKeyConfig};
+    use drasi_lib::config::{QueryJoinConfig, QueryJoinKeyConfig};
     let query = Query::cypher("join-query")
         .query("MATCH (a:TypeA)<-[:LINKED]-(b:TypeB) RETURN a, b")
         .from_source("join-source1")

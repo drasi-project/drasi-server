@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// Uses atomic writes (temp file + rename) to prevent corruption.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    core: Arc<drasi_server_core::DrasiServerCore>,
+    core: Arc<drasi_lib::DrasiServerCore>,
     host: String,
     port: u16,
     log_level: String,
@@ -33,7 +33,7 @@ impl ConfigPersistence {
     /// Create a new ConfigPersistence instance
     pub fn new(
         config_file_path: PathBuf,
-        core: Arc<drasi_server_core::DrasiServerCore>,
+        core: Arc<drasi_lib::DrasiServerCore>,
         host: String,
         port: u16,
         log_level: String,
@@ -134,22 +134,18 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    async fn create_test_core() -> Arc<drasi_server_core::DrasiServerCore> {
-        use drasi_server_core::{Source, Query};
+    async fn create_test_core() -> Arc<drasi_lib::DrasiServerCore> {
+        use drasi_lib::{Query, Source};
 
-        let core = drasi_server_core::DrasiServerCore::builder()
+        let core = drasi_lib::DrasiServerCore::builder()
             .with_id("test-server")
-            .add_source(
-                Source::mock("test-source")
-                    .auto_start(false)
-                    .build()
-            )
+            .add_source(Source::mock("test-source").auto_start(false).build())
             .add_query(
                 Query::cypher("test-query")
                     .query("MATCH (n) RETURN n")
                     .from_source("test-source")
                     .auto_start(false)
-                    .build()
+                    .build(),
             )
             .build()
             .await

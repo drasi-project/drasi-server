@@ -126,7 +126,7 @@ async fn test_persistence_saves_complete_configuration() {
             QueryConfig {
                 id: "test-query-1".to_string(),
                 query: "MATCH (n) RETURN n".to_string(),
-                query_language: drasi_server_core::config::QueryLanguage::default(),
+                query_language: drasi_lib::config::QueryLanguage::default(),
                 sources: vec!["test-source-1".to_string()],
                 auto_start: true,
                 properties: HashMap::new(),

@@ -3,9 +3,9 @@
 //! These tests validate that the REST API contracts remain stable over time.
 //! They test request/response formats, status codes, and data schemas.
 
+use drasi_lib::channels::ComponentStatus;
+use drasi_lib::{QueryConfig, ReactionConfig, SourceConfig};
 use drasi_server::api::handlers::ApiResponse;
-use drasi_server_core::channels::ComponentStatus;
-use drasi_server_core::{QueryConfig, ReactionConfig, SourceConfig};
 use serde_json::json;
 
 #[cfg(test)]
@@ -73,7 +73,7 @@ mod contract_tests {
 
     #[test]
     fn test_source_config_serialization() {
-        use drasi_server_core::{Properties, Source};
+        use drasi_lib::{Properties, Source};
 
         let config = Source::mock("test-source")
             .auto_start(true)
@@ -114,7 +114,7 @@ mod contract_tests {
 
     #[test]
     fn test_query_config_serialization() {
-        use drasi_server_core::Query;
+        use drasi_lib::Query;
 
         let config = Query::cypher("test-query")
             .query("MATCH (n:Node) RETURN n")
@@ -156,7 +156,7 @@ mod contract_tests {
 
     #[test]
     fn test_reaction_config_serialization() {
-        use drasi_server_core::{Properties, Reaction};
+        use drasi_lib::{Properties, Reaction};
 
         let config = Reaction::http("test-reaction")
             .subscribe_to("query1")
@@ -291,7 +291,7 @@ mod contract_tests {
 
     #[test]
     fn test_optional_properties() {
-        use drasi_server_core::Reaction;
+        use drasi_lib::Reaction;
 
         // Test that configs with and without custom properties work correctly
         let config_with_props = Reaction::http("r1")
@@ -346,7 +346,7 @@ mod edge_case_tests {
 
     #[test]
     fn test_special_characters_in_ids() {
-        use drasi_server_core::Source;
+        use drasi_lib::Source;
 
         let config = Source::mock("source-with-dashes_and_underscores.123")
             .auto_start(false)
@@ -362,7 +362,7 @@ mod edge_case_tests {
 
     #[test]
     fn test_very_long_query_string() {
-        use drasi_server_core::Query;
+        use drasi_lib::Query;
 
         let long_query = "MATCH ".to_string() + &"(n:Node) ".repeat(100) + "RETURN n";
         let config = Query::cypher("long-query")
@@ -377,15 +377,12 @@ mod edge_case_tests {
 
     #[test]
     fn test_unicode_in_properties() {
-        use drasi_server_core::{Properties, Source};
+        use drasi_lib::{Properties, Source};
 
         // Test that Unicode strings work in typed config fields
         let config = Source::mock("unicode-source")
             .auto_start(false)
-            .with_properties(
-                Properties::new()
-                    .with_string("data_type", "Hello 世界 🌍"),
-            )
+            .with_properties(Properties::new().with_string("data_type", "Hello 世界 🌍"))
             .build();
 
         let json = serde_json::to_value(&config).unwrap();
@@ -395,7 +392,7 @@ mod edge_case_tests {
 
     #[test]
     fn test_nested_json_in_properties() {
-        use drasi_server_core::Reaction;
+        use drasi_lib::Reaction;
 
         // Test that config serialization works correctly
         let config = Reaction::http("nested-reaction")
@@ -412,7 +409,7 @@ mod edge_case_tests {
 
     #[test]
     fn test_empty_strings() {
-        use drasi_server_core::Query;
+        use drasi_lib::Query;
 
         // Some fields might be empty strings
         let config = Query::cypher("empty-query")

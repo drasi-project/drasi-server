@@ -15,7 +15,7 @@
 #[cfg(test)]
 mod handler_tests {
     use super::super::*;
-    use drasi_server_core::channels::ComponentStatus;
+    use drasi_lib::channels::ComponentStatus;
 
     #[tokio::test]
     async fn test_api_response_constructors() {
@@ -50,13 +50,11 @@ mod handler_tests {
 
 #[cfg(test)]
 mod serialization_tests {
-    use drasi_server_core::{Query, Reaction, Source};
+    use drasi_lib::{Query, Reaction, Source};
 
     #[test]
     fn test_source_config_json_serialization() {
-        let config = Source::mock("test-source")
-            .auto_start(true)
-            .build();
+        let config = Source::mock("test-source").auto_start(true).build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
@@ -67,8 +65,7 @@ mod serialization_tests {
         assert!(json["interval_ms"].is_number());
 
         // Test deserialization
-        let deserialized: drasi_server_core::SourceConfig =
-            serde_json::from_value(json).unwrap();
+        let deserialized: drasi_lib::SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.id, config.id);
     }
 
@@ -87,8 +84,7 @@ mod serialization_tests {
         assert_eq!(json["source_subscriptions"].as_array().unwrap().len(), 2);
 
         // Test deserialization
-        let deserialized: drasi_server_core::QueryConfig =
-            serde_json::from_value(json).unwrap();
+        let deserialized: drasi_lib::QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.source_subscriptions.len(), 2);
     }
 

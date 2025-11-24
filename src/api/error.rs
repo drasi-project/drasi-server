@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use axum::http::StatusCode;
-use drasi_server_core::DrasiError;
+use drasi_lib::DrasiError;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -139,9 +139,10 @@ impl From<DrasiError> for ErrorResponse {
                 component_id: Some(id.clone()),
                 technical_details: None,
             }),
-            InvalidState(ref msg) => {
-                ErrorResponse::new(error_codes::INVALID_REQUEST, format!("Invalid state: {}", msg))
-            }
+            InvalidState(ref msg) => ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Invalid state: {}", msg),
+            ),
             Configuration(ref msg) => ErrorResponse::new(
                 error_codes::INVALID_REQUEST,
                 format!("Configuration error: {}", msg),

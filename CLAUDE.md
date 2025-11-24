@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is the Drasi Server repository - a standalone server wrapper around DrasiServerCore that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-server-core library located at `../drasi-server-core/`.
+This is the Drasi Server repository - a standalone server wrapper around DrasiLib that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-lib library located at `../drasi-lib/`.
 
 ## Development Commands
 
@@ -33,14 +33,14 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiSe
 
 This repository contains only the server wrapper functionality:
 
-1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiServerCore
+1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiLib
 2. **API** (`src/api/`) - REST API implementation with OpenAPI documentation
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 
 ### Core Components (External Dependency)
 
-The actual data processing functionality is provided by drasi-server-core:
+The actual data processing functionality is provided by drasi-lib:
 
 1. **Sources** - Data ingestion from various systems (PostgreSQL, HTTP, gRPC, etc.)
 2. **Queries** - Continuous Cypher queries over data with joins and bootstrap
@@ -244,14 +244,14 @@ let handles = server.start().await?;
 
 ### Core Dependencies
 - Rust edition 2021 minimum
-- `drasi-server-core` - External library at `../drasi-server-core/`
+- `drasi-lib` - External library at `../drasi-lib/`
 - Tokio for async runtime
 - Axum for HTTP server
 - Serde for serialization
 - Utoipa for OpenAPI documentation
 
 ### Important Notes
-- The core functionality is provided by the external `drasi-server-core` library
-- Config types from drasi-server-core don't implement ToSchema trait, limiting OpenAPI documentation
-- All data processing logic resides in drasi-server-core
+- The core functionality is provided by the external `drasi-lib` library
+- Config types from drasi-lib don't implement ToSchema trait, limiting OpenAPI documentation
+- All data processing logic resides in drasi-lib
 - This repository focuses on API, configuration, and server lifecycle management
