@@ -17,7 +17,7 @@ mod api_query_joins_tests {
     use crate::api::handlers::*;
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};
-    use drasi_server_core::{
+    use drasi_lib::{
         config::{QueryJoinConfig, QueryJoinKeyConfig},
         DrasiServerCore, Query, QueryConfig,
     };
@@ -67,7 +67,9 @@ mod api_query_joins_tests {
         };
 
         let query_config = Query::cypher("vehicle-driver-query")
-            .query("MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate")
+            .query(
+                "MATCH (d:Driver)-[:VEHICLE_TO_DRIVER]->(v:Vehicle) RETURN d.name, v.licensePlate",
+            )
             .from_source("vehicles")
             .from_source("drivers")
             .auto_start(false)

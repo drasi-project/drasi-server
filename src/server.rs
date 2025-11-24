@@ -29,7 +29,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::config::DrasiServerConfig;
 use crate::persistence::ConfigPersistence;
-use drasi_server_core::DrasiServerCore;
+use drasi_lib::DrasiServerCore;
 
 pub struct DrasiServer {
     core: Option<DrasiServerCore>,

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use drasi_server_core::config::DrasiServerCoreConfig;
+use drasi_lib::config::DrasiServerCoreConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::IpAddr;

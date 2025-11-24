@@ -1,10 +1,10 @@
 # Drasi Server
 
-A production-ready standalone server for building change-driven solutions with Microsoft Drasi. DrasiServer provides a REST API, configuration management, and lifecycle control around the powerful [DrasiServerCore](https://github.com/drasi-project/drasi-server-core/blob/main/README.md) event processing engine.
+A production-ready standalone server for building change-driven solutions with Microsoft Drasi. DrasiServer provides a REST API, configuration management, and lifecycle control around the powerful [DrasiLib](https://github.com/drasi-project/drasi-lib/blob/main/README.md) event processing engine.
 
 ## Overview
 
-DrasiServer enables you to build intelligent, event-driven applications that continuously detect and react to critical changes in your data systems - without polling, without delays, and without complexity. It wraps the DrasiServerCore library with enterprise-ready features including:
+DrasiServer enables you to build intelligent, event-driven applications that continuously detect and react to critical changes in your data systems - without polling, without delays, and without complexity. It wraps the DrasiLib library with enterprise-ready features including:
 
 - **REST API with OpenAPI/Swagger documentation** for programmatic control
 - **YAML-based configuration management** with hot-reload support
@@ -162,7 +162,7 @@ Automated responses triggered by query results:
 ### Build Steps
 
 #### Important: Submodule Initialization
-This project uses nested Git submodules (drasi-server-core contains drasi-core as a submodule).
+This project uses nested Git submodules (drasi-lib contains drasi-core as a submodule).
 You must initialize all submodules recursively for the build to work.
 
 ```bash
@@ -175,7 +175,7 @@ git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 git submodule update --init --recursive
 
-# Verify submodules are initialized (should show drasi-server-core and drasi-server-core/drasi-core)
+# Verify submodules are initialized (should show drasi-lib and drasi-lib/drasi-core)
 git submodule status --recursive
 
 # Build debug version
@@ -414,7 +414,7 @@ DrasiServer validates all configuration on startup and when creating components 
 - Query Cypher syntax is validated
 - Reaction types must be valid and supported
 - All referenced sources/queries in subscriptions must exist
-- Component configuration is delegated to DrasiServerCore for detailed validation
+- Component configuration is delegated to DrasiLib for detailed validation
 
 ### Configuration Persistence
 
@@ -851,8 +851,8 @@ GET /reactions/{id}
 
 **Build fails with "failed to get `drasi-core` as a dependency":**
 This error occurs when nested submodules aren't initialized. DrasiServer uses nested submodules:
-- `drasi-server-core` is a submodule of `drasi-server`
-- `drasi-core` is a submodule of `drasi-server-core`
+- `drasi-lib` is a submodule of `drasi-server`
+- `drasi-core` is a submodule of `drasi-lib`
 
 Solution:
 ```bash
@@ -860,8 +860,8 @@ Solution:
 git submodule update --init --recursive
 
 # Verify both submodules are present
-ls -la drasi-server-core/         # Should exist
-ls -la drasi-server-core/drasi-core/  # Should also exist
+ls -la drasi-lib/         # Should exist
+ls -la drasi-lib/drasi-core/  # Should also exist
 
 # If issues persist, force update
 git submodule update --init --recursive --force
@@ -947,7 +947,7 @@ DrasiServer is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for
 
 ## Related Projects
 
-- [DrasiServerCore](https://github.com/drasi-project/drasi-server-core) - Core event processing engine
+- [DrasiLib](https://github.com/drasi-project/drasi-lib) - Core event processing engine
 - [Drasi](https://github.com/drasi-project/drasi) - Main Drasi project
 - [Drasi Documentation](https://drasi.io/docs) - Complete documentation
 

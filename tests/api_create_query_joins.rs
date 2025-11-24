@@ -1,9 +1,9 @@
 use axum::Extension;
-use drasi_server::api::handlers::create_query;
-use drasi_server_core::{
+use drasi_lib::{
     config::{QueryJoinConfig, QueryJoinKeyConfig},
     DrasiServerCore, Query, QueryConfig,
 };
+use drasi_server::api::handlers::create_query;
 use std::sync::Arc;
 
 // Helper to build a minimal QueryConfig with joins

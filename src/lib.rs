@@ -26,7 +26,7 @@ pub use config::{DrasiServerConfig, ServerSettings};
 pub use server::DrasiServer;
 
 // Re-export from drasi-server-core (public API only)
-pub use drasi_server_core::{
+pub use drasi_lib::{
     // Application handle types
     ApplicationReactionHandle,
     ApplicationSourceHandle,
@@ -51,5 +51,5 @@ pub use drasi_server_core::{
 
 // Re-export types from internal modules (these are visible but marked as internal)
 // We need these for the wrapper API functionality
-pub use drasi_server_core::channels::ComponentStatus;
-pub use drasi_server_core::config::{DrasiServerCoreSettings, QueryJoinConfig, QueryJoinKeyConfig};
+pub use drasi_lib::channels::ComponentStatus;
+pub use drasi_lib::config::{DrasiServerCoreSettings, QueryJoinConfig, QueryJoinKeyConfig};

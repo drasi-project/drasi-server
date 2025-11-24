@@ -35,7 +35,7 @@ name = "basic_setup"
 path = "src/bin/basic_setup.rs"
 
 [dependencies]
-drasi-server-core = { path = "./drasi-core/server-core" }
+drasi-lib = { path = "./drasi-core/lib" }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }

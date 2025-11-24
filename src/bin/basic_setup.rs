@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server_core::{Properties, Query, Reaction, Source};
+use drasi_lib::{Properties, Query, Reaction, Source};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -95,8 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     // Create the configuration structure
-    let config = drasi_server_core::config::DrasiServerCoreConfig {
-        server_core: drasi_server_core::config::DrasiServerCoreSettings::default(),
+    let config = drasi_lib::config::DrasiServerCoreConfig {
+        server_core: drasi_lib::config::DrasiServerCoreSettings::default(),
         sources: vec![vehicle_source, order_source],
         queries: vec![available_drivers_query, pending_orders_query],
         reactions: vec![log_reaction, http_reaction],

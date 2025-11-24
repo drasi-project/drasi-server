@@ -9,15 +9,15 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use drasi_lib::{Query, Source};
 use drasi_server::api;
-use drasi_server_core::{Query, Source};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
 
 /// Helper to create a test router with all dependencies
-async fn create_test_router() -> (Router, Arc<drasi_server_core::DrasiServerCore>) {
-    use drasi_server_core::DrasiServerCore;
+async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiServerCore>) {
+    use drasi_lib::DrasiServerCore;
 
     // Create a minimal DrasiServerCore using the builder
     let core = DrasiServerCore::builder()
@@ -536,7 +536,7 @@ async fn test_idempotent_create_operations() {
 
 #[tokio::test]
 async fn test_read_only_mode() {
-    use drasi_server_core::DrasiServerCore;
+    use drasi_lib::DrasiServerCore;
 
     // Create a minimal DrasiServerCore
     let core = DrasiServerCore::builder()

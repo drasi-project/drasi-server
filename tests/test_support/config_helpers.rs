@@ -14,7 +14,7 @@
 
 //! Test configuration helpers for the new builder API
 
-use drasi_server_core::{Properties, Query, Reaction, Source};
+use drasi_lib::{Properties, Query, Reaction, Source};
 use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
 use serde_json::Value;
 use std::collections::HashMap;
