@@ -1,7 +1,7 @@
 use axum::Extension;
 use drasi_lib::{
     config::{QueryJoinConfig, QueryJoinKeyConfig},
-    DrasiServerCore, Query, QueryConfig,
+    DrasiLib, Query, QueryConfig,
 };
 use drasi_server::api::handlers::create_query;
 use std::sync::Arc;
@@ -31,8 +31,8 @@ fn build_query_config() -> QueryConfig {
 
 #[tokio::test]
 async fn test_create_query_with_joins_via_handler() {
-    // Create a minimal DrasiServerCore using the builder
-    let core = DrasiServerCore::builder()
+    // Create a minimal DrasiLib using the builder
+    let core = DrasiLib::builder()
         .with_id("test-server")
         .build()
         .await

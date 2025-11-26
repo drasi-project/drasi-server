@@ -134,7 +134,7 @@ pub async fn health_check() -> Json<HealthResponse> {
     tag = "Sources"
 )]
 pub async fn list_sources(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let sources = core.list_sources().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = sources
@@ -157,7 +157,7 @@ pub async fn list_sources(
     tag = "Sources"
 )]
 pub async fn create_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Json(config): Json<SourceConfig>,
@@ -170,7 +170,7 @@ pub async fn create_source(
 
     let source_id = config.id.clone();
 
-    // Use DrasiServerCore's public API to create source
+    // Use DrasiLib's public API to create source
     match core.create_source(config.clone()).await {
         Ok(_) => {
             log::info!("Source '{}' created successfully", source_id);
@@ -211,7 +211,7 @@ pub async fn create_source(
     tag = "Sources"
 )]
 pub async fn get_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<SourceConfig>>, StatusCode> {
     match core.get_source_config(&id).await {
@@ -233,7 +233,7 @@ pub async fn get_source(
     tag = "Sources"
 )]
 pub async fn delete_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
@@ -274,7 +274,7 @@ pub async fn delete_source(
     tag = "Sources"
 )]
 pub async fn start_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.start_source(&id).await {
@@ -307,7 +307,7 @@ pub async fn start_source(
     tag = "Sources"
 )]
 pub async fn stop_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.stop_source(&id).await {
@@ -336,7 +336,7 @@ pub async fn stop_source(
     tag = "Queries"
 )]
 pub async fn list_queries(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let queries = core.list_queries().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = queries
@@ -359,7 +359,7 @@ pub async fn list_queries(
     tag = "Queries"
 )]
 pub async fn create_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Json(config): Json<QueryConfig>,
@@ -407,7 +407,7 @@ pub async fn create_query(
         log::debug!("Registering query '{}' with no synthetic joins", query_id);
     }
 
-    // Use DrasiServerCore's public API to create query
+    // Use DrasiLib's public API to create query
     match core.create_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{}' created successfully", query_id);
@@ -448,7 +448,7 @@ pub async fn create_query(
     tag = "Queries"
 )]
 pub async fn get_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<QueryConfig>>, StatusCode> {
     match core.get_query_config(&id).await {
@@ -470,7 +470,7 @@ pub async fn get_query(
     tag = "Queries"
 )]
 pub async fn delete_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
@@ -511,7 +511,7 @@ pub async fn delete_query(
     tag = "Queries"
 )]
 pub async fn start_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.start_query(&id).await {
@@ -544,7 +544,7 @@ pub async fn start_query(
     tag = "Queries"
 )]
 pub async fn stop_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.stop_query(&id).await {
@@ -577,7 +577,7 @@ pub async fn stop_query(
     tag = "Queries"
 )]
 pub async fn get_query_results(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
     match core.get_query_results(&id).await {
@@ -604,7 +604,7 @@ pub async fn get_query_results(
     tag = "Reactions"
 )]
 pub async fn list_reactions(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let reactions = core.list_reactions().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = reactions
@@ -627,7 +627,7 @@ pub async fn list_reactions(
     tag = "Reactions"
 )]
 pub async fn create_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Json(config): Json<ReactionConfig>,
@@ -640,7 +640,7 @@ pub async fn create_reaction(
 
     let reaction_id = config.id.clone();
 
-    // Use DrasiServerCore's public API to create reaction
+    // Use DrasiLib's public API to create reaction
     match core.create_reaction(config.clone()).await {
         Ok(_) => {
             log::info!("Reaction '{}' created successfully", reaction_id);
@@ -684,7 +684,7 @@ pub async fn create_reaction(
     tag = "Reactions"
 )]
 pub async fn get_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ReactionConfig>>, StatusCode> {
     match core.get_reaction_config(&id).await {
@@ -706,7 +706,7 @@ pub async fn get_reaction(
     tag = "Reactions"
 )]
 pub async fn delete_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
@@ -747,7 +747,7 @@ pub async fn delete_reaction(
     tag = "Reactions"
 )]
 pub async fn start_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.start_reaction(&id).await {
@@ -780,7 +780,7 @@ pub async fn start_reaction(
     tag = "Reactions"
 )]
 pub async fn stop_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiServerCore>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     match core.stop_reaction(&id).await {

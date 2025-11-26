@@ -1,8 +1,9 @@
 //! API Integration Tests
 //!
-//! These tests validate the complete data flow from API requests to DrasiServerCore operations.
+//! These tests validate the complete data flow from API requests to DrasiLib operations.
 //! They test the full lifecycle of components through the API.
 
+use crate::test_utils::{create_mock_reaction_registry, create_mock_source_registry};
 use axum::{
     body::{to_bytes, Body},
     extract::Extension,
@@ -16,12 +17,14 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 /// Helper to create a test router with all dependencies
-async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiServerCore>) {
-    use drasi_lib::DrasiServerCore;
+async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
+    use drasi_lib::DrasiLib;
 
-    // Create a minimal DrasiServerCore using the builder
-    let core = DrasiServerCore::builder()
+    // Create a minimal DrasiLib using the builder with mock registries
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build()
         .await
         .expect("Failed to build test core");
@@ -536,11 +539,13 @@ async fn test_idempotent_create_operations() {
 
 #[tokio::test]
 async fn test_read_only_mode() {
-    use drasi_lib::DrasiServerCore;
+    use drasi_lib::DrasiLib;
 
-    // Create a minimal DrasiServerCore
-    let core = DrasiServerCore::builder()
+    // Create a minimal DrasiLib
+    let core = DrasiLib::builder()
         .with_id("readonly-test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build()
         .await
         .expect("Failed to build test core");

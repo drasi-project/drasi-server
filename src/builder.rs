@@ -12,31 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::{DrasiError, DrasiServerCore, DrasiServerCoreBuilder, Query, Reaction, Source};
-use std::collections::HashMap;
+use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
+use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query, Reaction, Source};
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
-    core_builder: DrasiServerCoreBuilder,
+    core_builder: DrasiLibBuilder,
     enable_api: bool,
     port: Option<u16>,
     host: Option<String>,
     config_file_path: Option<String>,
-    application_source_names: Vec<String>,
-    application_reaction_names: Vec<String>,
 }
 
 impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
-            core_builder: DrasiServerCore::builder(),
+            core_builder: DrasiLib::builder(),
             enable_api: false,
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
             config_file_path: None,
-            application_source_names: Vec::new(),
-            application_reaction_names: Vec::new(),
         }
     }
 }
@@ -53,6 +49,18 @@ impl DrasiServerBuilder {
         self
     }
 
+    /// Set the source registry for plugin registration
+    pub fn with_source_registry(mut self, registry: SourceRegistry) -> Self {
+        self.core_builder = self.core_builder.with_source_registry(registry);
+        self
+    }
+
+    /// Set the reaction registry for plugin registration
+    pub fn with_reaction_registry(mut self, registry: ReactionRegistry) -> Self {
+        self.core_builder = self.core_builder.with_reaction_registry(registry);
+        self
+    }
+
     /// Add a source using the new builder API
     /// The source should be built using Source::application("id").build() or similar
     pub fn with_source_config(
@@ -63,18 +71,19 @@ impl DrasiServerBuilder {
         let id = id.into();
         let source_type = source_type.into();
 
-        // Track application sources
-        if source_type == "application" {
-            self.application_source_names.push(id.clone());
-        }
-
         // Build the appropriate source configuration
-        let source_config = if source_type == "application" {
-            Source::application(&id).auto_start(true).build()
-        } else if source_type == "mock" {
+        let source_config = if source_type == "mock" {
             Source::mock(&id).auto_start(true).build()
+        } else if source_type == "postgres" {
+            Source::postgres(&id).auto_start(true).build()
+        } else if source_type == "http" {
+            Source::http(&id).auto_start(true).build()
+        } else if source_type == "grpc" {
+            Source::grpc(&id).auto_start(true).build()
+        } else if source_type == "platform" {
+            Source::platform(&id).auto_start(true).build()
         } else {
-            // For other source types, default to mock (in real usage, you'd handle each type)
+            // Default to mock for unknown types
             Source::mock(&id).auto_start(true).build()
         };
 
@@ -126,20 +135,33 @@ impl DrasiServerBuilder {
         let id = id.into();
         let reaction_type = reaction_type.into();
 
-        // Track application reactions
-        if reaction_type == "application" {
-            self.application_reaction_names.push(id.clone());
-        }
-
         // Build the appropriate reaction configuration
-        let reaction_config = if reaction_type == "application" {
-            let mut builder = Reaction::application(&id);
+        let reaction_config = if reaction_type == "log" {
+            let mut builder = Reaction::log(&id);
             for query in queries {
                 builder = builder.subscribe_to(query);
             }
             builder.build()
-        } else if reaction_type == "log" {
-            let mut builder = Reaction::log(&id);
+        } else if reaction_type == "http" {
+            let mut builder = Reaction::http(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        } else if reaction_type == "grpc" {
+            let mut builder = Reaction::grpc(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        } else if reaction_type == "sse" {
+            let mut builder = Reaction::sse(&id);
+            for query in queries {
+                builder = builder.subscribe_to(query);
+            }
+            builder.build()
+        } else if reaction_type == "platform" {
+            let mut builder = Reaction::platform(&id);
             for query in queries {
                 builder = builder.subscribe_to(query);
             }
@@ -183,36 +205,8 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add an application source that can be programmatically controlled
-    pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
-        let id = id.into();
-        self.application_source_names.push(id.clone());
-
-        let source = Source::application(&id).auto_start(true).build();
-        self.core_builder = self.core_builder.add_source(source);
-        self
-    }
-
-    /// Add an application reaction that sends results to the application
-    pub fn with_application_reaction(
-        mut self,
-        id: impl Into<String>,
-        queries: Vec<String>,
-    ) -> Self {
-        let id = id.into();
-        self.application_reaction_names.push(id.clone());
-
-        let mut reaction_builder = Reaction::application(&id);
-        for query in queries {
-            reaction_builder = reaction_builder.subscribe_to(query);
-        }
-
-        self.core_builder = self.core_builder.add_reaction(reaction_builder.build());
-        self
-    }
-
-    /// Build the DrasiServerCore instance
-    pub async fn build_core(self) -> Result<DrasiServerCore, DrasiError> {
+    /// Build the DrasiLib instance
+    pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
         // Build and return the core using the new API
         self.core_builder.build().await
     }
@@ -240,55 +234,21 @@ impl DrasiServerBuilder {
         Ok(server)
     }
 
-    /// Build a DrasiServerCore instance and return application handles
+    /// Build a DrasiLib instance, start it, and return a handle
+    ///
+    /// Note: Application source/reaction handles were removed during the plugin architecture refactor.
+    /// Use the builder pattern in drasi-lib directly for programmatic integration.
     pub async fn build_with_handles(
         self,
     ) -> Result<crate::builder_result::DrasiServerWithHandles, DrasiError> {
-        let app_source_names = self.application_source_names.clone();
-        let app_reaction_names = self.application_reaction_names.clone();
-
         // Build the core server (already initialized by builder)
         let core = self.build_core().await?;
 
         // Start the server
         core.start().await?;
 
-        // Collect application handles using the new public API
-        let mut source_handles = HashMap::new();
-        let mut reaction_handles = HashMap::new();
-
-        // Get source handles using the public API
-        for source_name in app_source_names {
-            match core.source_handle(&source_name).await {
-                Ok(handle) => {
-                    source_handles.insert(source_name, handle);
-                }
-                Err(e) => {
-                    log::warn!("Failed to get handle for source '{}': {}", source_name, e);
-                }
-            }
-        }
-
-        // Get reaction handles using the public API
-        for reaction_name in app_reaction_names {
-            match core.reaction_handle(&reaction_name).await {
-                Ok(handle) => {
-                    reaction_handles.insert(reaction_name, handle);
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to get handle for reaction '{}': {}",
-                        reaction_name,
-                        e
-                    );
-                }
-            }
-        }
-
         Ok(crate::builder_result::DrasiServerWithHandles {
             server: Arc::new(core),
-            source_handles,
-            reaction_handles,
         })
     }
 }

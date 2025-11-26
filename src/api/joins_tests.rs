@@ -19,18 +19,17 @@ mod api_query_joins_tests {
     use axum::{Extension, Json};
     use drasi_lib::{
         config::{QueryJoinConfig, QueryJoinKeyConfig},
-        DrasiServerCore, Query, QueryConfig,
+        DrasiLib, Query, QueryConfig,
     };
-    use serde_json::json;
     use std::sync::Arc;
 
     async fn create_test_environment() -> (
-        Arc<DrasiServerCore>,
+        Arc<DrasiLib>,
         Arc<bool>,
         Option<Arc<ConfigPersistence>>,
     ) {
-        // Create a minimal DrasiServerCore using the builder
-        let core = DrasiServerCore::builder()
+        // Create a minimal DrasiLib using the builder
+        let core = DrasiLib::builder()
             .with_id("test-server")
             .build()
             .await

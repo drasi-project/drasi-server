@@ -3,13 +3,16 @@
 //! These tests ensure API operations maintain consistent state across components,
 //! testing the public API for component lifecycle management.
 
-use drasi_lib::{DrasiServerCore, Query, Reaction, Source};
+use crate::test_utils::{create_mock_reaction_registry, create_mock_source_registry};
+use drasi_lib::{DrasiLib, Query, Reaction, Source};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() {
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build()
         .await
         .expect("Failed to build test core");
@@ -47,8 +50,10 @@ async fn test_components_with_auto_start() {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source)
         .add_query(query)
         .add_reaction(reaction)
@@ -86,8 +91,10 @@ async fn test_components_without_auto_start() {
         .auto_start(false)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source)
         .add_query(query)
         .add_reaction(reaction)
@@ -119,8 +126,10 @@ async fn test_restart_with_components() {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source)
         .add_query(query)
         .build()
@@ -164,8 +173,10 @@ async fn test_multiple_query_sources() {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source1)
         .add_source(source2)
         .add_query(query)
@@ -206,8 +217,10 @@ async fn test_multiple_reaction_queries() {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source)
         .add_query(query1)
         .add_query(query2)
@@ -243,7 +256,7 @@ async fn test_query_with_joins() {
         .from_source("join-source1")
         .from_source("join-source2")
         .auto_start(true)
-        .with_join(QueryJoinConfig {
+        .with_joins(vec![QueryJoinConfig {
             id: "LINKED".to_string(),
             keys: vec![
                 QueryJoinKeyConfig {
@@ -255,11 +268,13 @@ async fn test_query_with_joins() {
                     property: "type_a_id".to_string(),
                 },
             ],
-        })
+        }])
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id("test-server")
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source1)
         .add_source(source2)
         .add_query(query)

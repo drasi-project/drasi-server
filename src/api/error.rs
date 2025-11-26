@@ -113,48 +113,33 @@ impl From<DrasiError> for ErrorResponse {
     fn from(err: DrasiError) -> Self {
         use DrasiError::*;
 
-        match err {
-            ComponentNotFound { ref kind, ref id } => {
-                let code = match kind.as_str() {
-                    "source" => error_codes::SOURCE_NOT_FOUND,
-                    "query" => error_codes::QUERY_NOT_FOUND,
-                    "reaction" => error_codes::REACTION_NOT_FOUND,
-                    _ => error_codes::INTERNAL_ERROR,
+        match &err {
+            NotFound(ref msg) => {
+                // Try to determine the component type from the message
+                let code = if msg.contains("source") {
+                    error_codes::SOURCE_NOT_FOUND
+                } else if msg.contains("query") {
+                    error_codes::QUERY_NOT_FOUND
+                } else if msg.contains("reaction") {
+                    error_codes::REACTION_NOT_FOUND
+                } else {
+                    error_codes::INTERNAL_ERROR
                 };
 
-                ErrorResponse::new(code, format!("{} '{}' not found", kind, id)).with_details(
-                    ErrorDetail {
-                        component_type: Some(kind.clone()),
-                        component_id: Some(id.clone()),
-                        technical_details: None,
-                    },
-                )
+                ErrorResponse::new(code, msg.clone())
             }
-            DuplicateComponent { ref kind, ref id } => ErrorResponse::new(
-                error_codes::DUPLICATE_RESOURCE,
-                format!("{} '{}' already exists", kind, id),
-            )
-            .with_details(ErrorDetail {
-                component_type: Some(kind.clone()),
-                component_id: Some(id.clone()),
-                technical_details: None,
-            }),
-            InvalidState(ref msg) => ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                format!("Invalid state: {}", msg),
-            ),
-            Configuration(ref msg) => ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                format!("Configuration error: {}", msg),
-            ),
-            Io(ref err) => {
-                ErrorResponse::new(error_codes::INTERNAL_ERROR, format!("I/O error: {}", err))
+            AlreadyExists(ref msg) => {
+                ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, msg.clone())
             }
-            Serialization(ref msg) => ErrorResponse::new(
-                error_codes::INTERNAL_ERROR,
-                format!("Serialization error: {}", msg),
-            ),
-            _ => ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string()),
+            InvalidConfig(ref msg) => {
+                ErrorResponse::new(error_codes::INVALID_REQUEST, msg.clone())
+            }
+            OperationFailed(ref msg) => {
+                ErrorResponse::new(error_codes::INTERNAL_ERROR, msg.clone())
+            }
+            Internal(ref err) => {
+                ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
+            }
         }
     }
 }
@@ -164,9 +149,9 @@ pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
     use DrasiError::*;
 
     match err {
-        ComponentNotFound { .. } => StatusCode::NOT_FOUND,
-        DuplicateComponent { .. } => StatusCode::CONFLICT,
-        InvalidState(_) | Configuration(_) | Validation(_) => StatusCode::BAD_REQUEST,
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
+        NotFound(_) => StatusCode::NOT_FOUND,
+        AlreadyExists(_) => StatusCode::CONFLICT,
+        InvalidConfig(_) => StatusCode::BAD_REQUEST,
+        OperationFailed(_) | Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

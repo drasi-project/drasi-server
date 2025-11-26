@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::{Properties, Query, Reaction, Source};
+use drasi_lib::{Query, Reaction, Source};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,28 +21,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let query_name = "available-drivers-query";
     let reaction_name = "driver-availability-logger";
 
-    println!("🔧 Creating example Drasi configuration...");
+    println!("Creating example Drasi configuration...");
     println!();
 
     // Build source configurations using the new API
     let vehicle_source = Source::mock(source_name)
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("data_type", "vehicle_location")
-                .with_int("interval_seconds", 5)
-                .with_string("description", "Mock vehicle location data"),
-        )
+        .with_property("data_type", "vehicle_location")
+        .with_property("interval_seconds", 5)
+        .with_property("description", "Mock vehicle location data")
         .build();
 
     let order_source = Source::mock("order-status-source")
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("data_type", "order_status")
-                .with_int("interval_seconds", 3)
-                .with_string("description", "Mock order status updates"),
-        )
+        .with_property("data_type", "order_status")
+        .with_property("interval_seconds", 3)
+        .with_property("description", "Mock order status updates")
         .build();
 
     // Build query configurations
@@ -76,27 +70,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let log_reaction = Reaction::log(reaction_name)
         .subscribe_to(query_name)
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("log_level", "info")
-                .with_string("description", "Log driver availability changes"),
-        )
+        .with_property("log_level", "info")
+        .with_property("description", "Log driver availability changes")
         .build();
 
     let http_reaction = Reaction::http("order-notification-handler")
         .subscribe_to(query_name)
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("endpoint", "http://localhost:9000/notifications")
-                .with_string("method", "POST")
-                .with_string("description", "Send notifications for query results"),
-        )
+        .with_property("endpoint", "http://localhost:9000/notifications")
+        .with_property("method", "POST")
+        .with_property("description", "Send notifications for query results")
         .build();
 
     // Create the configuration structure
-    let config = drasi_lib::config::DrasiServerCoreConfig {
-        server_core: drasi_lib::config::DrasiServerCoreSettings::default(),
+    let config = drasi_lib::config::DrasiLibConfig {
+        server_core: drasi_lib::config::DrasiLibSettings::default(),
         sources: vec![vehicle_source, order_source],
         queries: vec![available_drivers_query, pending_orders_query],
         reactions: vec![log_reaction, http_reaction],
@@ -107,15 +95,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all("config")?;
     config.save_to_file("config/example.yaml")?;
 
-    println!("✅ Example configuration created successfully!");
-    println!("📝 Configuration saved to: config/example.yaml");
-    println!("🚀 You can now run the server with: cargo run -- --config config/example.yaml");
+    println!("Example configuration created successfully!");
+    println!("Configuration saved to: config/example.yaml");
+    println!("You can now run the server with: cargo run -- --config config/example.yaml");
     println!();
     println!("This example includes:");
-    println!("  • Two mock data sources (vehicle locations and order status)");
-    println!("  • Two Cypher queries (available drivers and pending orders)");
-    println!("  • Two reactions (logging and webhook notifications)");
-    println!("  • Real-time data processing using Drasi continuous queries");
+    println!("  - Two mock data sources (vehicle locations and order status)");
+    println!("  - Two Cypher queries (available drivers and pending orders)");
+    println!("  - Two reactions (logging and webhook notifications)");
+    println!("  - Real-time data processing using Drasi continuous queries");
 
     Ok(())
 }

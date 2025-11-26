@@ -14,7 +14,7 @@
 
 //! Test configuration helpers for the new builder API
 
-use drasi_lib::{Properties, Query, Reaction, Source};
+use drasi_lib::{Query, Reaction, Source};
 use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -31,12 +31,10 @@ pub fn mock_source_with_props(
 ) -> SourceConfig {
     let mut builder = Source::mock(id).auto_start(true);
 
-    let mut props = Properties::new();
     for (key, value) in properties {
-        props = props.with_value(key, value);
+        builder = builder.with_property_value(key, value);
     }
 
-    builder = builder.with_properties(props);
     builder.build()
 }
 
@@ -78,12 +76,10 @@ pub fn log_reaction_with_props(
         builder = builder.subscribe_to(query);
     }
 
-    let mut props = Properties::new();
     for (key, value) in properties {
-        props = props.with_value(key, value);
+        builder = builder.with_property_value(key, value);
     }
 
-    builder = builder.with_properties(props);
     builder.build()
 }
 
@@ -110,11 +106,9 @@ pub fn http_reaction_with_props(
         builder = builder.subscribe_to(query);
     }
 
-    let mut props = Properties::new();
     for (key, value) in properties {
-        props = props.with_value(key, value);
+        builder = builder.with_property_value(key, value);
     }
 
-    builder = builder.with_properties(props);
     builder.build()
 }

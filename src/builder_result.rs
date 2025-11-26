@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::{ApplicationReactionHandle, ApplicationSourceHandle, DrasiServerCore};
-use std::collections::HashMap;
+use drasi_lib::DrasiLib;
 use std::sync::Arc;
 
-/// Result of building a DrasiServer with application integration
+/// Result of building a DrasiServer
+///
+/// Note: Application source/reaction handles were removed during the plugin architecture refactor.
+/// Use the builder pattern in drasi-lib directly for programmatic integration.
 pub struct DrasiServerWithHandles {
     /// The server core for controlling the server
-    pub server: Arc<DrasiServerCore>,
-    /// Map of application source handles by name
-    pub source_handles: HashMap<String, ApplicationSourceHandle>,
-    /// Map of application reaction handles by name
-    pub reaction_handles: HashMap<String, ApplicationReactionHandle>,
+    pub server: Arc<DrasiLib>,
 }

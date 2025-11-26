@@ -29,10 +29,10 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::config::DrasiServerConfig;
 use crate::persistence::ConfigPersistence;
-use drasi_lib::DrasiServerCore;
+use drasi_lib::DrasiLib;
 
 pub struct DrasiServer {
-    core: Option<DrasiServerCore>,
+    core: Option<DrasiLib>,
     enable_api: bool,
     host: String,
     port: u16,
@@ -68,9 +68,9 @@ impl DrasiServer {
 
         // Create core server using the public API
         // The from_config_file method loads and initializes the core
-        let core = DrasiServerCore::from_config_file(&config_path)
+        let core = DrasiLib::from_config_file(&config_path)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to create DrasiServerCore: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {}", e))?;
 
         Ok(Self {
             core: Some(core),
@@ -85,7 +85,7 @@ impl DrasiServer {
 
     /// Create a DrasiServer from a pre-built core (for use with builder)
     pub fn from_core(
-        core: DrasiServerCore,
+        core: DrasiLib,
         enable_api: bool,
         host: String,
         port: u16,
@@ -184,7 +184,7 @@ impl DrasiServer {
 
     async fn start_api(
         &self,
-        core: &Arc<DrasiServerCore>,
+        core: &Arc<DrasiLib>,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation
@@ -215,7 +215,7 @@ impl DrasiServer {
             .route("/reactions/:id/stop", post(api::stop_reaction))
             .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi.clone()))
             .layer(CorsLayer::permissive())
-            // Inject DrasiServerCore for handlers to use
+            // Inject DrasiLib for handlers to use
             .layer(Extension(core.clone()))
             .layer(Extension(self.read_only.clone()))
             .layer(Extension(config_persistence));

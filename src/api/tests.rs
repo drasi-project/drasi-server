@@ -54,15 +54,20 @@ mod serialization_tests {
 
     #[test]
     fn test_source_config_json_serialization() {
-        let config = Source::mock("test-source").auto_start(true).build();
+        // Build a source with explicit properties
+        let config = Source::mock("test-source")
+            .auto_start(true)
+            .with_property("data_type", "test")
+            .with_property("interval_ms", 1000)
+            .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
         assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
-        // Mock source has typed config fields, not arbitrary properties
-        assert!(json["data_type"].is_string());
-        assert!(json["interval_ms"].is_number());
+        // These fields exist because we set them via with_property()
+        assert_eq!(json["data_type"], "test");
+        assert_eq!(json["interval_ms"], 1000);
 
         // Test deserialization
         let deserialized: drasi_lib::SourceConfig = serde_json::from_value(json).unwrap();
@@ -93,13 +98,14 @@ mod serialization_tests {
         let config = Reaction::log("test-reaction")
             .subscribe_to("query1")
             .auto_start(true)
+            .with_property("log_level", "info")
             .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-reaction");
         assert_eq!(json["reaction_type"], "log");
         assert_eq!(json["queries"].as_array().unwrap().len(), 1);
-        // Log reaction has typed config fields
-        assert!(json["log_level"].is_string());
+        // Log level exists because we set it via with_property()
+        assert_eq!(json["log_level"], "info");
     }
 }

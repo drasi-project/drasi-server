@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// Uses atomic writes (temp file + rename) to prevent corruption.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    core: Arc<drasi_lib::DrasiServerCore>,
+    core: Arc<drasi_lib::DrasiLib>,
     host: String,
     port: u16,
     log_level: String,
@@ -33,7 +33,7 @@ impl ConfigPersistence {
     /// Create a new ConfigPersistence instance
     pub fn new(
         config_file_path: PathBuf,
-        core: Arc<drasi_lib::DrasiServerCore>,
+        core: Arc<drasi_lib::DrasiLib>,
         host: String,
         port: u16,
         log_level: String,
@@ -64,7 +64,7 @@ impl ConfigPersistence {
 
         // Get current configuration from Core using public API
         let core_config = self.core.get_current_config().await.map_err(|e| {
-            anyhow::anyhow!("Failed to get current config from DrasiServerCore: {}", e)
+            anyhow::anyhow!("Failed to get current config from DrasiLib: {}", e)
         })?;
 
         // Wrap Core config with wrapper settings
@@ -132,13 +132,133 @@ impl ConfigPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use tempfile::TempDir;
 
-    async fn create_test_core() -> Arc<drasi_lib::DrasiServerCore> {
+    // Create a mock source registry for testing
+    fn create_mock_source_registry() -> drasi_lib::plugin_core::SourceRegistry {
+        use drasi_lib::channels::dispatcher::ChangeDispatcher;
+        use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+        use drasi_lib::plugin_core::SourceRegistry;
+        use drasi_lib::sources::Source as SourceTrait;
+        use drasi_lib::SourceConfig;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        struct MockSource {
+            config: SourceConfig,
+            status: Arc<RwLock<ComponentStatus>>,
+        }
+
+        #[async_trait]
+        impl SourceTrait for MockSource {
+            async fn start(&self) -> anyhow::Result<()> {
+                *self.status.write().await = ComponentStatus::Running;
+                Ok(())
+            }
+
+            async fn stop(&self) -> anyhow::Result<()> {
+                *self.status.write().await = ComponentStatus::Stopped;
+                Ok(())
+            }
+
+            async fn status(&self) -> ComponentStatus {
+                self.status.read().await.clone()
+            }
+
+            fn get_config(&self) -> &SourceConfig {
+                &self.config
+            }
+
+            async fn subscribe(
+                &self,
+                query_id: String,
+                _enable_bootstrap: bool,
+                _node_labels: Vec<String>,
+                _relation_labels: Vec<String>,
+            ) -> anyhow::Result<SubscriptionResponse> {
+                use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+                let dispatcher =
+                    ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+                let receiver = dispatcher.create_receiver().await?;
+                Ok(SubscriptionResponse {
+                    query_id,
+                    source_id: self.config.id.clone(),
+                    receiver,
+                    bootstrap_receiver: None,
+                })
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+        }
+
+        let mut registry = SourceRegistry::new();
+        registry.register("mock".to_string(), |config, _event_tx| {
+            let source = MockSource {
+                config,
+                status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+            };
+            Ok(Arc::new(source) as Arc<dyn SourceTrait>)
+        });
+        registry
+    }
+
+    // Create a mock reaction registry for testing
+    fn create_mock_reaction_registry() -> drasi_lib::plugin_core::ReactionRegistry {
+        use drasi_lib::channels::ComponentStatus;
+        use drasi_lib::plugin_core::ReactionRegistry;
+        use drasi_lib::reactions::common::base::QuerySubscriber;
+        use drasi_lib::reactions::Reaction as ReactionTrait;
+        use drasi_lib::ReactionConfig;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        struct MockReaction {
+            config: ReactionConfig,
+            status: Arc<RwLock<ComponentStatus>>,
+        }
+
+        #[async_trait]
+        impl ReactionTrait for MockReaction {
+            async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+                *self.status.write().await = ComponentStatus::Running;
+                Ok(())
+            }
+
+            async fn stop(&self) -> anyhow::Result<()> {
+                *self.status.write().await = ComponentStatus::Stopped;
+                Ok(())
+            }
+
+            async fn status(&self) -> ComponentStatus {
+                self.status.read().await.clone()
+            }
+
+            fn get_config(&self) -> &ReactionConfig {
+                &self.config
+            }
+        }
+
+        let mut registry = ReactionRegistry::new();
+        registry.register("log".to_string(), |config, _event_tx| {
+            let reaction = MockReaction {
+                config,
+                status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+            };
+            Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
+        });
+        registry
+    }
+
+    async fn create_test_core() -> Arc<drasi_lib::DrasiLib> {
         use drasi_lib::{Query, Source};
 
-        let core = drasi_lib::DrasiServerCore::builder()
+        let core = drasi_lib::DrasiLib::builder()
             .with_id("test-server")
+            .with_source_registry(create_mock_source_registry())
+            .with_reaction_registry(create_mock_reaction_registry())
             .add_source(Source::mock("test-source").auto_start(false).build())
             .add_query(
                 Query::cypher("test-query")

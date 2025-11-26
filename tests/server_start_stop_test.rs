@@ -1,8 +1,119 @@
 use anyhow::Result;
-use drasi_lib::{Query, Reaction, Source};
-use drasi_server::DrasiServerCore;
+use async_trait::async_trait;
+use drasi_lib::channels::dispatcher::ChangeDispatcher;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
+use drasi_lib::reactions::common::base::QuerySubscriber;
+use drasi_lib::reactions::Reaction as ReactionTrait;
+use drasi_lib::sources::Source as SourceTrait;
+use drasi_lib::{Query, Reaction, ReactionConfig, Source, SourceConfig};
+use drasi_server::DrasiLib;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
+
+/// A mock source for testing
+struct MockSource {
+    config: SourceConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl SourceTrait for MockSource {
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &SourceConfig {
+        &self.config
+    }
+
+    async fn subscribe(
+        &self,
+        query_id: String,
+        _enable_bootstrap: bool,
+        _node_labels: Vec<String>,
+        _relation_labels: Vec<String>,
+    ) -> anyhow::Result<SubscriptionResponse> {
+        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+        let dispatcher =
+            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let receiver = dispatcher.create_receiver().await?;
+        Ok(SubscriptionResponse {
+            query_id,
+            source_id: self.config.id.clone(),
+            receiver,
+            bootstrap_receiver: None,
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// A mock reaction for testing
+struct MockReaction {
+    config: ReactionConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl ReactionTrait for MockReaction {
+    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &ReactionConfig {
+        &self.config
+    }
+}
+
+/// Create a mock source registry for testing
+fn create_mock_source_registry() -> SourceRegistry {
+    let mut registry = SourceRegistry::new();
+    registry.register("mock".to_string(), |config, _event_tx| {
+        let source = MockSource {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
+    });
+    registry
+}
+
+/// Create a mock reaction registry for testing
+fn create_mock_reaction_registry() -> ReactionRegistry {
+    let mut registry = ReactionRegistry::new();
+    registry.register("log".to_string(), |config, _event_tx| {
+        let reaction = MockReaction {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
+    });
+    registry
+}
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() -> Result<()> {
@@ -10,8 +121,10 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     let server_id = uuid::Uuid::new_v4().to_string();
 
     // Build the core using the new builder API
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id(&server_id)
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build()
         .await?;
 
@@ -62,8 +175,10 @@ async fn test_auto_start_components() -> Result<()> {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id(&server_id)
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source)
         .add_query(query)
         .add_reaction(reaction)
@@ -119,8 +234,10 @@ async fn test_manual_vs_auto_start_components() -> Result<()> {
         .auto_start(false)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id(&server_id)
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(auto_source)
         .add_source(manual_source)
         .add_query(auto_query)
@@ -183,8 +300,10 @@ async fn test_component_startup_sequence() -> Result<()> {
         .auto_start(true)
         .build();
 
-    let core = DrasiServerCore::builder()
+    let core = DrasiLib::builder()
         .with_id(&server_id)
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .add_source(source1)
         .add_source(source2)
         .add_query(query1)

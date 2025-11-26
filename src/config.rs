@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use drasi_lib::config::DrasiServerCoreConfig;
+use drasi_lib::config::DrasiLibConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::IpAddr;
@@ -27,7 +27,7 @@ pub struct DrasiServerConfig {
     pub server: ServerSettings,
     /// Core configuration (sources, queries, reactions)
     #[serde(flatten)]
-    pub core_config: DrasiServerCoreConfig,
+    pub core_config: DrasiLibConfig,
 }
 
 /// Server settings for DrasiServer

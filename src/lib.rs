@@ -25,31 +25,25 @@ pub use builder_result::DrasiServerWithHandles;
 pub use config::{DrasiServerConfig, ServerSettings};
 pub use server::DrasiServer;
 
-// Re-export from drasi-server-core (public API only)
+// Re-export from drasi-lib (public API only)
 pub use drasi_lib::{
-    // Application handle types
-    ApplicationReactionHandle,
-    ApplicationSourceHandle,
     // Error types
     DrasiError,
     // Core server
-    DrasiServerCore,
-    DrasiServerCoreConfig as ServerConfig,
-    // Property utilities
-    PropertyMapBuilder,
+    DrasiLib,
+    DrasiLibConfig as ServerConfig,
     // Builder types
     Query,
+    Reaction,
+    Source,
     // Config types (still public for file-based config)
     QueryConfig,
-    Reaction,
     ReactionConfig,
     RuntimeConfig,
-    Source,
     SourceConfig,
-    SubscriptionOptions,
 };
 
 // Re-export types from internal modules (these are visible but marked as internal)
 // We need these for the wrapper API functionality
 pub use drasi_lib::channels::ComponentStatus;
-pub use drasi_lib::config::{DrasiServerCoreSettings, QueryJoinConfig, QueryJoinKeyConfig};
+pub use drasi_lib::config::{DrasiLibSettings, QueryJoinConfig, QueryJoinKeyConfig};

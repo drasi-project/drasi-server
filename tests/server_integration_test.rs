@@ -1,9 +1,120 @@
 use anyhow::Result;
-use drasi_lib::{Properties, Query, Reaction, Source};
-use drasi_server::DrasiServerCore;
+use async_trait::async_trait;
+use drasi_lib::channels::dispatcher::ChangeDispatcher;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
+use drasi_lib::reactions::common::base::QuerySubscriber;
+use drasi_lib::reactions::Reaction as ReactionTrait;
+use drasi_lib::sources::Source as SourceTrait;
+use drasi_lib::{Query, Reaction, ReactionConfig, Source, SourceConfig};
+use drasi_server::DrasiLib;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
+
+/// A mock source for testing
+struct MockSource {
+    config: SourceConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl SourceTrait for MockSource {
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &SourceConfig {
+        &self.config
+    }
+
+    async fn subscribe(
+        &self,
+        query_id: String,
+        _enable_bootstrap: bool,
+        _node_labels: Vec<String>,
+        _relation_labels: Vec<String>,
+    ) -> anyhow::Result<SubscriptionResponse> {
+        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+        let dispatcher =
+            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let receiver = dispatcher.create_receiver().await?;
+        Ok(SubscriptionResponse {
+            query_id,
+            source_id: self.config.id.clone(),
+            receiver,
+            bootstrap_receiver: None,
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// A mock reaction for testing
+struct MockReaction {
+    config: ReactionConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl ReactionTrait for MockReaction {
+    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &ReactionConfig {
+        &self.config
+    }
+}
+
+/// Create a mock source registry for testing
+fn create_mock_source_registry() -> SourceRegistry {
+    let mut registry = SourceRegistry::new();
+    registry.register("mock".to_string(), |config, _event_tx| {
+        let source = MockSource {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
+    });
+    registry
+}
+
+/// Create a mock reaction registry for testing
+fn create_mock_reaction_registry() -> ReactionRegistry {
+    let mut registry = ReactionRegistry::new();
+    registry.register("log".to_string(), |config, _event_tx| {
+        let reaction = MockReaction {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
+    });
+    registry
+}
 
 /// Integration test demonstrating data flow continues after server restart
 #[tokio::test]
@@ -18,11 +129,8 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     // Build the core using the new builder API
     let source = Source::mock("counter-source")
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("data_type", "counter")
-                .with_int("interval_ms", 500),
-        )
+        .with_property("data_type", "counter")
+        .with_property("interval_ms", 500)
         .build();
 
     let query = Query::cypher("counter-query")
@@ -37,8 +145,10 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiServerCore::builder()
+        DrasiLib::builder()
             .with_id(&server_id)
+            .with_source_registry(create_mock_source_registry())
+            .with_reaction_registry(create_mock_reaction_registry())
             .add_source(source)
             .add_query(query)
             .add_reaction(reaction)
@@ -91,20 +201,14 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     // Build the core using the new builder API
     let sensors_source = Source::mock("sensors-source")
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("data_type", "sensor")
-                .with_int("interval_ms", 1000),
-        )
+        .with_property("data_type", "sensor")
+        .with_property("interval_ms", 1000)
         .build();
 
     let vehicles_source = Source::mock("vehicles-source")
         .auto_start(true)
-        .with_properties(
-            Properties::new()
-                .with_string("data_type", "generic")
-                .with_int("interval_ms", 2000),
-        )
+        .with_property("data_type", "generic")
+        .with_property("interval_ms", 2000)
         .build();
 
     let sensor_query = Query::cypher("sensor-alerts")
@@ -133,8 +237,10 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiServerCore::builder()
+        DrasiLib::builder()
             .with_id(&server_id)
+            .with_source_registry(create_mock_source_registry())
+            .with_reaction_registry(create_mock_reaction_registry())
             .add_source(sensors_source)
             .add_source(vehicles_source)
             .add_query(sensor_query)
@@ -188,8 +294,10 @@ async fn test_component_failure_recovery() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiServerCore::builder()
+        DrasiLib::builder()
             .with_id(&server_id)
+            .with_source_registry(create_mock_source_registry())
+            .with_reaction_registry(create_mock_reaction_registry())
             .add_source(source)
             .add_query(query)
             .add_reaction(reaction)
@@ -228,8 +336,10 @@ async fn test_concurrent_operations() -> Result<()> {
         .build();
 
     let core = Arc::new(
-        DrasiServerCore::builder()
+        DrasiLib::builder()
             .with_id(&server_id)
+            .with_source_registry(create_mock_source_registry())
+            .with_reaction_registry(create_mock_reaction_registry())
             .add_source(source)
             .build()
             .await?,

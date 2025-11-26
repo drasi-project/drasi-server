@@ -1,12 +1,125 @@
-use drasi_lib::Source;
+use async_trait::async_trait;
+use drasi_lib::channels::dispatcher::ChangeDispatcher;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
+use drasi_lib::reactions::common::base::QuerySubscriber;
+use drasi_lib::reactions::Reaction as ReactionTrait;
+use drasi_lib::sources::Source as SourceTrait;
+use drasi_lib::{ReactionConfig, Source, SourceConfig};
 use drasi_server::DrasiServerBuilder;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
+
+/// A mock source for testing
+struct MockSource {
+    config: SourceConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl SourceTrait for MockSource {
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &SourceConfig {
+        &self.config
+    }
+
+    async fn subscribe(
+        &self,
+        query_id: String,
+        _enable_bootstrap: bool,
+        _node_labels: Vec<String>,
+        _relation_labels: Vec<String>,
+    ) -> anyhow::Result<SubscriptionResponse> {
+        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+        let dispatcher =
+            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let receiver = dispatcher.create_receiver().await?;
+        Ok(SubscriptionResponse {
+            query_id,
+            source_id: self.config.id.clone(),
+            receiver,
+            bootstrap_receiver: None,
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// A mock reaction for testing
+struct MockReaction {
+    config: ReactionConfig,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+#[async_trait]
+impl ReactionTrait for MockReaction {
+    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    fn get_config(&self) -> &ReactionConfig {
+        &self.config
+    }
+}
+
+/// Create a mock source registry for testing
+fn create_mock_source_registry() -> SourceRegistry {
+    let mut registry = SourceRegistry::new();
+    registry.register("mock".to_string(), |config, _event_tx| {
+        let source = MockSource {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
+    });
+    registry
+}
+
+/// Create a mock reaction registry for testing
+fn create_mock_reaction_registry() -> ReactionRegistry {
+    let mut registry = ReactionRegistry::new();
+    registry.register("log".to_string(), |config, _event_tx| {
+        let reaction = MockReaction {
+            config,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        };
+        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
+    });
+    registry
+}
 
 #[tokio::test]
 async fn test_basic_server_lifecycle() {
     // Create a basic server using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build_core()
         .await
         .expect("Failed to build server");
@@ -26,6 +139,8 @@ async fn test_basic_server_lifecycle() {
 async fn test_server_with_components() {
     // Create server with components using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .with_simple_source("test_source", "mock")
         .with_simple_query(
             "test_query",
@@ -54,6 +169,8 @@ async fn test_server_with_components() {
 async fn test_dynamic_component_management() {
     // Start with empty server using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build_core()
         .await
         .expect("Failed to build server");
@@ -89,6 +206,8 @@ async fn test_dynamic_component_management() {
 async fn test_server_with_api() {
     // Create server with API
     let _server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .with_port(0) // Use port 0 for random available port
         .build()
         .await
@@ -107,6 +226,8 @@ async fn test_config_persistence() {
 
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .with_simple_source("persist_source", "mock")
         .with_config_file(config_file)
         .build()
@@ -124,6 +245,8 @@ async fn test_config_persistence() {
 async fn test_concurrent_operations() {
     // Start with empty server using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .build_core()
         .await
         .expect("Failed to build server");
@@ -162,6 +285,8 @@ async fn test_concurrent_operations() {
 async fn test_graceful_shutdown_timeout() {
     // Create server with a source using the new builder API
     let server = DrasiServerBuilder::new()
+        .with_source_registry(create_mock_source_registry())
+        .with_reaction_registry(create_mock_reaction_registry())
         .with_simple_source("timeout_source", "mock")
         .build_core()
         .await
