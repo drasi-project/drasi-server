@@ -50,27 +50,26 @@ mod handler_tests {
 
 #[cfg(test)]
 mod serialization_tests {
-    use drasi_lib::{Query, Reaction, Source};
+    use drasi_lib::{Query, ReactionConfig, SourceConfig};
 
     #[test]
     fn test_source_config_json_serialization() {
-        // Build a source with explicit properties
-        let config = Source::mock("test-source")
-            .auto_start(true)
+        // Build a source config with explicit properties
+        let config = SourceConfig::new("test-source", "mock")
+            .with_auto_start(true)
             .with_property("data_type", "test")
-            .with_property("interval_ms", 1000)
-            .build();
+            .with_property("interval_ms", 1000);
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
         assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
         // These fields exist because we set them via with_property()
-        assert_eq!(json["data_type"], "test");
-        assert_eq!(json["interval_ms"], 1000);
+        assert_eq!(json["properties"]["data_type"], "test");
+        assert_eq!(json["properties"]["interval_ms"], 1000);
 
         // Test deserialization
-        let deserialized: drasi_lib::SourceConfig = serde_json::from_value(json).unwrap();
+        let deserialized: SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.id, config.id);
     }
 
@@ -95,17 +94,16 @@ mod serialization_tests {
 
     #[test]
     fn test_reaction_config_json_serialization() {
-        let config = Reaction::log("test-reaction")
-            .subscribe_to("query1")
-            .auto_start(true)
-            .with_property("log_level", "info")
-            .build();
+        let config = ReactionConfig::new("test-reaction", "log")
+            .with_query("query1")
+            .with_auto_start(true)
+            .with_property("log_level", "info");
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-reaction");
         assert_eq!(json["reaction_type"], "log");
         assert_eq!(json["queries"].as_array().unwrap().len(), 1);
         // Log level exists because we set it via with_property()
-        assert_eq!(json["log_level"], "info");
+        assert_eq!(json["properties"]["log_level"], "info");
     }
 }

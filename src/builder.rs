@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
-use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query, Reaction, Source};
+use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query, ReactionConfig, SourceConfig};
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
@@ -23,6 +23,8 @@ pub struct DrasiServerBuilder {
     port: Option<u16>,
     host: Option<String>,
     config_file_path: Option<String>,
+    source_configs: Vec<SourceConfig>,
+    reaction_configs: Vec<ReactionConfig>,
 }
 
 impl Default for DrasiServerBuilder {
@@ -33,6 +35,8 @@ impl Default for DrasiServerBuilder {
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
             config_file_path: None,
+            source_configs: Vec::new(),
+            reaction_configs: Vec::new(),
         }
     }
 }
@@ -59,41 +63,6 @@ impl DrasiServerBuilder {
     pub fn with_reaction_registry(mut self, registry: ReactionRegistry) -> Self {
         self.core_builder = self.core_builder.with_reaction_registry(registry);
         self
-    }
-
-    /// Add a source using the new builder API
-    /// The source should be built using Source::application("id").build() or similar
-    pub fn with_source_config(
-        mut self,
-        id: impl Into<String>,
-        source_type: impl Into<String>,
-    ) -> Self {
-        let id = id.into();
-        let source_type = source_type.into();
-
-        // Build the appropriate source configuration
-        let source_config = if source_type == "mock" {
-            Source::mock(&id).auto_start(true).build()
-        } else if source_type == "postgres" {
-            Source::postgres(&id).auto_start(true).build()
-        } else if source_type == "http" {
-            Source::http(&id).auto_start(true).build()
-        } else if source_type == "grpc" {
-            Source::grpc(&id).auto_start(true).build()
-        } else if source_type == "platform" {
-            Source::platform(&id).auto_start(true).build()
-        } else {
-            // Default to mock for unknown types
-            Source::mock(&id).auto_start(true).build()
-        };
-
-        self.core_builder = self.core_builder.add_source(source_config);
-        self
-    }
-
-    /// Add a source with name and type, using default properties
-    pub fn with_simple_source(self, id: impl Into<String>, source_type: impl Into<String>) -> Self {
-        self.with_source_config(id, source_type)
     }
 
     /// Add a query using the new builder API
@@ -124,64 +93,21 @@ impl DrasiServerBuilder {
         self.with_query_config(id, query_str, sources)
     }
 
-    /// Add a reaction using the new builder API
-    /// The reaction should be built using Reaction::log("id").build() or similar
-    pub fn with_reaction_config(
-        mut self,
-        id: impl Into<String>,
-        reaction_type: impl Into<String>,
-        queries: Vec<String>,
-    ) -> Self {
-        let id = id.into();
-        let reaction_type = reaction_type.into();
-
-        // Build the appropriate reaction configuration
-        let reaction_config = if reaction_type == "log" {
-            let mut builder = Reaction::log(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        } else if reaction_type == "http" {
-            let mut builder = Reaction::http(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        } else if reaction_type == "grpc" {
-            let mut builder = Reaction::grpc(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        } else if reaction_type == "sse" {
-            let mut builder = Reaction::sse(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        } else if reaction_type == "platform" {
-            let mut builder = Reaction::platform(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        } else {
-            // Default to log reaction
-            let mut builder = Reaction::log(&id);
-            for query in queries {
-                builder = builder.subscribe_to(query);
-            }
-            builder.build()
-        };
-
-        self.core_builder = self.core_builder.add_reaction(reaction_config);
+    /// Add a simple source that will be created after build
+    pub fn with_simple_source(mut self, id: impl Into<String>, source_type: impl Into<String>) -> Self {
+        let config = SourceConfig::new(id, source_type).with_auto_start(true);
+        self.source_configs.push(config);
         self
     }
 
-    /// Add a simple log reaction
-    pub fn with_log_reaction(self, id: impl Into<String>, queries: Vec<String>) -> Self {
-        self.with_reaction_config(id, "log", queries)
+    /// Add a log reaction that will be created after build
+    pub fn with_log_reaction(mut self, id: impl Into<String>, queries: Vec<String>) -> Self {
+        let mut config = ReactionConfig::new(id, "log").with_auto_start(true);
+        for query in queries {
+            config = config.with_query(query);
+        }
+        self.reaction_configs.push(config);
+        self
     }
 
     /// Enable the REST API on the default port
@@ -207,8 +133,18 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiLib instance
     pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
-        // Build and return the core using the new API
-        self.core_builder.build().await
+        // Build the core using the new API
+        let core = self.core_builder.build().await?;
+
+        // Create sources and reactions that were added to the builder
+        for source_config in self.source_configs {
+            core.create_source(source_config).await?;
+        }
+        for reaction_config in self.reaction_configs {
+            core.create_reaction(reaction_config).await?;
+        }
+
+        Ok(core)
     }
 
     /// Set the config file path for persistence
@@ -268,13 +204,11 @@ mod tests {
     #[test]
     fn test_builder_fluent_api() {
         let builder = DrasiServerBuilder::new()
-            .with_simple_source("test_source", "mock")
             .with_simple_query(
                 "test_query",
                 "MATCH (n) RETURN n",
                 vec!["test_source".to_string()],
             )
-            .with_log_reaction("test_reaction", vec!["test_query".to_string()])
             .with_port(9090);
 
         assert!(builder.enable_api);

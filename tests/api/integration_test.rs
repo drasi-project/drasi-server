@@ -10,7 +10,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::{Query, Source};
+use drasi_lib::{Query, SourceConfig};
 use drasi_server::api;
 use serde_json::json;
 use std::sync::Arc;
@@ -268,8 +268,8 @@ async fn test_query_lifecycle_via_api() {
     let (router, core) = create_test_router().await;
 
     // First create a source for the query
-    let source_config = Source::mock("query-source").auto_start(false).build();
-    core.create_source(source_config.clone()).await.unwrap();
+    let source_config = SourceConfig::new("query-source", "mock").with_auto_start(false);
+    core.create_source(source_config).await.unwrap();
 
     // Create a query
     let query_config = json!({

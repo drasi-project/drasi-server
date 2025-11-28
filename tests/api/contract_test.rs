@@ -73,21 +73,18 @@ mod contract_tests {
 
     #[test]
     fn test_source_config_serialization() {
-        use drasi_lib::Source;
-
-        let config = Source::mock("test-source")
-            .auto_start(true)
+        let config = SourceConfig::new("test-source", "mock")
+            .with_auto_start(true)
             .with_property("interval_ms", 1000)
-            .with_property("data_type", "counter")
-            .build();
+            .with_property("data_type", "counter");
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-source");
         assert_eq!(json["source_type"], "mock");
         assert_eq!(json["auto_start"], true);
-        // MockSourceConfig fields are flattened, not under "properties"
-        assert_eq!(json["interval_ms"], 1000);
-        assert_eq!(json["data_type"], "counter");
+        // Properties are stored in the properties field
+        assert_eq!(json["properties"]["interval_ms"], 1000);
+        assert_eq!(json["properties"]["data_type"], "counter");
     }
 
     #[test]
@@ -96,17 +93,17 @@ mod contract_tests {
             "id": "test-source",
             "source_type": "mock",
             "auto_start": false,
-            "interval_ms": 2000,
-            "data_type": "sensor"
+            "properties": {
+                "interval_ms": 2000,
+                "data_type": "sensor"
+            }
         });
 
         let config: SourceConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type(), "mock");
+        assert_eq!(config.source_type, "mock");
         assert!(!config.auto_start);
-        // Fields are flattened at top level
-        let serialized = serde_json::to_value(&config).unwrap();
-        assert_eq!(serialized["interval_ms"], 2000);
+        assert_eq!(config.properties["interval_ms"], 2000);
     }
 
     #[test]
@@ -153,24 +150,18 @@ mod contract_tests {
 
     #[test]
     fn test_reaction_config_serialization() {
-        use drasi_lib::Reaction;
-
-        let config = Reaction::http("test-reaction")
-            .subscribe_to("query1")
-            .subscribe_to("query2")
-            .auto_start(true)
-            .with_property("base_url", "http://example.com/webhook")
-            .build();
+        let config = ReactionConfig::new("test-reaction", "http")
+            .with_query("query1")
+            .with_query("query2")
+            .with_auto_start(true)
+            .with_property("base_url", "http://example.com/webhook");
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-reaction");
         assert_eq!(json["reaction_type"], "http");
-        // Note: HttpReactionConfig has its own "queries" field (HashMap) which conflicts with
-        // ReactionConfig's "queries" field (Vec<String>) when flattened. Testing id instead.
-        assert_eq!(config.queries, vec!["query1", "query2"]);
+        assert_eq!(json["queries"], json!(["query1", "query2"]));
         assert_eq!(json["auto_start"], true);
-        // HttpReactionConfig fields are flattened
-        assert_eq!(json["base_url"], "http://example.com/webhook");
+        assert_eq!(json["properties"]["base_url"], "http://example.com/webhook");
     }
 
     #[test]
@@ -180,16 +171,16 @@ mod contract_tests {
             "reaction_type": "log",
             "queries": ["query1"],
             "auto_start": true,
-            "log_level": "info"
+            "properties": {
+                "log_level": "info"
+            }
         });
 
         let config: ReactionConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "log-reaction");
-        assert_eq!(config.reaction_type(), "log");
+        assert_eq!(config.reaction_type, "log");
         assert_eq!(config.queries, vec!["query1"]);
-        // Check that it serializes correctly
-        let serialized = serde_json::to_value(&config).unwrap();
-        assert_eq!(serialized["log_level"], "info");
+        assert_eq!(config.properties["log_level"], "info");
     }
 
     #[test]
@@ -286,28 +277,23 @@ mod contract_tests {
 
     #[test]
     fn test_optional_properties() {
-        use drasi_lib::Reaction;
-
         // Test that configs with and without custom properties work correctly
-        let config_with_props = Reaction::http("r1")
-            .subscribe_to("q1")
-            .auto_start(false)
-            .with_property("base_url", "http://example.com")
-            .build();
+        let config_with_props = ReactionConfig::new("r1", "http")
+            .with_query("q1")
+            .with_auto_start(false)
+            .with_property("base_url", "http://example.com");
 
-        let config_without_props = Reaction::log("r2")
-            .subscribe_to("q2")
-            .auto_start(true)
-            .with_property("log_level", "info")
-            .build();
+        let config_without_props = ReactionConfig::new("r2", "log")
+            .with_query("q2")
+            .with_auto_start(true)
+            .with_property("log_level", "info");
 
         // Both should serialize successfully with typed config fields
         let json1 = serde_json::to_value(&config_with_props).unwrap();
         let json2 = serde_json::to_value(&config_without_props).unwrap();
 
-        // These fields exist because we set them via with_property()
-        assert_eq!(json1["base_url"], "http://example.com");
-        assert_eq!(json2["log_level"], "info");
+        assert_eq!(json1["properties"]["base_url"], "http://example.com");
+        assert_eq!(json2["properties"]["log_level"], "info");
     }
 
     #[test]
@@ -343,11 +329,8 @@ mod edge_case_tests {
 
     #[test]
     fn test_special_characters_in_ids() {
-        use drasi_lib::Source;
-
-        let config = Source::mock("source-with-dashes_and_underscores.123")
-            .auto_start(false)
-            .build();
+        let config = SourceConfig::new("source-with-dashes_and_underscores.123", "mock")
+            .with_auto_start(false);
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "source-with-dashes_and_underscores.123");
@@ -374,35 +357,24 @@ mod edge_case_tests {
 
     #[test]
     fn test_unicode_in_properties() {
-        use drasi_lib::Source;
-
-        // Test that Unicode strings work in typed config fields
-        let config = Source::mock("unicode-source")
-            .auto_start(false)
-            .with_property("data_type", "Hello 世界 🌍")
-            .build();
+        let config = SourceConfig::new("unicode-source", "mock")
+            .with_auto_start(false)
+            .with_property("data_type", "Hello 世界 🌍");
 
         let json = serde_json::to_value(&config).unwrap();
-        // Typed config has data_type field
-        assert_eq!(json["data_type"], "Hello 世界 🌍");
+        assert_eq!(json["properties"]["data_type"], "Hello 世界 🌍");
     }
 
     #[test]
     fn test_nested_json_in_properties() {
-        use drasi_lib::Reaction;
-
-        // Test that config serialization works correctly with explicit properties
-        let config = Reaction::http("nested-reaction")
-            .subscribe_to("q1")
-            .auto_start(false)
-            .with_property("base_url", "http://example.com")
-            .build();
+        let config = ReactionConfig::new("nested-reaction", "http")
+            .with_query("q1")
+            .with_auto_start(false)
+            .with_property("base_url", "http://example.com");
 
         let json = serde_json::to_value(&config).unwrap();
-        // Check struct field directly for queries
         assert_eq!(config.queries, vec!["q1"]);
-        // base_url exists because we set it via with_property()
-        assert_eq!(json["base_url"], "http://example.com");
+        assert_eq!(json["properties"]["base_url"], "http://example.com");
     }
 
     #[test]
@@ -428,7 +400,9 @@ mod edge_case_tests {
             "reaction_type": "log",
             "queries": ["q1"],
             "auto_start": false,
-            "log_level": "debug"
+            "properties": {
+                "log_level": "debug"
+            }
         });
 
         let json_minimal = json!({
@@ -444,9 +418,7 @@ mod edge_case_tests {
         // Both should serialize successfully with typed config fields
         let json1 = serde_json::to_value(&config1).unwrap();
         let _json2 = serde_json::to_value(&config2).unwrap();
-        assert_eq!(json1["log_level"], "debug");
-        // When not specified, log_level may or may not have a default depending on config implementation
-        // Just verify the configs were created successfully (assertions above)
+        assert_eq!(json1["properties"]["log_level"], "debug");
     }
 }
 
@@ -493,6 +465,6 @@ mod validation_tests {
 
         let config: SourceConfig = serde_json::from_value(json_with_extra).unwrap();
         assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type(), "mock");
+        assert_eq!(config.source_type, "mock");
     }
 }

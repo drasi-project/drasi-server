@@ -1,24 +1,50 @@
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
-use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
-use drasi_lib::reactions::common::base::QuerySubscriber;
-use drasi_lib::reactions::Reaction as ReactionTrait;
-use drasi_lib::sources::Source as SourceTrait;
-use drasi_lib::{ReactionConfig, Source, SourceConfig};
+use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::{QuerySubscriber, ReactionRegistry, SourceRegistry};
+use drasi_lib::plugin_core::Reaction as ReactionTrait;
+use drasi_lib::plugin_core::Source as SourceTrait;
+use drasi_lib::{ReactionConfig, SourceConfig};
 use drasi_server::DrasiServerBuilder;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
 
 /// A mock source for testing
 struct MockSource {
-    config: SourceConfig,
+    id: String,
     status: Arc<RwLock<ComponentStatus>>,
 }
 
 #[async_trait]
 impl SourceTrait for MockSource {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "mock"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
     async fn start(&self) -> anyhow::Result<()> {
         *self.status.write().await = ComponentStatus::Running;
         Ok(())
@@ -31,10 +57,6 @@ impl SourceTrait for MockSource {
 
     async fn status(&self) -> ComponentStatus {
         self.status.read().await.clone()
-    }
-
-    fn get_config(&self) -> &SourceConfig {
-        &self.config
     }
 
     async fn subscribe(
@@ -50,7 +72,7 @@ impl SourceTrait for MockSource {
         let receiver = dispatcher.create_receiver().await?;
         Ok(SubscriptionResponse {
             query_id,
-            source_id: self.config.id.clone(),
+            source_id: self.id.clone(),
             receiver,
             bootstrap_receiver: None,
         })
@@ -59,16 +81,37 @@ impl SourceTrait for MockSource {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
+    }
 }
 
 /// A mock reaction for testing
 struct MockReaction {
-    config: ReactionConfig,
+    id: String,
+    queries: Vec<String>,
     status: Arc<RwLock<ComponentStatus>>,
 }
 
 #[async_trait]
 impl ReactionTrait for MockReaction {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "log"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
+    fn query_ids(&self) -> Vec<String> {
+        self.queries.clone()
+    }
+
     async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
         *self.status.write().await = ComponentStatus::Running;
         Ok(())
@@ -83,17 +126,17 @@ impl ReactionTrait for MockReaction {
         self.status.read().await.clone()
     }
 
-    fn get_config(&self) -> &ReactionConfig {
-        &self.config
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
     }
 }
 
 /// Create a mock source registry for testing
 fn create_mock_source_registry() -> SourceRegistry {
     let mut registry = SourceRegistry::new();
-    registry.register("mock".to_string(), |config, _event_tx| {
+    registry.register("mock", |config: &SourceConfig| {
         let source = MockSource {
-            config,
+            id: config.id.clone(),
             status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
         };
         Ok(Arc::new(source) as Arc<dyn SourceTrait>)
@@ -104,9 +147,10 @@ fn create_mock_source_registry() -> SourceRegistry {
 /// Create a mock reaction registry for testing
 fn create_mock_reaction_registry() -> ReactionRegistry {
     let mut registry = ReactionRegistry::new();
-    registry.register("log".to_string(), |config, _event_tx| {
+    registry.register("log", |config: &ReactionConfig| {
         let reaction = MockReaction {
-            config,
+            id: config.id.clone(),
+            queries: config.queries.clone(),
             status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
         };
         Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
@@ -180,7 +224,8 @@ async fn test_dynamic_component_management() {
     server.start().await.expect("Failed to start server");
 
     // Add source dynamically using the new runtime API
-    let source_config = Source::mock("dynamic_source").auto_start(true).build();
+    let source_config = SourceConfig::new("dynamic_source", "mock")
+        .with_auto_start(true);
 
     server
         .create_source(source_config)
@@ -260,9 +305,8 @@ async fn test_concurrent_operations() {
     for i in 0..5 {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
-            let config = Source::mock(format!("concurrent_source_{}", i))
-                .auto_start(false)
-                .build();
+            let config = SourceConfig::new(format!("concurrent_source_{}", i), "mock")
+                .with_auto_start(false);
             server_clone.create_source(config).await
         });
         tasks.push(task);

@@ -138,20 +138,33 @@ mod tests {
     // Create a mock source registry for testing
     fn create_mock_source_registry() -> drasi_lib::plugin_core::SourceRegistry {
         use drasi_lib::channels::dispatcher::ChangeDispatcher;
-        use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+        use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
         use drasi_lib::plugin_core::SourceRegistry;
-        use drasi_lib::sources::Source as SourceTrait;
+        use drasi_lib::plugin_core::Source as SourceTrait;
         use drasi_lib::SourceConfig;
+        use std::collections::HashMap;
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
         struct MockSource {
-            config: SourceConfig,
+            id: String,
             status: Arc<RwLock<ComponentStatus>>,
         }
 
         #[async_trait]
         impl SourceTrait for MockSource {
+            fn id(&self) -> &str {
+                &self.id
+            }
+
+            fn type_name(&self) -> &str {
+                "mock"
+            }
+
+            fn properties(&self) -> HashMap<String, serde_json::Value> {
+                HashMap::new()
+            }
+
             async fn start(&self) -> anyhow::Result<()> {
                 *self.status.write().await = ComponentStatus::Running;
                 Ok(())
@@ -164,10 +177,6 @@ mod tests {
 
             async fn status(&self) -> ComponentStatus {
                 self.status.read().await.clone()
-            }
-
-            fn get_config(&self) -> &SourceConfig {
-                &self.config
             }
 
             async fn subscribe(
@@ -183,7 +192,7 @@ mod tests {
                 let receiver = dispatcher.create_receiver().await?;
                 Ok(SubscriptionResponse {
                     query_id,
-                    source_id: self.config.id.clone(),
+                    source_id: self.id.clone(),
                     receiver,
                     bootstrap_receiver: None,
                 })
@@ -192,12 +201,16 @@ mod tests {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
+
+            async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+                // No-op for testing
+            }
         }
 
         let mut registry = SourceRegistry::new();
-        registry.register("mock".to_string(), |config, _event_tx| {
+        registry.register("mock", |config: &SourceConfig| {
             let source = MockSource {
-                config,
+                id: config.id.clone(),
                 status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
             };
             Ok(Arc::new(source) as Arc<dyn SourceTrait>)
@@ -207,21 +220,39 @@ mod tests {
 
     // Create a mock reaction registry for testing
     fn create_mock_reaction_registry() -> drasi_lib::plugin_core::ReactionRegistry {
-        use drasi_lib::channels::ComponentStatus;
+        use drasi_lib::channels::{ComponentEventSender, ComponentStatus};
         use drasi_lib::plugin_core::ReactionRegistry;
-        use drasi_lib::reactions::common::base::QuerySubscriber;
-        use drasi_lib::reactions::Reaction as ReactionTrait;
+        use drasi_lib::plugin_core::QuerySubscriber;
+        use drasi_lib::plugin_core::Reaction as ReactionTrait;
         use drasi_lib::ReactionConfig;
+        use std::collections::HashMap;
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
         struct MockReaction {
-            config: ReactionConfig,
+            id: String,
+            queries: Vec<String>,
             status: Arc<RwLock<ComponentStatus>>,
         }
 
         #[async_trait]
         impl ReactionTrait for MockReaction {
+            fn id(&self) -> &str {
+                &self.id
+            }
+
+            fn type_name(&self) -> &str {
+                "log"
+            }
+
+            fn properties(&self) -> HashMap<String, serde_json::Value> {
+                HashMap::new()
+            }
+
+            fn query_ids(&self) -> Vec<String> {
+                self.queries.clone()
+            }
+
             async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
                 *self.status.write().await = ComponentStatus::Running;
                 Ok(())
@@ -236,15 +267,16 @@ mod tests {
                 self.status.read().await.clone()
             }
 
-            fn get_config(&self) -> &ReactionConfig {
-                &self.config
+            async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+                // No-op for testing
             }
         }
 
         let mut registry = ReactionRegistry::new();
-        registry.register("log".to_string(), |config, _event_tx| {
+        registry.register("log", |config: &ReactionConfig| {
             let reaction = MockReaction {
-                config,
+                id: config.id.clone(),
+                queries: config.queries.clone(),
                 status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
             };
             Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
@@ -253,13 +285,12 @@ mod tests {
     }
 
     async fn create_test_core() -> Arc<drasi_lib::DrasiLib> {
-        use drasi_lib::{Query, Source};
+        use drasi_lib::{Query, SourceConfig};
 
         let core = drasi_lib::DrasiLib::builder()
             .with_id("test-server")
             .with_source_registry(create_mock_source_registry())
             .with_reaction_registry(create_mock_reaction_registry())
-            .add_source(Source::mock("test-source").auto_start(false).build())
             .add_query(
                 Query::cypher("test-query")
                     .query("MATCH (n) RETURN n")
@@ -271,7 +302,14 @@ mod tests {
             .await
             .expect("Failed to build test core");
 
-        Arc::new(core)
+        let core = Arc::new(core);
+
+        // Create source using the registry
+        let source_config = SourceConfig::new("test-source", "mock")
+            .with_auto_start(false);
+        core.create_source(source_config).await.expect("Failed to create source");
+
+        core
     }
 
     #[tokio::test]
@@ -310,9 +348,7 @@ mod tests {
         assert_eq!(loaded_config.server.log_level, "info");
         assert!(!loaded_config.server.disable_persistence);
 
-        // Verify components
-        assert_eq!(loaded_config.core_config.sources.len(), 1);
-        assert_eq!(loaded_config.core_config.sources[0].id, "test-source");
+        // Verify queries (sources are created dynamically via registry, not in config)
         assert_eq!(loaded_config.core_config.queries.len(), 1);
         assert_eq!(loaded_config.core_config.queries[0].id, "test-query");
     }

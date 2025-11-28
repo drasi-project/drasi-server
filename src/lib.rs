@@ -34,9 +34,7 @@ pub use drasi_lib::{
     DrasiLibConfig as ServerConfig,
     // Builder types
     Query,
-    Reaction,
-    Source,
-    // Config types (still public for file-based config)
+    // Config types for API and file-based config
     QueryConfig,
     ReactionConfig,
     RuntimeConfig,

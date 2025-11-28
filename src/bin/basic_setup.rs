@@ -12,35 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::{Query, Reaction, Source};
+//! Example: Basic Drasi Configuration Setup
+//!
+//! This example demonstrates how to create a Drasi configuration file
+//! with queries. Sources and reactions are registered via plugin registries
+//! at runtime, not in the config file.
+
+use drasi_lib::Query;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create example names for linking components
-    let source_name = "vehicle-location-source";
-    let query_name = "available-drivers-query";
-    let reaction_name = "driver-availability-logger";
-
     println!("Creating example Drasi configuration...");
     println!();
 
-    // Build source configurations using the new API
-    let vehicle_source = Source::mock(source_name)
-        .auto_start(true)
-        .with_property("data_type", "vehicle_location")
-        .with_property("interval_seconds", 5)
-        .with_property("description", "Mock vehicle location data")
-        .build();
-
-    let order_source = Source::mock("order-status-source")
-        .auto_start(true)
-        .with_property("data_type", "order_status")
-        .with_property("interval_seconds", 3)
-        .with_property("description", "Mock order status updates")
-        .build();
-
-    // Build query configurations
-    let available_drivers_query = Query::cypher(query_name)
+    // Build query configurations using the Query builder
+    let available_drivers_query = Query::cypher("available-drivers-query")
         .query(
             r#"
             MATCH (d:Driver {status: 'available'})
@@ -49,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                    d.latitude AS lat, d.longitude AS lng, d.status AS status
         "#,
         )
-        .from_source(source_name)
+        .from_source("vehicle-location-source")
         .auto_start(true)
         .build();
 
@@ -62,32 +48,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                    o.restaurant AS restaurant, o.delivery_address AS address
         "#,
         )
-        .from_source(source_name)
+        .from_source("vehicle-location-source")
         .auto_start(true)
-        .build();
-
-    // Build reaction configurations
-    let log_reaction = Reaction::log(reaction_name)
-        .subscribe_to(query_name)
-        .auto_start(true)
-        .with_property("log_level", "info")
-        .with_property("description", "Log driver availability changes")
-        .build();
-
-    let http_reaction = Reaction::http("order-notification-handler")
-        .subscribe_to(query_name)
-        .auto_start(true)
-        .with_property("endpoint", "http://localhost:9000/notifications")
-        .with_property("method", "POST")
-        .with_property("description", "Send notifications for query results")
         .build();
 
     // Create the configuration structure
+    // Note: Sources and reactions are not included in the config file
+    // They are registered via plugin registries at runtime
     let config = drasi_lib::config::DrasiLibConfig {
         server_core: drasi_lib::config::DrasiLibSettings::default(),
-        sources: vec![vehicle_source, order_source],
         queries: vec![available_drivers_query, pending_orders_query],
-        reactions: vec![log_reaction, http_reaction],
         storage_backends: vec![],
     };
 
@@ -97,13 +67,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Example configuration created successfully!");
     println!("Configuration saved to: config/example.yaml");
-    println!("You can now run the server with: cargo run -- --config config/example.yaml");
     println!();
     println!("This example includes:");
-    println!("  - Two mock data sources (vehicle locations and order status)");
     println!("  - Two Cypher queries (available drivers and pending orders)");
-    println!("  - Two reactions (logging and webhook notifications)");
-    println!("  - Real-time data processing using Drasi continuous queries");
+    println!();
+    println!("Note: Sources and reactions are now registered at runtime via plugin registries.");
+    println!("To use sources and reactions, you need to:");
+    println!("  1. Create a SourceRegistry and ReactionRegistry");
+    println!("  2. Register factories for each plugin type you want to use");
+    println!("  3. Pass the registries to DrasiServerBuilder");
+    println!("  4. Use the REST API to create sources and reactions from config");
 
     Ok(())
 }
