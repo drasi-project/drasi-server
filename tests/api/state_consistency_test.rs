@@ -2,17 +2,21 @@
 //!
 //! These tests ensure API operations maintain consistent state across components,
 //! testing the public API for component lifecycle management.
+//!
+//! Note: Sources and reactions must be provided as instances when building DrasiLib.
+//! Dynamic creation via config is not supported.
 
-use crate::test_utils::{create_mock_reaction_registry, create_mock_source_registry};
-use drasi_lib::{DrasiLib, Query, ReactionConfig, SourceConfig};
+use crate::test_utils::{create_mock_reaction, create_mock_source};
+use drasi_lib::{DrasiLib, Query};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() {
+    let test_source = create_mock_source("test-source");
+
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
         .build()
         .await
         .expect("Failed to build test core");
@@ -39,6 +43,9 @@ async fn test_server_start_stop_cycle() {
 
 #[tokio::test]
 async fn test_components_with_auto_start() {
+    let test_source = create_mock_source("test-source");
+    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
         .from_source("test-source")
@@ -47,23 +54,14 @@ async fn test_components_with_auto_start() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
+        .with_reaction(test_reaction)
         .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create source and reaction dynamically
-    let source = SourceConfig::new("test-source", "mock").with_auto_start(true);
-    core.create_source(source).await.expect("Failed to create source");
-
-    let reaction = ReactionConfig::new("test-reaction", "log")
-        .with_query("test-query")
-        .with_auto_start(true);
-    core.create_reaction(reaction).await.expect("Failed to create reaction");
 
     // Start server - components should auto-start
     core.start().await.expect("Failed to start");
@@ -82,6 +80,9 @@ async fn test_components_with_auto_start() {
 
 #[tokio::test]
 async fn test_components_without_auto_start() {
+    let test_source = create_mock_source("test-source");
+    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
         .from_source("test-source")
@@ -90,23 +91,14 @@ async fn test_components_without_auto_start() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
+        .with_reaction(test_reaction)
         .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create source and reaction dynamically with auto_start=false
-    let source = SourceConfig::new("test-source", "mock").with_auto_start(false);
-    core.create_source(source).await.expect("Failed to create source");
-
-    let reaction = ReactionConfig::new("test-reaction", "log")
-        .with_query("test-query")
-        .with_auto_start(false);
-    core.create_reaction(reaction).await.expect("Failed to create reaction");
 
     // Start server - components should NOT auto-start
     core.start().await.expect("Failed to start");
@@ -123,6 +115,8 @@ async fn test_components_without_auto_start() {
 
 #[tokio::test]
 async fn test_restart_with_components() {
+    let restart_source = create_mock_source("restart-source");
+
     let query = Query::cypher("restart-query")
         .query("MATCH (n) RETURN n")
         .from_source("restart-source")
@@ -131,18 +125,13 @@ async fn test_restart_with_components() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(restart_source)
         .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create source dynamically
-    let source = SourceConfig::new("restart-source", "mock").with_auto_start(true);
-    core.create_source(source).await.expect("Failed to create source");
 
     // Start server
     core.start().await.expect("Failed to start");
@@ -170,6 +159,9 @@ async fn test_restart_with_components() {
 
 #[tokio::test]
 async fn test_multiple_query_sources() {
+    let source1 = create_mock_source("source1");
+    let source2 = create_mock_source("source2");
+
     let query = Query::cypher("multi-source-query")
         .query("MATCH (n) RETURN n")
         .from_source("source1")
@@ -179,21 +171,14 @@ async fn test_multiple_query_sources() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(source1)
+        .with_source(source2)
         .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create sources dynamically
-    let source1 = SourceConfig::new("source1", "mock").with_auto_start(true);
-    core.create_source(source1).await.expect("Failed to create source1");
-
-    let source2 = SourceConfig::new("source2", "mock").with_auto_start(true);
-    core.create_source(source2).await.expect("Failed to create source2");
 
     // Start server with multiple sources
     core.start().await.expect("Failed to start");
@@ -209,6 +194,12 @@ async fn test_multiple_query_sources() {
 
 #[tokio::test]
 async fn test_multiple_reaction_queries() {
+    let test_source = create_mock_source("test-source");
+    let multi_query_reaction = create_mock_reaction(
+        "multi-query-reaction",
+        vec!["query1".to_string(), "query2".to_string()],
+    );
+
     let query1 = Query::cypher("query1")
         .query("MATCH (n) RETURN n")
         .from_source("test-source")
@@ -222,8 +213,8 @@ async fn test_multiple_reaction_queries() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
+        .with_reaction(multi_query_reaction)
         .add_query(query1)
         .add_query(query2)
         .build()
@@ -231,17 +222,6 @@ async fn test_multiple_reaction_queries() {
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create source dynamically
-    let source = SourceConfig::new("test-source", "mock").with_auto_start(true);
-    core.create_source(source).await.expect("Failed to create source");
-
-    // Create reaction subscribing to multiple queries
-    let reaction = ReactionConfig::new("multi-query-reaction", "log")
-        .with_query("query1")
-        .with_query("query2")
-        .with_auto_start(true);
-    core.create_reaction(reaction).await.expect("Failed to create reaction");
 
     // Start server with reaction subscribing to multiple queries
     core.start().await.expect("Failed to start");
@@ -257,6 +237,9 @@ async fn test_multiple_reaction_queries() {
 
 #[tokio::test]
 async fn test_query_with_joins() {
+    let join_source1 = create_mock_source("join-source1");
+    let join_source2 = create_mock_source("join-source2");
+
     // For joins, we need to use the lower-level QueryConfig since the builder API
     // may not support join configuration yet
     use drasi_lib::config::{QueryJoinConfig, QueryJoinKeyConfig};
@@ -282,21 +265,14 @@ async fn test_query_with_joins() {
 
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(join_source1)
+        .with_source(join_source2)
         .add_query(query)
         .build()
         .await
         .expect("Failed to build test core");
 
     let core = Arc::new(core);
-
-    // Create sources dynamically
-    let source1 = SourceConfig::new("join-source1", "mock").with_auto_start(true);
-    core.create_source(source1).await.expect("Failed to create source1");
-
-    let source2 = SourceConfig::new("join-source2", "mock").with_auto_start(true);
-    core.create_source(source2).await.expect("Failed to create source2");
 
     // Start server with query that has joins
     core.start().await.expect("Failed to start");

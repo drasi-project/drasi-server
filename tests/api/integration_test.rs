@@ -2,15 +2,19 @@
 //!
 //! These tests validate the complete data flow from API requests to DrasiLib operations.
 //! They test the full lifecycle of components through the API.
+//!
+//! Note: Dynamic source/reaction creation via config is not supported.
+//! Sources and reactions must be provided as instances when building DrasiLib.
+//! These tests focus on querying and lifecycle operations for pre-registered components.
 
-use crate::test_utils::{create_mock_reaction_registry, create_mock_source_registry};
+use crate::test_utils::{create_mock_reaction, create_mock_source};
 use axum::{
     body::{to_bytes, Body},
     extract::Extension,
     http::{Request, StatusCode},
     Router,
 };
-use drasi_lib::{Query, SourceConfig};
+use drasi_lib::Query;
 use drasi_server::api;
 use serde_json::json;
 use std::sync::Arc;
@@ -20,11 +24,23 @@ use tower::ServiceExt;
 async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
     use drasi_lib::DrasiLib;
 
-    // Create a minimal DrasiLib using the builder with mock registries
+    // Create mock source instances
+    let test_source = create_mock_source("test-source");
+    let query_source = create_mock_source("query-source");
+    let auto_source = create_mock_source("auto-source");
+
+    // Create mock reaction instances
+    let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
+    let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
+
+    // Create a minimal DrasiLib using the builder with mock instances
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
+        .with_source(query_source)
+        .with_source(auto_source)
+        .with_reaction(test_reaction)
+        .with_reaction(auto_reaction)
         .build()
         .await
         .expect("Failed to build test core");
@@ -142,37 +158,7 @@ async fn test_health_endpoint() {
 async fn test_source_lifecycle_via_api() {
     let (router, _) = create_test_router().await;
 
-    // Create a source
-    let source_config = json!({
-        "id": "test-source",
-        "source_type": "mock",
-        "auto_start": false,
-        "properties": {
-            "interval_ms": 1000,
-            "data_type": "counter"
-        }
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/sources")
-                .header("content-type", "application/json")
-                .body(Body::from(source_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], true);
-
-    // List sources
+    // List sources (pre-registered via builder)
     let response = router
         .clone()
         .oneshot(
@@ -190,7 +176,8 @@ async fn test_source_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
     assert!(json["data"].is_array());
-    assert_eq!(json["data"][0]["id"], "test-source");
+    // Should have pre-registered sources
+    assert!(json["data"].as_array().unwrap().len() >= 1);
 
     // Get specific source
     let response = router
@@ -267,43 +254,33 @@ async fn test_source_lifecycle_via_api() {
 async fn test_query_lifecycle_via_api() {
     let (router, core) = create_test_router().await;
 
-    // First create a source for the query
-    let source_config = SourceConfig::new("query-source", "mock").with_auto_start(false);
-    core.create_source(source_config).await.unwrap();
+    // Create a query using DrasiLib (not via API - queries can still be created dynamically)
+    let query_config = Query::cypher("test-query")
+        .query("MATCH (n:Node) RETURN n")
+        .from_source("query-source")
+        .auto_start(false)
+        .build();
+    core.create_query(query_config.clone()).await.unwrap();
 
-    // Create a query
-    let query_config = json!({
-        "id": "test-query",
-        "query": "MATCH (n:Node) RETURN n",
-        "source_subscriptions": [
-            {
-                "source_id": "query-source",
-                "pipeline": []
-            }
-        ],
-        "auto_start": false
-    });
-
+    // List queries via API
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .method("POST")
                 .uri("/queries")
-                .header("content-type", "application/json")
-                .body(Body::from(query_config.to_string()))
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
+    assert!(json["data"].is_array());
 
-    // Delete the query
+    // Delete the query via API
     let response = router
         .clone()
         .oneshot(
@@ -321,44 +298,9 @@ async fn test_query_lifecycle_via_api() {
 
 #[tokio::test]
 async fn test_reaction_lifecycle_via_api() {
-    let (router, core) = create_test_router().await;
+    let (router, _core) = create_test_router().await;
 
-    // First create a query for the reaction
-    let query_config = Query::cypher("reaction-query")
-        .query("MATCH (n) RETURN n")
-        .from_source("source1")
-        .auto_start(false)
-        .build();
-    core.create_query(query_config.clone()).await.unwrap();
-
-    // Create a reaction
-    let reaction_config = json!({
-        "id": "test-reaction",
-        "reaction_type": "log",
-        "queries": ["reaction-query"],
-        "auto_start": false
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/reactions")
-                .header("content-type", "application/json")
-                .body(Body::from(reaction_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], true);
-
-    // List reactions
+    // Reactions are pre-registered via builder, test listing them
     let response = router
         .clone()
         .oneshot(
@@ -375,14 +317,14 @@ async fn test_reaction_lifecycle_via_api() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["data"].is_array());
-    assert_eq!(json["data"][0]["id"], "test-reaction");
+    // Should have pre-registered reactions
+    assert!(json["data"].as_array().unwrap().len() >= 1);
 
-    // Delete the reaction
+    // Get specific reaction
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .method("DELETE")
                 .uri("/reactions/test-reaction")
                 .body(Body::empty())
                 .unwrap(),
@@ -391,187 +333,19 @@ async fn test_reaction_lifecycle_via_api() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_auto_start_behavior() {
-    let (router, _) = create_test_router().await;
-
-    // Create source with auto_start=true
-    let source_config = json!({
-        "id": "auto-source",
-        "source_type": "mock",
-        "auto_start": true,
-        "properties": {
-            "interval_ms": 1000
-        }
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/sources")
-                .header("content-type", "application/json")
-                .body(Body::from(source_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Wait for auto-start
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-
-    // Create query with auto_start=true
-    let query_config = json!({
-        "id": "auto-query",
-        "query": "MATCH (n) RETURN n",
-        "source_subscriptions": [
-            {
-                "source_id": "auto-source",
-                "pipeline": []
-            }
-        ],
-        "auto_start": true
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/queries")
-                .header("content-type", "application/json")
-                .body(Body::from(query_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Wait for auto-start
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-
-    // Create reaction with auto_start=true
-    let reaction_config = json!({
-        "id": "auto-reaction",
-        "reaction_type": "log",
-        "queries": ["auto-query"],
-        "auto_start": true
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/reactions")
-                .header("content-type", "application/json")
-                .body(Body::from(reaction_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Wait for auto-start
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-}
-
-#[tokio::test]
-async fn test_idempotent_create_operations() {
-    let (router, _) = create_test_router().await;
-
-    let source_config = json!({
-        "id": "idempotent-source",
-        "source_type": "mock",
-        "auto_start": false,
-        "properties": {}
-    });
-
-    // First create
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/sources")
-                .header("content-type", "application/json")
-                .body(Body::from(source_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
-
-    // Second create (should be idempotent)
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/sources")
-                .header("content-type", "application/json")
-                .body(Body::from(source_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], true);
-    assert!(json["data"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("already exists"));
+    assert_eq!(json["data"]["id"], "test-reaction");
 }
 
 #[tokio::test]
-async fn test_read_only_mode() {
-    use drasi_lib::DrasiLib;
+async fn test_dynamic_source_creation_not_supported() {
+    let (router, _) = create_test_router().await;
 
-    // Create a minimal DrasiLib
-    let core = DrasiLib::builder()
-        .with_id("readonly-test-server")
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
-        .build()
-        .await
-        .expect("Failed to build test core");
-
-    let core = Arc::new(core);
-    core.start().await.expect("Failed to start core");
-
-    let read_only = Arc::new(true); // Enable read-only mode
-    let config_persistence: Option<Arc<drasi_server::persistence::ConfigPersistence>> = None;
-
-    let router = Router::new()
-        .route(
-            "/sources",
-            axum::routing::post(api::handlers::create_source),
-        )
-        .route(
-            "/sources/:id",
-            axum::routing::delete(api::handlers::delete_source),
-        )
-        .layer(Extension(core))
-        .layer(Extension(read_only))
-        .layer(Extension(config_persistence));
-
-    // Try to create a source in read-only mode
+    // Try to create a source via API - should return error
     let source_config = json!({
-        "id": "readonly-test",
+        "id": "dynamic-source",
         "source_type": "mock",
         "auto_start": false,
         "properties": {}
@@ -594,7 +368,45 @@ async fn test_read_only_mode() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], false);
-    assert!(json["error"].as_str().unwrap().contains("read-only mode"));
+    assert!(json["error"]
+        .as_str()
+        .unwrap()
+        .contains("not supported"));
+}
+
+#[tokio::test]
+async fn test_dynamic_reaction_creation_not_supported() {
+    let (router, _) = create_test_router().await;
+
+    // Try to create a reaction via API - should return error
+    let reaction_config = json!({
+        "id": "dynamic-reaction",
+        "reaction_type": "log",
+        "queries": ["some-query"],
+        "auto_start": false
+    });
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/reactions")
+                .header("content-type", "application/json")
+                .body(Body::from(reaction_config.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], false);
+    assert!(json["error"]
+        .as_str()
+        .unwrap()
+        .contains("not supported"));
 }
 
 #[tokio::test]
@@ -638,7 +450,7 @@ async fn test_query_results_endpoint() {
     // Create a query
     let query_config = Query::cypher("results-query")
         .query("MATCH (n) RETURN n")
-        .from_source("source1")
+        .from_source("query-source")
         .auto_start(false)
         .build();
     core.create_query(query_config.clone()).await.unwrap();

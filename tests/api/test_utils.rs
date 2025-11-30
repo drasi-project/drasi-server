@@ -1,22 +1,30 @@
 //! Shared test utilities for API tests
 //!
-//! Provides mock registries for testing DrasiLib with mock sources and reactions.
+//! Provides mock sources and reactions for testing DrasiLib.
 
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::{QuerySubscriber, ReactionRegistry, SourceRegistry};
+use drasi_lib::plugin_core::QuerySubscriber;
 use drasi_lib::plugin_core::Reaction as ReactionTrait;
 use drasi_lib::plugin_core::Source as SourceTrait;
-use drasi_lib::{ReactionConfig, SourceConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// A mock source for testing
-struct MockSource {
+pub struct MockSource {
     id: String,
     status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockSource {
+    pub fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
 }
 
 #[async_trait]
@@ -76,10 +84,20 @@ impl SourceTrait for MockSource {
 }
 
 /// A mock reaction for testing
-struct MockReaction {
+pub struct MockReaction {
     id: String,
     queries: Vec<String>,
     status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockReaction {
+    pub fn new(id: &str, queries: Vec<String>) -> Self {
+        Self {
+            id: id.to_string(),
+            queries,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
 }
 
 #[async_trait]
@@ -119,29 +137,12 @@ impl ReactionTrait for MockReaction {
     }
 }
 
-/// Create a mock source registry for testing
-pub fn create_mock_source_registry() -> SourceRegistry {
-    let mut registry = SourceRegistry::new();
-    registry.register("mock", |config: &SourceConfig| {
-        let source = MockSource {
-            id: config.id.clone(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        };
-        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
-    });
-    registry
+/// Create a mock source for testing
+pub fn create_mock_source(id: &str) -> Arc<dyn SourceTrait> {
+    Arc::new(MockSource::new(id))
 }
 
-/// Create a mock reaction registry for testing
-pub fn create_mock_reaction_registry() -> ReactionRegistry {
-    let mut registry = ReactionRegistry::new();
-    registry.register("log", |config: &ReactionConfig| {
-        let reaction = MockReaction {
-            id: config.id.clone(),
-            queries: config.queries.clone(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        };
-        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
-    });
-    registry
+/// Create a mock reaction for testing
+pub fn create_mock_reaction(id: &str, queries: Vec<String>) -> Arc<dyn ReactionTrait> {
+    Arc::new(MockReaction::new(id, queries))
 }

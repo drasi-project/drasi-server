@@ -15,8 +15,8 @@
 //! Example: Basic Drasi Configuration Setup
 //!
 //! This example demonstrates how to create a Drasi configuration file
-//! with queries. Sources and reactions are registered via plugin registries
-//! at runtime, not in the config file.
+//! with queries. Sources and reactions are created as instances and passed
+//! directly to the builder.
 
 use drasi_lib::Query;
 
@@ -71,12 +71,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("This example includes:");
     println!("  - Two Cypher queries (available drivers and pending orders)");
     println!();
-    println!("Note: Sources and reactions are now registered at runtime via plugin registries.");
+    println!("Note: Sources and reactions are created as instances and passed to the builder.");
     println!("To use sources and reactions, you need to:");
-    println!("  1. Create a SourceRegistry and ReactionRegistry");
-    println!("  2. Register factories for each plugin type you want to use");
-    println!("  3. Pass the registries to DrasiServerBuilder");
-    println!("  4. Use the REST API to create sources and reactions from config");
+    println!("  1. Create source/reaction instances implementing Source/Reaction traits");
+    println!("  2. Pass them to DrasiLibBuilder using with_source() and with_reaction()");
 
     Ok(())
 }

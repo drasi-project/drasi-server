@@ -15,14 +15,17 @@
 //! Server start/stop tests
 //!
 //! These tests verify the basic server lifecycle operations.
+//!
+//! Note: Sources and reactions must be provided as instances when building DrasiLib.
+//! Dynamic creation via config is not supported.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::{Reaction as ReactionTrait, ReactionRegistry, Source as SourceTrait, SourceRegistry};
 use drasi_lib::plugin_core::QuerySubscriber;
-use drasi_lib::{Query, ReactionConfig, SourceConfig};
+use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
+use drasi_lib::Query;
 use drasi_server::DrasiLib;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -153,24 +156,15 @@ impl ReactionTrait for MockReaction {
     }
 }
 
-/// Create a mock source registry for testing
-fn create_mock_source_registry() -> SourceRegistry {
-    let mut registry = SourceRegistry::new();
-    registry.register("mock", |config: &SourceConfig| {
-        let source = MockSource::new(&config.id);
-        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
-    });
-    registry
+/// Create a mock source for testing
+fn create_mock_source(id: &str) -> Arc<dyn SourceTrait> {
+    Arc::new(MockSource::new(id))
 }
 
-/// Create a mock reaction registry for testing
-fn create_mock_reaction_registry() -> ReactionRegistry {
-    let mut registry = ReactionRegistry::new();
-    registry.register("log", |config: &ReactionConfig| {
-        let reaction = MockReaction::new(&config.id, config.queries.clone());
-        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
-    });
-    registry
+/// Create a mock reaction for testing
+#[allow(dead_code)]
+fn create_mock_reaction(id: &str, queries: Vec<String>) -> Arc<dyn ReactionTrait> {
+    Arc::new(MockReaction::new(id, queries))
 }
 
 #[tokio::test]
@@ -178,11 +172,13 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     // Create a minimal runtime config
     let server_id = uuid::Uuid::new_v4().to_string();
 
+    // Create a mock source instance
+    let test_source = create_mock_source("test-source");
+
     // Build the core using the new builder API
     let core = DrasiLib::builder()
         .with_id(&server_id)
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
         .build()
         .await?;
 
@@ -221,6 +217,9 @@ async fn test_server_start_stop_cycle() -> Result<()> {
 async fn test_server_with_query() -> Result<()> {
     let server_id = uuid::Uuid::new_v4().to_string();
 
+    // Create source instance
+    let test_source = create_mock_source("test-source");
+
     // Build the core with a query
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
@@ -230,17 +229,12 @@ async fn test_server_with_query() -> Result<()> {
 
     let core = DrasiLib::builder()
         .with_id(&server_id)
-        .with_source_registry(create_mock_source_registry())
-        .with_reaction_registry(create_mock_reaction_registry())
+        .with_source(test_source)
         .add_query(query)
         .build()
         .await?;
 
     let core = Arc::new(core);
-
-    // Create the source that the query references (sources are created via registry)
-    let source_config = SourceConfig::new("test-source", "mock").with_auto_start(true);
-    core.create_source(source_config).await?;
 
     // Server should not be running initially
     assert!(!core.is_running().await);

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::plugin_core::{ReactionRegistry, SourceRegistry};
-use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query, ReactionConfig, SourceConfig};
+use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
+use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
@@ -23,8 +23,6 @@ pub struct DrasiServerBuilder {
     port: Option<u16>,
     host: Option<String>,
     config_file_path: Option<String>,
-    source_configs: Vec<SourceConfig>,
-    reaction_configs: Vec<ReactionConfig>,
 }
 
 impl Default for DrasiServerBuilder {
@@ -35,8 +33,6 @@ impl Default for DrasiServerBuilder {
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
             config_file_path: None,
-            source_configs: Vec::new(),
-            reaction_configs: Vec::new(),
         }
     }
 }
@@ -53,19 +49,19 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Set the source registry for plugin registration
-    pub fn with_source_registry(mut self, registry: SourceRegistry) -> Self {
-        self.core_builder = self.core_builder.with_source_registry(registry);
+    /// Add a pre-built source instance
+    pub fn with_source(mut self, source: Arc<dyn SourceTrait>) -> Self {
+        self.core_builder = self.core_builder.with_source(source);
         self
     }
 
-    /// Set the reaction registry for plugin registration
-    pub fn with_reaction_registry(mut self, registry: ReactionRegistry) -> Self {
-        self.core_builder = self.core_builder.with_reaction_registry(registry);
+    /// Add a pre-built reaction instance
+    pub fn with_reaction(mut self, reaction: Arc<dyn ReactionTrait>) -> Self {
+        self.core_builder = self.core_builder.with_reaction(reaction);
         self
     }
 
-    /// Add a query using the new builder API
+    /// Add a query using the builder API
     /// The query should be built using Query::cypher("id").build() or similar
     pub fn with_query_config(
         mut self,
@@ -93,23 +89,6 @@ impl DrasiServerBuilder {
         self.with_query_config(id, query_str, sources)
     }
 
-    /// Add a simple source that will be created after build
-    pub fn with_simple_source(mut self, id: impl Into<String>, source_type: impl Into<String>) -> Self {
-        let config = SourceConfig::new(id, source_type).with_auto_start(true);
-        self.source_configs.push(config);
-        self
-    }
-
-    /// Add a log reaction that will be created after build
-    pub fn with_log_reaction(mut self, id: impl Into<String>, queries: Vec<String>) -> Self {
-        let mut config = ReactionConfig::new(id, "log").with_auto_start(true);
-        for query in queries {
-            config = config.with_query(query);
-        }
-        self.reaction_configs.push(config);
-        self
-    }
-
     /// Enable the REST API on the default port
     pub fn enable_api(mut self) -> Self {
         self.enable_api = true;
@@ -133,18 +112,7 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiLib instance
     pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
-        // Build the core using the new API
-        let core = self.core_builder.build().await?;
-
-        // Create sources and reactions that were added to the builder
-        for source_config in self.source_configs {
-            core.create_source(source_config).await?;
-        }
-        for reaction_config in self.reaction_configs {
-            core.create_reaction(reaction_config).await?;
-        }
-
-        Ok(core)
+        self.core_builder.build().await
     }
 
     /// Set the config file path for persistence

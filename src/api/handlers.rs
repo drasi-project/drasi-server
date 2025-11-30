@@ -28,8 +28,6 @@ use drasi_lib::{
     queries::LabelExtractor, // For join validation
     // Public config types
     QueryConfig,
-    ReactionConfig,
-    SourceConfig,
 };
 
 /// Helper function to persist configuration after a successful operation.
@@ -146,58 +144,29 @@ pub async fn list_sources(
 }
 
 /// Create a new source
+///
+/// Note: Dynamic source creation via config is not supported.
+/// Sources must be provided as instances when building DrasiLib.
 #[utoipa::path(
     post,
     path = "/sources",
-    request_body = SourceConfig,
     responses(
-        (status = 200, description = "Source created successfully", body = ApiResponse),
-        (status = 500, description = "Internal server error"),
+        (status = 501, description = "Dynamic source creation not supported", body = ApiResponse),
     ),
     tag = "Sources"
 )]
-pub async fn create_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(read_only): Extension<Arc<bool>>,
-    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(config): Json<SourceConfig>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create sources.".to_string(),
-        )));
-    }
-
-    let source_id = config.id.clone();
-
-    // Use DrasiLib's public API to create source
-    match core.create_source(config.clone()).await {
-        Ok(_) => {
-            log::info!("Source '{}' created successfully", source_id);
-            persist_after_operation(&config_persistence, "creating source").await;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Source created successfully".to_string(),
-            })))
-        }
-        Err(e) => {
-            // Check if the source already exists
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!("Source '{}' already exists, skipping creation", source_id);
-                // Return success since the source exists (idempotent behavior)
-                return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Source '{}' already exists", source_id),
-                })));
-            }
-
-            log::error!("Failed to create source: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+pub async fn create_source() -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    // Dynamic source creation via config is not supported.
+    // Sources must be provided as instances when building DrasiLib.
+    Ok(Json(ApiResponse::error(
+        "Dynamic source creation is not supported. Sources must be provided as instances when building DrasiLib.".to_string(),
+    )))
 }
 
-/// Get source by name
+/// Get source status by ID
+///
+/// Note: Source configs are not stored - sources are instances.
+/// This endpoint returns the source status instead.
 #[utoipa::path(
     get,
     path = "/sources/{id}",
@@ -213,9 +182,9 @@ pub async fn create_source(
 pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<SourceConfig>>, StatusCode> {
-    match core.get_source_config(&id).await {
-        Ok(config) => Ok(Json(ApiResponse::success(config))),
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    match core.get_source_status(&id).await {
+        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -616,61 +585,29 @@ pub async fn list_reactions(
 }
 
 /// Create a new reaction
+///
+/// Note: Dynamic reaction creation via config is not supported.
+/// Reactions must be provided as instances when building DrasiLib.
 #[utoipa::path(
     post,
     path = "/reactions",
-    request_body = ReactionConfig,
     responses(
-        (status = 200, description = "Reaction created successfully", body = ApiResponse),
-        (status = 500, description = "Internal server error"),
+        (status = 501, description = "Dynamic reaction creation not supported", body = ApiResponse),
     ),
     tag = "Reactions"
 )]
-pub async fn create_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(read_only): Extension<Arc<bool>>,
-    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(config): Json<ReactionConfig>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create reactions.".to_string(),
-        )));
-    }
-
-    let reaction_id = config.id.clone();
-
-    // Use DrasiLib's public API to create reaction
-    match core.create_reaction(config.clone()).await {
-        Ok(_) => {
-            log::info!("Reaction '{}' created successfully", reaction_id);
-            persist_after_operation(&config_persistence, "creating reaction").await;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Reaction created successfully".to_string(),
-            })))
-        }
-        Err(e) => {
-            // Check if the reaction already exists
-            let error_msg = e.to_string();
-            if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!(
-                    "Reaction '{}' already exists, skipping creation",
-                    reaction_id
-                );
-                // Return success since the reaction exists (idempotent behavior)
-                return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Reaction '{}' already exists", reaction_id),
-                })));
-            }
-
-            log::error!("Failed to create reaction: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+pub async fn create_reaction() -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    // Dynamic reaction creation via config is not supported.
+    // Reactions must be provided as instances when building DrasiLib.
+    Ok(Json(ApiResponse::error(
+        "Dynamic reaction creation is not supported. Reactions must be provided as instances when building DrasiLib.".to_string(),
+    )))
 }
 
-/// Get reaction by name
+/// Get reaction status by ID
+///
+/// Note: Reaction configs are not stored - reactions are instances.
+/// This endpoint returns the reaction status instead.
 #[utoipa::path(
     get,
     path = "/reactions/{id}",
@@ -686,9 +623,9 @@ pub async fn create_reaction(
 pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<ReactionConfig>>, StatusCode> {
-    match core.get_reaction_config(&id).await {
-        Ok(config) => Ok(Json(ApiResponse::success(config))),
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    match core.get_reaction_status(&id).await {
+        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }

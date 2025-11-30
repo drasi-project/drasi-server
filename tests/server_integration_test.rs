@@ -12,14 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Server Integration Tests
+//!
+//! Note: Sources and reactions must be provided as instances when building DrasiLib.
+//! Dynamic creation via config is not supported.
+
 use anyhow::Result;
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::{QuerySubscriber, ReactionRegistry, SourceRegistry};
+use drasi_lib::plugin_core::QuerySubscriber;
 use drasi_lib::plugin_core::Reaction as ReactionTrait;
 use drasi_lib::plugin_core::Source as SourceTrait;
-use drasi_lib::{Query, ReactionConfig, SourceConfig};
+use drasi_lib::Query;
 use drasi_server::DrasiLib;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
@@ -31,6 +36,15 @@ use tokio::time::{sleep, Duration};
 struct MockSource {
     id: String,
     status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockSource {
+    fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
 }
 
 #[async_trait]
@@ -96,6 +110,16 @@ struct MockReaction {
     status: Arc<RwLock<ComponentStatus>>,
 }
 
+impl MockReaction {
+    fn new(id: &str, queries: Vec<String>) -> Self {
+        Self {
+            id: id.to_string(),
+            queries,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
+}
+
 #[async_trait]
 impl ReactionTrait for MockReaction {
     fn id(&self) -> &str {
@@ -133,31 +157,14 @@ impl ReactionTrait for MockReaction {
     }
 }
 
-/// Create a mock source registry for testing
-fn create_mock_source_registry() -> SourceRegistry {
-    let mut registry = SourceRegistry::new();
-    registry.register("mock", |config: &SourceConfig| {
-        let source = MockSource {
-            id: config.id.clone(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        };
-        Ok(Arc::new(source) as Arc<dyn SourceTrait>)
-    });
-    registry
+/// Create a mock source for testing
+fn create_mock_source(id: &str) -> Arc<dyn SourceTrait> {
+    Arc::new(MockSource::new(id))
 }
 
-/// Create a mock reaction registry for testing
-fn create_mock_reaction_registry() -> ReactionRegistry {
-    let mut registry = ReactionRegistry::new();
-    registry.register("log", |config: &ReactionConfig| {
-        let reaction = MockReaction {
-            id: config.id.clone(),
-            queries: config.queries.clone(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        };
-        Ok(Arc::new(reaction) as Arc<dyn ReactionTrait>)
-    });
-    registry
+/// Create a mock reaction for testing
+fn create_mock_reaction(id: &str, queries: Vec<String>) -> Arc<dyn ReactionTrait> {
+    Arc::new(MockReaction::new(id, queries))
 }
 
 /// Integration test demonstrating data flow continues after server restart
@@ -170,6 +177,11 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     // Create configuration
     let server_id = uuid::Uuid::new_v4().to_string();
 
+    // Create source and reaction instances
+    let counter_source = create_mock_source("counter-source");
+    let counter_reaction =
+        create_mock_reaction("counter-reaction", vec!["counter-query".to_string()]);
+
     // Build the core using the new builder API
     let query = Query::cypher("counter-query")
         .query("MATCH (n:Counter) RETURN n.value as value")
@@ -180,24 +192,12 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
     let core = Arc::new(
         DrasiLib::builder()
             .with_id(&server_id)
-            .with_source_registry(create_mock_source_registry())
-            .with_reaction_registry(create_mock_reaction_registry())
+            .with_source(counter_source)
+            .with_reaction(counter_reaction)
             .add_query(query)
             .build()
             .await?,
     );
-
-    // Create source and reaction dynamically
-    let source_config = SourceConfig::new("counter-source", "mock")
-        .with_auto_start(true)
-        .with_property("data_type", "counter")
-        .with_property("interval_ms", 500);
-    core.create_source(source_config).await?;
-
-    let reaction_config = ReactionConfig::new("counter-reaction", "log")
-        .with_query("counter-query")
-        .with_auto_start(true);
-    core.create_reaction(reaction_config).await?;
 
     // Start the server
     core.start().await?;
@@ -241,6 +241,14 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 async fn test_multiple_sources_and_queries() -> Result<()> {
     let server_id = uuid::Uuid::new_v4().to_string();
 
+    // Create source and reaction instances
+    let sensors_source = create_mock_source("sensors-source");
+    let vehicles_source = create_mock_source("vehicles-source");
+    let alert_handler = create_mock_reaction(
+        "alert-handler",
+        vec!["sensor-alerts".to_string(), "combined-view".to_string()],
+    );
+
     // Build the core using the new builder API
     let sensor_query = Query::cypher("sensor-alerts")
         .query("MATCH (s:Sensor) RETURN s")
@@ -264,34 +272,15 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     let core = Arc::new(
         DrasiLib::builder()
             .with_id(&server_id)
-            .with_source_registry(create_mock_source_registry())
-            .with_reaction_registry(create_mock_reaction_registry())
+            .with_source(sensors_source)
+            .with_source(vehicles_source)
+            .with_reaction(alert_handler)
             .add_query(sensor_query)
             .add_query(vehicle_query)
             .add_query(combined_query)
             .build()
             .await?,
     );
-
-    // Create sources dynamically
-    let sensors_source = SourceConfig::new("sensors-source", "mock")
-        .with_auto_start(true)
-        .with_property("data_type", "sensor")
-        .with_property("interval_ms", 1000);
-    core.create_source(sensors_source).await?;
-
-    let vehicles_source = SourceConfig::new("vehicles-source", "mock")
-        .with_auto_start(true)
-        .with_property("data_type", "generic")
-        .with_property("interval_ms", 2000);
-    core.create_source(vehicles_source).await?;
-
-    // Create reaction dynamically
-    let reaction_config = ReactionConfig::new("alert-handler", "log")
-        .with_query("sensor-alerts")
-        .with_query("combined-view")
-        .with_auto_start(true);
-    core.create_reaction(reaction_config).await?;
 
     // Start server
     core.start().await?;
@@ -320,6 +309,10 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 async fn test_component_failure_recovery() -> Result<()> {
     let server_id = uuid::Uuid::new_v4().to_string();
 
+    // Create source and reaction instances
+    let test_source = create_mock_source("test-source");
+    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+
     // Build the core using the new builder API
     let query = Query::cypher("test-query")
         // This query references a non-existent property, but should still start
@@ -331,22 +324,12 @@ async fn test_component_failure_recovery() -> Result<()> {
     let core = Arc::new(
         DrasiLib::builder()
             .with_id(&server_id)
-            .with_source_registry(create_mock_source_registry())
-            .with_reaction_registry(create_mock_reaction_registry())
+            .with_source(test_source)
+            .with_reaction(test_reaction)
             .add_query(query)
             .build()
             .await?,
     );
-
-    // Create source and reaction dynamically
-    let source_config = SourceConfig::new("test-source", "mock")
-        .with_auto_start(true);
-    core.create_source(source_config).await?;
-
-    let reaction_config = ReactionConfig::new("test-reaction", "log")
-        .with_query("test-query")
-        .with_auto_start(true);
-    core.create_reaction(reaction_config).await?;
 
     // Start server - all components should start even with the "bad" query
     core.start().await?;
@@ -373,40 +356,40 @@ async fn test_component_failure_recovery() -> Result<()> {
 async fn test_concurrent_operations() -> Result<()> {
     let server_id = uuid::Uuid::new_v4().to_string();
 
-    // Build the core using the new builder API
+    // Create source instances for concurrent test
+    let concurrent_source = create_mock_source("concurrent-source");
+    let extra_source_0 = create_mock_source("concurrent-source-0");
+    let extra_source_2 = create_mock_source("concurrent-source-2");
+    let extra_source_4 = create_mock_source("concurrent-source-4");
+
+    // Build the core using the new builder API with all sources pre-registered
     let core = Arc::new(
         DrasiLib::builder()
             .with_id(&server_id)
-            .with_source_registry(create_mock_source_registry())
-            .with_reaction_registry(create_mock_reaction_registry())
+            .with_source(concurrent_source)
+            .with_source(extra_source_0)
+            .with_source(extra_source_2)
+            .with_source(extra_source_4)
             .build()
             .await?,
     );
 
-    // Create initial source dynamically
-    let source_config = SourceConfig::new("concurrent-source", "mock")
-        .with_auto_start(false);
-    core.create_source(source_config).await?;
-
     // Start server
     core.start().await?;
 
-    // Test concurrent operations by adding/removing sources dynamically
+    // Test concurrent operations by starting/stopping sources
     let mut handles = vec![];
 
     for i in 0..5 {
         let core_clone = core.clone();
         let handle = tokio::spawn(async move {
-            // Alternate between adding and removing
+            // Alternate between starting and stopping sources
             if i % 2 == 0 {
-                let new_source = SourceConfig::new(format!("concurrent-source-{}", i), "mock")
-                    .with_auto_start(false);
-                core_clone.create_source(new_source).await
+                let source_id = format!("concurrent-source-{}", i);
+                core_clone.start_source(&source_id).await
             } else {
                 sleep(Duration::from_millis(10)).await;
-                core_clone
-                    .remove_source("concurrent-source")
-                    .await
+                core_clone.stop_source("concurrent-source").await
             }
         });
         handles.push(handle);

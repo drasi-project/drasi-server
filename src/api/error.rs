@@ -114,28 +114,36 @@ impl From<DrasiError> for ErrorResponse {
         use DrasiError::*;
 
         match &err {
-            NotFound(ref msg) => {
-                // Try to determine the component type from the message
-                let code = if msg.contains("source") {
-                    error_codes::SOURCE_NOT_FOUND
-                } else if msg.contains("query") {
-                    error_codes::QUERY_NOT_FOUND
-                } else if msg.contains("reaction") {
-                    error_codes::REACTION_NOT_FOUND
-                } else {
-                    error_codes::INTERNAL_ERROR
+            ComponentNotFound { component_type, component_id } => {
+                let code = match component_type.as_str() {
+                    "source" => error_codes::SOURCE_NOT_FOUND,
+                    "query" => error_codes::QUERY_NOT_FOUND,
+                    "reaction" => error_codes::REACTION_NOT_FOUND,
+                    _ => error_codes::INTERNAL_ERROR,
                 };
 
-                ErrorResponse::new(code, msg.clone())
+                ErrorResponse::new(code, format!("{} '{}' not found", component_type, component_id))
             }
-            AlreadyExists(ref msg) => {
-                ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, msg.clone())
+            AlreadyExists { component_type, component_id } => {
+                ErrorResponse::new(
+                    error_codes::DUPLICATE_RESOURCE,
+                    format!("{} '{}' already exists", component_type, component_id),
+                )
             }
-            InvalidConfig(ref msg) => {
-                ErrorResponse::new(error_codes::INVALID_REQUEST, msg.clone())
+            InvalidConfig { message } => {
+                ErrorResponse::new(error_codes::INVALID_REQUEST, message.clone())
             }
-            OperationFailed(ref msg) => {
-                ErrorResponse::new(error_codes::INTERNAL_ERROR, msg.clone())
+            InvalidState { message } => {
+                ErrorResponse::new(error_codes::INVALID_REQUEST, message.clone())
+            }
+            Validation { message } => {
+                ErrorResponse::new(error_codes::INVALID_REQUEST, message.clone())
+            }
+            OperationFailed { component_type, component_id, operation, reason } => {
+                ErrorResponse::new(
+                    error_codes::INTERNAL_ERROR,
+                    format!("Failed to {} {} '{}': {}", operation, component_type, component_id, reason),
+                )
             }
             Internal(ref err) => {
                 ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
@@ -149,9 +157,9 @@ pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
     use DrasiError::*;
 
     match err {
-        NotFound(_) => StatusCode::NOT_FOUND,
-        AlreadyExists(_) => StatusCode::CONFLICT,
-        InvalidConfig(_) => StatusCode::BAD_REQUEST,
-        OperationFailed(_) | Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ComponentNotFound { .. } => StatusCode::NOT_FOUND,
+        AlreadyExists { .. } => StatusCode::CONFLICT,
+        InvalidConfig { .. } | InvalidState { .. } | Validation { .. } => StatusCode::BAD_REQUEST,
+        OperationFailed { .. } | Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
