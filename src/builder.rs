@@ -49,14 +49,14 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add a pre-built source instance
-    pub fn with_source(mut self, source: Arc<dyn SourceTrait>) -> Self {
+    /// Add a pre-built source instance (ownership transferred)
+    pub fn with_source(mut self, source: impl SourceTrait + 'static) -> Self {
         self.core_builder = self.core_builder.with_source(source);
         self
     }
 
-    /// Add a pre-built reaction instance
-    pub fn with_reaction(mut self, reaction: Arc<dyn ReactionTrait>) -> Self {
+    /// Add a pre-built reaction instance (ownership transferred)
+    pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
         self.core_builder = self.core_builder.with_reaction(reaction);
         self
     }

@@ -157,14 +157,14 @@ impl ReactionTrait for MockReaction {
 }
 
 /// Create a mock source for testing
-fn create_mock_source(id: &str) -> Arc<dyn SourceTrait> {
-    Arc::new(MockSource::new(id))
+fn create_mock_source(id: &str) -> MockSource {
+    MockSource::new(id)
 }
 
 /// Create a mock reaction for testing
 #[allow(dead_code)]
-fn create_mock_reaction(id: &str, queries: Vec<String>) -> Arc<dyn ReactionTrait> {
-    Arc::new(MockReaction::new(id, queries))
+fn create_mock_reaction(id: &str, queries: Vec<String>) -> MockReaction {
+    MockReaction::new(id, queries)
 }
 
 #[tokio::test]

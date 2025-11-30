@@ -138,11 +138,11 @@ impl ReactionTrait for MockReaction {
 }
 
 /// Create a mock source for testing
-pub fn create_mock_source(id: &str) -> Arc<dyn SourceTrait> {
-    Arc::new(MockSource::new(id))
+pub fn create_mock_source(id: &str) -> MockSource {
+    MockSource::new(id)
 }
 
 /// Create a mock reaction for testing
-pub fn create_mock_reaction(id: &str, queries: Vec<String>) -> Arc<dyn ReactionTrait> {
-    Arc::new(MockReaction::new(id, queries))
+pub fn create_mock_reaction(id: &str, queries: Vec<String>) -> MockReaction {
+    MockReaction::new(id, queries)
 }

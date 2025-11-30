@@ -215,7 +215,7 @@ mod tests {
     async fn create_test_core() -> Arc<drasi_lib::DrasiLib> {
         use drasi_lib::Query;
 
-        let source = Arc::new(MockSource::new("test-source"));
+        let source = MockSource::new("test-source");
 
         let core = drasi_lib::DrasiLib::builder()
             .with_id("test-server")
