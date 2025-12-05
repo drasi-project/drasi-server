@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
+use drasi_lib::bootstrap::BootstrapProviderConfig;
 use drasi_lib::config::DrasiLibConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -20,12 +21,313 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 
+// Source plugin configs
+use drasi_source_grpc::GrpcSourceConfig;
+use drasi_source_http::HttpSourceConfig;
+use drasi_source_mock::MockSourceConfig;
+use drasi_source_platform::PlatformSourceConfig;
+use drasi_source_postgres::PostgresSourceConfig;
+
+// Reaction plugin configs
+use drasi_reaction_grpc::GrpcReactionConfig;
+use drasi_reaction_grpc_adaptive::GrpcAdaptiveReactionConfig;
+use drasi_reaction_http::HttpReactionConfig;
+use drasi_reaction_http_adaptive::HttpAdaptiveReactionConfig;
+use drasi_reaction_log::LogReactionConfig;
+use drasi_reaction_platform::PlatformReactionConfig;
+use drasi_reaction_profiler::ProfilerReactionConfig;
+use drasi_reaction_sse::SseReactionConfig;
+
+/// Source configuration with kind discriminator.
+///
+/// Uses serde tagged enum to automatically deserialize into the correct
+/// plugin-specific config struct based on the `kind` field.
+///
+/// # Example YAML
+///
+/// ```yaml
+/// sources:
+///   - kind: mock
+///     id: test-source
+///     auto_start: true
+///     data_type: sensor
+///     interval_ms: 1000
+///
+///   - kind: http
+///     id: http-source
+///     host: "0.0.0.0"
+///     port: 9000
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum SourceConfig {
+    /// Mock source for testing
+    #[serde(rename = "mock")]
+    Mock {
+        id: String,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bootstrap_provider: Option<BootstrapProviderConfig>,
+        #[serde(flatten)]
+        config: MockSourceConfig,
+    },
+    /// HTTP source for receiving events via HTTP endpoints
+    #[serde(rename = "http")]
+    Http {
+        id: String,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bootstrap_provider: Option<BootstrapProviderConfig>,
+        #[serde(flatten)]
+        config: HttpSourceConfig,
+    },
+    /// gRPC source for receiving events via gRPC streaming
+    #[serde(rename = "grpc")]
+    Grpc {
+        id: String,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bootstrap_provider: Option<BootstrapProviderConfig>,
+        #[serde(flatten)]
+        config: GrpcSourceConfig,
+    },
+    /// PostgreSQL replication source for CDC
+    #[serde(rename = "postgres")]
+    Postgres {
+        id: String,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bootstrap_provider: Option<BootstrapProviderConfig>,
+        #[serde(flatten)]
+        config: PostgresSourceConfig,
+    },
+    /// Platform source for Redis Streams consumption
+    #[serde(rename = "platform")]
+    Platform {
+        id: String,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bootstrap_provider: Option<BootstrapProviderConfig>,
+        #[serde(flatten)]
+        config: PlatformSourceConfig,
+    },
+}
+
+impl SourceConfig {
+    /// Get the source ID
+    pub fn id(&self) -> &str {
+        match self {
+            SourceConfig::Mock { id, .. } => id,
+            SourceConfig::Http { id, .. } => id,
+            SourceConfig::Grpc { id, .. } => id,
+            SourceConfig::Postgres { id, .. } => id,
+            SourceConfig::Platform { id, .. } => id,
+        }
+    }
+
+    /// Check if auto_start is enabled
+    pub fn auto_start(&self) -> bool {
+        match self {
+            SourceConfig::Mock { auto_start, .. } => *auto_start,
+            SourceConfig::Http { auto_start, .. } => *auto_start,
+            SourceConfig::Grpc { auto_start, .. } => *auto_start,
+            SourceConfig::Postgres { auto_start, .. } => *auto_start,
+            SourceConfig::Platform { auto_start, .. } => *auto_start,
+        }
+    }
+
+    /// Get the bootstrap provider configuration if any
+    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
+        match self {
+            SourceConfig::Mock {
+                bootstrap_provider, ..
+            } => bootstrap_provider.as_ref(),
+            SourceConfig::Http {
+                bootstrap_provider, ..
+            } => bootstrap_provider.as_ref(),
+            SourceConfig::Grpc {
+                bootstrap_provider, ..
+            } => bootstrap_provider.as_ref(),
+            SourceConfig::Postgres {
+                bootstrap_provider, ..
+            } => bootstrap_provider.as_ref(),
+            SourceConfig::Platform {
+                bootstrap_provider, ..
+            } => bootstrap_provider.as_ref(),
+        }
+    }
+}
+
+/// Reaction configuration with kind discriminator.
+///
+/// Uses serde tagged enum to automatically deserialize into the correct
+/// plugin-specific config struct based on the `kind` field.
+///
+/// # Example YAML
+///
+/// ```yaml
+/// reactions:
+///   - kind: log
+///     id: log-reaction
+///     queries: [my-query]
+///     auto_start: true
+///     log_level: info
+///
+///   - kind: http
+///     id: webhook
+///     queries: [my-query]
+///     base_url: "http://localhost:3000"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum ReactionConfig {
+    /// Log reaction for console output
+    #[serde(rename = "log")]
+    Log {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: LogReactionConfig,
+    },
+    /// HTTP reaction for webhooks
+    #[serde(rename = "http")]
+    Http {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: HttpReactionConfig,
+    },
+    /// HTTP adaptive reaction with batching
+    #[serde(rename = "http-adaptive")]
+    HttpAdaptive {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: HttpAdaptiveReactionConfig,
+    },
+    /// gRPC reaction for streaming results
+    #[serde(rename = "grpc")]
+    Grpc {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: GrpcReactionConfig,
+    },
+    /// gRPC adaptive reaction with batching
+    #[serde(rename = "grpc-adaptive")]
+    GrpcAdaptive {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: GrpcAdaptiveReactionConfig,
+    },
+    /// SSE reaction for Server-Sent Events
+    #[serde(rename = "sse")]
+    Sse {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: SseReactionConfig,
+    },
+    /// Platform reaction for Drasi platform integration
+    #[serde(rename = "platform")]
+    Platform {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: PlatformReactionConfig,
+    },
+    /// Profiler reaction for performance analysis
+    #[serde(rename = "profiler")]
+    Profiler {
+        id: String,
+        queries: Vec<String>,
+        #[serde(default = "default_true")]
+        auto_start: bool,
+        #[serde(flatten)]
+        config: ProfilerReactionConfig,
+    },
+}
+
+impl ReactionConfig {
+    /// Get the reaction ID
+    pub fn id(&self) -> &str {
+        match self {
+            ReactionConfig::Log { id, .. } => id,
+            ReactionConfig::Http { id, .. } => id,
+            ReactionConfig::HttpAdaptive { id, .. } => id,
+            ReactionConfig::Grpc { id, .. } => id,
+            ReactionConfig::GrpcAdaptive { id, .. } => id,
+            ReactionConfig::Sse { id, .. } => id,
+            ReactionConfig::Platform { id, .. } => id,
+            ReactionConfig::Profiler { id, .. } => id,
+        }
+    }
+
+    /// Get the query IDs this reaction subscribes to
+    pub fn queries(&self) -> &[String] {
+        match self {
+            ReactionConfig::Log { queries, .. } => queries,
+            ReactionConfig::Http { queries, .. } => queries,
+            ReactionConfig::HttpAdaptive { queries, .. } => queries,
+            ReactionConfig::Grpc { queries, .. } => queries,
+            ReactionConfig::GrpcAdaptive { queries, .. } => queries,
+            ReactionConfig::Sse { queries, .. } => queries,
+            ReactionConfig::Platform { queries, .. } => queries,
+            ReactionConfig::Profiler { queries, .. } => queries,
+        }
+    }
+
+    /// Check if auto_start is enabled
+    pub fn auto_start(&self) -> bool {
+        match self {
+            ReactionConfig::Log { auto_start, .. } => *auto_start,
+            ReactionConfig::Http { auto_start, .. } => *auto_start,
+            ReactionConfig::HttpAdaptive { auto_start, .. } => *auto_start,
+            ReactionConfig::Grpc { auto_start, .. } => *auto_start,
+            ReactionConfig::GrpcAdaptive { auto_start, .. } => *auto_start,
+            ReactionConfig::Sse { auto_start, .. } => *auto_start,
+            ReactionConfig::Platform { auto_start, .. } => *auto_start,
+            ReactionConfig::Profiler { auto_start, .. } => *auto_start,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// DrasiServer configuration that composes core config with server settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DrasiServerConfig {
     #[serde(default)]
     pub server: ServerSettings,
-    /// Core configuration (sources, queries, reactions)
+    /// Source configurations (DrasiServer-specific, parsed into plugin instances)
+    #[serde(default)]
+    pub sources: Vec<SourceConfig>,
+    /// Reaction configurations (DrasiServer-specific, parsed into plugin instances)
+    #[serde(default)]
+    pub reactions: Vec<ReactionConfig>,
+    /// Core configuration (queries, storage backends)
     #[serde(flatten)]
     pub core_config: DrasiLibConfig,
 }

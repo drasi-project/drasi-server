@@ -21,6 +21,8 @@ use serde::Serialize;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
+use crate::config::{ReactionConfig, SourceConfig};
+use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{
     // Internal types (doc-hidden but accessible)
@@ -145,22 +147,99 @@ pub async fn list_sources(
 
 /// Create a new source
 ///
-/// Note: Dynamic source creation via config is not supported.
-/// Sources must be provided as instances when building DrasiLib.
+/// Creates a source from a configuration object. The `kind` field determines
+/// the source type (mock, http, grpc, postgres, platform).
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "http",
+///   "id": "my-http-source",
+///   "auto_start": true,
+///   "host": "0.0.0.0",
+///   "port": 9000
+/// }
+/// ```
 #[utoipa::path(
     post,
     path = "/sources",
+    request_body = serde_json::Value,
     responses(
-        (status = 501, description = "Dynamic source creation not supported", body = ApiResponse),
+        (status = 200, description = "Source created successfully", body = ApiResponse),
+        (status = 400, description = "Invalid source configuration"),
+        (status = 500, description = "Internal server error"),
     ),
     tag = "Sources"
 )]
-pub async fn create_source() -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    // Dynamic source creation via config is not supported.
-    // Sources must be provided as instances when building DrasiLib.
-    Ok(Json(ApiResponse::error(
-        "Dynamic source creation is not supported. Sources must be provided as instances when building DrasiLib.".to_string(),
-    )))
+pub async fn create_source_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    if *read_only {
+        return Ok(Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot create sources.".to_string(),
+        )));
+    }
+
+    // Parse the JSON into SourceConfig (tagged enum)
+    let config: SourceConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse source config: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid source configuration: {}",
+                e
+            ))));
+        }
+    };
+
+    let source_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Create the source instance using the factory function
+    let source = match create_source(config).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create source instance: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create source: {}",
+                e
+            ))));
+        }
+    };
+
+    // Add the source to DrasiLib
+    match core.add_source(source).await {
+        Ok(_) => {
+            log::info!("Source '{}' created successfully", source_id);
+
+            // Auto-start if configured
+            if auto_start {
+                if let Err(e) = core.start_source(&source_id).await {
+                    log::warn!("Failed to auto-start source '{}': {}", source_id, e);
+                }
+            }
+
+            persist_after_operation(&config_persistence, "creating source").await;
+
+            Ok(Json(ApiResponse::success(StatusResponse {
+                message: format!("Source '{}' created successfully", source_id),
+            })))
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("already exists") {
+                log::info!("Source '{}' already exists", source_id);
+                return Ok(Json(ApiResponse::success(StatusResponse {
+                    message: format!("Source '{}' already exists", source_id),
+                })));
+            }
+            log::error!("Failed to add source: {}", e);
+            Ok(Json(ApiResponse::error(error_msg)))
+        }
+    }
 }
 
 /// Get source status by ID
@@ -586,22 +665,99 @@ pub async fn list_reactions(
 
 /// Create a new reaction
 ///
-/// Note: Dynamic reaction creation via config is not supported.
-/// Reactions must be provided as instances when building DrasiLib.
+/// Creates a reaction from a configuration object. The `kind` field determines
+/// the reaction type (log, http, http-adaptive, grpc, grpc-adaptive, sse, platform, profiler).
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "log",
+///   "id": "my-log-reaction",
+///   "queries": ["my-query"],
+///   "auto_start": true,
+///   "log_level": "info"
+/// }
+/// ```
 #[utoipa::path(
     post,
     path = "/reactions",
+    request_body = serde_json::Value,
     responses(
-        (status = 501, description = "Dynamic reaction creation not supported", body = ApiResponse),
+        (status = 200, description = "Reaction created successfully", body = ApiResponse),
+        (status = 400, description = "Invalid reaction configuration"),
+        (status = 500, description = "Internal server error"),
     ),
     tag = "Reactions"
 )]
-pub async fn create_reaction() -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    // Dynamic reaction creation via config is not supported.
-    // Reactions must be provided as instances when building DrasiLib.
-    Ok(Json(ApiResponse::error(
-        "Dynamic reaction creation is not supported. Reactions must be provided as instances when building DrasiLib.".to_string(),
-    )))
+pub async fn create_reaction_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    if *read_only {
+        return Ok(Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot create reactions.".to_string(),
+        )));
+    }
+
+    // Parse the JSON into ReactionConfig (tagged enum)
+    let config: ReactionConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse reaction config: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid reaction configuration: {}",
+                e
+            ))));
+        }
+    };
+
+    let reaction_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Create the reaction instance using the factory function
+    let reaction = match create_reaction(config) {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("Failed to create reaction instance: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create reaction: {}",
+                e
+            ))));
+        }
+    };
+
+    // Add the reaction to DrasiLib
+    match core.add_reaction(reaction).await {
+        Ok(_) => {
+            log::info!("Reaction '{}' created successfully", reaction_id);
+
+            // Auto-start if configured
+            if auto_start {
+                if let Err(e) = core.start_reaction(&reaction_id).await {
+                    log::warn!("Failed to auto-start reaction '{}': {}", reaction_id, e);
+                }
+            }
+
+            persist_after_operation(&config_persistence, "creating reaction").await;
+
+            Ok(Json(ApiResponse::success(StatusResponse {
+                message: format!("Reaction '{}' created successfully", reaction_id),
+            })))
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("already exists") {
+                log::info!("Reaction '{}' already exists", reaction_id);
+                return Ok(Json(ApiResponse::success(StatusResponse {
+                    message: format!("Reaction '{}' already exists", reaction_id),
+                })));
+            }
+            log::error!("Failed to add reaction: {}", e);
+            Ok(Json(ApiResponse::error(error_msg)))
+        }
+    }
 }
 
 /// Get reaction status by ID

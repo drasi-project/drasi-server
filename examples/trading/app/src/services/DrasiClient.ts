@@ -270,8 +270,8 @@ export class DrasiClient {
         console.log(`Creating SSE reaction: ${this.reactionId}`);
         
         const reactionConfig = {
+          kind: 'sse',
           id: this.reactionId,
-          reaction_type: 'sse',
           queries: Array.from(this.queries.keys()), // This will include price-ticker-query
           auto_start: true,
           // SSE reaction config fields (flattened, not in properties)

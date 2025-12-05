@@ -30,7 +30,7 @@ use drasi_lib::{
     paths(
         crate::api::handlers::health_check,
         crate::api::handlers::list_sources,
-        crate::api::handlers::create_source,
+        crate::api::handlers::create_source_handler,
         crate::api::handlers::get_source,
         crate::api::handlers::delete_source,
         crate::api::handlers::start_source,
@@ -43,7 +43,7 @@ use drasi_lib::{
         crate::api::handlers::stop_query,
         crate::api::handlers::get_query_results,
         crate::api::handlers::list_reactions,
-        crate::api::handlers::create_reaction,
+        crate::api::handlers::create_reaction_handler,
         crate::api::handlers::get_reaction,
         crate::api::handlers::delete_reaction,
         crate::api::handlers::start_reaction,

@@ -235,13 +235,8 @@ async fn test_source_lifecycle_operations() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Start the source
-    server
-        .start_source("lifecycle_source")
-        .await
-        .expect("Failed to start source");
-
-    // Wait for source to start
+    // Source is already running (auto-started on first startup)
+    // Wait briefly for startup to complete
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Server should still be running
@@ -328,19 +323,38 @@ async fn test_concurrent_start_stop_operations() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Spawn multiple tasks that start/stop sources concurrently
-    let mut tasks = vec![];
+    // Sources are now auto-started on first startup
+    // Test concurrent stop operations instead
+    let mut stop_tasks = vec![];
+    for i in 1..=5 {
+        let server_clone = server.clone();
+        let task = tokio::spawn(async move {
+            let source_id = format!("concurrent_source_{}", i);
+            server_clone.stop_source(&source_id).await
+        });
+        stop_tasks.push(task);
+    }
+
+    // Wait for all stop tasks
+    for task in stop_tasks {
+        task.await
+            .expect("Task panicked")
+            .expect("Failed to stop source");
+    }
+
+    // Now test concurrent start operations
+    let mut start_tasks = vec![];
     for i in 1..=5 {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
             let source_id = format!("concurrent_source_{}", i);
             server_clone.start_source(&source_id).await
         });
-        tasks.push(task);
+        start_tasks.push(task);
     }
 
-    // Wait for all tasks
-    for task in tasks {
+    // Wait for all start tasks
+    for task in start_tasks {
         task.await
             .expect("Task panicked")
             .expect("Failed to start source");

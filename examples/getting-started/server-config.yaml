@@ -8,11 +8,14 @@ server:
   log_level: info
   disable_persistence: true
 
+server_core:
+  id: getting-started-example
+
 # Sources: Define where data comes from
 sources:
   # HTTP Source: Receives product data via HTTP API
-  - id: products-source
-    source_type: http
+  - kind: http
+    id: products-source
     auto_start: true
     # Bootstrap: Load initial data from a file when starting
     bootstrap_provider:
@@ -20,10 +23,9 @@ sources:
       # Path to JSONL file with initial product catalog
       file_paths:
         - examples/getting-started/data/products.jsonl
-    properties:
-      # HTTP server will listen on port 9000
-      port: 9000
-      host: 0.0.0.0
+    # HTTP server will listen on port 9000
+    port: 9000
+    host: 0.0.0.0
 
 # Queries: Continuous Cypher queries that process data
 queries:
@@ -42,8 +44,8 @@ queries:
 # Reactions: Define what happens with query results
 reactions:
   # Log Reaction: Print query results to console
-  - id: log-results
-    reaction_type: log
+  - kind: log
+    id: log-results
     auto_start: true
     queries:
       # Subscribe to results from expensive-products query

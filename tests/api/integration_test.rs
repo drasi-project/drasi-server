@@ -1,11 +1,8 @@
 //! API Integration Tests
 //!
 //! These tests validate the complete data flow from API requests to DrasiLib operations.
-//! They test the full lifecycle of components through the API.
-//!
-//! Note: Dynamic source/reaction creation via config is not supported.
-//! Sources and reactions must be provided as instances when building DrasiLib.
-//! These tests focus on querying and lifecycle operations for pre-registered components.
+//! They test the full lifecycle of components through the API, including dynamic creation
+//! of sources and reactions via the tagged enum config format.
 
 use crate::test_utils::{create_mock_reaction, create_mock_source};
 use axum::{
@@ -60,7 +57,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
         .route("/sources", axum::routing::get(api::handlers::list_sources))
         .route(
             "/sources",
-            axum::routing::post(api::handlers::create_source),
+            axum::routing::post(api::handlers::create_source_handler),
         )
         .route(
             "/sources/:id",
@@ -105,7 +102,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
         )
         .route(
             "/reactions",
-            axum::routing::post(api::handlers::create_reaction),
+            axum::routing::post(api::handlers::create_reaction_handler),
         )
         .route(
             "/reactions/:id",
@@ -198,6 +195,25 @@ async fn test_source_lifecycle_via_api() {
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["id"], "test-source");
 
+    // Source is already running (auto-started on first startup)
+    // Stop the source first to test lifecycle operations
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/sources/test-source/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+
     // Start the source - should succeed (mock sources support lifecycle operations)
     let response = router
         .clone()
@@ -216,7 +232,7 @@ async fn test_source_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
 
-    // Stop the source - should succeed
+    // Stop the source - should succeed again
     let response = router
         .clone()
         .oneshot(
@@ -340,15 +356,14 @@ async fn test_reaction_lifecycle_via_api() {
 }
 
 #[tokio::test]
-async fn test_dynamic_source_creation_not_supported() {
+async fn test_dynamic_source_creation_via_api() {
     let (router, _) = create_test_router().await;
 
-    // Try to create a source via API - should return error
+    // Create a mock source via API using the tagged enum format
     let source_config = json!({
+        "kind": "mock",
         "id": "dynamic-source",
-        "source_type": "mock",
-        "auto_start": false,
-        "properties": {}
+        "auto_start": false
     });
 
     let response = router
@@ -367,21 +382,21 @@ async fn test_dynamic_source_creation_not_supported() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], false);
-    assert!(json["error"]
+    assert_eq!(json["success"], true);
+    assert!(json["data"]["message"]
         .as_str()
         .unwrap()
-        .contains("not supported"));
+        .contains("created successfully"));
 }
 
 #[tokio::test]
-async fn test_dynamic_reaction_creation_not_supported() {
+async fn test_dynamic_reaction_creation_via_api() {
     let (router, _) = create_test_router().await;
 
-    // Try to create a reaction via API - should return error
+    // Create a log reaction via API using the tagged enum format
     let reaction_config = json!({
+        "kind": "log",
         "id": "dynamic-reaction",
-        "reaction_type": "log",
         "queries": ["some-query"],
         "auto_start": false
     });
@@ -402,11 +417,11 @@ async fn test_dynamic_reaction_creation_not_supported() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], false);
-    assert!(json["error"]
+    assert_eq!(json["success"], true);
+    assert!(json["data"]["message"]
         .as_str()
         .unwrap()
-        .contains("not supported"));
+        .contains("created successfully"));
 }
 
 #[tokio::test]

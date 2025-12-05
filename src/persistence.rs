@@ -68,6 +68,9 @@ impl ConfigPersistence {
         })?;
 
         // Wrap Core config with wrapper settings
+        // Note: sources and reactions are empty here because they are owned by the core
+        // and we don't have access to the original config enums. The core manages them
+        // dynamically through the builder pattern or API.
         let wrapper_config = DrasiServerConfig {
             server: crate::config::ServerSettings {
                 host: self.host.clone(),
@@ -75,6 +78,8 @@ impl ConfigPersistence {
                 log_level: self.log_level.clone(),
                 disable_persistence: self.disable_persistence,
             },
+            sources: Vec::new(),
+            reactions: Vec::new(),
             core_config,
         };
 

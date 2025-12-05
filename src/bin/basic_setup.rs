@@ -53,12 +53,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     // Create the configuration structure
-    // Note: Sources and reactions are not included in the config file
-    // They are registered via plugin registries at runtime
-    let config = drasi_lib::config::DrasiLibConfig {
-        server_core: drasi_lib::config::DrasiLibSettings::default(),
-        queries: vec![available_drivers_query, pending_orders_query],
-        storage_backends: vec![],
+    // Note: Sources and reactions can be defined in the config file using the tagged enum format
+    let config = drasi_server::DrasiServerConfig {
+        server: drasi_server::ServerSettings::default(),
+        sources: vec![], // Add sources using SourceConfig enum
+        reactions: vec![], // Add reactions using ReactionConfig enum
+        core_config: drasi_lib::config::DrasiLibConfig {
+            server_core: drasi_lib::config::DrasiLibSettings::default(),
+            queries: vec![available_drivers_query, pending_orders_query],
+            storage_backends: vec![],
+        },
     };
 
     // Save configuration to file

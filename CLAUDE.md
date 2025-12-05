@@ -68,13 +68,32 @@ All components communicate through async channels:
 
 ## Configuration
 
-### Server Configuration
+### Configuration File Support
 
-The server uses YAML configuration files (default: `config/server.yaml`):
-- Sources defined under `sources:`
-- Queries defined under `queries:`
-- Reactions defined under `reactions:`
-- Server settings under `server:` (host, port, log_level, disable_persistence)
+DrasiServer supports YAML configuration files for defining server settings and queries:
+
+```bash
+cargo run -- --config config/server.yaml
+```
+
+**Example configuration file:**
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  log_level: "info"
+  disable_persistence: false  # Enable persistence (default)
+
+queries:
+  - id: "high-temp"
+    query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
+    query_language: "cypher"
+    source_subscriptions:
+      - source_id: "sensors"
+    auto_start: true
+```
+
+**Important**: Sources and reactions are plugins that must be provided programmatically. Only queries can be defined via configuration files.
 
 ### Configuration Persistence
 
@@ -99,27 +118,36 @@ DrasiServer separates two independent concepts:
 **Important distinction:**
 - `disable_persistence: true` → API mutations are allowed but NOT saved to config file
 - Read-only config file → API mutations are blocked entirely
-- This allows dynamic query/reaction creation without persistence (useful for programmatic usage)
+- This allows dynamic query creation without persistence (useful for programmatic usage)
 
 **Behavior:**
-- When persistence enabled: all API mutations (create/delete sources/queries/reactions) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
+- When persistence enabled: all API mutations (create/delete queries) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
 - When persistence disabled: API mutations work but changes are lost on restart
 - When read-only: all create/delete operations via API are rejected
 
-**Example Configuration:**
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-  log_level: "info"
-  disable_persistence: false  # Enable persistence (default)
-sources:
-  - id: my-source
-    source_type: mock
-    auto_start: true
-    properties: {}
-queries: []
-reactions: []
+### Builder-Based Configuration
+
+DrasiServer also supports a builder pattern for programmatic configuration. Sources and reactions are provided as plugin instances:
+
+```rust
+use drasi_server::DrasiServerBuilder;
+use drasi_lib::Query;
+
+let server = DrasiServerBuilder::new()
+    .with_id("my-server")
+    .with_host_port("0.0.0.0", 8080)
+    .with_source(my_source_instance)  // Plugin instance
+    .add_query(
+        Query::cypher("my-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("my-source")
+            .build()
+    )
+    .with_reaction(my_reaction_instance)  // Plugin instance
+    .build()
+    .await?;
+
+server.run().await?;
 ```
 
 ### Component Types
@@ -183,7 +211,7 @@ Component management:
 
 ### State Management
 - Components track their status (Stopped/Starting/Running/Stopping/Failed)
-- Configuration persisted to YAML files
+- Configuration persisted to YAML files (when persistence enabled)
 - In-memory state for active components
 
 ### Bootstrap Mechanism
@@ -233,11 +261,23 @@ println!("  API Port: {}", port);
 The server can be used as a library in other Rust projects:
 
 ```rust
-use drasi_server::{DrasiServerBuilder, ApplicationSourceHandle};
+use drasi_server::DrasiServerBuilder;
+use drasi_lib::Query;
 
-let builder = DrasiServerBuilder::new();
-let server = builder.with_sources(...).build();
-let handles = server.start().await?;
+let server = DrasiServerBuilder::new()
+    .with_id("my-server")
+    .with_host_port("0.0.0.0", 8080)
+    .with_source(my_source)
+    .add_query(
+        Query::cypher("my-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("my-source")
+            .build()
+    )
+    .build()
+    .await?;
+
+server.run().await?;
 ```
 
 ## Dependencies
@@ -252,6 +292,7 @@ let handles = server.start().await?;
 
 ### Important Notes
 - The core functionality is provided by the external `drasi-lib` library
-- Config types from drasi-lib don't implement ToSchema trait, limiting OpenAPI documentation
+- Sources and reactions are plugins that must be provided as instances (no YAML configuration)
+- Queries can be created via the builder pattern
 - All data processing logic resides in drasi-lib
-- This repository focuses on API, configuration, and server lifecycle management
+- This repository focuses on API and server lifecycle management

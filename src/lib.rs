@@ -16,13 +16,15 @@ pub mod api;
 pub mod builder;
 pub mod builder_result;
 pub mod config;
+pub mod factories;
 pub mod persistence;
 pub mod server;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
-pub use config::{DrasiServerConfig, ServerSettings};
+pub use config::{DrasiServerConfig, ReactionConfig, ServerSettings, SourceConfig};
+pub use factories::{create_reaction, create_source};
 pub use server::DrasiServer;
 
 // Re-export from drasi-lib (public API only)
@@ -36,9 +38,7 @@ pub use drasi_lib::{
     Query,
     // Config types for API and file-based config
     QueryConfig,
-    ReactionConfig,
     RuntimeConfig,
-    SourceConfig,
 };
 
 // Re-export types from internal modules (these are visible but marked as internal)

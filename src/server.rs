@@ -28,6 +28,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::config::DrasiServerConfig;
+use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::DrasiLib;
 
@@ -66,9 +67,31 @@ impl DrasiServer {
             info!("Persistence ENABLED. API modifications will be saved to config file.");
         }
 
-        // Create core server using the public API
-        // The from_config_file method loads and initializes the core
-        let core = DrasiLib::from_config_file(&config_path)
+        // Build DrasiLib using the builder pattern with factory-created components
+        let mut builder = DrasiLib::builder()
+            .with_id(&config.core_config.server_core.id);
+
+        // Create and add sources from config
+        info!("Loading {} source(s) from configuration", config.sources.len());
+        for source_config in config.sources.clone() {
+            let source = create_source(source_config).await?;
+            builder = builder.with_source(source);
+        }
+
+        // Add queries from core config
+        for query_config in &config.core_config.queries {
+            builder = builder.add_query(query_config.clone());
+        }
+
+        // Create and add reactions from config
+        for reaction_config in config.reactions.clone() {
+            let reaction = create_reaction(reaction_config)?;
+            builder = builder.with_reaction(reaction);
+        }
+
+        // Build and initialize the core
+        let core = builder
+            .build()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {}", e))?;
 
@@ -192,7 +215,7 @@ impl DrasiServer {
         let app = Router::new()
             .route("/health", get(api::health_check))
             .route("/sources", get(api::list_sources))
-            .route("/sources", post(api::create_source))
+            .route("/sources", post(api::create_source_handler))
             .route("/sources/:id", get(api::get_source))
             .route("/sources/:id", axum::routing::delete(api::delete_source))
             .route("/sources/:id/start", post(api::start_source))
@@ -205,7 +228,7 @@ impl DrasiServer {
             .route("/queries/:id/stop", post(api::stop_query))
             .route("/queries/:id/results", get(api::get_query_results))
             .route("/reactions", get(api::list_reactions))
-            .route("/reactions", post(api::create_reaction))
+            .route("/reactions", post(api::create_reaction_handler))
             .route("/reactions/:id", get(api::get_reaction))
             .route(
                 "/reactions/:id",

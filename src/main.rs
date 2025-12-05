@@ -39,7 +39,10 @@ async fn main() -> Result<()> {
     let config = if !cli.config.exists() {
         // Initialize basic logging first since we don't have a config yet
         if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", "info");
+            // SAFETY: set_var is called early in main() before any other threads are spawned
+            unsafe {
+                std::env::set_var("RUST_LOG", "info");
+            }
         }
         env_logger::init();
 
@@ -75,7 +78,10 @@ async fn main() -> Result<()> {
 
     // Set log level from config if RUST_LOG wasn't explicitly set by user
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", &config.server.log_level);
+        // SAFETY: set_var is called early in main() before any other threads are spawned
+        unsafe {
+            std::env::set_var("RUST_LOG", &config.server.log_level);
+        }
         // Initialize logger with correct level
         env_logger::init();
     } else {
