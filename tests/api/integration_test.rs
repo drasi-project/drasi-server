@@ -276,7 +276,7 @@ async fn test_query_lifecycle_via_api() {
         .from_source("query-source")
         .auto_start(false)
         .build();
-    core.create_query(query_config.clone()).await.unwrap();
+    core.add_query(query_config.clone()).await.unwrap();
 
     // List queries via API
     let response = router
@@ -462,13 +462,13 @@ async fn test_error_handling() {
 async fn test_query_results_endpoint() {
     let (router, core) = create_test_router().await;
 
-    // Create a query
+    // Add a query
     let query_config = Query::cypher("results-query")
         .query("MATCH (n) RETURN n")
         .from_source("query-source")
         .auto_start(false)
         .build();
-    core.create_query(query_config.clone()).await.unwrap();
+    core.add_query(query_config.clone()).await.unwrap();
 
     // Try to get results - should return error (not exposed in public API)
     let response = router

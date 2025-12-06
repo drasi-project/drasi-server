@@ -456,7 +456,7 @@ pub async fn create_query(
     }
 
     // Use DrasiLib's public API to create query
-    match core.create_query(config.clone()).await {
+    match core.add_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{}' created successfully", query_id);
             persist_after_operation(&config_persistence, "creating query").await;
