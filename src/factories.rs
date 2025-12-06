@@ -111,20 +111,11 @@ fn create_bootstrap_provider(
         }
         BootstrapProviderConfig::ScriptFile(script_config) => {
             use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
-            Ok(Box::new(ScriptFileBootstrapProvider::new(
-                script_config.file_paths.clone(),
-            )))
+            Ok(Box::new(ScriptFileBootstrapProvider::new(script_config.clone())))
         }
         BootstrapProviderConfig::Platform(platform_config) => {
             use drasi_bootstrap_platform::PlatformBootstrapProvider;
-            let url = platform_config
-                .query_api_url
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("Platform bootstrap requires query_api_url"))?;
-            Ok(Box::new(PlatformBootstrapProvider::new(
-                url,
-                platform_config.timeout_seconds,
-            )?))
+            Ok(Box::new(PlatformBootstrapProvider::new(platform_config.clone())?))
         }
         BootstrapProviderConfig::Application(_) => {
             // Application bootstrap is typically handled internally by application sources

@@ -1272,6 +1272,7 @@ dependencies = [
  "drasi-core",
  "drasi-lib",
  "futures",
+ "handlebars",
  "log",
  "ordered-float",
  "prost-types",

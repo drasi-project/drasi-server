@@ -80,7 +80,7 @@ impl DrasiServer {
 
         // Add queries from core config
         for query_config in &config.core_config.queries {
-            builder = builder.add_query(query_config.clone());
+            builder = builder.with_query(query_config.clone());
         }
 
         // Create and add reactions from config

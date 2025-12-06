@@ -56,7 +56,7 @@ async fn test_components_with_auto_start() {
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(test_reaction)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -93,7 +93,7 @@ async fn test_components_without_auto_start() {
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(test_reaction)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -126,7 +126,7 @@ async fn test_restart_with_components() {
     let core = DrasiLib::builder()
         .with_id("test-server")
         .with_source(restart_source)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -173,7 +173,7 @@ async fn test_multiple_query_sources() {
         .with_id("test-server")
         .with_source(source1)
         .with_source(source2)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await
         .expect("Failed to build test core");
@@ -215,8 +215,8 @@ async fn test_multiple_reaction_queries() {
         .with_id("test-server")
         .with_source(test_source)
         .with_reaction(multi_query_reaction)
-        .add_query(query1)
-        .add_query(query2)
+        .with_query(query1)
+        .with_query(query2)
         .build()
         .await
         .expect("Failed to build test core");
@@ -267,7 +267,7 @@ async fn test_query_with_joins() {
         .with_id("test-server")
         .with_source(join_source1)
         .with_source(join_source2)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await
         .expect("Failed to build test core");

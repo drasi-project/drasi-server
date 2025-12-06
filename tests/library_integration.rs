@@ -135,7 +135,11 @@ impl ReactionTrait for MockReaction {
         self.queries.clone()
     }
 
-    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+        // No-op for testing
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
         *self.status.write().await = ComponentStatus::Running;
         Ok(())
     }

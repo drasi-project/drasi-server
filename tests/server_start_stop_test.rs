@@ -137,7 +137,11 @@ impl ReactionTrait for MockReaction {
         self.queries.clone()
     }
 
-    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+        // No-op for testing
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
         *self.status.write().await = ComponentStatus::Running;
         Ok(())
     }
@@ -230,7 +234,7 @@ async fn test_server_with_query() -> Result<()> {
     let core = DrasiLib::builder()
         .with_id(&server_id)
         .with_source(test_source)
-        .add_query(query)
+        .with_query(query)
         .build()
         .await?;
 

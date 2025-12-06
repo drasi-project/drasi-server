@@ -138,7 +138,11 @@ impl ReactionTrait for MockReaction {
         self.queries.clone()
     }
 
-    async fn start(&self, _query_subscriber: Arc<dyn QuerySubscriber>) -> anyhow::Result<()> {
+    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+        // No-op for testing
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
         *self.status.write().await = ComponentStatus::Running;
         Ok(())
     }
@@ -194,7 +198,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
             .with_id(&server_id)
             .with_source(counter_source)
             .with_reaction(counter_reaction)
-            .add_query(query)
+            .with_query(query)
             .build()
             .await?,
     );
@@ -275,9 +279,9 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
             .with_source(sensors_source)
             .with_source(vehicles_source)
             .with_reaction(alert_handler)
-            .add_query(sensor_query)
-            .add_query(vehicle_query)
-            .add_query(combined_query)
+            .with_query(sensor_query)
+            .with_query(vehicle_query)
+            .with_query(combined_query)
             .build()
             .await?,
     );
@@ -326,7 +330,7 @@ async fn test_component_failure_recovery() -> Result<()> {
             .with_id(&server_id)
             .with_source(test_source)
             .with_reaction(test_reaction)
-            .add_query(query)
+            .with_query(query)
             .build()
             .await?,
     );

@@ -225,7 +225,7 @@ mod tests {
         let core = drasi_lib::DrasiLib::builder()
             .with_id("test-server")
             .with_source(source)
-            .add_query(
+            .with_query(
                 Query::cypher("test-query")
                     .query("MATCH (n) RETURN n")
                     .from_source("test-source")

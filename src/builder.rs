@@ -75,7 +75,7 @@ impl DrasiServerBuilder {
             query_builder = query_builder.from_source(source);
         }
 
-        self.core_builder = self.core_builder.add_query(query_builder.build());
+        self.core_builder = self.core_builder.with_query(query_builder.build());
         self
     }
 
