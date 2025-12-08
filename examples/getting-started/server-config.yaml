@@ -1,7 +1,29 @@
-# Getting Started Example - Drasi Server Configuration
-# This minimal configuration demonstrates core Drasi concepts using a simple product catalog
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# Server: Drasi Server configuration
+# =============================================================================
+# Drasi Server Getting Started Tutorial
+# =============================================================================
+# This configuration demonstrates a complete Drasi Server setup with:
+# - PostgreSQL source with CDC (Change Data Capture)
+# - Multiple continuous queries (filter, aggregation, time-based)
+# - Log reaction for console output
+# - SSE reaction for real-time browser streaming
+#
+# This tutorial mirrors the Drasi Platform getting-started tutorial at drasi.io
+
+# Server Configuration
 server:
   host: 0.0.0.0
   port: 8080
@@ -9,44 +31,123 @@ server:
   disable_persistence: true
 
 server_core:
-  id: getting-started-example
+  id: getting-started-server
 
-# Sources: Define where data comes from
+# =============================================================================
+# Sources
+# =============================================================================
+# Sources define where data comes from. This example uses PostgreSQL with
+# logical replication for Change Data Capture (CDC).
+
 sources:
-  # HTTP Source: Receives product data via HTTP API
-  - kind: http
-    id: products-source
+  - kind: postgres
+    id: postgres-messages
     auto_start: true
-    # Bootstrap: Load initial data from a file when starting
+
+    # PostgreSQL connection settings
+    host: localhost
+    port: 5432
+    database: getting_started
+    user: drasi_user
+    password: drasi_password
+    ssl_mode: prefer
+
+    # Tables to monitor for changes
+    tables:
+      - message
+
+    # Replication settings for CDC
+    slot_name: drasi_getting_started_slot
+    publication_name: drasi_getting_started_pub
+
+    # Primary key configuration for change tracking
+    table_keys:
+      - table: message
+        key_columns:
+          - messageid
+
+    # Bootstrap provider loads existing data on startup
     bootstrap_provider:
-      type: scriptfile
-      # Path to JSONL file with initial product catalog
-      file_paths:
-        - examples/getting-started/data/products.jsonl
-    # HTTP server will listen on port 9000
-    port: 9000
-    host: 0.0.0.0
+      type: postgres
 
-# Queries: Continuous Cypher queries that process data
+# =============================================================================
+# Queries
+# =============================================================================
+# Continuous queries that process incoming data in real-time.
+# These queries automatically update when source data changes.
+
 queries:
-  # Query: Find all products priced over $50
-  - id: expensive-products
+  # Query 1: hello-world-from
+  # Filters for messages containing "Hello World" and returns the sender
+  # Similar to the Platform tutorial's hello-world-from query
+  - id: hello-world-from
     auto_start: true
-    # Cypher query: Match Product nodes where price > 50, return all properties
     query: |
-      MATCH (p:Product)
-      WHERE p.price > 50
-      RETURN p.id, p.name, p.price, p.category, p.in_stock
+      MATCH (m:message {message: 'Hello World'})
+      RETURN m.messageid AS MessageId, m.from AS MessageFrom
     sources:
-      # Subscribe to data from products-source
-      - products-source
+      - source_id: postgres-messages
 
-# Reactions: Define what happens with query results
+  # Query 2: message-count
+  # Aggregates messages by content and counts frequency
+  # Cypher equivalent of the Platform tutorial's GQL aggregation query
+  - id: message-count
+    auto_start: true
+    query: |
+      MATCH (m:message)
+      RETURN m.message AS Message, count(m) AS Frequency
+    sources:
+      - source_id: postgres-messages
+
+  # Query 3: inactive-people
+  # Identifies users who haven't sent a message in 20+ seconds
+  # Uses drasi.trueLater for time-based triggering
+  # - id: inactive-people
+  #   auto_start: true
+  #   query: |
+  #     MATCH (m:message)
+  #     WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
+  #     WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
+  #       OR drasi.trueLater(
+  #            LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
+  #            LastMessageTimestamp + duration({ seconds: 20 })
+  #          )
+  #     RETURN MessageFrom, LastMessageTimestamp
+  #   sources:
+  #     - source_id: postgres-messages
+
+# =============================================================================
+# Reactions
+# =============================================================================
+# Reactions define what happens when query results change.
+# This example uses two reactions: console logging and SSE streaming.
+
 reactions:
-  # Log Reaction: Print query results to console
+  # Log Reaction - Console Output
+  # Prints query results to the console with custom formatting
   - kind: log
-    id: log-results
+    id: log-all-queries
     auto_start: true
     queries:
-      # Subscribe to results from expensive-products query
-      - expensive-products
+      - hello-world-from
+      - message-count
+      # - inactive-people
+    # Templates use handlebars syntax for formatting
+    added_template: "[{{query_name}}] + {{after}}"
+    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+    deleted_template: "[{{query_name}}] - {{before}}"
+
+  # SSE Reaction - Real-time Browser Streaming
+  # Streams query results to connected clients via Server-Sent Events
+  # Access at: http://localhost:8081/events
+  - kind: sse
+    id: sse-stream
+    auto_start: true
+    queries:
+      - hello-world-from
+      - message-count
+      # - inactive-people
+    host: 0.0.0.0
+    port: 8081
+    sse_path: /events
+    heartbeat_interval_ms: 30000

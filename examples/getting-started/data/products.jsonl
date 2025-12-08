@@ -1,9 +1,0 @@
-{"kind":"Header","start_time":"2024-01-01T00:00:00+00:00","description":"Initial product catalog"}
-{"kind":"Node","id":"prod-001","labels":["Product"],"properties":{"id":"prod-001","name":"Wireless Headphones","price":79.99,"category":"Electronics","in_stock":true}}
-{"kind":"Node","id":"prod-002","labels":["Product"],"properties":{"id":"prod-002","name":"Coffee Maker","price":129.99,"category":"Appliances","in_stock":true}}
-{"kind":"Node","id":"prod-003","labels":["Product"],"properties":{"id":"prod-003","name":"Running Shoes","price":89.99,"category":"Sports","in_stock":true}}
-{"kind":"Node","id":"prod-004","labels":["Product"],"properties":{"id":"prod-004","name":"Desk Lamp","price":34.99,"category":"Home","in_stock":true}}
-{"kind":"Node","id":"prod-005","labels":["Product"],"properties":{"id":"prod-005","name":"Backpack","price":45.00,"category":"Accessories","in_stock":false}}
-{"kind":"Node","id":"prod-006","labels":["Product"],"properties":{"id":"prod-006","name":"Bluetooth Speaker","price":59.99,"category":"Electronics","in_stock":true}}
-{"kind":"Node","id":"prod-007","labels":["Product"],"properties":{"id":"prod-007","name":"Water Bottle","price":64.99,"category":"Sports","in_stock":true}}
-{"kind":"Node","id":"prod-008","labels":["Product"],"properties":{"id":"prod-008","name":"Laptop Stand","price":49.99,"category":"Accessories","in_stock":true}}

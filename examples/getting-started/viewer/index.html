@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<!--
+Copyright 2025 The Drasi Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drasi Server - Getting Started Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: #2d2d44;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff4444;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .query-panel {
+            background: #2d2d44;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .query-header {
+            background: #3d3d5c;
+            padding: 15px 20px;
+            border-bottom: 1px solid #4d4d6d;
+        }
+
+        .query-header h2 {
+            font-size: 16px;
+            color: #00d4ff;
+            margin-bottom: 5px;
+        }
+
+        .query-header p {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .query-content {
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .result-table th {
+            text-align: left;
+            padding: 8px 12px;
+            background: #3d3d5c;
+            color: #00d4ff;
+            font-weight: 500;
+        }
+
+        .result-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #3d3d5c;
+        }
+
+        .result-table tr:hover {
+            background: #3d3d5c;
+        }
+
+        .result-table tr.added {
+            animation: highlight-add 2s ease-out;
+        }
+
+        .result-table tr.updated {
+            animation: highlight-update 2s ease-out;
+        }
+
+        .result-table tr.deleted {
+            animation: highlight-delete 1s ease-out;
+        }
+
+        @keyframes highlight-add {
+            from { background: rgba(68, 255, 68, 0.3); }
+            to { background: transparent; }
+        }
+
+        @keyframes highlight-update {
+            from { background: rgba(255, 200, 68, 0.3); }
+            to { background: transparent; }
+        }
+
+        @keyframes highlight-delete {
+            from { background: rgba(255, 68, 68, 0.3); }
+            to { background: transparent; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .event-log {
+            grid-column: 1 / -1;
+        }
+
+        .event-log .query-content {
+            max-height: 200px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #3d3d5c;
+        }
+
+        .log-entry.add { color: #44ff44; }
+        .log-entry.update { color: #ffc844; }
+        .log-entry.delete { color: #ff4444; }
+        .log-entry.info { color: #888; }
+
+        .log-time {
+            color: #666;
+            margin-right: 10px;
+        }
+
+        .instructions {
+            grid-column: 1 / -1;
+            background: #2d2d44;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .instructions h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+        }
+
+        .instructions code {
+            background: #3d3d5c;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        .instructions ul {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Drasi Server - Getting Started</h1>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Hello World From Query -->
+        <div class="query-panel">
+            <div class="query-header">
+                <h2>hello-world-from</h2>
+                <p>Filters messages containing "Hello World"</p>
+            </div>
+            <div class="query-content">
+                <table class="result-table" id="hello-world-from-table">
+                    <thead>
+                        <tr>
+                            <th>MessageId</th>
+                            <th>MessageFrom</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hello-world-from-body">
+                        <tr><td colspan="2" class="empty-state">Waiting for data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Message Count Query -->
+        <div class="query-panel">
+            <div class="query-header">
+                <h2>message-count</h2>
+                <p>Aggregates message frequency</p>
+            </div>
+            <div class="query-content">
+                <table class="result-table" id="message-count-table">
+                    <thead>
+                        <tr>
+                            <th>Message</th>
+                            <th>Frequency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="message-count-body">
+                        <tr><td colspan="2" class="empty-state">Waiting for data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Inactive People Query -->
+        <div class="query-panel">
+            <div class="query-header">
+                <h2>inactive-people</h2>
+                <p>Users inactive for 20+ seconds</p>
+            </div>
+            <div class="query-content">
+                <table class="result-table" id="inactive-people-table">
+                    <thead>
+                        <tr>
+                            <th>MessageFrom</th>
+                            <th>LastMessageTimestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inactive-people-body">
+                        <tr><td colspan="2" class="empty-state">Waiting for data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="query-panel event-log">
+            <div class="query-header">
+                <h2>Event Log</h2>
+                <p>Real-time event stream</p>
+            </div>
+            <div class="query-content" id="eventLog">
+                <div class="log-entry info">
+                    <span class="log-time">[--:--:--]</span>
+                    Waiting for events...
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions">
+            <h3>Try It Out!</h3>
+            <ul>
+                <li>Add a "Hello World" message: <code>./scripts/add-message.sh "Alice" "Hello World"</code></li>
+                <li>Add a different message: <code>./scripts/add-message.sh "Bob" "Goodbye World"</code></li>
+                <li>Delete a message: <code>./scripts/delete-message.sh 2</code></li>
+                <li>Wait 20 seconds to see users appear in "inactive-people"</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        // Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
+        const SSE_URL = 'http://127.0.0.1:8081/events';
+
+        // State
+        const queryData = {
+            'hello-world-from': {},
+            'message-count': {},
+            'inactive-people': {}
+        };
+
+        // DOM elements
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const eventLog = document.getElementById('eventLog');
+
+        // Connect to SSE
+        function connect() {
+            console.log('Connecting to SSE:', SSE_URL);
+            addLogEntry('Attempting connection to ' + SSE_URL, 'info');
+
+            const eventSource = new EventSource(SSE_URL);
+
+            console.log('EventSource created, readyState:', eventSource.readyState);
+
+            eventSource.onopen = () => {
+                console.log('SSE connected!');
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected';
+                addLogEntry('Connected to SSE stream', 'info');
+            };
+
+            eventSource.onerror = (err) => {
+                console.error('SSE error:', err);
+                console.log('EventSource readyState:', eventSource.readyState);
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Disconnected - Reconnecting...';
+                addLogEntry('Connection error (readyState: ' + eventSource.readyState + ')', 'info');
+            };
+
+            eventSource.onmessage = (event) => {
+                console.log('SSE message received:', event.data.substring(0, 100));
+                try {
+                    const data = JSON.parse(event.data);
+                    handleEvent(data);
+                } catch (e) {
+                    // Handle heartbeat or non-JSON messages
+                    if (event.data.includes(':heartbeat') || event.data.includes('heartbeat')) {
+                        console.log('Heartbeat received');
+                        addLogEntry('Heartbeat', 'info');
+                    } else {
+                        console.log('Non-JSON message:', event.data);
+                        addLogEntry('Raw: ' + event.data.substring(0, 50), 'info');
+                    }
+                }
+            };
+        }
+
+        // Handle SSE events
+        function handleEvent(data) {
+            const queryId = data.queryId || data.query_id;
+            if (!queryId || !queryData.hasOwnProperty(queryId)) {
+                console.log('Unknown queryId or heartbeat:', queryId);
+                return;
+            }
+
+            // Handle new format: results array with type field
+            if (data.results && data.results.length > 0) {
+                data.results.forEach(item => {
+                    const type = (item.type || '').toUpperCase();
+                    // Get the actual data - could be in 'data', 'after', or directly on item
+                    const result = item.data || item.after || item;
+                    const key = getResultKey(queryId, result);
+
+                    if (type === 'ADD' || type === 'ADDED') {
+                        queryData[queryId][key] = result;
+                        addLogEntry(`[${queryId}] + ${JSON.stringify(result)}`, 'add');
+                        updateTable(queryId, 'added');
+                    } else if (type === 'UPDATE' || type === 'UPDATED' || type === 'AGGREGATION') {
+                        // For aggregations, use 'after' data
+                        const updateData = item.after || result;
+                        const updateKey = getResultKey(queryId, updateData);
+                        queryData[queryId][updateKey] = updateData;
+                        addLogEntry(`[${queryId}] ~ ${JSON.stringify(updateData)}`, 'update');
+                        updateTable(queryId, 'updated');
+                    } else if (type === 'DELETE' || type === 'DELETED') {
+                        delete queryData[queryId][key];
+                        addLogEntry(`[${queryId}] - ${JSON.stringify(result)}`, 'delete');
+                        updateTable(queryId, 'deleted');
+                    } else {
+                        // Unknown type, try to add it
+                        console.log('Unknown result type:', type, item);
+                        queryData[queryId][key] = result;
+                        updateTable(queryId, 'added');
+                    }
+                });
+                return;
+            }
+
+            // Legacy format support: addedResults, updatedResults, deletedResults
+            if (data.addedResults && data.addedResults.length > 0) {
+                data.addedResults.forEach(result => {
+                    const key = getResultKey(queryId, result);
+                    queryData[queryId][key] = result;
+                    addLogEntry(`[${queryId}] + ${JSON.stringify(result)}`, 'add');
+                });
+                updateTable(queryId, 'added');
+            }
+
+            if (data.updatedResults && data.updatedResults.length > 0) {
+                data.updatedResults.forEach(item => {
+                    const result = item.after || item;
+                    const key = getResultKey(queryId, result);
+                    queryData[queryId][key] = result;
+                    addLogEntry(`[${queryId}] ~ ${JSON.stringify(result)}`, 'update');
+                });
+                updateTable(queryId, 'updated');
+            }
+
+            if (data.deletedResults && data.deletedResults.length > 0) {
+                data.deletedResults.forEach(result => {
+                    const key = getResultKey(queryId, result);
+                    delete queryData[queryId][key];
+                    addLogEntry(`[${queryId}] - ${JSON.stringify(result)}`, 'delete');
+                });
+                updateTable(queryId, 'deleted');
+            }
+        }
+
+        // Get unique key for a result
+        function getResultKey(queryId, result) {
+            if (queryId === 'hello-world-from') {
+                return result.MessageId;
+            } else if (queryId === 'message-count') {
+                return result.Message;
+            } else if (queryId === 'inactive-people') {
+                return result.MessageFrom;
+            }
+            return JSON.stringify(result);
+        }
+
+        // Update table display
+        function updateTable(queryId, changeType) {
+            const tbody = document.getElementById(`${queryId}-body`);
+            const results = Object.values(queryData[queryId]);
+
+            if (results.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No results</td></tr>';
+                return;
+            }
+
+            const columns = getColumns(queryId);
+            tbody.innerHTML = results.map(result => {
+                const cells = columns.map(col => `<td>${result[col] ?? ''}</td>`).join('');
+                return `<tr class="${changeType}">${cells}</tr>`;
+            }).join('');
+        }
+
+        // Get columns for each query
+        function getColumns(queryId) {
+            switch (queryId) {
+                case 'hello-world-from':
+                    return ['MessageId', 'MessageFrom'];
+                case 'message-count':
+                    return ['Message', 'Frequency'];
+                case 'inactive-people':
+                    return ['MessageFrom', 'LastMessageTimestamp'];
+                default:
+                    return [];
+            }
+        }
+
+        // Add entry to event log
+        function addLogEntry(message, type) {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span>${message}`;
+
+            // Remove "waiting" message if present
+            const waiting = eventLog.querySelector('.empty-state, .log-entry.info');
+            if (waiting && waiting.textContent.includes('Waiting')) {
+                waiting.remove();
+            }
+
+            eventLog.insertBefore(entry, eventLog.firstChild);
+
+            // Keep only last 50 entries
+            while (eventLog.children.length > 50) {
+                eventLog.removeChild(eventLog.lastChild);
+            }
+        }
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>
