@@ -85,11 +85,11 @@ mod serialization_tests {
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
         assert_eq!(json["query"], "MATCH (n) RETURN n");
-        assert_eq!(json["source_subscriptions"].as_array().unwrap().len(), 2);
+        assert_eq!(json["sources"].as_array().unwrap().len(), 2);
 
         // Test deserialization
         let deserialized: drasi_lib::QueryConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(deserialized.source_subscriptions.len(), 2);
+        assert_eq!(deserialized.sources.len(), 2);
     }
 
     #[test]

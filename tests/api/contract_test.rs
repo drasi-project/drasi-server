@@ -143,8 +143,8 @@ mod contract_tests {
         let config: QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.id, "test-query");
         assert_eq!(config.query, "MATCH (p:Person) WHERE p.age > 21 RETURN p");
-        assert_eq!(config.source_subscriptions.len(), 1);
-        assert_eq!(config.source_subscriptions[0].source_id, "postgres-db");
+        assert_eq!(config.sources.len(), 1);
+        assert_eq!(config.sources[0].source_id, "postgres-db");
         assert!(!config.auto_start);
     }
 
