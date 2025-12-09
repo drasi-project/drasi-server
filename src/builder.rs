@@ -12,50 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_server_core::{
-    config::{DrasiServerCoreSettings as ServerSettings, QueryLanguage},
-    ApplicationHandle, DrasiError, DrasiServerCore, QueryConfig, ReactionConfig, RuntimeConfig,
-    SourceConfig,
-};
-use std::collections::HashMap;
+use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
+use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
-    server_settings: ServerSettings,
-    source_configs: Vec<SourceConfig>,
-    query_configs: Vec<QueryConfig>,
-    reaction_configs: Vec<ReactionConfig>,
+    core_builder: DrasiLibBuilder,
     enable_api: bool,
-    api_port: Option<u16>,
-    api_host: Option<String>,
-    enable_config_persistence: bool,
+    port: Option<u16>,
+    host: Option<String>,
     config_file_path: Option<String>,
-    application_source_names: Vec<String>,
-    application_reaction_names: Vec<String>,
 }
 
 impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
-            server_settings: ServerSettings {
-                host: "127.0.0.1".to_string(),
-                port: 8080,
-                log_level: "info".to_string(),
-                max_connections: 100,
-                shutdown_timeout_seconds: 30,
-                disable_persistence: false,
-            },
-            source_configs: Vec::new(),
-            query_configs: Vec::new(),
-            reaction_configs: Vec::new(),
+            core_builder: DrasiLib::builder(),
             enable_api: false,
-            api_port: None,
-            api_host: None,
-            enable_config_persistence: false,
+            port: Some(8080),
+            host: Some("127.0.0.1".to_string()),
             config_file_path: None,
-            application_source_names: Vec::new(),
-            application_reaction_names: Vec::new(),
         }
     }
 }
@@ -66,89 +43,50 @@ impl DrasiServerBuilder {
         Self::default()
     }
 
-    /// Set the server log level
-    pub fn with_log_level(mut self, level: impl Into<String>) -> Self {
-        self.server_settings.log_level = level.into();
+    /// Set the server ID
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.core_builder = self.core_builder.with_id(id);
         self
     }
 
-    /// Disable persistence of configuration changes
-    pub fn disable_persistence(mut self) -> Self {
-        self.server_settings.disable_persistence = true;
+    /// Add a pre-built source instance (ownership transferred)
+    pub fn with_source(mut self, source: impl SourceTrait + 'static) -> Self {
+        self.core_builder = self.core_builder.with_source(source);
         self
     }
 
-    /// Add a source configuration
-    pub fn with_source(mut self, config: SourceConfig) -> Self {
-        // Track application sources (both new and legacy formats)
-        if config.source_type == "application" {
-            self.application_source_names.push(config.id.clone());
-        }
-        self.source_configs.push(config);
+    /// Add a pre-built reaction instance (ownership transferred)
+    pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
+        self.core_builder = self.core_builder.with_reaction(reaction);
         self
     }
 
-    /// Add a source with name and type, using default properties
-    pub fn with_simple_source(
+    /// Add a query using the builder API
+    /// The query should be built using Query::cypher("id").build() or similar
+    pub fn with_query_config(
         mut self,
         id: impl Into<String>,
-        source_type: impl Into<String>,
+        query_str: impl Into<String>,
+        sources: Vec<String>,
     ) -> Self {
-        self.source_configs.push(SourceConfig {
-            id: id.into(),
-            source_type: source_type.into(),
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            bootstrap_provider: None,
-        });
-        self
-    }
+        let mut query_builder = Query::cypher(id).query(query_str);
 
-    /// Add a query configuration
-    pub fn with_query(mut self, config: QueryConfig) -> Self {
-        self.query_configs.push(config);
+        for source in sources {
+            query_builder = query_builder.from_source(source);
+        }
+
+        self.core_builder = self.core_builder.with_query(query_builder.build());
         self
     }
 
     /// Add a query with simple parameters
     pub fn with_simple_query(
-        mut self,
+        self,
         id: impl Into<String>,
-        query: impl Into<String>,
+        query_str: impl Into<String>,
         sources: Vec<String>,
     ) -> Self {
-        self.query_configs.push(QueryConfig {
-            id: id.into(),
-            query: query.into(),
-            query_language: QueryLanguage::default(),
-            sources,
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-            joins: None,
-        });
-        self
-    }
-
-    /// Add a reaction configuration
-    pub fn with_reaction(mut self, config: ReactionConfig) -> Self {
-        // Track application reactions (both new and legacy formats)
-        if config.reaction_type == "application" {
-            self.application_reaction_names.push(config.id.clone());
-        }
-        self.reaction_configs.push(config);
-        self
-    }
-
-    /// Add a simple log reaction
-    pub fn with_log_reaction(mut self, id: impl Into<String>, queries: Vec<String>) -> Self {
-        self.reaction_configs.push(ReactionConfig {
-            id: id.into(),
-            reaction_type: "log".to_string(),
-            queries,
-            auto_start: true,
-            properties: std::collections::HashMap::new(),
-        });
-        self
+        self.with_query_config(id, query_str, sources)
     }
 
     /// Enable the REST API on the default port
@@ -158,163 +96,63 @@ impl DrasiServerBuilder {
     }
 
     /// Enable the REST API on a specific port
-    pub fn enable_api_with_port(mut self, port: u16) -> Self {
+    pub fn with_port(mut self, port: u16) -> Self {
         self.enable_api = true;
-        self.api_port = Some(port);
+        self.port = Some(port);
         self
     }
 
     /// Enable the REST API on a specific host and port
-    pub fn enable_api_with_host_port(mut self, host: impl Into<String>, port: u16) -> Self {
+    pub fn with_host_port(mut self, host: impl Into<String>, port: u16) -> Self {
         self.enable_api = true;
-        self.api_host = Some(host.into());
-        self.api_port = Some(port);
+        self.host = Some(host.into());
+        self.port = Some(port);
         self
     }
 
-    /// Enable configuration persistence to a file
-    pub fn enable_config_persistence(mut self, file_path: impl Into<String>) -> Self {
-        self.enable_config_persistence = true;
-        self.config_file_path = Some(file_path.into());
-        self
+    /// Build the DrasiLib instance
+    pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
+        self.core_builder.build().await
     }
 
-    /// Add an application source that can be programmatically controlled
-    pub fn with_application_source(mut self, id: impl Into<String>) -> Self {
-        let id = id.into();
-        self.application_source_names.push(id.clone());
-        self.source_configs.push(SourceConfig {
-            id,
-            source_type: "application".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-        });
+    /// Set the config file path for persistence
+    pub fn with_config_file(mut self, path: impl Into<String>) -> Self {
+        self.config_file_path = Some(path.into());
         self
-    }
-
-    /// Add an application reaction that sends results to the application
-    pub fn with_application_reaction(
-        mut self,
-        id: impl Into<String>,
-        queries: Vec<String>,
-    ) -> Self {
-        let id = id.into();
-        self.application_reaction_names.push(id.clone());
-        self.reaction_configs.push(ReactionConfig {
-            id,
-            reaction_type: "application".to_string(),
-            queries,
-            auto_start: true,
-            properties: HashMap::new(),
-        });
-        self
-    }
-
-    /// Build the DrasiServerCore instance
-    pub async fn build_core(self) -> Result<DrasiServerCore, DrasiError> {
-        // Create RuntimeConfig from builder settings
-        let runtime_config = RuntimeConfig {
-            server: self.server_settings,
-            sources: self.source_configs,
-            queries: self.query_configs,
-            reactions: self.reaction_configs,
-        };
-
-        // Create server core
-        let mut server_core = DrasiServerCore::new(Arc::new(runtime_config));
-
-        // Initialize components
-        server_core.initialize().await?;
-
-        Ok(server_core)
     }
 
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
-        let api_host = self
-            .api_host
-            .clone()
-            .unwrap_or_else(|| self.server_settings.host.clone());
-        let api_port = self.api_port.unwrap_or(self.server_settings.port);
-        let config_persistence = self.enable_config_persistence;
+        let host = self.host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = self.port.unwrap_or(8080);
         let config_file = self.config_file_path.clone();
 
         // Build the core server
         let core = self.build_core().await?;
 
         // Create the full server with optional features
-        let server = crate::server::DrasiServer::from_core(
-            core,
-            api_enabled,
-            api_host,
-            api_port,
-            config_persistence,
-            config_file,
-        );
+        let server =
+            crate::server::DrasiServer::from_core(core, api_enabled, host, port, config_file);
 
         Ok(server)
     }
 
-    /// Build a DrasiServerCore instance and return application handles
+    /// Build a DrasiLib instance, start it, and return a handle
+    ///
+    /// Note: Application source/reaction handles were removed during the plugin architecture refactor.
+    /// Use the builder pattern in drasi-lib directly for programmatic integration.
     pub async fn build_with_handles(
         self,
     ) -> Result<crate::builder_result::DrasiServerWithHandles, DrasiError> {
-        let app_source_names = self.application_source_names.clone();
-        let app_reaction_names = self.application_reaction_names.clone();
+        // Build the core server (already initialized by builder)
+        let core = self.build_core().await?;
 
-        // Build the core server
-        let mut core = self.build_core().await?;
-
-        // Initialize the core
-        core.initialize().await?;
-
-        // Convert to Arc and start
-        let core = Arc::new(core);
+        // Start the server
         core.start().await?;
 
-        // Collect application handles
-        let mut handles = HashMap::new();
-
-        // Get source handles
-        for source_name in app_source_names {
-            if let Some(source_handle) = core
-                .source_manager()
-                .get_application_handle(&source_name)
-                .await
-            {
-                handles.insert(
-                    source_name.clone(),
-                    ApplicationHandle::source_only(source_handle),
-                );
-            }
-        }
-
-        // Get reaction handles
-        for reaction_name in app_reaction_names {
-            if let Some(reaction_handle) = core
-                .reaction_manager()
-                .get_application_handle(&reaction_name)
-                .await
-            {
-                if let Some(existing) = handles.get_mut(&reaction_name) {
-                    // If we already have a source handle with the same name, combine them
-                    if let Some(source) = existing.source.clone() {
-                        *existing = ApplicationHandle::new(source, reaction_handle);
-                    }
-                } else {
-                    handles.insert(
-                        reaction_name.clone(),
-                        ApplicationHandle::reaction_only(reaction_handle),
-                    );
-                }
-            }
-        }
-
         Ok(crate::builder_result::DrasiServerWithHandles {
-            server: core,
-            handles,
+            server: Arc::new(core),
         })
     }
 }
@@ -326,34 +164,22 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         let builder = DrasiServerBuilder::new();
-        assert_eq!(builder.server_settings.host, "127.0.0.1");
-        assert_eq!(builder.server_settings.port, 8080);
-        assert_eq!(builder.server_settings.log_level, "info");
+        assert_eq!(builder.host, Some("127.0.0.1".to_string()));
+        assert_eq!(builder.port, Some(8080));
         assert!(!builder.enable_api);
-        assert!(!builder.enable_config_persistence);
     }
 
     #[test]
     fn test_builder_fluent_api() {
         let builder = DrasiServerBuilder::new()
-            .with_log_level("debug")
-            .with_simple_source("test_source", "mock")
             .with_simple_query(
                 "test_query",
                 "MATCH (n) RETURN n",
                 vec!["test_source".to_string()],
             )
-            .with_log_reaction("test_reaction", vec!["test_query".to_string()])
-            .enable_api_with_port(9090)
-            .enable_config_persistence("test.yaml");
+            .with_port(9090);
 
-        assert_eq!(builder.server_settings.log_level, "debug");
-        assert_eq!(builder.source_configs.len(), 1);
-        assert_eq!(builder.query_configs.len(), 1);
-        assert_eq!(builder.reaction_configs.len(), 1);
         assert!(builder.enable_api);
-        assert_eq!(builder.api_port, Some(9090));
-        assert!(builder.enable_config_persistence);
-        assert_eq!(builder.config_file_path, Some("test.yaml".to_string()));
+        assert_eq!(builder.port, Some(9090));
     }
 }

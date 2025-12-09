@@ -1,0 +1,142 @@
+# Drasi Platform Example - HTTP Requests
+# Use with VSCode REST Client extension: https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+@baseUrl = http://localhost:8080
+@sourceId = facilities-db
+@queryId = room-comfort-level
+@logReactionId = log-room-comfort-level
+@platformReactionId = platform-hello-world-results
+
+### Health Check
+# Check if the Drasi server is running
+GET {{baseUrl}}/health
+
+### Get OpenAPI Specification
+# View the complete API documentation
+GET {{baseUrl}}/api-docs/openapi.json
+
+### Swagger UI
+# Interactive API documentation
+GET {{baseUrl}}/docs/
+
+###############################################################################
+# Sources
+###############################################################################
+
+### Get All Sources
+GET {{baseUrl}}/sources
+
+### Get Platform Source Status
+# Check the status of the platform Redis source
+GET {{baseUrl}}/sources/{{sourceId}}
+
+### Stop Platform Source
+# Stop consuming events from Redis
+POST {{baseUrl}}/sources/{{sourceId}}/stop
+
+### Start Platform Source
+# Resume consuming events from Redis
+POST {{baseUrl}}/sources/{{sourceId}}/start
+
+###############################################################################
+# Queries
+###############################################################################
+
+### Get All Queries
+GET {{baseUrl}}/queries
+
+### Get Query Status
+# Check the status of the hello-world query
+GET {{baseUrl}}/queries/{{queryId}}
+
+### Get Query Results
+# Retrieve current query results
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+### Stop Query
+# Stop processing events for this query
+POST {{baseUrl}}/queries/{{queryId}}/stop
+
+### Start Query
+# Resume processing events for this query
+POST {{baseUrl}}/queries/{{queryId}}/start
+
+###############################################################################
+# Reactions
+###############################################################################
+
+### Get All Reactions
+GET {{baseUrl}}/reactions
+
+### Get Log Reaction Status
+# Check the status of the log reaction
+GET {{baseUrl}}/reactions/{{logReactionId}}
+
+### Stop Log Reaction
+# Stop logging query results to console
+POST {{baseUrl}}/reactions/{{logReactionId}}/stop
+
+### Start Log Reaction
+# Resume logging query results to console
+POST {{baseUrl}}/reactions/{{logReactionId}}/start
+
+###############################################################################
+# Platform Reaction
+###############################################################################
+
+### Get Platform Reaction Status
+# Check the status of the platform reaction (publishes to Redis stream)
+GET {{baseUrl}}/reactions/{{platformReactionId}}
+
+### Stop Platform Reaction
+# Stop publishing query results to Redis stream (hello-world-from-results)
+POST {{baseUrl}}/reactions/{{platformReactionId}}/stop
+
+### Start Platform Reaction
+# Resume publishing query results to Redis stream
+POST {{baseUrl}}/reactions/{{platformReactionId}}/start
+
+###############################################################################
+# Testing Workflow
+###############################################################################
+
+### 1. Check All Components Are Running
+# @name checkHealth
+GET {{baseUrl}}/health
+
+### 2. Verify Source Is Active
+# @name checkSource
+GET {{baseUrl}}/sources/{{sourceId}}
+
+### 3. View Current Results (Empty Initially)
+# @name initialResults
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+### 4. Publish Event Using Script
+# Run in terminal: ./examples/drasi-platform/scripts/publish-event.sh Alice
+
+### 5. View Updated Results
+# @name updatedResults
+GET {{baseUrl}}/queries/{{queryId}}/results
+
+###############################################################################
+# Advanced: Component Lifecycle Management
+###############################################################################
+
+### Stop All Components (Source → Query → Reactions)
+POST {{baseUrl}}/reactions/{{logReactionId}}/stop
+###
+POST {{baseUrl}}/reactions/{{platformReactionId}}/stop
+###
+POST {{baseUrl}}/queries/{{queryId}}/stop
+###
+POST {{baseUrl}}/sources/{{sourceId}}/stop
+
+### Start All Components (Source → Query → Reactions)
+POST {{baseUrl}}/sources/{{sourceId}}/start
+###
+POST {{baseUrl}}/queries/{{queryId}}/start
+###
+POST {{baseUrl}}/reactions/{{logReactionId}}/start
+###
+POST {{baseUrl}}/reactions/{{platformReactionId}}/start

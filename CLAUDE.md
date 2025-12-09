@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is the Drasi Server repository - a standalone server wrapper around DrasiServerCore that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-server-core library located at `../drasi-server-core/`.
+This is the Drasi Server repository - a standalone server wrapper around DrasiLib that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-lib library located at `../drasi-lib/`.
 
 ## Development Commands
 
@@ -33,14 +33,14 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiSe
 
 This repository contains only the server wrapper functionality:
 
-1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiServerCore
+1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiLib
 2. **API** (`src/api/`) - REST API implementation with OpenAPI documentation
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 
 ### Core Components (External Dependency)
 
-The actual data processing functionality is provided by drasi-server-core:
+The actual data processing functionality is provided by drasi-lib:
 
 1. **Sources** - Data ingestion from various systems (PostgreSQL, HTTP, gRPC, etc.)
 2. **Queries** - Continuous Cypher queries over data with joins and bootstrap
@@ -68,13 +68,87 @@ All components communicate through async channels:
 
 ## Configuration
 
-### Server Configuration
+### Configuration File Support
 
-The server uses YAML configuration files (default: `config/server.yaml`):
-- Sources defined under `sources:`
-- Queries defined under `queries:` 
-- Reactions defined under `reactions:`
-- Runtime settings under `runtime:`
+DrasiServer supports YAML configuration files for defining server settings and queries:
+
+```bash
+cargo run -- --config config/server.yaml
+```
+
+**Example configuration file:**
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  log_level: "info"
+  disable_persistence: false  # Enable persistence (default)
+
+queries:
+  - id: "high-temp"
+    query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
+    query_language: "cypher"
+    source_subscriptions:
+      - source_id: "sensors"
+    auto_start: true
+```
+
+**Important**: Sources and reactions are plugins that must be provided programmatically. Only queries can be defined via configuration files.
+
+### Configuration Persistence
+
+DrasiServer separates two independent concepts:
+
+1. **Persistence** - Whether API changes are saved to the config file
+2. **Read-Only Mode** - Whether API changes are allowed at all
+
+**Persistence is enabled when:**
+- Config file is provided on startup (`--config path/to/config.yaml`)
+- Config file is writable
+- `disable_persistence: false` in server settings (default)
+
+**Persistence is disabled when:**
+- No config file provided (server starts with empty configuration)
+- Config file is read-only
+- `disable_persistence: true` in server settings
+
+**Read-Only mode is enabled ONLY when:**
+- Config file is not writable (file permissions prevent writing)
+
+**Important distinction:**
+- `disable_persistence: true` → API mutations are allowed but NOT saved to config file
+- Read-only config file → API mutations are blocked entirely
+- This allows dynamic query creation without persistence (useful for programmatic usage)
+
+**Behavior:**
+- When persistence enabled: all API mutations (create/delete queries) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
+- When persistence disabled: API mutations work but changes are lost on restart
+- When read-only: all create/delete operations via API are rejected
+
+### Builder-Based Configuration
+
+DrasiServer also supports a builder pattern for programmatic configuration. Sources and reactions are provided as plugin instances:
+
+```rust
+use drasi_server::DrasiServerBuilder;
+use drasi_lib::Query;
+
+let server = DrasiServerBuilder::new()
+    .with_id("my-server")
+    .with_host_port("0.0.0.0", 8080)
+    .with_source(my_source_instance)  // Plugin instance
+    .add_query(
+        Query::cypher("my-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("my-source")
+            .build()
+    )
+    .with_reaction(my_reaction_instance)  // Plugin instance
+    .build()
+    .await?;
+
+server.run().await?;
+```
 
 ### Component Types
 
@@ -137,7 +211,7 @@ Component management:
 
 ### State Management
 - Components track their status (Stopped/Starting/Running/Stopping/Failed)
-- Configuration persisted to YAML files
+- Configuration persisted to YAML files (when persistence enabled)
 - In-memory state for active components
 
 ### Bootstrap Mechanism
@@ -145,30 +219,80 @@ Component management:
 - Sources filter bootstrap data by labels from Cypher queries
 - Bootstrap completes before normal data flow begins
 
+### Logging Conventions
+
+**Use log macros for operational logging:**
+- `error!()` - For errors that require attention
+- `warn!()` - For warnings and non-fatal issues
+- `info!()` - For important operational information
+- `debug!()` - For detailed debugging information
+
+**When to use `println!`:**
+- CLI help output and usage messages
+- Setup scripts (like `basic_setup.rs`)
+- Direct user interaction in binaries
+- Server startup banners in `main.rs` and `server.rs` (user-facing CLI output)
+
+**Never use `println!` for:**
+- Operational logging in library code
+- Error messages
+- Debugging output
+- Progress updates
+
+**Example:**
+```rust
+// Good: Use log macros for operational logging
+info!("Server starting on port {}", port);
+warn!("Config file not found, using defaults");
+error!("Failed to connect to database: {}", err);
+debug!("Processing message: {:?}", msg);
+
+// Good: Use println! for CLI user output
+println!("Starting Drasi Server");
+println!("  API Port: {}", port);
+
+// Bad: Don't use println! for operational logging
+// println!("Error: Connection failed"); // Use error!() instead
+// println!("Debug: Processing message"); // Use debug!() instead
+```
+
 ## Library Usage
 
 The server can be used as a library in other Rust projects:
 
 ```rust
-use drasi_server::{DrasiServerBuilder, ApplicationSourceHandle};
+use drasi_server::DrasiServerBuilder;
+use drasi_lib::Query;
 
-let builder = DrasiServerBuilder::new();
-let server = builder.with_sources(...).build();
-let handles = server.start().await?;
+let server = DrasiServerBuilder::new()
+    .with_id("my-server")
+    .with_host_port("0.0.0.0", 8080)
+    .with_source(my_source)
+    .add_query(
+        Query::cypher("my-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("my-source")
+            .build()
+    )
+    .build()
+    .await?;
+
+server.run().await?;
 ```
 
 ## Dependencies
 
 ### Core Dependencies
 - Rust edition 2021 minimum
-- `drasi-server-core` - External library at `../drasi-server-core/`
+- `drasi-lib` - External library at `../drasi-lib/`
 - Tokio for async runtime
 - Axum for HTTP server
 - Serde for serialization
 - Utoipa for OpenAPI documentation
 
 ### Important Notes
-- The core functionality is provided by the external `drasi-server-core` library
-- Config types from drasi-server-core don't implement ToSchema trait, limiting OpenAPI documentation
-- All data processing logic resides in drasi-server-core
-- This repository focuses on API, configuration, and server lifecycle management
+- The core functionality is provided by the external `drasi-lib` library
+- Sources and reactions are plugins that must be provided as instances (no YAML configuration)
+- Queries can be created via the builder pattern
+- All data processing logic resides in drasi-lib
+- This repository focuses on API and server lifecycle management

@@ -1,0 +1,11 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  log_level: info
+  disable_persistence: false
+server_core:
+  id: c99a43b2-cb1e-478b-b3d6-f710cf09f084
+storage_backends: []
+sources: []
+queries: []
+reactions: []

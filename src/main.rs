@@ -18,7 +18,7 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 
-use drasi_server::{DrasiServer, ServerConfig};
+use drasi_server::{DrasiServer, DrasiServerConfig};
 
 #[derive(Parser)]
 #[command(name = "drasi-server")]
@@ -39,14 +39,13 @@ async fn main() -> Result<()> {
     let config = if !cli.config.exists() {
         // Initialize basic logging first since we don't have a config yet
         if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", "info");
+            // SAFETY: set_var is called early in main() before any other threads are spawned
+            unsafe {
+                std::env::set_var("RUST_LOG", "info");
+            }
         }
         env_logger::init();
 
-        println!(
-            "Config file '{}' not found. Creating default configuration.",
-            cli.config.display()
-        );
         warn!(
             "Config file '{}' not found. Creating default configuration.",
             cli.config.display()
@@ -58,7 +57,7 @@ async fn main() -> Result<()> {
         }
 
         // Create default config with command line port if specified
-        let mut default_config = ServerConfig::default();
+        let mut default_config = DrasiServerConfig::default();
 
         // Use CLI port if provided
         if let Some(port) = cli.port {
@@ -74,12 +73,15 @@ async fn main() -> Result<()> {
         default_config
     } else {
         // Load config first to get log level
-        ServerConfig::load_from_file(&cli.config)?
+        DrasiServerConfig::load_from_file(&cli.config)?
     };
 
     // Set log level from config if RUST_LOG wasn't explicitly set by user
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", &config.server.log_level);
+        // SAFETY: set_var is called early in main() before any other threads are spawned
+        unsafe {
+            std::env::set_var("RUST_LOG", &config.server.log_level);
+        }
         // Initialize logger with correct level
         env_logger::init();
     } else {

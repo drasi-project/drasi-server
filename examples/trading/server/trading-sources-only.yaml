@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,35 +16,40 @@ server:
   host: 0.0.0.0
   port: 8080
   log_level: info
-  max_connections: 1000
-  shutdown_timeout_seconds: 30
   disable_persistence: true
+server_core:
+  id: trading-server
 sources:
-- id: postgres-stocks
-  source_type: postgres
+- kind: http
+  id: price-feed
   auto_start: true
+  # HttpSourceConfig fields
+  host: 0.0.0.0
+  port: 9000
+  timeout_ms: 10000
+- kind: postgres
+  id: postgres-stocks
+  auto_start: true
+  # PostgresSourceConfig fields
+  host: localhost
+  port: 5432
+  database: trading_demo
+  user: drasi_user
+  password: drasi_password
+  tables:
+  - stocks
+  - portfolio
+  slot_name: drasi_trading_slot
+  publication_name: drasi_trading_pub
+  ssl_mode: prefer
+  table_keys:
+  - table: stocks
+    key_columns:
+    - id
+  - table: portfolio
+    key_columns:
+    - id
   bootstrap_provider:
     type: postgres
-  properties:
-    keepalive_idle_secs: 30
-    batch_size: 100
-    password: drasi_password
-    tables:
-    - stocks
-    - portfolio
-    host: localhost
-    port: 5432
-    slot_name: drasi_trading_slot
-    user: drasi_user
-    database: trading_demo
-    publication_name: drasi_trading_pub
-    bootstrap_batch_size: 500
-    keepalive_interval_secs: 10
-- id: price-feed
-  source_type: http
-  auto_start: true
-  properties:
-    port: 9000
-    host: 0.0.0.0
 queries: []
 reactions: []

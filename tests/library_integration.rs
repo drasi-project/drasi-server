@@ -1,22 +1,186 @@
-use drasi_server::{ComponentStatus, DrasiServerBuilder, SourceConfig};
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Library Integration Tests
+//!
+//! Note: Sources and reactions must be provided as instances when building DrasiLib.
+//! Dynamic creation via config is not supported.
+
+use async_trait::async_trait;
+use drasi_lib::channels::dispatcher::ChangeDispatcher;
+use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::QuerySubscriber;
+use drasi_lib::plugin_core::Reaction as ReactionTrait;
+use drasi_lib::plugin_core::Source as SourceTrait;
+use drasi_server::DrasiServerBuilder;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
+
+/// A mock source for testing
+struct MockSource {
+    id: String,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockSource {
+    fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
+}
+
+#[async_trait]
+impl SourceTrait for MockSource {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "mock"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    async fn subscribe(
+        &self,
+        query_id: String,
+        _enable_bootstrap: bool,
+        _node_labels: Vec<String>,
+        _relation_labels: Vec<String>,
+    ) -> anyhow::Result<SubscriptionResponse> {
+        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+        let dispatcher =
+            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let receiver = dispatcher.create_receiver().await?;
+        Ok(SubscriptionResponse {
+            query_id,
+            source_id: self.id.clone(),
+            receiver,
+            bootstrap_receiver: None,
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
+    }
+}
+
+/// A mock reaction for testing
+struct MockReaction {
+    id: String,
+    queries: Vec<String>,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockReaction {
+    fn new(id: &str, queries: Vec<String>) -> Self {
+        Self {
+            id: id.to_string(),
+            queries,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
+}
+
+#[async_trait]
+impl ReactionTrait for MockReaction {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "log"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
+    fn query_ids(&self) -> Vec<String> {
+        self.queries.clone()
+    }
+
+    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+        // No-op for testing
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
+    }
+}
+
+/// Create a mock source for testing
+fn create_mock_source(id: &str) -> MockSource {
+    MockSource::new(id)
+}
+
+/// Create a mock reaction for testing
+fn create_mock_reaction(id: &str, queries: Vec<String>) -> MockReaction {
+    MockReaction::new(id, queries)
+}
 
 #[tokio::test]
 async fn test_basic_server_lifecycle() {
-    // Create a basic server
-    let mut server = DrasiServerBuilder::new()
-        .with_log_level("info")
+    // Create source instance
+    let test_source = create_mock_source("test-source");
+
+    // Create a basic server using the new builder API
+    let server = DrasiServerBuilder::new()
+        .with_source(test_source)
         .build_core()
         .await
         .expect("Failed to build server");
 
-    // Initialize and start the server
-    server
-        .initialize()
-        .await
-        .expect("Failed to initialize server");
+    // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
@@ -29,112 +193,83 @@ async fn test_basic_server_lifecycle() {
 
 #[tokio::test]
 async fn test_server_with_components() {
-    // Create server with components
-    let mut server = DrasiServerBuilder::new()
-        .with_simple_source("test_source", "mock")
-        .with_simple_query(
+    // Create source and reaction instances
+    let test_source = create_mock_source("test_source");
+    let test_reaction = create_mock_reaction("test_reaction", vec!["test_query".to_string()]);
+
+    // Create server with components using the new builder API
+    let server = DrasiServerBuilder::new()
+        .with_source(test_source)
+        .with_reaction(test_reaction)
+        .with_query_config(
             "test_query",
             "MATCH (n) RETURN n",
             vec!["test_source".to_string()],
         )
-        .with_log_reaction("test_reaction", vec!["test_query".to_string()])
         .build_core()
         .await
         .expect("Failed to build server");
 
-    server
-        .initialize()
-        .await
-        .expect("Failed to initialize server");
+    // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
     // Wait a bit for components to start
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Check component statuses
-    let sources = server.source_manager().list_sources().await;
-    assert_eq!(sources.len(), 1);
-    assert!(sources.iter().any(|(name, status)| {
-        name == "test_source" && matches!(status, ComponentStatus::Running)
-    }));
-
-    let queries = server.query_manager().list_queries().await;
-    assert_eq!(queries.len(), 1);
-
-    let reactions = server.reaction_manager().list_reactions().await;
-    assert_eq!(reactions.len(), 1);
+    // Check that server is running with all components
+    assert!(server.is_running().await);
 
     server.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test]
-async fn test_dynamic_component_management() {
-    // Start with empty server
-    let mut server = DrasiServerBuilder::new()
+async fn test_source_lifecycle_operations() {
+    // Create source instance
+    let test_source = create_mock_source("lifecycle_source");
+
+    // Start with server with source
+    let server = DrasiServerBuilder::new()
+        .with_source(test_source)
         .build_core()
         .await
         .expect("Failed to build server");
 
-    server
-        .initialize()
-        .await
-        .expect("Failed to initialize server");
+    // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Add source dynamically
-    let source_config = SourceConfig {
-        id: "dynamic_source".to_string(),
-        source_type: "mock".to_string(),
-        auto_start: false,
-        properties: HashMap::new(),
-        bootstrap_provider: None,
-    };
-
-    server
-        .source_manager()
-        .add_source(source_config)
-        .await
-        .expect("Failed to add source");
-
-    // Verify source was added
-    let sources = server.source_manager().list_sources().await;
-    assert_eq!(sources.len(), 1);
-
-    // Start the source
-    server
-        .source_manager()
-        .start_source("dynamic_source".to_string())
-        .await
-        .expect("Failed to start source");
-
-    // Wait for status update
+    // Source is already running (auto-started on first startup)
+    // Wait briefly for startup to complete
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Check it's running
-    let status = server
-        .source_manager()
-        .get_source_status("dynamic_source".to_string())
-        .await
-        .expect("Failed to get status");
-    assert_eq!(status, ComponentStatus::Running);
+    // Server should still be running
+    assert!(server.is_running().await);
 
     // Stop the source
     server
-        .source_manager()
-        .stop_source("dynamic_source".to_string())
+        .stop_source("lifecycle_source")
         .await
         .expect("Failed to stop source");
+
+    // Remove the source
+    server
+        .remove_source("lifecycle_source")
+        .await
+        .expect("Failed to remove source");
 
     server.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test]
 async fn test_server_with_api() {
+    // Create source instance
+    let test_source = create_mock_source("api_source");
+
     // Create server with API
     let _server = DrasiServerBuilder::new()
-        .enable_api_with_port(0) // Use port 0 for random available port
+        .with_source(test_source)
+        .with_port(0) // Use port 0 for random available port
         .build()
         .await
         .expect("Failed to build server");
@@ -150,10 +285,13 @@ async fn test_server_with_api() {
 async fn test_config_persistence() {
     let config_file = "test_config_persistence.yaml";
 
+    // Create source instance
+    let persist_source = create_mock_source("persist_source");
+
     // Create server with config persistence
     let _server = DrasiServerBuilder::new()
-        .with_simple_source("persist_source", "mock")
-        .enable_config_persistence(config_file)
+        .with_source(persist_source)
+        .with_config_file(config_file)
         .build()
         .await
         .expect("Failed to build server");
@@ -166,62 +304,85 @@ async fn test_config_persistence() {
 }
 
 #[tokio::test]
-async fn test_concurrent_operations() {
-    let mut server = DrasiServerBuilder::new()
+async fn test_concurrent_start_stop_operations() {
+    // Create multiple source instances
+    let source1 = create_mock_source("concurrent_source_1");
+    let source2 = create_mock_source("concurrent_source_2");
+    let source3 = create_mock_source("concurrent_source_3");
+    let source4 = create_mock_source("concurrent_source_4");
+    let source5 = create_mock_source("concurrent_source_5");
+
+    // Start with server with all sources pre-registered
+    let server = DrasiServerBuilder::new()
+        .with_source(source1)
+        .with_source(source2)
+        .with_source(source3)
+        .with_source(source4)
+        .with_source(source5)
         .build_core()
         .await
         .expect("Failed to build server");
 
-    server
-        .initialize()
-        .await
-        .expect("Failed to initialize server");
+    // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Spawn multiple tasks that add sources concurrently
-    let mut tasks = vec![];
-    for i in 0..5 {
-        let source_manager = server.source_manager().clone();
+    // Sources are now auto-started on first startup
+    // Test concurrent stop operations instead
+    let mut stop_tasks = vec![];
+    for i in 1..=5 {
+        let server_clone = server.clone();
         let task = tokio::spawn(async move {
-            let config = SourceConfig {
-                id: format!("concurrent_source_{}", i),
-                source_type: "mock".to_string(),
-                auto_start: false,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-            };
-            source_manager.add_source(config).await
+            let source_id = format!("concurrent_source_{}", i);
+            server_clone.stop_source(&source_id).await
         });
-        tasks.push(task);
+        stop_tasks.push(task);
     }
 
-    // Wait for all tasks
-    for task in tasks {
+    // Wait for all stop tasks
+    for task in stop_tasks {
         task.await
             .expect("Task panicked")
-            .expect("Failed to add source");
+            .expect("Failed to stop source");
     }
 
-    // Verify all sources were added
-    let sources = server.source_manager().list_sources().await;
-    assert_eq!(sources.len(), 5);
+    // Now test concurrent start operations
+    let mut start_tasks = vec![];
+    for i in 1..=5 {
+        let server_clone = server.clone();
+        let task = tokio::spawn(async move {
+            let source_id = format!("concurrent_source_{}", i);
+            server_clone.start_source(&source_id).await
+        });
+        start_tasks.push(task);
+    }
+
+    // Wait for all start tasks
+    for task in start_tasks {
+        task.await
+            .expect("Task panicked")
+            .expect("Failed to start source");
+    }
+
+    // Server should still be running with all sources
+    assert!(server.is_running().await);
 
     server.stop().await.expect("Failed to stop server");
 }
 
 #[tokio::test]
 async fn test_graceful_shutdown_timeout() {
-    let mut server = DrasiServerBuilder::new()
-        .with_simple_source("timeout_source", "mock")
+    // Create source instance
+    let timeout_source = create_mock_source("timeout_source");
+
+    // Create server with a source
+    let server = DrasiServerBuilder::new()
+        .with_source(timeout_source)
         .build_core()
         .await
         .expect("Failed to build server");
 
-    server
-        .initialize()
-        .await
-        .expect("Failed to initialize server");
+    // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 

@@ -2,45 +2,52 @@
 # This example demonstrates using the platform source to consume events from Redis Streams
 # with bootstrap data from a Query API service
 
-# Server configuration
+# Server: Drasi Server configuration
 server:
   host: 0.0.0.0
   port: 8080
   log_level: info
   disable_persistence: true
 
+server_core:
+  id: drasi-platform-example
+
 # Sources: Define where data comes from
 sources:
   # Platform source - connects to Redis Stream to consume events with platform bootstrap
-  - id: platform-redis-source
-    source_type: platform
+  - kind: platform
+    id: platform-redis-source
     auto_start: true
     # Platform bootstrap provider - fetches initial data from Query API
     bootstrap_provider:
       type: platform
       query_api_url: "http://localhost:8082"
       timeout_seconds: 300
-    properties:
-      # Redis connection URL
-      redis_url: "redis://localhost:6379"
+    # Redis connection URL
+    redis_url: "redis://localhost:6379"
 
-      # Redis stream key to read from
-      stream_key: "hello-world-change"
+    # Redis stream key to read from
+    stream_key: "facilities-db-change"
 
-      # Consumer group name for Redis Streams consumer group
-      consumer_group: "drasi-core"
+    # Consumer group name for Redis Streams consumer group
+    consumer_group: "drasi-core"
 
-      # Unique consumer name within the consumer group
-      consumer_name: "consumer-1"
+    # Unique consumer name within the consumer group
+    consumer_name: "consumer-1"
 
-      # Number of events to read per batch (default: 10)
-      batch_size: 10
+    # Number of events to read per batch (default: 10)
+    batch_size: 10
 
-      # Milliseconds to block waiting for new events (default: 5000)
-      block_ms: 5000
+    # Milliseconds to block waiting for new events (default: 5000)
+    block_ms: 5000
 
-      # Stream position: ">" for new events, "0" to replay all (default: ">")
-      start_id: ">"
+    # Stream position: ">" for new events, "0" to replay all (default: ">")
+    start_id: ">"
+
+    # Always recreate consumer group on startup (default: false)
+    # If true, deletes and recreates the consumer group using start_id
+    # If false, uses existing group position (ignores start_id if group exists)
+    # always_create_consumer_group: false
 
 # Queries: Continuous Cypher queries that process incoming data
 queries:
@@ -61,8 +68,8 @@ queries:
 # Reactions: Define what happens with query results
 reactions:
   # Log reaction - prints query results to console for debugging
-  - id: log-hello-world
-    reaction_type: log
+  - kind: log
+    id: log-hello-world
     auto_start: true
     # Queries this reaction subscribes to
     queries:
@@ -70,25 +77,24 @@ reactions:
 
   # Platform reaction - publishes query results to Redis stream in CloudEvent format
   # Results are published to: hello-world-from-results (stream name = query-id + "-results")
-  - id: platform-hello-world-results
-    reaction_type: platform
+  - kind: platform
+    id: platform-hello-world-results
     auto_start: true
     # Queries this reaction subscribes to
     queries:
       - hello-world-from
-    properties:
-      # Redis connection URL (same Redis instance as platform source)
-      redis_url: "redis://localhost:6379"
+    # Redis connection URL (same Redis instance as platform source)
+    redis_url: "redis://localhost:6379"
 
-      # Dapr pubsub component name (used in CloudEvent metadata)
-      pubsub_name: "drasi-pubsub"
+    # Dapr pubsub component name (used in CloudEvent metadata)
+    pubsub_name: "drasi-pubsub"
 
-      # Event source identifier (used in CloudEvent source field)
-      source_name: "drasi-core"
+    # Event source identifier (used in CloudEvent source field)
+    source_name: "drasi-core"
 
-      # Maximum number of messages to retain in the results stream
-      # Uses Redis MAXLEN with approximate trimming (~)
-      max_stream_length: 10000
+    # Maximum number of messages to retain in the results stream
+    # Uses Redis MAXLEN with approximate trimming (~)
+    max_stream_length: 10000
 
-      # Emit lifecycle control events (BootstrapStarted, Running, Stopped, etc.)
-      emit_control_events: true
+    # Emit lifecycle control events (BootstrapStarted, Running, Stopped, etc.)
+    emit_control_events: true

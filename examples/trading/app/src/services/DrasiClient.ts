@@ -18,7 +18,7 @@ import { DrasiSSEClient } from './grpc/SSEClient';
 interface QueryDefinition {
   id: string;
   query: string;
-  sources: string[];
+  source_subscriptions: Array<{ source_id: string; pipeline: string[] }>;
   joins?: QueryJoin[];
 }
 
@@ -78,7 +78,10 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [hasPrice]
     });
 
@@ -87,17 +90,20 @@ export class DrasiClient {
       query: `
         MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)
         OPTIONAL MATCH (s)-[:HAS_PRICE]->(sp:stock_prices)
-        RETURN  p.symbol AS symbol, 
-                s.name AS name, 
-                p.quantity AS quantity, 
-                p.purchase_price AS purchase_price, 
-                sp.price AS current_price, 
-                (sp.price * p.quantity) AS current_value, 
-                (p.purchase_price * p.quantity) AS cost_basis, 
-                ((sp.price - p.purchase_price) * p.quantity) AS profit_loss, 
+        RETURN  p.symbol AS symbol,
+                s.name AS name,
+                p.quantity AS quantity,
+                p.purchase_price AS purchase_price,
+                sp.price AS current_price,
+                (sp.price * p.quantity) AS current_value,
+                (p.purchase_price * p.quantity) AS cost_basis,
+                ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
                 ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [ownsStock, hasPrice]
     });
 
@@ -113,7 +119,10 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                change_percent
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [hasPrice]
     });
 
@@ -129,7 +138,10 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                change_percent
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [hasPrice]
     });
 
@@ -144,7 +156,10 @@ export class DrasiClient {
                sp.volume AS volume,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [hasPrice]
     });
 
@@ -158,7 +173,9 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      sources: ['price-feed'],
+      source_subscriptions: [
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [] // No joins needed - single source
     });
   }
@@ -253,16 +270,15 @@ export class DrasiClient {
         console.log(`Creating SSE reaction: ${this.reactionId}`);
         
         const reactionConfig = {
+          kind: 'sse',
           id: this.reactionId,
-          reaction_type: 'sse',
           queries: Array.from(this.queries.keys()), // This will include price-ticker-query
           auto_start: true,
-          properties: {
-            host: '0.0.0.0',
-            port: 50051,
-            sse_path: '/events',
-            heartbeat_interval_ms: 15000
-          }
+          // SSE reaction config fields (flattened, not in properties)
+          host: '0.0.0.0',
+          port: 50051,
+          sse_path: '/events',
+          heartbeat_interval_ms: 15000
         };
 
         const createResponse = await fetch(`${this.baseUrl}/reactions`, {
@@ -316,7 +332,7 @@ export class DrasiClient {
         const queryConfig = {
           id: queryDef.id,
           query: queryDef.query,
-          sources: queryDef.sources,
+          source_subscriptions: queryDef.source_subscriptions,
           joins: queryDef.joins,
           auto_start: true
         };
@@ -388,7 +404,10 @@ export class DrasiClient {
         RETURN ${allFields.join(',\n               ')}
         ORDER BY sp.volume DESC
       `,
-      sources: ['postgres-stocks', 'price-feed'],
+      source_subscriptions: [
+        { source_id: 'postgres-stocks', pipeline: [] },
+        { source_id: 'price-feed', pipeline: [] }
+      ],
       joins: [hasPrice]
     };
 

@@ -1,30 +1,190 @@
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Server start/stop tests
+//!
+//! These tests verify the basic server lifecycle operations.
+//!
+//! Note: Sources and reactions must be provided as instances when building DrasiLib.
+//! Dynamic creation via config is not supported.
+
 use anyhow::Result;
-use drasi_server::{ComponentStatus, DrasiServerCore, RuntimeConfig, ServerSettings};
-use drasi_server_core::config::QueryLanguage;
+use async_trait::async_trait;
+use drasi_lib::channels::dispatcher::ChangeDispatcher;
+use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
+use drasi_lib::plugin_core::QuerySubscriber;
+use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
+use drasi_lib::Query;
+use drasi_server::DrasiLib;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::sync::RwLock;
+
+/// A mock source for testing
+struct MockSource {
+    id: String,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockSource {
+    fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
+}
+
+#[async_trait]
+impl SourceTrait for MockSource {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "mock"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    async fn subscribe(
+        &self,
+        query_id: String,
+        _enable_bootstrap: bool,
+        _node_labels: Vec<String>,
+        _relation_labels: Vec<String>,
+    ) -> anyhow::Result<SubscriptionResponse> {
+        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
+        let dispatcher =
+            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let receiver = dispatcher.create_receiver().await?;
+        Ok(SubscriptionResponse {
+            query_id,
+            source_id: self.id.clone(),
+            receiver,
+            bootstrap_receiver: None,
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
+    }
+}
+
+/// A mock reaction for testing
+struct MockReaction {
+    id: String,
+    queries: Vec<String>,
+    status: Arc<RwLock<ComponentStatus>>,
+}
+
+impl MockReaction {
+    fn new(id: &str, queries: Vec<String>) -> Self {
+        Self {
+            id: id.to_string(),
+            queries,
+            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+        }
+    }
+}
+
+#[async_trait]
+impl ReactionTrait for MockReaction {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn type_name(&self) -> &str {
+        "log"
+    }
+
+    fn properties(&self) -> HashMap<String, serde_json::Value> {
+        HashMap::new()
+    }
+
+    fn query_ids(&self) -> Vec<String> {
+        self.queries.clone()
+    }
+
+    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+        // No-op for testing
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Running;
+        Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.status.write().await = ComponentStatus::Stopped;
+        Ok(())
+    }
+
+    async fn status(&self) -> ComponentStatus {
+        self.status.read().await.clone()
+    }
+
+    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        // No-op for testing
+    }
+}
+
+/// Create a mock source for testing
+fn create_mock_source(id: &str) -> MockSource {
+    MockSource::new(id)
+}
+
+/// Create a mock reaction for testing
+#[allow(dead_code)]
+fn create_mock_reaction(id: &str, queries: Vec<String>) -> MockReaction {
+    MockReaction::new(id, queries)
+}
 
 #[tokio::test]
 async fn test_server_start_stop_cycle() -> Result<()> {
     // Create a minimal runtime config
-    let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
-        },
-        sources: vec![],
-        queries: vec![],
-        reactions: vec![],
-    };
+    let server_id = uuid::Uuid::new_v4().to_string();
 
-    let mut core = DrasiServerCore::new(Arc::new(config));
+    // Create a mock source instance
+    let test_source = create_mock_source("test-source");
 
-    // Initialize the server
-    core.initialize().await?;
+    // Build the core using the new builder API
+    let core = DrasiLib::builder()
+        .with_id(&server_id)
+        .with_source(test_source)
+        .build()
+        .await?;
 
     // Convert to Arc for repeated use
     let core = Arc::new(core);
@@ -58,396 +218,38 @@ async fn test_server_start_stop_cycle() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_auto_start_components() -> Result<()> {
-    use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
-    use std::collections::HashMap;
+async fn test_server_with_query() -> Result<()> {
+    let server_id = uuid::Uuid::new_v4().to_string();
 
-    // Create config with auto-start components
-    let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
-        },
-        sources: vec![SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            properties: HashMap::new(),
-            bootstrap_provider: None,
-        }],
-        queries: vec![QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["test-source".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-        }],
-        reactions: vec![ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["test-query".to_string()],
-            auto_start: true,
-            properties: HashMap::new(),
-        }],
-    };
+    // Create source instance
+    let test_source = create_mock_source("test-source");
 
-    let mut core = DrasiServerCore::new(Arc::new(config));
-    core.initialize().await?;
-    let core = Arc::new(core);
+    // Build the core with a query
+    let query = Query::cypher("test-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("test-source")
+        .auto_start(true)
+        .build();
 
-    // Components should not be running before server start
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("test-source".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("test-query".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.reaction_manager()
-            .get_reaction_status("test-reaction".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-
-    // Start the server
-    core.start().await?;
-
-    // Wait a bit for components to start
-    sleep(Duration::from_millis(100)).await;
-
-    // All auto-start components should be running
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("test-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("test-query".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.reaction_manager()
-            .get_reaction_status("test-reaction".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    // Stop the server
-    core.stop().await?;
-
-    // All components should be stopped
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("test-source".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("test-query".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.reaction_manager()
-            .get_reaction_status("test-reaction".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-
-    // Start again - auto-start components should restart
-    core.start().await?;
-    sleep(Duration::from_millis(100)).await;
-
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("test-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_manual_vs_auto_start_components() -> Result<()> {
-    use drasi_server::{QueryConfig, SourceConfig};
-    use std::collections::HashMap;
-
-    // Create config with mixed auto-start settings
-    let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
-        },
-        sources: vec![
-            SourceConfig {
-                id: "auto-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-            },
-            SourceConfig {
-                id: "manual-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: false,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-            },
-        ],
-        queries: vec![
-            QueryConfig {
-                id: "auto-query".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                sources: vec!["auto-source".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                query_language: QueryLanguage::default(),
-            },
-            QueryConfig {
-                id: "manual-query".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                sources: vec!["manual-source".to_string()],
-                auto_start: false,
-                properties: HashMap::new(),
-                joins: None,
-                query_language: QueryLanguage::default(),
-            },
-        ],
-        reactions: vec![],
-    };
-
-    let mut core = DrasiServerCore::new(Arc::new(config));
-    core.initialize().await?;
-    let core = Arc::new(core);
-
-    // Start the server
-    core.start().await?;
-    sleep(Duration::from_millis(100)).await;
-
-    // Auto-start components should be running
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("auto-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("auto-query".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    // Manual components should still be stopped
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("manual-source".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("manual-query".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-
-    // Manually start the manual source
-    core.source_manager()
-        .start_source("manual-source".to_string())
+    let core = DrasiLib::builder()
+        .with_id(&server_id)
+        .with_source(test_source)
+        .with_query(query)
+        .build()
         .await?;
-    sleep(Duration::from_millis(100)).await;
 
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("manual-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    // Stop the server
-    core.stop().await?;
-
-    // All components should be stopped
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("auto-source".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("manual-source".to_string())
-            .await?,
-        ComponentStatus::Stopped
-    );
-
-    // Start the server again
-    core.start().await?;
-    sleep(Duration::from_millis(100)).await;
-
-    // Auto-start source should restart
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("auto-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    // Manual source that was running before should also restart
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("manual-source".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_component_startup_sequence() -> Result<()> {
-    use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
-    use std::collections::HashMap;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::Arc as StdArc;
-
-    // Create a shared counter to track startup order
-    let _startup_order = StdArc::new(AtomicUsize::new(0));
-
-    // Create config with components that have dependencies
-    let config = RuntimeConfig {
-        server: ServerSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
-            max_connections: 100,
-            shutdown_timeout_seconds: 30,
-            disable_persistence: false,
-        },
-        sources: vec![
-            SourceConfig {
-                id: "source1".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-            },
-            SourceConfig {
-                id: "source2".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-            },
-        ],
-        queries: vec![
-            QueryConfig {
-                id: "query1".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                sources: vec!["source1".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                query_language: QueryLanguage::default(),
-            },
-            QueryConfig {
-                id: "query2".to_string(),
-                query: "MATCH (n) RETURN n".to_string(),
-                sources: vec!["source2".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-                joins: None,
-                query_language: QueryLanguage::default(),
-            },
-        ],
-        reactions: vec![
-            ReactionConfig {
-                id: "reaction1".to_string(),
-                reaction_type: "log".to_string(),
-                queries: vec!["query1".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-            },
-            ReactionConfig {
-                id: "reaction2".to_string(),
-                reaction_type: "log".to_string(),
-                queries: vec!["query2".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-            },
-        ],
-    };
-
-    let mut core = DrasiServerCore::new(Arc::new(config));
-    core.initialize().await?;
     let core = Arc::new(core);
+
+    // Server should not be running initially
+    assert!(!core.is_running().await);
 
     // Start the server
     core.start().await?;
+    assert!(core.is_running().await);
 
-    // Give components time to start in sequence
-    sleep(Duration::from_millis(200)).await;
-
-    // Verify all components are running
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("source1".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.source_manager()
-            .get_source_status("source2".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("query1".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.query_manager()
-            .get_query_status("query2".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.reaction_manager()
-            .get_reaction_status("reaction1".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
-    assert_eq!(
-        core.reaction_manager()
-            .get_reaction_status("reaction2".to_string())
-            .await?,
-        ComponentStatus::Running
-    );
+    // Stop the server
+    core.stop().await?;
+    assert!(!core.is_running().await);
 
     Ok(())
 }

@@ -30,6 +30,24 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Function to kill process on port
+kill_port() {
+    local port=$1
+    local service_name=$2
+    local pid=$(lsof -ti:$port 2>/dev/null)
+
+    if [ -n "$pid" ]; then
+        if kill -9 $pid 2>/dev/null; then
+            echo -e "Killed $service_name on port $port (PID: $pid) ${GREEN}✓${NC}"
+            return 0
+        else
+            echo -e "Failed to kill $service_name on port $port ${RED}✗${NC}"
+            return 1
+        fi
+    fi
+    return 2
+}
+
 # Stop processes using saved PIDs
 if [ -f /tmp/drasi-demo-generator.pid ]; then
     PID=$(cat /tmp/drasi-demo-generator.pid)
@@ -59,6 +77,46 @@ if [ -f /tmp/drasi-demo-server.pid ]; then
         echo -e "Drasi Server already stopped ${YELLOW}✓${NC}"
     fi
     rm /tmp/drasi-demo-server.pid
+fi
+
+# Kill processes on known ports (fallback if PIDs not saved)
+echo ""
+echo "Checking for processes on demo ports..."
+
+# Port 8080: Drasi Server API
+result=$(kill_port 8080 "Drasi Server API")
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "$result"
+elif [ $ret -eq 2 ]; then
+    echo -e "Port 8080: ${YELLOW}No process found${NC}"
+fi
+
+# Port 9000: HTTP Source
+result=$(kill_port 9000 "HTTP Source")
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "$result"
+elif [ $ret -eq 2 ]; then
+    echo -e "Port 9000: ${YELLOW}No process found${NC}"
+fi
+
+# Port 5173: React app (Vite)
+result=$(kill_port 5173 "React app")
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "$result"
+elif [ $ret -eq 2 ]; then
+    echo -e "Port 5173: ${YELLOW}No process found${NC}"
+fi
+
+# Port 50051: SSE Stream
+result=$(kill_port 50051 "SSE Stream")
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "$result"
+elif [ $ret -eq 2 ]; then
+    echo -e "Port 50051: ${YELLOW}No process found${NC}"
 fi
 
 # Stop PostgreSQL

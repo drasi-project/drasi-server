@@ -20,24 +20,14 @@
 @port = 8080
 @source_id = price-feed
 
-### Homepage
-GET http://{{hostname}}:{{port}}/
-
 ### GET LIST of all sources
 GET http://{{hostname}}:{{port}}/sources
 
 ### GET STATE of a specific source
 GET http://{{hostname}}:{{port}}/sources/{{source_id}}
 
-### GET RESULTS of a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/results
-
 ### START a specific source
 GET http://{{hostname}}:{{port}}/sources/{{source_id}}/start
-Content-Type: application/json
-
-### PAUSE a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/pause
 Content-Type: application/json
 
 ### STOP a specific source
