@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// DevSkim: ignore DS137138 - localhost is used for unit test configuration only
+// DevSkim: ignore DS162092 - localhost/127.0.0.1 is used for unit test configuration only
+
 /// Integration tests for configuration persistence
 /// Tests that API mutations are saved to config file
 use drasi_server::{DrasiServerConfig, QueryConfig, ReactionConfig, SourceConfig};
