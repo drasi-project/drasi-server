@@ -59,7 +59,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sources: vec![], // Add sources using SourceConfig enum
         reactions: vec![], // Add reactions using ReactionConfig enum
         core_config: drasi_lib::config::DrasiLibConfig {
-            server_core: drasi_lib::config::DrasiLibSettings::default(),
+            id: uuid::Uuid::new_v4().to_string(),
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
             queries: vec![available_drivers_query, pending_orders_query],
             storage_backends: vec![],
         },

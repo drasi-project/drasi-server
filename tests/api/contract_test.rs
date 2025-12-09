@@ -4,7 +4,7 @@
 //! They test request/response formats, status codes, and data schemas.
 
 use drasi_lib::channels::ComponentStatus;
-use drasi_lib::{QueryConfig, ReactionConfig, SourceConfig};
+use drasi_lib::QueryConfig;
 use drasi_server::api::handlers::ApiResponse;
 use serde_json::json;
 
@@ -72,41 +72,6 @@ mod contract_tests {
     }
 
     #[test]
-    fn test_source_config_serialization() {
-        let config = SourceConfig::new("test-source", "mock")
-            .with_auto_start(true)
-            .with_property("interval_ms", 1000)
-            .with_property("data_type", "counter");
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-source");
-        assert_eq!(json["source_type"], "mock");
-        assert_eq!(json["auto_start"], true);
-        // Properties are stored in the properties field
-        assert_eq!(json["properties"]["interval_ms"], 1000);
-        assert_eq!(json["properties"]["data_type"], "counter");
-    }
-
-    #[test]
-    fn test_source_config_deserialization() {
-        let json = json!({
-            "id": "test-source",
-            "source_type": "mock",
-            "auto_start": false,
-            "properties": {
-                "interval_ms": 2000,
-                "data_type": "sensor"
-            }
-        });
-
-        let config: SourceConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type, "mock");
-        assert!(!config.auto_start);
-        assert_eq!(config.properties["interval_ms"], 2000);
-    }
-
-    #[test]
     fn test_query_config_serialization() {
         use drasi_lib::Query;
 
@@ -120,9 +85,9 @@ mod contract_tests {
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
         assert_eq!(json["query"], "MATCH (n:Node) RETURN n");
-        assert_eq!(json["source_subscriptions"].as_array().unwrap().len(), 2);
-        assert_eq!(json["source_subscriptions"][0]["source_id"], "source1");
-        assert_eq!(json["source_subscriptions"][1]["source_id"], "source2");
+        assert_eq!(json["sources"].as_array().unwrap().len(), 2);
+        assert_eq!(json["sources"][0]["source_id"], "source1");
+        assert_eq!(json["sources"][1]["source_id"], "source2");
         assert_eq!(json["auto_start"], true);
     }
 
@@ -131,7 +96,7 @@ mod contract_tests {
         let json = json!({
             "id": "test-query",
             "query": "MATCH (p:Person) WHERE p.age > 21 RETURN p",
-            "source_subscriptions": [
+            "sources": [
                 {
                     "source_id": "postgres-db",
                     "pipeline": []
@@ -146,41 +111,6 @@ mod contract_tests {
         assert_eq!(config.sources.len(), 1);
         assert_eq!(config.sources[0].source_id, "postgres-db");
         assert!(!config.auto_start);
-    }
-
-    #[test]
-    fn test_reaction_config_serialization() {
-        let config = ReactionConfig::new("test-reaction", "http")
-            .with_query("query1")
-            .with_query("query2")
-            .with_auto_start(true)
-            .with_property("base_url", "http://example.com/webhook");
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-reaction");
-        assert_eq!(json["reaction_type"], "http");
-        assert_eq!(json["queries"], json!(["query1", "query2"]));
-        assert_eq!(json["auto_start"], true);
-        assert_eq!(json["properties"]["base_url"], "http://example.com/webhook");
-    }
-
-    #[test]
-    fn test_reaction_config_deserialization() {
-        let json = json!({
-            "id": "log-reaction",
-            "reaction_type": "log",
-            "queries": ["query1"],
-            "auto_start": true,
-            "properties": {
-                "log_level": "info"
-            }
-        });
-
-        let config: ReactionConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.id, "log-reaction");
-        assert_eq!(config.reaction_type, "log");
-        assert_eq!(config.queries, vec!["query1"]);
-        assert_eq!(config.properties["log_level"], "info");
     }
 
     #[test]
@@ -276,27 +206,6 @@ mod contract_tests {
     }
 
     #[test]
-    fn test_optional_properties() {
-        // Test that configs with and without custom properties work correctly
-        let config_with_props = ReactionConfig::new("r1", "http")
-            .with_query("q1")
-            .with_auto_start(false)
-            .with_property("base_url", "http://example.com");
-
-        let config_without_props = ReactionConfig::new("r2", "log")
-            .with_query("q2")
-            .with_auto_start(true)
-            .with_property("log_level", "info");
-
-        // Both should serialize successfully with typed config fields
-        let json1 = serde_json::to_value(&config_with_props).unwrap();
-        let json2 = serde_json::to_value(&config_without_props).unwrap();
-
-        assert_eq!(json1["properties"]["base_url"], "http://example.com");
-        assert_eq!(json2["properties"]["log_level"], "info");
-    }
-
-    #[test]
     fn test_idempotent_response_format() {
         // Test the response format for idempotent operations
         let status_json = json!({
@@ -328,19 +237,6 @@ mod edge_case_tests {
     use super::*;
 
     #[test]
-    fn test_special_characters_in_ids() {
-        let config = SourceConfig::new("source-with-dashes_and_underscores.123", "mock")
-            .with_auto_start(false);
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "source-with-dashes_and_underscores.123");
-
-        // Should deserialize back correctly
-        let deserialized: SourceConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(deserialized.id, config.id);
-    }
-
-    #[test]
     fn test_very_long_query_string() {
         use drasi_lib::Query;
 
@@ -356,28 +252,6 @@ mod edge_case_tests {
     }
 
     #[test]
-    fn test_unicode_in_properties() {
-        let config = SourceConfig::new("unicode-source", "mock")
-            .with_auto_start(false)
-            .with_property("data_type", "Hello 世界 🌍");
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["properties"]["data_type"], "Hello 世界 🌍");
-    }
-
-    #[test]
-    fn test_nested_json_in_properties() {
-        let config = ReactionConfig::new("nested-reaction", "http")
-            .with_query("q1")
-            .with_auto_start(false)
-            .with_property("base_url", "http://example.com");
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(config.queries, vec!["q1"]);
-        assert_eq!(json["properties"]["base_url"], "http://example.com");
-    }
-
-    #[test]
     fn test_empty_strings() {
         use drasi_lib::Query;
 
@@ -389,36 +263,7 @@ mod edge_case_tests {
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["query"], "");
-        assert_eq!(json["source_subscriptions"], json!([]));
-    }
-
-    #[test]
-    fn test_null_vs_missing_properties() {
-        // Test that configs work with required and optional fields
-        let json_full = json!({
-            "id": "reaction1",
-            "reaction_type": "log",
-            "queries": ["q1"],
-            "auto_start": false,
-            "properties": {
-                "log_level": "debug"
-            }
-        });
-
-        let json_minimal = json!({
-            "id": "reaction2",
-            "reaction_type": "log",
-            "queries": ["q1"],
-            "auto_start": false
-        });
-
-        let config1: ReactionConfig = serde_json::from_value(json_full).unwrap();
-        let config2: ReactionConfig = serde_json::from_value(json_minimal).unwrap();
-
-        // Both should serialize successfully with typed config fields
-        let json1 = serde_json::to_value(&config1).unwrap();
-        let _json2 = serde_json::to_value(&config2).unwrap();
-        assert_eq!(json1["properties"]["log_level"], "debug");
+        assert_eq!(json["sources"], json!([]));
     }
 }
 
@@ -427,44 +272,15 @@ mod validation_tests {
     use super::*;
 
     #[test]
-    fn test_invalid_json_rejection() {
-        let invalid_source = json!({
-            "id": "test",
-            // Missing required field: source_type
-            "auto_start": true
-        });
-
-        let result: Result<SourceConfig, _> = serde_json::from_value(invalid_source);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_type_mismatch_rejection() {
         let invalid_query = json!({
             "id": "test",
             "query": "MATCH (n) RETURN n",
-            "source_subscriptions": "should-be-array", // Wrong type - should be array
+            "sources": "should-be-array", // Wrong type - should be array
             "auto_start": false
         });
 
         let result: Result<QueryConfig, _> = serde_json::from_value(invalid_query);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_additional_fields_allowed() {
-        // Additional fields should be ignored (forward compatibility)
-        let json_with_extra = json!({
-            "id": "test-source",
-            "source_type": "mock",
-            "auto_start": false,
-            "properties": {},
-            "future_field": "ignored", // Extra field
-            "another_field": 123       // Another extra field
-        });
-
-        let config: SourceConfig = serde_json::from_value(json_with_extra).unwrap();
-        assert_eq!(config.id, "test-source");
-        assert_eq!(config.source_type, "mock");
     }
 }

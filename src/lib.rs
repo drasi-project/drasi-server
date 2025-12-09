@@ -44,4 +44,4 @@ pub use drasi_lib::{
 // Re-export types from internal modules (these are visible but marked as internal)
 // We need these for the wrapper API functionality
 pub use drasi_lib::channels::ComponentStatus;
-pub use drasi_lib::config::{DrasiLibSettings, QueryJoinConfig, QueryJoinKeyConfig};
+pub use drasi_lib::config::{QueryJoinConfig, QueryJoinKeyConfig};
