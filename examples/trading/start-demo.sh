@@ -21,6 +21,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRASI_SERVER_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
+
+# Create logs directory if it doesn't exist
+mkdir -p "$LOG_DIR"
 
 echo "======================================"
 echo "   Drasi Trading Demo Startup"
@@ -135,7 +139,7 @@ echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamica
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
-    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > /tmp/drasi-server.log 2>&1 &
+    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
 echo "Replication source will bootstrap initial data from PostgreSQL..."
@@ -147,7 +151,7 @@ sleep 2
 if ! kill -0 $DRASI_PID 2>/dev/null; then
     echo -e "${RED}✗ Drasi Server failed to start${NC}"
     echo "Checking log for errors..."
-    tail -10 /tmp/drasi-server.log | grep -E "ERROR|Error|error" || tail -5 /tmp/drasi-server.log
+    tail -10 "$LOG_DIR/drasi-server.log" | grep -E "ERROR|Error|error" || tail -5 "$LOG_DIR/drasi-server.log"
     echo ""
     echo "Common issues:"
     echo "  - Port 8080 already in use (check with: lsof -i :8080)"
@@ -162,7 +166,7 @@ fi
 if ! wait_for_service "http://localhost:8080/health" "Drasi Server"; then
     echo -e "${RED}✗ Drasi Server API is not responding${NC}"
     echo "Server process is running but API is not available"
-    echo "Check logs: tail -50 /tmp/drasi-server.log"
+    echo "Check logs: tail -50 $LOG_DIR/drasi-server.log"
     kill $DRASI_PID 2>/dev/null
     exit 1
 fi
@@ -194,7 +198,7 @@ fi
 
 # Step 4: Start React app
 echo "Starting React application..."
-npm run dev > /tmp/react-app.log 2>&1 &
+npm run dev > "$LOG_DIR/react-app.log" 2>&1 &
 REACT_PID=$!
 echo "React app started with PID: $REACT_PID"
 
@@ -214,7 +218,7 @@ fi
 
 # Step 6: Start price generator
 echo "Starting simple price generator..."
-python3 simple_price_generator.py > /tmp/price-generator.log 2>&1 &
+python3 simple_price_generator.py > "$LOG_DIR/price-generator.log" 2>&1 &
 GENERATOR_PID=$!
 echo "Price generator started with PID: $GENERATOR_PID"
 
@@ -236,9 +240,9 @@ echo "  • React App: $REACT_PID"
 echo "  • Price Generator: $GENERATOR_PID"
 echo ""
 echo "Logs are available at:"
-echo "  • Drasi Server: /tmp/drasi-server.log"
-echo "  • React App: /tmp/react-app.log"
-echo "  • Price Generator: /tmp/price-generator.log"
+echo "  • Drasi Server: $LOG_DIR/drasi-server.log"
+echo "  • React App: $LOG_DIR/react-app.log"
+echo "  • Price Generator: $LOG_DIR/price-generator.log"
 echo ""
 echo "To stop the demo, run: ./stop-demo.sh"
 echo ""

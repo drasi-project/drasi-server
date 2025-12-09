@@ -1,5 +1,8 @@
 //! Main entry point for API test suite
 
+#[path = "api/test_utils.rs"]
+mod test_utils;
+
 #[path = "api/contract_test.rs"]
 mod contract_test;
 

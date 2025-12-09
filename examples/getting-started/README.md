@@ -1,333 +1,453 @@
 # Getting Started with Drasi Server
 
-This is a minimal example to help you quickly understand Drasi Server's core concepts. You'll learn how to:
+This tutorial helps you create your first change-driven solution using Drasi Server. In approximately 15-20 minutes, you'll have a complete working system with PostgreSQL Change Data Capture (CDC), continuous queries, and real-time streaming reactions.
 
-- Ingest data using an **HTTP Source**
-- Load initial data with a **Bootstrap Provider**
-- Process data with a **Continuous Query**
-- Output results using a **Reaction**
-- View query results via API
+This tutorial mirrors the [Drasi Platform getting-started tutorial](https://drasi.io/getting-started/) but demonstrates the standalone Drasi Server approach without Kubernetes.
 
 ## What You'll Build
 
-A simple product catalog system that:
-1. Loads initial products from a file
-2. Accepts product updates via HTTP
-3. Continuously queries for products over $50
-4. Logs matching products to the console
+A message tracking system that:
+- Captures changes from a PostgreSQL database in real-time
+- Runs continuous queries that automatically update when data changes
+- Streams results to your browser via Server-Sent Events (SSE)
+- Logs all changes to the console
 
 ## Architecture
 
 ```
-HTTP Source (port 9000)          Continuous Query              Log Reaction
-     │                                  │                            │
-     │  POST /products        ┌─────────▼─────────┐                 │
-     ├───────────────────────>│  MATCH (p:Product) │                │
-     │                        │  WHERE p.price > 50│                │
-     │  Bootstrap Provider    │  RETURN p.*        │                │
-     │  (products.jsonl)      └─────────┬─────────┘                 │
-     └───────────────────────>          │                           │
-                                         └──────> Results ──────────>│
-                                                                     │
-                                                            Console Output
+┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  PostgreSQL DB  │────▶│    Drasi Server      │────▶│  Browser (SSE)  │
+│  (Replication)  │ WAL │                      │ SSE │  viewer/index   │
+│                 │     │  Source:             │     │     .html       │
+│  Table:         │     │  - postgres-messages │     └─────────────────┘
+│  • message      │     │                      │
+│                 │     │  Queries:            │     ┌─────────────────┐
+└─────────────────┘     │  - hello-world-from  │────▶│  Console (Log)  │
+                        │  - message-count     │ Log │  reaction       │
+                        │  - inactive-people   │     │                 │
+                        │                      │     └─────────────────┘
+                        │  Reactions:          │
+                        │  - log-all-queries   │     ┌─────────────────┐
+                        │  - sse-stream        │────▶│  REST API       │
+                        │                      │     │  port 8080      │
+                        └──────────────────────┘     └─────────────────┘
 ```
+
+### Data Flow
+
+1. **PostgreSQL Source** captures changes via logical replication (WAL)
+2. **Continuous Queries** filter and aggregate the data
+3. **Reactions** deliver results to console and browser in real-time
 
 ## Prerequisites
 
-- Rust and Cargo (1.70 or later)
-- `curl` command-line tool
-- `jq` for JSON formatting (optional, for view-results.sh)
+Before you begin, ensure you have:
+
+- **Docker**: Required to run PostgreSQL
+  - [Install Docker](https://docs.docker.com/get-docker/)
+- **Rust/Cargo**: Required to build Drasi Server
+  - [Install Rust](https://rustup.rs/)
+- **psql** (optional): For manual database queries
+  - macOS: `brew install postgresql`
+  - Ubuntu: `sudo apt-get install postgresql-client`
 
 ## Quick Start
 
-### 1. Start the Drasi Server
+### Step 1: Start PostgreSQL Database
+
+Open a terminal in this directory and run:
 
 ```bash
-./scripts/start-server.sh
+cd scripts
+./setup-database.sh
 ```
 
-This builds and starts the server with:
-- **API Server** on http://localhost:8080
-- **HTTP Source** on http://localhost:9000
+This will:
+- Start PostgreSQL with logical replication enabled
+- Create the `message` table
+- Insert initial sample data
+- Set up replication slots for CDC
 
-### 2. View Bootstrap Data in Logs
+You'll see the initial messages:
 
-Watch the console output. You'll see the initial products loaded from `data/products.jsonl`:
+| messageid | from            | message                 |
+|-----------|-----------------|-------------------------|
+| 1         | Buzz Lightyear  | To infinity and beyond! |
+| 2         | Brian Kernighan | Hello World             |
+| 3         | Antoninus       | I am Spartacus          |
+| 4         | David           | I am Spartacus          |
 
-```
-[LOG REACTION] expensive-products:
-  - Wireless Headphones ($79.99)
-  - Coffee Maker ($129.99)
-  - Running Shoes ($89.99)
-  - Bluetooth Speaker ($59.99)
-  ...
-```
+### Step 2: Start Drasi Server
 
-### 3. Add a New Product
-
-In a new terminal, add a product priced over $50:
+In a **new terminal**, run:
 
 ```bash
-curl -X POST http://localhost:9000/sources/products-source/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "insert",
-    "element": {
-      "type": "node",
-      "id": "prod-009",
-      "labels": ["Product"],
-      "properties": {
-        "id": "prod-009",
-        "name": "Gaming Mouse",
-        "price": 69.99,
-        "category": "Electronics",
-        "in_stock": true
-      }
-    }
-  }'
+cd scripts
+./start-server.sh
 ```
 
-Or use the helper script:
+This will:
+- Build Drasi Server in release mode
+- Start the server with the tutorial configuration
+- Connect to PostgreSQL and begin capturing changes
+
+You'll see log output showing:
+- Source connecting to PostgreSQL
+- Queries starting and bootstrapping
+- Initial results from the bootstrap phase
+
+### Step 3: View Real-Time Results
+
+**Option A: Browser (Recommended)**
+
+In a **new terminal**, run:
 
 ```bash
-./scripts/add-product.sh prod-009 "Gaming Mouse" 69.99 Electronics true
+cd scripts
+./open-viewer.sh
 ```
 
-Watch the server logs - you'll see the new product appear in the query results!
+This starts a local HTTP server and opens the viewer in your browser. The viewer connects to the SSE stream and displays:
+- `hello-world-from`: Messages containing "Hello World"
+- `message-count`: Message frequency counts
+- Change log showing all changes
 
-### 4. View Query Results via API
+> **Note**: The viewer must be served via HTTP (not opened as a file) because browsers block cross-origin SSE requests from `file://` URLs.
 
-Get current query results:
+**Option B: Terminal**
 
 ```bash
-curl http://localhost:8080/queries/expensive-products/results | jq '.'
+cd scripts
+./stream-events.sh
 ```
 
-Or use the helper script:
+This connects to the SSE endpoint and displays changes in the terminal.
+
+**Option C: API**
 
 ```bash
-./scripts/view-results.sh
+cd scripts
+./view-results.sh
 ```
 
-You'll see JSON output with all products priced over $50.
+This queries the REST API for current results.
 
-### 5. Update a Product
+### Step 4: Make Database Changes
 
-Update the price of an existing product:
+Now let's see the system react to changes! In a **new terminal**:
+
+**Add a "Hello World" message:**
+```bash
+cd scripts
+./add-message.sh "Alice" "Hello World"
+```
+
+Watch the browser/console - you'll see:
+- `hello-world-from` gains a new entry (Alice)
+- `message-count` updates the "Hello World" frequency
+
+**Add a different message:**
+```bash
+./add-message.sh "Bob" "Goodbye World"
+```
+
+Watch the results:
+- `message-count` gains a new "Goodbye World" entry
+- `hello-world-from` doesn't change (not "Hello World")
+
+**Wait 20 seconds**, then watch:
+- `inactive-people` starts showing users as they become inactive
+- This demonstrates time-based continuous queries
+
+**Delete a message:**
+```bash
+./delete-message.sh 2
+```
+
+Watch the results:
+- `hello-world-from` loses Brian Kernighan
+- `message-count` decreases "Hello World" frequency
+
+### Step 5: Cleanup
+
+When you're done:
 
 ```bash
-curl -X POST http://localhost:9000/sources/products-source/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "update",
-    "element": {
-      "type": "node",
-      "id": "prod-001",
-      "labels": ["Product"],
-      "properties": {
-        "id": "prod-001",
-        "name": "Wireless Headphones Pro",
-        "price": 99.99,
-        "category": "Electronics",
-        "in_stock": true
-      }
-    }
-  }'
+cd scripts
+./cleanup.sh
 ```
 
-Or use the helper script:
-
+To also remove the database volume:
 ```bash
-./scripts/update-product.sh prod-001 "Wireless Headphones Pro" 99.99 Electronics true
+./cleanup.sh --volumes
 ```
 
-The query automatically re-evaluates and updates the results!
+## Understanding the Components
 
-### 6. Delete a Product
+### PostgreSQL Source
 
-Remove a product from the catalog:
-
-```bash
-curl -X POST http://localhost:9000/sources/products-source/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "delete",
-    "id": "prod-005",
-    "labels": ["Product"]
-  }'
-```
-
-Or use the helper script:
-
-```bash
-./scripts/delete-product.sh prod-005
-```
-
-The product is removed from query results immediately.
-
-## HTTP Source API Reference
-
-The HTTP source accepts events in **Direct Format** at `http://localhost:9000/sources/products-source/events`:
-
-### Node Insert
-```json
-{
-  "operation": "insert",
-  "element": {
-    "type": "node",
-    "id": "unique-id",
-    "labels": ["Product"],
-    "properties": {
-      "id": "unique-id",
-      "name": "Product Name",
-      "price": 99.99,
-      "category": "Category",
-      "in_stock": true
-    }
-  }
-}
-```
-
-### Node Update
-```json
-{
-  "operation": "update",
-  "element": {
-    "type": "node",
-    "id": "existing-id",
-    "labels": ["Product"],
-    "properties": {
-      "id": "existing-id",
-      "name": "Updated Name",
-      "price": 149.99,
-      "category": "Category",
-      "in_stock": false
-    }
-  }
-}
-```
-
-### Node Delete
-```json
-{
-  "operation": "delete",
-  "id": "existing-id",
-  "labels": ["Product"]
-}
-```
-
-## Viewing Results
-
-### Method 1: Server Logs
-The log reaction prints results to the console in real-time. Watch for lines starting with `[LOG REACTION]`.
-
-### Method 2: REST API
-Query the current results at any time:
-
-```bash
-GET http://localhost:8080/queries/expensive-products/results
-```
-
-The API returns a JSON array of all current query results.
-
-## Understanding the Cypher Query
-
-The query in this example is:
-
-```cypher
-MATCH (p:Product)
-WHERE p.price > 50
-RETURN p.id, p.name, p.price, p.category, p.in_stock
-```
-
-Breaking it down:
-- `MATCH (p:Product)` - Find all nodes with label "Product"
-- `WHERE p.price > 50` - Filter for products priced over $50
-- `RETURN p.*` - Return all properties of matching products
-
-This is a **continuous query** - it automatically updates whenever data changes!
-
-## Understanding Bootstrap
-
-The bootstrap provider loads initial data when the server starts:
+The source connects to PostgreSQL using logical replication (WAL) to capture all changes:
 
 ```yaml
-bootstrap:
-  provider: script_file
-  config:
-    file_path: examples/getting-started/data/products.jsonl
+sources:
+  - kind: postgres
+    id: postgres-messages
+    host: localhost
+    port: 5432
+    database: getting_started
+    tables:
+      - message
+    slot_name: drasi_getting_started_slot
+    publication_name: drasi_getting_started_pub
+    bootstrap_provider:
+      type: postgres
 ```
 
-The `products.jsonl` file uses **JSON Lines format** (one JSON object per line):
+Key features:
+- **WAL Replication**: Zero-polling change detection
+- **Bootstrap**: Loads existing data on startup
+- **Tables**: Specifies which tables to monitor
 
-```jsonl
-{"op":"Header","desc":"Initial product catalog","ts":0}
-{"op":"NodeInsert","labels":["Product"],"id":"prod-001","properties":{...}}
-{"op":"NodeInsert","labels":["Product"],"id":"prod-002","properties":{...}}
+### Continuous Queries
+
+Queries run continuously and automatically update when source data changes.
+
+#### Query 1: hello-world-from
+
+Filters messages containing "Hello World":
+
+```cypher
+MATCH (m:Message {message: 'Hello World'})
+RETURN m.messageid AS MessageId, m.from AS MessageFrom
 ```
 
-This provides initial state before accepting live updates.
+#### Query 2: message-count
 
-## Configuration File
+Aggregates messages by content:
 
-The example uses `server-config.yaml` with:
+```cypher
+MATCH (m:Message)
+RETURN m.message AS Message, count(m) AS Frequency
+```
 
-1. **HTTP Source** - Receives data on port 9000
-2. **Bootstrap Provider** - Loads initial products from JSONL file
-3. **Continuous Query** - Filters products over $50
-4. **Log Reaction** - Outputs results to console
+#### Query 3: inactive-people
 
-All components use `auto_start: true` for convenience.
+Finds users inactive for 20+ seconds using time functions:
+
+```cypher
+MATCH (m:Message)
+WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
+WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
+  OR drasi.trueLater(
+       LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
+       LastMessageTimestamp + duration({ seconds: 20 })
+     )
+RETURN MessageFrom, LastMessageTimestamp
+```
+
+Key Cypher functions:
+- `drasi.changeDateTime(m)`: Returns when the element was last changed
+- `drasi.trueLater(condition, time)`: Triggers future evaluation
+
+### Reactions
+
+#### Log Reaction
+
+Prints query results to the console with templates:
+
+```yaml
+reactions:
+  - kind: log
+    id: log-all-queries
+    queries:
+      - hello-world-from
+      - message-count
+      - inactive-people
+    added_template: "[{{query_name}}] + {{after}}"
+    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+    deleted_template: "[{{query_name}}] - {{before}}"
+```
+
+#### SSE Reaction
+
+Streams results to browser via Server-Sent Events:
+
+```yaml
+  - kind: sse
+    id: sse-stream
+    queries:
+      - hello-world-from
+      - message-count
+      - inactive-people
+    host: 0.0.0.0
+    port: 8081
+    sse_path: /events
+```
+
+## API Reference
+
+The server exposes a REST API on port 8080:
+
+### Health & Documentation
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check |
+| `GET /swagger-ui/` | Interactive API documentation |
+| `GET /api-docs/openapi.json` | OpenAPI specification |
+
+### Sources
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/sources` | List all sources |
+| `GET /api/sources/{id}` | Get source status |
+| `POST /api/sources/{id}/start` | Start a source |
+| `POST /api/sources/{id}/stop` | Stop a source |
+
+### Queries
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/queries` | List all queries |
+| `GET /api/queries/{id}` | Get query status |
+| `GET /api/queries/{id}/results` | Get current query results |
+| `POST /api/queries/{id}/start` | Start a query |
+| `POST /api/queries/{id}/stop` | Stop a query |
+
+### Reactions
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/reactions` | List all reactions |
+| `GET /api/reactions/{id}` | Get reaction status |
+| `POST /api/reactions/{id}/start` | Start a reaction |
+| `POST /api/reactions/{id}/stop` | Stop a reaction |
+
+See `requests.http` for examples using VSCode REST Client.
 
 ## Troubleshooting
 
-**Server won't start:**
-- Check if ports 8080 or 9000 are already in use
-- Ensure you're in the `drasi-server` directory
-- Verify the bootstrap file path is correct
+### PostgreSQL Connection Failed
 
-**Bootstrap data not loading:**
-- Ensure `data/products.jsonl` exists
-- Check file format (one JSON object per line)
-- Look for bootstrap errors in server logs
+**Error**: `Connection refused` or `Cannot connect to PostgreSQL`
 
-**Query results not updating:**
-- Verify the HTTP request format matches the examples
-- Check that `Content-Type: application/json` header is set
-- Ensure the node ID is unique for inserts
+**Solution**:
+1. Verify PostgreSQL is running: `docker ps | grep getting-started-postgres`
+2. If not running, start it: `./scripts/setup-database.sh`
+3. Check Docker logs: `docker logs getting-started-postgres`
 
-**Can't view results via API:**
-- Confirm server is running on port 8080
-- Check query ID matches "expensive-products"
-- Use `curl -v` to see detailed HTTP response
+### Replication Slot Issues
+
+**Error**: `replication slot already exists` or replication errors
+
+**Solution**:
+1. Stop the server and database
+2. Clean up and restart:
+   ```bash
+   ./scripts/cleanup.sh --volumes
+   ./scripts/setup-database.sh
+   ```
+
+### SSE Connection Failed
+
+**Error**: Browser shows "Disconnected" or events not appearing
+
+**Solution**:
+1. Verify Drasi Server is running
+2. Check SSE reaction is started:
+   ```bash
+   curl http://localhost:8080/api/reactions/sse-stream
+   ```
+3. Check browser console for CORS errors
+4. Try the terminal stream: `./scripts/stream-events.sh`
+
+### No Query Results
+
+**Problem**: Queries show no data after startup
+
+**Solution**:
+1. Check if source is connected:
+   ```bash
+   curl http://localhost:8080/api/sources/postgres-messages
+   ```
+2. Verify bootstrap completed in server logs
+3. Check query status:
+   ```bash
+   curl http://localhost:8080/api/queries/hello-world-from
+   ```
+
+### Port Already in Use
+
+**Error**: `Address already in use (port 8080)` or `(port 8081)`
+
+**Solution**:
+1. Find and stop the conflicting process:
+   ```bash
+   lsof -i :8080
+   kill <PID>
+   ```
+2. Or modify the ports in `server-config.yaml`
+
+## Differences from Drasi Platform
+
+| Aspect | Drasi Platform | Drasi Server |
+|--------|----------------|--------------|
+| Deployment | Kubernetes | Standalone binary |
+| Configuration | YAML CRDs + drasi CLI | Single YAML file |
+| Query Languages | Cypher + GQL | Cypher only |
+| Debug Reaction | Built-in Web UI | SSE + custom viewer |
+| Scaling | Kubernetes-native | Single instance |
 
 ## What's Next?
 
-Now that you understand the basics:
+After completing this tutorial, explore:
 
-1. **Modify the Query** - Try different filters (e.g., `p.category = "Electronics"`)
-2. **Add Relationships** - Extend the data model with relationships between nodes
-3. **Explore Complex Examples** - Check out `examples/trading/` for advanced patterns
-4. **Read the Docs** - Learn about more source types, query features, and reactions
+1. **Advanced Queries**: Modify queries to:
+   - Join multiple tables
+   - Use complex WHERE clauses
+   - Add more aggregations
 
-### Advanced Examples
+2. **Different Reactions**: Add reactions like:
+   - `http` for webhooks to external services
+   - `grpc` for gRPC streaming
 
-- **Trading Example** (`examples/trading/`) - Complex multi-source system with PostgreSQL, HTTP, and gRPC
+3. **Multiple Sources**: Add sources like:
+   - `http` for REST API polling
+   - `grpc` for gRPC streaming
+   - `platform` for Redis Streams integration
 
-### API Documentation
+4. **Other Examples**:
+   - [Trading Demo](../trading/) - Multi-source with React UI
+   - [Drasi Platform Integration](../drasi-platform/) - Redis Streams
 
-View the full API docs at: http://localhost:8080/swagger-ui/
+## Files in This Example
 
-## Helper Scripts Reference
-
-- `scripts/start-server.sh` - Build and start the server
-- `scripts/add-product.sh <id> <name> <price> <category> <in_stock>` - Add a product
-- `scripts/update-product.sh <id> <name> <price> <category> <in_stock>` - Update a product
-- `scripts/delete-product.sh <id>` - Delete a product
-- `scripts/view-results.sh` - Fetch current query results
+```
+examples/getting-started/
+├── README.md                          # This file
+├── server-config.yaml                 # Complete server configuration
+├── requests.http                      # VSCode REST Client examples
+├── database/
+│   ├── docker-compose.yml            # PostgreSQL with WAL replication
+│   └── init.sql                      # Schema and initial data
+├── scripts/
+│   ├── setup-database.sh             # Start PostgreSQL container
+│   ├── start-server.sh               # Build and start Drasi Server
+│   ├── open-viewer.sh                # Serve viewer via HTTP and open browser
+│   ├── add-message.sh                # Insert new message
+│   ├── delete-message.sh             # Delete a message
+│   ├── view-results.sh               # Query API for results
+│   ├── stream-events.sh              # Connect to SSE stream
+│   └── cleanup.sh                    # Stop server and containers
+└── viewer/
+    └── index.html                    # Browser-based SSE viewer
+```
 
 ## Learn More
 
-- [Drasi Documentation](https://drasi.io) - Official Drasi docs
-- [Cypher Query Language](https://neo4j.com/docs/cypher-manual/current/) - Query syntax reference
-- [OpenCypher](https://opencypher.org/) - Open standard for graph queries
+- [Drasi Documentation](https://drasi.io/)
+- [Drasi Platform Getting Started](https://drasi.io/getting-started/)
+- [Cypher Query Language](https://neo4j.com/docs/cypher-manual/current/)
+- [PostgreSQL Logical Replication](https://www.postgresql.org/docs/current/logical-replication.html)
+- [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)

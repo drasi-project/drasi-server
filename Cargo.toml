@@ -35,8 +35,30 @@ name = "basic_setup"
 path = "src/bin/basic_setup.rs"
 
 [dependencies]
-# Drasi Server Core dependencies via submodules
-drasi-server-core = { git = "https://github.com/drasi-project/drasi-server-core.git", branch = "main" }
+drasi-lib = { path = "./drasi-core/lib" }
+
+# Source plugins
+drasi-source-mock = { path = "./drasi-core/components/sources/mock" }
+drasi-source-http = { path = "./drasi-core/components/sources/http" }
+drasi-source-grpc = { path = "./drasi-core/components/sources/grpc" }
+drasi-source-postgres = { path = "./drasi-core/components/sources/postgres" }
+drasi-source-platform = { path = "./drasi-core/components/sources/platform" }
+
+# Bootstrap provider plugins
+drasi-bootstrap-postgres = { path = "./drasi-core/components/bootstrappers/postgres" }
+drasi-bootstrap-scriptfile = { path = "./drasi-core/components/bootstrappers/scriptfile" }
+drasi-bootstrap-platform = { path = "./drasi-core/components/bootstrappers/platform" }
+drasi-bootstrap-noop = { path = "./drasi-core/components/bootstrappers/noop" }
+
+# Reaction plugins
+drasi-reaction-log = { path = "./drasi-core/components/reactions/log" }
+drasi-reaction-http = { path = "./drasi-core/components/reactions/http" }
+drasi-reaction-http-adaptive = { path = "./drasi-core/components/reactions/http-adaptive" }
+drasi-reaction-grpc = { path = "./drasi-core/components/reactions/grpc" }
+drasi-reaction-grpc-adaptive = { path = "./drasi-core/components/reactions/grpc-adaptive" }
+drasi-reaction-sse = { path = "./drasi-core/components/reactions/sse" }
+drasi-reaction-platform = { path = "./drasi-core/components/reactions/platform" }
+drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -52,9 +74,11 @@ tower-http = { version = "0.5", features = ["cors"] }
 clap = { version = "4.0", features = ["derive"] }
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
+uuid = { version = "1.0", features = ["v4"] }
 
 [dev-dependencies]
 # Testing utilities
+async-trait = "0.1"
 tempfile = "3.8"
 mockall = "0.12"
 tokio-test = "0.4"
@@ -70,7 +94,7 @@ tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
 
-# Patch section to use local development copy instead of submodule
-[patch."https://github.com/drasi-project/drasi-server-core.git"]
-drasi-server-core = { path = "../drasi-server-core" }
-
+# Integration testing with testcontainers
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["redis"] }
+redis = { version = "0.24", features = ["tokio-comp", "streams"] }

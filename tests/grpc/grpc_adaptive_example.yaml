@@ -2,8 +2,6 @@ server:
   host: 0.0.0.0
   port: 18080
   log_level: drasi_server=info,drasi_core=warn
-  max_connections: 1000
-  shutdown_timeout_seconds: 30
   disable_persistence: true
 sources:
 - id: facilities-db
@@ -12,7 +10,6 @@ sources:
   properties:
     keepalive_timeout_seconds: 10
     port: 50051
-    max_connections: 100
     max_message_size: 8388608
     host: 0.0.0.0
     keepalive_interval_seconds: 10

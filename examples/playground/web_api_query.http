@@ -1,0 +1,38 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This file is for use with the REST Client extension for Visual Studio Code to make it easy to manually 
+# test the Test Service Web API.
+# https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+@hostname = localhost
+@port = 8080
+@query_id = all
+
+### GET LIST of all queries
+GET http://{{hostname}}:{{port}}/queries
+
+### GET STATE of a specific query
+GET http://{{hostname}}:{{port}}/queries/{{query_id}}
+
+### GET RESULTS of a specific query
+GET http://{{hostname}}:{{port}}/queries/{{query_id}}/results
+
+### START a specific query
+GET http://{{hostname}}:{{port}}/queries/{{query_id}}/start
+Content-Type: application/json
+
+### STOP a specific query
+GET http://{{hostname}}:{{port}}/queries/{{query_id}}/stop
+Content-Type: application/json

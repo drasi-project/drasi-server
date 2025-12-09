@@ -15,32 +15,7 @@
 #[cfg(test)]
 mod handler_tests {
     use super::super::*;
-    use drasi_server_core::{
-        channels::EventChannels, config::QueryLanguage, ComponentStatus, QueryConfig, QueryManager,
-        ReactionConfig, ReactionManager, SourceConfig, SourceManager,
-    };
-    use serde_json::json;
-    use std::sync::Arc;
-
-    async fn create_test_managers() -> (Arc<SourceManager>, Arc<QueryManager>, Arc<ReactionManager>)
-    {
-        let (channels, _receivers) = EventChannels::new();
-
-        let source_manager = Arc::new(SourceManager::new(
-            channels.source_change_tx.clone(),
-            channels.component_event_tx.clone(),
-        ));
-
-        let query_manager = Arc::new(QueryManager::new(
-            channels.query_result_tx.clone(),
-            channels.component_event_tx.clone(),
-            channels.bootstrap_request_tx.clone(),
-        ));
-
-        let reaction_manager = Arc::new(ReactionManager::new(channels.component_event_tx.clone()));
-
-        (source_manager, query_manager, reaction_manager)
-    }
+    use drasi_lib::channels::ComponentStatus;
 
     #[tokio::test]
     async fn test_api_response_constructors() {
@@ -71,152 +46,20 @@ mod handler_tests {
         let json = serde_json::to_value(&stopped).unwrap();
         assert_eq!(json, "Stopped");
     }
-
-    #[tokio::test]
-    async fn test_source_manager_api_operations() {
-        let (source_manager, _, _) = create_test_managers().await;
-
-        // Test adding a source
-        let config = SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: false,
-            properties: std::collections::HashMap::new(),
-            bootstrap_provider: None,
-        };
-
-        let result = source_manager.add_source(config.clone()).await;
-        assert!(result.is_ok());
-
-        // Test listing sources
-        let sources = source_manager.list_sources().await;
-        assert_eq!(sources.len(), 1);
-        assert_eq!(sources[0].0, "test-source");
-
-        // Test getting a source
-        let retrieved = source_manager.get_source_config("test-source").await;
-        assert!(retrieved.is_some());
-
-        // Test updating a source
-        let mut updated_config = config.clone();
-        updated_config
-            .properties
-            .insert("new_prop".to_string(), json!("value"));
-
-        let update_result = source_manager
-            .update_source("test-source".to_string(), updated_config)
-            .await;
-        assert!(update_result.is_ok());
-
-        // Test deleting a source
-        let delete_result = source_manager
-            .delete_source("test-source".to_string())
-            .await;
-        assert!(delete_result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_query_manager_api_operations() {
-        let (_, query_manager, _) = create_test_managers().await;
-
-        // Test adding a query
-        let config = QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["source1".to_string()],
-            auto_start: false,
-            properties: std::collections::HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-        };
-
-        let result = query_manager.add_query(config.clone()).await;
-        assert!(result.is_ok());
-
-        // Test listing queries
-        let queries = query_manager.list_queries().await;
-        assert_eq!(queries.len(), 1);
-        assert_eq!(queries[0].0, "test-query");
-
-        // Test getting a query
-        let retrieved = query_manager.get_query_config("test-query").await;
-        assert!(retrieved.is_some());
-
-        // Test deleting a query
-        let delete_result = query_manager.delete_query("test-query".to_string()).await;
-        assert!(delete_result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_reaction_manager_api_operations() {
-        let (_, _, reaction_manager) = create_test_managers().await;
-
-        // Test adding a reaction
-        let config = ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["query1".to_string()],
-            auto_start: false,
-            properties: std::collections::HashMap::new(),
-        };
-
-        let result = reaction_manager.add_reaction(config.clone()).await;
-        assert!(result.is_ok());
-
-        // Test listing reactions
-        let reactions = reaction_manager.list_reactions().await;
-        assert_eq!(reactions.len(), 1);
-        assert_eq!(reactions[0].0, "test-reaction");
-
-        // Test getting a reaction
-        let retrieved = reaction_manager.get_reaction_config("test-reaction").await;
-        assert!(retrieved.is_some());
-
-        // Test deleting a reaction
-        let delete_result = reaction_manager
-            .delete_reaction("test-reaction".to_string())
-            .await;
-        assert!(delete_result.is_ok());
-    }
 }
 
 #[cfg(test)]
 mod serialization_tests {
-    use drasi_server_core::{config::QueryLanguage, QueryConfig, ReactionConfig, SourceConfig};
-    use serde_json::json;
-
-    #[test]
-    fn test_source_config_json_serialization() {
-        let config = SourceConfig {
-            id: "test-source".to_string(),
-            source_type: "mock".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            properties: std::collections::HashMap::from([("key".to_string(), json!("value"))]),
-        };
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-source");
-        assert_eq!(json["source_type"], "mock");
-        assert_eq!(json["auto_start"], true);
-        assert_eq!(json["properties"]["key"], "value");
-
-        // Test deserialization
-        let deserialized: SourceConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(deserialized.id, config.id);
-    }
+    use drasi_lib::Query;
 
     #[test]
     fn test_query_config_json_serialization() {
-        let config = QueryConfig {
-            id: "test-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            sources: vec!["source1".to_string(), "source2".to_string()],
-            auto_start: false,
-            properties: std::collections::HashMap::new(),
-            joins: None,
-            query_language: QueryLanguage::default(),
-        };
+        let config = Query::cypher("test-query")
+            .query("MATCH (n) RETURN n")
+            .from_source("source1")
+            .from_source("source2")
+            .auto_start(false)
+            .build();
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["id"], "test-query");
@@ -224,24 +67,7 @@ mod serialization_tests {
         assert_eq!(json["sources"].as_array().unwrap().len(), 2);
 
         // Test deserialization
-        let deserialized: QueryConfig = serde_json::from_value(json).unwrap();
+        let deserialized: drasi_lib::QueryConfig = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized.sources.len(), 2);
-    }
-
-    #[test]
-    fn test_reaction_config_json_serialization() {
-        let config = ReactionConfig {
-            id: "test-reaction".to_string(),
-            reaction_type: "log".to_string(),
-            queries: vec!["query1".to_string()],
-            auto_start: true,
-            properties: std::collections::HashMap::from([("log_level".to_string(), json!("info"))]),
-        };
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(json["id"], "test-reaction");
-        assert_eq!(json["reaction_type"], "log");
-        assert_eq!(json["queries"].as_array().unwrap().len(), 1);
-        assert_eq!(json["properties"]["log_level"], "info");
     }
 }

@@ -15,48 +15,33 @@
 pub mod api;
 pub mod builder;
 pub mod builder_result;
+pub mod config;
+pub mod factories;
+pub mod persistence;
 pub mod server;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
+pub use config::{DrasiServerConfig, ReactionConfig, ServerSettings, SourceConfig};
+pub use factories::{create_reaction, create_source};
 pub use server::DrasiServer;
 
-// Re-export from drasi-server-core
-pub use drasi_server_core::{
-    // Application types
-    ApplicationHandle,
-    ApplicationReactionHandle,
-    ApplicationSourceHandle,
-    ComponentEvent,
-    // Channel types
-    ComponentStatus,
+// Re-export from drasi-lib (public API only)
+pub use drasi_lib::{
     // Error types
     DrasiError,
-    DrasiServerCore,
-    DrasiServerCoreConfig as ServerConfig,
-    PropertyMapBuilder,
+    // Core server
+    DrasiLib,
+    DrasiLibConfig as ServerConfig,
+    // Builder types
     Query,
+    // Config types for API and file-based config
     QueryConfig,
-    QueryManager,
-    QueryResult,
-    Reaction,
-    ReactionConfig,
-    ReactionManager,
     RuntimeConfig,
-    // Core components
-    Source,
-    // Config types
-    SourceConfig,
-    SourceManager,
-    SubscriptionOptions,
 };
 
-// Re-export from submodules in drasi_server_core that aren't in main lib
-pub use drasi_server_core::channels::{BootstrapRequest, ComponentType, EventChannels};
-pub use drasi_server_core::config::{
-    ConfigPersistence, DrasiServerCoreSettings as ServerSettings, QueryJoinConfig,
-    QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime,
-};
-pub use drasi_server_core::queries::LabelExtractor;
-pub use drasi_server_core::routers::{BootstrapRouter, DataRouter, SubscriptionRouter};
+// Re-export types from internal modules (these are visible but marked as internal)
+// We need these for the wrapper API functionality
+pub use drasi_lib::channels::ComponentStatus;
+pub use drasi_lib::config::{QueryJoinConfig, QueryJoinKeyConfig};

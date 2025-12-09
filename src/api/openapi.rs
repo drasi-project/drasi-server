@@ -14,39 +14,40 @@
 
 use utoipa::OpenApi;
 
+use crate::api::error::{ErrorDetail, ErrorResponse};
 use crate::api::handlers::{ApiResponseSchema, ComponentListItem, HealthResponse, StatusResponse};
-// Note: Config types from drasi_server_core are imported but not used in schema
+// Note: Config types from drasi_lib are imported but not used in schema
 // as they don't implement ToSchema trait
 #[allow(unused_imports)]
-use drasi_server_core::{
-    channels::ComponentType,
+use drasi_lib::{
+    channels::{ComponentStatus, ComponentType},
     config::{QueryJoinConfig, QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime},
-    ComponentStatus, QueryConfig, ReactionConfig, SourceConfig,
+    QueryConfig,
 };
+// SourceConfig and ReactionConfig are defined in crate::config, not drasi_lib
+#[allow(unused_imports)]
+use crate::config::{ReactionConfig, SourceConfig};
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         crate::api::handlers::health_check,
         crate::api::handlers::list_sources,
-        crate::api::handlers::create_source,
+        crate::api::handlers::create_source_handler,
         crate::api::handlers::get_source,
-        crate::api::handlers::update_source,
         crate::api::handlers::delete_source,
         crate::api::handlers::start_source,
         crate::api::handlers::stop_source,
         crate::api::handlers::list_queries,
         crate::api::handlers::create_query,
         crate::api::handlers::get_query,
-        crate::api::handlers::update_query,
         crate::api::handlers::delete_query,
         crate::api::handlers::start_query,
         crate::api::handlers::stop_query,
         crate::api::handlers::get_query_results,
         crate::api::handlers::list_reactions,
-        crate::api::handlers::create_reaction,
+        crate::api::handlers::create_reaction_handler,
         crate::api::handlers::get_reaction,
-        crate::api::handlers::update_reaction,
         crate::api::handlers::delete_reaction,
         crate::api::handlers::start_reaction,
         crate::api::handlers::stop_reaction,
@@ -57,7 +58,9 @@ use drasi_server_core::{
             ComponentListItem,
             ApiResponseSchema,
             StatusResponse,
-            // Note: Config types from drasi_server_core are not included
+            ErrorResponse,
+            ErrorDetail,
+            // Note: Config types from drasi_lib are not included
             // in the schema as they don't implement ToSchema trait
         )
     ),

@@ -21,18 +21,30 @@ use serde::Serialize;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use drasi_server_core::{
-    config::{QueryRuntime, ReactionRuntime, SourceRuntime},
+use crate::config::{ReactionConfig, SourceConfig};
+use crate::factories::{create_reaction, create_source};
+use crate::persistence::ConfigPersistence;
+use drasi_lib::{
+    // Internal types (doc-hidden but accessible)
+    channels::ComponentStatus,
     queries::LabelExtractor, // For join validation
-    routers::{BootstrapRouter, DataRouter, SubscriptionRouter},
-    ComponentStatus,
+    // Public config types
     QueryConfig,
-    QueryManager,
-    ReactionConfig,
-    ReactionManager,
-    SourceConfig,
-    SourceManager,
 };
+
+/// Helper function to persist configuration after a successful operation.
+/// Logs errors but does not fail the request - persistence failures are non-fatal.
+async fn persist_after_operation(
+    config_persistence: &Option<Arc<ConfigPersistence>>,
+    operation: &str,
+) {
+    if let Some(persistence) = config_persistence {
+        if let Err(e) = persistence.save().await {
+            log::error!("Failed to persist configuration after {}: {}", operation, e);
+            // Don't fail the request, just log the error
+        }
+    }
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
@@ -122,9 +134,9 @@ pub async fn health_check() -> Json<HealthResponse> {
     tag = "Sources"
 )]
 pub async fn list_sources(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let sources = source_manager.list_sources().await;
+    let sources = core.list_sources().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = sources
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
@@ -134,21 +146,36 @@ pub async fn list_sources(
 }
 
 /// Create a new source
+///
+/// Creates a source from a configuration object. The `kind` field determines
+/// the source type (mock, http, grpc, postgres, platform).
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "http",
+///   "id": "my-http-source",
+///   "auto_start": true,
+///   "host": "0.0.0.0",
+///   "port": 9000
+/// }
+/// ```
 #[utoipa::path(
     post,
     path = "/sources",
-    request_body = SourceConfig,
+    request_body = serde_json::Value,
     responses(
         (status = 200, description = "Source created successfully", body = ApiResponse),
+        (status = 400, description = "Invalid source configuration"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Sources"
 )]
-pub async fn create_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
-    Extension(bootstrap_router): Extension<Arc<BootstrapRouter>>,
+pub async fn create_source_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
-    Json(config): Json<SourceConfig>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
@@ -156,55 +183,69 @@ pub async fn create_source(
         )));
     }
 
-    let source_id = config.id.clone();
-    let bootstrap_provider_config = config.bootstrap_provider.clone();
+    // Parse the JSON into SourceConfig (tagged enum)
+    let config: SourceConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse source config: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid source configuration: {}",
+                e
+            ))));
+        }
+    };
 
-    // Use source manager's add_source which handles auto-start internally
-    match source_manager.add_source(config).await {
+    let source_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Create the source instance using the factory function
+    let source = match create_source(config).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create source instance: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create source: {}",
+                e
+            ))));
+        }
+    };
+
+    // Add the source to DrasiLib
+    match core.add_source(source).await {
         Ok(_) => {
-            // Register with bootstrap router
-            if let Some(source_config) = source_manager.get_source_config(&source_id).await {
-                let source_config_arc = Arc::new(source_config);
-                let source_change_tx = source_manager.get_source_change_sender();
-                if let Err(e) = bootstrap_router
-                    .register_provider(
-                        source_config_arc,
-                        bootstrap_provider_config,
-                        source_change_tx,
-                    )
-                    .await
-                {
-                    log::warn!(
-                        "Failed to register bootstrap provider for source '{}': {}",
-                        source_id,
-                        e
-                    );
-                } else {
-                    log::info!("Registered bootstrap provider for source '{}'", source_id);
+            log::info!("Source '{}' created successfully", source_id);
+
+            // Auto-start if configured
+            if auto_start {
+                if let Err(e) = core.start_source(&source_id).await {
+                    log::warn!("Failed to auto-start source '{}': {}", source_id, e);
                 }
             }
 
+            persist_after_operation(&config_persistence, "creating source").await;
+
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Source created successfully".to_string(),
+                message: format!("Source '{}' created successfully", source_id),
             })))
         }
         Err(e) => {
-            // Check if the source already exists
-            if e.to_string().contains("already exists") {
-                log::info!("Source '{}' already exists, skipping creation", source_id);
-                // Return success since the source exists (idempotent behavior)
+            let error_msg = e.to_string();
+            if error_msg.contains("already exists") {
+                log::info!("Source '{}' already exists", source_id);
                 return Ok(Json(ApiResponse::success(StatusResponse {
                     message: format!("Source '{}' already exists", source_id),
                 })));
             }
-
-            log::error!("Failed to create source: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            log::error!("Failed to add source: {}", e);
+            Ok(Json(ApiResponse::error(error_msg)))
         }
     }
 }
 
-/// Get source by name
+/// Get source status by ID
+///
+/// Note: Source configs are not stored - sources are instances.
+/// This endpoint returns the source status instead.
 #[utoipa::path(
     get,
     path = "/sources/{id}",
@@ -218,54 +259,12 @@ pub async fn create_source(
     tag = "Sources"
 )]
 pub async fn get_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<SourceRuntime>>, StatusCode> {
-    match source_manager.get_source(id).await {
-        Ok(runtime) => Ok(Json(ApiResponse::success(runtime))),
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    match core.get_source_status(&id).await {
+        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
-    }
-}
-
-/// Update an existing source
-#[utoipa::path(
-    put,
-    path = "/sources/{id}",
-    params(
-        ("id" = String, Path, description = "Source ID")
-    ),
-    request_body = SourceConfig,
-    responses(
-        (status = 200, description = "Source updated successfully", body = ApiResponse),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Sources"
-)]
-pub async fn update_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
-    Extension(read_only): Extension<Arc<bool>>,
-    Path(id): Path<String>,
-    Json(config): Json<SourceConfig>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update sources.".to_string(),
-        )));
-    }
-
-    if config.id != id {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    match source_manager.update_source(id, config).await {
-        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
-            message: "Source updated successfully".to_string(),
-        }))),
-        Err(e) => {
-            log::error!("Failed to update source: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
-        }
     }
 }
 
@@ -282,8 +281,9 @@ pub async fn update_source(
     tag = "Sources"
 )]
 pub async fn delete_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -292,10 +292,14 @@ pub async fn delete_source(
         )));
     }
 
-    match source_manager.delete_source(id).await {
-        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
-            message: "Source deleted successfully".to_string(),
-        }))),
+    match core.remove_source(&id).await {
+        Ok(_) => {
+            persist_after_operation(&config_persistence, "deleting source").await;
+
+            Ok(Json(ApiResponse::success(StatusResponse {
+                message: "Source deleted successfully".to_string(),
+            })))
+        }
         Err(e) => {
             log::error!("Failed to delete source: {}", e);
             Ok(Json(ApiResponse::error(e.to_string())))
@@ -312,21 +316,26 @@ pub async fn delete_source(
     ),
     responses(
         (status = 200, description = "Source started successfully", body = ApiResponse),
+        (status = 404, description = "Source not found"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Sources"
 )]
 pub async fn start_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    match source_manager.start_source(id).await {
+    match core.start_source(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source started successfully".to_string(),
         }))),
         Err(e) => {
-            log::error!("Failed to start source: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
+            }
         }
     }
 }
@@ -340,21 +349,26 @@ pub async fn start_source(
     ),
     responses(
         (status = 200, description = "Source stopped successfully", body = ApiResponse),
+        (status = 404, description = "Source not found"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Sources"
 )]
 pub async fn stop_source(
-    Extension(source_manager): Extension<Arc<SourceManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    match source_manager.stop_source(id).await {
+    match core.stop_source(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source stopped successfully".to_string(),
         }))),
         Err(e) => {
-            log::error!("Failed to stop source: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
+            }
         }
     }
 }
@@ -370,9 +384,9 @@ pub async fn stop_source(
     tag = "Queries"
 )]
 pub async fn list_queries(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let queries = query_manager.list_queries().await;
+    let queries = core.list_queries().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = queries
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
@@ -393,10 +407,9 @@ pub async fn list_queries(
     tag = "Queries"
 )]
 pub async fn create_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
-    Extension(data_router): Extension<Arc<DataRouter>>,
-    Extension(bootstrap_router): Extension<Arc<BootstrapRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Json(config): Json<QueryConfig>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -406,8 +419,6 @@ pub async fn create_query(
     }
 
     let query_id = config.id.clone();
-    let should_auto_start = config.auto_start;
-    let sources = config.sources.clone();
     let join_count = config.joins.as_ref().map(|j| j.len()).unwrap_or(0);
 
     // Pre-flight join validation/logging (non-fatal warnings)
@@ -444,29 +455,11 @@ pub async fn create_query(
         log::debug!("Registering query '{}' with no synthetic joins", query_id);
     }
 
-    match query_manager.add_query(config).await {
+    // Use DrasiLib's public API to create query
+    match core.add_query(config.clone()).await {
         Ok(_) => {
-            // Register with bootstrap router
-            let bootstrap_senders = query_manager.get_bootstrap_response_senders().await;
-            if let Some(sender) = bootstrap_senders.get(&query_id) {
-                bootstrap_router
-                    .register_query(query_id.clone(), sender.clone())
-                    .await;
-                log::info!("Registered query '{}' with bootstrap router", query_id);
-            }
-
-            // Auto-start if configured
-            if should_auto_start {
-                log::info!("Auto-starting query: {}", query_id);
-                let rx = data_router
-                    .add_query_subscription(query_id.clone(), sources)
-                    .await;
-
-                if let Err(e) = query_manager.start_query(query_id.clone(), rx).await {
-                    log::error!("Failed to auto-start query {}: {}", query_id, e);
-                    // Don't fail the add operation, just log the error
-                }
-            }
+            log::info!("Query '{}' created successfully", query_id);
+            persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query created successfully".to_string(),
@@ -474,7 +467,8 @@ pub async fn create_query(
         }
         Err(e) => {
             // Check if the query already exists
-            if e.to_string().contains("already exists") {
+            let error_msg = e.to_string();
+            if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                 log::info!("Query '{}' already exists, skipping creation", query_id);
                 // Return success since the query exists (idempotent behavior)
                 return Ok(Json(ApiResponse::success(StatusResponse {
@@ -502,54 +496,12 @@ pub async fn create_query(
     tag = "Queries"
 )]
 pub async fn get_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<QueryRuntime>>, StatusCode> {
-    match query_manager.get_query(id).await {
-        Ok(runtime) => Ok(Json(ApiResponse::success(runtime))),
+) -> Result<Json<ApiResponse<QueryConfig>>, StatusCode> {
+    match core.get_query_config(&id).await {
+        Ok(config) => Ok(Json(ApiResponse::success(config))),
         Err(_) => Err(StatusCode::NOT_FOUND),
-    }
-}
-
-/// Update an existing query
-#[utoipa::path(
-    put,
-    path = "/queries/{id}",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    request_body = QueryConfig,
-    responses(
-        (status = 200, description = "Query updated successfully", body = ApiResponse),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Queries"
-)]
-pub async fn update_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
-    Extension(read_only): Extension<Arc<bool>>,
-    Path(id): Path<String>,
-    Json(config): Json<QueryConfig>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update queries.".to_string(),
-        )));
-    }
-
-    if config.id != id {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    match query_manager.update_query(id, config).await {
-        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
-            message: "Query updated successfully".to_string(),
-        }))),
-        Err(e) => {
-            log::error!("Failed to update query: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
-        }
     }
 }
 
@@ -566,9 +518,9 @@ pub async fn update_query(
     tag = "Queries"
 )]
 pub async fn delete_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
-    Extension(data_router): Extension<Arc<DataRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -577,10 +529,9 @@ pub async fn delete_query(
         )));
     }
 
-    match query_manager.delete_query(id.clone()).await {
+    match core.remove_query(&id).await {
         Ok(_) => {
-            // Remove the query's subscription from the data router
-            data_router.remove_query_subscription(&id).await;
+            persist_after_operation(&config_persistence, "deleting query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query deleted successfully".to_string(),
@@ -602,38 +553,27 @@ pub async fn delete_query(
     ),
     responses(
         (status = 200, description = "Query started successfully", body = ApiResponse),
+        (status = 404, description = "Query not found"),
+        (status = 500, description = "Internal server error"),
     ),
     tag = "Queries"
 )]
 pub async fn start_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
-    Extension(data_router): Extension<Arc<DataRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Json<ApiResponse<StatusResponse>> {
-    // Get the query to retrieve its source configuration
-    match query_manager.get_query(id.clone()).await {
-        Ok(runtime) => {
-            // Check if query is already running
-            if matches!(runtime.status, ComponentStatus::Running) {
-                return Json(ApiResponse::error(
-                    "Component is already running".to_string(),
-                ));
-            }
-
-            // Get a receiver connected to the data router
-            let rx = data_router
-                .add_query_subscription(id.clone(), runtime.sources.clone())
-                .await;
-
-            // Start the query with the receiver
-            match query_manager.start_query(id.clone(), rx).await {
-                Ok(_) => Json(ApiResponse::success(StatusResponse {
-                    message: "Query started successfully".to_string(),
-                })),
-                Err(e) => Json(ApiResponse::error(e.to_string())),
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    match core.start_query(&id).await {
+        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
+            message: "Query started successfully".to_string(),
+        }))),
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
             }
         }
-        Err(_) => Json(ApiResponse::error(format!("Query '{}' not found", id))),
     }
 }
 
@@ -646,27 +586,26 @@ pub async fn start_query(
     ),
     responses(
         (status = 200, description = "Query stopped successfully", body = ApiResponse),
+        (status = 404, description = "Query not found"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Queries"
 )]
 pub async fn stop_query(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
-    Extension(data_router): Extension<Arc<DataRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    match query_manager.stop_query(id.clone()).await {
-        Ok(_) => {
-            // Remove the query's subscription from the data router
-            data_router.remove_query_subscription(&id).await;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Query stopped successfully".to_string(),
-            })))
-        }
+    match core.stop_query(&id).await {
+        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
+            message: "Query stopped successfully".to_string(),
+        }))),
         Err(e) => {
-            log::error!("Failed to stop query: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
+            }
         }
     }
 }
@@ -686,18 +625,17 @@ pub async fn stop_query(
     tag = "Queries"
 )]
 pub async fn get_query_results(
-    Extension(query_manager): Extension<Arc<QueryManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
-    match query_manager.get_query_results(&id).await {
+    match core.get_query_results(&id).await {
         Ok(results) => Ok(Json(ApiResponse::success(results))),
         Err(e) => {
-            if e.to_string().contains("not found") {
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
                 Err(StatusCode::NOT_FOUND)
-            } else if e.to_string().contains("not running") {
-                Ok(Json(ApiResponse::error(e.to_string())))
             } else {
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                Ok(Json(ApiResponse::error(error_msg)))
             }
         }
     }
@@ -714,9 +652,9 @@ pub async fn get_query_results(
     tag = "Reactions"
 )]
 pub async fn list_reactions(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let reactions = reaction_manager.list_reactions().await;
+    let reactions = core.list_reactions().await.unwrap_or_default();
     let items: Vec<ComponentListItem> = reactions
         .into_iter()
         .map(|(id, status)| ComponentListItem { id, status })
@@ -726,21 +664,36 @@ pub async fn list_reactions(
 }
 
 /// Create a new reaction
+///
+/// Creates a reaction from a configuration object. The `kind` field determines
+/// the reaction type (log, http, http-adaptive, grpc, grpc-adaptive, sse, platform, profiler).
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "log",
+///   "id": "my-log-reaction",
+///   "queries": ["my-query"],
+///   "auto_start": true,
+///   "log_level": "info"
+/// }
+/// ```
 #[utoipa::path(
     post,
     path = "/reactions",
-    request_body = ReactionConfig,
+    request_body = serde_json::Value,
     responses(
         (status = 200, description = "Reaction created successfully", body = ApiResponse),
+        (status = 400, description = "Invalid reaction configuration"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Reactions"
 )]
-pub async fn create_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
-    Extension(subscription_router): Extension<Arc<SubscriptionRouter>>,
+pub async fn create_reaction_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
-    Json(config): Json<ReactionConfig>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
@@ -748,52 +701,69 @@ pub async fn create_reaction(
         )));
     }
 
-    let reaction_id = config.id.clone();
-    let should_auto_start = config.auto_start;
-    let queries = config.queries.clone();
+    // Parse the JSON into ReactionConfig (tagged enum)
+    let config: ReactionConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse reaction config: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid reaction configuration: {}",
+                e
+            ))));
+        }
+    };
 
-    match reaction_manager.add_reaction(config).await {
+    let reaction_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Create the reaction instance using the factory function
+    let reaction = match create_reaction(config) {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("Failed to create reaction instance: {}", e);
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create reaction: {}",
+                e
+            ))));
+        }
+    };
+
+    // Add the reaction to DrasiLib
+    match core.add_reaction(reaction).await {
         Ok(_) => {
-            // Auto-start if configured
-            if should_auto_start {
-                log::info!("Auto-starting reaction: {}", reaction_id);
-                let rx = subscription_router
-                    .add_reaction_subscription(reaction_id.clone(), queries)
-                    .await;
+            log::info!("Reaction '{}' created successfully", reaction_id);
 
-                if let Err(e) = reaction_manager
-                    .start_reaction(reaction_id.clone(), rx)
-                    .await
-                {
-                    log::error!("Failed to auto-start reaction {}: {}", reaction_id, e);
-                    // Don't fail the add operation, just log the error
+            // Auto-start if configured
+            if auto_start {
+                if let Err(e) = core.start_reaction(&reaction_id).await {
+                    log::warn!("Failed to auto-start reaction '{}': {}", reaction_id, e);
                 }
             }
 
+            persist_after_operation(&config_persistence, "creating reaction").await;
+
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Reaction created successfully".to_string(),
+                message: format!("Reaction '{}' created successfully", reaction_id),
             })))
         }
         Err(e) => {
-            // Check if the reaction already exists
-            if e.to_string().contains("already exists") {
-                log::info!(
-                    "Reaction '{}' already exists, skipping creation",
-                    reaction_id
-                );
-                // Return success since the reaction exists (idempotent behavior)
+            let error_msg = e.to_string();
+            if error_msg.contains("already exists") {
+                log::info!("Reaction '{}' already exists", reaction_id);
                 return Ok(Json(ApiResponse::success(StatusResponse {
                     message: format!("Reaction '{}' already exists", reaction_id),
                 })));
             }
-
-            log::error!("Failed to create reaction: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            log::error!("Failed to add reaction: {}", e);
+            Ok(Json(ApiResponse::error(error_msg)))
         }
     }
 }
 
-/// Get reaction by name
+/// Get reaction status by ID
+///
+/// Note: Reaction configs are not stored - reactions are instances.
+/// This endpoint returns the reaction status instead.
 #[utoipa::path(
     get,
     path = "/reactions/{id}",
@@ -807,54 +777,12 @@ pub async fn create_reaction(
     tag = "Reactions"
 )]
 pub async fn get_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<ReactionRuntime>>, StatusCode> {
-    match reaction_manager.get_reaction(id).await {
-        Ok(runtime) => Ok(Json(ApiResponse::success(runtime))),
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    match core.get_reaction_status(&id).await {
+        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
-    }
-}
-
-/// Update an existing reaction
-#[utoipa::path(
-    put,
-    path = "/reactions/{id}",
-    params(
-        ("id" = String, Path, description = "Reaction ID")
-    ),
-    request_body = ReactionConfig,
-    responses(
-        (status = 200, description = "Reaction updated successfully", body = ApiResponse),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Reactions"
-)]
-pub async fn update_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
-    Extension(read_only): Extension<Arc<bool>>,
-    Path(id): Path<String>,
-    Json(config): Json<ReactionConfig>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot update reactions.".to_string(),
-        )));
-    }
-
-    if config.id != id {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    match reaction_manager.update_reaction(id, config).await {
-        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
-            message: "Reaction updated successfully".to_string(),
-        }))),
-        Err(e) => {
-            log::error!("Failed to update reaction: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
-        }
     }
 }
 
@@ -871,9 +799,9 @@ pub async fn update_reaction(
     tag = "Reactions"
 )]
 pub async fn delete_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
-    Extension(subscription_router): Extension<Arc<SubscriptionRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -882,10 +810,9 @@ pub async fn delete_reaction(
         )));
     }
 
-    match reaction_manager.delete_reaction(id.clone()).await {
+    match core.remove_reaction(&id).await {
         Ok(_) => {
-            // Remove the reaction's subscription from the subscription router
-            subscription_router.remove_reaction_subscription(&id).await;
+            persist_after_operation(&config_persistence, "deleting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction deleted successfully".to_string(),
@@ -907,39 +834,27 @@ pub async fn delete_reaction(
     ),
     responses(
         (status = 200, description = "Reaction started successfully", body = ApiResponse),
+        (status = 404, description = "Reaction not found"),
+        (status = 500, description = "Internal server error"),
     ),
     tag = "Reactions"
 )]
 pub async fn start_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
-    Extension(subscription_router): Extension<Arc<SubscriptionRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Json<ApiResponse<StatusResponse>> {
-    // Get the reaction to retrieve its query configuration
-    match reaction_manager.get_reaction(id.clone()).await {
-        Ok(runtime) => {
-            // Check if the reaction is already running
-            if runtime.status == ComponentStatus::Running {
-                log::info!("Reaction '{}' is already running", id);
-                return Json(ApiResponse::error(
-                    "Component is already running".to_string(),
-                ));
-            }
-
-            // Get a receiver connected to the subscription router
-            let rx = subscription_router
-                .add_reaction_subscription(id.clone(), runtime.queries.clone())
-                .await;
-
-            // Start the reaction with the receiver
-            match reaction_manager.start_reaction(id.clone(), rx).await {
-                Ok(_) => Json(ApiResponse::success(StatusResponse {
-                    message: "Reaction started successfully".to_string(),
-                })),
-                Err(e) => Json(ApiResponse::error(e.to_string())),
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    match core.start_reaction(&id).await {
+        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
+            message: "Reaction started successfully".to_string(),
+        }))),
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
             }
         }
-        Err(_) => Json(ApiResponse::error(format!("Reaction '{}' not found", id))),
     }
 }
 
@@ -952,27 +867,26 @@ pub async fn start_reaction(
     ),
     responses(
         (status = 200, description = "Reaction stopped successfully", body = ApiResponse),
+        (status = 404, description = "Reaction not found"),
         (status = 500, description = "Internal server error"),
     ),
     tag = "Reactions"
 )]
 pub async fn stop_reaction(
-    Extension(reaction_manager): Extension<Arc<ReactionManager>>,
-    Extension(subscription_router): Extension<Arc<SubscriptionRouter>>,
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    match reaction_manager.stop_reaction(id.clone()).await {
-        Ok(_) => {
-            // Remove the reaction's subscription from the subscription router
-            subscription_router.remove_reaction_subscription(&id).await;
-
-            Ok(Json(ApiResponse::success(StatusResponse {
-                message: "Reaction stopped successfully".to_string(),
-            })))
-        }
+    match core.stop_reaction(&id).await {
+        Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
+            message: "Reaction stopped successfully".to_string(),
+        }))),
         Err(e) => {
-            log::error!("Failed to stop reaction: {}", e);
-            Ok(Json(ApiResponse::error(e.to_string())))
+            let error_msg = e.to_string();
+            if error_msg.contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Ok(Json(ApiResponse::error(error_msg)))
+            }
         }
     }
 }
