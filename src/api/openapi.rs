@@ -22,8 +22,11 @@ use crate::api::handlers::{ApiResponseSchema, ComponentListItem, HealthResponse,
 use drasi_lib::{
     channels::{ComponentStatus, ComponentType},
     config::{QueryJoinConfig, QueryJoinKeyConfig, QueryRuntime, ReactionRuntime, SourceRuntime},
-    QueryConfig, ReactionConfig, SourceConfig,
+    QueryConfig,
 };
+// SourceConfig and ReactionConfig are defined in crate::config, not drasi_lib
+#[allow(unused_imports)]
+use crate::config::{ReactionConfig, SourceConfig};
 
 #[derive(OpenApi)]
 #[openapi(
