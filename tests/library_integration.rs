@@ -333,7 +333,7 @@ async fn test_concurrent_start_stop_operations() {
     for i in 1..=5 {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
-            let source_id = format!("concurrent_source_{}", i);
+            let source_id = format!("concurrent_source_{i}");
             server_clone.stop_source(&source_id).await
         });
         stop_tasks.push(task);
@@ -351,7 +351,7 @@ async fn test_concurrent_start_stop_operations() {
     for i in 1..=5 {
         let server_clone = server.clone();
         let task = tokio::spawn(async move {
-            let source_id = format!("concurrent_source_{}", i);
+            let source_id = format!("concurrent_source_{i}");
             server_clone.start_source(&source_id).await
         });
         start_tasks.push(task);

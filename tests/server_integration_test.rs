@@ -389,7 +389,7 @@ async fn test_concurrent_operations() -> Result<()> {
         let handle = tokio::spawn(async move {
             // Alternate between starting and stopping sources
             if i % 2 == 0 {
-                let source_id = format!("concurrent-source-{}", i);
+                let source_id = format!("concurrent-source-{i}");
                 core_clone.start_source(&source_id).await
             } else {
                 sleep(Duration::from_millis(10)).await;

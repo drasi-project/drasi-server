@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         // Use CLI port if provided
         if let Some(port) = cli.port {
             default_config.server.port = port;
-            info!("Using command line port {} in default configuration", port);
+            info!("Using command line port {port} in default configuration");
         }
 
         default_config.save_to_file(&cli.config)?;
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
     info!("Config file: {}", cli.config.display());
 
     let final_port = cli.port.unwrap_or(config.server.port);
-    info!("Port: {}", final_port);
+    info!("Port: {final_port}");
     debug!("Server configuration: {:?}", config.server);
 
     let server = DrasiServer::new(cli.config, final_port).await?;

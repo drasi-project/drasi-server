@@ -68,11 +68,13 @@ impl DrasiServer {
         }
 
         // Build DrasiLib using the builder pattern with factory-created components
-        let mut builder = DrasiLib::builder()
-            .with_id(&config.core_config.id);
+        let mut builder = DrasiLib::builder().with_id(&config.core_config.id);
 
         // Create and add sources from config
-        info!("Loading {} source(s) from configuration", config.sources.len());
+        info!(
+            "Loading {} source(s) from configuration",
+            config.sources.len()
+        );
         for source_config in config.sources.clone() {
             let source = create_source(source_config).await?;
             builder = builder.with_source(source);
@@ -93,7 +95,7 @@ impl DrasiServer {
         let core = builder
             .build()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {e}"))?;
 
         Ok(Self {
             core: Some(core),
@@ -131,10 +133,11 @@ impl DrasiServer {
         OpenOptions::new().append(true).open(path).is_ok()
     }
 
+    #[allow(clippy::print_stdout)]
     pub async fn run(mut self) -> Result<()> {
         println!("Starting Drasi Server");
         if let Some(config_file) = &self.config_file_path {
-            println!("  Config file: {}", config_file);
+            println!("  Config file: {config_file}");
         }
         println!("  API Port: {}", self.port);
         println!(
@@ -244,14 +247,14 @@ impl DrasiServer {
             .layer(Extension(config_persistence));
 
         let addr = format!("{}:{}", self.host, self.port);
-        info!("Starting web API on {}", addr);
-        info!("Swagger UI available at http://{}/docs/", addr);
+        info!("Starting web API on {addr}");
+        info!("Swagger UI available at http://{addr}/docs/");
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
-                error!("Web API server error: {}", e);
+                error!("Web API server error: {e}");
             }
         });
 

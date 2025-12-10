@@ -18,7 +18,7 @@ import { DrasiSSEClient } from './grpc/SSEClient';
 interface QueryDefinition {
   id: string;
   query: string;
-  source_subscriptions: Array<{ source_id: string; pipeline: string[] }>;
+  sources: Array<{ source_id: string; pipeline: string[] }>;
   joins?: QueryJoin[];
 }
 
@@ -78,7 +78,7 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],
@@ -100,7 +100,7 @@ export class DrasiClient {
                 ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
                 ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],
@@ -119,7 +119,7 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                change_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],
@@ -138,7 +138,7 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                change_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],
@@ -156,7 +156,7 @@ export class DrasiClient {
                sp.volume AS volume,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],
@@ -173,7 +173,7 @@ export class DrasiClient {
                sp.previous_close AS previous_close,
                ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'price-feed', pipeline: [] }
       ],
       joins: [] // No joins needed - single source
@@ -332,7 +332,7 @@ export class DrasiClient {
         const queryConfig = {
           id: queryDef.id,
           query: queryDef.query,
-          source_subscriptions: queryDef.source_subscriptions,
+          sources: queryDef.sources,
           joins: queryDef.joins,
           auto_start: true
         };
@@ -404,7 +404,7 @@ export class DrasiClient {
         RETURN ${allFields.join(',\n               ')}
         ORDER BY sp.volume DESC
       `,
-      source_subscriptions: [
+      sources: [
         { source_id: 'postgres-stocks', pipeline: [] },
         { source_id: 'price-feed', pipeline: [] }
       ],

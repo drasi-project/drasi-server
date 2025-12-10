@@ -4,6 +4,8 @@
 //! They test the full lifecycle of components through the API, including dynamic creation
 //! of sources and reactions via the tagged enum config format.
 
+#![allow(clippy::unwrap_used)]
+
 use crate::test_utils::{create_mock_reaction, create_mock_source};
 use axum::{
     body::{to_bytes, Body},
@@ -174,7 +176,7 @@ async fn test_source_lifecycle_via_api() {
     assert_eq!(json["success"], true);
     assert!(json["data"].is_array());
     // Should have pre-registered sources
-    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(!json["data"].as_array().unwrap().is_empty());
 
     // Get specific source
     let response = router
@@ -334,7 +336,7 @@ async fn test_reaction_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["data"].is_array());
     // Should have pre-registered reactions
-    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(!json["data"].as_array().unwrap().is_empty());
 
     // Get specific reaction
     let response = router

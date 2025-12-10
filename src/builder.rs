@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
+use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically

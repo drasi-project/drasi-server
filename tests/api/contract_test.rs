@@ -3,6 +3,8 @@
 //! These tests validate that the REST API contracts remain stable over time.
 //! They test request/response formats, status codes, and data schemas.
 
+#![allow(clippy::unwrap_used)]
+
 use drasi_lib::channels::ComponentStatus;
 use drasi_lib::QueryConfig;
 use drasi_server::api::handlers::ApiResponse;

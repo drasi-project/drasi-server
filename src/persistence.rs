@@ -63,9 +63,11 @@ impl ConfigPersistence {
         );
 
         // Get current configuration from Core using public API
-        let core_config = self.core.get_current_config().await.map_err(|e| {
-            anyhow::anyhow!("Failed to get current config from DrasiLib: {}", e)
-        })?;
+        let core_config = self
+            .core
+            .get_current_config()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get current config from DrasiLib: {e}"))?;
 
         // Wrap Core config with wrapper settings
         // Note: sources and reactions are empty here because they are owned by the core
@@ -95,24 +97,22 @@ impl ConfigPersistence {
         // Write to temp file
         std::fs::write(&temp_path, yaml_content).map_err(|e| {
             error!(
-                "Failed to write temp config file {}: {}",
-                temp_path.display(),
-                e
+                "Failed to write temp config file {}: {e}",
+                temp_path.display()
             );
-            anyhow::anyhow!("Failed to write temp config file: {}", e)
+            anyhow::anyhow!("Failed to write temp config file: {e}")
         })?;
 
         // Atomically rename temp file to actual config file
         std::fs::rename(&temp_path, &self.config_file_path).map_err(|e| {
             error!(
-                "Failed to rename temp config file {} to {}: {}",
+                "Failed to rename temp config file {} to {}: {e}",
                 temp_path.display(),
-                self.config_file_path.display(),
-                e
+                self.config_file_path.display()
             );
             // Clean up temp file if rename fails
             let _ = std::fs::remove_file(&temp_path);
-            anyhow::anyhow!("Failed to rename config file: {}", e)
+            anyhow::anyhow!("Failed to rename config file: {e}")
         })?;
 
         info!(
@@ -138,12 +138,12 @@ impl ConfigPersistence {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use tempfile::TempDir;
     use drasi_lib::channels::dispatcher::ChangeDispatcher;
     use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
     use drasi_lib::plugin_core::Source as SourceTrait;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use tempfile::TempDir;
     use tokio::sync::RwLock;
 
     // Mock source for testing

@@ -131,10 +131,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
     // If a bootstrap provider is configured, create and attach it
     if let Some(bootstrap_config) = config.bootstrap_provider() {
         let provider = create_bootstrap_provider(bootstrap_config, &config)?;
-        info!(
-            "Setting bootstrap provider for source '{}'",
-            config.id()
-        );
+        info!("Setting bootstrap provider for source '{}'", config.id());
         source.set_bootstrap_provider(provider).await;
     }
 
@@ -162,11 +159,15 @@ fn create_bootstrap_provider(
         }
         BootstrapProviderConfig::ScriptFile(script_config) => {
             use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
-            Ok(Box::new(ScriptFileBootstrapProvider::new(script_config.clone())))
+            Ok(Box::new(ScriptFileBootstrapProvider::new(
+                script_config.clone(),
+            )))
         }
         BootstrapProviderConfig::Platform(platform_config) => {
             use drasi_bootstrap_platform::PlatformBootstrapProvider;
-            Ok(Box::new(PlatformBootstrapProvider::new(platform_config.clone())?))
+            Ok(Box::new(PlatformBootstrapProvider::new(
+                platform_config.clone(),
+            )?))
         }
         BootstrapProviderConfig::Application(_) => {
             // Application bootstrap is typically handled internally by application sources

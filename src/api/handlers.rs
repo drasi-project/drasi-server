@@ -40,7 +40,7 @@ async fn persist_after_operation(
 ) {
     if let Some(persistence) = config_persistence {
         if let Err(e) = persistence.save().await {
-            log::error!("Failed to persist configuration after {}: {}", operation, e);
+            log::error!("Failed to persist configuration after {operation}: {e}");
             // Don't fail the request, just log the error
         }
     }
@@ -187,10 +187,9 @@ pub async fn create_source_handler(
     let config: SourceConfig = match serde_json::from_value(config_json) {
         Ok(c) => c,
         Err(e) => {
-            log::error!("Failed to parse source config: {}", e);
+            log::error!("Failed to parse source config: {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Invalid source configuration: {}",
-                e
+                "Invalid source configuration: {e}"
             ))));
         }
     };
@@ -202,10 +201,9 @@ pub async fn create_source_handler(
     let source = match create_source(config).await {
         Ok(s) => s,
         Err(e) => {
-            log::error!("Failed to create source instance: {}", e);
+            log::error!("Failed to create source instance: {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Failed to create source: {}",
-                e
+                "Failed to create source: {e}"
             ))));
         }
     };
@@ -213,30 +211,30 @@ pub async fn create_source_handler(
     // Add the source to DrasiLib
     match core.add_source(source).await {
         Ok(_) => {
-            log::info!("Source '{}' created successfully", source_id);
+            log::info!("Source '{source_id}' created successfully");
 
             // Auto-start if configured
             if auto_start {
                 if let Err(e) = core.start_source(&source_id).await {
-                    log::warn!("Failed to auto-start source '{}': {}", source_id, e);
+                    log::warn!("Failed to auto-start source '{source_id}': {e}");
                 }
             }
 
             persist_after_operation(&config_persistence, "creating source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Source '{}' created successfully", source_id),
+                message: format!("Source '{source_id}' created successfully"),
             })))
         }
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
-                log::info!("Source '{}' already exists", source_id);
+                log::info!("Source '{source_id}' already exists");
                 return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Source '{}' already exists", source_id),
+                    message: format!("Source '{source_id}' already exists"),
                 })));
             }
-            log::error!("Failed to add source: {}", e);
+            log::error!("Failed to add source: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
         }
     }
@@ -301,7 +299,7 @@ pub async fn delete_source(
             })))
         }
         Err(e) => {
-            log::error!("Failed to delete source: {}", e);
+            log::error!("Failed to delete source: {e}");
             Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
@@ -419,46 +417,46 @@ pub async fn create_query(
     }
 
     let query_id = config.id.clone();
-    let join_count = config.joins.as_ref().map(|j| j.len()).unwrap_or(0);
 
     // Pre-flight join validation/logging (non-fatal warnings)
-    if join_count > 0 {
-        match LabelExtractor::extract_labels(&config.query, &config.query_language) {
-            Ok(labels) => {
-                let rel_labels: std::collections::HashSet<String> =
-                    labels.relation_labels.into_iter().collect();
-                for j in config.joins.as_ref().unwrap() {
-                    if !rel_labels.contains(&j.id) {
-                        log::warn!("[JOIN-VALIDATION] Query '{}' defines join id '{}' which does not appear as a relationship label in the Cypher pattern.", query_id, j.id);
-                    }
-                    for key in &j.keys {
-                        if key.label.trim().is_empty() || key.property.trim().is_empty() {
-                            log::warn!("[JOIN-VALIDATION] Query '{}' join '{}' has an empty label or property (label='{}', property='{}').", query_id, j.id, key.label, key.property);
+    if let Some(joins) = &config.joins {
+        if !joins.is_empty() {
+            match LabelExtractor::extract_labels(&config.query, &config.query_language) {
+                Ok(labels) => {
+                    let rel_labels: std::collections::HashSet<String> =
+                        labels.relation_labels.into_iter().collect();
+                    for j in joins {
+                        if !rel_labels.contains(&j.id) {
+                            log::warn!("[JOIN-VALIDATION] Query '{query_id}' defines join id '{}' which does not appear as a relationship label in the Cypher pattern.", j.id);
+                        }
+                        for key in &j.keys {
+                            if key.label.trim().is_empty() || key.property.trim().is_empty() {
+                                log::warn!("[JOIN-VALIDATION] Query '{query_id}' join '{}' has an empty label or property (label='{}', property='{}').", j.id, key.label, key.property);
+                            }
                         }
                     }
+                    log::info!(
+                        "Registering query '{query_id}' with {} synthetic join(s)",
+                        joins.len()
+                    );
                 }
-                log::info!(
-                    "Registering query '{}' with {} synthetic join(s)",
-                    query_id,
-                    join_count
-                );
+                Err(e) => {
+                    log::warn!(
+                        "[JOIN-VALIDATION] Failed to parse query '{query_id}' for join validation: {e}"
+                    );
+                }
             }
-            Err(e) => {
-                log::warn!(
-                    "[JOIN-VALIDATION] Failed to parse query '{}' for join validation: {}",
-                    query_id,
-                    e
-                );
-            }
+        } else {
+            log::debug!("Registering query '{query_id}' with no synthetic joins");
         }
     } else {
-        log::debug!("Registering query '{}' with no synthetic joins", query_id);
+        log::debug!("Registering query '{query_id}' with no synthetic joins");
     }
 
     // Use DrasiLib's public API to create query
     match core.add_query(config.clone()).await {
         Ok(_) => {
-            log::info!("Query '{}' created successfully", query_id);
+            log::info!("Query '{query_id}' created successfully");
             persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -469,14 +467,14 @@ pub async fn create_query(
             // Check if the query already exists
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!("Query '{}' already exists, skipping creation", query_id);
+                log::info!("Query '{query_id}' already exists, skipping creation");
                 // Return success since the query exists (idempotent behavior)
                 return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Query '{}' already exists", query_id),
+                    message: format!("Query '{query_id}' already exists"),
                 })));
             }
 
-            log::error!("Failed to create query: {}", e);
+            log::error!("Failed to create query: {e}");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -538,7 +536,7 @@ pub async fn delete_query(
             })))
         }
         Err(e) => {
-            log::error!("Failed to delete query: {}", e);
+            log::error!("Failed to delete query: {e}");
             Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
@@ -705,10 +703,9 @@ pub async fn create_reaction_handler(
     let config: ReactionConfig = match serde_json::from_value(config_json) {
         Ok(c) => c,
         Err(e) => {
-            log::error!("Failed to parse reaction config: {}", e);
+            log::error!("Failed to parse reaction config: {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Invalid reaction configuration: {}",
-                e
+                "Invalid reaction configuration: {e}"
             ))));
         }
     };
@@ -720,10 +717,9 @@ pub async fn create_reaction_handler(
     let reaction = match create_reaction(config) {
         Ok(r) => r,
         Err(e) => {
-            log::error!("Failed to create reaction instance: {}", e);
+            log::error!("Failed to create reaction instance: {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Failed to create reaction: {}",
-                e
+                "Failed to create reaction: {e}"
             ))));
         }
     };
@@ -731,30 +727,30 @@ pub async fn create_reaction_handler(
     // Add the reaction to DrasiLib
     match core.add_reaction(reaction).await {
         Ok(_) => {
-            log::info!("Reaction '{}' created successfully", reaction_id);
+            log::info!("Reaction '{reaction_id}' created successfully");
 
             // Auto-start if configured
             if auto_start {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
-                    log::warn!("Failed to auto-start reaction '{}': {}", reaction_id, e);
+                    log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
                 }
             }
 
             persist_after_operation(&config_persistence, "creating reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Reaction '{}' created successfully", reaction_id),
+                message: format!("Reaction '{reaction_id}' created successfully"),
             })))
         }
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
-                log::info!("Reaction '{}' already exists", reaction_id);
+                log::info!("Reaction '{reaction_id}' already exists");
                 return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Reaction '{}' already exists", reaction_id),
+                    message: format!("Reaction '{reaction_id}' already exists"),
                 })));
             }
-            log::error!("Failed to add reaction: {}", e);
+            log::error!("Failed to add reaction: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
         }
     }
@@ -819,7 +815,7 @@ pub async fn delete_reaction(
             })))
         }
         Err(e) => {
-            log::error!("Failed to delete reaction: {}", e);
+            log::error!("Failed to delete reaction: {e}");
             Ok(Json(ApiResponse::error(e.to_string())))
         }
     }

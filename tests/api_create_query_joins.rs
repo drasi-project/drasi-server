@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use axum::Extension;
 use drasi_lib::{
     config::{QueryJoinConfig, QueryJoinKeyConfig},
