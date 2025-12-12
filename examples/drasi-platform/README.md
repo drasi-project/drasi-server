@@ -165,17 +165,16 @@ The platform source is configured in `server-config.yaml`:
 
 ```yaml
 sources:
-  - id: platform-redis-source
-    source_type: platform
+  - kind: platform
+    id: platform-redis-source
     auto_start: true
-    properties:
-      redis_url: "redis://localhost:6379"
-      stream_key: "hello-world-change"
-      consumer_group: "drasi-core"
-      consumer_name: "consumer-1"
-      batch_size: 10
-      block_ms: 5000
-      start_id: ">"
+    redis_url: "redis://localhost:6379"
+    stream_key: "hello-world-change"
+    consumer_group: "drasi-core"
+    consumer_name: "consumer-1"
+    batch_size: 10
+    block_ms: 5000
+    start_id: ">"
 ```
 
 **Key Properties:**
@@ -214,8 +213,8 @@ Outputs query results to the console for immediate visibility:
 
 ```yaml
 reactions:
-  - id: log-hello-world
-    reaction_type: log
+  - kind: log
+    id: log-hello-world
     auto_start: true
     queries:
       - hello-world-from
@@ -226,17 +225,16 @@ reactions:
 Publishes query results to a Redis stream in CloudEvent format for downstream consumption:
 
 ```yaml
-  - id: platform-hello-world-results
-    reaction_type: platform
+  - kind: platform
+    id: platform-hello-world-results
     auto_start: true
     queries:
       - hello-world-from
-    properties:
-      redis_url: "redis://localhost:6379"
-      pubsub_name: "drasi-pubsub"
-      source_name: "drasi-core"
-      max_stream_length: 10000
-      emit_control_events: true
+    redis_url: "redis://localhost:6379"
+    pubsub_name: "drasi-pubsub"
+    source_name: "drasi-core"
+    max_stream_length: 10000
+    emit_control_events: true
 ```
 
 **Key Properties:**
@@ -566,8 +564,7 @@ docker exec -it drasi-redis redis-cli XGROUP DESTROY hello-world-change drasi-co
 **Solutions**:
 1. Configure `max_stream_length` in platform reaction:
    ```yaml
-   properties:
-     max_stream_length: 10000  # Keep last 10,000 messages
+   max_stream_length: 10000  # Keep last 10,000 messages
    ```
 2. Implement a consumer to process and archive messages
 3. Manually trim the stream:

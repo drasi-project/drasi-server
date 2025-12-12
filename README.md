@@ -386,9 +386,9 @@ queries:
     sources: [my-source]
 
 reactions:
-  - id: high-volume-reaction
+  - kind: http
+    id: high-volume-reaction
     priority_queue_capacity: 50000  # Override for this specific reaction
-    reaction_type: http
     queries: [high-volume-query]
 ```
 
