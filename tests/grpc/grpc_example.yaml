@@ -1,19 +1,18 @@
 server:
   host: 0.0.0.0
   port: 18080
-  log_level: drasi_server=info,drasi_core=warn
-  disable_persistence: true
+  logLevel: drasi_server=info,drasi_core=warn
+  disablePersistence: true
 sources:
-- id: facilities-db
-  source_type: grpc
-  auto_start: true
-  properties:
-    keepalive_interval_seconds: 10
-    keepalive_timeout_seconds: 10
-    host: 0.0.0.0
-    port: 50051
-    max_message_size: 8388608
-    max_connections: 100
+- kind: grpc
+  id: facilities-db
+  autoStart: true
+  keepaliveIntervalSeconds: 10
+  keepaliveTimeoutSeconds: 10
+  host: 0.0.0.0
+  port: 50051
+  maxMessageSize: 8388608
+  maxConnections: 100
 queries:
 - id: building-comfort
   query: |
@@ -23,28 +22,26 @@ queries:
       elementId(r) AS RoomId,
       r.temperature, r.humidity, r.co2
   sources:
-  - facilities-db
-  auto_start: true
-  properties: {}
+  - sourceId: facilities-db
+  autoStart: true
 reactions:
-- id: rooms-grpc
-  reaction_type: grpc
+- kind: grpc
+  id: rooms-grpc
   queries:
   - building-comfort
-  auto_start: true
-  properties:
-    endpoint: http://127.0.0.1:50052
-    batch_flush_timeout_ms: 100
-    compression: false
-    batch_size: 1000
-    keepalive:
-      interval_seconds: 10
-      timeout_seconds: 10
-    metadata:
-      x-api-key: test-key-12345
-      x-client-id: drasi-test
-    max_retries: 3
-    timeout_ms: 5000
-    retry_delay_ms: 500
-    tls:
-      enabled: false
+  autoStart: true
+  endpoint: http://127.0.0.1:50052
+  batchFlushTimeoutMs: 100
+  compression: false
+  batchSize: 1000
+  keepalive:
+    intervalSeconds: 10
+    timeoutSeconds: 10
+  metadata:
+    x-api-key: test-key-12345
+    x-client-id: drasi-test
+  maxRetries: 3
+  timeoutMs: 5000
+  retryDelayMs: 500
+  tls:
+    enabled: false

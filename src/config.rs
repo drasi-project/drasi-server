@@ -65,9 +65,9 @@ pub enum SourceConfig {
     #[serde(rename = "mock")]
     Mock {
         id: String,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
         bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: MockSourceConfig,
@@ -76,9 +76,9 @@ pub enum SourceConfig {
     #[serde(rename = "http")]
     Http {
         id: String,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
         bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: HttpSourceConfig,
@@ -87,9 +87,9 @@ pub enum SourceConfig {
     #[serde(rename = "grpc")]
     Grpc {
         id: String,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
         bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: GrpcSourceConfig,
@@ -98,9 +98,9 @@ pub enum SourceConfig {
     #[serde(rename = "postgres")]
     Postgres {
         id: String,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
         bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PostgresSourceConfig,
@@ -109,9 +109,9 @@ pub enum SourceConfig {
     #[serde(rename = "platform")]
     Platform {
         id: String,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
         bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PlatformSourceConfig,
@@ -191,7 +191,7 @@ pub enum ReactionConfig {
     Log {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: LogReactionConfig,
@@ -201,7 +201,7 @@ pub enum ReactionConfig {
     Http {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpReactionConfig,
@@ -211,7 +211,7 @@ pub enum ReactionConfig {
     HttpAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpAdaptiveReactionConfig,
@@ -221,7 +221,7 @@ pub enum ReactionConfig {
     Grpc {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcReactionConfig,
@@ -231,7 +231,7 @@ pub enum ReactionConfig {
     GrpcAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcAdaptiveReactionConfig,
@@ -241,7 +241,7 @@ pub enum ReactionConfig {
     Sse {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: SseReactionConfig,
@@ -251,7 +251,7 @@ pub enum ReactionConfig {
     Platform {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: PlatformReactionConfig,
@@ -261,7 +261,7 @@ pub enum ReactionConfig {
     Profiler {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
+        #[serde(default = "default_true", rename = "autoStart")]
         auto_start: bool,
         #[serde(flatten)]
         config: ProfilerReactionConfig,
@@ -340,9 +340,9 @@ pub struct ServerSettings {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default = "default_log_level")]
+    #[serde(default = "default_log_level", rename = "logLevel")]
     pub log_level: String,
-    #[serde(default = "default_disable_persistence")]
+    #[serde(default = "default_disable_persistence", rename = "disablePersistence")]
     pub disable_persistence: bool,
 }
 

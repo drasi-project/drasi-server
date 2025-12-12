@@ -60,13 +60,13 @@ pub struct ErrorResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorDetail {
     /// Component type if applicable
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "componentType")]
     pub component_type: Option<String>,
     /// Component ID if applicable
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "componentId")]
     pub component_id: Option<String>,
     /// Technical error details
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "technicalDetails")]
     pub technical_details: Option<String>,
 }
 
