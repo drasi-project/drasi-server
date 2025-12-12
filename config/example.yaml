@@ -2,15 +2,15 @@ server_core:
   id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
 storage_backends: []
 sources:
-- id: vehicle-location-source
+- kind: mock
+  id: vehicle-location-source
   auto_start: true
-  source_type: mock
   interval_seconds: 5
   data_type: vehicle_location
   description: Mock vehicle location data
-- id: order-status-source
+- kind: mock
+  id: order-status-source
   auto_start: true
-  source_type: mock
   data_type: order_status
   interval_seconds: 3
   description: Mock order status updates
@@ -36,18 +36,18 @@ queries:
   enableBootstrap: true
   bootstrapBufferSize: 10000
 reactions:
-- id: driver-availability-logger
+- kind: log
+  id: driver-availability-logger
   queries:
   - available-drivers-query
   auto_start: true
-  reaction_type: log
   log_level: info
   description: Log driver availability changes
-- id: order-notification-handler
+- kind: http
+  id: order-notification-handler
   queries:
   - available-drivers-query
   auto_start: true
-  reaction_type: http
   endpoint: http://localhost:9000/notifications
   method: POST
   description: Send notifications for query results

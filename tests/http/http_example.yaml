@@ -4,8 +4,8 @@ server:
   log_level: drasi_server=info,drasi_core=warn
   disable_persistence: false
 sources:
-- id: facilities-db
-  source_type: http
+- kind: http
+  id: facilities-db
   auto_start: true
   properties:
     port: 9000
@@ -23,8 +23,8 @@ queries:
   auto_start: true
   properties: {}
 reactions:
-- id: rooms-webhook
-  reaction_type: http
+- kind: http
+  id: rooms-webhook
   queries:
   - all-rooms
   auto_start: true

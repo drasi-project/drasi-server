@@ -4,8 +4,8 @@ server:
   log_level: drasi_server=info,drasi_core=warn
   disable_persistence: false
 sources:
-- id: events-http
-  source_type: http_adaptive
+- kind: http-adaptive
+  id: events-http
   auto_start: true
   properties:
     adaptive_enabled: true
@@ -29,8 +29,8 @@ queries:
   auto_start: true
   properties: {}
 reactions:
-- id: webhook-adaptive
-  reaction_type: http_adaptive
+- kind: http-adaptive
+  id: webhook-adaptive
   queries:
   - event-processing
   auto_start: true

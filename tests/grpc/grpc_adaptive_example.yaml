@@ -4,8 +4,8 @@ server:
   log_level: drasi_server=info,drasi_core=warn
   disable_persistence: true
 sources:
-- id: facilities-db
-  source_type: grpc
+- kind: grpc
+  id: facilities-db
   auto_start: true
   properties:
     keepalive_timeout_seconds: 10
@@ -26,8 +26,8 @@ queries:
   auto_start: true
   properties: {}
 reactions:
-- id: rooms-grpc-adaptive
-  reaction_type: grpc_adaptive
+- kind: grpc-adaptive
+  id: rooms-grpc-adaptive
   queries:
   - building-comfort
   auto_start: true

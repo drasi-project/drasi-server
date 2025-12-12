@@ -53,8 +53,8 @@ server:
   disable_persistence: false
 
 sources:
-  - id: inventory-db
-    source_type: postgres
+  - kind: postgres
+    id: inventory-db
     auto_start: true
     # PostgreSQL source configuration (flattened typed fields)
     host: localhost
@@ -80,8 +80,8 @@ queries:
     bootstrapBufferSize: 10000
 
 reactions:
-  - id: alert-webhook
-    reaction_type: http
+  - kind: http
+    id: alert-webhook
     auto_start: true
     queries: [low-stock-detector]
     # HTTP reaction configuration (flattened typed fields)
@@ -213,8 +213,8 @@ server_core:
 
 # Data sources
 sources:
-  - id: unique-source-id
-    source_type: postgres               # Source type (postgres, http, grpc, platform, mock, application)
+  - kind: postgres                      # Source type (postgres, http, grpc, platform, mock)
+    id: unique-source-id
     auto_start: true                    # Start automatically
 
     # Bootstrap provider (optional) - Load initial data independently from streaming
@@ -260,8 +260,8 @@ queries:
 
 # Reactions
 reactions:
-  - id: unique-reaction-id
-    reaction_type: http                 # Reaction type (http, grpc, sse, log, platform, profiler, etc.)
+  - kind: http                          # Reaction type (http, grpc, sse, log, platform, profiler, http-adaptive, grpc-adaptive)
+    id: unique-reaction-id
     queries: [query-id]                 # Query subscriptions
     auto_start: true                    # Start automatically (default: true)
     priority_queue_capacity: 5000       # Override default priority queue capacity (optional)
@@ -285,8 +285,8 @@ DrasiServer supports **strongly-typed configuration** where each source type has
 **PostgreSQL Source Example:**
 ```yaml
 sources:
-  - id: my-postgres
-    source_type: postgres
+  - kind: postgres
+    id: my-postgres
     auto_start: true
     # PostgreSQL-specific typed fields
     host: localhost
@@ -303,8 +303,8 @@ sources:
 **HTTP Source Example:**
 ```yaml
 sources:
-  - id: my-http-api
-    source_type: http
+  - kind: http
+    id: my-http-api
     auto_start: true
     # HTTP-specific typed fields
     host: 0.0.0.0
@@ -315,8 +315,8 @@ sources:
 **Platform Source Example (Redis Streams):**
 ```yaml
 sources:
-  - id: redis-stream
-    source_type: platform
+  - kind: platform
+    id: redis-stream
     auto_start: true
     # Platform-specific typed fields
     redis_url: redis://localhost:6379
@@ -333,8 +333,8 @@ Similar to sources, reactions use strongly-typed configuration fields:
 **HTTP Reaction Example:**
 ```yaml
 reactions:
-  - id: webhook-reaction
-    reaction_type: http
+  - kind: http
+    id: webhook-reaction
     queries: [my-query]
     auto_start: true
     # HTTP reaction typed fields
@@ -350,8 +350,8 @@ reactions:
 **Adaptive HTTP Reaction Example (with retry logic):**
 ```yaml
 reactions:
-  - id: adaptive-webhook
-    reaction_type: http_adaptive  # or adaptive_http
+  - kind: http-adaptive
+    id: adaptive-webhook
     queries: [my-query]
     auto_start: true
     base_url: https://api.example.com
@@ -363,8 +363,8 @@ reactions:
 **Platform Reaction Example (Redis Streams with CloudEvents):**
 ```yaml
 reactions:
-  - id: redis-publisher
-    reaction_type: platform
+  - kind: platform
+    id: redis-publisher
     queries: [my-query]
     auto_start: true
     redis_url: redis://localhost:6379
@@ -457,22 +457,45 @@ reactions: []
 
 If you're upgrading from an older version of DrasiServer, you may need to update your configuration files:
 
-#### Source Type Renames (Breaking Change)
+#### Source and Reaction Field Names (Breaking Change)
+
+**Configuration field names have changed:**
+```yaml
+# OLD (no longer supported)
+sources:
+  - id: my-source
+    source_type: postgres
+    
+reactions:
+  - id: my-reaction
+    reaction_type: http
+
+# NEW (current format)
+sources:
+  - kind: postgres
+    id: my-source
+    
+reactions:
+  - kind: http
+    id: my-reaction
+```
+
+#### PostgreSQL Source Type Rename
 
 **PostgreSQL sources:**
 ```yaml
 # OLD (no longer supported)
-source_type: postgres_replication
+kind: postgres_replication
 
 # NEW
-source_type: postgres
+kind: postgres
 ```
 
 #### Flattened Source Configuration (Recommended)
 
 Source configurations now use strongly-typed fields flattened at the source level instead of nested under `properties`:
 
-**OLD pattern (still supported for backward compatibility):**
+**OLD pattern (no longer supported):**
 ```yaml
 sources:
   - id: my-source
@@ -484,11 +507,11 @@ sources:
       database: mydb
 ```
 
-**NEW pattern (recommended - provides better type safety):**
+**NEW pattern (current format):**
 ```yaml
 sources:
-  - id: my-source
-    source_type: postgres
+  - kind: postgres
+    id: my-source
     auto_start: true
     # Flattened typed fields
     host: localhost
@@ -502,11 +525,11 @@ sources:
     ssl_mode: prefer
 ```
 
-**Note:** The flattened pattern is recommended as it provides compile-time type checking and validation. The nested `properties` pattern may be deprecated in future versions.
+**Note:** The current format uses `kind` field and flattened configuration. The old `source_type`/`reaction_type` and `properties` patterns are no longer supported.
 
 #### Reaction Configuration
 
-Similar to sources, reactions should use flattened typed fields:
+Similar to sources, reactions now use `kind` field and flattened typed fields:
 
 **OLD pattern:**
 ```yaml
@@ -522,8 +545,8 @@ reactions:
 **NEW pattern:**
 ```yaml
 reactions:
-  - id: my-reaction
-    reaction_type: http
+  - kind: http
+    id: my-reaction
     queries: [my-query]
     base_url: https://example.com
     timeout_ms: 5000
@@ -596,8 +619,8 @@ GET /sources/{id}
 POST /sources
 Content-Type: application/json
 {
+  "kind": "postgres",
   "id": "new-source",
-  "source_type": "postgres",
   "auto_start": true,
   "host": "localhost",
   "port": 5432,
@@ -668,8 +691,8 @@ GET /reactions/{id}
 POST /reactions
 Content-Type: application/json
 {
+  "kind": "http",
   "id": "new-reaction",
-  "reaction_type": "http",
   "queries": ["query-id"],
   "auto_start": true,
   "base_url": "https://api.example.com",
