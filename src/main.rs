@@ -18,7 +18,7 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 
-use drasi_server::{DrasiServer, DrasiServerConfig};
+use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
 #[derive(Parser)]
 #[command(name = "drasi-server")]
@@ -34,6 +34,25 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Load .env file if it exists (for environment variable interpolation)
+    // Look for .env in the same directory as the config file
+    let env_file_loaded = if let Some(config_dir) = cli.config.parent() {
+        let env_file = config_dir.join(".env");
+        if env_file.exists() {
+            match dotenvy::from_path(&env_file) {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!("Warning: Failed to load .env file: {}", e);
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     // Check if config file exists, create default if it doesn't
     let config = if !cli.config.exists() {
@@ -65,7 +84,7 @@ async fn main() -> Result<()> {
             info!("Using command line port {port} in default configuration");
         }
 
-        default_config.save_to_file(&cli.config)?;
+        save_config_file(&default_config, &cli.config)?;
 
         info!("Default configuration created at: {}", cli.config.display());
         info!("Please edit the configuration file to add sources, queries, and reactions.");
@@ -73,7 +92,7 @@ async fn main() -> Result<()> {
         default_config
     } else {
         // Load config first to get log level
-        DrasiServerConfig::load_from_file(&cli.config)?
+        load_config_file(&cli.config)?
     };
 
     // Set log level from config if RUST_LOG wasn't explicitly set by user
@@ -91,6 +110,11 @@ async fn main() -> Result<()> {
 
     info!("Starting Drasi Server");
     debug!("Debug logging is enabled");
+    
+    if env_file_loaded {
+        info!("Loaded environment variables from .env file");
+    }
+    
     info!("Config file: {}", cli.config.display());
 
     let final_port = cli.port.unwrap_or(config.server.port);

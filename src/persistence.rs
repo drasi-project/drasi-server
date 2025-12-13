@@ -267,7 +267,7 @@ mod tests {
         // Verify content is valid YAML
         let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
         let loaded_config: DrasiServerConfig =
-            serde_yaml::from_str(&content).expect("Failed to parse saved config");
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
 
         // Verify wrapper settings
         assert_eq!(loaded_config.server.host, "127.0.0.1");

@@ -22,12 +22,15 @@
 # - SSE reaction for real-time browser streaming
 #
 # This tutorial mirrors the Drasi Platform getting-started tutorial at drasi.io
+#
+# SECURITY NOTE: This config uses environment variables for sensitive data.
+# Set these before running: source .env or use a secrets manager.
 
 # Server Configuration
 server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
+  host: "${SERVER_HOST:-0.0.0.0}"
+  port: ${SERVER_PORT:-8080}
+  log_level: "${LOG_LEVEL:-info}"
   disable_persistence: true
 
 server_core:
@@ -45,11 +48,12 @@ sources:
     auto_start: true
 
     # PostgreSQL connection settings
-    host: localhost
-    port: 5432
-    database: getting_started
-    user: drasi_user
-    password: drasi_password
+    # Using environment variables for security
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5432}
+    database: "${POSTGRES_DATABASE:-getting_started}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD}"
     ssl_mode: prefer
 
     # Tables to monitor for changes
@@ -147,7 +151,7 @@ reactions:
       - hello-world-from
       - message-count
       # - inactive-people
-    host: 0.0.0.0
-    port: 8081
+    host: "${SSE_HOST:-0.0.0.0}"
+    port: ${SSE_PORT:-8081}
     sse_path: /events
     heartbeat_interval_ms: 30000

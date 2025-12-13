@@ -75,6 +75,10 @@ clap = { version = "4.0", features = ["derive"] }
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1.0", features = ["v4"] }
+regex = "1.10"
+lazy_static = "1.4"
+thiserror = "1.0"
+dotenvy = "0.15"
 
 [dev-dependencies]
 # Testing utilities

@@ -1,0 +1,124 @@
+# Drasi Server Configuration with Environment Variables
+#
+# This example demonstrates how to use environment variable interpolation
+# in Drasi Server configuration files.
+#
+# Syntax:
+#   ${VAR_NAME}           - Required variable (fails if not set)
+#   ${VAR_NAME:-default}  - Variable with default value
+#
+# Security Best Practice:
+# Use environment variables for sensitive data like passwords, API keys,
+# and connection strings instead of hardcoding them in config files.
+
+server:
+  # Server bind address - uses environment variable with default
+  host: "${SERVER_HOST:-0.0.0.0}"
+  
+  # Server port - uses environment variable with default
+  port: "${SERVER_PORT:-8080}"
+  
+  # Logging level: trace, debug, info, warn, error
+  log_level: "${LOG_LEVEL:-info}"
+  
+  # Disable automatic persistence of API changes to this file
+  disable_persistence: false
+
+server_core:
+  # Unique server identifier
+  id: "${SERVER_ID:-drasi-server-1}"
+
+# Data sources
+sources:
+  # PostgreSQL source with CDC (Change Data Capture)
+  - kind: postgres
+    id: my-postgres-db
+    auto_start: true
+    
+    # Connection details - all use environment variables for security
+    host: "${DB_HOST}"
+    port: "${DB_PORT:-5432}"
+    database: "${DB_NAME}"
+    user: "${DB_USER}"
+    password: "${DB_PASSWORD}"  # NEVER hardcode passwords!
+    
+    # Optional: SSL configuration
+    # ssl_mode: "${DB_SSL_MODE:-prefer}"
+    
+    bootstrap_provider:
+      kind: postgres
+      host: "${DB_HOST}"
+      port: "${DB_PORT:-5432}"
+      database: "${DB_NAME}"
+      user: "${DB_USER}"
+      password: "${DB_PASSWORD}"
+
+  # HTTP source for receiving events
+  - kind: http
+    id: webhook-receiver
+    auto_start: true
+    host: "${WEBHOOK_HOST:-0.0.0.0}"
+    port: "${WEBHOOK_PORT:-9000}"
+
+# Continuous queries
+queries:
+  - id: high-value-orders
+    query: |
+      MATCH (o:Order)
+      WHERE o.total > 1000
+      RETURN o.id AS order_id, o.total AS total, o.customer AS customer
+    query_language: Cypher
+    auto_start: true
+    enable_bootstrap: true
+    
+    source_subscriptions:
+      - source_id: my-postgres-db
+
+# Reactions (where to send query results)
+reactions:
+  # Log reaction for debugging
+  - kind: log
+    id: log-high-value-orders
+    queries:
+      - high-value-orders
+    auto_start: true
+    log_level: "${REACTION_LOG_LEVEL:-info}"
+
+  # HTTP webhook reaction
+  - kind: http
+    id: notify-high-value-orders
+    queries:
+      - high-value-orders
+    auto_start: true
+    
+    # Webhook URL - uses environment variable
+    base_url: "${WEBHOOK_URL}"
+    
+    # Optional: Authentication
+    # headers:
+    #   Authorization: "Bearer ${API_TOKEN}"
+    
+    method: POST
+    
+  # Server-Sent Events (SSE) for real-time updates
+  - kind: sse
+    id: sse-high-value-orders
+    queries:
+      - high-value-orders
+    auto_start: true
+    host: "${SSE_HOST:-0.0.0.0}"
+    port: "${SSE_PORT:-8081}"
+
+# Example: Running the server with environment variables
+#
+# export SERVER_HOST=0.0.0.0
+# export SERVER_PORT=8080
+# export LOG_LEVEL=debug
+# export DB_HOST=db.example.com
+# export DB_PORT=5432
+# export DB_NAME=production
+# export DB_USER=drasi_user
+# export DB_PASSWORD=<secret-from-vault>
+# export WEBHOOK_URL=https://api.example.com/webhooks/orders
+#
+# cargo run -- --config config/server-with-env-vars.yaml

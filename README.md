@@ -191,6 +191,93 @@ cargo test
 RUST_LOG=debug cargo run
 ```
 
+## Environment Variable Interpolation
+
+### Security Best Practices
+
+**Never hardcode sensitive data** like passwords, API keys, or tokens in configuration files. DrasiServer supports POSIX-style environment variable interpolation to inject secrets at runtime.
+
+### Syntax
+
+```yaml
+# Required variable - fails if not set
+password: ${DB_PASSWORD}
+
+# Variable with default value
+port: ${DB_PORT:-5432}
+host: ${DB_HOST:-localhost}
+```
+
+### Example Configuration
+
+```yaml
+server:
+  host: "${SERVER_HOST:-0.0.0.0}"
+  port: "${SERVER_PORT:-8080}"
+  log_level: "${LOG_LEVEL:-info}"
+
+sources:
+  - kind: postgres
+    id: production-db
+    auto_start: true
+    
+    # Use environment variables for sensitive data
+    host: "${DB_HOST}"
+    port: "${DB_PORT:-5432}"
+    database: "${DB_NAME}"
+    user: "${DB_USER}"
+    password: "${DB_PASSWORD}"  # Never hardcode!
+    
+queries:
+  - id: critical-alerts
+    query: "MATCH (e:Event) WHERE e.severity = 'critical' RETURN e"
+    source_subscriptions:
+      - source_id: production-db
+
+reactions:
+  - kind: http
+    id: webhook-notifier
+    queries: [critical-alerts]
+    base_url: "${WEBHOOK_URL}"
+    # Optional authentication
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+```
+
+### Running with Environment Variables
+
+```bash
+# Set environment variables
+export DB_HOST=db.production.example.com
+export DB_PORT=5432
+export DB_NAME=production_db
+export DB_USER=drasi_user
+export DB_PASSWORD=$(vault read -field=password secret/db/drasi)
+export WEBHOOK_URL=https://api.example.com/webhooks
+export API_TOKEN=$(vault read -field=token secret/api/webhook)
+
+# Run server - variables are automatically interpolated
+cargo run -- --config config/server.yaml
+```
+
+### Features
+
+- ✅ **Transparent** - Works automatically when loading any config file
+- ✅ **Type-safe** - Environment variables work with any config field type (strings, numbers, booleans)
+- ✅ **Default values** - Use `${VAR:-default}` syntax for optional configuration
+- ✅ **Validation** - Clear error messages if required variables are missing
+- ✅ **Backward compatible** - Existing configs without `${...}` work unchanged
+
+### Security Notes
+
+1. **Never commit secrets** to version control
+2. **Use secret management** tools (HashiCorp Vault, AWS Secrets Manager, etc.)
+3. **Limit permissions** on config files containing `${...}` references
+4. **Audit access** to environment variables in production
+5. **Rotate secrets** regularly
+
+See `config/server-with-env-vars.yaml` for a comprehensive example.
+
 ## Configuration
 
 ### Configuration File Structure

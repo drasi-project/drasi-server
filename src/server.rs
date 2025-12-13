@@ -27,8 +27,8 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::config::DrasiServerConfig;
 use crate::factories::{create_reaction, create_source};
+use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use drasi_lib::DrasiLib;
 
@@ -46,7 +46,7 @@ pub struct DrasiServer {
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
     pub async fn new(config_path: PathBuf, port: u16) -> Result<Self> {
-        let config = DrasiServerConfig::load_from_file(&config_path)?;
+        let config = load_config_file(&config_path)?;
         config.validate()?;
 
         // Determine persistence and read-only status
@@ -160,7 +160,7 @@ impl DrasiServer {
         let config_persistence = if let Some(config_file) = &self.config_file_path {
             if !*self.read_only {
                 // Need to reload config to check disable_persistence flag
-                let config = DrasiServerConfig::load_from_file(PathBuf::from(config_file))?;
+                let config = load_config_file(PathBuf::from(config_file))?;
                 let persistence_disabled = config.server.disable_persistence;
 
                 if !persistence_disabled {

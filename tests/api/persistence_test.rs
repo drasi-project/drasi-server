@@ -47,7 +47,7 @@ async fn test_persistence_creates_config_file_on_save() {
     assert!(config_path.exists());
 
     // Verify content
-    let loaded_config = DrasiServerConfig::load_from_file(&config_path)
+    let loaded_config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load config");
     assert_eq!(loaded_config.api.host, "127.0.0.1");
     assert_eq!(loaded_config.api.port, 8080);
@@ -78,7 +78,7 @@ async fn test_persistence_disabled_by_flag() {
     config.save_to_file(&config_path).expect("Failed to save config");
 
     // Load and verify
-    let loaded_config = DrasiServerConfig::load_from_file(&config_path)
+    let loaded_config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load config");
     assert!(loaded_config.server.disable_persistence);
 }
@@ -148,7 +148,7 @@ async fn test_persistence_saves_complete_configuration() {
     config.save_to_file(&config_path).expect("Failed to save config");
 
     // Load and verify all components
-    let loaded_config = DrasiServerConfig::load_from_file(&config_path)
+    let loaded_config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load config");
 
     // Verify API settings
@@ -239,7 +239,7 @@ async fn test_persistence_atomic_write() {
     assert!(!temp_path.exists(), "Temp file should not exist after atomic write");
 
     // Load and verify updated config
-    let loaded_config = DrasiServerConfig::load_from_file(&config_path)
+    let loaded_config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load updated config");
     assert_eq!(loaded_config.api.port, 9090);
     assert_eq!(loaded_config.server.log_level, "debug");
@@ -297,7 +297,7 @@ reactions: []
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify
-    let config = DrasiServerConfig::load_from_file(&config_path)
+    let config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load YAML config");
     assert_eq!(config.api.host, "127.0.0.1");
     assert_eq!(config.sources.len(), 1);
@@ -318,7 +318,7 @@ reactions: []
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify defaults are applied
-    let config = DrasiServerConfig::load_from_file(&config_path)
+    let config = drasi_server::load_config_file(&config_path)
         .expect("Failed to load config");
     assert_eq!(config.api.host, "0.0.0.0"); // Default
     assert_eq!(config.api.port, 8080); // Default
