@@ -135,11 +135,11 @@ fi
 
 # Step 2: Start Drasi Server
 echo ""
-echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamically)..."
+echo "Step 2: Starting Drasi Server..."
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
-    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
+    ./target/release/drasi-server --config "examples/trading/server/trading-server.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
 echo "Replication source will bootstrap initial data from PostgreSQL..."

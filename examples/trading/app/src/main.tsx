@@ -16,9 +16,25 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { SSEProvider } from '@drasi/react';
+
+// Query IDs defined in trading-server.yaml
+const queryIds = [
+  'watchlist-query',
+  'portfolio-query',
+  'top-gainers-query',
+  'top-losers-query',
+  'high-volume-query',
+  'price-ticker-query'
+];
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <SSEProvider 
+      config={{ endpoint: 'http://localhost:50051/events' }}
+      queryIds={queryIds}
+    >
+      <App />
+    </SSEProvider>
   </React.StrictMode>,
 );

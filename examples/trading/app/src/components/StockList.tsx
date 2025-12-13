@@ -13,17 +13,29 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useQuery } from '@drasi/react';
 import { Stock } from '@/types';
 import clsx from 'clsx';
 
 interface StockListProps {
   title: string;
   queryId: string;
+  filter?: (item: Stock) => boolean;
+  sortBy?: (a: Stock, b: Stock) => number;
+  showVolume?: boolean;
 }
 
-export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
-  const { data, loading, error, lastUpdate } = useQuery<Stock>(queryId);
+export const StockList: React.FC<StockListProps> = ({ 
+  title, 
+  queryId, 
+  filter, 
+  sortBy,
+  showVolume = false 
+}) => {
+  const { data, loading, error, lastUpdate } = useQuery<Stock>(queryId, {
+    filter,
+    sortBy
+  });
   const [prevPrices, setPrevPrices] = useState<Map<string, number>>(new Map());
   const [priceChanges, setPriceChanges] = useState<Map<string, 'up' | 'down' | null>>(new Map());
 
@@ -115,7 +127,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
               <th className="text-left py-2 px-2 text-sm font-medium text-gray-400">Name</th>
               <th className="text-right py-2 px-2 text-sm font-medium text-gray-400">Price</th>
               <th className="text-right py-2 px-2 text-sm font-medium text-gray-400">
-                {queryId === 'high-volume-query' ? 'Volume' : 'Change'}
+                {showVolume ? 'Volume' : 'Change'}
               </th>
             </tr>
           </thead>
@@ -138,9 +150,9 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
                   </td>
                   <td className={clsx(
                     "py-3 px-2 text-right font-mono text-sm",
-                    queryId !== 'high-volume-query' && (stock.changePercent >= 0 ? "text-trading-green" : "text-trading-red")
+                    !showVolume && (stock.changePercent >= 0 ? "text-trading-green" : "text-trading-red")
                   )}>
-                    {queryId === 'high-volume-query' ? (
+                    {showVolume ? (
                       <span className="text-gray-200">{formatVolume(stock.volume || 0)}</span>
                     ) : (
                       <span className="inline-flex items-center gap-1">

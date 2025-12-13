@@ -15,7 +15,7 @@
 import { StockList } from '@/components/StockList';
 import { Portfolio } from '@/components/Portfolio';
 import StockTicker from '@/components/StockTicker';
-import { useConnectionStatus } from '@/hooks/useDrasi';
+import { useConnectionStatus } from '@drasi/react';
 import clsx from 'clsx';
 
 function App() {
@@ -52,7 +52,15 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* Watchlist */}
           <div className="xl:col-span-1">
-            <StockList title="Watchlist" queryId="watchlist-query" />
+            <StockList 
+              title="Watchlist" 
+              queryId="watchlist-query"
+              filter={(stock) => ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA'].includes(stock.symbol)}
+              sortBy={(a, b) => {
+                const watchlist = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA'];
+                return watchlist.indexOf(a.symbol) - watchlist.indexOf(b.symbol);
+              }}
+            />
           </div>
 
           {/* Portfolio */}
@@ -62,15 +70,30 @@ function App() {
 
           {/* Market Movers */}
           <div className="lg:col-span-1">
-            <StockList title="Top Gainers" queryId="top-gainers-query" />
+            <StockList 
+              title="Top Gainers" 
+              queryId="top-gainers-query"
+              filter={(stock) => stock.changePercent > 0}
+              sortBy={(a, b) => b.changePercent - a.changePercent}
+            />
           </div>
 
           <div className="lg:col-span-1">
-            <StockList title="Top Losers" queryId="top-losers-query" />
+            <StockList 
+              title="Top Losers" 
+              queryId="top-losers-query"
+              filter={(stock) => stock.changePercent < 0}
+              sortBy={(a, b) => a.changePercent - b.changePercent}
+            />
           </div>
 
           <div className="lg:col-span-1">
-            <StockList title="High Volume" queryId="high-volume-query" />
+            <StockList 
+              title="High Volume" 
+              queryId="high-volume-query"
+              sortBy={(a, b) => (b.volume || 0) - (a.volume || 0)}
+              showVolume={true}
+            />
           </div>
         </div>
       </main>

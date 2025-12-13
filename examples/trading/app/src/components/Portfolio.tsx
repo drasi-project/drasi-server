@@ -13,12 +13,15 @@
 // limitations under the License.
 
 import React, { useMemo } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useQuery } from '@drasi/react';
 import { PortfolioPosition } from '@/types';
 import clsx from 'clsx';
 
 export const Portfolio: React.FC = () => {
-  const { data, loading, error, lastUpdate } = useQuery<PortfolioPosition>('portfolio-query');
+  const { data, loading, error, lastUpdate } = useQuery<PortfolioPosition>('portfolio-query', {
+    sortBy: (a, b) => (b.currentValue || 0) - (a.currentValue || 0),
+    accumulationStrategy: 'merge'
+  });
 
   const portfolioStats = useMemo(() => {
     if (!data || data.length === 0) {

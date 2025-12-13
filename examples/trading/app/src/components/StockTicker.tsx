@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useQuery } from '@drasi/react';
 import './StockTicker.css';
 
 interface TickerItem {
