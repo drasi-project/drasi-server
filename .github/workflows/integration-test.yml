@@ -1,0 +1,246 @@
+name: Integration Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature-lib
+  push:
+    branches:
+      - main
+      - feature-lib
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  integration-test:
+    name: Integration Test with PostgreSQL
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: getting_started
+          POSTGRES_USER: drasi_user
+          POSTGRES_PASSWORD: drasi_password
+          POSTGRES_INITDB_ARGS: "-c wal_level=logical"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjq-dev postgresql-client
+
+      - name: Set JQ_LIB_DIR
+        run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ vars.RUST_VERSION || 'stable' }}
+
+      - name: Initialize PostgreSQL database
+        run: |
+          # Wait for PostgreSQL to be ready
+          until pg_isready -h localhost -p 5432 -U drasi_user; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+          # Create the message table
+          PGPASSWORD=drasi_password psql -h localhost -U drasi_user -d getting_started <<EOF
+          CREATE TABLE IF NOT EXISTS message (
+            messageid SERIAL PRIMARY KEY,
+            "from" VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Insert test data
+          INSERT INTO message (messageid, "from", message) VALUES
+            (1, 'Buzz Lightyear', 'To infinity and beyond!'),
+            (2, 'Brian Kernighan', 'Hello World'),
+            (3, 'Antoninus', 'I am Spartacus'),
+            (4, 'David', 'I am Spartacus');
+
+          -- Set up replication publication
+          CREATE PUBLICATION drasi_getting_started_pub FOR TABLE message;
+
+          -- Verify data
+          SELECT COUNT(*) FROM message;
+          EOF
+
+      - name: Build Drasi Server
+        run: cargo build --release
+
+      - name: Create test configuration
+        run: |
+          cat > test-config.yaml <<EOF
+          server:
+            host: 0.0.0.0
+            port: 8080
+            log_level: info
+            disable_persistence: true
+
+          server_core:
+            id: integration-test-server
+
+          sources:
+            - kind: postgres
+              id: postgres-messages
+              auto_start: true
+              host: localhost
+              port: 5432
+              database: getting_started
+              user: drasi_user
+              password: drasi_password
+              ssl_mode: prefer
+              tables:
+                - message
+              slot_name: drasi_integration_test_slot
+              publication_name: drasi_getting_started_pub
+              table_keys:
+                - table: message
+                  key_columns:
+                    - messageid
+              bootstrap_provider:
+                type: postgres
+
+          queries:
+            - id: hello-world-from
+              auto_start: true
+              query: |
+                MATCH (m:message {message: 'Hello World'})
+                RETURN m.messageid AS MessageId, m.from AS MessageFrom
+              sources:
+                - source_id: postgres-messages
+
+            - id: message-count
+              auto_start: true
+              query: |
+                MATCH (m:message)
+                RETURN m.message AS Message, count(m) AS Frequency
+              sources:
+                - source_id: postgres-messages
+
+          reactions:
+            - kind: log
+              id: log-all-queries
+              auto_start: true
+              queries:
+                - hello-world-from
+                - message-count
+              added_template: "[{{query_name}}] + {{after}}"
+              updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+              deleted_template: "[{{query_name}}] - {{before}}"
+          EOF
+
+      - name: Start Drasi Server in background
+        run: |
+          ./target/release/drasi-server --config test-config.yaml &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+
+          # Wait for server to start
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/health > /dev/null; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Attempt $i: Server not ready yet..."
+            sleep 2
+          done
+
+      - name: Test health endpoint
+        run: |
+          response=$(curl -s http://localhost:8080/health)
+          echo "Health response: $response"
+          if ! echo "$response" | grep -q "ok"; then
+            echo "Health check failed"
+            exit 1
+          fi
+
+      - name: Test sources endpoint
+        run: |
+          response=$(curl -s http://localhost:8080/api/sources)
+          echo "Sources response: $response"
+          if ! echo "$response" | grep -q "postgres-messages"; then
+            echo "Source not found"
+            exit 1
+          fi
+
+      - name: Test queries endpoint
+        run: |
+          response=$(curl -s http://localhost:8080/api/queries)
+          echo "Queries response: $response"
+          if ! echo "$response" | grep -q "hello-world-from"; then
+            echo "Query not found"
+            exit 1
+          fi
+
+      - name: Wait for bootstrap to complete
+        run: |
+          echo "Waiting for bootstrap to complete..."
+          sleep 10
+
+      - name: Test query results
+        run: |
+          # Test hello-world-from query
+          response=$(curl -s http://localhost:8080/api/queries/hello-world-from/results)
+          echo "hello-world-from results: $response"
+          if ! echo "$response" | grep -q "Brian Kernighan"; then
+            echo "Expected query result not found"
+            exit 1
+          fi
+
+          # Test message-count query
+          response=$(curl -s http://localhost:8080/api/queries/message-count/results)
+          echo "message-count results: $response"
+          if ! echo "$response" | grep -q "Hello World"; then
+            echo "Expected aggregation result not found"
+            exit 1
+          fi
+
+      - name: Test data change detection
+        run: |
+          # Insert a new message
+          PGPASSWORD=drasi_password psql -h localhost -U drasi_user -d getting_started <<EOF
+          INSERT INTO message ("from", message) VALUES ('Alice', 'Hello World');
+          EOF
+
+          # Wait for change to propagate
+          sleep 5
+
+          # Verify the new message appears in query results
+          response=$(curl -s http://localhost:8080/api/queries/hello-world-from/results)
+          echo "Updated hello-world-from results: $response"
+          if ! echo "$response" | grep -q "Alice"; then
+            echo "New message not detected in query results"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            echo "Stopping server (PID: $SERVER_PID)"
+            kill $SERVER_PID || true
+            wait $SERVER_PID || true
+          fi
