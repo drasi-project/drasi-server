@@ -1,6 +1,6 @@
 # @drasi/react
 
-React hooks and client library for seamless integration with Drasi Server. Build real-time, change-driven applications with continuous query streaming via Server-Sent Events (SSE).
+React hooks and components for seamless integration with Drasi Server. Build real-time, change-driven applications with continuous query streaming via Server-Sent Events (SSE).
 
 ## Features
 
@@ -8,10 +8,8 @@ React hooks and client library for seamless integration with Drasi Server. Build
 - 🪝 **React Hooks** - Idiomatic React integration with `useQuery`, `useConnectionStatus`
 - 🔌 **Auto-Reconnection** - Built-in reconnection logic with exponential backoff
 - 📦 **Type-Safe** - Full TypeScript support with generics
-- 🎯 **Zero Dependencies** - Only React as peer dependency
-- 🧹 **Auto Cleanup** - Automatic resource cleanup on unmount
 - ⚡ **Bootstrap Support** - Initial data load before streaming updates
-- 🎭 **Separate Providers** - Independent REST and SSE clients for maximum flexibility
+- 🔀 **Multiple Instances** - Support for connecting to multiple Drasi servers
 
 ## Installation
 
@@ -21,35 +19,28 @@ npm install @drasi/react
 
 ## Quick Start
 
-### 1. Configure Providers (main.tsx)
+### 1. Configure SSE Provider
+
+Wrap your app with `SSEProvider` to stream query results from a Drasi SSE reaction:
 
 ```typescript
-import { RestProvider, SSEProvider } from '@drasi/react';
-
-const queries = [
-  {
-    id: 'my-query',
-    query: 'MATCH (n:Person) RETURN n.name AS name, n.age AS age',
-    sources: [{ source_id: 'postgres-db' }]
-  }
-];
+import { SSEProvider } from '@drasi/react';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <RestProvider 
-    config={{ baseUrl: 'http://localhost:8080' }}
-    queries={queries}
+  <SSEProvider 
+    config={{ 
+      endpoint: 'http://localhost:8080/api/reactions/my-sse-reaction/stream'
+    }}
+    queryIds={['query-1', 'query-2']}
   >
-    <SSEProvider 
-      config={{ endpoint: 'http://localhost:50051/events' }}
-      queryIds={queries.map(q => q.id)}
-    >
-      <App />
-    </SSEProvider>
-  </RestProvider>
+    <App />
+  </SSEProvider>
 );
 ```
 
-### 2. Subscribe to Queries (App.tsx)
+### 2. Subscribe to Queries
+
+Use the `useQuery` hook to access real-time query results:
 
 ```typescript
 import { useQuery } from '@drasi/react';
@@ -60,7 +51,7 @@ interface Person {
 }
 
 function Dashboard() {
-  const { data, loading, error } = useQuery<Person>('my-query', {
+  const { data, loading, error } = useQuery<Person>('query-1', {
     transform: (item) => ({
       name: item.name,
       age: parseInt(item.age)
@@ -100,33 +91,33 @@ function ConnectionIndicator() {
 
 ## API Reference
 
-### `useDrasiClient(config?: DrasiClientConfig)`
+### `SSEProvider`
 
-Initialize and access the Drasi client singleton.
+Provider component that establishes SSE connection to a Drasi reaction endpoint.
 
-**Config Options:**
+**Props:**
 ```typescript
-interface DrasiClientConfig {
-  baseUrl?: string;                    // Default: 'http://localhost:8080'
-  queries?: QueryDefinition[];         // Queries to create on init
-  reactionId?: string;                 // Default: 'drasi-sse-stream'
-  sseConfig?: {
-    host?: string;                     // Default: '0.0.0.0'
-    port?: number;                     // Default: 50051
-    sse_path?: string;                 // Default: '/events'
-    heartbeat_interval_ms?: number;    // Default: 15000
+interface SSEProviderProps {
+  config: {
+    endpoint: string;                    // SSE endpoint URL (required)
+    reconnectDelay?: number;             // Reconnection delay in ms (default: 1000)
+    maxReconnectDelay?: number;          // Max delay in ms (default: 30000)
   };
-  autoInitialize?: boolean;            // Default: true
+  queryIds: string[];                    // Query IDs to subscribe to
+  children: React.ReactNode;
 }
 ```
 
-**Returns:**
+**Example:**
 ```typescript
-{
-  client: DrasiClient | null;
-  initialized: boolean;
-  error: string | null;
-}
+<SSEProvider 
+  config={{ 
+    endpoint: 'http://localhost:8080/api/reactions/my-sse-reaction/stream'
+  }}
+  queryIds={['portfolio', 'stocks', 'prices']}
+>
+  <App />
+</SSEProvider>
 ```
 
 ### `useQuery<T>(queryId: string, options?: QueryOptions)`
@@ -173,99 +164,91 @@ Monitor SSE connection health.
 }
 ```
 
-## Advanced Usage
-
-### Dynamic Query Creation
-
+**Example:**
 ```typescript
-import { getDrasiClient } from '@drasi/react';
-
-function CreateQuery() {
-  const client = getDrasiClient();
-
-  const handleCreate = async () => {
-    await client?.createQuery({
-      id: 'dynamic-query',
-      query: 'MATCH (s:Stock) WHERE s.price > $minPrice RETURN s',
-      sources: [{ source_id: 'market-data' }],
-      parameters: { minPrice: 100 }
-    });
-  };
-
-  return <button onClick={handleCreate}>Create Query</button>;
+function StatusBar() {
+  const { connected, reconnecting, error } = useConnectionStatus();
+  
+  if (error && !reconnecting) {
+    return <div>Connection failed: {error}</div>;
+  }
+  
+  return (
+    <div>
+      {connected ? '🟢 Live' : '🔴 Offline'}
+      {reconnecting && ' (reconnecting...)'}
+    </div>
+  );
 }
 ```
 
-### Synthetic Joins
+## Multiple Drasi Instances
 
-Create relationships between data from different sources:
+You can connect to multiple Drasi servers by nesting providers with different endpoints:
 
 ```typescript
-const queries = [{
-  id: 'portfolio-with-prices',
-  query: `
-    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-    RETURN p.quantity * sp.price AS value
-  `,
-  sources: [
-    { source_id: 'postgres-db' },
-    { source_id: 'price-feed' }
-  ],
-  joins: [
-    {
-      id: 'OWNS_STOCK',
-      keys: [
-        { label: 'portfolio', property: 'symbol' },
-        { label: 'stocks', property: 'symbol' }
-      ]
-    },
-    {
-      id: 'HAS_PRICE',
-      keys: [
-        { label: 'stocks', property: 'symbol' },
-        { label: 'stock_prices', property: 'symbol' }
-      ]
-    }
-  ]
-}];
+<SSEProvider 
+  config={{ endpoint: 'http://drasi-prod:8080/api/reactions/main/stream' }}
+  queryIds={['prod-portfolio']}
+>
+  <SSEProvider 
+    config={{ endpoint: 'http://drasi-staging:8080/api/reactions/test/stream' }}
+    queryIds={['staging-portfolio']}
+  >
+    <App />
+  </SSEProvider>
+</SSEProvider>
 ```
+
+Components will use the nearest provider in the React tree.
+
+## Advanced Usage
 
 ### Custom Transformations
 
 ```typescript
-const { data } = useQuery<ProcessedData>('raw-query', {
+const { data } = useQuery<ProcessedStock>('stocks', {
   transform: (raw) => ({
-    id: raw.id,
-    displayName: `${raw.first_name} ${raw.last_name}`,
-    totalValue: parseFloat(raw.value) * parseFloat(raw.quantity),
-    timestamp: new Date(raw.created_at)
+    symbol: raw.symbol,
+    displayPrice: `$${parseFloat(raw.price).toFixed(2)}`,
+    marketCap: parseFloat(raw.price) * parseInt(raw.shares),
+    timestamp: new Date(raw.updated_at)
   }),
-  filter: (item) => item.totalValue > 1000,
-  sortBy: (a, b) => b.totalValue - a.totalValue
+  filter: (stock) => stock.marketCap > 1000000,
+  sortBy: (a, b) => b.marketCap - a.marketCap
 });
 ```
 
-### Manual Client Usage
+### Accumulation Strategies
 
-For non-React contexts or advanced control:
+Control how query results are accumulated:
 
 ```typescript
-import { DrasiClient } from '@drasi/react';
-
-const client = new DrasiClient({
-  baseUrl: 'http://localhost:8080',
-  queries: [/* ... */]
+// Replace all data on each update (snapshot mode)
+const { data } = useQuery('stocks', { 
+  accumulationStrategy: 'replace' 
 });
 
-await client.initialize();
-
-const unsubscribe = client.subscribe('my-query', (result) => {
-  console.log('Query update:', result.data);
+// Merge updates with existing data (default, best for most cases)
+const { data } = useQuery('portfolio', { 
+  accumulationStrategy: 'merge' 
 });
 
-// Later...
-unsubscribe();
-await client.disconnect();
+// Append all updates (event log mode)
+const { data } = useQuery('trades', { 
+  accumulationStrategy: 'append' 
+});
+```
+
+### Custom Key Extraction
+
+By default, items are keyed by stringifying the entire object. For better performance with `merge` strategy:
+
+```typescript
+const { data } = useQuery<Stock>('stocks', {
+  accumulationStrategy: 'merge',
+  getItemKey: (item) => item.symbol  // Use symbol as unique key
+});
 ```
 
 ## Data Transformations
@@ -310,14 +293,26 @@ if (error && !reconnecting) {
 
 ## Best Practices
 
-### 1. Initialize Once at Root
+### 1. Define Queries in Drasi Config
+
+Use Drasi's YAML configuration to define queries server-side:
+
+```yaml
+queries:
+  - id: "portfolio"
+    query: "MATCH (p:Portfolio) RETURN p"
+    query_language: "cypher"
+    source_subscriptions:
+      - source_id: "postgres-db"
+    auto_start: true
+```
+
+Then simply reference them in your React app:
 
 ```typescript
-// App.tsx
-function App() {
-  useDrasiClient({ /* config */ });
-  return <Router><Routes /></Router>;
-}
+<SSEProvider queryIds={['portfolio', 'stocks', 'prices']}>
+  <App />
+</SSEProvider>
 ```
 
 ### 2. Use TypeScript Generics
