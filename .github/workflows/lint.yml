@@ -33,11 +33,11 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ vars.RUST_VERSION || 'stable' }}
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: make fmt
 
   clippy:
     name: Clippy
@@ -54,8 +54,8 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ vars.RUST_VERSION || 'stable' }}
           components: clippy
 
       - name: Run clippy
-        run: cargo clippy --all-features --all-targets -- -D warnings
+        run: make clippy
