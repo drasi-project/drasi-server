@@ -12,24 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! REST API implementation for Drasi Server.
-//!
-//! This module provides the HTTP API endpoints for managing sources, queries, and reactions.
-//! It also includes the data models (DTOs) and mappings used for API serialization/deserialization.
+//! Profiler reaction configuration DTOs.
 
-pub mod error;
-pub mod handlers;
-pub mod mappings;
-pub mod models;
-pub mod openapi;
+use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod tests;
+/// Local copy of profiler reaction configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProfilerReactionConfigDto {
+    #[serde(default = "default_profiler_window_size")]
+    pub window_size: usize,
+    #[serde(default = "default_report_interval_secs")]
+    pub report_interval_secs: u64,
+}
 
-#[cfg(test)]
-mod joins_tests;
+fn default_profiler_window_size() -> usize {
+    100
+}
 
-pub use error::*;
-pub use handlers::*;
-pub use models::*;
-pub use openapi::ApiDoc;
+fn default_report_interval_secs() -> u64 {
+    60
+}

@@ -12,24 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! REST API implementation for Drasi Server.
-//!
-//! This module provides the HTTP API endpoints for managing sources, queries, and reactions.
-//! It also includes the data models (DTOs) and mappings used for API serialization/deserialization.
+//! Log reaction configuration DTOs.
 
-pub mod error;
-pub mod handlers;
-pub mod mappings;
-pub mod models;
-pub mod openapi;
+use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod joins_tests;
-
-pub use error::*;
-pub use handlers::*;
-pub use models::*;
-pub use openapi::ApiDoc;
+/// Local copy of log reaction configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct LogReactionConfigDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub added_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_template: Option<String>,
+}

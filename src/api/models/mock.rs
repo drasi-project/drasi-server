@@ -12,24 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! REST API implementation for Drasi Server.
-//!
-//! This module provides the HTTP API endpoints for managing sources, queries, and reactions.
-//! It also includes the data models (DTOs) and mappings used for API serialization/deserialization.
+//! Mock source configuration DTOs.
 
-pub mod error;
-pub mod handlers;
-pub mod mappings;
-pub mod models;
-pub mod openapi;
+use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod tests;
+/// Local copy of mock source configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MockSourceConfigDto {
+    #[serde(default = "default_data_type")]
+    pub data_type: String,
+    #[serde(default = "default_interval_ms")]
+    pub interval_ms: u64,
+}
 
-#[cfg(test)]
-mod joins_tests;
+fn default_data_type() -> String {
+    "generic".to_string()
+}
 
-pub use error::*;
-pub use handlers::*;
-pub use models::*;
-pub use openapi::ApiDoc;
+fn default_interval_ms() -> u64 {
+    5000
+}

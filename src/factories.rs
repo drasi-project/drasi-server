@@ -79,7 +79,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             use drasi_source_http::HttpSourceBuilder;
             Box::new(
                 HttpSourceBuilder::new(id)
-                    .with_config(c.clone())
+                    .with_config(c.clone().into())
                     .with_auto_start(*auto_start)
                     .build()?,
             )
@@ -93,7 +93,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             use drasi_source_grpc::GrpcSourceBuilder;
             Box::new(
                 GrpcSourceBuilder::new(id)
-                    .with_config(c.clone())
+                    .with_config(c.clone().into())
                     .with_auto_start(*auto_start)
                     .build()?,
             )
@@ -107,7 +107,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             use drasi_source_postgres::PostgresSourceBuilder;
             Box::new(
                 PostgresSourceBuilder::new(id)
-                    .with_config(c.clone())
+                    .with_config(c.clone().into())
                     .with_auto_start(*auto_start)
                     .build()?,
             )
@@ -121,7 +121,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             use drasi_source_platform::PlatformSourceBuilder;
             Box::new(
                 PlatformSourceBuilder::new(id)
-                    .with_config(c.clone())
+                    .with_config(c.clone().into())
                     .with_auto_start(*auto_start)
                     .build()?,
             )
@@ -150,7 +150,7 @@ fn create_bootstrap_provider(
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
                 use drasi_bootstrap_postgres::PostgresBootstrapProvider;
-                Ok(Box::new(PostgresBootstrapProvider::new(config.clone())))
+                Ok(Box::new(PostgresBootstrapProvider::new(config.clone().into())))
             } else {
                 Err(anyhow::anyhow!(
                     "Postgres bootstrap provider can only be used with Postgres sources"
@@ -244,7 +244,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 HttpReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -259,7 +259,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 HttpAdaptiveReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -274,7 +274,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 GrpcReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -289,7 +289,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 GrpcAdaptiveReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -304,7 +304,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 SseReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -319,7 +319,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 PlatformReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }
@@ -334,7 +334,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                 ProfilerReactionBuilder::new(&id)
                     .with_queries(queries)
                     .with_auto_start(auto_start)
-                    .with_config(config)
+                    .with_config(config.into())
                     .build()?,
             ))
         }

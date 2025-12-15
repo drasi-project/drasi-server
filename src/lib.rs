@@ -30,6 +30,10 @@ pub use config::{
 pub use factories::{create_reaction, create_source};
 pub use server::DrasiServer;
 
+// Re-export API models and mappings for external use
+pub use api::models;
+pub use api::mappings;
+
 // Re-export from drasi-lib (public API only)
 pub use drasi_lib::{
     // Error types
