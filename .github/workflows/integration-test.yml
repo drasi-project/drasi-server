@@ -29,7 +29,6 @@ jobs:
           POSTGRES_DB: getting_started
           POSTGRES_USER: drasi_user
           POSTGRES_PASSWORD: drasi_password
-          POSTGRES_INITDB_ARGS: "-c wal_level=logical"
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -60,6 +59,22 @@ jobs:
           # Wait for PostgreSQL to be ready
           until pg_isready -h localhost -p 5432 -U drasi_user; do
             echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+          # Configure PostgreSQL for logical replication
+          PGPASSWORD=drasi_password psql -h localhost -U drasi_user -d postgres <<EOF
+          ALTER SYSTEM SET wal_level = logical;
+          SELECT pg_reload_conf();
+          EOF
+
+          # Restart PostgreSQL to apply wal_level change
+          docker restart $(docker ps -q --filter ancestor=postgres:15)
+          sleep 5
+
+          # Wait for PostgreSQL to be ready again
+          until pg_isready -h localhost -p 5432 -U drasi_user; do
+            echo "Waiting for PostgreSQL to restart..."
             sleep 2
           done
 
