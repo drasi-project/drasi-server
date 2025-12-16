@@ -138,31 +138,40 @@ test_health_endpoint() {
 }
 
 test_sources_endpoint() {
-  local response=$(curl -s http://localhost:$SERVER_PORT/sources)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/sources)
   echo "Sources response: $response"
   echo "$response" | grep -q "postgres-messages"
 }
 
 test_queries_endpoint() {
-  local response=$(curl -s http://localhost:$SERVER_PORT/queries)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/queries)
   echo "Queries response: $response"
   echo "$response" | grep -q "hello-world-from"
 }
 
 test_query_results() {
-  # Wait for bootstrap to complete
-  log_info "Waiting for bootstrap to complete..."
-  sleep 10
+  # Wait for bootstrap to complete and results to be processed
+  log_info "Waiting for bootstrap to complete and results to be processed..."
+  sleep 15
 
   # Test hello-world-from query
-  local response=$(curl -s http://localhost:$SERVER_PORT/queries/hello-world-from/results)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/queries/hello-world-from/results)
   echo "hello-world-from results: $response"
+
+  # Check if data array has items
+  if echo "$response" | grep -q '"data":\[\]'; then
+    log_warn "Query returned empty results, checking query status..."
+    local status=$(curl -s http://localhost:$SERVER_PORT/api/queries/hello-world-from)
+    echo "Query status: $status"
+    return 1
+  fi
+
   echo "$response" | grep -q "Brian Kernighan"
 }
 
 test_aggregation_results() {
   # Test message-count query
-  local response=$(curl -s http://localhost:$SERVER_PORT/queries/message-count/results)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/queries/message-count/results)
   echo "message-count results: $response"
   echo "$response" | grep -q "Hello World"
 }
@@ -170,7 +179,7 @@ test_aggregation_results() {
 test_change_detection() {
   log_info "Inserting new message into database..."
 
-  # Insert a new message (with a new ID to avoid conflicts)
+  # Insert a new message (SERIAL will auto-increment now)
   PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME <<EOF
 INSERT INTO message ("from", message) VALUES ('Alice', 'Hello World');
 EOF
@@ -180,7 +189,7 @@ EOF
   sleep 5
 
   # Verify the new message appears in query results
-  local response=$(curl -s http://localhost:$SERVER_PORT/queries/hello-world-from/results)
+  local response=$(curl -s http://localhost:$SERVER_PORT/api/queries/hello-world-from/results)
   echo "Updated hello-world-from results: $response"
   echo "$response" | grep -q "Alice"
 }
