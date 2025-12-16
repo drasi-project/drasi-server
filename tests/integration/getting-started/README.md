@@ -35,7 +35,7 @@ cd ../..
 cargo build --release
 
 # Run tests
-cd tests/integration
+cd tests/integration/getting-started
 ./run-integration-test.sh
 ```
 
