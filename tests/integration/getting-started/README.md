@@ -83,7 +83,7 @@ The GitHub Actions workflow uses these scripts:
 - name: Setup PostgreSQL
   run: |
     export RESTART_CONTAINER=true
-    ./tests/integration/setup-postgres.sh
+    ./tests/integration/getting-started/setup-postgres.sh
 
 - name: Build server
   run: cargo build --release
