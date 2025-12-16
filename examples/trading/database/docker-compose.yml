@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+name: trading-demo
+
 services:
   postgres:
     image: postgres:14-alpine
@@ -32,7 +34,7 @@ services:
       - "5432:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-      - postgres_data:/var/lib/postgresql/data
+      - trading_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U drasi_user -d trading_demo"]
       interval: 5s
@@ -40,4 +42,4 @@ services:
       retries: 5
 
 volumes:
-  postgres_data:
+  trading_postgres_data:
