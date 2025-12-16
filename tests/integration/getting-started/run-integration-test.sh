@@ -6,7 +6,7 @@ set -e
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/config.yaml}"
 SERVER_BINARY="${SERVER_BINARY:-$PROJECT_ROOT/target/release/drasi-server}"
 SERVER_LOG="${SERVER_LOG:-$SCRIPT_DIR/server.log}"

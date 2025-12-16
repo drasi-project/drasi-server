@@ -1,4 +1,4 @@
-name: Integration Test
+name: Getting Started Test
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   integration-test:
-    name: Integration Test with PostgreSQL
+    name: Getting Started Integration Test
     runs-on: ubuntu-latest
 
     services:
@@ -57,20 +57,20 @@ jobs:
       - name: Setup PostgreSQL database
         run: |
           export RESTART_CONTAINER=true
-          ./tests/integration/setup-postgres.sh
+          ./tests/integration/getting-started/setup-postgres.sh
 
       - name: Build Drasi Server
         run: cargo build --release
 
       - name: Run integration tests
-        run: ./tests/integration/run-integration-test.sh
+        run: ./tests/integration/getting-started/run-integration-test.sh
 
       - name: Show server logs on failure
         if: failure()
         run: |
           echo "=== Server logs ==="
-          if [ -f tests/integration/server.log ]; then
-            cat tests/integration/server.log
+          if [ -f tests/integration/getting-started/server.log ]; then
+            cat tests/integration/getting-started/server.log
           else
             echo "No server log file found"
           fi
