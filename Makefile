@@ -9,16 +9,21 @@ RUSTFLAGS := -Dwarnings \
 	-A clippy::ptr_arg \
 	-A clippy::type_complexity
 
-.PHONY: clippy help
+.PHONY: clippy test fmt help
 
 # Default target
 help:
 	@echo "Available targets:"
 	@echo "  clippy        - Run cargo clippy with same configuration as CI"
+	@echo "  test          - Run cargo test with all features"
+	@echo "  fmt           - Check code formatting"
 	@echo "  help          - Show this help message"
 
 clippy:
 	RUSTFLAGS="$(RUSTFLAGS)" cargo clippy --all-targets --all-features
+
+test:
+	cargo test --all-features
 
 fmt:
 	cargo fmt -- --check
