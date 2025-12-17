@@ -15,32 +15,33 @@
 //! SSE reaction configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of SSE reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SseReactionConfigDto {
     #[serde(default = "default_sse_host")]
-    pub host: String,
+    pub host: ConfigValue<String>,
     #[serde(default = "default_sse_port")]
-    pub port: u16,
+    pub port: ConfigValue<u16>,
     #[serde(default = "default_sse_path")]
-    pub sse_path: String,
+    pub sse_path: ConfigValue<String>,
     #[serde(default = "default_heartbeat_interval_ms")]
-    pub heartbeat_interval_ms: u64,
+    pub heartbeat_interval_ms: ConfigValue<u64>,
 }
 
-fn default_sse_host() -> String {
-    "0.0.0.0".to_string()
+fn default_sse_host() -> ConfigValue<String> {
+    ConfigValue::Static("0.0.0.0".to_string())
 }
 
-fn default_sse_port() -> u16 {
-    8080
+fn default_sse_port() -> ConfigValue<u16> {
+    ConfigValue::Static(8080)
 }
 
-fn default_sse_path() -> String {
-    "/events".to_string()
+fn default_sse_path() -> ConfigValue<String> {
+    ConfigValue::Static("/events".to_string())
 }
 
-fn default_heartbeat_interval_ms() -> u64 {
-    30000
+fn default_heartbeat_interval_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(30000)
 }

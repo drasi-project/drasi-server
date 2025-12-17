@@ -15,20 +15,21 @@
 //! Mock source configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of mock source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MockSourceConfigDto {
     #[serde(default = "default_data_type")]
-    pub data_type: String,
+    pub data_type: ConfigValue<String>,
     #[serde(default = "default_interval_ms")]
-    pub interval_ms: u64,
+    pub interval_ms: ConfigValue<u64>,
 }
 
-fn default_data_type() -> String {
-    "generic".to_string()
+fn default_data_type() -> ConfigValue<String> {
+    ConfigValue::Static("generic".to_string())
 }
 
-fn default_interval_ms() -> u64 {
-    5000
+fn default_interval_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
 }

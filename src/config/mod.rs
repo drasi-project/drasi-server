@@ -16,16 +16,8 @@
 //!
 //! This module provides comprehensive configuration handling including:
 //! - Type-safe configuration structures
-//! - Automatic environment variable interpolation
 //! - YAML and JSON file loading
 //! - Configuration validation
-//!
-//! # Environment Variable Interpolation
-//!
-//! All config loading functions automatically interpolate environment variables
-//! using POSIX-style syntax:
-//! - `${VAR_NAME}` - Required variable
-//! - `${VAR_NAME:-default}` - Variable with default value
 //!
 //! # Examples
 //!
@@ -37,29 +29,9 @@
 //! // Load configuration from file (auto-detects YAML/JSON)
 //! let config = config::load_config_file("config.yaml").unwrap();
 //!
-//! // Server will use interpolated values
-//! println!("Binding to {}:{}", config.server.host, config.server.port);
-//! ```
-//!
-//! ## Configuration File Example
-//!
-//! ```yaml
-//! server:
-//!   host: "${SERVER_HOST:-0.0.0.0}"
-//!   port: "${SERVER_PORT:-8080}"
-//!   log_level: "${LOG_LEVEL:-info}"
-//!
-//! sources:
-//!   - kind: postgres
-//!     id: my-database
-//!     host: "${DB_HOST}"
-//!     port: "${DB_PORT:-5432}"
-//!     user: "${DB_USER}"
-//!     password: "${DB_PASSWORD}"
-//!     database: "${DB_NAME}"
+//! println!("Server configuration loaded successfully");
 //! ```
 
-pub mod env_interpolation;
 pub mod loader;
 pub mod types;
 

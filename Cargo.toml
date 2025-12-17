@@ -79,6 +79,7 @@ regex = "1.10"
 lazy_static = "1.4"
 thiserror = "1.0"
 dotenvy = "0.15"
+envfmt = "1.0.0"
 
 [dev-dependencies]
 # Testing utilities

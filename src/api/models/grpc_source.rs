@@ -15,28 +15,29 @@
 //! gRPC source configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of gRPC source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GrpcSourceConfigDto {
     #[serde(default = "default_grpc_host")]
-    pub host: String,
+    pub host: ConfigValue<String>,
     #[serde(default = "default_grpc_port")]
-    pub port: u16,
+    pub port: ConfigValue<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint: Option<String>,
+    pub endpoint: Option<ConfigValue<String>>,
     #[serde(default = "default_grpc_timeout_ms")]
-    pub timeout_ms: u64,
+    pub timeout_ms: ConfigValue<u64>,
 }
 
-fn default_grpc_host() -> String {
-    "0.0.0.0".to_string()
+fn default_grpc_host() -> ConfigValue<String> {
+    ConfigValue::Static("0.0.0.0".to_string())
 }
 
-fn default_grpc_port() -> u16 {
-    50051
+fn default_grpc_port() -> ConfigValue<u16> {
+    ConfigValue::Static(50051)
 }
 
-fn default_grpc_timeout_ms() -> u64 {
-    5000
+fn default_grpc_timeout_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
 }

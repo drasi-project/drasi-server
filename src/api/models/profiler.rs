@@ -15,20 +15,21 @@
 //! Profiler reaction configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of profiler reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProfilerReactionConfigDto {
     #[serde(default = "default_profiler_window_size")]
-    pub window_size: usize,
+    pub window_size: ConfigValue<usize>,
     #[serde(default = "default_report_interval_secs")]
-    pub report_interval_secs: u64,
+    pub report_interval_secs: ConfigValue<u64>,
 }
 
-fn default_profiler_window_size() -> usize {
-    100
+fn default_profiler_window_size() -> ConfigValue<usize> {
+    ConfigValue::Static(100)
 }
 
-fn default_report_interval_secs() -> u64 {
-    60
+fn default_report_interval_secs() -> ConfigValue<u64> {
+    ConfigValue::Static(60)
 }

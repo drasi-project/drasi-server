@@ -27,6 +27,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
+use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::factories::{create_reaction, create_source};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -49,11 +50,15 @@ impl DrasiServer {
         let config = load_config_file(&config_path)?;
         config.validate()?;
 
+        // Resolve server settings using the mapper
+        let mapper = DtoMapper::new();
+        let resolved_settings = map_server_settings(&config.server, &mapper)?;
+
         // Determine persistence and read-only status
         // Read-only mode is ONLY enabled when the config file is not writable
         // disable_persistence just means "don't save changes" but still allows API mutations
         let file_writable = Self::check_write_access(&config_path);
-        let persistence_disabled = config.server.disable_persistence;
+        let persistence_disabled = resolved_settings.disable_persistence;
         let _persistence_enabled = file_writable && !persistence_disabled;
         let read_only = !file_writable; // Only read-only if file is not writable
 
@@ -100,7 +105,7 @@ impl DrasiServer {
         Ok(Self {
             core: Some(core),
             enable_api: true,
-            host: config.server.host.clone(),
+            host: resolved_settings.host,
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
@@ -161,7 +166,9 @@ impl DrasiServer {
             if !*self.read_only {
                 // Need to reload config to check disable_persistence flag
                 let config = load_config_file(PathBuf::from(config_file))?;
-                let persistence_disabled = config.server.disable_persistence;
+                let mapper = DtoMapper::new();
+                let resolved_settings = map_server_settings(&config.server, &mapper)?;
+                let persistence_disabled = resolved_settings.disable_persistence;
 
                 if !persistence_disabled {
                     // Persistence is enabled - create ConfigPersistence instance
@@ -170,7 +177,7 @@ impl DrasiServer {
                         core.clone(),
                         self.host.clone(),
                         self.port,
-                        config.server.log_level.clone(),
+                        resolved_settings.log_level,
                         false,
                     ));
                     info!("Configuration persistence enabled");

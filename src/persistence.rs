@@ -75,9 +75,9 @@ impl ConfigPersistence {
         // dynamically through the builder pattern or API.
         let wrapper_config = DrasiServerConfig {
             server: crate::config::ServerSettings {
-                host: self.host.clone(),
-                port: self.port,
-                log_level: self.log_level.clone(),
+                host: crate::api::models::ConfigValue::Static(self.host.clone()),
+                port: crate::api::models::ConfigValue::Static(self.port),
+                log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
                 disable_persistence: self.disable_persistence,
             },
             sources: Vec::new(),
@@ -270,9 +270,18 @@ mod tests {
             crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
 
         // Verify wrapper settings
-        assert_eq!(loaded_config.server.host, "127.0.0.1");
-        assert_eq!(loaded_config.server.port, 8080);
-        assert_eq!(loaded_config.server.log_level, "info");
+        assert_eq!(
+            loaded_config.server.host,
+            crate::api::models::ConfigValue::Static("127.0.0.1".to_string())
+        );
+        assert_eq!(
+            loaded_config.server.port,
+            crate::api::models::ConfigValue::Static(8080)
+        );
+        assert_eq!(
+            loaded_config.server.log_level,
+            crate::api::models::ConfigValue::Static("info".to_string())
+        );
         assert!(!loaded_config.server.disable_persistence);
 
         // Verify queries (sources are created dynamically via registry, not in config)

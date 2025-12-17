@@ -21,7 +21,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
-use crate::api::models::{ReactionConfig, SourceConfig};
+use crate::api::models::{ReactionConfig, SourceConfig, ConfigValue};
 
 /// DrasiServer configuration that composes core config with server settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -44,11 +44,11 @@ pub struct DrasiServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
     #[serde(default = "default_host")]
-    pub host: String,
+    pub host: ConfigValue<String>,
     #[serde(default = "default_port")]
-    pub port: u16,
+    pub port: ConfigValue<u16>,
     #[serde(default = "default_log_level")]
-    pub log_level: String,
+    pub log_level: ConfigValue<String>,
     #[serde(default = "default_disable_persistence")]
     pub disable_persistence: bool,
 }
@@ -56,24 +56,24 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            log_level: "info".to_string(),
+            host: ConfigValue::Static("0.0.0.0".to_string()),
+            port: ConfigValue::Static(8080),
+            log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
         }
     }
 }
 
-fn default_host() -> String {
-    "0.0.0.0".to_string()
+fn default_host() -> ConfigValue<String> {
+    ConfigValue::Static("0.0.0.0".to_string())
 }
 
-fn default_port() -> u16 {
-    8080
+fn default_port() -> ConfigValue<u16> {
+    ConfigValue::Static(8080)
 }
 
-fn default_log_level() -> String {
-    "info".to_string()
+fn default_log_level() -> ConfigValue<String> {
+    ConfigValue::Static("info".to_string())
 }
 
 fn default_disable_persistence() -> bool {
@@ -123,28 +123,34 @@ fn is_valid_hostname(hostname: &str) -> bool {
 impl DrasiServerConfig {
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
-        if !self.server.host.is_empty()
-            && self.server.host != "0.0.0.0"
-            && !is_valid_hostname(&self.server.host)
-            && IpAddr::from_str(&self.server.host).is_err()
+        use crate::api::mappings::{map_server_settings, DtoMapper};
+        
+        // Resolve server settings to validate them
+        let mapper = DtoMapper::new();
+        let resolved_settings = map_server_settings(&self.server, &mapper)?;
+        
+        if !resolved_settings.host.is_empty()
+            && resolved_settings.host != "0.0.0.0"
+            && !is_valid_hostname(&resolved_settings.host)
+            && IpAddr::from_str(&resolved_settings.host).is_err()
         {
             return Err(anyhow::anyhow!(
                 "Invalid host '{}': must be a valid hostname or IP address",
-                self.server.host
+                resolved_settings.host
             ));
         }
 
-        if self.server.port == 0 {
+        if resolved_settings.port == 0 {
             return Err(anyhow::anyhow!(
                 "Invalid port 0: port must be between 1 and 65535"
             ));
         }
 
         let valid_levels = ["trace", "debug", "info", "warn", "error"];
-        if !valid_levels.contains(&self.server.log_level.to_lowercase().as_str()) {
+        if !valid_levels.contains(&resolved_settings.log_level.to_lowercase().as_str()) {
             return Err(anyhow::anyhow!(
                 "Invalid log level '{}': must be one of trace, debug, info, warn, error",
-                self.server.log_level
+                resolved_settings.log_level
             ));
         }
 

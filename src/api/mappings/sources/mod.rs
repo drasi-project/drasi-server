@@ -12,18 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Log reaction configuration DTOs.
+//! Source configuration mappers.
 
-use serde::{Deserialize, Serialize};
-use crate::api::models::ConfigValue;
+mod postgres_mapper;
+mod http_mapper;
+mod grpc_mapper;
+mod mock_mapper;
+mod platform_mapper;
 
-/// Local copy of log reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct LogReactionConfigDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub added_template: Option<ConfigValue<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_template: Option<ConfigValue<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deleted_template: Option<ConfigValue<String>>,
-}
+pub use postgres_mapper::PostgresConfigMapper;
+pub use http_mapper::HttpSourceConfigMapper;
+pub use grpc_mapper::GrpcSourceConfigMapper;
+pub use mock_mapper::MockSourceConfigMapper;
+pub use platform_mapper::PlatformSourceConfigMapper;

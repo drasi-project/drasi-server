@@ -15,30 +15,31 @@
 //! HTTP source configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of HTTP source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HttpSourceConfigDto {
-    pub host: String,
-    pub port: u16,
+    pub host: ConfigValue<String>,
+    pub port: ConfigValue<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint: Option<String>,
+    pub endpoint: Option<ConfigValue<String>>,
     #[serde(default = "default_http_timeout_ms")]
-    pub timeout_ms: u64,
+    pub timeout_ms: ConfigValue<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_max_batch_size: Option<usize>,
+    pub adaptive_max_batch_size: Option<ConfigValue<usize>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_min_batch_size: Option<usize>,
+    pub adaptive_min_batch_size: Option<ConfigValue<usize>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_max_wait_ms: Option<u64>,
+    pub adaptive_max_wait_ms: Option<ConfigValue<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_min_wait_ms: Option<u64>,
+    pub adaptive_min_wait_ms: Option<ConfigValue<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_window_secs: Option<u64>,
+    pub adaptive_window_secs: Option<ConfigValue<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_enabled: Option<bool>,
+    pub adaptive_enabled: Option<ConfigValue<bool>>,
 }
 
-fn default_http_timeout_ms() -> u64 {
-    10000
+fn default_http_timeout_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(10000)
 }

@@ -15,31 +15,32 @@
 //! Platform reaction configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of platform reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlatformReactionConfigDto {
-    pub redis_url: String,
+    pub redis_url: ConfigValue<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pubsub_name: Option<String>,
+    pub pubsub_name: Option<ConfigValue<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_name: Option<String>,
+    pub source_name: Option<ConfigValue<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_stream_length: Option<usize>,
+    pub max_stream_length: Option<ConfigValue<usize>>,
     #[serde(default)]
-    pub emit_control_events: bool,
+    pub emit_control_events: ConfigValue<bool>,
     #[serde(default)]
-    pub batch_enabled: bool,
+    pub batch_enabled: ConfigValue<bool>,
     #[serde(default = "default_batch_size")]
-    pub batch_max_size: usize,
+    pub batch_max_size: ConfigValue<usize>,
     #[serde(default = "default_batch_wait_ms")]
-    pub batch_max_wait_ms: u64,
+    pub batch_max_wait_ms: ConfigValue<u64>,
 }
 
-fn default_batch_size() -> usize {
-    100
+fn default_batch_size() -> ConfigValue<usize> {
+    ConfigValue::Static(100)
 }
 
-fn default_batch_wait_ms() -> u64 {
-    100
+fn default_batch_wait_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(100)
 }

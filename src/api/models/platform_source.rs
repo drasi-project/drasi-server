@@ -15,30 +15,31 @@
 //! Platform source configuration DTOs.
 
 use serde::{Deserialize, Serialize};
+use crate::api::models::ConfigValue;
 
 /// Local copy of platform source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlatformSourceConfigDto {
-    pub redis_url: String,
-    pub stream_key: String,
+    pub redis_url: ConfigValue<String>,
+    pub stream_key: ConfigValue<String>,
     #[serde(default = "default_consumer_group")]
-    pub consumer_group: String,
+    pub consumer_group: ConfigValue<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub consumer_name: Option<String>,
+    pub consumer_name: Option<ConfigValue<String>>,
     #[serde(default = "default_batch_size")]
-    pub batch_size: usize,
+    pub batch_size: ConfigValue<usize>,
     #[serde(default = "default_block_ms")]
-    pub block_ms: u64,
+    pub block_ms: ConfigValue<u64>,
 }
 
-fn default_consumer_group() -> String {
-    "drasi-core".to_string()
+fn default_consumer_group() -> ConfigValue<String> {
+    ConfigValue::Static("drasi-core".to_string())
 }
 
-fn default_batch_size() -> usize {
-    100
+fn default_batch_size() -> ConfigValue<usize> {
+    ConfigValue::Static(100)
 }
 
-fn default_block_ms() -> u64 {
-    5000
+fn default_block_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
 }

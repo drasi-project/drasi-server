@@ -37,6 +37,9 @@
 
 use serde::{Deserialize, Serialize};
 
+// Config value module
+pub mod config_value;
+
 // Source modules
 pub mod grpc_source;
 pub mod http_source;
@@ -65,6 +68,9 @@ pub use log::*;
 pub use platform_reaction::*;
 pub use profiler::*;
 pub use sse::*;
+
+// Config value types
+pub use config_value::*;
 
 // =============================================================================
 // Configuration Enums (Top-level aggregates)

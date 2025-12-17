@@ -16,26 +16,27 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::api::models::ConfigValue;
 
 /// Local copy of HTTP reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HttpReactionConfigDto {
     #[serde(default = "default_base_url")]
-    pub base_url: String,
+    pub base_url: ConfigValue<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+    pub token: Option<ConfigValue<String>>,
     #[serde(default = "default_reaction_timeout_ms")]
-    pub timeout_ms: u64,
+    pub timeout_ms: ConfigValue<u64>,
     #[serde(default)]
     pub routes: HashMap<String, QueryConfigDto>,
 }
 
-fn default_base_url() -> String {
-    "http://localhost".to_string()
+fn default_base_url() -> ConfigValue<String> {
+    ConfigValue::Static("http://localhost".to_string())
 }
 
-fn default_reaction_timeout_ms() -> u64 {
-    5000
+fn default_reaction_timeout_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -50,23 +51,23 @@ pub struct QueryConfigDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CallSpecDto {
-    pub url: String,
-    pub method: String,
+    pub url: ConfigValue<String>,
+    pub method: ConfigValue<String>,
     #[serde(default)]
-    pub body: String,
+    pub body: ConfigValue<String>,
     #[serde(default)]
-    pub headers: HashMap<String, String>,
+    pub headers: HashMap<String, ConfigValue<String>>,
 }
 
 /// Local copy of HTTP adaptive reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HttpAdaptiveReactionConfigDto {
     #[serde(default = "default_base_url")]
-    pub base_url: String,
+    pub base_url: ConfigValue<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+    pub token: Option<ConfigValue<String>>,
     #[serde(default = "default_reaction_timeout_ms")]
-    pub timeout_ms: u64,
+    pub timeout_ms: ConfigValue<u64>,
     #[serde(default)]
     pub routes: HashMap<String, QueryConfigDto>,
     #[serde(flatten)]
@@ -76,27 +77,27 @@ pub struct HttpAdaptiveReactionConfigDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AdaptiveBatchConfigDto {
     #[serde(default = "default_adaptive_min_batch_size")]
-    pub adaptive_min_batch_size: usize,
+    pub adaptive_min_batch_size: ConfigValue<usize>,
     #[serde(default = "default_adaptive_max_batch_size")]
-    pub adaptive_max_batch_size: usize,
+    pub adaptive_max_batch_size: ConfigValue<usize>,
     #[serde(default = "default_adaptive_window_size")]
-    pub adaptive_window_size: usize,
+    pub adaptive_window_size: ConfigValue<usize>,
     #[serde(default = "default_adaptive_batch_timeout_ms")]
-    pub adaptive_batch_timeout_ms: u64,
+    pub adaptive_batch_timeout_ms: ConfigValue<u64>,
 }
 
-fn default_adaptive_window_size() -> usize {
-    100
+fn default_adaptive_window_size() -> ConfigValue<usize> {
+    ConfigValue::Static(100)
 }
 
-fn default_adaptive_batch_timeout_ms() -> u64 {
-    1000
+fn default_adaptive_batch_timeout_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(1000)
 }
 
-fn default_adaptive_max_batch_size() -> usize {
-    1000
+fn default_adaptive_max_batch_size() -> ConfigValue<usize> {
+    ConfigValue::Static(1000)
 }
 
-fn default_adaptive_min_batch_size() -> usize {
-    1
+fn default_adaptive_min_batch_size() -> ConfigValue<usize> {
+    ConfigValue::Static(1)
 }
