@@ -1,0 +1,61 @@
+# Integration test configuration for Drasi Server
+# This configuration is used for automated integration tests in CI and can be used locally
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  log_level: info
+  disable_persistence: true
+
+server_core:
+  id: integration-test-server
+
+sources:
+  - kind: postgres
+    id: postgres-messages
+    auto_start: true
+    host: localhost
+    port: 5432
+    database: getting_started
+    user: drasi_user
+    password: drasi_password
+    ssl_mode: prefer
+    tables:
+      - message
+    slot_name: drasi_integration_test_slot
+    publication_name: drasi_getting_started_pub
+    table_keys:
+      - table: message
+        key_columns:
+          - messageid
+    bootstrap_provider:
+      type: postgres
+
+queries:
+  - id: hello-world-from
+    auto_start: true
+    query: |
+      MATCH (m:message)
+      WHERE m.message = 'Hello World'
+      RETURN m.messageid AS MessageId, m.from AS MessageFrom
+    sources:
+      - source_id: postgres-messages
+
+  - id: message-count
+    auto_start: true
+    query: |
+      MATCH (m:message)
+      RETURN m.message AS Message, count(m) AS Frequency
+    sources:
+      - source_id: postgres-messages
+
+reactions:
+  - kind: log
+    id: log-all-queries
+    auto_start: true
+    queries:
+      - hello-world-from
+      - message-count
+    added_template: "[{{query_name}}] + {{after}}"
+    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+    deleted_template: "[{{query_name}}] - {{before}}"
