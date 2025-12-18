@@ -14,14 +14,18 @@
 
 //! HTTP source configuration mapper.
 
-use crate::api::models::HttpSourceConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::HttpSourceConfigDto;
 use drasi_source_http::HttpSourceConfig;
 
 pub struct HttpSourceConfigMapper;
 
 impl ConfigMapper<HttpSourceConfigDto, HttpSourceConfig> for HttpSourceConfigMapper {
-    fn map(&self, dto: &HttpSourceConfigDto, resolver: &DtoMapper) -> Result<HttpSourceConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &HttpSourceConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<HttpSourceConfig, MappingError> {
         Ok(HttpSourceConfig {
             host: resolver.resolve_string(&dto.host)?,
             port: resolver.resolve_typed(&dto.port)?,

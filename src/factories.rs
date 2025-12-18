@@ -22,18 +22,26 @@ use drasi_lib::bootstrap::BootstrapProviderConfig;
 use drasi_lib::plugin_core::{Reaction, Source};
 use log::info;
 
-use crate::config::{ReactionConfig, SourceConfig};
 use crate::api::mappings::{
-    DtoMapper, ConfigMapper,
-    // Source mappers
-    PostgresConfigMapper, HttpSourceConfigMapper, GrpcSourceConfigMapper,
-    MockSourceConfigMapper, PlatformSourceConfigMapper,
+    ConfigMapper,
+    DtoMapper,
+    GrpcAdaptiveReactionConfigMapper,
+    GrpcReactionConfigMapper,
+    GrpcSourceConfigMapper,
+    HttpAdaptiveReactionConfigMapper,
     // Reaction mappers
-    HttpReactionConfigMapper, HttpAdaptiveReactionConfigMapper,
-    GrpcReactionConfigMapper, GrpcAdaptiveReactionConfigMapper,
-    SseReactionConfigMapper, LogReactionConfigMapper,
-    PlatformReactionConfigMapper, ProfilerReactionConfigMapper
+    HttpReactionConfigMapper,
+    HttpSourceConfigMapper,
+    LogReactionConfigMapper,
+    MockSourceConfigMapper,
+    PlatformReactionConfigMapper,
+    PlatformSourceConfigMapper,
+    // Source mappers
+    PostgresConfigMapper,
+    ProfilerReactionConfigMapper,
+    SseReactionConfigMapper,
 };
+use crate::config::{ReactionConfig, SourceConfig};
 
 /// Create a source instance from a SourceConfig.
 ///
@@ -241,7 +249,7 @@ fn create_bootstrap_provider(
 /// ```
 pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'static>> {
     let mapper = DtoMapper::new();
-    
+
     match config {
         ReactionConfig::Log {
             id,
@@ -252,7 +260,7 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
             use drasi_reaction_log::LogReactionBuilder;
             let log_mapper = LogReactionConfigMapper;
             let domain_config = log_mapper.map(&config, &mapper)?;
-            
+
             let mut builder = LogReactionBuilder::new(&id)
                 .with_queries(queries)
                 .with_auto_start(auto_start);

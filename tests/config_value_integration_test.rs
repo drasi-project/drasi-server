@@ -16,9 +16,9 @@
 
 #[cfg(test)]
 mod tests {
+    use drasi_server::api::mappings::{ConfigMapper, DtoMapper, PostgresConfigMapper};
     use drasi_server::api::models::{ConfigValue, PostgresSourceConfigDto, SslModeDto};
-    use drasi_server::api::mappings::{DtoMapper, PostgresConfigMapper, ConfigMapper};
-    
+
     #[test]
     fn test_postgres_with_static_values() {
         let dto = PostgresSourceConfigDto {
@@ -33,18 +33,18 @@ mod tests {
             ssl_mode: ConfigValue::Static(SslModeDto::Require),
             table_keys: vec![],
         };
-        
+
         let mapper = DtoMapper::new();
         let postgres_mapper = PostgresConfigMapper;
         let config = postgres_mapper.map(&dto, &mapper).unwrap();
-        
+
         assert_eq!(config.host, "db.example.com");
         assert_eq!(config.port, 5433);
         assert_eq!(config.database, "production");
         assert_eq!(config.user, "app_user");
         assert_eq!(config.password, "secret123");
     }
-    
+
     #[test]
     fn test_postgres_with_environment_variables() {
         // Set up environment variables
@@ -54,7 +54,7 @@ mod tests {
         std::env::set_var("TEST_DB_USER", "env_user");
         std::env::set_var("TEST_DB_PASSWORD", "env_secret");
         std::env::set_var("TEST_SSL_MODE", "require");
-        
+
         let dto = PostgresSourceConfigDto {
             host: ConfigValue::EnvironmentVariable {
                 name: "TEST_DB_HOST".to_string(),
@@ -85,17 +85,17 @@ mod tests {
             },
             table_keys: vec![],
         };
-        
+
         let mapper = DtoMapper::new();
         let postgres_mapper = PostgresConfigMapper;
         let config = postgres_mapper.map(&dto, &mapper).unwrap();
-        
+
         assert_eq!(config.host, "env-host.com");
         assert_eq!(config.port, 5434);
         assert_eq!(config.database, "env_database");
         assert_eq!(config.user, "env_user");
         assert_eq!(config.password, "env_secret");
-        
+
         // Clean up
         std::env::remove_var("TEST_DB_HOST");
         std::env::remove_var("TEST_DB_PORT");
@@ -104,7 +104,7 @@ mod tests {
         std::env::remove_var("TEST_DB_PASSWORD");
         std::env::remove_var("TEST_SSL_MODE");
     }
-    
+
     #[test]
     fn test_postgres_with_defaults() {
         // Don't set environment variables, rely on defaults
@@ -138,22 +138,22 @@ mod tests {
             },
             table_keys: vec![],
         };
-        
+
         let mapper = DtoMapper::new();
         let postgres_mapper = PostgresConfigMapper;
         let config = postgres_mapper.map(&dto, &mapper).unwrap();
-        
+
         assert_eq!(config.host, "default-host.com");
         assert_eq!(config.port, 9999);
         assert_eq!(config.database, "default_db");
         assert_eq!(config.user, "default_user");
         assert_eq!(config.password, "default_pass");
     }
-    
+
     #[test]
     fn test_postgres_mixed_static_and_env() {
         std::env::set_var("TEST_MIXED_PASSWORD", "secure_password");
-        
+
         let dto = PostgresSourceConfigDto {
             host: ConfigValue::Static("localhost".to_string()),
             port: ConfigValue::Static(5432),
@@ -169,18 +169,18 @@ mod tests {
             ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
             table_keys: vec![],
         };
-        
+
         let mapper = DtoMapper::new();
         let postgres_mapper = PostgresConfigMapper;
         let config = postgres_mapper.map(&dto, &mapper).unwrap();
-        
+
         assert_eq!(config.host, "localhost");
         assert_eq!(config.port, 5432);
         assert_eq!(config.password, "secure_password");
-        
+
         std::env::remove_var("TEST_MIXED_PASSWORD");
     }
-    
+
     #[test]
     fn test_deserialization_from_yaml() {
         let yaml = r#"
@@ -203,33 +203,42 @@ ssl_mode:
   default: "prefer"
 table_keys: []
         "#;
-        
+
         let dto: PostgresSourceConfigDto = serde_yaml::from_str(yaml).unwrap();
-        
+
         // Check deserialization worked correctly
         match dto.host {
             ConfigValue::Static(ref s) => assert_eq!(s, "yaml-host.com"),
             _ => panic!("Expected static host"),
         }
-        
+
         match dto.database {
-            ConfigValue::EnvironmentVariable { ref name, ref default } => {
+            ConfigValue::EnvironmentVariable {
+                ref name,
+                ref default,
+            } => {
                 assert_eq!(name, "DB_NAME");
                 assert_eq!(default.as_deref(), Some("default_db"));
             }
             _ => panic!("Expected environment variable for database"),
         }
-        
+
         match dto.password {
-            ConfigValue::EnvironmentVariable { ref name, ref default } => {
+            ConfigValue::EnvironmentVariable {
+                ref name,
+                ref default,
+            } => {
                 assert_eq!(name, "DB_PASSWORD");
                 assert_eq!(default.as_deref(), Some("default_password"));
             }
             _ => panic!("Expected environment variable for password"),
         }
-        
+
         match dto.ssl_mode {
-            ConfigValue::EnvironmentVariable { ref name, ref default } => {
+            ConfigValue::EnvironmentVariable {
+                ref name,
+                ref default,
+            } => {
                 assert_eq!(name, "SSL_MODE");
                 assert_eq!(default.as_deref(), Some("prefer"));
             }

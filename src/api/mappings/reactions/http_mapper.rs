@@ -14,15 +14,19 @@
 
 //! HTTP reaction configuration mapper.
 
-use crate::api::models::*;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
-use drasi_reaction_http::{HttpReactionConfig, CallSpec, QueryConfig};
+use crate::api::models::*;
+use drasi_reaction_http::{CallSpec, HttpReactionConfig, QueryConfig};
 use std::collections::HashMap;
 
 pub struct HttpReactionConfigMapper;
 
 impl ConfigMapper<HttpReactionConfigDto, HttpReactionConfig> for HttpReactionConfigMapper {
-    fn map(&self, dto: &HttpReactionConfigDto, resolver: &DtoMapper) -> Result<HttpReactionConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &HttpReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<HttpReactionConfig, MappingError> {
         let mut routes = HashMap::new();
         for (key, query_dto) in &dto.routes {
             let added = if let Some(call_dto) = &query_dto.added {
@@ -58,7 +62,14 @@ impl ConfigMapper<HttpReactionConfigDto, HttpReactionConfig> for HttpReactionCon
                 None
             };
 
-            routes.insert(key.clone(), QueryConfig { added, updated, deleted });
+            routes.insert(
+                key.clone(),
+                QueryConfig {
+                    added,
+                    updated,
+                    deleted,
+                },
+            );
         }
 
         Ok(HttpReactionConfig {
@@ -71,7 +82,10 @@ impl ConfigMapper<HttpReactionConfigDto, HttpReactionConfig> for HttpReactionCon
 }
 
 // Helper function to resolve HashMap<String, ConfigValue<String>>
-fn resolve_hashmap(map: &HashMap<String, ConfigValue<String>>, resolver: &DtoMapper) -> Result<HashMap<String, String>, MappingError> {
+fn resolve_hashmap(
+    map: &HashMap<String, ConfigValue<String>>,
+    resolver: &DtoMapper,
+) -> Result<HashMap<String, String>, MappingError> {
     let mut result = HashMap::new();
     for (key, value) in map {
         result.insert(key.clone(), resolver.resolve_string(value)?);

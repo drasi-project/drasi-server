@@ -25,11 +25,11 @@
 
 // Core infrastructure
 pub mod core {
-    pub mod resolver;
     pub mod mapper;
-    
-    pub use resolver::{ResolverError, ValueResolver, EnvironmentVariableResolver, SecretResolver};
-    pub use mapper::{MappingError, ConfigMapper, DtoMapper};
+    pub mod resolver;
+
+    pub use mapper::{ConfigMapper, DtoMapper, MappingError};
+    pub use resolver::{EnvironmentVariableResolver, ResolverError, SecretResolver, ValueResolver};
 }
 
 // Server settings mapper
@@ -43,6 +43,6 @@ pub mod reactions;
 
 // Re-export commonly used types at module root for convenience
 pub use core::*;
+pub use reactions::*;
 pub use server_settings::{map_server_settings, ResolvedServerSettings};
 pub use sources::*;
-pub use reactions::*;

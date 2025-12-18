@@ -14,9 +14,9 @@
 
 //! HTTP reaction configuration DTOs.
 
+use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::api::models::ConfigValue;
 
 /// Local copy of HTTP reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

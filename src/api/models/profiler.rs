@@ -14,8 +14,8 @@
 
 //! Profiler reaction configuration DTOs.
 
-use serde::{Deserialize, Serialize};
 use crate::api::models::ConfigValue;
+use serde::{Deserialize, Serialize};
 
 /// Local copy of profiler reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -14,14 +14,18 @@
 
 //! Log reaction configuration mapper.
 
-use crate::api::models::LogReactionConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::LogReactionConfigDto;
 use drasi_reaction_log::LogReactionConfig;
 
 pub struct LogReactionConfigMapper;
 
 impl ConfigMapper<LogReactionConfigDto, LogReactionConfig> for LogReactionConfigMapper {
-    fn map(&self, dto: &LogReactionConfigDto, resolver: &DtoMapper) -> Result<LogReactionConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &LogReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<LogReactionConfig, MappingError> {
         Ok(LogReactionConfig {
             added_template: resolver.resolve_optional(&dto.added_template)?,
             updated_template: resolver.resolve_optional(&dto.updated_template)?,

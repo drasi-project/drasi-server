@@ -21,7 +21,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
-use crate::api::models::{ReactionConfig, SourceConfig, ConfigValue};
+use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
 
 /// DrasiServer configuration that composes core config with server settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -109,10 +109,7 @@ fn is_valid_hostname(hostname: &str) -> bool {
             return false;
         }
 
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return false;
         }
     }
@@ -124,11 +121,11 @@ impl DrasiServerConfig {
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         use crate::api::mappings::{map_server_settings, DtoMapper};
-        
+
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
         let resolved_settings = map_server_settings(&self.server, &mapper)?;
-        
+
         if !resolved_settings.host.is_empty()
             && resolved_settings.host != "0.0.0.0"
             && !is_valid_hostname(&resolved_settings.host)

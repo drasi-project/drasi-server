@@ -18,9 +18,9 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 
-use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
+use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
 #[derive(Parser)]
 #[command(name = "drasi-server")]
@@ -116,11 +116,11 @@ async fn main() -> Result<()> {
 
     info!("Starting Drasi Server");
     debug!("Debug logging is enabled");
-    
+
     if env_file_loaded {
         info!("Loaded environment variables from .env file");
     }
-    
+
     info!("Config file: {}", cli.config.display());
 
     let final_port = cli.port.unwrap_or(resolved_settings.port);

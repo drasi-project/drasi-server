@@ -14,14 +14,18 @@
 
 //! SSE reaction configuration mapper.
 
-use crate::api::models::SseReactionConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::SseReactionConfigDto;
 use drasi_reaction_sse::SseReactionConfig;
 
 pub struct SseReactionConfigMapper;
 
 impl ConfigMapper<SseReactionConfigDto, SseReactionConfig> for SseReactionConfigMapper {
-    fn map(&self, dto: &SseReactionConfigDto, resolver: &DtoMapper) -> Result<SseReactionConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &SseReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<SseReactionConfig, MappingError> {
         Ok(SseReactionConfig {
             host: resolver.resolve_string(&dto.host)?,
             port: resolver.resolve_typed(&dto.port)?,

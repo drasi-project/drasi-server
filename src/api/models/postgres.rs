@@ -14,10 +14,10 @@
 
 //! PostgreSQL source configuration DTOs.
 
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use crate::api::models::ConfigValue;
 use drasi_source_postgres::SslMode;
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// Local copy of PostgreSQL source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -58,7 +58,7 @@ impl Default for SslModeDto {
 
 impl FromStr for SslModeDto {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "disable" => Ok(SslModeDto::Disable),

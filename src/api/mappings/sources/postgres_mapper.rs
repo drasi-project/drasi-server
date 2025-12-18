@@ -14,14 +14,18 @@
 
 //! PostgreSQL source configuration mapper.
 
-use crate::api::models::PostgresSourceConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::PostgresSourceConfigDto;
 use drasi_source_postgres::{PostgresSourceConfig, TableKeyConfig};
 
 pub struct PostgresConfigMapper;
 
 impl ConfigMapper<PostgresSourceConfigDto, PostgresSourceConfig> for PostgresConfigMapper {
-    fn map(&self, dto: &PostgresSourceConfigDto, resolver: &DtoMapper) -> Result<PostgresSourceConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &PostgresSourceConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<PostgresSourceConfig, MappingError> {
         Ok(PostgresSourceConfig {
             host: resolver.resolve_string(&dto.host)?,
             port: resolver.resolve_typed(&dto.port)?,
@@ -31,11 +35,17 @@ impl ConfigMapper<PostgresSourceConfigDto, PostgresSourceConfig> for PostgresCon
             tables: dto.tables.clone(),
             slot_name: dto.slot_name.clone(),
             publication_name: dto.publication_name.clone(),
-            ssl_mode: resolver.resolve_typed::<crate::api::models::SslModeDto>(&dto.ssl_mode)?.into(),
-            table_keys: dto.table_keys.iter().map(|tk| TableKeyConfig {
-                table: tk.table.clone(),
-                key_columns: tk.key_columns.clone(),
-            }).collect(),
+            ssl_mode: resolver
+                .resolve_typed::<crate::api::models::SslModeDto>(&dto.ssl_mode)?
+                .into(),
+            table_keys: dto
+                .table_keys
+                .iter()
+                .map(|tk| TableKeyConfig {
+                    table: tk.table.clone(),
+                    key_columns: tk.key_columns.clone(),
+                })
+                .collect(),
         })
     }
 }
@@ -44,11 +54,11 @@ impl ConfigMapper<PostgresSourceConfigDto, PostgresSourceConfig> for PostgresCon
 mod tests {
     use super::*;
     use crate::api::models::{ConfigValue, SslModeDto};
-    
+
     #[test]
     fn test_postgres_mapper() {
         std::env::set_var("TEST_PG_PASSWORD", "secret123");
-        
+
         let dto = PostgresSourceConfigDto {
             host: ConfigValue::Static("localhost".to_string()),
             port: ConfigValue::Static(5432),
@@ -64,18 +74,18 @@ mod tests {
             ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
             table_keys: vec![],
         };
-        
+
         let mapper = DtoMapper::new();
         let postgres_mapper = PostgresConfigMapper;
         let result = postgres_mapper.map(&dto, &mapper).unwrap();
-        
+
         assert_eq!(result.host, "localhost");
         assert_eq!(result.port, 5432);
         assert_eq!(result.database, "testdb");
         assert_eq!(result.user, "testuser");
         assert_eq!(result.password, "secret123");
         assert_eq!(result.tables, vec!["users".to_string()]);
-        
+
         std::env::remove_var("TEST_PG_PASSWORD");
     }
 }

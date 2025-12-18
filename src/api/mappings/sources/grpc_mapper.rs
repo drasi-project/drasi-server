@@ -14,14 +14,18 @@
 
 //! gRPC source configuration mapper.
 
-use crate::api::models::GrpcSourceConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::GrpcSourceConfigDto;
 use drasi_source_grpc::GrpcSourceConfig;
 
 pub struct GrpcSourceConfigMapper;
 
 impl ConfigMapper<GrpcSourceConfigDto, GrpcSourceConfig> for GrpcSourceConfigMapper {
-    fn map(&self, dto: &GrpcSourceConfigDto, resolver: &DtoMapper) -> Result<GrpcSourceConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &GrpcSourceConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<GrpcSourceConfig, MappingError> {
         Ok(GrpcSourceConfig {
             host: resolver.resolve_string(&dto.host)?,
             port: resolver.resolve_typed(&dto.port)?,

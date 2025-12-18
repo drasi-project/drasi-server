@@ -14,14 +14,14 @@
 
 //! Source configuration mappers.
 
-mod postgres_mapper;
-mod http_mapper;
 mod grpc_mapper;
+mod http_mapper;
 mod mock_mapper;
 mod platform_mapper;
+mod postgres_mapper;
 
-pub use postgres_mapper::PostgresConfigMapper;
-pub use http_mapper::HttpSourceConfigMapper;
 pub use grpc_mapper::GrpcSourceConfigMapper;
+pub use http_mapper::HttpSourceConfigMapper;
 pub use mock_mapper::MockSourceConfigMapper;
 pub use platform_mapper::PlatformSourceConfigMapper;
+pub use postgres_mapper::PostgresConfigMapper;

@@ -28,7 +28,10 @@ pub struct ResolvedServerSettings {
 }
 
 /// Maps ServerSettings DTO to ResolvedServerSettings domain model
-pub fn map_server_settings(dto: &ServerSettings, mapper: &DtoMapper) -> Result<ResolvedServerSettings> {
+pub fn map_server_settings(
+    dto: &ServerSettings,
+    mapper: &DtoMapper,
+) -> Result<ResolvedServerSettings> {
     Ok(ResolvedServerSettings {
         host: mapper.resolve_typed(&dto.host)?,
         port: mapper.resolve_typed(&dto.port)?,

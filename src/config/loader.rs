@@ -33,7 +33,9 @@ pub enum ConfigError {
     #[error("Failed to parse JSON: {0}")]
     JsonError(#[from] serde_json::Error),
 
-    #[error("Failed to parse config file '{path}': YAML error: {yaml_err}, JSON error: {json_err}")]
+    #[error(
+        "Failed to parse config file '{path}': YAML error: {yaml_err}, JSON error: {json_err}"
+    )]
     ParseError {
         path: String,
         yaml_err: String,

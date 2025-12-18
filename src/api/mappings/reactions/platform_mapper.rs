@@ -14,14 +14,20 @@
 
 //! Platform reaction configuration mapper.
 
-use crate::api::models::PlatformReactionConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::PlatformReactionConfigDto;
 use drasi_reaction_platform::PlatformReactionConfig;
 
 pub struct PlatformReactionConfigMapper;
 
-impl ConfigMapper<PlatformReactionConfigDto, PlatformReactionConfig> for PlatformReactionConfigMapper {
-    fn map(&self, dto: &PlatformReactionConfigDto, resolver: &DtoMapper) -> Result<PlatformReactionConfig, MappingError> {
+impl ConfigMapper<PlatformReactionConfigDto, PlatformReactionConfig>
+    for PlatformReactionConfigMapper
+{
+    fn map(
+        &self,
+        dto: &PlatformReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<PlatformReactionConfig, MappingError> {
         Ok(PlatformReactionConfig {
             redis_url: resolver.resolve_string(&dto.redis_url)?,
             pubsub_name: resolver.resolve_optional(&dto.pubsub_name)?,

@@ -23,16 +23,14 @@ where
     T: Serialize + DeserializeOwned + Clone,
 {
     /// A reference to a secret (always resolves to string, then parsed to T)
-    Secret {
-        name: String,
-    },
-    
+    Secret { name: String },
+
     /// A reference to an environment variable
     EnvironmentVariable {
         name: String,
         default: Option<String>,
     },
-    
+
     /// A static value of type T
     Static(T),
 }
@@ -53,7 +51,7 @@ where
         S: serde::Serializer,
     {
         use serde::ser::SerializeMap;
-        
+
         match self {
             ConfigValue::Secret { name } => {
                 let mut map = serializer.serialize_map(Some(2))?;
@@ -87,31 +85,34 @@ where
     {
         use serde::de::Error;
         use serde_json::Value;
-        
+
         let value = Value::deserialize(deserializer)?;
-        
+
         // Try to deserialize as structured format with "kind" field
         if let Value::Object(ref map) = value {
             if let Some(Value::String(kind)) = map.get("kind") {
                 match kind.as_str() {
                     "Secret" => {
-                        let name = map.get("name")
+                        let name = map
+                            .get("name")
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| D::Error::missing_field("name"))?
                             .to_string();
-                        
+
                         return Ok(ConfigValue::Secret { name });
                     }
                     "EnvironmentVariable" => {
-                        let name = map.get("name")
+                        let name = map
+                            .get("name")
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| D::Error::missing_field("name"))?
                             .to_string();
-                        
-                        let default = map.get("default")
+
+                        let default = map
+                            .get("default")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                        
+
                         return Ok(ConfigValue::EnvironmentVariable { name, default });
                     }
                     _ => {
@@ -120,18 +121,19 @@ where
                 }
             }
         }
-        
+
         // Try to parse POSIX format for any type (the string will be parsed to T later)
         if let Value::String(s) = &value {
             if let Some(env_ref) = parse_posix_env_var(s) {
                 return Ok(env_ref);
             }
         }
-        
+
         // Otherwise, deserialize as static value
-        let static_value: T = serde_json::from_value(value)
-            .map_err(|e| D::Error::custom(format!("Failed to deserialize as static value: {}", e)))?;
-        
+        let static_value: T = serde_json::from_value(value).map_err(|e| {
+            D::Error::custom(format!("Failed to deserialize as static value: {}", e))
+        })?;
+
         Ok(ConfigValue::Static(static_value))
     }
 }
@@ -145,18 +147,21 @@ where
     if !s.starts_with("${") || !s.ends_with('}') {
         return None;
     }
-    
-    let inner = &s[2..s.len()-1];
-    
+
+    let inner = &s[2..s.len() - 1];
+
     // Check for default value syntax: VAR:-default
     if let Some(colon_pos) = inner.find(":-") {
         let name = inner[..colon_pos].to_string();
-        let default = Some(inner[colon_pos+2..].to_string());
+        let default = Some(inner[colon_pos + 2..].to_string());
         Some(ConfigValue::EnvironmentVariable { name, default })
     } else {
         // No default value
         let name = inner.to_string();
-        Some(ConfigValue::EnvironmentVariable { name, default: None })
+        Some(ConfigValue::EnvironmentVariable {
+            name,
+            default: None,
+        })
     }
 }
 
@@ -174,21 +179,21 @@ where
 mod tests {
     use super::*;
     use serde_json;
-    
+
     #[test]
     fn test_deserialize_static_string() {
         let json = r#""hello""#;
         let value: ConfigValue<String> = serde_json::from_str(json).unwrap();
         assert_eq!(value, ConfigValue::Static("hello".to_string()));
     }
-    
+
     #[test]
     fn test_deserialize_static_number() {
         let json = r#"5432"#;
         let value: ConfigValue<u16> = serde_json::from_str(json).unwrap();
         assert_eq!(value, ConfigValue::Static(5432));
     }
-    
+
     #[test]
     fn test_deserialize_posix_with_default() {
         let json = r#""${DB_PORT:-5432}""#;
@@ -201,7 +206,7 @@ mod tests {
             _ => panic!("Expected EnvironmentVariable variant"),
         }
     }
-    
+
     #[test]
     fn test_deserialize_posix_without_default() {
         let json = r#""${MY_VAR}""#;
@@ -214,7 +219,7 @@ mod tests {
             _ => panic!("Expected EnvironmentVariable variant"),
         }
     }
-    
+
     #[test]
     fn test_deserialize_structured_env_var() {
         let json = r#"{"kind": "EnvironmentVariable", "name": "DB_PASSWORD", "default": "secret"}"#;
@@ -227,7 +232,7 @@ mod tests {
             _ => panic!("Expected EnvironmentVariable variant"),
         }
     }
-    
+
     #[test]
     fn test_deserialize_structured_secret() {
         let json = r#"{"kind": "Secret", "name": "my-secret"}"#;
@@ -239,14 +244,14 @@ mod tests {
             _ => panic!("Expected Secret variant"),
         }
     }
-    
+
     #[test]
     fn test_serialize_static() {
         let value = ConfigValue::Static("hello".to_string());
         let json = serde_json::to_string(&value).unwrap();
         assert_eq!(json, r#""hello""#);
     }
-    
+
     #[test]
     fn test_serialize_env_var() {
         let value: ConfigValue<String> = ConfigValue::EnvironmentVariable {
@@ -258,7 +263,7 @@ mod tests {
         assert_eq!(json["name"], "MY_VAR");
         assert_eq!(json["default"], "default");
     }
-    
+
     #[test]
     fn test_serialize_secret() {
         let value: ConfigValue<String> = ConfigValue::Secret {

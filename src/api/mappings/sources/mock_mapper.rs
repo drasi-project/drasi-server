@@ -14,14 +14,18 @@
 
 //! Mock source configuration mapper.
 
-use crate::api::models::MockSourceConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::MockSourceConfigDto;
 use drasi_source_mock::MockSourceConfig;
 
 pub struct MockSourceConfigMapper;
 
 impl ConfigMapper<MockSourceConfigDto, MockSourceConfig> for MockSourceConfigMapper {
-    fn map(&self, dto: &MockSourceConfigDto, resolver: &DtoMapper) -> Result<MockSourceConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &MockSourceConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<MockSourceConfig, MappingError> {
         Ok(MockSourceConfig {
             data_type: resolver.resolve_string(&dto.data_type)?,
             interval_ms: resolver.resolve_typed(&dto.interval_ms)?,

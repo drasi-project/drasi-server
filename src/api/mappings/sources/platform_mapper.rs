@@ -14,14 +14,18 @@
 
 //! Platform source configuration mapper.
 
-use crate::api::models::PlatformSourceConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::PlatformSourceConfigDto;
 use drasi_source_platform::PlatformSourceConfig;
 
 pub struct PlatformSourceConfigMapper;
 
 impl ConfigMapper<PlatformSourceConfigDto, PlatformSourceConfig> for PlatformSourceConfigMapper {
-    fn map(&self, dto: &PlatformSourceConfigDto, resolver: &DtoMapper) -> Result<PlatformSourceConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &PlatformSourceConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<PlatformSourceConfig, MappingError> {
         Ok(PlatformSourceConfig {
             redis_url: resolver.resolve_string(&dto.redis_url)?,
             stream_key: resolver.resolve_string(&dto.stream_key)?,

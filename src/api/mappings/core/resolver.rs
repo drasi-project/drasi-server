@@ -22,16 +22,16 @@ use thiserror::Error;
 pub enum ResolverError {
     #[error("Environment variable '{0}' not found and no default provided")]
     EnvVarNotFound(String),
-    
+
     #[error("Not implemented: {0}")]
     NotImplemented(String),
-    
+
     #[error("No resolver found for reference type: {0}")]
     NoResolverFound(String),
-    
+
     #[error("Wrong resolver type used for this reference")]
     WrongResolverType,
-    
+
     #[error("Failed to parse value: {0}")]
     ParseError(String),
 }
@@ -66,12 +66,10 @@ pub struct SecretResolver;
 impl ValueResolver for SecretResolver {
     fn resolve_to_string(&self, value: &ConfigValue<String>) -> Result<String, ResolverError> {
         match value {
-            ConfigValue::Secret { name } => {
-                Err(ResolverError::NotImplemented(format!(
-                    "Secret resolution not yet implemented for '{}'",
-                    name
-                )))
-            }
+            ConfigValue::Secret { name } => Err(ResolverError::NotImplemented(format!(
+                "Secret resolution not yet implemented for '{}'",
+                name
+            ))),
             _ => Err(ResolverError::WrongResolverType),
         }
     }
@@ -80,23 +78,23 @@ impl ValueResolver for SecretResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_env_resolver_with_set_var() {
         std::env::set_var("TEST_VAR_1", "test_value");
-        
+
         let resolver = EnvironmentVariableResolver;
         let value = ConfigValue::EnvironmentVariable {
             name: "TEST_VAR_1".to_string(),
             default: None,
         };
-        
+
         let result = resolver.resolve_to_string(&value).unwrap();
         assert_eq!(result, "test_value");
-        
+
         std::env::remove_var("TEST_VAR_1");
     }
-    
+
     #[test]
     fn test_env_resolver_with_default() {
         let resolver = EnvironmentVariableResolver;
@@ -104,11 +102,11 @@ mod tests {
             name: "NONEXISTENT_VAR_12345".to_string(),
             default: Some("default_value".to_string()),
         };
-        
+
         let result = resolver.resolve_to_string(&value).unwrap();
         assert_eq!(result, "default_value");
     }
-    
+
     #[test]
     fn test_env_resolver_missing_var_no_default() {
         let resolver = EnvironmentVariableResolver;
@@ -116,21 +114,27 @@ mod tests {
             name: "NONEXISTENT_VAR_67890".to_string(),
             default: None,
         };
-        
+
         let result = resolver.resolve_to_string(&value);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ResolverError::EnvVarNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolverError::EnvVarNotFound(_)
+        ));
     }
-    
+
     #[test]
     fn test_secret_resolver_not_implemented() {
         let resolver = SecretResolver;
         let value = ConfigValue::Secret {
             name: "my-secret".to_string(),
         };
-        
+
         let result = resolver.resolve_to_string(&value);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ResolverError::NotImplemented(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolverError::NotImplemented(_)
+        ));
     }
 }

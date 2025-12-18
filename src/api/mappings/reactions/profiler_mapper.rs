@@ -14,14 +14,20 @@
 
 //! Profiler reaction configuration mapper.
 
-use crate::api::models::ProfilerReactionConfigDto;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::ProfilerReactionConfigDto;
 use drasi_reaction_profiler::ProfilerReactionConfig;
 
 pub struct ProfilerReactionConfigMapper;
 
-impl ConfigMapper<ProfilerReactionConfigDto, ProfilerReactionConfig> for ProfilerReactionConfigMapper {
-    fn map(&self, dto: &ProfilerReactionConfigDto, resolver: &DtoMapper) -> Result<ProfilerReactionConfig, MappingError> {
+impl ConfigMapper<ProfilerReactionConfigDto, ProfilerReactionConfig>
+    for ProfilerReactionConfigMapper
+{
+    fn map(
+        &self,
+        dto: &ProfilerReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<ProfilerReactionConfig, MappingError> {
         Ok(ProfilerReactionConfig {
             window_size: resolver.resolve_typed(&dto.window_size)?,
             report_interval_secs: resolver.resolve_typed(&dto.report_interval_secs)?,

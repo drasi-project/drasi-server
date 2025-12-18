@@ -14,8 +14,8 @@
 
 //! Mock source configuration DTOs.
 
-use serde::{Deserialize, Serialize};
 use crate::api::models::ConfigValue;
+use serde::{Deserialize, Serialize};
 
 /// Local copy of mock source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

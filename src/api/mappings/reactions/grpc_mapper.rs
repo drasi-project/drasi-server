@@ -14,15 +14,19 @@
 
 //! gRPC reaction configuration mapper.
 
-use crate::api::models::*;
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::*;
 use drasi_reaction_grpc::GrpcReactionConfig;
 use std::collections::HashMap;
 
 pub struct GrpcReactionConfigMapper;
 
 impl ConfigMapper<GrpcReactionConfigDto, GrpcReactionConfig> for GrpcReactionConfigMapper {
-    fn map(&self, dto: &GrpcReactionConfigDto, resolver: &DtoMapper) -> Result<GrpcReactionConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &GrpcReactionConfigDto,
+        resolver: &DtoMapper,
+    ) -> Result<GrpcReactionConfig, MappingError> {
         Ok(GrpcReactionConfig {
             endpoint: resolver.resolve_string(&dto.endpoint)?,
             timeout_ms: resolver.resolve_typed(&dto.timeout_ms)?,
@@ -30,14 +34,18 @@ impl ConfigMapper<GrpcReactionConfigDto, GrpcReactionConfig> for GrpcReactionCon
             batch_flush_timeout_ms: resolver.resolve_typed(&dto.batch_flush_timeout_ms)?,
             max_retries: resolver.resolve_typed(&dto.max_retries)?,
             connection_retry_attempts: resolver.resolve_typed(&dto.connection_retry_attempts)?,
-            initial_connection_timeout_ms: resolver.resolve_typed(&dto.initial_connection_timeout_ms)?,
+            initial_connection_timeout_ms: resolver
+                .resolve_typed(&dto.initial_connection_timeout_ms)?,
             metadata: resolve_hashmap(&dto.metadata, resolver)?,
         })
     }
 }
 
 // Helper function to resolve HashMap<String, ConfigValue<String>>
-fn resolve_hashmap(map: &HashMap<String, ConfigValue<String>>, resolver: &DtoMapper) -> Result<HashMap<String, String>, MappingError> {
+fn resolve_hashmap(
+    map: &HashMap<String, ConfigValue<String>>,
+    resolver: &DtoMapper,
+) -> Result<HashMap<String, String>, MappingError> {
     let mut result = HashMap::new();
     for (key, value) in map {
         result.insert(key.clone(), resolver.resolve_string(value)?);

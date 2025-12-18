@@ -14,9 +14,9 @@
 
 //! gRPC reaction configuration DTOs.
 
+use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::api::models::ConfigValue;
 
 // Re-use adaptive config from http_reaction
 use super::http_reaction::AdaptiveBatchConfigDto;
