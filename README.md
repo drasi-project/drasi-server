@@ -153,6 +153,7 @@ Automated responses triggered by query results:
 - **Profiler** (`profiler`) - Performance profiling for queries
 - **Application** (`application`) - Custom code handlers for embedded usage
 
+
 ## Building from Source
 
 ### Prerequisites
