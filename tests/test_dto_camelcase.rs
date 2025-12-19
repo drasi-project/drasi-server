@@ -17,21 +17,33 @@ fn test_postgres_dto_serializes_camelcase() {
         ssl_mode: ConfigValue::Static(SslModeDto::Disable),
         table_keys: vec![],
     };
-    
+
     let json = serde_json::to_value(&dto).unwrap();
-    
+
     // Verify fields are in camelCase
     assert!(json.get("slotName").is_some(), "slotName should exist");
-    assert!(json.get("publicationName").is_some(), "publicationName should exist");
+    assert!(
+        json.get("publicationName").is_some(),
+        "publicationName should exist"
+    );
     assert!(json.get("tableKeys").is_some(), "tableKeys should exist");
     assert!(json.get("sslMode").is_some(), "sslMode should exist");
-    
+
     // Verify snake_case versions don't exist
-    assert!(json.get("slot_name").is_none(), "slot_name should NOT exist");
-    assert!(json.get("publication_name").is_none(), "publication_name should NOT exist");
-    assert!(json.get("table_keys").is_none(), "table_keys should NOT exist");
+    assert!(
+        json.get("slot_name").is_none(),
+        "slot_name should NOT exist"
+    );
+    assert!(
+        json.get("publication_name").is_none(),
+        "publication_name should NOT exist"
+    );
+    assert!(
+        json.get("table_keys").is_none(),
+        "table_keys should NOT exist"
+    );
     assert!(json.get("ssl_mode").is_none(), "ssl_mode should NOT exist");
-    
+
     println!("✅ PostgresSourceConfigDto serializes as camelCase");
 }
 
@@ -41,17 +53,23 @@ fn test_mock_dto_serializes_camelcase() {
         data_type: ConfigValue::Static("sensor".to_string()),
         interval_ms: ConfigValue::Static(1000),
     };
-    
+
     let json = serde_json::to_value(&dto).unwrap();
-    
+
     // Verify fields are in camelCase
     assert!(json.get("dataType").is_some(), "dataType should exist");
     assert!(json.get("intervalMs").is_some(), "intervalMs should exist");
-    
+
     // Verify snake_case versions don't exist
-    assert!(json.get("data_type").is_none(), "data_type should NOT exist");
-    assert!(json.get("interval_ms").is_none(), "interval_ms should NOT exist");
-    
+    assert!(
+        json.get("data_type").is_none(),
+        "data_type should NOT exist"
+    );
+    assert!(
+        json.get("interval_ms").is_none(),
+        "interval_ms should NOT exist"
+    );
+
     println!("✅ MockSourceConfigDto serializes as camelCase");
 }
 
@@ -69,17 +87,29 @@ fn test_http_source_dto_serializes_camelcase() {
         adaptive_window_secs: Some(ConfigValue::Static(60)),
         adaptive_enabled: Some(ConfigValue::Static(true)),
     };
-    
+
     let json = serde_json::to_value(&dto).unwrap();
-    
+
     // Verify fields are in camelCase
     assert!(json.get("timeoutMs").is_some(), "timeoutMs should exist");
-    assert!(json.get("adaptiveMaxBatchSize").is_some(), "adaptiveMaxBatchSize should exist");
-    assert!(json.get("adaptiveMinBatchSize").is_some(), "adaptiveMinBatchSize should exist");
-    
+    assert!(
+        json.get("adaptiveMaxBatchSize").is_some(),
+        "adaptiveMaxBatchSize should exist"
+    );
+    assert!(
+        json.get("adaptiveMinBatchSize").is_some(),
+        "adaptiveMinBatchSize should exist"
+    );
+
     // Verify snake_case versions don't exist
-    assert!(json.get("timeout_ms").is_none(), "timeout_ms should NOT exist");
-    assert!(json.get("adaptive_max_batch_size").is_none(), "adaptive_max_batch_size should NOT exist");
-    
+    assert!(
+        json.get("timeout_ms").is_none(),
+        "timeout_ms should NOT exist"
+    );
+    assert!(
+        json.get("adaptive_max_batch_size").is_none(),
+        "adaptive_max_batch_size should NOT exist"
+    );
+
     println!("✅ HttpSourceConfigDto serializes as camelCase");
 }
