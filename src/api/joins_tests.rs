@@ -299,7 +299,7 @@ mod api_query_joins_tests {
             "MATCH (a:NodeA)-[:TEST_JOIN]->(b:NodeB) RETURN a, b"
         );
         assert_eq!(json["sources"].as_array().unwrap().len(), 2);
-        assert_eq!(json["autoStart"], true);
+        assert_eq!(json["auto_start"], true);
 
         assert!(json["joins"].is_array());
         let joins_array = json["joins"].as_array().unwrap();
