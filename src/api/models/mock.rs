@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of mock source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct MockSourceConfigDto {
     #[serde(default = "default_data_type")]
     pub data_type: ConfigValue<String>,

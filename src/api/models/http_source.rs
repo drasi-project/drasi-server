@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of HTTP source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct HttpSourceConfigDto {
     pub host: ConfigValue<String>,
     pub port: ConfigValue<u16>,

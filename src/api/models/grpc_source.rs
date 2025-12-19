@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of gRPC source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GrpcSourceConfigDto {
     #[serde(default = "default_grpc_host")]
     pub host: ConfigValue<String>,

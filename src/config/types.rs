@@ -42,6 +42,7 @@ pub struct DrasiServerConfig {
 /// Server settings for DrasiServer
 /// These control DrasiServer's operational behavior including network binding
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerSettings {
     #[serde(default = "default_host")]
     pub host: ConfigValue<String>,

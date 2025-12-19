@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of SSE reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SseReactionConfigDto {
     #[serde(default = "default_sse_host")]
     pub host: ConfigValue<String>,

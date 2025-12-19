@@ -23,6 +23,7 @@ use super::http_reaction::AdaptiveBatchConfigDto;
 
 /// Local copy of gRPC reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GrpcReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]
     pub endpoint: ConfigValue<String>,
@@ -72,6 +73,7 @@ fn default_initial_connection_timeout_ms() -> ConfigValue<u64> {
 
 /// Local copy of gRPC adaptive reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GrpcAdaptiveReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]
     pub endpoint: ConfigValue<String>,

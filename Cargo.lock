@@ -1379,15 +1379,12 @@ dependencies = [
  "drasi-source-platform",
  "drasi-source-postgres",
  "env_logger",
- "envfmt",
  "futures",
  "hyper 1.7.0",
- "lazy_static",
  "log",
  "mockall",
  "pretty_assertions",
  "redis 0.24.0",
- "regex",
  "rstest",
  "serde",
  "serde_json",
@@ -1560,12 +1557,6 @@ dependencies = [
  "regex",
  "termcolor",
 ]
-
-[[package]]
-name = "envfmt"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c32e096f9220f238dafb809fbb1e8084d03eac294e7cad911ae13821acf79fd0"
 
 [[package]]
 name = "equivalent"

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of log reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct LogReactionConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added_template: Option<ConfigValue<String>>,

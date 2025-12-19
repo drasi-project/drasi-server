@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of profiler reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfilerReactionConfigDto {
     #[serde(default = "default_profiler_window_size")]
     pub window_size: ConfigValue<usize>,
