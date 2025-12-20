@@ -19,12 +19,12 @@ server:
   port: "${SERVER_PORT:-8080}"
   
   # Logging level: trace, debug, info, warn, error
-  log_level: "${LOG_LEVEL:-info}"
+  logLevel: "${LOG_LEVEL:-info}"
   
   # Disable automatic persistence of API changes to this file
-  disable_persistence: false
+  disablePersistence: false
 
-server_core:
+serverCore:
   # Unique server identifier
   id: "${SERVER_ID:-drasi-server-1}"
 
@@ -33,7 +33,7 @@ sources:
   # PostgreSQL source with CDC (Change Data Capture)
   - kind: postgres
     id: my-postgres-db
-    auto_start: true
+    autoStart: true
     
     # Connection details - all use environment variables for security
     host: "${DB_HOST}"
@@ -43,9 +43,9 @@ sources:
     password: "${DB_PASSWORD}"  # NEVER hardcode passwords!
     
     # Optional: SSL configuration
-    # ssl_mode: "${DB_SSL_MODE:-prefer}"
+    # sslMode: "${DB_SSL_MODE:-prefer}"
     
-    bootstrap_provider:
+    bootstrapProvider:
       kind: postgres
       host: "${DB_HOST}"
       port: "${DB_PORT:-5432}"
@@ -56,7 +56,7 @@ sources:
   # HTTP source for receiving events
   - kind: http
     id: webhook-receiver
-    auto_start: true
+    autoStart: true
     host: "${WEBHOOK_HOST:-0.0.0.0}"
     port: "${WEBHOOK_PORT:-9000}"
 
@@ -67,12 +67,12 @@ queries:
       MATCH (o:Order)
       WHERE o.total > 1000
       RETURN o.id AS order_id, o.total AS total, o.customer AS customer
-    query_language: Cypher
-    auto_start: true
-    enable_bootstrap: true
+    queryLanguage: Cypher
+    autoStart: true
+    enableBootstrap: true
     
-    source_subscriptions:
-      - source_id: my-postgres-db
+    sourceSubscriptions:
+      - sourceId: my-postgres-db
 
 # Reactions (where to send query results)
 reactions:
@@ -81,18 +81,18 @@ reactions:
     id: log-high-value-orders
     queries:
       - high-value-orders
-    auto_start: true
-    log_level: "${REACTION_LOG_LEVEL:-info}"
+    autoStart: true
+    logLevel: "${REACTION_LOG_LEVEL:-info}"
 
   # HTTP webhook reaction
   - kind: http
     id: notify-high-value-orders
     queries:
       - high-value-orders
-    auto_start: true
+    autoStart: true
     
     # Webhook URL - uses environment variable
-    base_url: "${WEBHOOK_URL}"
+    baseUrl: "${WEBHOOK_URL}"
     
     # Optional: Authentication
     # headers:
@@ -105,7 +105,7 @@ reactions:
     id: sse-high-value-orders
     queries:
       - high-value-orders
-    auto_start: true
+    autoStart: true
     host: "${SSE_HOST:-0.0.0.0}"
     port: "${SSE_PORT:-8081}"
 

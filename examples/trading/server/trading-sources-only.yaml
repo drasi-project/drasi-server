@@ -15,21 +15,21 @@
 server:
   host: 0.0.0.0
   port: 8080
-  log_level: info
-  disable_persistence: true
-server_core:
+  logLevel: info
+  disablePersistence: true
+serverCore:
   id: trading-server
 sources:
 - kind: http
   id: price-feed
-  auto_start: true
+  autoStart: true
   # HttpSourceConfig fields
   host: 0.0.0.0
   port: 9000
-  timeout_ms: 10000
+  timeoutMs: 10000
 - kind: postgres
   id: postgres-stocks
-  auto_start: true
+  autoStart: true
   # PostgresSourceConfig fields
   host: localhost
   port: 5432
@@ -39,17 +39,17 @@ sources:
   tables:
   - stocks
   - portfolio
-  slot_name: drasi_trading_slot
-  publication_name: drasi_trading_pub
-  ssl_mode: prefer
-  table_keys:
+  slotName: drasi_trading_slot
+  publicationName: drasi_trading_pub
+  sslMode: prefer
+  tableKeys:
   - table: stocks
-    key_columns:
+    keyColumns:
     - id
   - table: portfolio
-    key_columns:
+    keyColumns:
     - id
-  bootstrap_provider:
+  bootstrapProvider:
     type: postgres
 queries: []
 reactions: []
