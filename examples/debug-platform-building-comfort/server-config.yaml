@@ -48,7 +48,7 @@ sources:
 # Queries: Continuous Cypher queries that process incoming data
 queries:
   - id: room-comfort-level
-    auto_start: true
+    autoStart: true
     query: |
       MATCH
         (r:Room)

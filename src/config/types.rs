@@ -21,7 +21,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
-use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
+use crate::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig};
 
 /// DrasiServer configuration that composes core config with server settings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -31,10 +31,14 @@ pub struct DrasiServerConfig {
     /// Source configurations (DrasiServer-specific, parsed into plugin instances)
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
+    /// Query configurations (with camelCase serialization)
+    #[serde(default)]
+    pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (DrasiServer-specific, parsed into plugin instances)
     #[serde(default)]
     pub reactions: Vec<ReactionConfig>,
-    /// Core configuration (queries, storage backends)
+    /// Core configuration (storage backends, etc.)
+    /// Note: queries are handled separately above with camelCase serialization
     #[serde(flatten)]
     pub core_config: DrasiLibConfig,
 }

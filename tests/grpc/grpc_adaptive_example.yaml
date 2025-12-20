@@ -21,8 +21,8 @@ queries:
       elementId(r) AS RoomId,
       r.temperature, r.humidity, r.co2
   sources:
-  - source_id: facilities-db
-  auto_start: true
+  - sourceId: facilities-db
+  autoStart: true
 reactions:
 - kind: grpc-adaptive
   id: rooms-grpc-adaptive

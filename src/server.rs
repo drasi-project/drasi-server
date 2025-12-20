@@ -85,9 +85,14 @@ impl DrasiServer {
             builder = builder.with_source(source);
         }
 
-        // Add queries from core config
-        for query_config in &config.core_config.queries {
-            builder = builder.with_query(query_config.clone());
+        // Add queries from config (map DTOs to drasi-lib QueryConfig)
+        info!("Loading {} query/queries from configuration", config.queries.len());
+        let mapper = crate::api::mappings::DtoMapper::new();
+        let query_mapper = crate::api::mappings::queries::QueryConfigMapper;
+        for query_dto in &config.queries {
+            let query_config = query_mapper.map(query_dto, &mapper)
+                .map_err(|e| anyhow::anyhow!("Failed to map query config: {e}"))?;
+            builder = builder.with_query(query_config);
         }
 
         // Create and add reactions from config

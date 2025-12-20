@@ -19,9 +19,9 @@ queries:
   queryLanguage: Cypher
   middleware: []
   sources:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
-  auto_start: true
+  autoStart: true
   enableBootstrap: true
   bootstrapBufferSize: 10000
 - id: pending-orders-query
@@ -29,9 +29,9 @@ queries:
   queryLanguage: Cypher
   middleware: []
   sources:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
-  auto_start: true
+  autoStart: true
   enableBootstrap: true
   bootstrapBufferSize: 10000
 reactions:

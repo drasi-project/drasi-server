@@ -68,11 +68,11 @@ queries:
       WHERE o.total > 1000
       RETURN o.id AS order_id, o.total AS total, o.customer AS customer
     queryLanguage: Cypher
-    auto_start: true
+    autoStart: true
     enableBootstrap: true
     
     sourceSubscriptions:
-      - source_id: my-postgres-db
+      - sourceId: my-postgres-db
 
 # Reactions (where to send query results)
 reactions:
