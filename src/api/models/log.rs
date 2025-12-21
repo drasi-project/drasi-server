@@ -14,16 +14,38 @@
 
 //! Log reaction configuration DTOs.
 
-use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Template specification for log output
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TemplateSpecDto {
+    /// Output template as a Handlebars template
+    #[serde(default)]
+    pub template: String,
+}
+
+/// Configuration for query-specific log output
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QueryConfigDto {
+    /// Template for ADD operations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub added: Option<TemplateSpecDto>,
+    /// Template for UPDATE operations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated: Option<TemplateSpecDto>,
+    /// Template for DELETE operations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<TemplateSpecDto>,
+}
 
 /// Local copy of log reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct LogReactionConfigDto {
+    /// Query-specific template configurations
+    #[serde(default)]
+    pub routes: HashMap<String, QueryConfigDto>,
+    /// Default template configuration
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub added_template: Option<ConfigValue<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_template: Option<ConfigValue<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deleted_template: Option<ConfigValue<String>>,
+    pub default_template: Option<QueryConfigDto>,
 }

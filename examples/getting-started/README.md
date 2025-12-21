@@ -263,9 +263,13 @@ reactions:
       - hello-world-from
       - message-count
       - inactive-people
-    added_template: "[{{query_name}}] + {{after}}"
-    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-    deleted_template: "[{{query_name}}] - {{before}}"
+    default_template:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
 ```
 
 #### SSE Reaction

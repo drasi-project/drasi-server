@@ -77,17 +77,14 @@ impl SourceTrait for MockSource {
 
     async fn subscribe(
         &self,
-        query_id: String,
-        _enable_bootstrap: bool,
-        _node_labels: Vec<String>,
-        _relation_labels: Vec<String>,
+        settings: drasi_lib::config::SourceSubscriptionSettings,
     ) -> anyhow::Result<SubscriptionResponse> {
         use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
         let dispatcher =
             ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
         let receiver = dispatcher.create_receiver().await?;
         Ok(SubscriptionResponse {
-            query_id,
+            query_id: settings.query_id,
             source_id: self.id.clone(),
             receiver,
             bootstrap_receiver: None,

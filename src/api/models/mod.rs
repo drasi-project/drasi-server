@@ -64,10 +64,12 @@ pub use postgres::*;
 
 pub use grpc_reaction::*;
 pub use http_reaction::*;
-pub use log::*;
+// Note: log and sse modules have types with similar names (QueryConfigDto, TemplateSpecDto)
+// They should be accessed via their module namespaces: log::*, sse::*
+pub use log::LogReactionConfigDto;
 pub use platform_reaction::*;
 pub use profiler::*;
-pub use sse::*;
+pub use sse::SseReactionConfigDto;
 
 // Config value types
 pub use config_value::*;

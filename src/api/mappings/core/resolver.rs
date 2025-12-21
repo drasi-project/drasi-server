@@ -67,8 +67,7 @@ impl ValueResolver for SecretResolver {
     fn resolve_to_string(&self, value: &ConfigValue<String>) -> Result<String, ResolverError> {
         match value {
             ConfigValue::Secret { name } => Err(ResolverError::NotImplemented(format!(
-                "Secret resolution not yet implemented for '{}'",
-                name
+                "Secret resolution not yet implemented for '{name}'"
             ))),
             _ => Err(ResolverError::WrongResolverType),
         }

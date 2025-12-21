@@ -136,10 +136,15 @@ reactions:
       - hello-world-from
       - message-count
       # - inactive-people
+    # Default template configuration for all queries
     # Templates use handlebars syntax for formatting
-    added_template: "[{{query_name}}] + {{after}}"
-    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-    deleted_template: "[{{query_name}}] - {{before}}"
+    default_template:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
 
   # SSE Reaction - Real-time Browser Streaming
   # Streams query results to connected clients via Server-Sent Events

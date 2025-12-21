@@ -264,16 +264,13 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
             let mut builder = LogReactionBuilder::new(&id)
                 .with_queries(queries)
                 .with_auto_start(auto_start);
-            if let Some(template) = domain_config.added_template {
-                builder = builder.with_added_template(template);
+            if let Some(template) = domain_config.default_template {
+                builder = builder.with_default_template(template);
             }
-            if let Some(template) = domain_config.updated_template {
-                builder = builder.with_updated_template(template);
+            for (query_id, route_config) in domain_config.routes {
+                builder = builder.with_route(query_id, route_config);
             }
-            if let Some(template) = domain_config.deleted_template {
-                builder = builder.with_deleted_template(template);
-            }
-            Ok(Box::new(builder.build()))
+            Ok(Box::new(builder.build()?))
         }
         ReactionConfig::Http {
             id,

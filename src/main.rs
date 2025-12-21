@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
             match dotenvy::from_path(&env_file) {
                 Ok(_) => true,
                 Err(e) => {
-                    eprintln!("Warning: Failed to load .env file: {}", e);
+                    eprintln!("Warning: Failed to load .env file: {e}");
                     false
                 }
             }
@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
 
     let final_port = cli.port.unwrap_or(resolved_settings.port);
     info!("Port: {final_port}");
-    debug!("Server configuration: {:?}", resolved_settings);
+    debug!("Server configuration: {resolved_settings:?}");
 
     let server = DrasiServer::new(cli.config, final_port).await?;
     server.run().await?;
