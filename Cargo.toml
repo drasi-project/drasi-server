@@ -108,7 +108,7 @@ unused = "allow"
 [lints.clippy]
 print_stdout = "warn"
 unwrap_used = "warn"
-uninlined_format_args = "allow"
+uninlined_format_args = "warn"
 module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
