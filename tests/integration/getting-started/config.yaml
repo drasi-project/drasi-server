@@ -1,14 +1,12 @@
 # Integration test configuration for Drasi Server
 # This configuration is used for automated integration tests in CI and can be used locally
 
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-  disable_persistence: true
+host: 0.0.0.0
+port: 8080
+log_level: info
+disable_persistence: true
 
-server_core:
-  id: integration-test-server
+id: integration-test-server
 
 sources:
   - kind: postgres

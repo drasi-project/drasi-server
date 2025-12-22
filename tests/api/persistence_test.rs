@@ -14,10 +14,10 @@
 
 /// Integration tests for configuration persistence
 /// Tests that API mutations are saved to config file
+use drasi_server::models::ConfigValue;
 use drasi_server::{DrasiServerConfig, QueryConfig, ReactionConfig, SourceConfig};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -27,17 +27,13 @@ async fn test_persistence_creates_config_file_on_save() {
 
     // Create initial config
     let config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "info".to_string(),
-            disable_persistence: false,
-        },
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(8080),
+        log_level: ConfigValue::Static("info".to_string()),
+        disable_persistence: false,
         sources: vec![],
-        queries: vec![],
         reactions: vec![],
+        core_config: drasi_lib::config::DrasiLibConfig::default(),
     };
 
     // Save config
@@ -47,11 +43,14 @@ async fn test_persistence_creates_config_file_on_save() {
     assert!(config_path.exists());
 
     // Verify content
-    let loaded_config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load config");
-    assert_eq!(loaded_config.api.host, "127.0.0.1");
-    assert_eq!(loaded_config.api.port, 8080);
-    assert!(!loaded_config.server.disable_persistence);
+    let loaded_config =
+        drasi_server::load_config_file(&config_path).expect("Failed to load config");
+    assert_eq!(
+        loaded_config.host,
+        ConfigValue::Static("127.0.0.1".to_string())
+    );
+    assert_eq!(loaded_config.port, ConfigValue::Static(8080));
+    assert!(!loaded_config.disable_persistence);
 }
 
 #[tokio::test]
@@ -61,26 +60,22 @@ async fn test_persistence_disabled_by_flag() {
 
     // Create config with persistence disabled
     let config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "info".to_string(),
-            disable_persistence: true, // Disabled
-        },
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(8080),
+        log_level: ConfigValue::Static("info".to_string()),
+        disable_persistence: true, // Disabled
         sources: vec![],
-        queries: vec![],
         reactions: vec![],
+        core_config: drasi_lib::config::DrasiLibConfig::default(),
     };
 
     // Save config
     config.save_to_file(&config_path).expect("Failed to save config");
 
     // Load and verify
-    let loaded_config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load config");
-    assert!(loaded_config.server.disable_persistence);
+    let loaded_config =
+        drasi_server::load_config_file(&config_path).expect("Failed to load config");
+    assert!(loaded_config.disable_persistence);
 }
 
 #[tokio::test]
@@ -90,14 +85,10 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Create config with all components
     let config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "0.0.0.0".to_string(),
-            port: 9090,
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "debug".to_string(),
-            disable_persistence: false,
-        },
+        host: ConfigValue::Static("0.0.0.0".to_string()),
+        port: ConfigValue::Static(9090),
+        log_level: ConfigValue::Static("debug".to_string()),
+        disable_persistence: false,
         sources: vec![
             SourceConfig {
                 id: "test-source-1".to_string(),
@@ -110,7 +101,7 @@ async fn test_persistence_saves_complete_configuration() {
                 },
                 bootstrap_provider: None,
                 dispatch_buffer_capacity: None,
-            dispatch_mode: None,
+                dispatch_mode: None,
             },
             SourceConfig {
                 id: "test-source-2".to_string(),
@@ -119,11 +110,18 @@ async fn test_persistence_saves_complete_configuration() {
                 properties: HashMap::new(),
                 bootstrap_provider: None,
                 dispatch_buffer_capacity: None,
-            dispatch_mode: None,
+                dispatch_mode: None,
             },
         ],
-        queries: vec![
-            QueryConfig {
+        reactions: vec![ReactionConfig {
+            id: "test-reaction-1".to_string(),
+            reaction_type: "log".to_string(),
+            queries: vec!["test-query-1".to_string()],
+            auto_start: true,
+            properties: HashMap::new(),
+        }],
+        core_config: drasi_lib::config::DrasiLibConfig {
+            queries: vec![QueryConfig {
                 id: "test-query-1".to_string(),
                 query: "MATCH (n) RETURN n".to_string(),
                 query_language: drasi_lib::config::QueryLanguage::default(),
@@ -131,33 +129,29 @@ async fn test_persistence_saves_complete_configuration() {
                 auto_start: true,
                 properties: HashMap::new(),
                 joins: None,
-            },
-        ],
-        reactions: vec![
-            ReactionConfig {
-                id: "test-reaction-1".to_string(),
-                reaction_type: "log".to_string(),
-                queries: vec!["test-query-1".to_string()],
-                auto_start: true,
-                properties: HashMap::new(),
-            },
-        ],
+            }],
+            ..Default::default()
+        },
     };
 
     // Save config
     config.save_to_file(&config_path).expect("Failed to save config");
 
     // Load and verify all components
-    let loaded_config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load config");
-
-    // Verify API settings
-    assert_eq!(loaded_config.api.host, "0.0.0.0");
-    assert_eq!(loaded_config.api.port, 9090);
+    let loaded_config =
+        drasi_server::load_config_file(&config_path).expect("Failed to load config");
 
     // Verify server settings
-    assert_eq!(loaded_config.server.log_level, "debug");
-    assert!(!loaded_config.server.disable_persistence);
+    assert_eq!(
+        loaded_config.host,
+        ConfigValue::Static("0.0.0.0".to_string())
+    );
+    assert_eq!(loaded_config.port, ConfigValue::Static(9090));
+    assert_eq!(
+        loaded_config.log_level,
+        ConfigValue::Static("debug".to_string())
+    );
+    assert!(!loaded_config.disable_persistence);
 
     // Verify sources
     assert_eq!(loaded_config.sources.len(), 2);
@@ -169,11 +163,17 @@ async fn test_persistence_saves_complete_configuration() {
     assert!(!loaded_config.sources[1].auto_start);
 
     // Verify queries
-    assert_eq!(loaded_config.queries.len(), 1);
-    assert_eq!(loaded_config.queries[0].id, "test-query-1");
-    assert_eq!(loaded_config.queries[0].query, "MATCH (n) RETURN n");
-    assert_eq!(loaded_config.queries[0].sources.len(), 1);
-    assert_eq!(loaded_config.queries[0].sources[0], "test-source-1");
+    assert_eq!(loaded_config.core_config.queries.len(), 1);
+    assert_eq!(loaded_config.core_config.queries[0].id, "test-query-1");
+    assert_eq!(
+        loaded_config.core_config.queries[0].query,
+        "MATCH (n) RETURN n"
+    );
+    assert_eq!(loaded_config.core_config.queries[0].sources.len(), 1);
+    assert_eq!(
+        loaded_config.core_config.queries[0].sources[0],
+        "test-source-1"
+    );
 
     // Verify reactions
     assert_eq!(loaded_config.reactions.len(), 1);
@@ -190,81 +190,74 @@ async fn test_persistence_atomic_write() {
 
     // Create initial config
     let initial_config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "info".to_string(),
-            disable_persistence: false,
-        },
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(8080),
+        log_level: ConfigValue::Static("info".to_string()),
+        disable_persistence: false,
         sources: vec![],
-        queries: vec![],
         reactions: vec![],
+        core_config: drasi_lib::config::DrasiLibConfig::default(),
     };
 
     // Save initial config
-    initial_config.save_to_file(&config_path).expect("Failed to save initial config");
+    initial_config
+        .save_to_file(&config_path)
+        .expect("Failed to save initial config");
 
     // Create updated config
     let updated_config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "0.0.0.0".to_string(),
-            port: 9090,
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "debug".to_string(),
-            disable_persistence: false,
-        },
-        sources: vec![
-            SourceConfig {
-                id: "new-source".to_string(),
-                source_type: "mock".to_string(),
-                auto_start: true,
-                properties: HashMap::new(),
-                bootstrap_provider: None,
-                dispatch_buffer_capacity: None,
+        host: ConfigValue::Static("0.0.0.0".to_string()),
+        port: ConfigValue::Static(9090),
+        log_level: ConfigValue::Static("debug".to_string()),
+        disable_persistence: false,
+        sources: vec![SourceConfig {
+            id: "new-source".to_string(),
+            source_type: "mock".to_string(),
+            auto_start: true,
+            properties: HashMap::new(),
+            bootstrap_provider: None,
+            dispatch_buffer_capacity: None,
             dispatch_mode: None,
-            },
-        ],
-        queries: vec![],
+        }],
         reactions: vec![],
+        core_config: drasi_lib::config::DrasiLibConfig::default(),
     };
 
     // Save updated config
-    updated_config.save_to_file(&config_path).expect("Failed to save updated config");
+    updated_config
+        .save_to_file(&config_path)
+        .expect("Failed to save updated config");
 
     // Verify temp file doesn't exist
     let temp_path = config_path.with_extension("tmp");
-    assert!(!temp_path.exists(), "Temp file should not exist after atomic write");
+    assert!(
+        !temp_path.exists(),
+        "Temp file should not exist after atomic write"
+    );
 
     // Load and verify updated config
-    let loaded_config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load updated config");
-    assert_eq!(loaded_config.api.port, 9090);
-    assert_eq!(loaded_config.server.log_level, "debug");
+    let loaded_config =
+        drasi_server::load_config_file(&config_path).expect("Failed to load updated config");
+    assert_eq!(loaded_config.port, ConfigValue::Static(9090));
+    assert_eq!(
+        loaded_config.log_level,
+        ConfigValue::Static("debug".to_string())
+    );
     assert_eq!(loaded_config.sources.len(), 1);
     assert_eq!(loaded_config.sources[0].id, "new-source");
 }
 
 #[tokio::test]
 async fn test_persistence_validation_before_save() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let config_path = temp_dir.path().join("test-config.yaml");
-
     // Create invalid config (port = 0)
     let invalid_config = DrasiServerConfig {
-        api: drasi_server::ApiSettings {
-            host: "127.0.0.1".to_string(),
-            port: 0, // Invalid port
-        },
-        server: drasi_server::ServerSettings {
-            log_level: "info".to_string(),
-            disable_persistence: false,
-        },
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(0), // Invalid port
+        log_level: ConfigValue::Static("info".to_string()),
+        disable_persistence: false,
         sources: vec![],
-        queries: vec![],
         reactions: vec![],
+        core_config: drasi_lib::config::DrasiLibConfig::default(),
     };
 
     // Validation should fail
@@ -278,14 +271,12 @@ fn test_config_load_yaml_format() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let config_path = temp_dir.path().join("test-config.yaml");
 
-    // Write YAML directly
+    // Write YAML directly (flat structure)
     let yaml_content = r#"
-api:
-  host: 127.0.0.1
-  port: 8080
-server:
-  log_level: info
-  disable_persistence: false
+host: 127.0.0.1
+port: 8080
+log_level: info
+disable_persistence: false
 sources:
   - id: test-source
     source_type: mock
@@ -297,9 +288,11 @@ reactions: []
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify
-    let config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load YAML config");
-    assert_eq!(config.api.host, "127.0.0.1");
+    let config = drasi_server::load_config_file(&config_path).expect("Failed to load YAML config");
+    assert_eq!(
+        config.host,
+        ConfigValue::Static("127.0.0.1".to_string())
+    );
     assert_eq!(config.sources.len(), 1);
     assert_eq!(config.sources[0].id, "test-source");
 }
@@ -318,10 +311,12 @@ reactions: []
     fs::write(&config_path, yaml_content).expect("Failed to write YAML");
 
     // Load and verify defaults are applied
-    let config = drasi_server::load_config_file(&config_path)
-        .expect("Failed to load config");
-    assert_eq!(config.api.host, "0.0.0.0"); // Default
-    assert_eq!(config.api.port, 8080); // Default
-    assert_eq!(config.server.log_level, "info"); // Default
-    assert!(!config.server.disable_persistence); // Default false
+    let config = drasi_server::load_config_file(&config_path).expect("Failed to load config");
+    assert_eq!(config.host, ConfigValue::Static("0.0.0.0".to_string())); // Default
+    assert_eq!(config.port, ConfigValue::Static(8080)); // Default
+    assert_eq!(
+        config.log_level,
+        ConfigValue::Static("info".to_string())
+    ); // Default
+    assert!(!config.disable_persistence); // Default false
 }

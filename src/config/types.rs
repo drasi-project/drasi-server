@@ -24,10 +24,20 @@ use std::str::FromStr;
 use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
 
 /// DrasiServer configuration that composes core config with server settings
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrasiServerConfig {
-    #[serde(default)]
-    pub server: ServerSettings,
+    /// Server bind address
+    #[serde(default = "default_host")]
+    pub host: ConfigValue<String>,
+    /// Server port
+    #[serde(default = "default_port")]
+    pub port: ConfigValue<u16>,
+    /// Log level (trace, debug, info, warn, error)
+    #[serde(default = "default_log_level")]
+    pub log_level: ConfigValue<String>,
+    /// Disable automatic persistence of API changes to config file
+    #[serde(default = "default_disable_persistence")]
+    pub disable_persistence: bool,
     /// Source configurations (DrasiServer-specific, parsed into plugin instances)
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
@@ -39,27 +49,16 @@ pub struct DrasiServerConfig {
     pub core_config: DrasiLibConfig,
 }
 
-/// Server settings for DrasiServer
-/// These control DrasiServer's operational behavior including network binding
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerSettings {
-    #[serde(default = "default_host")]
-    pub host: ConfigValue<String>,
-    #[serde(default = "default_port")]
-    pub port: ConfigValue<u16>,
-    #[serde(default = "default_log_level")]
-    pub log_level: ConfigValue<String>,
-    #[serde(default = "default_disable_persistence")]
-    pub disable_persistence: bool,
-}
-
-impl Default for ServerSettings {
+impl Default for DrasiServerConfig {
     fn default() -> Self {
         Self {
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
             log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
+            sources: Vec::new(),
+            reactions: Vec::new(),
+            core_config: DrasiLibConfig::default(),
         }
     }
 }
@@ -124,7 +123,7 @@ impl DrasiServerConfig {
 
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
-        let resolved_settings = map_server_settings(&self.server, &mapper)?;
+        let resolved_settings = map_server_settings(self, &mapper)?;
 
         if !resolved_settings.host.is_empty()
             && resolved_settings.host != "0.0.0.0"

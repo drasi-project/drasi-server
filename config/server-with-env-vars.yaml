@@ -11,22 +11,20 @@
 # Use environment variables for sensitive data like passwords, API keys,
 # and connection strings instead of hardcoding them in config files.
 
-server:
-  # Server bind address - uses environment variable with default
-  host: "${SERVER_HOST:-0.0.0.0}"
-  
-  # Server port - uses environment variable with default
-  port: "${SERVER_PORT:-8080}"
-  
-  # Logging level: trace, debug, info, warn, error
-  log_level: "${LOG_LEVEL:-info}"
-  
-  # Disable automatic persistence of API changes to this file
-  disable_persistence: false
+# Server bind address - uses environment variable with default
+host: "${SERVER_HOST:-0.0.0.0}"
 
-server_core:
-  # Unique server identifier
-  id: "${SERVER_ID:-drasi-server-1}"
+# Server port - uses environment variable with default
+port: "${SERVER_PORT:-8080}"
+
+# Logging level: trace, debug, info, warn, error
+log_level: "${LOG_LEVEL:-info}"
+
+# Disable automatic persistence of API changes to this file
+disable_persistence: false
+
+# Unique server identifier
+id: "${SERVER_ID:-drasi-server-1}"
 
 # Data sources
 sources:

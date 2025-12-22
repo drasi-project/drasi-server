@@ -178,8 +178,8 @@ mod tests {
 
         // Create a config
         let mut config = DrasiServerConfig::default();
-        config.server.host = crate::api::models::ConfigValue::Static("localhost".to_string());
-        config.server.port = crate::api::models::ConfigValue::Static(9090);
+        config.host = crate::api::models::ConfigValue::Static("localhost".to_string());
+        config.port = crate::api::models::ConfigValue::Static(9090);
 
         // Save it
         save_config_file(&config, temp_file.path()).unwrap();
@@ -188,11 +188,11 @@ mod tests {
         let loaded_config = load_config_file(temp_file.path()).unwrap();
 
         assert_eq!(
-            loaded_config.server.host,
+            loaded_config.host,
             crate::api::models::ConfigValue::Static("localhost".to_string())
         );
         assert_eq!(
-            loaded_config.server.port,
+            loaded_config.port,
             crate::api::models::ConfigValue::Static(9090)
         );
     }
@@ -200,12 +200,10 @@ mod tests {
     #[test]
     fn test_load_basic_config() {
         let config_content = r#"
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-server_core:
-  id: test-server-id
+host: 0.0.0.0
+port: 8080
+log_level: info
+id: test-server-id
 sources: []
 queries: []
 reactions: []
@@ -217,11 +215,11 @@ reactions: []
         let config = load_config_file(temp_file.path()).unwrap();
 
         assert_eq!(
-            config.server.host,
+            config.host,
             crate::api::models::ConfigValue::Static("0.0.0.0".to_string())
         );
         assert_eq!(
-            config.server.port,
+            config.port,
             crate::api::models::ConfigValue::Static(8080)
         );
     }

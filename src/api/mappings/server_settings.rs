@@ -15,7 +15,7 @@
 //! Server settings mapper
 
 use crate::api::mappings::core::mapper::DtoMapper;
-use crate::config::types::ServerSettings;
+use crate::config::types::DrasiServerConfig;
 use anyhow::Result;
 
 /// Resolved server settings with actual values (no ConfigValue wrappers)
@@ -27,15 +27,15 @@ pub struct ResolvedServerSettings {
     pub disable_persistence: bool,
 }
 
-/// Maps ServerSettings DTO to ResolvedServerSettings domain model
+/// Maps DrasiServerConfig to ResolvedServerSettings domain model
 pub fn map_server_settings(
-    dto: &ServerSettings,
+    config: &DrasiServerConfig,
     mapper: &DtoMapper,
 ) -> Result<ResolvedServerSettings> {
     Ok(ResolvedServerSettings {
-        host: mapper.resolve_typed(&dto.host)?,
-        port: mapper.resolve_typed(&dto.port)?,
-        log_level: mapper.resolve_typed(&dto.log_level)?,
-        disable_persistence: dto.disable_persistence,
+        host: mapper.resolve_typed(&config.host)?,
+        port: mapper.resolve_typed(&config.port)?,
+        log_level: mapper.resolve_typed(&config.log_level)?,
+        disable_persistence: config.disable_persistence,
     })
 }

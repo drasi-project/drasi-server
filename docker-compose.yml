@@ -1,0 +1,125 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Drasi Server Docker Compose - Full Stack
+# Includes Drasi Server and PostgreSQL with CDC (Change Data Capture) support
+#
+# Usage:
+#   cp .env.example .env
+#   # Edit .env and config/server.yaml
+#   docker compose up -d
+#
+# Configuration:
+#   - Edit config/server.yaml on your host machine
+#   - Changes are available immediately (restart server to apply)
+#   - Use .env file for environment variables
+
+name: drasi-server
+
+services:
+  # =========================================================================
+  # Drasi Server
+  # =========================================================================
+  drasi-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: drasi-server:latest
+    container_name: drasi-server
+    ports:
+      - "${DRASI_API_PORT:-8080}:8080"    # REST API
+      - "${DRASI_SSE_PORT:-8081}:8081"    # SSE reactions (if configured)
+    volumes:
+      # Mount config directory for easy editing
+      - ./config:/app/config:rw
+    environment:
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      # Database connection (use container name as host)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-drasi}
+      - POSTGRES_USER=${POSTGRES_USER:-drasi_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-drasi_password}
+      # Alias for config file compatibility
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DATABASE:-drasi}
+      - DB_USER=${POSTGRES_USER:-drasi_user}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-drasi_password}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - drasi-network
+
+  # =========================================================================
+  # PostgreSQL with CDC Support
+  # =========================================================================
+  postgres:
+    image: postgres:14-alpine
+    container_name: drasi-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-drasi}
+      POSTGRES_USER: ${POSTGRES_USER:-drasi_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-drasi_password}
+    # Enable logical replication for CDC
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: mount init scripts
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-drasi_user} -d ${POSTGRES_DATABASE:-drasi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - drasi-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    name: drasi_postgres_data
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  drasi-network:
+    name: drasi-network
+    driver: bridge

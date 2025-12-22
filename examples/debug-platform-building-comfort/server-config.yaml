@@ -3,14 +3,12 @@
 # with bootstrap data from a Query API service
 
 # Server: Drasi Server configuration
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: debug
-  disable_persistence: true
+host: 0.0.0.0
+port: 8080
+log_level: debug
+disable_persistence: true
 
-server_core:
-  id: debug-platform-building-comfort
+id: debug-platform-building-comfort
 
 # Sources: Define where data comes from
 sources:

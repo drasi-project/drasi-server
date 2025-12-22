@@ -26,9 +26,42 @@ Drasi solves this by providing **continuous queries** that watch for specific pa
 
 ## Quick Start
 
-Get DrasiServer running in under 5 minutes:
+Get DrasiServer running in under 5 minutes. Choose the option that works best for you:
 
-### 1. Install Prerequisites
+### Option 1: Native with Make (Recommended)
+
+```bash
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+cd drasi-server
+
+# One-command setup (checks dependencies, builds, creates config)
+make setup
+
+# Start the server
+make run
+```
+
+### Option 2: Docker
+
+```bash
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+cd drasi-server
+
+# Copy environment template
+cp .env.example .env
+
+# Start the full stack (Drasi Server + PostgreSQL)
+docker compose up -d
+
+# View logs
+docker compose logs -f drasi-server
+```
+
+See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
+
+### Option 3: Manual Setup
 
 ```bash
 # Ensure Rust is installed (1.70+)
@@ -40,9 +73,47 @@ cd drasi-server
 
 # If you already cloned without submodules, initialize them:
 git submodule update --init --recursive
+
+# Build and run
+cargo run
 ```
 
-### 2. Create a Configuration
+### Verify It's Working
+
+```bash
+# Check health
+curl http://localhost:8080/health
+
+# View API documentation
+open http://localhost:8080/swagger-ui/
+
+# List running queries
+curl http://localhost:8080/api/queries
+```
+
+### CLI Commands
+
+After building, you can run CLI commands using `cargo run --` or the binary directly:
+
+```bash
+# Using cargo run (recommended during development)
+cargo run -- --version
+cargo run -- doctor --all
+cargo run -- validate --config config/server.yaml
+cargo run -- init --template postgres --output config/my-config.yaml
+
+# Or use the binary directly
+./target/debug/drasi-server --version
+./target/debug/drasi-server doctor --all
+
+# Or install globally (then use 'drasi-server' directly)
+cargo install --path .
+drasi-server --version
+```
+
+Available templates for `init`: `minimal`, `postgres`, `http`, `mock`
+
+### Example Configuration
 
 ```yaml
 # config/server.yaml
@@ -56,12 +127,11 @@ sources:
   - id: inventory-db
     source_type: postgres
     auto_start: true
-    # PostgreSQL source configuration (flattened typed fields)
-    host: localhost
-    port: 5432
-    database: inventory
-    user: postgres
-    password: postgres
+    host: "${DB_HOST:-localhost}"
+    port: "${DB_PORT:-5432}"
+    database: "${DB_NAME:-inventory}"
+    user: "${DB_USER:-postgres}"
+    password: "${DB_PASSWORD}"
     tables: [products]
     slot_name: drasi_inventory_slot
     publication_name: drasi_inventory_pub
@@ -84,36 +154,12 @@ reactions:
     reaction_type: http
     auto_start: true
     queries: [low-stock-detector]
-    # HTTP reaction configuration (flattened typed fields)
     base_url: https://alerts.example.com
     timeout_ms: 5000
     routes:
       low-stock-detector:
         path: /webhook
         method: POST
-```
-
-### 3. Run the Server
-
-```bash
-# Build and run
-cargo run
-
-# Or with custom config
-cargo run -- --config my-config.yaml --port 9000
-```
-
-### 4. Verify It's Working
-
-```bash
-# Check health
-curl http://localhost:8080/health
-
-# View API documentation
-open http://localhost:8080/docs
-
-# List running queries
-curl http://localhost:8080/queries
 ```
 
 ## Core Concepts
@@ -286,18 +332,16 @@ See `config/server-with-env-vars.yaml` for a comprehensive example.
 DrasiServer uses YAML configuration files with the following structure:
 
 ```yaml
-# Server settings
-server:
-  host: 0.0.0.0              # Bind address
-  port: 8080                 # API port
-  log_level: info            # Log level (trace, debug, info, warn, error)
-  disable_persistence: false # Disable automatic config file persistence
+# Server settings (all at root level)
+host: 0.0.0.0                           # Bind address
+port: 8080                              # API port
+log_level: info                         # Log level (trace, debug, info, warn, error)
+disable_persistence: false              # Disable automatic config file persistence
 
-# Server core settings (optional)
-server_core:
-  id: my-server-id                      # Unique server ID (auto-generated if not set)
-  priority_queue_capacity: 10000        # Default capacity for query/reaction priority queues
-  broadcast_channel_capacity: 1000      # Capacity for broadcast channels (optional)
+# Core settings (optional)
+id: my-server-id                        # Unique server ID (auto-generated if not set)
+priority_queue_capacity: 10000          # Default capacity for query/reaction priority queues
+dispatch_buffer_capacity: 1000          # Default buffer capacity for dispatching
 
 # Data sources
 sources:
@@ -464,8 +508,8 @@ reactions:
 DrasiServer supports hierarchical capacity configuration for query and reaction priority queues:
 
 ```yaml
-server_core:
-  priority_queue_capacity: 10000  # Default for all queries and reactions
+# Root-level capacity settings
+priority_queue_capacity: 10000  # Default for all queries and reactions
 
 queries:
   - id: high-volume-query
@@ -481,8 +525,8 @@ reactions:
 ```
 
 **Capacity Settings:**
-- `server_core.priority_queue_capacity` - Default capacity for all query/reaction priority queues
-- `server_core.broadcast_channel_capacity` - Capacity for broadcast channels
+- `priority_queue_capacity` - Default capacity for all query/reaction priority queues (root level)
+- `dispatch_buffer_capacity` - Default buffer capacity for dispatching (root level)
 - `queries[].priority_queue_capacity` - Override default for a specific query
 - `reactions[].priority_queue_capacity` - Override default for a specific reaction
 - `sources[].dispatch_buffer_capacity` - Buffer size for source event dispatching

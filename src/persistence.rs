@@ -74,12 +74,10 @@ impl ConfigPersistence {
         // and we don't have access to the original config enums. The core manages them
         // dynamically through the builder pattern or API.
         let wrapper_config = DrasiServerConfig {
-            server: crate::config::ServerSettings {
-                host: crate::api::models::ConfigValue::Static(self.host.clone()),
-                port: crate::api::models::ConfigValue::Static(self.port),
-                log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
-                disable_persistence: self.disable_persistence,
-            },
+            host: crate::api::models::ConfigValue::Static(self.host.clone()),
+            port: crate::api::models::ConfigValue::Static(self.port),
+            log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
+            disable_persistence: self.disable_persistence,
             sources: Vec::new(),
             reactions: Vec::new(),
             core_config,
@@ -268,18 +266,18 @@ mod tests {
 
         // Verify wrapper settings
         assert_eq!(
-            loaded_config.server.host,
+            loaded_config.host,
             crate::api::models::ConfigValue::Static("127.0.0.1".to_string())
         );
         assert_eq!(
-            loaded_config.server.port,
+            loaded_config.port,
             crate::api::models::ConfigValue::Static(8080)
         );
         assert_eq!(
-            loaded_config.server.log_level,
+            loaded_config.log_level,
             crate::api::models::ConfigValue::Static("info".to_string())
         );
-        assert!(!loaded_config.server.disable_persistence);
+        assert!(!loaded_config.disable_persistence);
 
         // Verify queries (sources are created dynamically via registry, not in config)
         assert_eq!(loaded_config.core_config.queries.len(), 1);
@@ -338,7 +336,7 @@ mod tests {
         // Verify main file exists with valid content
         assert!(config_path.exists());
         let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
-        assert!(content.contains("server:"));
+        assert!(content.contains("host:"));
         assert!(!content.contains("initial content"));
     }
 

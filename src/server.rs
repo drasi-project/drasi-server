@@ -52,7 +52,7 @@ impl DrasiServer {
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
-        let resolved_settings = map_server_settings(&config.server, &mapper)?;
+        let resolved_settings = map_server_settings(&config, &mapper)?;
 
         // Determine persistence and read-only status
         // Read-only mode is ONLY enabled when the config file is not writable
@@ -167,7 +167,7 @@ impl DrasiServer {
                 // Need to reload config to check disable_persistence flag
                 let config = load_config_file(PathBuf::from(config_file))?;
                 let mapper = DtoMapper::new();
-                let resolved_settings = map_server_settings(&config.server, &mapper)?;
+                let resolved_settings = map_server_settings(&config, &mapper)?;
                 let persistence_disabled = resolved_settings.disable_persistence;
 
                 if !persistence_disabled {
