@@ -100,7 +100,7 @@ After building, you can run CLI commands using `cargo run --` or the binary dire
 cargo run -- --version
 cargo run -- doctor --all
 cargo run -- validate --config config/server.yaml
-cargo run -- init --template postgres --output config/my-config.yaml
+cargo run -- init --output config/my-config.yaml
 
 # Or use the binary directly
 ./target/debug/drasi-server --version
@@ -111,7 +111,7 @@ cargo install --path .
 drasi-server --version
 ```
 
-Available templates for `init`: `minimal`, `postgres`, `http`, `mock`
+See the [Interactive Configuration (init command)](#interactive-configuration-init-command) section for details on the `init` command.
 
 ### Example Configuration
 
@@ -237,6 +237,278 @@ cargo test
 # Run with logging
 RUST_LOG=debug cargo run
 ```
+
+## Interactive Configuration (init command)
+
+The `drasi-server init` command provides an interactive wizard for creating configuration files. Instead of manually writing YAML, you can answer a series of questions to build a custom configuration tailored to your needs.
+
+### Usage
+
+```bash
+# Create a new configuration file interactively
+drasi-server init
+
+# Specify output path
+drasi-server init --output config/my-config.yaml
+
+# Overwrite existing file
+drasi-server init --output config/server.yaml --force
+```
+
+### Command Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--output` | `-o` | `config/server.yaml` | Output path for the configuration file |
+| `--force` | | `false` | Overwrite existing configuration file |
+
+### Interactive Flow
+
+The init wizard guides you through four main steps:
+
+#### Step 1: Server Settings
+
+Configure basic server parameters:
+
+```
+Server Settings
+---------------
+? Server host: [0.0.0.0]
+? Server port: [8080]
+? Log level: [info/debug/warn/error/trace]
+```
+
+#### Step 2: Data Sources
+
+Select one or more data sources for your configuration:
+
+```
+Data Sources
+------------
+? Select sources (space to select, enter to confirm):
+  ▸ [x] PostgreSQL - CDC from PostgreSQL database
+    [ ] HTTP - Receive events via HTTP endpoint
+    [ ] gRPC - Stream events via gRPC
+    [x] Mock - Generate test data (for development)
+    [ ] Platform - Redis Streams integration
+```
+
+For each selected source, you'll be prompted for source-specific configuration:
+
+**PostgreSQL Source:**
+```
+Configuring PostgreSQL Source
+------------------------------
+? Source ID: [postgres-source]
+? Database host: [localhost]
+? Database port: [5432]
+? Database name: [postgres]
+? Database user: [postgres]
+? Database password: ****
+? Tables to monitor (comma-separated): [my_table]
+? Bootstrap provider (for initial data loading):
+  ▸ PostgreSQL - Load initial data from PostgreSQL
+    Script File - Load from JSONL file
+    None - No initial data loading
+```
+
+**HTTP Source:**
+```
+Configuring HTTP Source
+-----------------------
+? Source ID: [http-source]
+? Listen host: [0.0.0.0]
+? Listen port: [9000]
+? Bootstrap provider: [None/Script File/Platform]
+```
+
+**gRPC Source:**
+```
+Configuring gRPC Source
+-----------------------
+? Source ID: [grpc-source]
+? Listen host: [0.0.0.0]
+? Listen port: [50051]
+? Bootstrap provider: [None/Script File/Platform]
+```
+
+**Mock Source:**
+```
+Configuring Mock Source
+-----------------------
+? Source ID: [mock-source]
+? Data generation interval (milliseconds): [5000]
+```
+
+**Platform Source:**
+```
+Configuring Platform Source
+---------------------------
+? Source ID: [platform-source]
+? Redis URL: [redis://localhost:6379]
+? Stream key in Redis: [external-source:changes]
+? Consumer group name: [drasi-core]
+? Bootstrap provider: [None/Script File/Platform]
+```
+
+#### Step 3: Bootstrap Providers
+
+For sources that support bootstrap (initial data loading), you can select a provider:
+
+| Provider | Description |
+|----------|-------------|
+| **PostgreSQL** | Load initial data from PostgreSQL database (uses source connection) |
+| **Script File** | Load from JSONL file (prompts for file path) |
+| **Platform** | Load from Query API service (prompts for URL) |
+| **None** | No initial data loading |
+
+#### Step 4: Reactions
+
+Select how you want to receive query results:
+
+```
+Reactions
+---------
+? Select reactions (space to select, enter to confirm):
+  ▸ [x] Log - Write query results to console
+    [x] SSE - Server-Sent Events endpoint
+    [ ] HTTP Webhook - POST results to external URL
+    [ ] gRPC - Stream results via gRPC
+    [ ] Platform - Drasi Platform integration
+```
+
+For each selected reaction, you'll be prompted for reaction-specific configuration:
+
+**Log Reaction:**
+```
+Configuring Log Reaction
+------------------------
+? Reaction ID: [log-reaction]
+```
+
+**SSE Reaction:**
+```
+Configuring SSE Reaction
+------------------------
+? Reaction ID: [sse-reaction]
+? SSE server host: [0.0.0.0]
+? SSE server port: [8081]
+```
+
+**HTTP Webhook Reaction:**
+```
+Configuring HTTP Webhook Reaction
+----------------------------------
+? Reaction ID: [http-reaction]
+? Webhook base URL: [http://localhost:9000]
+```
+
+**gRPC Reaction:**
+```
+Configuring gRPC Reaction
+-------------------------
+? Reaction ID: [grpc-reaction]
+? gRPC endpoint URL: [grpc://localhost:50052]
+```
+
+**Platform Reaction:**
+```
+Configuring Platform Reaction
+-----------------------------
+? Reaction ID: [platform-reaction]
+? Redis URL: [redis://localhost:6379]
+```
+
+### Generated Configuration
+
+The init command generates a complete YAML configuration file with:
+
+- Server settings (host, port, log level)
+- All selected sources with their configurations
+- Bootstrap providers for each source (if selected)
+- A sample query that references the first source
+- All selected reactions
+
+**Example generated configuration:**
+
+```yaml
+# Drasi Server Configuration
+# Generated with: drasi-server init
+#
+# Edit this file to customize your configuration.
+# See documentation at: https://drasi.io/docs
+
+host: 0.0.0.0
+port: 8080
+log_level: info
+disable_persistence: false
+
+sources:
+  - kind: postgres
+    id: postgres-source
+    auto_start: true
+    bootstrap_provider:
+      type: postgres
+    host: localhost
+    port: 5432
+    database: mydb
+    user: postgres
+    password: secret
+    tables:
+      - users
+      - orders
+    slot_name: drasi_slot
+    publication_name: drasi_pub
+    ssl_mode: prefer
+
+queries:
+  - id: my-query
+    query: MATCH (n) RETURN n
+    queryLanguage: Cypher
+    auto_start: true
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
+    sources:
+      - source_id: postgres-source
+
+reactions:
+  - kind: log
+    id: log-reaction
+    auto_start: true
+    queries:
+      - my-query
+  - kind: sse
+    id: sse-reaction
+    auto_start: true
+    queries:
+      - my-query
+    host: 0.0.0.0
+    port: 8081
+    sse_path: /events
+    heartbeat_interval_ms: 30000
+
+# Tips:
+# - Use environment variables: ${VAR_NAME:-default}
+# - Update 'my-query' with your actual Cypher query
+# - Connect reactions to your queries by updating the 'queries' field
+```
+
+### Post-Generation Steps
+
+After generating the configuration:
+
+1. **Edit the query**: Replace the sample `MATCH (n) RETURN n` query with your actual Cypher query
+2. **Add environment variables**: Replace hardcoded passwords with `${DB_PASSWORD}` syntax
+3. **Configure table keys**: For PostgreSQL sources, add `table_keys` for proper change tracking
+4. **Test the configuration**: Run `drasi-server validate --config your-config.yaml`
+5. **Start the server**: Run `drasi-server --config your-config.yaml`
+
+### Tips
+
+- Use **environment variables** for sensitive data like passwords: `${DB_PASSWORD}`
+- The generated config includes helpful comments and tips
+- You can always edit the YAML file manually after generation
+- Run `drasi-server validate` to check your configuration before starting
 
 ## Environment Variable Interpolation
 

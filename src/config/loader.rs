@@ -177,9 +177,11 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
 
         // Create a config
-        let mut config = DrasiServerConfig::default();
-        config.host = crate::api::models::ConfigValue::Static("localhost".to_string());
-        config.port = crate::api::models::ConfigValue::Static(9090);
+        let config = DrasiServerConfig {
+            host: crate::api::models::ConfigValue::Static("localhost".to_string()),
+            port: crate::api::models::ConfigValue::Static(9090),
+            ..DrasiServerConfig::default()
+        };
 
         // Save it
         save_config_file(&config, temp_file.path()).unwrap();
@@ -218,9 +220,6 @@ reactions: []
             config.host,
             crate::api::models::ConfigValue::Static("0.0.0.0".to_string())
         );
-        assert_eq!(
-            config.port,
-            crate::api::models::ConfigValue::Static(8080)
-        );
+        assert_eq!(config.port, crate::api::models::ConfigValue::Static(8080));
     }
 }

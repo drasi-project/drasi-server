@@ -26,6 +26,8 @@ use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
+mod init;
+
 #[derive(Parser)]
 #[command(name = "drasi-server")]
 #[command(about = "Standalone Drasi server for data change processing")]
@@ -74,15 +76,11 @@ enum Commands {
         all: bool,
     },
 
-    /// Initialize a new configuration file
+    /// Initialize a new configuration file interactively
     Init {
         /// Output path for the configuration file
         #[arg(short, long, default_value = "config/server.yaml")]
         output: PathBuf,
-
-        /// Template to use: minimal, postgres, http, mock
-        #[arg(short, long, default_value = "minimal")]
-        template: String,
 
         /// Overwrite existing configuration file
         #[arg(long)]
@@ -101,11 +99,7 @@ async fn main() -> Result<()> {
             show_resolved,
         }) => validate_config(config, show_resolved),
         Some(Commands::Doctor { all }) => run_doctor(all),
-        Some(Commands::Init {
-            output,
-            template,
-            force,
-        }) => init_config(output, template, force),
+        Some(Commands::Init { output, force }) => init::run_init(output, force),
         None => {
             // Default behavior: run the server (backward compatible)
             run_server(cli.config, cli.port).await
@@ -381,250 +375,4 @@ fn run_doctor(check_all: bool) -> Result<()> {
         println!("Some required dependencies are missing.");
         std::process::exit(1);
     }
-}
-
-/// Initialize a new configuration file
-fn init_config(output_path: PathBuf, template: String, force: bool) -> Result<()> {
-    // Check if file already exists
-    if output_path.exists() && !force {
-        println!(
-            "Configuration file already exists: {}",
-            output_path.display()
-        );
-        println!("Use --force to overwrite.");
-        std::process::exit(1);
-    }
-
-    // Create parent directories
-    if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Get template content
-    let content = match template.as_str() {
-        "minimal" => get_minimal_template(),
-        "postgres" => get_postgres_template(),
-        "http" => get_http_template(),
-        "mock" => get_mock_template(),
-        _ => {
-            println!("Unknown template: {template}");
-            println!("Available templates: minimal, postgres, http, mock");
-            std::process::exit(1);
-        }
-    };
-
-    // Write file
-    fs::write(&output_path, content)?;
-
-    println!("Created configuration file: {}", output_path.display());
-    println!("Template: {template}");
-    println!();
-    println!("Next steps:");
-    println!(
-        "  1. Edit {} to customize your configuration",
-        output_path.display()
-    );
-    println!("  2. Run: drasi-server --config {}", output_path.display());
-
-    Ok(())
-}
-
-fn get_minimal_template() -> &'static str {
-    r#"# Drasi Server Configuration
-# Generated with: drasi-server init --template minimal
-
-host: 0.0.0.0
-port: 8080
-log_level: info
-
-id: drasi-server
-
-# Add your sources here
-sources: []
-
-# Add your queries here
-# queries:
-#   - id: my-query
-#     query: "MATCH (n) RETURN n"
-#     query_language: Cypher
-#     sources: [my-source]
-
-# Add your reactions here
-reactions: []
-"#
-}
-
-fn get_postgres_template() -> &'static str {
-    r#"# Drasi Server Configuration - PostgreSQL CDC
-# Generated with: drasi-server init --template postgres
-#
-# This template demonstrates PostgreSQL Change Data Capture (CDC).
-# Update the connection details below to match your database.
-
-host: "${SERVER_HOST:-0.0.0.0}"
-port: "${SERVER_PORT:-8080}"
-log_level: "${LOG_LEVEL:-info}"
-
-id: "${SERVER_ID:-drasi-postgres}"
-
-sources:
-  - kind: postgres
-    id: my-database
-    auto_start: true
-
-    # Database connection - use environment variables for security
-    host: "${DB_HOST:-localhost}"
-    port: "${DB_PORT:-5432}"
-    database: "${DB_NAME:-mydb}"
-    user: "${DB_USER:-postgres}"
-    password: "${DB_PASSWORD}"  # Set via environment variable
-
-    # Tables to monitor for changes
-    tables:
-      - my_table
-
-    # Replication settings
-    slot_name: drasi_slot
-    publication_name: drasi_pub
-
-    bootstrap_provider:
-      kind: postgres
-      host: "${DB_HOST:-localhost}"
-      port: "${DB_PORT:-5432}"
-      database: "${DB_NAME:-mydb}"
-      user: "${DB_USER:-postgres}"
-      password: "${DB_PASSWORD}"
-
-queries:
-  - id: sample-query
-    query: |
-      MATCH (n:MyTable)
-      RETURN n.id, n.name, n.updated_at
-    query_language: Cypher
-    auto_start: true
-    enable_bootstrap: true
-    source_subscriptions:
-      - source_id: my-database
-
-reactions:
-  - kind: log
-    id: log-changes
-    queries:
-      - sample-query
-    auto_start: true
-    log_level: info
-
-# To run:
-#   export DB_HOST=localhost DB_NAME=mydb DB_USER=postgres DB_PASSWORD=secret
-#   drasi-server --config config/server.yaml
-"#
-}
-
-fn get_http_template() -> &'static str {
-    r#"# Drasi Server Configuration - HTTP Source
-# Generated with: drasi-server init --template http
-#
-# This template demonstrates receiving events via HTTP endpoint.
-
-host: "${SERVER_HOST:-0.0.0.0}"
-port: "${SERVER_PORT:-8080}"
-log_level: "${LOG_LEVEL:-info}"
-
-id: "${SERVER_ID:-drasi-http}"
-
-sources:
-  - kind: http
-    id: http-ingestion
-    auto_start: true
-    host: 0.0.0.0
-    port: 9000
-
-    # Optional: bootstrap from file
-    # bootstrap_provider:
-    #   kind: scriptfile
-    #   file_paths:
-    #     - data/initial-data.jsonl
-
-queries:
-  - id: filter-query
-    query: |
-      MATCH (n:Event)
-      WHERE n.severity = 'high'
-      RETURN n.id, n.message, n.timestamp
-    query_language: Cypher
-    auto_start: true
-    source_subscriptions:
-      - source_id: http-ingestion
-
-reactions:
-  # Log high-severity events
-  - kind: log
-    id: log-events
-    queries:
-      - filter-query
-    auto_start: true
-    log_level: warn
-
-  # Stream events via SSE
-  - kind: sse
-    id: sse-events
-    queries:
-      - filter-query
-    auto_start: true
-    host: 0.0.0.0
-    port: 8081
-
-# To run:
-#   drasi-server --config config/server.yaml
-#
-# Send events:
-#   curl -X POST http://localhost:9000/events \
-#     -H "Content-Type: application/json" \
-#     -d '{"op": "i", "labels": ["Event"], "data": {"id": "1", "severity": "high", "message": "Alert!"}}'
-"#
-}
-
-fn get_mock_template() -> &'static str {
-    r#"# Drasi Server Configuration - Mock Source (Testing)
-# Generated with: drasi-server init --template mock
-#
-# This template uses a mock source that generates test data.
-# Useful for testing queries and reactions without external dependencies.
-
-host: 0.0.0.0
-port: 8080
-log_level: info
-
-id: drasi-mock
-
-sources:
-  - kind: mock
-    id: test-source
-    auto_start: true
-    interval_seconds: 5  # Generate data every 5 seconds
-
-queries:
-  - id: all-data
-    query: |
-      MATCH (n)
-      RETURN n
-    query_language: Cypher
-    auto_start: true
-    source_subscriptions:
-      - source_id: test-source
-
-reactions:
-  - kind: log
-    id: log-all
-    queries:
-      - all-data
-    auto_start: true
-    log_level: info
-
-# To run:
-#   drasi-server --config config/server.yaml
-#
-# The mock source will generate test data every 5 seconds.
-# View the output in the server logs.
-"#
 }
