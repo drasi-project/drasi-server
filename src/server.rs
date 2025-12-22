@@ -31,6 +31,7 @@ use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::factories::{create_reaction, create_source};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
+use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
 
 pub struct DrasiServer {
@@ -85,6 +86,20 @@ impl DrasiServer {
         if let Some(ref capacity_config) = config.default_dispatch_buffer_capacity {
             let capacity: usize = mapper.resolve_typed(capacity_config)?;
             builder = builder.with_dispatch_buffer_capacity(capacity);
+        }
+
+        // Create and add RocksDB index provider if persist_index is enabled
+        if config.persist_index {
+            let index_path = PathBuf::from("./data/index");
+            info!(
+                "Enabling persistent indexing with RocksDB at: {}",
+                index_path.display()
+            );
+            let rocksdb_provider = RocksDbIndexProvider::new(
+                index_path, true,  // enable_archive - support for past() function
+                false, // direct_io - use OS page cache
+            );
+            builder = builder.with_index_provider(Arc::new(rocksdb_provider));
         }
 
         // Create and add sources from config
@@ -191,6 +206,7 @@ impl DrasiServer {
                         self.port,
                         resolved_settings.log_level,
                         false,
+                        config.persist_index,
                     ));
                     info!("Configuration persistence enabled");
                     Some(persistence)

@@ -46,6 +46,9 @@ pub struct DrasiServerConfig {
     /// Disable automatic persistence of API changes to config file
     #[serde(default = "default_disable_persistence")]
     pub disable_persistence: bool,
+    /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
+    #[serde(default = "default_persist_index")]
+    pub persist_index: bool,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,6 +76,7 @@ impl Default for DrasiServerConfig {
             port: ConfigValue::Static(8080),
             log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
+            persist_index: false,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
             sources: Vec::new(),
@@ -99,6 +103,10 @@ fn default_log_level() -> ConfigValue<String> {
 }
 
 fn default_disable_persistence() -> bool {
+    false
+}
+
+fn default_persist_index() -> bool {
     false
 }
 
@@ -181,5 +189,185 @@ impl DrasiServerConfig {
         let yaml = serde_yaml::to_string(self)?;
         fs::write(path, yaml)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== persist_index tests ====================
+
+    #[test]
+    fn test_persist_index_default_is_false() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            !config.persist_index,
+            "persist_index should default to false"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_deserialize_true() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            persist_index: true
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.persist_index,
+            "persist_index should be true when explicitly set"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_deserialize_false() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            persist_index: false
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            !config.persist_index,
+            "persist_index should be false when explicitly set"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_defaults_when_omitted() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            !config.persist_index,
+            "persist_index should default to false when omitted from YAML"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_serialization_roundtrip_true() {
+        let config = DrasiServerConfig {
+            persist_index: true,
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(
+            yaml.contains("persist_index: true"),
+            "Serialized YAML should contain 'persist_index: true'"
+        );
+
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert!(
+            deserialized.persist_index,
+            "Deserialized config should have persist_index = true"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_serialization_roundtrip_false() {
+        let config = DrasiServerConfig {
+            persist_index: false,
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert!(
+            !deserialized.persist_index,
+            "Deserialized config should have persist_index = false"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_with_other_settings() {
+        let yaml = r#"
+            id: my-production-server
+            host: 192.168.1.100
+            port: 9090
+            log_level: debug
+            disable_persistence: true
+            persist_index: true
+            sources: []
+            queries: []
+            reactions: []
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+
+        // Verify persist_index is correctly parsed alongside other settings
+        assert!(config.persist_index);
+        assert!(config.disable_persistence);
+        match &config.log_level {
+            ConfigValue::Static(level) => assert_eq!(level, "debug"),
+            _ => panic!("Expected static log_level"),
+        }
+    }
+
+    #[test]
+    fn test_default_persist_index_function() {
+        assert!(
+            !default_persist_index(),
+            "default_persist_index() should return false"
+        );
+    }
+
+    // ==================== disable_persistence tests (for comparison) ====================
+
+    #[test]
+    fn test_disable_persistence_default_is_false() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            !config.disable_persistence,
+            "disable_persistence should default to false"
+        );
+    }
+
+    // ==================== DrasiServerConfig validation tests ====================
+
+    #[test]
+    fn test_config_validation_succeeds_with_persist_index() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            log_level: info
+            persist_index: true
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.validate().is_ok(),
+            "Config with persist_index: true should validate successfully"
+        );
+    }
+
+    #[test]
+    fn test_save_to_file_includes_persist_index() {
+        use tempfile::NamedTempFile;
+
+        let config = DrasiServerConfig {
+            persist_index: true,
+            ..Default::default()
+        };
+
+        let temp_file = NamedTempFile::new().unwrap();
+        config.save_to_file(temp_file.path()).unwrap();
+
+        let content = std::fs::read_to_string(temp_file.path()).unwrap();
+        assert!(
+            content.contains("persist_index: true"),
+            "Saved file should contain persist_index setting"
+        );
     }
 }

@@ -23,6 +23,9 @@ log_level: "${LOG_LEVEL:-info}"
 # Disable automatic persistence of API changes to this file
 disable_persistence: false
 
+# Enable persistent indexing using RocksDB (default: false, uses in-memory indexes)
+# persist_index: false
+
 # Unique server identifier
 id: "${SERVER_ID:-drasi-server-1}"
 

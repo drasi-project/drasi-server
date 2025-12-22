@@ -15,7 +15,7 @@
 //! Interactive prompt functions for configuration initialization.
 
 use anyhow::Result;
-use inquire::{MultiSelect, Password, Select, Text};
+use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::{
     ConfigValue, GrpcReactionConfigDto, GrpcSourceConfigDto, HttpReactionConfigDto,
@@ -29,6 +29,7 @@ pub struct ServerSettings {
     pub host: String,
     pub port: u16,
     pub log_level: String,
+    pub persist_index: bool,
 }
 
 /// Source type selection options.
@@ -120,12 +121,18 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         .prompt()?
         .to_string();
 
+    let persist_index = Confirm::new("Enable persistent indexing (RocksDB)?")
+        .with_default(false)
+        .with_help_message("Persists query index data to disk. Use for production workloads.")
+        .prompt()?;
+
     println!();
 
     Ok(ServerSettings {
         host,
         port,
         log_level,
+        persist_index,
     })
 }
 
@@ -681,11 +688,13 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 9090,
             log_level: "debug".to_string(),
+            persist_index: true,
         };
 
         assert_eq!(settings.host, "127.0.0.1");
         assert_eq!(settings.port, 9090);
         assert_eq!(settings.log_level, "debug");
+        assert!(settings.persist_index);
     }
 
     #[test]
@@ -694,11 +703,13 @@ mod tests {
             host: "0.0.0.0".to_string(),
             port: 8080,
             log_level: "info".to_string(),
+            persist_index: false,
         };
 
         assert_eq!(settings.host, "0.0.0.0");
         assert_eq!(settings.port, 8080);
         assert_eq!(settings.log_level, "info");
+        assert!(!settings.persist_index);
     }
 
     // ==================== SourceType enum tests ====================

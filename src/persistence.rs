@@ -27,6 +27,7 @@ pub struct ConfigPersistence {
     port: u16,
     log_level: String,
     disable_persistence: bool,
+    persist_index: bool,
 }
 
 impl ConfigPersistence {
@@ -38,6 +39,7 @@ impl ConfigPersistence {
         port: u16,
         log_level: String,
         disable_persistence: bool,
+        persist_index: bool,
     ) -> Self {
         Self {
             config_file_path,
@@ -46,6 +48,7 @@ impl ConfigPersistence {
             port,
             log_level,
             disable_persistence,
+            persist_index,
         }
     }
 
@@ -79,6 +82,7 @@ impl ConfigPersistence {
             port: crate::api::models::ConfigValue::Static(self.port),
             log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
             disable_persistence: self.disable_persistence,
+            persist_index: self.persist_index,
             default_priority_queue_capacity: lib_config
                 .priority_queue_capacity
                 .map(crate::api::models::ConfigValue::Static),
@@ -258,6 +262,7 @@ mod tests {
             8080,
             "info".to_string(),
             false,
+            false, // persist_index
         );
 
         // Save should succeed
@@ -304,7 +309,8 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true, // disable_persistence = true
+            true,  // disable_persistence = true
+            false, // persist_index
         );
 
         // Save should succeed but not write anything
@@ -331,6 +337,7 @@ mod tests {
             8080,
             "info".to_string(),
             false,
+            false, // persist_index
         );
 
         // Save should succeed
@@ -364,6 +371,7 @@ mod tests {
             8080,
             "info".to_string(),
             false,
+            false, // persist_index
         );
 
         // Should be writable
@@ -378,6 +386,7 @@ mod tests {
             8080,
             "info".to_string(),
             false,
+            false, // persist_index
         );
 
         // Should not be writable

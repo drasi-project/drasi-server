@@ -61,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         disable_persistence: false,
+        persist_index: false,                  // Use in-memory indexes (default)
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources: vec![],                       // Add sources using SourceConfig enum

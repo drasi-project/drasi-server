@@ -66,6 +66,7 @@ pub fn build_config(
         port: ConfigValue::Static(server_settings.port),
         log_level: ConfigValue::Static(server_settings.log_level),
         disable_persistence: false,
+        persist_index: server_settings.persist_index,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources,
@@ -111,6 +112,7 @@ mod tests {
             host: "0.0.0.0".to_string(),
             port: 8080,
             log_level: "info".to_string(),
+            persist_index: false,
         }
     }
 
@@ -265,6 +267,7 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 9090,
             log_level: "debug".to_string(),
+            persist_index: false,
         };
         let sources = vec![mock_source_config("data-source")];
         let reactions = vec![log_reaction_config("my-log")];
@@ -326,6 +329,7 @@ mod tests {
             host: "192.168.1.1".to_string(),
             port: 3000,
             log_level: "warn".to_string(),
+            persist_index: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -438,5 +442,150 @@ mod tests {
         assert!(yaml.contains("port:"));
         assert!(yaml.contains("sources:"));
         assert!(yaml.contains("reactions:"));
+    }
+
+    // ==================== persist_index tests ====================
+
+    #[test]
+    fn test_build_config_persist_index_false() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+        };
+        let config = build_config(settings, vec![], vec![]);
+
+        assert!(
+            !config.persist_index,
+            "persist_index should be false when server settings has false"
+        );
+    }
+
+    #[test]
+    fn test_build_config_persist_index_true() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: true,
+        };
+        let config = build_config(settings, vec![], vec![]);
+
+        assert!(
+            config.persist_index,
+            "persist_index should be true when server settings has true"
+        );
+    }
+
+    #[test]
+    fn test_generate_yaml_includes_persist_index_false() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+        };
+        let config = build_config(settings, vec![], vec![]);
+
+        let yaml = generate_yaml(&config).unwrap();
+
+        assert!(
+            yaml.contains("persist_index: false"),
+            "YAML should contain persist_index: false"
+        );
+    }
+
+    #[test]
+    fn test_generate_yaml_includes_persist_index_true() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: true,
+        };
+        let config = build_config(settings, vec![], vec![]);
+
+        let yaml = generate_yaml(&config).unwrap();
+
+        assert!(
+            yaml.contains("persist_index: true"),
+            "YAML should contain persist_index: true"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_roundtrip_true() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: true,
+        };
+        let original_config = build_config(settings, vec![], vec![]);
+
+        let yaml = generate_yaml(&original_config).unwrap();
+
+        // Extract just the YAML content (skip comments)
+        let yaml_content: String = yaml
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Parse back to config
+        let parsed_config: DrasiServerConfig = serde_yaml::from_str(&yaml_content).unwrap();
+
+        assert!(
+            parsed_config.persist_index,
+            "Roundtrip should preserve persist_index: true"
+        );
+    }
+
+    #[test]
+    fn test_persist_index_roundtrip_false() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+        };
+        let original_config = build_config(settings, vec![], vec![]);
+
+        let yaml = generate_yaml(&original_config).unwrap();
+
+        // Extract just the YAML content (skip comments)
+        let yaml_content: String = yaml
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Parse back to config
+        let parsed_config: DrasiServerConfig = serde_yaml::from_str(&yaml_content).unwrap();
+
+        assert!(
+            !parsed_config.persist_index,
+            "Roundtrip should preserve persist_index: false"
+        );
+    }
+
+    #[test]
+    fn test_build_config_persist_index_with_sources_and_reactions() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: true,
+        };
+        let sources = vec![mock_source_config("test-source")];
+        let reactions = vec![log_reaction_config("test-reaction")];
+        let config = build_config(settings, sources, reactions);
+
+        // Verify persist_index is set correctly even with sources and reactions
+        assert!(config.persist_index);
+        assert_eq!(config.sources.len(), 1);
+        assert_eq!(config.reactions.len(), 1);
+        assert_eq!(config.queries.len(), 1);
     }
 }

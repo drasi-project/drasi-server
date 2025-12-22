@@ -86,6 +86,7 @@ host: "0.0.0.0"
 port: 8080
 log_level: "info"
 disable_persistence: false  # Enable persistence (default)
+persist_index: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 
 # Optional capacity defaults (cascades to queries/reactions)
 # Supports environment variables like other fields

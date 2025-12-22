@@ -381,7 +381,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "regex",
@@ -1088,29 +1088,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "drasi-index-garnet"
-version = "0.1.0"
-dependencies = [
- "async-recursion",
- "async-stream",
- "async-trait",
- "bit-set",
- "drasi-core",
- "drasi-query-ast",
- "fnv",
- "hashers",
- "log",
- "ordered-float",
- "prost",
- "redis 0.25.4",
- "serde",
- "serde_json",
- "siphasher 0.3.11",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "drasi-index-rocksdb"
 version = "0.1.0"
 dependencies = [
@@ -1142,8 +1119,6 @@ dependencies = [
  "drasi-core",
  "drasi-functions-cypher",
  "drasi-functions-gql",
- "drasi-index-garnet",
- "drasi-index-rocksdb",
  "drasi-middleware",
  "drasi-query-ast",
  "drasi-query-cypher",
@@ -1390,6 +1365,7 @@ dependencies = [
  "drasi-bootstrap-platform",
  "drasi-bootstrap-postgres",
  "drasi-bootstrap-scriptfile",
+ "drasi-index-rocksdb",
  "drasi-lib",
  "drasi-reaction-grpc",
  "drasi-reaction-grpc-adaptive",
@@ -2510,15 +2486,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3225,7 +3192,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -3234,7 +3201,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -3460,7 +3427,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.12.1",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -3480,7 +3447,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -4518,12 +4485,6 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
-
-[[package]]
-name = "siphasher"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "siphasher"

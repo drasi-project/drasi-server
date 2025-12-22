@@ -1,4 +1,5 @@
 id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
+# persist_index: false  # Enable RocksDB persistent indexing (default: false)
 sources:
 - id: vehicle-location-source
   auto_start: true

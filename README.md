@@ -122,6 +122,7 @@ host: 0.0.0.0
 port: 8080
 log_level: info
 disable_persistence: false
+persist_index: false  # Use RocksDB for persistent indexing (default: false)
 
 sources:
   - id: inventory-db
@@ -276,6 +277,7 @@ Server Settings
 ? Server host: [0.0.0.0]
 ? Server port: [8080]
 ? Log level: [info/debug/warn/error/trace]
+? Enable persistent indexing (RocksDB)? [y/N]
 ```
 
 #### Step 2: Data Sources
@@ -423,7 +425,7 @@ Configuring Platform Reaction
 
 The init command generates a complete YAML configuration file with:
 
-- Server settings (host, port, log level)
+- Server settings (host, port, log level, persist_index)
 - All selected sources with their configurations
 - Bootstrap providers for each source (if selected)
 - A sample query that references the first source
@@ -442,6 +444,7 @@ host: 0.0.0.0
 port: 8080
 log_level: info
 disable_persistence: false
+persist_index: false
 
 sources:
   - kind: postgres
@@ -609,6 +612,7 @@ host: 0.0.0.0                           # Bind address
 port: 8080                              # API port
 log_level: info                         # Log level (trace, debug, info, warn, error)
 disable_persistence: false              # Disable automatic config file persistence
+persist_index: false                    # Use RocksDB for persistent indexing (default: false)
 
 # Core settings (optional)
 id: my-server-id                              # Unique server ID (auto-generated if not set)
@@ -853,10 +857,34 @@ host: 0.0.0.0
 port: 8080
 log_level: info
 disable_persistence: false  # Enable persistence (default)
+persist_index: false         # Use in-memory indexes (default)
 sources: []
 queries: []
 reactions: []
 ```
+
+### Persistent Indexing
+
+By default, DrasiServer uses in-memory indexes for query state, which provides fast performance but loses data on restart. For production workloads requiring data persistence across restarts, enable RocksDB-based persistent indexing:
+
+```yaml
+persist_index: true  # Enable RocksDB persistent indexing
+```
+
+**When `persist_index: false` (default):**
+- Uses in-memory indexes
+- Fastest performance
+- Data is lost on restart
+- Best for development and stateless deployments
+
+**When `persist_index: true`:**
+- Uses RocksDB for persistent storage
+- Data stored at `./data/index`
+- Query state survives restarts
+- Archive indexing enabled (supports `past()` function in queries)
+- Best for production workloads requiring durability
+
+**Note:** The index path (`./data/index`) is currently fixed. Future versions may allow customizing this path.
 
 ### Configuration Migration Guide
 

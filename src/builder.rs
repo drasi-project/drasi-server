@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
+use drasi_lib::plugin_core::{
+    IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceTrait,
+};
 use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use std::sync::Arc;
 
@@ -58,6 +60,15 @@ impl DrasiServerBuilder {
     /// Add a pre-built reaction instance (ownership transferred)
     pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
         self.core_builder = self.core_builder.with_reaction(reaction);
+        self
+    }
+
+    /// Add an index provider for persistent storage
+    ///
+    /// By default, DrasiLib uses in-memory indexes. Use this method to inject
+    /// a persistent index provider like RocksDB.
+    pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
+        self.core_builder = self.core_builder.with_index_provider(provider);
         self
     }
 
