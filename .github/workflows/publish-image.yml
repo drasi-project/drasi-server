@@ -34,9 +34,19 @@ env:
   IMAGE_NAME: drasi-server
 
 jobs:
-  build-and-push:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+  # Build job for each platform using matrix strategy
+  build-platform:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,9 +63,44 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push platform-specific image
         run: |
           make docker-build \
             IMAGE_PREFIX=${{ inputs.image_prefix }} \
-            DOCKER_TAG_VERSION=${{ inputs.tag }} \
-            DOCKERX_OPTS="--platform linux/amd64,linux/arm64 --push --cache-from type=gha --cache-to type=gha,mode=max"
+            DOCKER_TAG_VERSION=${{ inputs.tag }}-${{ matrix.suffix }} \
+            DOCKERX_OPTS="--platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max"
+
+  # Create multi-arch manifest
+  create-manifest:
+    name: Create Multi-Arch Manifest
+    needs: build-platform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest list
+        run: |
+          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }} \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64 \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64
+
+      - name: Generate summary
+        run: |
+          echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
