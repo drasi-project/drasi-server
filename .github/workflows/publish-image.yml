@@ -15,6 +15,9 @@
 name: Build and Publish Docker Image
 
 on:
+  push:
+    branches:
+      - dockerfile
   workflow_dispatch:
     inputs:
       tag:
@@ -64,11 +67,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push platform-specific image
+        env:
+          IMAGE_PREFIX: ${{ inputs.image_prefix }}
+          DOCKER_TAG_VERSION: ${{ inputs.tag }}-${{ matrix.suffix }}
+          DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
         run: |
-          make docker-build \
-            IMAGE_PREFIX=${{ inputs.image_prefix }} \
-            DOCKER_TAG_VERSION=${{ inputs.tag }}-${{ matrix.suffix }} \
-            DOCKERX_OPTS="--platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max"
+          make docker-build
 
   # Create multi-arch manifest
   create-manifest:
