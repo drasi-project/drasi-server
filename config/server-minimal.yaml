@@ -1,9 +1,8 @@
+id: 5fe76da1-bce9-4a6d-896a-23a0f9afb762
 host: 0.0.0.0
 port: 8080
 log_level: info
 disable_persistence: false
 sources: []
 reactions: []
-id: 5fe76da1-bce9-4a6d-896a-23a0f9afb762
-storage_backends: []
 queries: []

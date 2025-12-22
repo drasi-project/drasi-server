@@ -56,19 +56,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the configuration structure
     // Note: Sources and reactions can be defined in the config file using the tagged enum format
     let config = drasi_server::DrasiServerConfig {
+        id: drasi_server::models::ConfigValue::Static(uuid::Uuid::new_v4().to_string()),
         host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         disable_persistence: false,
-        sources: vec![],   // Add sources using SourceConfig enum
-        reactions: vec![], // Add reactions using ReactionConfig enum
-        core_config: drasi_lib::config::DrasiLibConfig {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            queries: vec![available_drivers_query, pending_orders_query],
-            storage_backends: vec![],
-        },
+        default_priority_queue_capacity: None, // Use lib defaults
+        default_dispatch_buffer_capacity: None, // Use lib defaults
+        sources: vec![],                       // Add sources using SourceConfig enum
+        reactions: vec![],                     // Add reactions using ReactionConfig enum
+        queries: vec![available_drivers_query, pending_orders_query],
     };
 
     // Save configuration to file

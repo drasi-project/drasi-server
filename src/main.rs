@@ -230,7 +230,7 @@ fn validate_config(config_path: PathBuf, show_resolved: bool) -> Result<()> {
             // Show summary
             println!("Summary:");
             println!("  Sources: {}", config.sources.len());
-            println!("  Queries: {}", config.core_config.queries.len());
+            println!("  Queries: {}", config.queries.len());
             println!("  Reactions: {}", config.reactions.len());
 
             if show_resolved {

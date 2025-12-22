@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use drasi_lib::config::DrasiLibConfig;
+use drasi_lib::config::QueryConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::IpAddr;
@@ -23,9 +23,17 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
 
-/// DrasiServer configuration that composes core config with server settings
+/// DrasiServer configuration
+///
+/// This is a self-contained configuration struct that includes all settings
+/// needed to run a DrasiServer. The `id`, `default_priority_queue_capacity`,
+/// `default_dispatch_buffer_capacity`, and `queries` fields are used to construct
+/// a DrasiLibConfig when creating a DrasiLib instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrasiServerConfig {
+    /// Unique identifier for this server instance (defaults to UUID)
+    #[serde(default = "default_id")]
+    pub id: ConfigValue<String>,
     /// Server bind address
     #[serde(default = "default_host")]
     pub host: ConfigValue<String>,
@@ -38,29 +46,44 @@ pub struct DrasiServerConfig {
     /// Disable automatic persistence of API changes to config file
     #[serde(default = "default_disable_persistence")]
     pub disable_persistence: bool,
-    /// Source configurations (DrasiServer-specific, parsed into plugin instances)
+    /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
+    /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_priority_queue_capacity: Option<ConfigValue<usize>>,
+    /// Default dispatch buffer capacity for sources and queries (default: 1000 if not specified)
+    /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
-    /// Reaction configurations (DrasiServer-specific, parsed into plugin instances)
+    /// Query configurations
+    #[serde(default)]
+    pub queries: Vec<QueryConfig>,
+    /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
     pub reactions: Vec<ReactionConfig>,
-    /// Core configuration (queries, storage backends)
-    #[serde(flatten)]
-    pub core_config: DrasiLibConfig,
 }
 
 impl Default for DrasiServerConfig {
     fn default() -> Self {
         Self {
+            id: default_id(),
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
             log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
+            default_priority_queue_capacity: None,
+            default_dispatch_buffer_capacity: None,
             sources: Vec::new(),
             reactions: Vec::new(),
-            core_config: DrasiLibConfig::default(),
+            queries: Vec::new(),
         }
     }
+}
+
+fn default_id() -> ConfigValue<String> {
+    ConfigValue::Static(uuid::Uuid::new_v4().to_string())
 }
 
 fn default_host() -> ConfigValue<String> {

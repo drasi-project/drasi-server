@@ -73,7 +73,19 @@ impl DrasiServer {
         }
 
         // Build DrasiLib using the builder pattern with factory-created components
-        let mut builder = DrasiLib::builder().with_id(&config.core_config.id);
+        // Resolve the id from ConfigValue (supports env vars)
+        let id: String = mapper.resolve_typed(&config.id)?;
+        let mut builder = DrasiLib::builder().with_id(&id);
+
+        // Set capacity defaults if configured (resolve env vars)
+        if let Some(ref capacity_config) = config.default_priority_queue_capacity {
+            let capacity: usize = mapper.resolve_typed(capacity_config)?;
+            builder = builder.with_priority_queue_capacity(capacity);
+        }
+        if let Some(ref capacity_config) = config.default_dispatch_buffer_capacity {
+            let capacity: usize = mapper.resolve_typed(capacity_config)?;
+            builder = builder.with_dispatch_buffer_capacity(capacity);
+        }
 
         // Create and add sources from config
         info!(
@@ -85,8 +97,8 @@ impl DrasiServer {
             builder = builder.with_source(source);
         }
 
-        // Add queries from core config
-        for query_config in &config.core_config.queries {
+        // Add queries from config
+        for query_config in &config.queries {
             builder = builder.with_query(query_config.clone());
         }
 

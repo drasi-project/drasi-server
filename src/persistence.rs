@@ -63,24 +63,31 @@ impl ConfigPersistence {
         );
 
         // Get current configuration from Core using public API
-        let core_config = self
+        let lib_config = self
             .core
             .get_current_config()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get current config from DrasiLib: {e}"))?;
 
-        // Wrap Core config with wrapper settings
+        // Construct DrasiServerConfig from lib config fields
         // Note: sources and reactions are empty here because they are owned by the core
         // and we don't have access to the original config enums. The core manages them
         // dynamically through the builder pattern or API.
         let wrapper_config = DrasiServerConfig {
+            id: crate::api::models::ConfigValue::Static(lib_config.id.clone()),
             host: crate::api::models::ConfigValue::Static(self.host.clone()),
             port: crate::api::models::ConfigValue::Static(self.port),
             log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
             disable_persistence: self.disable_persistence,
+            default_priority_queue_capacity: lib_config
+                .priority_queue_capacity
+                .map(crate::api::models::ConfigValue::Static),
+            default_dispatch_buffer_capacity: lib_config
+                .dispatch_buffer_capacity
+                .map(crate::api::models::ConfigValue::Static),
             sources: Vec::new(),
             reactions: Vec::new(),
-            core_config,
+            queries: lib_config.queries.clone(),
         };
 
         // Validate before saving
@@ -280,8 +287,8 @@ mod tests {
         assert!(!loaded_config.disable_persistence);
 
         // Verify queries (sources are created dynamically via registry, not in config)
-        assert_eq!(loaded_config.core_config.queries.len(), 1);
-        assert_eq!(loaded_config.core_config.queries[0].id, "test-query");
+        assert_eq!(loaded_config.queries.len(), 1);
+        assert_eq!(loaded_config.queries[0].id, "test-query");
     }
 
     #[tokio::test]

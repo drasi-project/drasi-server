@@ -78,22 +78,47 @@ cargo run -- --config config/server.yaml
 
 **Example configuration file:**
 ```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-  log_level: "info"
-  disable_persistence: false  # Enable persistence (default)
+# Server identification
+id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 
+# Server settings
+host: "0.0.0.0"
+port: 8080
+log_level: "info"
+disable_persistence: false  # Enable persistence (default)
+
+# Optional capacity defaults (cascades to queries/reactions)
+# Supports environment variables like other fields
+# default_priority_queue_capacity: 10000
+# default_priority_queue_capacity: "${PRIORITY_QUEUE_CAPACITY:-10000}"
+# default_dispatch_buffer_capacity: 1000
+# default_dispatch_buffer_capacity: "${DISPATCH_BUFFER_CAPACITY:-1000}"
+
+# Sources (parsed into plugin instances)
+sources:
+  - kind: mock
+    id: "sensors"
+    auto_start: true
+
+# Queries
 queries:
   - id: "high-temp"
     query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
-    query_language: "cypher"
-    source_subscriptions:
+    queryLanguage: Cypher
+    sources:
       - source_id: "sensors"
+    auto_start: true
+
+# Reactions
+reactions:
+  - kind: log
+    id: "log-temps"
+    queries:
+      - "high-temp"
     auto_start: true
 ```
 
-**Important**: Sources and reactions are plugins that must be provided programmatically. Only queries can be defined via configuration files.
+**Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
 
 ### Configuration Persistence
 

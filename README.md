@@ -117,11 +117,11 @@ See the [Interactive Configuration (init command)](#interactive-configuration-in
 
 ```yaml
 # config/server.yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-  disable_persistence: false
+id: inventory-server
+host: 0.0.0.0
+port: 8080
+log_level: info
+disable_persistence: false
 
 sources:
   - id: inventory-db
@@ -530,23 +530,23 @@ host: ${DB_HOST:-localhost}
 ### Example Configuration
 
 ```yaml
-server:
-  host: "${SERVER_HOST:-0.0.0.0}"
-  port: "${SERVER_PORT:-8080}"
-  log_level: "${LOG_LEVEL:-info}"
+id: "${SERVER_ID:-production-server}"
+host: "${SERVER_HOST:-0.0.0.0}"
+port: "${SERVER_PORT:-8080}"
+log_level: "${LOG_LEVEL:-info}"
 
 sources:
   - kind: postgres
     id: production-db
     auto_start: true
-    
+
     # Use environment variables for sensitive data
     host: "${DB_HOST}"
     port: "${DB_PORT:-5432}"
     database: "${DB_NAME}"
     user: "${DB_USER}"
     password: "${DB_PASSWORD}"  # Never hardcode!
-    
+
 queries:
   - id: critical-alerts
     query: "MATCH (e:Event) WHERE e.severity = 'critical' RETURN e"
@@ -611,9 +611,9 @@ log_level: info                         # Log level (trace, debug, info, warn, e
 disable_persistence: false              # Disable automatic config file persistence
 
 # Core settings (optional)
-id: my-server-id                        # Unique server ID (auto-generated if not set)
-priority_queue_capacity: 10000          # Default capacity for query/reaction priority queues
-dispatch_buffer_capacity: 1000          # Default buffer capacity for dispatching
+id: my-server-id                              # Unique server ID (auto-generated if not set)
+default_priority_queue_capacity: 10000        # Default capacity for query/reaction priority queues
+default_dispatch_buffer_capacity: 1000        # Default buffer capacity for dispatching
 
 # Data sources
 sources:
@@ -780,8 +780,9 @@ reactions:
 DrasiServer supports hierarchical capacity configuration for query and reaction priority queues:
 
 ```yaml
-# Root-level capacity settings
-priority_queue_capacity: 10000  # Default for all queries and reactions
+# Root-level capacity settings (support environment variables)
+default_priority_queue_capacity: 10000  # Default for all queries and reactions
+# default_priority_queue_capacity: "${PRIORITY_QUEUE_CAPACITY:-10000}"
 
 queries:
   - id: high-volume-query
@@ -797,8 +798,8 @@ reactions:
 ```
 
 **Capacity Settings:**
-- `priority_queue_capacity` - Default capacity for all query/reaction priority queues (root level)
-- `dispatch_buffer_capacity` - Default buffer capacity for dispatching (root level)
+- `default_priority_queue_capacity` - Default capacity for all query/reaction priority queues (root level, supports env vars)
+- `default_dispatch_buffer_capacity` - Default buffer capacity for dispatching (root level, supports env vars)
 - `queries[].priority_queue_capacity` - Override default for a specific query
 - `reactions[].priority_queue_capacity` - Override default for a specific reaction
 - `sources[].dispatch_buffer_capacity` - Buffer size for source event dispatching
@@ -847,11 +848,11 @@ DrasiServer supports automatic persistence of runtime configuration changes made
 
 **Example Configuration:**
 ```yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-  disable_persistence: false  # Enable persistence (default)
+id: my-server
+host: 0.0.0.0
+port: 8080
+log_level: info
+disable_persistence: false  # Enable persistence (default)
 sources: []
 queries: []
 reactions: []

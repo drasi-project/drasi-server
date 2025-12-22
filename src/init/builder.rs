@@ -61,19 +61,16 @@ pub fn build_config(
     };
 
     DrasiServerConfig {
+        id: ConfigValue::Static(server_id),
         host: ConfigValue::Static(server_settings.host),
         port: ConfigValue::Static(server_settings.port),
         log_level: ConfigValue::Static(server_settings.log_level),
         disable_persistence: false,
+        default_priority_queue_capacity: None, // Use lib defaults
+        default_dispatch_buffer_capacity: None, // Use lib defaults
         sources,
         reactions,
-        core_config: drasi_lib::config::DrasiLibConfig {
-            id: server_id,
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            queries,
-            storage_backends: vec![],
-        },
+        queries,
     }
 }
 
@@ -196,11 +193,15 @@ mod tests {
         assert!(config.reactions.is_empty());
 
         // Check no query is generated when no sources
-        assert!(config.core_config.queries.is_empty());
+        assert!(config.queries.is_empty());
 
         // Check server ID is generated (UUID format)
-        assert!(!config.core_config.id.is_empty());
-        assert!(uuid::Uuid::parse_str(&config.core_config.id).is_ok());
+        let id = match &config.id {
+            ConfigValue::Static(s) => s.clone(),
+            _ => panic!("Expected static id"),
+        };
+        assert!(!id.is_empty());
+        assert!(uuid::Uuid::parse_str(&id).is_ok());
     }
 
     #[test]
@@ -214,8 +215,8 @@ mod tests {
         assert_eq!(config.sources[0].id(), "my-mock");
 
         // Check a sample query is generated
-        assert_eq!(config.core_config.queries.len(), 1);
-        let query = &config.core_config.queries[0];
+        assert_eq!(config.queries.len(), 1);
+        let query = &config.queries[0];
         assert_eq!(query.id, "my-query");
         assert_eq!(query.query, "MATCH (n) RETURN n");
         assert!(query.auto_start);
@@ -242,11 +243,8 @@ mod tests {
         assert_eq!(config.sources[1].id(), "source-2");
 
         // Query should subscribe to the first source
-        assert_eq!(config.core_config.queries.len(), 1);
-        assert_eq!(
-            config.core_config.queries[0].sources[0].source_id,
-            "source-1"
-        );
+        assert_eq!(config.queries.len(), 1);
+        assert_eq!(config.queries[0].sources[0].source_id, "source-1");
     }
 
     #[test]
@@ -281,7 +279,7 @@ mod tests {
         // Check components
         assert_eq!(config.sources.len(), 1);
         assert_eq!(config.reactions.len(), 1);
-        assert_eq!(config.core_config.queries.len(), 1);
+        assert_eq!(config.queries.len(), 1);
     }
 
     #[test]
@@ -293,7 +291,7 @@ mod tests {
         let config2 = build_config(settings2, vec![], vec![]);
 
         // Each call should generate a unique ID
-        assert_ne!(config1.core_config.id, config2.core_config.id);
+        assert_ne!(config1.id, config2.id);
     }
 
     // ==================== generate_yaml tests ====================
@@ -425,10 +423,7 @@ mod tests {
             parsed_config.reactions.len(),
             original_config.reactions.len()
         );
-        assert_eq!(
-            parsed_config.core_config.queries.len(),
-            original_config.core_config.queries.len()
-        );
+        assert_eq!(parsed_config.queries.len(), original_config.queries.len());
     }
 
     #[test]

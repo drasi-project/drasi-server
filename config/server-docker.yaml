@@ -1,5 +1,4 @@
 id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
-storage_backends: []
 sources:
 - id: vehicle-location-source
   auto_start: true
