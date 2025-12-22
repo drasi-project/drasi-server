@@ -15,7 +15,8 @@
 # Makefile for Drasi Server
 
 .PHONY: all build build-release run run-release setup demo demo-cleanup \
-        doctor validate clean clippy test fmt fmt-check help
+        doctor validate clean clippy test fmt fmt-check help docker-build \
+        submodule-update
 
 # Default target
 help:
@@ -35,11 +36,15 @@ help:
 	@echo "  make fmt           - Format code"
 	@echo "  make fmt-check     - Check formatting"
 	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build  - Build Docker image (IMAGE_PREFIX, DOCKER_TAG_VERSION)"
+	@echo ""
 	@echo "Utilities:"
-	@echo "  make doctor        - Check system dependencies"
-	@echo "  make validate      - Validate config file (CONFIG=path)"
-	@echo "  make clean         - Clean build artifacts"
-	@echo "  make demo-cleanup  - Stop demo containers"
+	@echo "  make doctor            - Check system dependencies"
+	@echo "  make validate          - Validate config file (CONFIG=path)"
+	@echo "  make clean             - Clean build artifacts"
+	@echo "  make demo-cleanup      - Stop demo containers"
+	@echo "  make submodule-update  - Initialize/update git submodules"
 	@echo ""
 
 # === Getting Started ===
@@ -96,6 +101,22 @@ fmt-check:
 test:
 	cargo test --all-features
 
+# === Docker ===
+
+# Docker build variables
+IMAGE_PREFIX ?= ghcr.io/drasi-project
+DOCKER_TAG_VERSION ?=
+DOCKERX_OPTS ?=
+
+# Build Docker image
+docker-build:
+	@if [ -z "$(DOCKER_TAG_VERSION)" ]; then \
+		echo "Error: DOCKER_TAG_VERSION is required"; \
+		echo "Usage: make docker-build DOCKER_TAG_VERSION=v1.0.0"; \
+		exit 1; \
+	fi
+	docker buildx build . -t $(IMAGE_PREFIX)/drasi-server:$(DOCKER_TAG_VERSION) $(DOCKERX_OPTS)
+
 # === Utilities ===
 
 # Check system dependencies
@@ -146,3 +167,9 @@ demo-cleanup:
 # Clean build artifacts
 clean:
 	cargo clean
+
+# Initialize and update git submodules
+submodule-update:
+	@echo "Initializing and updating git submodules..."
+	git submodule update --init --recursive
+	@echo "Submodules updated successfully"
