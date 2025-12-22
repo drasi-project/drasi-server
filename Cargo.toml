@@ -30,10 +30,6 @@ path = "src/lib.rs"
 name = "drasi-server"
 path = "src/main.rs"
 
-[[bin]]
-name = "basic_setup"
-path = "src/bin/basic_setup.rs"
-
 [dependencies]
 drasi-lib = { path = "./drasi-core/lib" }
 
