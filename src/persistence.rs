@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::DrasiServerConfig;
+use crate::api::models::ConfigValue;
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 use anyhow::Result;
 use log::{debug, error, info};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,33 +24,33 @@ use std::sync::Arc;
 /// Uses atomic writes (temp file + rename) to prevent corruption.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    core: Arc<drasi_lib::DrasiLib>,
+    instances: Arc<HashMap<String, Arc<drasi_lib::DrasiLib>>>,
     host: String,
     port: u16,
     log_level: String,
     disable_persistence: bool,
-    persist_index: bool,
+    persist_settings: HashMap<String, bool>,
 }
 
 impl ConfigPersistence {
     /// Create a new ConfigPersistence instance
     pub fn new(
         config_file_path: PathBuf,
-        core: Arc<drasi_lib::DrasiLib>,
+        instances: Arc<HashMap<String, Arc<drasi_lib::DrasiLib>>>,
         host: String,
         port: u16,
         log_level: String,
         disable_persistence: bool,
-        persist_index: bool,
+        persist_settings: HashMap<String, bool>,
     ) -> Self {
         Self {
             config_file_path,
-            core,
+            instances,
             host,
             port,
             log_level,
             disable_persistence,
-            persist_index,
+            persist_settings,
         }
     }
 
@@ -65,33 +67,52 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
 
-        // Get current configuration from Core using public API
-        let lib_config = self
-            .core
-            .get_current_config()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get current config from DrasiLib: {e}"))?;
+        let mut instance_configs = Vec::new();
 
-        // Construct DrasiServerConfig from lib config fields
-        // Note: sources and reactions are empty here because they are owned by the core
-        // and we don't have access to the original config enums. The core manages them
-        // dynamically through the builder pattern or API.
+        for (id, core) in self.instances.iter() {
+            let lib_config = core.get_current_config().await.map_err(|e| {
+                anyhow::anyhow!("Failed to get current config from DrasiLib '{id}': {e}")
+            })?;
+
+            let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
+
+            instance_configs.push(DrasiLibInstanceConfig {
+                id: ConfigValue::Static(lib_config.id.clone()),
+                persist_index,
+                default_priority_queue_capacity: lib_config
+                    .priority_queue_capacity
+                    .map(ConfigValue::Static),
+                default_dispatch_buffer_capacity: lib_config
+                    .dispatch_buffer_capacity
+                    .map(ConfigValue::Static),
+                sources: Vec::new(),
+                reactions: Vec::new(),
+                queries: lib_config.queries.clone(),
+            });
+        }
+
+        // Construct DrasiServerConfig wrapper with multi-instance layout
+        let first_id = instance_configs
+            .get(0)
+            .and_then(|cfg| match &cfg.id {
+                ConfigValue::Static(id) => Some(id.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+
         let wrapper_config = DrasiServerConfig {
-            id: crate::api::models::ConfigValue::Static(lib_config.id.clone()),
-            host: crate::api::models::ConfigValue::Static(self.host.clone()),
-            port: crate::api::models::ConfigValue::Static(self.port),
-            log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
+            id: ConfigValue::Static(first_id),
+            host: ConfigValue::Static(self.host.clone()),
+            port: ConfigValue::Static(self.port),
+            log_level: ConfigValue::Static(self.log_level.clone()),
             disable_persistence: self.disable_persistence,
-            persist_index: self.persist_index,
-            default_priority_queue_capacity: lib_config
-                .priority_queue_capacity
-                .map(crate::api::models::ConfigValue::Static),
-            default_dispatch_buffer_capacity: lib_config
-                .dispatch_buffer_capacity
-                .map(crate::api::models::ConfigValue::Static),
+            persist_index: false,
+            default_priority_queue_capacity: None,
+            default_dispatch_buffer_capacity: None,
             sources: Vec::new(),
             reactions: Vec::new(),
-            queries: lib_config.queries.clone(),
+            queries: Vec::new(),
+            instances: instance_configs,
         };
 
         // Validate before saving
@@ -254,15 +275,19 @@ mod tests {
         std::fs::write(&config_path, "").expect("Failed to create test file");
 
         let core = create_test_core().await;
+        let mut instances_map = HashMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = HashMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings,
         );
 
         // Save should succeed
@@ -279,21 +304,19 @@ mod tests {
         // Verify wrapper settings
         assert_eq!(
             loaded_config.host,
-            crate::api::models::ConfigValue::Static("127.0.0.1".to_string())
+            ConfigValue::Static("127.0.0.1".to_string())
         );
-        assert_eq!(
-            loaded_config.port,
-            crate::api::models::ConfigValue::Static(8080)
-        );
+        assert_eq!(loaded_config.port, ConfigValue::Static(8080));
         assert_eq!(
             loaded_config.log_level,
-            crate::api::models::ConfigValue::Static("info".to_string())
+            ConfigValue::Static("info".to_string())
         );
         assert!(!loaded_config.disable_persistence);
 
-        // Verify queries (sources are created dynamically via registry, not in config)
-        assert_eq!(loaded_config.queries.len(), 1);
-        assert_eq!(loaded_config.queries[0].id, "test-query");
+        // Verify queries inside instance (sources are created dynamically via registry, not in config)
+        assert_eq!(loaded_config.instances.len(), 1);
+        assert_eq!(loaded_config.instances[0].queries.len(), 1);
+        assert_eq!(loaded_config.instances[0].queries[0].id, "test-query");
     }
 
     #[tokio::test]
@@ -302,15 +325,19 @@ mod tests {
         let config_path = temp_dir.path().join("test-config.yaml");
 
         let core = create_test_core().await;
+        let mut instances_map = HashMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = HashMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true,  // disable_persistence = true
-            false, // persist_index
+            true, // disable_persistence = true
+            persist_settings,
         );
 
         // Save should succeed but not write anything
@@ -329,15 +356,19 @@ mod tests {
         std::fs::write(&config_path, "initial content").expect("Failed to create initial file");
 
         let core = create_test_core().await;
+        let mut instances_map = HashMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = HashMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings,
         );
 
         // Save should succeed
@@ -363,15 +394,19 @@ mod tests {
         std::fs::write(&config_path, "test").expect("Failed to create test file");
 
         let core = create_test_core().await;
+        let mut instances_map = HashMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = HashMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings.clone(),
         );
 
         // Should be writable
@@ -379,14 +414,16 @@ mod tests {
 
         // Test non-existent file
         let non_existent = temp_dir.path().join("does-not-exist.yaml");
+        let mut missing_instances = HashMap::new();
+        missing_instances.insert("test-server".to_string(), create_test_core().await);
         let persistence_non_existent = ConfigPersistence::new(
             non_existent,
-            create_test_core().await,
+            Arc::new(missing_instances),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            HashMap::new(),
         );
 
         // Should not be writable

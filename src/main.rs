@@ -229,9 +229,16 @@ fn validate_config(config_path: PathBuf, show_resolved: bool) -> Result<()> {
 
             // Show summary
             println!("Summary:");
-            println!("  Sources: {}", config.sources.len());
-            println!("  Queries: {}", config.queries.len());
-            println!("  Reactions: {}", config.reactions.len());
+            let mapper = DtoMapper::new();
+            let instances = config.resolved_instances(&mapper).unwrap_or_default();
+            let total_sources: usize = instances.iter().map(|i| i.sources.len()).sum();
+            let total_queries: usize = instances.iter().map(|i| i.queries.len()).sum();
+            let total_reactions: usize = instances.iter().map(|i| i.reactions.len()).sum();
+
+            println!("  Instances: {}", instances.len());
+            println!("  Sources: {}", total_sources);
+            println!("  Queries: {}", total_queries);
+            println!("  Reactions: {}", total_reactions);
 
             if show_resolved {
                 println!();

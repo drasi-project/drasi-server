@@ -18,6 +18,7 @@ use axum::{
     response::Json,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -60,6 +61,12 @@ pub struct ComponentListItem {
     id: String,
     /// Current status of the component
     status: ComponentStatus,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InstanceListItem {
+    /// ID of the DrasiLib instance
+    id: String,
 }
 
 #[derive(Serialize)]
@@ -108,6 +115,27 @@ impl<T> ApiResponse<T> {
     }
 }
 
+/// List configured DrasiLib instances
+#[utoipa::path(
+    get,
+    path = "/instances",
+    responses(
+        (status = 200, description = "List of DrasiLib instances", body = ApiResponse),
+    ),
+    tag = "Instances"
+)]
+pub async fn list_instances(
+    Extension(instances): Extension<Arc<HashMap<String, Arc<drasi_lib::DrasiLib>>>>,
+) -> Json<ApiResponse<Vec<InstanceListItem>>> {
+    let data = instances
+        .keys()
+        .cloned()
+        .map(|id| InstanceListItem { id })
+        .collect();
+
+    Json(ApiResponse::success(data))
+}
+
 /// Check server health
 #[utoipa::path(
     get,
@@ -127,7 +155,7 @@ pub async fn health_check() -> Json<HealthResponse> {
 /// List all sources
 #[utoipa::path(
     get,
-    path = "/sources",
+    path = "/instances/{instanceId}/sources",
     responses(
         (status = 200, description = "List of sources", body = ApiResponse),
     ),
@@ -162,7 +190,7 @@ pub async fn list_sources(
 /// ```
 #[utoipa::path(
     post,
-    path = "/sources",
+    path = "/instances/{instanceId}/sources",
     request_body = serde_json::Value,
     responses(
         (status = 200, description = "Source created successfully", body = ApiResponse),
@@ -246,7 +274,7 @@ pub async fn create_source_handler(
 /// This endpoint returns the source status instead.
 #[utoipa::path(
     get,
-    path = "/sources/{id}",
+    path = "/instances/{instanceId}/sources/{id}",
     params(
         ("id" = String, Path, description = "Source ID")
     ),
@@ -269,7 +297,7 @@ pub async fn get_source(
 /// Delete a source
 #[utoipa::path(
     delete,
-    path = "/sources/{id}",
+    path = "/instances/{instanceId}/sources/{id}",
     params(
         ("id" = String, Path, description = "Source ID")
     ),
@@ -308,7 +336,7 @@ pub async fn delete_source(
 /// Start a source
 #[utoipa::path(
     post,
-    path = "/sources/{id}/start",
+    path = "/instances/{instanceId}/sources/{id}/start",
     params(
         ("id" = String, Path, description = "Source ID")
     ),
@@ -341,7 +369,7 @@ pub async fn start_source(
 /// Stop a source
 #[utoipa::path(
     post,
-    path = "/sources/{id}/stop",
+    path = "/instances/{instanceId}/sources/{id}/stop",
     params(
         ("id" = String, Path, description = "Source ID")
     ),
@@ -375,7 +403,7 @@ pub async fn stop_source(
 /// List all queries
 #[utoipa::path(
     get,
-    path = "/queries",
+    path = "/instances/{instanceId}/queries",
     responses(
         (status = 200, description = "List of queries", body = ApiResponse),
     ),
@@ -396,7 +424,7 @@ pub async fn list_queries(
 /// Create a new query
 #[utoipa::path(
     post,
-    path = "/queries",
+    path = "/instances/{instanceId}/queries",
     request_body = QueryConfig,
     responses(
         (status = 200, description = "Query created successfully", body = ApiResponse),
@@ -483,7 +511,7 @@ pub async fn create_query(
 /// Get query by name
 #[utoipa::path(
     get,
-    path = "/queries/{id}",
+    path = "/instances/{instanceId}/queries/{id}",
     params(
         ("id" = String, Path, description = "Query ID")
     ),
@@ -506,7 +534,7 @@ pub async fn get_query(
 /// Delete a query
 #[utoipa::path(
     delete,
-    path = "/queries/{id}",
+    path = "/instances/{instanceId}/queries/{id}",
     params(
         ("id" = String, Path, description = "Query ID")
     ),
@@ -545,7 +573,7 @@ pub async fn delete_query(
 /// Start a query
 #[utoipa::path(
     post,
-    path = "/queries/{id}/start",
+    path = "/instances/{instanceId}/queries/{id}/start",
     params(
         ("id" = String, Path, description = "Query ID")
     ),
@@ -578,7 +606,7 @@ pub async fn start_query(
 /// Stop a query
 #[utoipa::path(
     post,
-    path = "/queries/{id}/stop",
+    path = "/instances/{instanceId}/queries/{id}/stop",
     params(
         ("id" = String, Path, description = "Query ID")
     ),
@@ -611,7 +639,7 @@ pub async fn stop_query(
 /// Get current results of a query
 #[utoipa::path(
     get,
-    path = "/queries/{id}/results",
+    path = "/instances/{instanceId}/queries/{id}/results",
     params(
         ("id" = String, Path, description = "Query ID")
     ),
@@ -643,7 +671,7 @@ pub async fn get_query_results(
 /// List all reactions
 #[utoipa::path(
     get,
-    path = "/reactions",
+    path = "/instances/{instanceId}/reactions",
     responses(
         (status = 200, description = "List of reactions", body = ApiResponse),
     ),
@@ -678,7 +706,7 @@ pub async fn list_reactions(
 /// ```
 #[utoipa::path(
     post,
-    path = "/reactions",
+    path = "/instances/{instanceId}/reactions",
     request_body = serde_json::Value,
     responses(
         (status = 200, description = "Reaction created successfully", body = ApiResponse),
@@ -762,7 +790,7 @@ pub async fn create_reaction_handler(
 /// This endpoint returns the reaction status instead.
 #[utoipa::path(
     get,
-    path = "/reactions/{id}",
+    path = "/instances/{instanceId}/reactions/{id}",
     params(
         ("id" = String, Path, description = "Reaction ID")
     ),
@@ -785,7 +813,7 @@ pub async fn get_reaction(
 /// Delete a reaction
 #[utoipa::path(
     delete,
-    path = "/reactions/{id}",
+    path = "/instances/{instanceId}/reactions/{id}",
     params(
         ("id" = String, Path, description = "Reaction ID")
     ),
@@ -824,7 +852,7 @@ pub async fn delete_reaction(
 /// Start a reaction
 #[utoipa::path(
     post,
-    path = "/reactions/{id}/start",
+    path = "/instances/{instanceId}/reactions/{id}/start",
     params(
         ("id" = String, Path, description = "Reaction ID")
     ),
@@ -857,7 +885,7 @@ pub async fn start_reaction(
 /// Stop a reaction
 #[utoipa::path(
     post,
-    path = "/reactions/{id}/stop",
+    path = "/instances/{instanceId}/reactions/{id}/stop",
     params(
         ("id" = String, Path, description = "Reaction ID")
     ),

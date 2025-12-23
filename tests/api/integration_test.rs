@@ -52,9 +52,9 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
     let read_only = Arc::new(false);
     let config_persistence: Option<Arc<drasi_server::persistence::ConfigPersistence>> = None;
 
-    let router = Router::new()
-        // Health endpoint
-        .route("/health", axum::routing::get(api::handlers::health_check))
+    let instance_id = "test-server";
+
+    let instance_router = Router::new()
         // Source endpoints
         .route("/sources", axum::routing::get(api::handlers::list_sources))
         .route(
@@ -127,6 +127,15 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
         .layer(Extension(read_only))
         .layer(Extension(config_persistence));
 
+    let router = Router::new()
+        // Health endpoint
+        .route("/health", axum::routing::get(api::handlers::health_check))
+        .route(
+            "/instances",
+            axum::routing::get(api::handlers::list_instances),
+        )
+        .nest(&format!("/instances/{instance_id}"), instance_router);
+
     (router, core)
 }
 
@@ -154,15 +163,43 @@ async fn test_health_endpoint() {
 }
 
 #[tokio::test]
+async fn test_instances_endpoint() {
+    let (router, _) = create_test_router().await;
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/instances")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["success"], true);
+    assert!(json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["id"] == "test-server"));
+}
+
+#[tokio::test]
 async fn test_source_lifecycle_via_api() {
     let (router, _) = create_test_router().await;
+    let base = format!("/instances/{}", "test-server");
 
     // List sources (pre-registered via builder)
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/sources")
+                .uri(format!("{base}/sources"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -183,7 +220,7 @@ async fn test_source_lifecycle_via_api() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/sources/test-source")
+                .uri(format!("{base}/sources/test-source"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -204,7 +241,7 @@ async fn test_source_lifecycle_via_api() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/sources/test-source/stop")
+                .uri(format!("{base}/sources/test-source/stop"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -222,7 +259,7 @@ async fn test_source_lifecycle_via_api() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/sources/test-source/start")
+                .uri(format!("{base}/sources/test-source/start"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -240,7 +277,7 @@ async fn test_source_lifecycle_via_api() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/sources/test-source/stop")
+                .uri(format!("{base}/sources/test-source/stop"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -258,7 +295,7 @@ async fn test_source_lifecycle_via_api() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/sources/test-source")
+                .uri(format!("{base}/sources/test-source"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -271,6 +308,7 @@ async fn test_source_lifecycle_via_api() {
 #[tokio::test]
 async fn test_query_lifecycle_via_api() {
     let (router, core) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Create a query using DrasiLib (not via API - queries can still be created dynamically)
     let query_config = Query::cypher("test-query")
@@ -285,7 +323,7 @@ async fn test_query_lifecycle_via_api() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/queries")
+                .uri(format!("{base}/queries"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -304,7 +342,7 @@ async fn test_query_lifecycle_via_api() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/queries/test-query")
+                .uri(format!("{base}/queries/test-query"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -317,13 +355,14 @@ async fn test_query_lifecycle_via_api() {
 #[tokio::test]
 async fn test_reaction_lifecycle_via_api() {
     let (router, _core) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Reactions are pre-registered via builder, test listing them
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/reactions")
+                .uri(format!("{base}/reactions"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -343,7 +382,7 @@ async fn test_reaction_lifecycle_via_api() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/reactions/test-reaction")
+                .uri(format!("{base}/reactions/test-reaction"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -360,6 +399,7 @@ async fn test_reaction_lifecycle_via_api() {
 #[tokio::test]
 async fn test_dynamic_source_creation_via_api() {
     let (router, _) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Create a mock source via API using the tagged enum format
     let source_config = json!({
@@ -373,7 +413,7 @@ async fn test_dynamic_source_creation_via_api() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/sources")
+                .uri(format!("{base}/sources"))
                 .header("content-type", "application/json")
                 .body(Body::from(source_config.to_string()))
                 .unwrap(),
@@ -394,6 +434,7 @@ async fn test_dynamic_source_creation_via_api() {
 #[tokio::test]
 async fn test_dynamic_reaction_creation_via_api() {
     let (router, _) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Create a log reaction via API using the tagged enum format
     let reaction_config = json!({
@@ -408,7 +449,7 @@ async fn test_dynamic_reaction_creation_via_api() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/reactions")
+                .uri(format!("{base}/reactions"))
                 .header("content-type", "application/json")
                 .body(Body::from(reaction_config.to_string()))
                 .unwrap(),
@@ -429,13 +470,14 @@ async fn test_dynamic_reaction_creation_via_api() {
 #[tokio::test]
 async fn test_error_handling() {
     let (router, _) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Try to get non-existent source
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/sources/non-existent")
+                .uri(format!("{base}/sources/non-existent"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -450,7 +492,7 @@ async fn test_error_handling() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/sources/non-existent/start")
+                .uri(format!("{base}/sources/non-existent/start"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -463,6 +505,7 @@ async fn test_error_handling() {
 #[tokio::test]
 async fn test_query_results_endpoint() {
     let (router, core) = create_test_router().await;
+    let base = "/instances/test-server";
 
     // Add a query
     let query_config = Query::cypher("results-query")
@@ -477,7 +520,7 @@ async fn test_query_results_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/queries/results-query/results")
+                .uri(format!("{base}/queries/results-query/results"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -496,7 +539,7 @@ async fn test_query_results_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/queries/non-existent/results")
+                .uri(format!("{base}/queries/non-existent/results"))
                 .body(Body::empty())
                 .unwrap(),
         )

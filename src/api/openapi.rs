@@ -15,7 +15,9 @@
 use utoipa::OpenApi;
 
 use crate::api::error::{ErrorDetail, ErrorResponse};
-use crate::api::handlers::{ApiResponseSchema, ComponentListItem, HealthResponse, StatusResponse};
+use crate::api::handlers::{
+    ApiResponseSchema, ComponentListItem, HealthResponse, InstanceListItem, StatusResponse,
+};
 // Note: Config types from drasi_lib are imported but not used in schema
 // as they don't implement ToSchema trait
 #[allow(unused_imports)]
@@ -31,6 +33,7 @@ use crate::config::{ReactionConfig, SourceConfig};
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::api::handlers::list_instances,
         crate::api::handlers::health_check,
         crate::api::handlers::list_sources,
         crate::api::handlers::create_source_handler,
@@ -58,6 +61,7 @@ use crate::config::{ReactionConfig, SourceConfig};
             ComponentListItem,
             ApiResponseSchema,
             StatusResponse,
+            InstanceListItem,
             ErrorResponse,
             ErrorDetail,
             // Note: Config types from drasi_lib are not included
@@ -66,6 +70,7 @@ use crate::config::{ReactionConfig, SourceConfig};
     ),
     tags(
         (name = "Health", description = "Health check endpoints"),
+        (name = "Instances", description = "DrasiLib instance management"),
         (name = "Sources", description = "Data source management"),
         (name = "Queries", description = "Continuous query management"),
         (name = "Reactions", description = "Reaction management"),

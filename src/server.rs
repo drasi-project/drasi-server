@@ -19,6 +19,7 @@ use axum::{
     Router,
 };
 use log::{error, info, warn};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,7 +36,7 @@ use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
 
 pub struct DrasiServer {
-    core: Option<DrasiLib>,
+    instances: Vec<PreparedInstance>,
     enable_api: bool,
     host: String,
     port: u16,
@@ -43,6 +44,12 @@ pub struct DrasiServer {
     read_only: Arc<bool>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
+}
+
+struct PreparedInstance {
+    id_hint: Option<String>,
+    persist_index: bool,
+    core: DrasiLib,
 }
 
 impl DrasiServer {
@@ -54,13 +61,13 @@ impl DrasiServer {
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
         let resolved_settings = map_server_settings(&config, &mapper)?;
+        let resolved_instances = config.resolved_instances(&mapper)?;
 
         // Determine persistence and read-only status
         // Read-only mode is ONLY enabled when the config file is not writable
         // disable_persistence just means "don't save changes" but still allows API mutations
         let file_writable = Self::check_write_access(&config_path);
         let persistence_disabled = resolved_settings.disable_persistence;
-        let _persistence_enabled = file_writable && !persistence_disabled;
         let read_only = !file_writable; // Only read-only if file is not writable
 
         if !file_writable {
@@ -73,64 +80,72 @@ impl DrasiServer {
             info!("Persistence ENABLED. API modifications will be saved to config file.");
         }
 
-        // Build DrasiLib using the builder pattern with factory-created components
-        // Resolve the id from ConfigValue (supports env vars)
-        let id: String = mapper.resolve_typed(&config.id)?;
-        let mut builder = DrasiLib::builder().with_id(&id);
+        let mut instances = Vec::new();
 
-        // Set capacity defaults if configured (resolve env vars)
-        if let Some(ref capacity_config) = config.default_priority_queue_capacity {
-            let capacity: usize = mapper.resolve_typed(capacity_config)?;
-            builder = builder.with_priority_queue_capacity(capacity);
-        }
-        if let Some(ref capacity_config) = config.default_dispatch_buffer_capacity {
-            let capacity: usize = mapper.resolve_typed(capacity_config)?;
-            builder = builder.with_dispatch_buffer_capacity(capacity);
-        }
+        for instance in resolved_instances {
+            let mut builder = DrasiLib::builder().with_id(&instance.id);
 
-        // Create and add RocksDB index provider if persist_index is enabled
-        if config.persist_index {
-            let index_path = PathBuf::from("./data/index");
+            // Set capacity defaults if configured (resolve env vars)
+            if let Some(capacity) = instance.default_priority_queue_capacity {
+                builder = builder.with_priority_queue_capacity(capacity);
+            }
+            if let Some(capacity) = instance.default_dispatch_buffer_capacity {
+                builder = builder.with_dispatch_buffer_capacity(capacity);
+            }
+
+            // Create and add RocksDB index provider if persist_index is enabled
+            if instance.persist_index {
+                let safe_id = instance.id.replace(['/', '\\'], "_").replace("..", "_");
+                let index_path = PathBuf::from(format!("./data/{}/index", safe_id));
+                info!(
+                    "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
+                    instance.id,
+                    index_path.display()
+                );
+                let rocksdb_provider = RocksDbIndexProvider::new(
+                    index_path, true,  // enable_archive - support for past() function
+                    false, // direct_io - use OS page cache
+                );
+                builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+            }
+
+            // Create and add sources from config
             info!(
-                "Enabling persistent indexing with RocksDB at: {}",
-                index_path.display()
+                "Loading {} source(s) from configuration for instance '{}'",
+                instance.sources.len(),
+                instance.id
             );
-            let rocksdb_provider = RocksDbIndexProvider::new(
-                index_path, true,  // enable_archive - support for past() function
-                false, // direct_io - use OS page cache
-            );
-            builder = builder.with_index_provider(Arc::new(rocksdb_provider));
-        }
+            for source_config in instance.sources.clone() {
+                let source = create_source(source_config).await?;
+                builder = builder.with_source(source);
+            }
 
-        // Create and add sources from config
-        info!(
-            "Loading {} source(s) from configuration",
-            config.sources.len()
-        );
-        for source_config in config.sources.clone() {
-            let source = create_source(source_config).await?;
-            builder = builder.with_source(source);
-        }
+            // Add queries from config
+            for query_config in &instance.queries {
+                builder = builder.with_query(query_config.clone());
+            }
 
-        // Add queries from config
-        for query_config in &config.queries {
-            builder = builder.with_query(query_config.clone());
-        }
+            // Create and add reactions from config
+            for reaction_config in instance.reactions.clone() {
+                let reaction = create_reaction(reaction_config)?;
+                builder = builder.with_reaction(reaction);
+            }
 
-        // Create and add reactions from config
-        for reaction_config in config.reactions.clone() {
-            let reaction = create_reaction(reaction_config)?;
-            builder = builder.with_reaction(reaction);
-        }
+            // Build and initialize the core
+            let core = builder
+                .build()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {e}"))?;
 
-        // Build and initialize the core
-        let core = builder
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {e}"))?;
+            instances.push(PreparedInstance {
+                id_hint: Some(instance.id),
+                persist_index: instance.persist_index,
+                core,
+            });
+        }
 
         Ok(Self {
-            core: Some(core),
+            instances,
             enable_api: true,
             host: resolved_settings.host,
             port,
@@ -149,13 +164,45 @@ impl DrasiServer {
         config_file_path: Option<String>,
     ) -> Self {
         Self {
-            core: Some(core),
+            instances: vec![PreparedInstance {
+                id_hint: None,
+                persist_index: false,
+                core,
+            }],
             enable_api,
             host,
             port,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
             config_persistence: None,   // Will be set up if config file is provided
+        }
+    }
+
+    /// Create a DrasiServer from multiple pre-built cores (for builder multi-instance usage)
+    pub fn from_cores(
+        cores: Vec<(DrasiLib, Option<String>, bool)>,
+        enable_api: bool,
+        host: String,
+        port: u16,
+        config_file_path: Option<String>,
+    ) -> Self {
+        let instances = cores
+            .into_iter()
+            .map(|(core, id_hint, persist_index)| PreparedInstance {
+                id_hint,
+                persist_index,
+                core,
+            })
+            .collect();
+
+        Self {
+            instances,
+            enable_api,
+            host,
+            port,
+            config_file_path,
+            read_only: Arc::new(false),
+            config_persistence: None,
         }
     }
 
@@ -178,15 +225,33 @@ impl DrasiServer {
         );
         info!("Initializing Drasi Server");
 
-        // Take the core out of self
-        let core = self.core.take().expect("Core should be initialized");
+        let mut instance_map: HashMap<String, Arc<DrasiLib>> = HashMap::new();
+        let mut persist_settings: HashMap<String, bool> = HashMap::new();
 
-        // Core is already initialized by from_config_file or builder
-        // Convert to Arc for sharing
-        let core = Arc::new(core);
+        for instance in self.instances.into_iter() {
+            let mut core = instance.core;
+            let id = match instance.id_hint {
+                Some(id) => id,
+                None => core
+                    .get_current_config()
+                    .await
+                    .map(|c| c.id.clone())
+                    .map_err(|e| anyhow::anyhow!("Failed to resolve DrasiLib id: {e}"))?,
+            };
 
-        // Start the core server
-        core.start().await?;
+            let core = Arc::new(core);
+            core.start().await?;
+            persist_settings.insert(id.clone(), instance.persist_index);
+            instance_map.insert(id, core);
+        }
+
+        if instance_map.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No DrasiLib instances configured for this server"
+            ));
+        }
+
+        let instance_map = Arc::new(instance_map);
 
         // Initialize persistence if config file is provided and persistence is enabled
         let config_persistence = if let Some(config_file) = &self.config_file_path {
@@ -201,12 +266,12 @@ impl DrasiServer {
                     // Persistence is enabled - create ConfigPersistence instance
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
-                        core.clone(),
+                        instance_map.clone(),
                         self.host.clone(),
                         self.port,
                         resolved_settings.log_level,
                         false,
-                        config.persist_index,
+                        persist_settings.clone(),
                     ));
                     info!("Configuration persistence enabled");
                     Some(persistence)
@@ -225,7 +290,8 @@ impl DrasiServer {
 
         // Start web API if enabled
         if self.enable_api {
-            self.start_api(&core, config_persistence.clone()).await?;
+            self.start_api(instance_map.clone(), config_persistence.clone())
+                .await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.port
@@ -238,48 +304,79 @@ impl DrasiServer {
         tokio::signal::ctrl_c().await?;
 
         info!("Shutting down Drasi Server");
-        core.stop().await?;
+        for core in instance_map.values() {
+            core.stop().await?;
+        }
 
         Ok(())
     }
 
     async fn start_api(
         &self,
-        core: &Arc<DrasiLib>,
+        instances: Arc<HashMap<String, Arc<DrasiLib>>>,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation
         let openapi = api::ApiDoc::openapi();
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/health", get(api::health_check))
-            .route("/sources", get(api::list_sources))
-            .route("/sources", post(api::create_source_handler))
-            .route("/sources/:id", get(api::get_source))
-            .route("/sources/:id", axum::routing::delete(api::delete_source))
-            .route("/sources/:id/start", post(api::start_source))
-            .route("/sources/:id/stop", post(api::stop_source))
-            .route("/queries", get(api::list_queries))
-            .route("/queries", post(api::create_query))
-            .route("/queries/:id", get(api::get_query))
-            .route("/queries/:id", axum::routing::delete(api::delete_query))
-            .route("/queries/:id/start", post(api::start_query))
-            .route("/queries/:id/stop", post(api::stop_query))
-            .route("/queries/:id/results", get(api::get_query_results))
-            .route("/reactions", get(api::list_reactions))
-            .route("/reactions", post(api::create_reaction_handler))
-            .route("/reactions/:id", get(api::get_reaction))
-            .route(
-                "/reactions/:id",
-                axum::routing::delete(api::delete_reaction),
-            )
-            .route("/reactions/:id/start", post(api::start_reaction))
-            .route("/reactions/:id/stop", post(api::stop_reaction))
+            .route("/instances", get(api::list_instances));
+
+        let build_instance_router =
+            |core: Arc<DrasiLib>,
+             read_only: Arc<bool>,
+             config_persistence: Option<Arc<ConfigPersistence>>| {
+                Router::new()
+                    .route("/sources", get(api::list_sources))
+                    .route("/sources", post(api::create_source_handler))
+                    .route("/sources/:id", get(api::get_source))
+                    .route("/sources/:id", axum::routing::delete(api::delete_source))
+                    .route("/sources/:id/start", post(api::start_source))
+                    .route("/sources/:id/stop", post(api::stop_source))
+                    .route("/queries", get(api::list_queries))
+                    .route("/queries", post(api::create_query))
+                    .route("/queries/:id", get(api::get_query))
+                    .route("/queries/:id", axum::routing::delete(api::delete_query))
+                    .route("/queries/:id/start", post(api::start_query))
+                    .route("/queries/:id/stop", post(api::stop_query))
+                    .route("/queries/:id/results", get(api::get_query_results))
+                    .route("/reactions", get(api::list_reactions))
+                    .route("/reactions", post(api::create_reaction_handler))
+                    .route("/reactions/:id", get(api::get_reaction))
+                    .route(
+                        "/reactions/:id",
+                        axum::routing::delete(api::delete_reaction),
+                    )
+                    .route("/reactions/:id/start", post(api::start_reaction))
+                    .route("/reactions/:id/stop", post(api::stop_reaction))
+                    .layer(Extension(core))
+                    .layer(Extension(read_only))
+                    .layer(Extension(config_persistence))
+            };
+
+        for (instance_id, core) in instances.iter() {
+            let instance_router = build_instance_router(
+                core.clone(),
+                self.read_only.clone(),
+                config_persistence.clone(),
+            );
+            app = app.nest(&format!("/instances/{instance_id}"), instance_router);
+        }
+
+        // Backward compatibility: expose the first instance on root paths
+        if let Some((_, core)) = instances.iter().next() {
+            let default_router = build_instance_router(
+                core.clone(),
+                self.read_only.clone(),
+                config_persistence.clone(),
+            );
+            app = app.merge(default_router);
+        }
+
+        app = app
             .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi.clone()))
             .layer(CorsLayer::permissive())
-            // Inject DrasiLib for handlers to use
-            .layer(Extension(core.clone()))
-            .layer(Extension(self.read_only.clone()))
-            .layer(Extension(config_persistence));
+            .layer(Extension(instances));
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");
