@@ -44,19 +44,47 @@ make run
 
 ### Option 2: Docker
 
+#### Using Pre-built Images from GHCR (Fastest)
+
+```bash
+# Start the full stack (Drasi Server + PostgreSQL)
+docker compose up -d
+
+# Or server only (bring your own database)
+docker compose -f docker-compose-server-only.yml up -d
+
+# View logs
+docker compose logs -f drasi-server
+
+# Check health
+curl http://localhost:8080/health
+```
+
+By default, this uses the latest published image from `ghcr.io/drasi-project/drasi-server:latest`.
+
+To use a different version:
+```bash
+# Set image via environment variable
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:v1.0.0
+docker compose up -d
+
+# Or inline
+DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -d
+```
+
+#### Building Locally from Source
+
 ```bash
 # Clone the repository with submodules
 git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Copy environment template
-cp .env.example .env
+# Build the Docker image
+make docker-build DOCKER_TAG_VERSION=local
 
-# Start the full stack (Drasi Server + PostgreSQL)
+# Update docker-compose to use local image
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:local
 docker compose up -d
-
-# View logs
-docker compose logs -f drasi-server
 ```
 
 See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
