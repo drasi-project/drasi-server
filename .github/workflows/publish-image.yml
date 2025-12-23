@@ -15,9 +15,6 @@
 name: Build and Publish Docker Image
 
 on:
-  push:
-    branches:
-      - dockerfile
   workflow_dispatch:
     inputs:
       tag:
