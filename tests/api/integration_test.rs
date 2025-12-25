@@ -125,7 +125,13 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
         // Add extensions using new architecture
         .layer(Extension(core.clone()))
         .layer(Extension(read_only))
-        .layer(Extension(config_persistence));
+        .layer(Extension(config_persistence))
+        .layer(Extension(instance_id.to_string()));
+
+    // Create instances map for list_instances endpoint
+    let mut instances_map = indexmap::IndexMap::new();
+    instances_map.insert(instance_id.to_string(), core.clone());
+    let instances = Arc::new(instances_map);
 
     let router = Router::new()
         // Health endpoint
@@ -134,7 +140,8 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
             "/instances",
             axum::routing::get(api::handlers::list_instances),
         )
-        .nest(&format!("/instances/{instance_id}"), instance_router);
+        .nest(&format!("/instances/{instance_id}"), instance_router)
+        .layer(Extension(instances));
 
     (router, core)
 }

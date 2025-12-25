@@ -78,7 +78,7 @@ use crate::config::{ReactionConfig, SourceConfig};
     info(
         title = "Drasi Server API",
         version = "0.1.0",
-        description = "Standalone Drasi server for data change processing",
+        description = "Standalone Drasi server for data change processing.\nDrasi Server supports multiple concurrent DrasiLib instances. Each instance has its own sources, queries, and reactions.\n\n## Single / Default Instance Routes\n\nThese simplified endpoints access the first (default) instance:\n- `/sources` → operates on the sources of the **first configured instance**\n- `/queries` → operates on the queries of the **first configured instance**\n- `/reactions` → operates on the reactions of the **first configured instance**\n\n## Multi-Instance Support\n\nEndpoints to access specific instances are prefixed with `/instances/{instanceId}/...`:\n- `/instances/{instanceId}/sources`\n- `/instances/{instanceId}/queries`\n- `/instances/{instanceId}/reactions`",
         contact(
             name = "Drasi Project",
             url = "https://github.com/drasi-project/drasi-server"

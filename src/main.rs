@@ -235,10 +235,11 @@ fn validate_config(config_path: PathBuf, show_resolved: bool) -> Result<()> {
             let total_queries: usize = instances.iter().map(|i| i.queries.len()).sum();
             let total_reactions: usize = instances.iter().map(|i| i.reactions.len()).sum();
 
-            println!("  Instances: {}", instances.len());
-            println!("  Sources: {}", total_sources);
-            println!("  Queries: {}", total_queries);
-            println!("  Reactions: {}", total_reactions);
+            let instance_count = instances.len();
+            println!("  Instances: {instance_count}");
+            println!("  Sources: {total_sources}");
+            println!("  Queries: {total_queries}");
+            println!("  Reactions: {total_reactions}");
 
             if show_resolved {
                 println!();

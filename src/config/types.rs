@@ -194,7 +194,7 @@ fn is_valid_hostname(hostname: &str) -> bool {
 }
 
 impl DrasiServerConfig {
-    /// Resolve configured DrasiLib instances, supporting legacy single-instance layout.
+    /// Resolve configured DrasiLib instances, supporting single-instance and multi-instance layout.
     pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
         let raw_instances: Vec<DrasiLibInstanceConfig> = if self.instances.is_empty() {
             vec![DrasiLibInstanceConfig {
@@ -217,8 +217,7 @@ impl DrasiServerConfig {
             let id: String = mapper.resolve_typed(&instance.id)?;
             if seen.contains(&id) {
                 return Err(anyhow::anyhow!(
-                    "Duplicate DrasiLib instance id detected: '{}'",
-                    id
+                    "Duplicate DrasiLib instance id detected: '{id}'"
                 ));
             }
             seen.insert(id.clone());

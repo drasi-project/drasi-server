@@ -87,8 +87,14 @@ curl http://localhost:8080/health
 # View API documentation
 open http://localhost:8080/swagger-ui/
 
-# List running queries
-curl http://localhost:8080/api/queries
+# List configured instances
+curl http://localhost:8080/instances
+
+# List running queries (default instance)
+curl http://localhost:8080/queries
+
+# List queries for a specific instance
+curl http://localhost:8080/instances/{instanceId}/queries
 ```
 
 ### CLI Commands
@@ -602,9 +608,127 @@ See `config/server-with-env-vars.yaml` for a comprehensive example.
 
 ## Configuration
 
+DrasiServer can be configured in two complementary ways:
+
+1. **Configuration Files (YAML)**: Define your initial setup in a YAML file. Supports both single-instance (simple) and multi-instance (advanced) formats.
+2. **REST API**: Create, modify, and delete sources, queries, and reactions at runtime. Changes are automatically persisted to the config file when persistence is enabled.
+
+These approaches work together - you can start with a config file and dynamically add/remove components via the API.
+
 ### Configuration File Structure
 
-DrasiServer uses YAML configuration files with the following structure:
+DrasiServer uses YAML configuration files supporting both single-instance (default) and multi-instance deployments.
+
+#### Single-Instance Configuration (Default)
+
+For most use cases, configure sources, queries, and reactions at the root level:
+
+```yaml
+# Server settings
+host: 0.0.0.0                           # Bind address
+port: 8080                              # API port
+log_level: info                         # Log level (trace, debug, info, warn, error)
+disable_persistence: false              # Disable automatic config file persistence
+persist_index: false                    # Use RocksDB for persistent indexing (default: false)
+
+# Core settings (optional)
+id: my-server-id                              # Unique server ID (auto-generated if not set)
+default_priority_queue_capacity: 10000        # Default capacity for query/reaction priority queues
+default_dispatch_buffer_capacity: 1000        # Default buffer capacity for dispatching
+
+# Data sources
+sources:
+  - id: unique-source-id
+    source_type: postgres               # Source type (postgres, http, grpc, platform, mock, application)
+    auto_start: true                    # Start automatically
+    # ... source-specific fields
+
+# Continuous queries
+queries:
+  - id: unique-query-id
+    query: "MATCH (n:Node) RETURN n"
+    queryLanguage: Cypher
+    sources: [unique-source-id]
+    auto_start: true
+
+# Reactions
+reactions:
+  - id: unique-reaction-id
+    reaction_type: log
+    queries: [unique-query-id]
+    auto_start: true
+```
+
+#### Multi-Instance Configuration
+
+For advanced use cases requiring multiple isolated DrasiLib instances (separate source/query/reaction namespaces), use the `instances` array:
+
+```yaml
+# Server settings (shared across all instances)
+host: 0.0.0.0
+port: 8080
+log_level: info
+disable_persistence: false
+
+# Multiple DrasiLib instances
+instances:
+  - id: analytics
+    persist_index: true                 # Per-instance index persistence
+    sources:
+      - kind: postgres
+        id: analytics-db
+        auto_start: true
+        host: analytics.db.example.com
+        port: 5432
+        database: analytics
+        # ... other postgres fields
+    queries:
+      - id: high-value-orders
+        query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
+        queryLanguage: Cypher
+        sources:
+          - source_id: analytics-db
+        auto_start: true
+    reactions:
+      - kind: log
+        id: analytics-log
+        queries: [high-value-orders]
+        auto_start: true
+
+  - id: monitoring
+    persist_index: false
+    sources:
+      - kind: http
+        id: metrics-api
+        auto_start: true
+        host: 0.0.0.0
+        port: 9001
+    queries:
+      - id: alert-threshold
+        query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
+        queryLanguage: Cypher
+        sources:
+          - source_id: metrics-api
+        auto_start: true
+    reactions:
+      - kind: sse
+        id: alert-stream
+        queries: [alert-threshold]
+        auto_start: true
+        host: 0.0.0.0
+        port: 8082
+```
+
+**Key differences in multi-instance mode:**
+- Each instance has its own isolated namespace for sources, queries, and reactions
+- Component IDs only need to be unique within their instance
+- API routes use `/instances/{instanceId}/...` prefix (see [REST API](#rest-api) section)
+- The first instance is also accessible via simple root-level routes (`/sources`, `/queries`, `/reactions`) for convenience
+
+**Dynamic configuration:**
+Both single-instance and multi-instance configurations can be modified at runtime using the REST API. Create, delete, and manage sources, queries, and reactions dynamically. When `disable_persistence: false` (the default), changes are automatically saved to the config file.
+
+#### Full Single-Instance Configuration Reference
 
 ```yaml
 # Server settings (all at root level)
@@ -975,38 +1099,124 @@ RUST_LOG=drasi_server=debug
 
 ## Library Usage
 
-Embed DrasiServer in your Rust application:
+Embed DrasiServer in your Rust application using either the builder pattern or configuration files.
+
+### Single-Instance Builder (Default)
+
+For most use cases, use the simple builder pattern:
 
 ```rust
 use drasi_server::{DrasiServerBuilder, DrasiServer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Using builder pattern
     let server = DrasiServerBuilder::new()
         .with_port(8080)
         .with_log_level("info")
-        .with_source("my-source", source_config)
+        .with_source("my-source", source_instance)
         .with_query("my-query", "MATCH (n) RETURN n", vec!["my-source"])
-        .with_reaction("my-reaction", reaction_config)
+        .with_reaction("my-reaction", reaction_instance)
         .build()
         .await?;
 
-    server.run().await?;
-    
-    // Or load from config file
+    server.run().await
+}
+```
+
+### Multi-Instance Builder
+
+For advanced use cases requiring multiple isolated DrasiLib instances:
+
+```rust
+use drasi_server::{DrasiServerBuilder, DrasiServer};
+use drasi_lib::DrasiLib;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Build first instance for analytics
+    let analytics = DrasiLib::builder()
+        .with_id("analytics")
+        .with_source(analytics_source)
+        .with_query(analytics_query)
+        .with_reaction(analytics_reaction)
+        .build()
+        .await?;
+
+    // Build second instance for monitoring
+    let monitoring = DrasiLib::builder()
+        .with_id("monitoring")
+        .with_source(monitoring_source)
+        .with_query(monitoring_query)
+        .with_reaction(monitoring_reaction)
+        .build()
+        .await?;
+
+    // Create server with multiple instances
+    let server = DrasiServerBuilder::new()
+        .with_port(8080)
+        .with_log_level("info")
+        .with_instance(analytics)      // First instance (also available via legacy routes)
+        .with_instance(monitoring)     // Second instance
+        .build()
+        .await?;
+
+    server.run().await
+}
+```
+
+### Loading from Configuration File
+
+```rust
+use drasi_server::DrasiServer;
+use std::path::PathBuf;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Load from config file (supports both single and multi-instance configs)
     let server = DrasiServer::new(
         PathBuf::from("config.yaml"),
         8080
     ).await?;
-    
+
     server.run().await
 }
 ```
 
 ## REST API
 
-DrasiServer provides a comprehensive REST API for runtime control:
+DrasiServer provides a comprehensive REST API for runtime control. The API supports both single-instance and multi-instance deployments.
+
+### API Route Patterns
+
+DrasiServer supports both **simple routes** for single-instance deployments and **instance-specific routes** for multi-instance deployments:
+
+| Route Type | Pattern | Description |
+|------------|---------|-------------|
+| **Simple Routes** | `/sources`, `/queries`, `/reactions` | Access the default instance (single-instance or first configured instance) |
+| **Instance Routes** | `/instances/{instanceId}/sources` | Access a specific instance by ID |
+
+**Choosing the right routes:**
+
+- **Single-instance deployments**: Use simple routes (`/sources`, `/queries`, `/reactions`) for clean, straightforward API calls
+- **Multi-instance deployments**: Use instance routes (`/instances/{instanceId}/...`) to target specific instances
+- **Mixed approach**: The first configured instance is always accessible via simple routes, so you can use simple routes for the primary instance and instance routes for secondary instances
+
+**Dynamic configuration via Web API:**
+
+All component management (sources, queries, reactions) can be performed dynamically at runtime through the REST API:
+- **Create components**: `POST /sources`, `POST /queries`, `POST /reactions`
+- **Delete components**: `DELETE /sources/{id}`, `DELETE /queries/{id}`, `DELETE /reactions/{id}`
+- **Lifecycle control**: `POST /{component}/{id}/start`, `POST /{component}/{id}/stop`
+
+Changes made via the API are automatically persisted to the config file when `disable_persistence: false` (the default).
+
+### Instances API
+
+```bash
+# List all configured instances
+GET /instances
+# Returns: {"success": true, "data": [{"id": "analytics"}, {"id": "monitoring"}]}
+```
 
 ### Health Check
 
@@ -1019,13 +1229,18 @@ GET /health
 ### Sources API
 
 ```bash
-# List all sources
+# List all sources (simple route - default instance)
 GET /sources
 
+# List all sources (instance-specific)
+GET /instances/{instanceId}/sources
+
 # Get source details
+GET /instances/{instanceId}/sources/{id}
 GET /sources/{id}
 
 # Create a new source
+POST /instances/{instanceId}/sources
 POST /sources
 Content-Type: application/json
 {
@@ -1044,12 +1259,15 @@ Content-Type: application/json
 }
 
 # Delete a source
+DELETE /instances/{instanceId}/sources/{id}
 DELETE /sources/{id}
 
 # Start a source
+POST /instances/{instanceId}/sources/{id}/start
 POST /sources/{id}/start
 
 # Stop a source
+POST /instances/{instanceId}/sources/{id}/stop
 POST /sources/{id}/stop
 ```
 
@@ -1057,12 +1275,15 @@ POST /sources/{id}/stop
 
 ```bash
 # List all queries
+GET /instances/{instanceId}/queries
 GET /queries
 
 # Get query details
+GET /instances/{instanceId}/queries/{id}
 GET /queries/{id}
 
 # Create a new query
+POST /instances/{instanceId}/queries
 POST /queries
 Content-Type: application/json
 {
@@ -1076,15 +1297,19 @@ Content-Type: application/json
 }
 
 # Delete a query
+DELETE /instances/{instanceId}/queries/{id}
 DELETE /queries/{id}
 
 # Start a query
+POST /instances/{instanceId}/queries/{id}/start
 POST /queries/{id}/start
 
 # Stop a query
+POST /instances/{instanceId}/queries/{id}/stop
 POST /queries/{id}/stop
 
 # Get current query results
+GET /instances/{instanceId}/queries/{id}/results
 GET /queries/{id}/results
 ```
 
@@ -1092,12 +1317,15 @@ GET /queries/{id}/results
 
 ```bash
 # List all reactions
+GET /instances/{instanceId}/reactions
 GET /reactions
 
 # Get reaction details
+GET /instances/{instanceId}/reactions/{id}
 GET /reactions/{id}
 
 # Create a new reaction
+POST /instances/{instanceId}/reactions
 POST /reactions
 Content-Type: application/json
 {
@@ -1116,20 +1344,23 @@ Content-Type: application/json
 }
 
 # Delete a reaction
+DELETE /instances/{instanceId}/reactions/{id}
 DELETE /reactions/{id}
 
 # Start a reaction
+POST /instances/{instanceId}/reactions/{id}/start
 POST /reactions/{id}/start
 
 # Stop a reaction
+POST /instances/{instanceId}/reactions/{id}/stop
 POST /reactions/{id}/stop
 ```
 
 ### API Documentation
 
 Interactive API documentation is available at:
-- Swagger UI: `http://localhost:8080/docs/`
-- OpenAPI spec: `http://localhost:8080/api-docs/openapi.json`
+- Swagger UI: `http://localhost:8080/swagger-ui/`
+- OpenAPI spec: `http://localhost:8080/openapi.json`
 
 ### API Response Format
 

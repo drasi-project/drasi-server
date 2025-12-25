@@ -1383,6 +1383,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hyper 1.7.0",
+ "indexmap 2.11.4",
  "inquire",
  "log",
  "mockall",

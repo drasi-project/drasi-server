@@ -18,8 +18,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use indexmap::IndexMap;
 use log::{error, info, warn};
-use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -96,7 +97,7 @@ impl DrasiServer {
             // Create and add RocksDB index provider if persist_index is enabled
             if instance.persist_index {
                 let safe_id = instance.id.replace(['/', '\\'], "_").replace("..", "_");
-                let index_path = PathBuf::from(format!("./data/{}/index", safe_id));
+                let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
                 info!(
                     "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
                     instance.id,
@@ -225,10 +226,12 @@ impl DrasiServer {
         );
         info!("Initializing Drasi Server");
 
-        let mut instance_map: HashMap<String, Arc<DrasiLib>> = HashMap::new();
-        let mut persist_settings: HashMap<String, bool> = HashMap::new();
+        let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
+        let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
 
-        for instance in self.instances.into_iter() {
+        // Take ownership of instances to avoid partial move of self
+        let instances = std::mem::take(&mut self.instances);
+        for instance in instances {
             let mut core = instance.core;
             let id = match instance.id_hint {
                 Some(id) => id,
@@ -256,13 +259,18 @@ impl DrasiServer {
         // Initialize persistence if config file is provided and persistence is enabled
         let config_persistence = if let Some(config_file) = &self.config_file_path {
             if !*self.read_only {
-                // Need to reload config to check disable_persistence flag
+                // Need to reload config to check disable_persistence flag and get initial configs
                 let config = load_config_file(PathBuf::from(config_file))?;
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
                 let persistence_disabled = resolved_settings.disable_persistence;
 
                 if !persistence_disabled {
+                    // Extract source and reaction configs from the loaded config
+                    let resolved_instances = config.resolved_instances(&mapper)?;
+                    let (initial_source_configs, initial_reaction_configs) =
+                        Self::extract_component_configs(&resolved_instances);
+
                     // Persistence is enabled - create ConfigPersistence instance
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
@@ -272,6 +280,8 @@ impl DrasiServer {
                         resolved_settings.log_level,
                         false,
                         persist_settings.clone(),
+                        initial_source_configs,
+                        initial_reaction_configs,
                     ));
                     info!("Configuration persistence enabled");
                     Some(persistence)
@@ -313,7 +323,7 @@ impl DrasiServer {
 
     async fn start_api(
         &self,
-        instances: Arc<HashMap<String, Arc<DrasiLib>>>,
+        instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation
@@ -322,53 +332,56 @@ impl DrasiServer {
             .route("/health", get(api::health_check))
             .route("/instances", get(api::list_instances));
 
-        let build_instance_router =
-            |core: Arc<DrasiLib>,
-             read_only: Arc<bool>,
-             config_persistence: Option<Arc<ConfigPersistence>>| {
-                Router::new()
-                    .route("/sources", get(api::list_sources))
-                    .route("/sources", post(api::create_source_handler))
-                    .route("/sources/:id", get(api::get_source))
-                    .route("/sources/:id", axum::routing::delete(api::delete_source))
-                    .route("/sources/:id/start", post(api::start_source))
-                    .route("/sources/:id/stop", post(api::stop_source))
-                    .route("/queries", get(api::list_queries))
-                    .route("/queries", post(api::create_query))
-                    .route("/queries/:id", get(api::get_query))
-                    .route("/queries/:id", axum::routing::delete(api::delete_query))
-                    .route("/queries/:id/start", post(api::start_query))
-                    .route("/queries/:id/stop", post(api::stop_query))
-                    .route("/queries/:id/results", get(api::get_query_results))
-                    .route("/reactions", get(api::list_reactions))
-                    .route("/reactions", post(api::create_reaction_handler))
-                    .route("/reactions/:id", get(api::get_reaction))
-                    .route(
-                        "/reactions/:id",
-                        axum::routing::delete(api::delete_reaction),
-                    )
-                    .route("/reactions/:id/start", post(api::start_reaction))
-                    .route("/reactions/:id/stop", post(api::stop_reaction))
-                    .layer(Extension(core))
-                    .layer(Extension(read_only))
-                    .layer(Extension(config_persistence))
-            };
+        let build_instance_router = |core: Arc<DrasiLib>,
+                                     read_only: Arc<bool>,
+                                     config_persistence: Option<Arc<ConfigPersistence>>,
+                                     instance_id: String| {
+            Router::new()
+                .route("/sources", get(api::list_sources))
+                .route("/sources", post(api::create_source_handler))
+                .route("/sources/:id", get(api::get_source))
+                .route("/sources/:id", axum::routing::delete(api::delete_source))
+                .route("/sources/:id/start", post(api::start_source))
+                .route("/sources/:id/stop", post(api::stop_source))
+                .route("/queries", get(api::list_queries))
+                .route("/queries", post(api::create_query))
+                .route("/queries/:id", get(api::get_query))
+                .route("/queries/:id", axum::routing::delete(api::delete_query))
+                .route("/queries/:id/start", post(api::start_query))
+                .route("/queries/:id/stop", post(api::stop_query))
+                .route("/queries/:id/results", get(api::get_query_results))
+                .route("/reactions", get(api::list_reactions))
+                .route("/reactions", post(api::create_reaction_handler))
+                .route("/reactions/:id", get(api::get_reaction))
+                .route(
+                    "/reactions/:id",
+                    axum::routing::delete(api::delete_reaction),
+                )
+                .route("/reactions/:id/start", post(api::start_reaction))
+                .route("/reactions/:id/stop", post(api::stop_reaction))
+                .layer(Extension(core))
+                .layer(Extension(read_only))
+                .layer(Extension(config_persistence))
+                .layer(Extension(instance_id))
+        };
 
         for (instance_id, core) in instances.iter() {
             let instance_router = build_instance_router(
                 core.clone(),
                 self.read_only.clone(),
                 config_persistence.clone(),
+                instance_id.clone(),
             );
             app = app.nest(&format!("/instances/{instance_id}"), instance_router);
         }
 
         // Backward compatibility: expose the first instance on root paths
-        if let Some((_, core)) = instances.iter().next() {
+        if let Some((instance_id, core)) = instances.iter().next() {
             let default_router = build_instance_router(
                 core.clone(),
                 self.read_only.clone(),
                 config_persistence.clone(),
+                instance_id.clone(),
             );
             app = app.merge(default_router);
         }
@@ -391,5 +404,33 @@ impl DrasiServer {
         });
 
         Ok(())
+    }
+
+    /// Extract source and reaction configs from resolved instances for persistence initialization
+    fn extract_component_configs(
+        resolved_instances: &[ResolvedInstanceConfig],
+    ) -> (
+        IndexMap<String, IndexMap<String, SourceConfig>>,
+        IndexMap<String, IndexMap<String, ReactionConfig>>,
+    ) {
+        let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
+        let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
+            IndexMap::new();
+
+        for instance in resolved_instances {
+            let mut sources = IndexMap::new();
+            for source in &instance.sources {
+                sources.insert(source.id().to_string(), source.clone());
+            }
+            source_configs.insert(instance.id.clone(), sources);
+
+            let mut reactions = IndexMap::new();
+            for reaction in &instance.reactions {
+                reactions.insert(reaction.id().to_string(), reaction.clone());
+            }
+            reaction_configs.insert(instance.id.clone(), reactions);
+        }
+
+        (source_configs, reaction_configs)
     }
 }
