@@ -24,8 +24,8 @@ pub mod server;
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
 pub use config::{
-    load_config_file, save_config_file, ConfigError, DrasiServerConfig, ReactionConfig,
-    SourceConfig,
+    load_config_file, save_config_file, ConfigError, DrasiLibInstanceConfig, DrasiServerConfig,
+    ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
 pub use factories::{create_reaction, create_source};
 pub use server::DrasiServer;

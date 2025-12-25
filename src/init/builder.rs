@@ -72,6 +72,7 @@ pub fn build_config(
         sources,
         reactions,
         queries,
+        instances: vec![], // Empty = use single-instance mode
     }
 }
 

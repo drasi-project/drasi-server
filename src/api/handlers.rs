@@ -17,6 +17,7 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
+use indexmap::IndexMap;
 use serde::Serialize;
 use std::sync::Arc;
 use utoipa::ToSchema;
@@ -60,6 +61,12 @@ pub struct ComponentListItem {
     id: String,
     /// Current status of the component
     status: ComponentStatus,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InstanceListItem {
+    /// ID of the DrasiLib instance
+    id: String,
 }
 
 #[derive(Serialize)]
@@ -108,6 +115,27 @@ impl<T> ApiResponse<T> {
     }
 }
 
+/// List configured DrasiLib instances
+#[utoipa::path(
+    get,
+    path = "/instances",
+    responses(
+        (status = 200, description = "List of DrasiLib instances", body = ApiResponse),
+    ),
+    tag = "Instances"
+)]
+pub async fn list_instances(
+    Extension(instances): Extension<Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>>,
+) -> Json<ApiResponse<Vec<InstanceListItem>>> {
+    let data = instances
+        .keys()
+        .cloned()
+        .map(|id| InstanceListItem { id })
+        .collect();
+
+    Json(ApiResponse::success(data))
+}
+
 /// Check server health
 #[utoipa::path(
     get,
@@ -127,7 +155,10 @@ pub async fn health_check() -> Json<HealthResponse> {
 /// List all sources
 #[utoipa::path(
     get,
-    path = "/sources",
+    path = "/instances/{instanceId}/sources",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     responses(
         (status = 200, description = "List of sources", body = ApiResponse),
     ),
@@ -162,7 +193,10 @@ pub async fn list_sources(
 /// ```
 #[utoipa::path(
     post,
-    path = "/sources",
+    path = "/instances/{instanceId}/sources",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     request_body = serde_json::Value,
     responses(
         (status = 200, description = "Source created successfully", body = ApiResponse),
@@ -175,6 +209,7 @@ pub async fn create_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -198,7 +233,7 @@ pub async fn create_source_handler(
     let auto_start = config.auto_start();
 
     // Create the source instance using the factory function
-    let source = match create_source(config).await {
+    let source = match create_source(config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -212,6 +247,11 @@ pub async fn create_source_handler(
     match core.add_source(source).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
+
+            // Register the config for persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.register_source(&instance_id, config).await;
+            }
 
             // Auto-start if configured
             if auto_start {
@@ -246,8 +286,9 @@ pub async fn create_source_handler(
 /// This endpoint returns the source status instead.
 #[utoipa::path(
     get,
-    path = "/sources/{id}",
+    path = "/instances/{instanceId}/sources/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Source ID")
     ),
     responses(
@@ -269,8 +310,9 @@ pub async fn get_source(
 /// Delete a source
 #[utoipa::path(
     delete,
-    path = "/sources/{id}",
+    path = "/instances/{instanceId}/sources/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Source ID")
     ),
     responses(
@@ -282,6 +324,7 @@ pub async fn delete_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -292,6 +335,11 @@ pub async fn delete_source(
 
     match core.remove_source(&id).await {
         Ok(_) => {
+            // Unregister the config from persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_source(&instance_id, &id).await;
+            }
+
             persist_after_operation(&config_persistence, "deleting source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -308,8 +356,9 @@ pub async fn delete_source(
 /// Start a source
 #[utoipa::path(
     post,
-    path = "/sources/{id}/start",
+    path = "/instances/{instanceId}/sources/{id}/start",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Source ID")
     ),
     responses(
@@ -341,8 +390,9 @@ pub async fn start_source(
 /// Stop a source
 #[utoipa::path(
     post,
-    path = "/sources/{id}/stop",
+    path = "/instances/{instanceId}/sources/{id}/stop",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Source ID")
     ),
     responses(
@@ -375,7 +425,10 @@ pub async fn stop_source(
 /// List all queries
 #[utoipa::path(
     get,
-    path = "/queries",
+    path = "/instances/{instanceId}/queries",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     responses(
         (status = 200, description = "List of queries", body = ApiResponse),
     ),
@@ -396,7 +449,10 @@ pub async fn list_queries(
 /// Create a new query
 #[utoipa::path(
     post,
-    path = "/queries",
+    path = "/instances/{instanceId}/queries",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     request_body = QueryConfig,
     responses(
         (status = 200, description = "Query created successfully", body = ApiResponse),
@@ -483,8 +539,9 @@ pub async fn create_query(
 /// Get query by name
 #[utoipa::path(
     get,
-    path = "/queries/{id}",
+    path = "/instances/{instanceId}/queries/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
@@ -506,8 +563,9 @@ pub async fn get_query(
 /// Delete a query
 #[utoipa::path(
     delete,
-    path = "/queries/{id}",
+    path = "/instances/{instanceId}/queries/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
@@ -545,8 +603,9 @@ pub async fn delete_query(
 /// Start a query
 #[utoipa::path(
     post,
-    path = "/queries/{id}/start",
+    path = "/instances/{instanceId}/queries/{id}/start",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
@@ -578,8 +637,9 @@ pub async fn start_query(
 /// Stop a query
 #[utoipa::path(
     post,
-    path = "/queries/{id}/stop",
+    path = "/instances/{instanceId}/queries/{id}/stop",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
@@ -611,8 +671,9 @@ pub async fn stop_query(
 /// Get current results of a query
 #[utoipa::path(
     get,
-    path = "/queries/{id}/results",
+    path = "/instances/{instanceId}/queries/{id}/results",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Query ID")
     ),
     responses(
@@ -643,7 +704,10 @@ pub async fn get_query_results(
 /// List all reactions
 #[utoipa::path(
     get,
-    path = "/reactions",
+    path = "/instances/{instanceId}/reactions",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     responses(
         (status = 200, description = "List of reactions", body = ApiResponse),
     ),
@@ -678,7 +742,10 @@ pub async fn list_reactions(
 /// ```
 #[utoipa::path(
     post,
-    path = "/reactions",
+    path = "/instances/{instanceId}/reactions",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
     request_body = serde_json::Value,
     responses(
         (status = 200, description = "Reaction created successfully", body = ApiResponse),
@@ -691,6 +758,7 @@ pub async fn create_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -714,7 +782,7 @@ pub async fn create_reaction_handler(
     let auto_start = config.auto_start();
 
     // Create the reaction instance using the factory function
-    let reaction = match create_reaction(config) {
+    let reaction = match create_reaction(config.clone()) {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");
@@ -728,6 +796,11 @@ pub async fn create_reaction_handler(
     match core.add_reaction(reaction).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
+
+            // Register the config for persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.register_reaction(&instance_id, config).await;
+            }
 
             // Auto-start if configured
             if auto_start {
@@ -762,8 +835,9 @@ pub async fn create_reaction_handler(
 /// This endpoint returns the reaction status instead.
 #[utoipa::path(
     get,
-    path = "/reactions/{id}",
+    path = "/instances/{instanceId}/reactions/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Reaction ID")
     ),
     responses(
@@ -785,8 +859,9 @@ pub async fn get_reaction(
 /// Delete a reaction
 #[utoipa::path(
     delete,
-    path = "/reactions/{id}",
+    path = "/instances/{instanceId}/reactions/{id}",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Reaction ID")
     ),
     responses(
@@ -798,6 +873,7 @@ pub async fn delete_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -808,6 +884,11 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id).await {
         Ok(_) => {
+            // Unregister the config from persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_reaction(&instance_id, &id).await;
+            }
+
             persist_after_operation(&config_persistence, "deleting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -824,8 +905,9 @@ pub async fn delete_reaction(
 /// Start a reaction
 #[utoipa::path(
     post,
-    path = "/reactions/{id}/start",
+    path = "/instances/{instanceId}/reactions/{id}/start",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Reaction ID")
     ),
     responses(
@@ -857,8 +939,9 @@ pub async fn start_reaction(
 /// Stop a reaction
 #[utoipa::path(
     post,
-    path = "/reactions/{id}/stop",
+    path = "/instances/{instanceId}/reactions/{id}/stop",
     params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
         ("id" = String, Path, description = "Reaction ID")
     ),
     responses(

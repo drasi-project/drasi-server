@@ -18,15 +18,39 @@
 
 @hostname = localhost
 @port = 8080
+@instanceId = trading-server
 
 ### Health Check
 GET http://{{hostname}}:{{port}}/health
 
-### GET LIST of all Source
+### GET LIST of all Instances
+GET http://{{hostname}}:{{port}}/instances
+
+###############################################################################
+# Single instance routes (routes to first/default instance)
+###############################################################################
+
+### GET LIST of all Sources (single instance)
 GET http://{{hostname}}:{{port}}/sources
 
-### GET LIST of all Queries
+### GET LIST of all Queries (single instance)
 GET http://{{hostname}}:{{port}}/queries
 
-### GET LIST of all Reactions
+### GET LIST of all Reactions (single instance)
 GET http://{{hostname}}:{{port}}/reactions
+
+###############################################################################
+# Instance-specific routes (use instance ID in path)
+###############################################################################
+
+### GET LIST of Sources for specific instance
+GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/sources
+
+### GET LIST of Queries for specific instance
+GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/queries
+
+### GET LIST of Reactions for specific instance
+GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/reactions
+
+### GET specific query results
+GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/queries/watchlist-query/results

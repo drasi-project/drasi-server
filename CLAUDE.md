@@ -119,6 +119,35 @@ reactions:
     auto_start: true
 ```
 
+For multiple DrasiLib instances, use the `instances` array (legacy single-instance fields continue to work and map to the first instance):
+
+```yaml
+host: "0.0.0.0"
+port: 8080
+log_level: "info"
+disable_persistence: false
+
+instances:
+  - id: "analytics"
+    persist_index: true
+    sources:
+      - kind: mock
+        id: "sensors"
+        auto_start: true
+    queries:
+      - id: "high-temp"
+        query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
+        queryLanguage: Cypher
+        sources:
+          - source_id: "sensors"
+  - id: "monitoring"
+    sources: []
+    queries: []
+    reactions: []
+```
+
+The REST API is exposed under `/instances/{instanceId}/...` for multi-instance access; the first configured instance also remains available on the legacy root routes for backward compatibility.
+
 **Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
 
 ### Configuration Persistence

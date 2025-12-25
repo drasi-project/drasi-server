@@ -12,48 +12,110 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::DrasiServerConfig;
+use crate::api::models::ConfigValue;
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
 use anyhow::Result;
+use indexmap::IndexMap;
 use log::{debug, error, info};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Handles persistence of DrasiServerConfig to a YAML file.
 /// Uses atomic writes (temp file + rename) to prevent corruption.
+/// Stores source and reaction configs in memory for persistence since
+/// they cannot be retrieved from running plugin instances.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    core: Arc<drasi_lib::DrasiLib>,
+    instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
     host: String,
     port: u16,
     log_level: String,
     disable_persistence: bool,
-    persist_index: bool,
+    persist_settings: IndexMap<String, bool>,
+    /// Source configs by instance_id -> source_id -> config
+    source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
+    /// Reaction configs by instance_id -> reaction_id -> config
+    reaction_configs: Arc<RwLock<IndexMap<String, IndexMap<String, ReactionConfig>>>>,
 }
 
 impl ConfigPersistence {
     /// Create a new ConfigPersistence instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config_file_path: PathBuf,
-        core: Arc<drasi_lib::DrasiLib>,
+        instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
         host: String,
         port: u16,
         log_level: String,
         disable_persistence: bool,
-        persist_index: bool,
+        persist_settings: IndexMap<String, bool>,
+        initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
+        initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
     ) -> Self {
         Self {
             config_file_path,
-            core,
+            instances,
             host,
             port,
             log_level,
             disable_persistence,
-            persist_index,
+            persist_settings,
+            source_configs: Arc::new(RwLock::new(initial_source_configs)),
+            reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
+        }
+    }
+
+    /// Register a source config for persistence
+    pub async fn register_source(&self, instance_id: &str, config: SourceConfig) {
+        if self.disable_persistence {
+            return;
+        }
+        let mut source_configs = self.source_configs.write().await;
+        source_configs
+            .entry(instance_id.to_string())
+            .or_default()
+            .insert(config.id().to_string(), config);
+    }
+
+    /// Unregister a source config (called on deletion)
+    pub async fn unregister_source(&self, instance_id: &str, source_id: &str) {
+        if self.disable_persistence {
+            return;
+        }
+        let mut source_configs = self.source_configs.write().await;
+        if let Some(instance_sources) = source_configs.get_mut(instance_id) {
+            instance_sources.swap_remove(source_id);
+        }
+    }
+
+    /// Register a reaction config for persistence
+    pub async fn register_reaction(&self, instance_id: &str, config: ReactionConfig) {
+        if self.disable_persistence {
+            return;
+        }
+        let mut reaction_configs = self.reaction_configs.write().await;
+        reaction_configs
+            .entry(instance_id.to_string())
+            .or_default()
+            .insert(config.id().to_string(), config);
+    }
+
+    /// Unregister a reaction config (called on deletion)
+    pub async fn unregister_reaction(&self, instance_id: &str, reaction_id: &str) {
+        if self.disable_persistence {
+            return;
+        }
+        let mut reaction_configs = self.reaction_configs.write().await;
+        if let Some(instance_reactions) = reaction_configs.get_mut(instance_id) {
+            instance_reactions.swap_remove(reaction_id);
         }
     }
 
     /// Save the current configuration to the config file using atomic writes.
     /// Uses Core's public API to get current configuration snapshot.
+    /// Includes source and reaction configs from the in-memory registry.
+    /// Uses single-instance format when there's 1 instance, multi-instance format otherwise.
     pub async fn save(&self) -> Result<()> {
         if self.disable_persistence {
             debug!("Persistence disabled, skipping save");
@@ -65,33 +127,86 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
 
-        // Get current configuration from Core using public API
-        let lib_config = self
-            .core
-            .get_current_config()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get current config from DrasiLib: {e}"))?;
+        // Get stored source and reaction configs
+        let source_configs = self.source_configs.read().await;
+        let reaction_configs = self.reaction_configs.read().await;
 
-        // Construct DrasiServerConfig from lib config fields
-        // Note: sources and reactions are empty here because they are owned by the core
-        // and we don't have access to the original config enums. The core manages them
-        // dynamically through the builder pattern or API.
-        let wrapper_config = DrasiServerConfig {
-            id: crate::api::models::ConfigValue::Static(lib_config.id.clone()),
-            host: crate::api::models::ConfigValue::Static(self.host.clone()),
-            port: crate::api::models::ConfigValue::Static(self.port),
-            log_level: crate::api::models::ConfigValue::Static(self.log_level.clone()),
-            disable_persistence: self.disable_persistence,
-            persist_index: self.persist_index,
-            default_priority_queue_capacity: lib_config
-                .priority_queue_capacity
-                .map(crate::api::models::ConfigValue::Static),
-            default_dispatch_buffer_capacity: lib_config
-                .dispatch_buffer_capacity
-                .map(crate::api::models::ConfigValue::Static),
-            sources: Vec::new(),
-            reactions: Vec::new(),
-            queries: lib_config.queries.clone(),
+        let mut instance_configs = Vec::new();
+
+        for (id, core) in self.instances.iter() {
+            let lib_config = core.get_current_config().await.map_err(|e| {
+                anyhow::anyhow!("Failed to get current config from DrasiLib '{id}': {e}")
+            })?;
+
+            let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
+
+            // Get source and reaction configs for this instance
+            let sources: Vec<SourceConfig> = source_configs
+                .get(id)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default();
+            let reactions: Vec<ReactionConfig> = reaction_configs
+                .get(id)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default();
+
+            instance_configs.push(DrasiLibInstanceConfig {
+                id: ConfigValue::Static(lib_config.id.clone()),
+                persist_index,
+                default_priority_queue_capacity: lib_config
+                    .priority_queue_capacity
+                    .map(ConfigValue::Static),
+                default_dispatch_buffer_capacity: lib_config
+                    .dispatch_buffer_capacity
+                    .map(ConfigValue::Static),
+                sources,
+                reactions,
+                queries: lib_config.queries.clone(),
+            });
+        }
+
+        // Dynamic format selection based on instance count
+        let wrapper_config = if instance_configs.len() == 1 {
+            // Single instance → use single-instance format (root-level fields)
+            let instance = instance_configs.remove(0);
+            DrasiServerConfig {
+                id: instance.id,
+                host: ConfigValue::Static(self.host.clone()),
+                port: ConfigValue::Static(self.port),
+                log_level: ConfigValue::Static(self.log_level.clone()),
+                disable_persistence: self.disable_persistence,
+                persist_index: instance.persist_index,
+                default_priority_queue_capacity: instance.default_priority_queue_capacity,
+                default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
+                sources: instance.sources,
+                reactions: instance.reactions,
+                queries: instance.queries,
+                instances: Vec::new(), // Empty = single-instance format
+            }
+        } else {
+            // Multiple instances → use multi-instance format (instances array)
+            let first_id = instance_configs
+                .first()
+                .and_then(|cfg| match &cfg.id {
+                    ConfigValue::Static(id) => Some(id.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+
+            DrasiServerConfig {
+                id: ConfigValue::Static(first_id),
+                host: ConfigValue::Static(self.host.clone()),
+                port: ConfigValue::Static(self.port),
+                log_level: ConfigValue::Static(self.log_level.clone()),
+                disable_persistence: self.disable_persistence,
+                persist_index: false, // Per-instance setting in multi-instance mode
+                default_priority_queue_capacity: None,
+                default_dispatch_buffer_capacity: None,
+                sources: Vec::new(),
+                reactions: Vec::new(),
+                queries: Vec::new(),
+                instances: instance_configs,
+            }
         };
 
         // Validate before saving
@@ -254,15 +369,21 @@ mod tests {
         std::fs::write(&config_path, "").expect("Failed to create test file");
 
         let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed
@@ -279,20 +400,26 @@ mod tests {
         // Verify wrapper settings
         assert_eq!(
             loaded_config.host,
-            crate::api::models::ConfigValue::Static("127.0.0.1".to_string())
+            ConfigValue::Static("127.0.0.1".to_string())
         );
-        assert_eq!(
-            loaded_config.port,
-            crate::api::models::ConfigValue::Static(8080)
-        );
+        assert_eq!(loaded_config.port, ConfigValue::Static(8080));
         assert_eq!(
             loaded_config.log_level,
-            crate::api::models::ConfigValue::Static("info".to_string())
+            ConfigValue::Static("info".to_string())
         );
         assert!(!loaded_config.disable_persistence);
 
-        // Verify queries (sources are created dynamically via registry, not in config)
-        assert_eq!(loaded_config.queries.len(), 1);
+        // With single instance, dynamic format selection outputs single-instance format
+        // (queries at root level, instances array empty)
+        assert!(
+            loaded_config.instances.is_empty(),
+            "Expected empty instances array for single-instance format"
+        );
+        assert_eq!(
+            loaded_config.queries.len(),
+            1,
+            "Expected query at root level"
+        );
         assert_eq!(loaded_config.queries[0].id, "test-query");
     }
 
@@ -302,15 +429,21 @@ mod tests {
         let config_path = temp_dir.path().join("test-config.yaml");
 
         let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true,  // disable_persistence = true
-            false, // persist_index
+            true, // disable_persistence = true
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed but not write anything
@@ -329,15 +462,21 @@ mod tests {
         std::fs::write(&config_path, "initial content").expect("Failed to create initial file");
 
         let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed
@@ -363,15 +502,21 @@ mod tests {
         std::fs::write(&config_path, "test").expect("Failed to create test file");
 
         let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            core,
+            Arc::new(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            persist_settings.clone(),
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Should be writable
@@ -379,17 +524,675 @@ mod tests {
 
         // Test non-existent file
         let non_existent = temp_dir.path().join("does-not-exist.yaml");
+        let mut missing_instances = IndexMap::new();
+        missing_instances.insert("test-server".to_string(), create_test_core().await);
         let persistence_non_existent = ConfigPersistence::new(
             non_existent,
-            create_test_core().await,
+            Arc::new(missing_instances),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
             false,
-            false, // persist_index
+            IndexMap::new(),
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Should not be writable
         assert!(!persistence_non_existent.is_writable());
+    }
+
+    // ==================== Multi-Instance Format Tests ====================
+
+    async fn create_test_core_with_id(id: &str) -> Arc<drasi_lib::DrasiLib> {
+        use drasi_lib::Query;
+
+        let source = MockSource::new(&format!("{id}-source"));
+
+        let core = drasi_lib::DrasiLib::builder()
+            .with_id(id)
+            .with_source(source)
+            .with_query(
+                Query::cypher(format!("{id}-query"))
+                    .query("MATCH (n) RETURN n")
+                    .from_source(format!("{id}-source"))
+                    .auto_start(false)
+                    .build(),
+            )
+            .build()
+            .await
+            .expect("Failed to build test core");
+
+        Arc::new(core)
+    }
+
+    #[tokio::test]
+    async fn test_multi_instance_format_persistence() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create a test file
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        // Create two instances
+        let core1 = create_test_core_with_id("instance-1").await;
+        let core2 = create_test_core_with_id("instance-2").await;
+
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("instance-1".to_string(), core1);
+        instances_map.insert("instance-2".to_string(), core2);
+
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("instance-1".to_string(), false);
+        persist_settings.insert("instance-2".to_string(), true);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "0.0.0.0".to_string(),
+            8080,
+            "debug".to_string(),
+            false,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Save should succeed
+        persistence.save().await.expect("Save failed");
+
+        // Verify file was written
+        assert!(config_path.exists());
+
+        // Verify content is valid YAML with multi-instance format
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        // With multiple instances, should use multi-instance format
+        assert_eq!(
+            loaded_config.instances.len(),
+            2,
+            "Expected 2 instances in multi-instance format"
+        );
+
+        // Root-level arrays should be empty in multi-instance format
+        assert!(
+            loaded_config.sources.is_empty(),
+            "Expected empty sources at root level"
+        );
+        assert!(
+            loaded_config.queries.is_empty(),
+            "Expected empty queries at root level"
+        );
+        assert!(
+            loaded_config.reactions.is_empty(),
+            "Expected empty reactions at root level"
+        );
+
+        // Verify instance contents
+        let instance1 = loaded_config
+            .instances
+            .iter()
+            .find(|i| match &i.id {
+                ConfigValue::Static(id) => id == "instance-1",
+                _ => false,
+            })
+            .expect("instance-1 not found");
+        assert_eq!(instance1.queries.len(), 1);
+        assert_eq!(instance1.queries[0].id, "instance-1-query");
+
+        let instance2 = loaded_config
+            .instances
+            .iter()
+            .find(|i| match &i.id {
+                ConfigValue::Static(id) => id == "instance-2",
+                _ => false,
+            })
+            .expect("instance-2 not found");
+        assert_eq!(instance2.queries.len(), 1);
+        assert_eq!(instance2.queries[0].id, "instance-2-query");
+        assert!(
+            instance2.persist_index,
+            "instance-2 should have persist_index=true"
+        );
+    }
+
+    // ==================== Config Loading Tests ====================
+
+    #[test]
+    fn test_load_single_instance_config_format() {
+        let config_yaml = r#"
+id: my-server
+host: localhost
+port: 9090
+log_level: info
+disable_persistence: false
+persist_index: true
+sources:
+  - kind: mock
+    id: test-source
+    auto_start: true
+queries:
+  - id: test-query
+    query: "MATCH (n) RETURN n"
+    queryLanguage: Cypher
+    sources:
+      - source_id: test-source
+reactions:
+  - kind: log
+    id: test-reaction
+    queries:
+      - test-query
+    auto_start: true
+instances: []
+"#;
+
+        let config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(config_yaml).expect("Failed to parse config");
+
+        // Verify single-instance format was loaded correctly
+        assert!(
+            config.instances.is_empty(),
+            "instances should be empty for single-instance format"
+        );
+        assert_eq!(config.sources.len(), 1, "Should have 1 source at root");
+        assert_eq!(config.queries.len(), 1, "Should have 1 query at root");
+        assert_eq!(config.reactions.len(), 1, "Should have 1 reaction at root");
+        assert!(config.persist_index, "persist_index should be true");
+        assert!(
+            !config.disable_persistence,
+            "disable_persistence should be false"
+        );
+
+        // Verify source details
+        assert_eq!(config.sources[0].id(), "test-source");
+
+        // Verify query details
+        assert_eq!(config.queries[0].id, "test-query");
+
+        // Verify reaction details
+        assert_eq!(config.reactions[0].id(), "test-reaction");
+    }
+
+    #[test]
+    fn test_load_multi_instance_config_format() {
+        let config_yaml = r#"
+host: 0.0.0.0
+port: 8080
+log_level: debug
+disable_persistence: false
+sources: []
+queries: []
+reactions: []
+instances:
+  - id: analytics
+    persist_index: true
+    sources:
+      - kind: mock
+        id: analytics-source
+        auto_start: true
+    queries:
+      - id: analytics-query
+        query: "MATCH (n) RETURN n"
+        queryLanguage: Cypher
+        sources:
+          - source_id: analytics-source
+    reactions:
+      - kind: log
+        id: analytics-reaction
+        queries:
+          - analytics-query
+        auto_start: true
+  - id: monitoring
+    persist_index: false
+    sources:
+      - kind: mock
+        id: monitoring-source
+        auto_start: false
+    queries:
+      - id: monitoring-query
+        query: "MATCH (m) RETURN m"
+        queryLanguage: Cypher
+        sources:
+          - source_id: monitoring-source
+    reactions: []
+"#;
+
+        let config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(config_yaml).expect("Failed to parse config");
+
+        // Verify multi-instance format was loaded correctly
+        assert_eq!(config.instances.len(), 2, "Should have 2 instances");
+        assert!(config.sources.is_empty(), "Root sources should be empty");
+        assert!(config.queries.is_empty(), "Root queries should be empty");
+        assert!(
+            config.reactions.is_empty(),
+            "Root reactions should be empty"
+        );
+
+        // Verify first instance
+        let analytics = &config.instances[0];
+        match &analytics.id {
+            ConfigValue::Static(id) => assert_eq!(id, "analytics"),
+            _ => panic!("Expected static id"),
+        }
+        assert!(
+            analytics.persist_index,
+            "analytics should have persist_index=true"
+        );
+        assert_eq!(analytics.sources.len(), 1);
+        assert_eq!(analytics.queries.len(), 1);
+        assert_eq!(analytics.reactions.len(), 1);
+
+        // Verify second instance
+        let monitoring = &config.instances[1];
+        match &monitoring.id {
+            ConfigValue::Static(id) => assert_eq!(id, "monitoring"),
+            _ => panic!("Expected static id"),
+        }
+        assert!(
+            !monitoring.persist_index,
+            "monitoring should have persist_index=false"
+        );
+        assert_eq!(monitoring.sources.len(), 1);
+        assert_eq!(monitoring.queries.len(), 1);
+        assert!(monitoring.reactions.is_empty());
+    }
+
+    // ==================== Source/Reaction Registration Tests ====================
+
+    #[tokio::test]
+    async fn test_source_reaction_registration_when_enabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false, // persistence ENABLED
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Register a source config
+        let source_config = SourceConfig::Mock {
+            id: "dynamic-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: crate::api::models::MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+        persistence
+            .register_source("test-server", source_config)
+            .await;
+
+        // Register a reaction config
+        let reaction_config = ReactionConfig::Log {
+            id: "dynamic-reaction".to_string(),
+            queries: vec!["test-query".to_string()],
+            auto_start: true,
+            config: crate::api::models::LogReactionConfigDto {
+                routes: std::collections::HashMap::new(),
+                default_template: None,
+            },
+        };
+        persistence
+            .register_reaction("test-server", reaction_config)
+            .await;
+
+        // Save and verify source/reaction configs are included
+        persistence.save().await.expect("Save failed");
+
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        // Single instance format - sources/reactions at root level
+        assert_eq!(
+            loaded_config.sources.len(),
+            1,
+            "Should have registered source"
+        );
+        assert_eq!(loaded_config.sources[0].id(), "dynamic-source");
+
+        assert_eq!(
+            loaded_config.reactions.len(),
+            1,
+            "Should have registered reaction"
+        );
+        assert_eq!(loaded_config.reactions[0].id(), "dynamic-reaction");
+    }
+
+    #[tokio::test]
+    async fn test_source_reaction_registration_skipped_when_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true, // persistence DISABLED
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Try to register a source config - should be skipped
+        let source_config = SourceConfig::Mock {
+            id: "dynamic-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: crate::api::models::MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+        persistence
+            .register_source("test-server", source_config)
+            .await;
+
+        // Try to register a reaction config - should be skipped
+        let reaction_config = ReactionConfig::Log {
+            id: "dynamic-reaction".to_string(),
+            queries: vec!["test-query".to_string()],
+            auto_start: true,
+            config: crate::api::models::LogReactionConfigDto {
+                routes: std::collections::HashMap::new(),
+                default_template: None,
+            },
+        };
+        persistence
+            .register_reaction("test-server", reaction_config)
+            .await;
+
+        // Verify internal maps are empty (registration was skipped)
+        let source_configs = persistence.source_configs.read().await;
+        assert!(
+            source_configs.is_empty(),
+            "Source configs should be empty when persistence disabled"
+        );
+
+        let reaction_configs = persistence.reaction_configs.read().await;
+        assert!(
+            reaction_configs.is_empty(),
+            "Reaction configs should be empty when persistence disabled"
+        );
+
+        // Save should also not write anything
+        persistence
+            .save()
+            .await
+            .expect("Save should succeed (no-op)");
+        assert!(
+            !config_path.exists(),
+            "File should not exist when persistence disabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unregister_skipped_when_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Start with some initial configs
+        let mut initial_sources = IndexMap::new();
+        let mut instance_sources = IndexMap::new();
+        instance_sources.insert(
+            "existing-source".to_string(),
+            SourceConfig::Mock {
+                id: "existing-source".to_string(),
+                auto_start: true,
+                bootstrap_provider: None,
+                config: crate::api::models::MockSourceConfigDto {
+                    data_type: ConfigValue::Static("generic".to_string()),
+                    interval_ms: ConfigValue::Static(1000),
+                },
+            },
+        );
+        initial_sources.insert("test-server".to_string(), instance_sources);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true, // persistence DISABLED
+            persist_settings,
+            initial_sources,
+            IndexMap::new(),
+        );
+
+        // Try to unregister - should be skipped because persistence is disabled
+        persistence
+            .unregister_source("test-server", "existing-source")
+            .await;
+
+        // The internal map should still have the source (unregister was skipped)
+        let source_configs = persistence.source_configs.read().await;
+        assert!(
+            source_configs.get("test-server").is_some(),
+            "Source should still exist because unregister was skipped"
+        );
+    }
+
+    // ==================== Persistence Enabled/Disabled Behavior Tests ====================
+
+    #[tokio::test]
+    async fn test_changes_persisted_when_enabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false, // persistence ENABLED
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // First save
+        persistence.save().await.expect("Save failed");
+
+        // Verify file exists and has content
+        assert!(config_path.exists(), "Config file should exist");
+        let content1 = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        assert!(content1.contains("host:"), "Config should contain host");
+        assert!(
+            content1.contains("test-query"),
+            "Config should contain query"
+        );
+
+        // Register a new source
+        let source_config = SourceConfig::Mock {
+            id: "new-source".to_string(),
+            auto_start: false,
+            bootstrap_provider: None,
+            config: crate::api::models::MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+        persistence
+            .register_source("test-server", source_config)
+            .await;
+
+        // Second save
+        persistence.save().await.expect("Second save failed");
+
+        // Verify new content includes the registered source
+        let content2 = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        assert!(
+            content2.contains("new-source"),
+            "Config should contain new source"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_changes_not_persisted_when_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create an initial config file
+        let initial_content = r#"
+host: localhost
+port: 9999
+log_level: warn
+"#;
+        std::fs::write(&config_path, initial_content).expect("Failed to create initial file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(), // Different from initial
+            8080,                    // Different from initial
+            "info".to_string(),      // Different from initial
+            true,                    // persistence DISABLED
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Try to save - should be skipped
+        persistence
+            .save()
+            .await
+            .expect("Save should succeed (no-op)");
+
+        // Verify original file is unchanged
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        assert!(
+            content.contains("port: 9999"),
+            "Original port should be preserved"
+        );
+        assert!(
+            content.contains("localhost"),
+            "Original host should be preserved"
+        );
+        assert!(
+            !content.contains("127.0.0.1"),
+            "New host should NOT be written"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_single_instance_format_preserved_after_changes() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        // Single instance
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            false,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Register some configs
+        let source_config = SourceConfig::Mock {
+            id: "added-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: crate::api::models::MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+        persistence
+            .register_source("test-server", source_config)
+            .await;
+
+        let reaction_config = ReactionConfig::Log {
+            id: "added-reaction".to_string(),
+            queries: vec!["test-query".to_string()],
+            auto_start: true,
+            config: crate::api::models::LogReactionConfigDto {
+                routes: std::collections::HashMap::new(),
+                default_template: None,
+            },
+        };
+        persistence
+            .register_reaction("test-server", reaction_config)
+            .await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Load and verify single-instance format is used
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        // Should be single-instance format
+        assert!(
+            loaded_config.instances.is_empty(),
+            "Should use single-instance format"
+        );
+        assert_eq!(loaded_config.sources.len(), 1, "Source at root level");
+        assert_eq!(loaded_config.queries.len(), 1, "Query at root level");
+        assert_eq!(loaded_config.reactions.len(), 1, "Reaction at root level");
+
+        // Verify content
+        assert_eq!(loaded_config.sources[0].id(), "added-source");
+        assert_eq!(loaded_config.queries[0].id, "test-query");
+        assert_eq!(loaded_config.reactions[0].id(), "added-reaction");
     }
 }

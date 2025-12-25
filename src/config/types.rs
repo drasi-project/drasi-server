@@ -15,12 +15,14 @@
 use anyhow::Result;
 use drasi_lib::config::QueryConfig;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
+use crate::api::mappings::DtoMapper;
 use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
 
 /// DrasiServer configuration
@@ -66,6 +68,9 @@ pub struct DrasiServerConfig {
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
     pub reactions: Vec<ReactionConfig>,
+    /// Optional list of DrasiLib instances when running in multi-tenant mode
+    #[serde(default)]
+    pub instances: Vec<DrasiLibInstanceConfig>,
 }
 
 impl Default for DrasiServerConfig {
@@ -82,6 +87,7 @@ impl Default for DrasiServerConfig {
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
+            instances: Vec::new(),
         }
     }
 }
@@ -108,6 +114,46 @@ fn default_disable_persistence() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+/// Configuration for a single DrasiLib instance (multi-instance mode)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrasiLibInstanceConfig {
+    /// Unique identifier for this DrasiLib instance
+    #[serde(default = "default_id")]
+    pub id: ConfigValue<String>,
+    /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
+    #[serde(default = "default_persist_index")]
+    pub persist_index: bool,
+    /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
+    /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_priority_queue_capacity: Option<ConfigValue<usize>>,
+    /// Default dispatch buffer capacity for sources and queries (default: 1000 if not specified)
+    /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Source configurations (parsed into plugin instances)
+    #[serde(default)]
+    pub sources: Vec<SourceConfig>,
+    /// Query configurations
+    #[serde(default)]
+    pub queries: Vec<QueryConfig>,
+    /// Reaction configurations (parsed into plugin instances)
+    #[serde(default)]
+    pub reactions: Vec<ReactionConfig>,
+}
+
+/// Resolved instance settings with ConfigValue evaluated
+#[derive(Debug, Clone)]
+pub struct ResolvedInstanceConfig {
+    pub id: String,
+    pub persist_index: bool,
+    pub default_priority_queue_capacity: Option<usize>,
+    pub default_dispatch_buffer_capacity: Option<usize>,
+    pub sources: Vec<SourceConfig>,
+    pub queries: Vec<QueryConfig>,
+    pub reactions: Vec<ReactionConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -148,13 +194,77 @@ fn is_valid_hostname(hostname: &str) -> bool {
 }
 
 impl DrasiServerConfig {
+    /// Resolve configured DrasiLib instances, supporting single-instance and multi-instance layout.
+    pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
+        let raw_instances: Vec<DrasiLibInstanceConfig> = if self.instances.is_empty() {
+            vec![DrasiLibInstanceConfig {
+                id: self.id.clone(),
+                persist_index: self.persist_index,
+                default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
+                default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
+                sources: self.sources.clone(),
+                queries: self.queries.clone(),
+                reactions: self.reactions.clone(),
+            }]
+        } else {
+            self.instances.clone()
+        };
+
+        let mut seen = HashSet::new();
+        let mut resolved = Vec::with_capacity(raw_instances.len());
+
+        for instance in raw_instances {
+            let id: String = mapper.resolve_typed(&instance.id)?;
+            if seen.contains(&id) {
+                return Err(anyhow::anyhow!(
+                    "Duplicate DrasiLib instance id detected: '{id}'"
+                ));
+            }
+            seen.insert(id.clone());
+
+            let default_priority_queue_capacity =
+                if let Some(capacity) = instance.default_priority_queue_capacity.as_ref() {
+                    Some(mapper.resolve_typed(capacity)?)
+                } else {
+                    None
+                };
+
+            let default_dispatch_buffer_capacity =
+                if let Some(capacity) = instance.default_dispatch_buffer_capacity.as_ref() {
+                    Some(mapper.resolve_typed(capacity)?)
+                } else {
+                    None
+                };
+
+            resolved.push(ResolvedInstanceConfig {
+                id,
+                persist_index: instance.persist_index,
+                default_priority_queue_capacity,
+                default_dispatch_buffer_capacity,
+                sources: instance.sources.clone(),
+                queries: instance.queries.clone(),
+                reactions: instance.reactions.clone(),
+            });
+        }
+
+        if resolved.is_empty() {
+            return Err(anyhow::anyhow!(
+                "At least one DrasiLib instance must be configured"
+            ));
+        }
+
+        Ok(resolved)
+    }
+
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
-        use crate::api::mappings::{map_server_settings, DtoMapper};
+        use crate::api::mappings::map_server_settings;
 
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
         let resolved_settings = map_server_settings(self, &mapper)?;
+        // Validate instance layout
+        let _ = self.resolved_instances(&mapper)?;
 
         if !resolved_settings.host.is_empty()
             && resolved_settings.host != "0.0.0.0"

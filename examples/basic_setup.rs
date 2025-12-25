@@ -67,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sources: vec![],                       // Add sources using SourceConfig enum
         reactions: vec![],                     // Add reactions using ReactionConfig enum
         queries: vec![available_drivers_query, pending_orders_query],
+        instances: vec![], // Empty = use legacy single-instance mode
     };
 
     // Save configuration to file
