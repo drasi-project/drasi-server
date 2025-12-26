@@ -29,8 +29,9 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::api::models::StateStoreConfig;
 use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
-use crate::factories::{create_reaction, create_source};
+use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use drasi_index_rocksdb::RocksDbIndexProvider;
@@ -108,6 +109,16 @@ impl DrasiServer {
                     false, // direct_io - use OS page cache
                 );
                 builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+            }
+
+            // Create and add state store provider if configured
+            if let Some(state_store_config) = &instance.state_store {
+                info!(
+                    "Configuring state store for instance '{}': {:?}",
+                    instance.id, state_store_config
+                );
+                let provider = create_state_store_provider(state_store_config, &instance.id)?;
+                builder = builder.with_state_store_provider(provider);
             }
 
             // Create and add sources from config
@@ -268,7 +279,7 @@ impl DrasiServer {
                 if !persistence_disabled {
                     // Extract source and reaction configs from the loaded config
                     let resolved_instances = config.resolved_instances(&mapper)?;
-                    let (initial_source_configs, initial_reaction_configs) =
+                    let (initial_source_configs, initial_reaction_configs, state_store_settings) =
                         Self::extract_component_configs(&resolved_instances);
 
                     // Persistence is enabled - create ConfigPersistence instance
@@ -280,6 +291,7 @@ impl DrasiServer {
                         resolved_settings.log_level,
                         false,
                         persist_settings.clone(),
+                        state_store_settings,
                         initial_source_configs,
                         initial_reaction_configs,
                     ));
@@ -406,16 +418,18 @@ impl DrasiServer {
         Ok(())
     }
 
-    /// Extract source and reaction configs from resolved instances for persistence initialization
+    /// Extract source, reaction, and state store configs from resolved instances for persistence initialization
     fn extract_component_configs(
         resolved_instances: &[ResolvedInstanceConfig],
     ) -> (
         IndexMap<String, IndexMap<String, SourceConfig>>,
         IndexMap<String, IndexMap<String, ReactionConfig>>,
+        IndexMap<String, Option<StateStoreConfig>>,
     ) {
         let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
         let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
             IndexMap::new();
+        let mut state_store_configs: IndexMap<String, Option<StateStoreConfig>> = IndexMap::new();
 
         for instance in resolved_instances {
             let mut sources = IndexMap::new();
@@ -429,8 +443,10 @@ impl DrasiServer {
                 reactions.insert(reaction.id().to_string(), reaction.clone());
             }
             reaction_configs.insert(instance.id.clone(), reactions);
+
+            state_store_configs.insert(instance.id.clone(), instance.state_store.clone());
         }
 
-        (source_configs, reaction_configs)
+        (source_configs, reaction_configs, state_store_configs)
     }
 }

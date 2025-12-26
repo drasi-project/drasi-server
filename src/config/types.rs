@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 // Import the config enums from api::models
 use crate::api::mappings::DtoMapper;
-use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
+use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// DrasiServer configuration
 ///
@@ -51,6 +51,10 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// State store configuration for plugin state persistence (optional - defaults to in-memory)
+    /// Example: `state_store: { kind: redb, path: ./data/state.redb }`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_store: Option<StateStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +86,7 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
             persist_index: false,
+            state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
             sources: Vec::new(),
@@ -125,6 +130,9 @@ pub struct DrasiLibInstanceConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// State store configuration for plugin state persistence (optional - defaults to in-memory)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_store: Option<StateStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -149,6 +157,7 @@ pub struct DrasiLibInstanceConfig {
 pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
+    pub state_store: Option<StateStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
     pub sources: Vec<SourceConfig>,
@@ -200,6 +209,7 @@ impl DrasiServerConfig {
             vec![DrasiLibInstanceConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
+                state_store: self.state_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
                 default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
                 sources: self.sources.clone(),
@@ -239,6 +249,7 @@ impl DrasiServerConfig {
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
+                state_store: instance.state_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 sources: instance.sources.clone(),
@@ -479,5 +490,160 @@ mod tests {
             content.contains("persist_index: true"),
             "Saved file should contain persist_index setting"
         );
+    }
+
+    // ==================== state_store tests ====================
+
+    #[test]
+    fn test_state_store_default_is_none() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            config.state_store.is_none(),
+            "state_store should default to None"
+        );
+    }
+
+    #[test]
+    fn test_state_store_deserialize_redb() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+              path: ./data/state.redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.state_store.is_some(),
+            "state_store should be Some when explicitly set"
+        );
+
+        if let Some(StateStoreConfig::Redb { path }) = &config.state_store {
+            assert_eq!(path, &Some("./data/state.redb".to_string()));
+        } else {
+            panic!("Expected Redb state store config");
+        }
+    }
+
+    #[test]
+    fn test_state_store_deserialize_redb_without_path() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.state_store.is_some(),
+            "state_store should be Some when explicitly set"
+        );
+
+        if let Some(StateStoreConfig::Redb { path }) = &config.state_store {
+            assert!(path.is_none(), "path should be None when not specified");
+        } else {
+            panic!("Expected Redb state store config");
+        }
+    }
+
+    #[test]
+    fn test_state_store_not_present() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.state_store.is_none(),
+            "state_store should be None when not specified"
+        );
+    }
+
+    #[test]
+    fn test_state_store_serialize() {
+        let config = DrasiServerConfig {
+            state_store: Some(StateStoreConfig::Redb {
+                path: Some("./data/mystate.redb".to_string()),
+            }),
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(
+            yaml.contains("state_store"),
+            "Serialized config should contain state_store"
+        );
+        assert!(
+            yaml.contains("redb"),
+            "Serialized config should contain redb kind"
+        );
+        assert!(
+            yaml.contains("mystate.redb"),
+            "Serialized config should contain path"
+        );
+    }
+
+    #[test]
+    fn test_state_store_in_instance_config() {
+        let yaml = r#"
+            host: 0.0.0.0
+            port: 8080
+            instances:
+              - id: instance-1
+                state_store:
+                  kind: redb
+                  path: ./data/instance1/state.redb
+              - id: instance-2
+                persist_index: true
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.instances.len(), 2);
+
+        // First instance has state_store
+        if let Some(StateStoreConfig::Redb { path }) = &config.instances[0].state_store {
+            assert_eq!(path, &Some("./data/instance1/state.redb".to_string()));
+        } else {
+            panic!("Expected first instance to have Redb state store config");
+        }
+
+        // Second instance has no state_store
+        assert!(
+            config.instances[1].state_store.is_none(),
+            "Second instance should not have state_store"
+        );
+    }
+
+    #[test]
+    fn test_resolved_instances_includes_state_store() {
+        let yaml = r#"
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+              path: ./data/state.redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let mapper = DtoMapper::new();
+        let resolved = config.resolved_instances(&mapper).unwrap();
+
+        assert_eq!(resolved.len(), 1);
+        assert!(
+            resolved[0].state_store.is_some(),
+            "Resolved instance should have state_store"
+        );
+
+        if let Some(StateStoreConfig::Redb { path }) = &resolved[0].state_store {
+            assert_eq!(path, &Some("./data/state.redb".to_string()));
+        } else {
+            panic!("Expected Redb state store config in resolved instance");
+        }
     }
 }

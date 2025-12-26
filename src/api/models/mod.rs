@@ -83,6 +83,31 @@ fn default_true() -> bool {
     true
 }
 
+/// State store configuration with kind discriminator.
+///
+/// Uses serde tagged enum to automatically deserialize into the correct
+/// state store provider configuration based on the `kind` field.
+///
+/// # Example YAML
+///
+/// ```yaml
+/// state_store:
+///   kind: redb
+///   path: ./data/state.redb
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind")]
+pub enum StateStoreConfig {
+    /// Redb-based persistent state store
+    #[serde(rename = "redb")]
+    Redb {
+        /// Path to the redb database file (relative or absolute)
+        /// Defaults to "./data/{instance_id}/state.redb" if not specified
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
+}
+
 /// Source configuration with kind discriminator.
 ///
 /// Uses serde tagged enum to automatically deserialize into the correct
@@ -338,5 +363,92 @@ impl ReactionConfig {
             ReactionConfig::Platform { auto_start, .. } => *auto_start,
             ReactionConfig::Profiler { auto_start, .. } => *auto_start,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== StateStoreConfig tests ====================
+
+    #[test]
+    fn test_state_store_config_redb_with_path() {
+        let config = StateStoreConfig::Redb {
+            path: Some("./data/state.redb".to_string()),
+        };
+
+        // Test serialization
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(yaml.contains("kind: redb"));
+        assert!(yaml.contains("./data/state.redb"));
+
+        // Test deserialization
+        let deserialized: StateStoreConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_state_store_config_redb_without_path() {
+        let config = StateStoreConfig::Redb { path: None };
+
+        // Test serialization - path should be omitted
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(yaml.contains("kind: redb"));
+        assert!(!yaml.contains("path:"));
+
+        // Test deserialization
+        let deserialized: StateStoreConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_state_store_config_deserialize_from_yaml() {
+        let yaml = r#"
+            kind: redb
+            path: /var/lib/drasi/state.redb
+        "#;
+
+        let config: StateStoreConfig = serde_yaml::from_str(yaml).unwrap();
+
+        match config {
+            StateStoreConfig::Redb { path } => {
+                assert_eq!(path, Some("/var/lib/drasi/state.redb".to_string()));
+            }
+        }
+    }
+
+    #[test]
+    fn test_state_store_config_deserialize_minimal() {
+        let yaml = "kind: redb";
+
+        let config: StateStoreConfig = serde_yaml::from_str(yaml).unwrap();
+
+        match config {
+            StateStoreConfig::Redb { path } => {
+                assert!(path.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn test_state_store_config_clone() {
+        let config = StateStoreConfig::Redb {
+            path: Some("./state.redb".to_string()),
+        };
+
+        let cloned = config.clone();
+        assert_eq!(config, cloned);
+    }
+
+    #[test]
+    fn test_state_store_config_debug() {
+        let config = StateStoreConfig::Redb {
+            path: Some("./state.redb".to_string()),
+        };
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("Redb"));
+        assert!(debug_str.contains("state.redb"));
     }
 }

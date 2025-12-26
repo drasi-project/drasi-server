@@ -42,18 +42,13 @@ pub struct PostgresSourceConfigDto {
     pub table_keys: Vec<TableKeyConfigDto>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SslModeDto {
     Disable,
+    #[default]
     Prefer,
     Require,
-}
-
-impl Default for SslModeDto {
-    fn default() -> Self {
-        Self::Prefer
-    }
 }
 
 impl FromStr for SslModeDto {

@@ -67,6 +67,7 @@ pub fn build_config(
         log_level: ConfigValue::Static(server_settings.log_level),
         disable_persistence: false,
         persist_index: server_settings.persist_index,
+        state_store: None, // Use in-memory state store by default
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::ConfigValue;
+use crate::api::models::{ConfigValue, StateStoreConfig};
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -33,6 +33,7 @@ pub struct ConfigPersistence {
     log_level: String,
     disable_persistence: bool,
     persist_settings: IndexMap<String, bool>,
+    state_store_settings: IndexMap<String, Option<StateStoreConfig>>,
     /// Source configs by instance_id -> source_id -> config
     source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
     /// Reaction configs by instance_id -> reaction_id -> config
@@ -50,6 +51,7 @@ impl ConfigPersistence {
         log_level: String,
         disable_persistence: bool,
         persist_settings: IndexMap<String, bool>,
+        state_store_settings: IndexMap<String, Option<StateStoreConfig>>,
         initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
         initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
     ) -> Self {
@@ -61,6 +63,7 @@ impl ConfigPersistence {
             log_level,
             disable_persistence,
             persist_settings,
+            state_store_settings,
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
         }
@@ -139,6 +142,7 @@ impl ConfigPersistence {
             })?;
 
             let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
+            let state_store = self.state_store_settings.get(id).cloned().flatten();
 
             // Get source and reaction configs for this instance
             let sources: Vec<SourceConfig> = source_configs
@@ -153,6 +157,7 @@ impl ConfigPersistence {
             instance_configs.push(DrasiLibInstanceConfig {
                 id: ConfigValue::Static(lib_config.id.clone()),
                 persist_index,
+                state_store,
                 default_priority_queue_capacity: lib_config
                     .priority_queue_capacity
                     .map(ConfigValue::Static),
@@ -176,6 +181,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 disable_persistence: self.disable_persistence,
                 persist_index: instance.persist_index,
+                state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
                 sources: instance.sources,
@@ -200,6 +206,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 disable_persistence: self.disable_persistence,
                 persist_index: false, // Per-instance setting in multi-instance mode
+                state_store: None,    // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 sources: Vec::new(),
@@ -382,6 +389,7 @@ mod tests {
             "info".to_string(),
             false,
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -442,6 +450,7 @@ mod tests {
             "info".to_string(),
             true, // disable_persistence = true
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -475,6 +484,7 @@ mod tests {
             "info".to_string(),
             false,
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -515,6 +525,7 @@ mod tests {
             "info".to_string(),
             false,
             persist_settings.clone(),
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -534,6 +545,7 @@ mod tests {
             "info".to_string(),
             false,
             IndexMap::new(),
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -594,6 +606,7 @@ mod tests {
             "debug".to_string(),
             false,
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -822,6 +835,7 @@ instances:
             "info".to_string(),
             false, // persistence ENABLED
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -896,6 +910,7 @@ instances:
             "info".to_string(),
             true, // persistence DISABLED
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -988,6 +1003,7 @@ instances:
             "info".to_string(),
             true, // persistence DISABLED
             persist_settings,
+            IndexMap::new(), // state_store_settings
             initial_sources,
             IndexMap::new(),
         );
@@ -1027,6 +1043,7 @@ instances:
             "info".to_string(),
             false, // persistence ENABLED
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -1095,6 +1112,7 @@ log_level: warn
             "info".to_string(),      // Different from initial
             true,                    // persistence DISABLED
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -1142,6 +1160,7 @@ log_level: warn
             "info".to_string(),
             false,
             persist_settings,
+            IndexMap::new(), // state_store_settings
             IndexMap::new(),
             IndexMap::new(),
         );

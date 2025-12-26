@@ -19,8 +19,10 @@
 
 use anyhow::Result;
 use drasi_lib::bootstrap::BootstrapProviderConfig;
-use drasi_lib::plugin_core::{Reaction, Source};
+use drasi_lib::plugin_core::{Reaction, Source, StateStoreProvider};
 use log::info;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::api::mappings::{
     ConfigMapper,
@@ -41,7 +43,69 @@ use crate::api::mappings::{
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
 };
+use crate::api::models::StateStoreConfig;
 use crate::config::{ReactionConfig, SourceConfig};
+
+/// Create a state store provider from configuration.
+///
+/// This function matches on the state store config variant and creates the appropriate
+/// provider. Currently supports:
+/// - `redb` - Redb-based persistent state store
+///
+/// # Arguments
+///
+/// * `config` - The state store configuration
+/// * `instance_id` - The DrasiLib instance ID (used for default path generation)
+///
+/// # Returns
+///
+/// An Arc-wrapped StateStoreProvider trait object
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use drasi_server::factories::create_state_store_provider;
+/// use drasi_server::api::models::StateStoreConfig;
+///
+/// let config = StateStoreConfig::Redb { path: Some("./data/state.redb".to_string()) };
+/// let provider = create_state_store_provider(&config, "my-instance")?;
+/// ```
+pub fn create_state_store_provider(
+    config: &StateStoreConfig,
+    instance_id: &str,
+) -> Result<Arc<dyn StateStoreProvider>> {
+    match config {
+        StateStoreConfig::Redb { path } => {
+            use drasi_state_store_redb::RedbStateStoreProvider;
+
+            // Use provided path or generate default based on instance_id
+            let store_path = path.clone().unwrap_or_else(|| {
+                let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+                format!("./data/{safe_id}/state.redb")
+            });
+
+            // Ensure parent directory exists
+            if let Some(parent) = PathBuf::from(&store_path).parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to create state store directory '{}': {e}",
+                        parent.display()
+                    )
+                })?;
+            }
+
+            info!(
+                "Creating Redb state store provider at: {store_path} for instance '{instance_id}'"
+            );
+
+            let provider = RedbStateStoreProvider::new(&store_path).map_err(|e| {
+                anyhow::anyhow!("Failed to create Redb state store provider at '{store_path}': {e}")
+            })?;
+
+            Ok(Arc::new(provider))
+        }
+    }
+}
 
 /// Create a source instance from a SourceConfig.
 ///
