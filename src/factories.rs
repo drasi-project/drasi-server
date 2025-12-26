@@ -20,6 +20,7 @@
 use anyhow::Result;
 use drasi_lib::bootstrap::BootstrapProviderConfig;
 use drasi_lib::plugin_core::{Reaction, Source, StateStoreProvider};
+use drasi_state_store_redb::RedbStateStoreProvider;
 use log::info;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,6 +46,18 @@ use crate::api::mappings::{
 };
 use crate::api::models::StateStoreConfig;
 use crate::config::{ReactionConfig, SourceConfig};
+
+/// Sanitize an instance ID for use in file paths.
+///
+/// This prevents directory traversal attacks by replacing dangerous characters.
+/// Uses the same sanitization pattern as persist_index path generation.
+fn sanitize_instance_id(id: &str) -> String {
+    id.replace(['/', '\\', '\0'], "_")
+        .replace("..", "_")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect()
+}
 
 /// Create a state store provider from configuration.
 ///
@@ -76,11 +89,9 @@ pub fn create_state_store_provider(
 ) -> Result<Arc<dyn StateStoreProvider>> {
     match config {
         StateStoreConfig::Redb { path } => {
-            use drasi_state_store_redb::RedbStateStoreProvider;
-
             // Use provided path or generate default based on instance_id
             let store_path = path.clone().unwrap_or_else(|| {
-                let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+                let safe_id = sanitize_instance_id(instance_id);
                 format!("./data/{safe_id}/state.redb")
             });
 
@@ -455,5 +466,47 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                     .build()?,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_instance_id_normal() {
+        assert_eq!(sanitize_instance_id("my-instance"), "my-instance");
+        assert_eq!(sanitize_instance_id("instance_123"), "instance_123");
+    }
+
+    #[test]
+    fn test_sanitize_instance_id_path_traversal() {
+        // "../etc/passwd" -> replace `/` with `_` -> ".._etc_passwd" -> replace ".." with "_" -> "__etc_passwd"
+        assert_eq!(sanitize_instance_id("../etc/passwd"), "__etc_passwd");
+        assert_eq!(
+            sanitize_instance_id("..\\windows\\system32"),
+            "__windows_system32"
+        );
+        // "foo/../bar" -> replace `/` with `_` -> "foo_.._bar" -> replace ".." with "_" -> "foo___bar"
+        assert_eq!(sanitize_instance_id("foo/../bar"), "foo___bar");
+    }
+
+    #[test]
+    fn test_sanitize_instance_id_slashes() {
+        assert_eq!(sanitize_instance_id("foo/bar"), "foo_bar");
+        assert_eq!(sanitize_instance_id("foo\\bar"), "foo_bar");
+        assert_eq!(sanitize_instance_id("foo/bar\\baz"), "foo_bar_baz");
+    }
+
+    #[test]
+    fn test_sanitize_instance_id_control_chars() {
+        assert_eq!(sanitize_instance_id("foo\0bar"), "foo_bar");
+        assert_eq!(sanitize_instance_id("foo\nbar"), "foobar");
+        assert_eq!(sanitize_instance_id("foo\tbar"), "foobar");
+    }
+
+    #[test]
+    fn test_sanitize_instance_id_empty() {
+        assert_eq!(sanitize_instance_id(""), "");
     }
 }
