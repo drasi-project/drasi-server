@@ -20,11 +20,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
-use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::QuerySubscriber;
-use drasi_lib::plugin_core::Reaction as ReactionTrait;
-use drasi_lib::plugin_core::Source as SourceTrait;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
 use drasi_lib::Query;
+use drasi_lib::Reaction as ReactionTrait;
+use drasi_lib::Source as SourceTrait;
 use drasi_server::DrasiLib;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
@@ -95,7 +95,7 @@ impl SourceTrait for MockSource {
         self
     }
 
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+    async fn initialize(&self, _context: SourceRuntimeContext) {
         // No-op for testing
     }
 }
@@ -135,7 +135,7 @@ impl ReactionTrait for MockReaction {
         self.queries.clone()
     }
 
-    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+    async fn initialize(&self, _context: ReactionRuntimeContext) {
         // No-op for testing
     }
 
@@ -151,10 +151,6 @@ impl ReactionTrait for MockReaction {
 
     async fn status(&self) -> ComponentStatus {
         self.status.read().await.clone()
-    }
-
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
-        // No-op for testing
     }
 }
 

@@ -19,7 +19,7 @@
 
 use anyhow::Result;
 use drasi_lib::bootstrap::BootstrapProviderConfig;
-use drasi_lib::plugin_core::{Reaction, Source};
+use drasi_lib::{Reaction, Source};
 use log::info;
 
 use crate::api::mappings::{

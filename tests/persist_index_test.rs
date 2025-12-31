@@ -22,8 +22,8 @@
 
 use anyhow::Result;
 use drasi_index_rocksdb::RocksDbIndexProvider;
-use drasi_lib::plugin_core::IndexBackendPlugin;
 use drasi_lib::DrasiLib;
+use drasi_lib::IndexBackendPlugin;
 use drasi_server::DrasiServerConfig;
 use std::sync::Arc;
 use tempfile::TempDir;
