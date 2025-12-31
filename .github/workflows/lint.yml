@@ -32,8 +32,10 @@ jobs:
 
       - name: Debug Rust version
         run: |
+          echo "=== Variable Debug ==="
           echo "vars.RUST_VERSION = '${{ vars.RUST_VERSION }}'"
-          echo "Length: ${#RUST_VERSION}"
+          echo "Raw expression: ${{ vars.RUST_VERSION }}"
+          echo "All vars context: ${{ toJSON(vars) }}"
 
       - name: Install specific Rust version
         run: |
