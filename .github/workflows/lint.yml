@@ -32,8 +32,8 @@ jobs:
 
       - name: Install specific Rust version
         run: |
-          rustup update ${{ vars.RUST_VERSION || 'stable' }}
-          rustup default ${{ vars.RUST_VERSION || 'stable' }}
+          rustup update ${{ vars.RUST_VERSION }}
+          rustup default ${{ vars.RUST_VERSION }}
           rustup component add rustfmt
 
       - name: Check formatting
@@ -56,8 +56,8 @@ jobs:
 
       - name: Install specific Rust version
         run: |
-          rustup update ${{ vars.RUST_VERSION || 'stable' }}
-          rustup default ${{ vars.RUST_VERSION || 'stable' }}
+          rustup update ${{ vars.RUST_VERSION }}
+          rustup default ${{ vars.RUST_VERSION }}
           rustup component add clippy
 
       - name: Run clippy

@@ -35,8 +35,8 @@ jobs:
 
       - name: Install specific Rust version
         run: |
-          rustup update ${{ vars.RUST_VERSION || 'stable' }}
-          rustup default ${{ vars.RUST_VERSION || 'stable' }}
+          rustup update ${{ vars.RUST_VERSION }}
+          rustup default ${{ vars.RUST_VERSION }}
 
       - name: Run tests
         run: make test
