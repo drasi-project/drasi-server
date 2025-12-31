@@ -30,6 +30,11 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
 
+      - name: Debug Rust version
+        run: |
+          echo "vars.RUST_VERSION = '${{ vars.RUST_VERSION }}'"
+          echo "Length: ${#RUST_VERSION}"
+
       - name: Install specific Rust version
         run: |
           rustup update ${{ vars.RUST_VERSION }}
