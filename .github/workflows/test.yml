@@ -33,10 +33,8 @@ jobs:
       - name: Set JQ_LIB_DIR
         run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
 
-      - name: Install specific Rust version
-        run: |
-          rustup update ${{ vars.RUST_VERSION }}
-          rustup default ${{ vars.RUST_VERSION }}
+      - name: Install Rust toolchain
+        run: rustup show
 
       - name: Run tests
         run: make test
