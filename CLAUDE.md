@@ -35,6 +35,11 @@ This repository contains only the server wrapper functionality:
 
 1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiLib
 2. **API** (`src/api/`) - REST API implementation with OpenAPI documentation
+   - `v1/` - API version 1 handlers, routes, and OpenAPI spec
+   - `shared/` - Common handlers, error types, and response types shared across versions
+   - `version.rs` - API version constants and utilities
+   - `models/` - Data Transfer Objects (DTOs)
+   - `mappings/` - DTO to domain model conversions
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 
@@ -146,7 +151,7 @@ instances:
     reactions: []
 ```
 
-The REST API is exposed under `/instances/{instanceId}/...` for multi-instance access; the first configured instance also remains available on the legacy root routes for backward compatibility.
+The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-instance access; the first configured instance is also accessible via convenience routes at `/api/v1/sources`, `/api/v1/queries`, and `/api/v1/reactions`.
 
 **Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
 
@@ -238,19 +243,52 @@ server.run().await?;
 
 ## API Endpoints
 
-The server exposes a REST API on port 8080 by default:
+The server exposes a versioned REST API on port 8080 by default. All API endpoints use URL-based versioning with the `/api/v1/` prefix.
 
-- `GET /health` - Health check
-- `GET /openapi.json` - OpenAPI specification
-- `GET /swagger-ui/` - Interactive API documentation
+### API Versioning
 
-Component management:
-- `GET/POST /api/sources` - Source CRUD operations
-- `GET/POST /api/queries` - Query CRUD operations  
-- `GET/POST /api/reactions` - Reaction CRUD operations
-- `POST /api/{component}/{id}/start` - Start component
-- `POST /api/{component}/{id}/stop` - Stop component
-- `GET /api/queries/{id}/results` - Get query results
+- `GET /health` - Health check (unversioned operational endpoint)
+- `GET /api/versions` - List available API versions
+- `GET /api/v1/openapi.json` - OpenAPI specification for v1
+- `GET /api/v1/docs/` - Interactive Swagger UI documentation
+
+### Instance Management
+
+- `GET /api/v1/instances` - List all DrasiLib instances
+
+### Component Management (Instance-Specific)
+
+Sources:
+- `GET /api/v1/instances/{instanceId}/sources` - List sources
+- `POST /api/v1/instances/{instanceId}/sources` - Create source
+- `GET /api/v1/instances/{instanceId}/sources/{id}` - Get source status
+- `DELETE /api/v1/instances/{instanceId}/sources/{id}` - Delete source
+- `POST /api/v1/instances/{instanceId}/sources/{id}/start` - Start source
+- `POST /api/v1/instances/{instanceId}/sources/{id}/stop` - Stop source
+
+Queries:
+- `GET /api/v1/instances/{instanceId}/queries` - List queries
+- `POST /api/v1/instances/{instanceId}/queries` - Create query
+- `GET /api/v1/instances/{instanceId}/queries/{id}` - Get query config
+- `DELETE /api/v1/instances/{instanceId}/queries/{id}` - Delete query
+- `POST /api/v1/instances/{instanceId}/queries/{id}/start` - Start query
+- `POST /api/v1/instances/{instanceId}/queries/{id}/stop` - Stop query
+- `GET /api/v1/instances/{instanceId}/queries/{id}/results` - Get query results
+
+Reactions:
+- `GET /api/v1/instances/{instanceId}/reactions` - List reactions
+- `POST /api/v1/instances/{instanceId}/reactions` - Create reaction
+- `GET /api/v1/instances/{instanceId}/reactions/{id}` - Get reaction status
+- `DELETE /api/v1/instances/{instanceId}/reactions/{id}` - Delete reaction
+- `POST /api/v1/instances/{instanceId}/reactions/{id}/start` - Start reaction
+- `POST /api/v1/instances/{instanceId}/reactions/{id}/stop` - Stop reaction
+
+### Convenience Routes (First Instance)
+
+For convenience, the first configured instance is accessible via shortened routes:
+- `GET/POST /api/v1/sources` - Sources of the first instance
+- `GET/POST /api/v1/queries` - Queries of the first instance
+- `GET/POST /api/v1/reactions` - Reactions of the first instance
 
 ## Important Patterns
 

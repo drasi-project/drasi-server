@@ -7,7 +7,7 @@
 
 use drasi_lib::channels::ComponentStatus;
 use drasi_lib::QueryConfig;
-use drasi_server::api::handlers::ApiResponse;
+use drasi_server::api::ApiResponse;
 use serde_json::json;
 
 #[cfg(test)]

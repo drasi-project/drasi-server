@@ -21,18 +21,18 @@
 @reaction_id = all
 
 ### GET LIST of all reactions
-GET http://{{hostname}}:{{port}}/reactions
+GET http://{{hostname}}:{{port}}/api/v1/reactions
 
 ### GET STATE of a specific reaction
-GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}
+GET http://{{hostname}}:{{port}}/api/v1/reactions/{{reaction_id}}
 
 ### GET RESULTS of a specific reaction
-GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/results
+GET http://{{hostname}}:{{port}}/api/v1/reactions/{{reaction_id}}/results
 
 ### START a specific reaction
-GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/start
+POST http://{{hostname}}:{{port}}/api/v1/reactions/{{reaction_id}}/start
 Content-Type: application/json
 
 ### STOP a specific reaction
-GET http://{{hostname}}:{{port}}/reactions/{{reaction_id}}/stop
+POST http://{{hostname}}:{{port}}/api/v1/reactions/{{reaction_id}}/stop
 Content-Type: application/json

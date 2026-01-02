@@ -142,16 +142,17 @@ Web UI Updates (Real-time)
 The playground interacts with Drasi Server through these endpoints:
 
 - `GET /health` - Health check
-- `GET /sources` - List all sources
-- `POST /sources` - Create a new source
-- `DELETE /sources/{id}` - Delete a source
-- `POST /sources/{id}/events` - Inject data into source
-- `GET /queries` - List all queries
-- `POST /queries` - Create a new query
-- `DELETE /queries/{id}` - Delete a query
-- `GET /queries/{id}/results` - Get query results
-- `GET /reactions` - List all reactions
-- `POST /reactions` - Create a new reaction
+- `GET /api/versions` - List available API versions
+- `GET /api/v1/sources` - List all sources
+- `POST /api/v1/sources` - Create a new source
+- `DELETE /api/v1/sources/{id}` - Delete a source
+- `POST /sources/{id}/events` - Inject data into source (direct to HTTP source port)
+- `GET /api/v1/queries` - List all queries
+- `POST /api/v1/queries` - Create a new query
+- `DELETE /api/v1/queries/{id}` - Delete a query
+- `GET /api/v1/queries/{id}/results` - Get query results
+- `GET /api/v1/reactions` - List all reactions
+- `POST /api/v1/reactions` - Create a new reaction
 
 ## Troubleshooting
 

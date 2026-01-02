@@ -13,11 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use axum::{
-    extract::Extension,
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::get, Router};
 use indexmap::IndexMap;
 use log::{error, info, warn};
 use std::fs::OpenOptions;
@@ -326,74 +322,32 @@ impl DrasiServer {
         instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
-        // Create OpenAPI documentation
-        let openapi = api::ApiDoc::openapi();
-        let mut app = Router::new()
+        // Create OpenAPI documentation for v1
+        let openapi_v1 = api::ApiDocV1::openapi();
+
+        // Build the v1 API router
+        let v1_router = api::build_v1_router(
+            instances.clone(),
+            self.read_only.clone(),
+            config_persistence.clone(),
+        );
+
+        // Build the main application router
+        let app = Router::new()
+            // Health check at root level (operational endpoint, not versioned)
             .route("/health", get(api::health_check))
-            .route("/instances", get(api::list_instances));
-
-        let build_instance_router = |core: Arc<DrasiLib>,
-                                     read_only: Arc<bool>,
-                                     config_persistence: Option<Arc<ConfigPersistence>>,
-                                     instance_id: String| {
-            Router::new()
-                .route("/sources", get(api::list_sources))
-                .route("/sources", post(api::create_source_handler))
-                .route("/sources/:id", get(api::get_source))
-                .route("/sources/:id", axum::routing::delete(api::delete_source))
-                .route("/sources/:id/start", post(api::start_source))
-                .route("/sources/:id/stop", post(api::stop_source))
-                .route("/queries", get(api::list_queries))
-                .route("/queries", post(api::create_query))
-                .route("/queries/:id", get(api::get_query))
-                .route("/queries/:id", axum::routing::delete(api::delete_query))
-                .route("/queries/:id/start", post(api::start_query))
-                .route("/queries/:id/stop", post(api::stop_query))
-                .route("/queries/:id/results", get(api::get_query_results))
-                .route("/reactions", get(api::list_reactions))
-                .route("/reactions", post(api::create_reaction_handler))
-                .route("/reactions/:id", get(api::get_reaction))
-                .route(
-                    "/reactions/:id",
-                    axum::routing::delete(api::delete_reaction),
-                )
-                .route("/reactions/:id/start", post(api::start_reaction))
-                .route("/reactions/:id/stop", post(api::stop_reaction))
-                .layer(Extension(core))
-                .layer(Extension(read_only))
-                .layer(Extension(config_persistence))
-                .layer(Extension(instance_id))
-        };
-
-        for (instance_id, core) in instances.iter() {
-            let instance_router = build_instance_router(
-                core.clone(),
-                self.read_only.clone(),
-                config_persistence.clone(),
-                instance_id.clone(),
-            );
-            app = app.nest(&format!("/instances/{instance_id}"), instance_router);
-        }
-
-        // Backward compatibility: expose the first instance on root paths
-        if let Some((instance_id, core)) = instances.iter().next() {
-            let default_router = build_instance_router(
-                core.clone(),
-                self.read_only.clone(),
-                config_persistence.clone(),
-                instance_id.clone(),
-            );
-            app = app.merge(default_router);
-        }
-
-        app = app
-            .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi.clone()))
-            .layer(CorsLayer::permissive())
-            .layer(Extension(instances));
+            // API versions endpoint
+            .route("/api/versions", get(api::list_api_versions))
+            // Nest v1 API under /api/v1
+            .nest("/api/v1", v1_router)
+            // Swagger UI and OpenAPI spec for v1
+            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()))
+            .layer(CorsLayer::permissive());
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");
-        info!("Swagger UI available at http://{addr}/docs/");
+        info!("API v1 available at http://{addr}/api/v1/");
+        info!("Swagger UI available at http://{addr}/api/v1/docs/");
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 

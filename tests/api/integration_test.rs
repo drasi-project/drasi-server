@@ -15,6 +15,7 @@ use axum::{
 };
 use drasi_lib::Query;
 use drasi_server::api;
+use drasi_server::api::shared::handlers;
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -56,71 +57,62 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
 
     let instance_router = Router::new()
         // Source endpoints
-        .route("/sources", axum::routing::get(api::handlers::list_sources))
+        .route("/sources", axum::routing::get(handlers::list_sources))
         .route(
             "/sources",
-            axum::routing::post(api::handlers::create_source_handler),
+            axum::routing::post(handlers::create_source_handler),
         )
+        .route("/sources/:id", axum::routing::get(handlers::get_source))
         .route(
             "/sources/:id",
-            axum::routing::get(api::handlers::get_source),
-        )
-        .route(
-            "/sources/:id",
-            axum::routing::delete(api::handlers::delete_source),
+            axum::routing::delete(handlers::delete_source),
         )
         .route(
             "/sources/:id/start",
-            axum::routing::post(api::handlers::start_source),
+            axum::routing::post(handlers::start_source),
         )
         .route(
             "/sources/:id/stop",
-            axum::routing::post(api::handlers::stop_source),
+            axum::routing::post(handlers::stop_source),
         )
         // Query endpoints
-        .route("/queries", axum::routing::get(api::handlers::list_queries))
-        .route("/queries", axum::routing::post(api::handlers::create_query))
-        .route("/queries/:id", axum::routing::get(api::handlers::get_query))
+        .route("/queries", axum::routing::get(handlers::list_queries))
+        .route("/queries", axum::routing::post(handlers::create_query))
+        .route("/queries/:id", axum::routing::get(handlers::get_query))
         .route(
             "/queries/:id",
-            axum::routing::delete(api::handlers::delete_query),
+            axum::routing::delete(handlers::delete_query),
         )
         .route(
             "/queries/:id/start",
-            axum::routing::post(api::handlers::start_query),
+            axum::routing::post(handlers::start_query),
         )
         .route(
             "/queries/:id/stop",
-            axum::routing::post(api::handlers::stop_query),
+            axum::routing::post(handlers::stop_query),
         )
         .route(
             "/queries/:id/results",
-            axum::routing::get(api::handlers::get_query_results),
+            axum::routing::get(handlers::get_query_results),
         )
         // Reaction endpoints
+        .route("/reactions", axum::routing::get(handlers::list_reactions))
         .route(
             "/reactions",
-            axum::routing::get(api::handlers::list_reactions),
+            axum::routing::post(handlers::create_reaction_handler),
         )
-        .route(
-            "/reactions",
-            axum::routing::post(api::handlers::create_reaction_handler),
-        )
+        .route("/reactions/:id", axum::routing::get(handlers::get_reaction))
         .route(
             "/reactions/:id",
-            axum::routing::get(api::handlers::get_reaction),
-        )
-        .route(
-            "/reactions/:id",
-            axum::routing::delete(api::handlers::delete_reaction),
+            axum::routing::delete(handlers::delete_reaction),
         )
         .route(
             "/reactions/:id/start",
-            axum::routing::post(api::handlers::start_reaction),
+            axum::routing::post(handlers::start_reaction),
         )
         .route(
             "/reactions/:id/stop",
-            axum::routing::post(api::handlers::stop_reaction),
+            axum::routing::post(handlers::stop_reaction),
         )
         // Add extensions using new architecture
         .layer(Extension(core.clone()))
@@ -135,11 +127,8 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
 
     let router = Router::new()
         // Health endpoint
-        .route("/health", axum::routing::get(api::handlers::health_check))
-        .route(
-            "/instances",
-            axum::routing::get(api::handlers::list_instances),
-        )
+        .route("/health", axum::routing::get(handlers::health_check))
+        .route("/instances", axum::routing::get(handlers::list_instances))
         .nest(&format!("/instances/{instance_id}"), instance_router)
         .layer(Extension(instances));
 
