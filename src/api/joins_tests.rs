@@ -15,7 +15,7 @@
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
-    use crate::api::handlers::*;
+    use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};
     use drasi_lib::{

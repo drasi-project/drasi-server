@@ -5,7 +5,7 @@ use drasi_lib::{
     config::{QueryJoinConfig, QueryJoinKeyConfig},
     DrasiLib, Query, QueryConfig,
 };
-use drasi_server::api::handlers::create_query;
+use drasi_server::api::shared::handlers::create_query;
 use std::sync::Arc;
 
 // Helper to build a minimal QueryConfig with joins

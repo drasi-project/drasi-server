@@ -84,17 +84,20 @@ cargo run
 # Check health
 curl http://localhost:8080/health
 
+# List available API versions
+curl http://localhost:8080/api/versions
+
 # View API documentation
-open http://localhost:8080/swagger-ui/
+open http://localhost:8080/api/v1/docs/
 
 # List configured instances
-curl http://localhost:8080/instances
+curl http://localhost:8080/api/v1/instances
 
 # List running queries (default instance)
-curl http://localhost:8080/queries
+curl http://localhost:8080/api/v1/queries
 
 # List queries for a specific instance
-curl http://localhost:8080/instances/{instanceId}/queries
+curl http://localhost:8080/api/v1/instances/{instanceId}/queries
 ```
 
 ### CLI Commands
@@ -722,8 +725,8 @@ instances:
 **Key differences in multi-instance mode:**
 - Each instance has its own isolated namespace for sources, queries, and reactions
 - Component IDs only need to be unique within their instance
-- API routes use `/instances/{instanceId}/...` prefix (see [REST API](#rest-api) section)
-- The first instance is also accessible via simple root-level routes (`/sources`, `/queries`, `/reactions`) for convenience
+- API routes use `/api/v1/instances/{instanceId}/...` prefix (see [REST API](#rest-api) section)
+- The first instance is also accessible via convenience routes (`/api/v1/sources`, `/api/v1/queries`, `/api/v1/reactions`)
 
 **Dynamic configuration:**
 Both single-instance and multi-instance configurations can be modified at runtime using the REST API. Create, delete, and manage sources, queries, and reactions dynamically. When `disable_persistence: false` (the default), changes are automatically saved to the config file.
@@ -1184,29 +1187,36 @@ async fn main() -> Result<()> {
 
 ## REST API
 
-DrasiServer provides a comprehensive REST API for runtime control. The API supports both single-instance and multi-instance deployments.
+DrasiServer provides a comprehensive REST API for runtime control. The API uses URL-based versioning with all endpoints prefixed with `/api/v1/`.
+
+### API Versioning
+
+The API uses URL-based versioning for stability and clarity:
+- All API endpoints are prefixed with `/api/v1/`
+- `/health` remains at root level (operational endpoint)
+- `/api/versions` lists all available API versions
 
 ### API Route Patterns
 
-DrasiServer supports both **simple routes** for single-instance deployments and **instance-specific routes** for multi-instance deployments:
+DrasiServer supports both **convenience routes** for the default instance and **instance-specific routes** for multi-instance deployments:
 
 | Route Type | Pattern | Description |
 |------------|---------|-------------|
-| **Simple Routes** | `/sources`, `/queries`, `/reactions` | Access the default instance (single-instance or first configured instance) |
-| **Instance Routes** | `/instances/{instanceId}/sources` | Access a specific instance by ID |
+| **Convenience Routes** | `/api/v1/sources`, `/api/v1/queries`, `/api/v1/reactions` | Access the first/default instance |
+| **Instance Routes** | `/api/v1/instances/{instanceId}/sources` | Access a specific instance by ID |
 
 **Choosing the right routes:**
 
-- **Single-instance deployments**: Use simple routes (`/sources`, `/queries`, `/reactions`) for clean, straightforward API calls
-- **Multi-instance deployments**: Use instance routes (`/instances/{instanceId}/...`) to target specific instances
-- **Mixed approach**: The first configured instance is always accessible via simple routes, so you can use simple routes for the primary instance and instance routes for secondary instances
+- **Single-instance deployments**: Use convenience routes (`/api/v1/sources`, `/api/v1/queries`, `/api/v1/reactions`) for clean, straightforward API calls
+- **Multi-instance deployments**: Use instance routes (`/api/v1/instances/{instanceId}/...`) to target specific instances
+- **Mixed approach**: The first configured instance is always accessible via convenience routes, so you can use those for the primary instance and instance routes for secondary instances
 
 **Dynamic configuration via Web API:**
 
 All component management (sources, queries, reactions) can be performed dynamically at runtime through the REST API:
-- **Create components**: `POST /sources`, `POST /queries`, `POST /reactions`
-- **Delete components**: `DELETE /sources/{id}`, `DELETE /queries/{id}`, `DELETE /reactions/{id}`
-- **Lifecycle control**: `POST /{component}/{id}/start`, `POST /{component}/{id}/stop`
+- **Create components**: `POST /api/v1/sources`, `POST /api/v1/queries`, `POST /api/v1/reactions`
+- **Delete components**: `DELETE /api/v1/sources/{id}`, `DELETE /api/v1/queries/{id}`, `DELETE /api/v1/reactions/{id}`
+- **Lifecycle control**: `POST /api/v1/{component}/{id}/start`, `POST /api/v1/{component}/{id}/stop`
 
 Changes made via the API are automatically persisted to the config file when `disable_persistence: false` (the default).
 
@@ -1214,34 +1224,38 @@ Changes made via the API are automatically persisted to the config file when `di
 
 ```bash
 # List all configured instances
-GET /instances
+GET /api/v1/instances
 # Returns: {"success": true, "data": [{"id": "analytics"}, {"id": "monitoring"}]}
 ```
 
 ### Health Check
 
 ```bash
-# Check server health
+# Check server health (unversioned operational endpoint)
 GET /health
 # Returns: {"status": "ok", "timestamp": "2025-01-15T12:00:00Z"}
+
+# List available API versions
+GET /api/versions
+# Returns: {"versions": ["v1"], "current": "v1"}
 ```
 
 ### Sources API
 
 ```bash
-# List all sources (simple route - default instance)
-GET /sources
+# List all sources (convenience route - default instance)
+GET /api/v1/sources
 
 # List all sources (instance-specific)
-GET /instances/{instanceId}/sources
+GET /api/v1/instances/{instanceId}/sources
 
 # Get source details
-GET /instances/{instanceId}/sources/{id}
-GET /sources/{id}
+GET /api/v1/instances/{instanceId}/sources/{id}
+GET /api/v1/sources/{id}
 
 # Create a new source
-POST /instances/{instanceId}/sources
-POST /sources
+POST /api/v1/instances/{instanceId}/sources
+POST /api/v1/sources
 Content-Type: application/json
 {
   "id": "new-source",
@@ -1259,32 +1273,32 @@ Content-Type: application/json
 }
 
 # Delete a source
-DELETE /instances/{instanceId}/sources/{id}
-DELETE /sources/{id}
+DELETE /api/v1/instances/{instanceId}/sources/{id}
+DELETE /api/v1/sources/{id}
 
 # Start a source
-POST /instances/{instanceId}/sources/{id}/start
-POST /sources/{id}/start
+POST /api/v1/instances/{instanceId}/sources/{id}/start
+POST /api/v1/sources/{id}/start
 
 # Stop a source
-POST /instances/{instanceId}/sources/{id}/stop
-POST /sources/{id}/stop
+POST /api/v1/instances/{instanceId}/sources/{id}/stop
+POST /api/v1/sources/{id}/stop
 ```
 
 ### Queries API
 
 ```bash
 # List all queries
-GET /instances/{instanceId}/queries
-GET /queries
+GET /api/v1/instances/{instanceId}/queries
+GET /api/v1/queries
 
 # Get query details
-GET /instances/{instanceId}/queries/{id}
-GET /queries/{id}
+GET /api/v1/instances/{instanceId}/queries/{id}
+GET /api/v1/queries/{id}
 
 # Create a new query
-POST /instances/{instanceId}/queries
-POST /queries
+POST /api/v1/instances/{instanceId}/queries
+POST /api/v1/queries
 Content-Type: application/json
 {
   "id": "new-query",
@@ -1297,36 +1311,36 @@ Content-Type: application/json
 }
 
 # Delete a query
-DELETE /instances/{instanceId}/queries/{id}
-DELETE /queries/{id}
+DELETE /api/v1/instances/{instanceId}/queries/{id}
+DELETE /api/v1/queries/{id}
 
 # Start a query
-POST /instances/{instanceId}/queries/{id}/start
-POST /queries/{id}/start
+POST /api/v1/instances/{instanceId}/queries/{id}/start
+POST /api/v1/queries/{id}/start
 
 # Stop a query
-POST /instances/{instanceId}/queries/{id}/stop
-POST /queries/{id}/stop
+POST /api/v1/instances/{instanceId}/queries/{id}/stop
+POST /api/v1/queries/{id}/stop
 
 # Get current query results
-GET /instances/{instanceId}/queries/{id}/results
-GET /queries/{id}/results
+GET /api/v1/instances/{instanceId}/queries/{id}/results
+GET /api/v1/queries/{id}/results
 ```
 
 ### Reactions API
 
 ```bash
 # List all reactions
-GET /instances/{instanceId}/reactions
-GET /reactions
+GET /api/v1/instances/{instanceId}/reactions
+GET /api/v1/reactions
 
 # Get reaction details
-GET /instances/{instanceId}/reactions/{id}
-GET /reactions/{id}
+GET /api/v1/instances/{instanceId}/reactions/{id}
+GET /api/v1/reactions/{id}
 
 # Create a new reaction
-POST /instances/{instanceId}/reactions
-POST /reactions
+POST /api/v1/instances/{instanceId}/reactions
+POST /api/v1/reactions
 Content-Type: application/json
 {
   "id": "new-reaction",
@@ -1344,23 +1358,23 @@ Content-Type: application/json
 }
 
 # Delete a reaction
-DELETE /instances/{instanceId}/reactions/{id}
-DELETE /reactions/{id}
+DELETE /api/v1/instances/{instanceId}/reactions/{id}
+DELETE /api/v1/reactions/{id}
 
 # Start a reaction
-POST /instances/{instanceId}/reactions/{id}/start
-POST /reactions/{id}/start
+POST /api/v1/instances/{instanceId}/reactions/{id}/start
+POST /api/v1/reactions/{id}/start
 
 # Stop a reaction
-POST /instances/{instanceId}/reactions/{id}/stop
-POST /reactions/{id}/stop
+POST /api/v1/instances/{instanceId}/reactions/{id}/stop
+POST /api/v1/reactions/{id}/stop
 ```
 
 ### API Documentation
 
 Interactive API documentation is available at:
-- Swagger UI: `http://localhost:8080/swagger-ui/`
-- OpenAPI spec: `http://localhost:8080/openapi.json`
+- Swagger UI: `http://localhost:8080/api/v1/docs/`
+- OpenAPI spec: `http://localhost:8080/api/v1/openapi.json`
 
 ### API Response Format
 
@@ -1492,13 +1506,13 @@ Example script file:
 ### Health Checks
 
 ```bash
-# Health check endpoint
+# Health check endpoint (unversioned)
 GET /health
 
 # Component status checks
-GET /sources/{id}
-GET /queries/{id}
-GET /reactions/{id}
+GET /api/v1/sources/{id}
+GET /api/v1/queries/{id}
+GET /api/v1/reactions/{id}
 ```
 
 ### Security Considerations
@@ -1544,8 +1558,8 @@ cargo run -- --port 9090
 ```
 
 **Query not receiving data:**
-- Verify source is running: `GET /sources/{id}`
-- Check source subscription: `GET /queries/{id}`
+- Verify source is running: `GET /api/v1/sources/{id}`
+- Check source subscription: `GET /api/v1/queries/{id}`
 - Review logs: `RUST_LOG=debug cargo run`
 
 ### Debug Logging

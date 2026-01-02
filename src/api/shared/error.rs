@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Error types and error handling utilities shared across API versions.
+
 use axum::http::StatusCode;
 use drasi_lib::DrasiError;
 use serde::Serialize;
