@@ -30,11 +30,8 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
 
-      - name: Install specific Rust version
-        run: |
-          rustup update ${{ vars.RUST_VERSION }}
-          rustup default ${{ vars.RUST_VERSION }}
-          rustup component add rustfmt
+      - name: Install Rust toolchain
+        run: rustup show
 
       - name: Check formatting
         run: make fmt-check
@@ -54,11 +51,8 @@ jobs:
       - name: Set JQ_LIB_DIR
         run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
 
-      - name: Install specific Rust version
-        run: |
-          rustup update ${{ vars.RUST_VERSION }}
-          rustup default ${{ vars.RUST_VERSION }}
-          rustup component add clippy
+      - name: Install Rust toolchain
+        run: rustup show
 
       - name: Run clippy
         run: make clippy
