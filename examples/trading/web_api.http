@@ -23,34 +23,37 @@
 ### Health Check
 GET http://{{hostname}}:{{port}}/health
 
+### List API Versions
+GET http://{{hostname}}:{{port}}/api/versions
+
 ### GET LIST of all Instances
-GET http://{{hostname}}:{{port}}/instances
+GET http://{{hostname}}:{{port}}/api/v1/instances
 
 ###############################################################################
 # Single instance routes (routes to first/default instance)
 ###############################################################################
 
 ### GET LIST of all Sources (single instance)
-GET http://{{hostname}}:{{port}}/sources
+GET http://{{hostname}}:{{port}}/api/v1/sources
 
 ### GET LIST of all Queries (single instance)
-GET http://{{hostname}}:{{port}}/queries
+GET http://{{hostname}}:{{port}}/api/v1/queries
 
 ### GET LIST of all Reactions (single instance)
-GET http://{{hostname}}:{{port}}/reactions
+GET http://{{hostname}}:{{port}}/api/v1/reactions
 
 ###############################################################################
 # Instance-specific routes (use instance ID in path)
 ###############################################################################
 
 ### GET LIST of Sources for specific instance
-GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/sources
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/sources
 
 ### GET LIST of Queries for specific instance
-GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/queries
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/queries
 
 ### GET LIST of Reactions for specific instance
-GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/reactions
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/reactions
 
 ### GET specific query results
-GET http://{{hostname}}:{{port}}/instances/{{instanceId}}/queries/watchlist-query/results
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/queries/watchlist-query/results

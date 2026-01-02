@@ -21,15 +21,15 @@
 @source_id = price-feed
 
 ### GET LIST of all sources
-GET http://{{hostname}}:{{port}}/sources
+GET http://{{hostname}}:{{port}}/api/v1/sources
 
 ### GET STATE of a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}
+GET http://{{hostname}}:{{port}}/api/v1/sources/{{source_id}}
 
 ### START a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/start
+POST http://{{hostname}}:{{port}}/api/v1/sources/{{source_id}}/start
 Content-Type: application/json
 
 ### STOP a specific source
-GET http://{{hostname}}:{{port}}/sources/{{source_id}}/stop
+POST http://{{hostname}}:{{port}}/api/v1/sources/{{source_id}}/stop
 Content-Type: application/json

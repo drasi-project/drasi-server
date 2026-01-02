@@ -196,7 +196,7 @@ export class DrasiClient {
       }
 
       // Check if sources exist
-      const sourcesResponse = await fetch(`${this.baseUrl}/sources`);
+      const sourcesResponse = await fetch(`${this.baseUrl}/api/v1/sources`);
       const sourcesData = await sourcesResponse.json();
       const sources = sourcesData.data || sourcesData; // Handle both wrapped and unwrapped responses
       
@@ -263,7 +263,7 @@ export class DrasiClient {
   private async ensureReaction(): Promise<string> {
     try {
       // Check if reaction exists
-      const checkResponse = await fetch(`${this.baseUrl}/reactions/${this.reactionId}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`);
       
       if (checkResponse.status === 404) {
         // Reaction doesn't exist, create it
@@ -281,7 +281,7 @@ export class DrasiClient {
           heartbeat_interval_ms: 15000
         };
 
-        const createResponse = await fetch(`${this.baseUrl}/reactions`, {
+        const createResponse = await fetch(`${this.baseUrl}/api/v1/reactions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(reactionConfig)
@@ -293,14 +293,14 @@ export class DrasiClient {
         }
 
         // Start the reaction
-        await fetch(`${this.baseUrl}/reactions/${this.reactionId}/start`, { method: 'POST' });
+        await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
         return 'http://localhost:50051/events';
       } else if (checkResponse.ok) {
         // Reaction exists, make sure it's running
         const reaction = await checkResponse.json();
         if (reaction.status !== 'running') {
           console.log(`Starting reaction: ${this.reactionId}`);
-          await fetch(`${this.baseUrl}/reactions/${this.reactionId}/start`, { method: 'POST' });
+          await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
         }
         // Derive endpoint from existing reaction properties
         const props = reaction.config?.properties || reaction.properties || {};
@@ -323,7 +323,7 @@ export class DrasiClient {
   private async ensureQuery(queryDef: QueryDefinition): Promise<void> {
     try {
       // Check if query exists
-      const checkResponse = await fetch(`${this.baseUrl}/queries/${queryDef.id}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}`);
       
       if (checkResponse.status === 404) {
         // Query doesn't exist, create it
@@ -337,7 +337,7 @@ export class DrasiClient {
           auto_start: true
         };
 
-        const createResponse = await fetch(`${this.baseUrl}/queries`, {
+        const createResponse = await fetch(`${this.baseUrl}/api/v1/queries`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(queryConfig)
@@ -352,14 +352,14 @@ export class DrasiClient {
         this.createdQueries.add(queryDef.id);
 
         // Start the query
-        await fetch(`${this.baseUrl}/queries/${queryDef.id}/start`, { method: 'POST' });
+        await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}/start`, { method: 'POST' });
         
       } else if (checkResponse.ok) {
         // Query exists, make sure it's running
         const query = await checkResponse.json();
         if (query.status !== 'running') {
           console.log(`Starting query: ${queryDef.id}`);
-          await fetch(`${this.baseUrl}/queries/${queryDef.id}/start`, { method: 'POST' });
+          await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}/start`, { method: 'POST' });
         }
       }
     } catch (error) {
@@ -429,7 +429,7 @@ export class DrasiClient {
       ...Array.from(this.customQueries)
     ];
 
-    const updateResponse = await fetch(`${this.baseUrl}/reactions/${this.reactionId}`, {
+    const updateResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -447,7 +447,7 @@ export class DrasiClient {
    */
   async getQueryResults(queryId: string): Promise<any[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/queries/${queryId}/results`);
+      const response = await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/results`);
       if (!response.ok) {
         console.warn(`No results available for query ${queryId}`);
         return [];
@@ -506,8 +506,8 @@ export class DrasiClient {
 
     // IMPORTANT: Stop and delete reaction FIRST (before queries)
     try {
-      await fetch(`${this.baseUrl}/reactions/${this.reactionId}/stop`, { method: 'POST' });
-      await fetch(`${this.baseUrl}/reactions/${this.reactionId}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/stop`, { method: 'POST' });
+      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, { method: 'DELETE' });
       console.log(`Deleted reaction: ${this.reactionId}`);
     } catch (error) {
       console.error(`Failed to cleanup reaction ${this.reactionId}:`, error);
@@ -516,8 +516,8 @@ export class DrasiClient {
     // Then stop and delete all queries
     for (const queryId of this.createdQueries) {
       try {
-        await fetch(`${this.baseUrl}/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/queries/${queryId}`, { method: 'DELETE' });
+        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
+        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
         console.log(`Deleted query: ${queryId}`);
       } catch (error) {
         console.error(`Failed to cleanup query ${queryId}:`, error);
@@ -527,8 +527,8 @@ export class DrasiClient {
     // Stop and delete custom queries
     for (const queryId of this.customQueries) {
       try {
-        await fetch(`${this.baseUrl}/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/queries/${queryId}`, { method: 'DELETE' });
+        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
+        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
         console.log(`Deleted custom query: ${queryId}`);
       } catch (error) {
         console.error(`Failed to cleanup custom query ${queryId}:`, error);

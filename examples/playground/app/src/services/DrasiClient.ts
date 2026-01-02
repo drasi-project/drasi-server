@@ -80,7 +80,7 @@ export class DrasiClient {
    * List all sources
    */
   async listSources(): Promise<Source[]> {
-    const response = await this.apiClient.get('/sources');
+    const response = await this.apiClient.get('/api/v1/sources');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
     if (Array.isArray(data)) {
@@ -95,7 +95,7 @@ export class DrasiClient {
    * Get a specific source
    */
   async getSource(id: string): Promise<Source> {
-    const response = await this.apiClient.get(`/sources/${id}`);
+    const response = await this.apiClient.get(`/api/v1/sources/${id}`);
     return response.data;
   }
 
@@ -103,7 +103,7 @@ export class DrasiClient {
    * Create a new source
    */
   async createSource(source: Partial<Source>): Promise<Source> {
-    const response = await this.apiClient.post('/sources', source);
+    const response = await this.apiClient.post('/api/v1/sources', source);
     return response.data;
   }
 
@@ -111,21 +111,21 @@ export class DrasiClient {
    * Delete a source
    */
   async deleteSource(id: string): Promise<void> {
-    await this.apiClient.delete(`/sources/${id}`);
+    await this.apiClient.delete(`/api/v1/sources/${id}`);
   }
 
   /**
    * Start a source
    */
   async startSource(id: string): Promise<void> {
-    await this.apiClient.post(`/sources/${id}/start`);
+    await this.apiClient.post(`/api/v1/sources/${id}/start`);
   }
 
   /**
    * Stop a source
    */
   async stopSource(id: string): Promise<void> {
-    await this.apiClient.post(`/sources/${id}/stop`);
+    await this.apiClient.post(`/api/v1/sources/${id}/stop`);
   }
 
   // ========== Query Management ==========
@@ -134,7 +134,7 @@ export class DrasiClient {
    * List all queries
    */
   async listQueries(): Promise<Query[]> {
-    const response = await this.apiClient.get('/queries');
+    const response = await this.apiClient.get('/api/v1/queries');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
     let queries = [];
@@ -157,7 +157,7 @@ export class DrasiClient {
    * Get a specific query
    */
   async getQuery(id: string): Promise<Query> {
-    const response = await this.apiClient.get(`/queries/${id}`);
+    const response = await this.apiClient.get(`/api/v1/queries/${id}`);
     const q = response.data.data || response.data;
     return {
       ...q,
@@ -181,7 +181,7 @@ export class DrasiClient {
     };
     delete apiQuery.sources;
 
-    await this.apiClient.post('/queries', apiQuery);
+    await this.apiClient.post('/api/v1/queries', apiQuery);
 
     // API doesn't return the query object, so fetch it
     const createdQuery = await this.getQuery(query.id!);
@@ -196,7 +196,7 @@ export class DrasiClient {
    * Delete a query
    */
   async deleteQuery(id: string): Promise<void> {
-    await this.apiClient.delete(`/queries/${id}`);
+    await this.apiClient.delete(`/api/v1/queries/${id}`);
 
     // Delete the SSE reaction for this query
     const reactionId = this.queryReactions.get(id);
@@ -214,14 +214,14 @@ export class DrasiClient {
    * Start a query
    */
   async startQuery(id: string): Promise<void> {
-    await this.apiClient.post(`/queries/${id}/start`);
+    await this.apiClient.post(`/api/v1/queries/${id}/start`);
   }
 
   /**
    * Stop a query
    */
   async stopQuery(id: string): Promise<void> {
-    await this.apiClient.post(`/queries/${id}/stop`);
+    await this.apiClient.post(`/api/v1/queries/${id}/stop`);
   }
 
   /**
@@ -229,7 +229,7 @@ export class DrasiClient {
    */
   async getQueryResults(queryId: string): Promise<any[]> {
     try {
-      const response = await this.apiClient.get(`/queries/${queryId}/results`);
+      const response = await this.apiClient.get(`/api/v1/queries/${queryId}/results`);
       const data = response.data;
       // Handle both direct array and wrapped {data: [...]} responses
       if (Array.isArray(data)) {
@@ -250,7 +250,7 @@ export class DrasiClient {
    * List all reactions
    */
   async listReactions(): Promise<Reaction[]> {
-    const response = await this.apiClient.get('/reactions');
+    const response = await this.apiClient.get('/api/v1/reactions');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
     if (Array.isArray(data)) {
@@ -265,7 +265,7 @@ export class DrasiClient {
    * Get a specific reaction
    */
   async getReaction(id: string): Promise<Reaction> {
-    const response = await this.apiClient.get(`/reactions/${id}`);
+    const response = await this.apiClient.get(`/api/v1/reactions/${id}`);
     return response.data;
   }
 
@@ -273,7 +273,7 @@ export class DrasiClient {
    * Create a new reaction
    */
   async createReaction(reaction: Partial<Reaction>): Promise<Reaction> {
-    const response = await this.apiClient.post('/reactions', reaction);
+    const response = await this.apiClient.post('/api/v1/reactions', reaction);
     return response.data;
   }
 
@@ -281,21 +281,21 @@ export class DrasiClient {
    * Delete a reaction
    */
   async deleteReaction(id: string): Promise<void> {
-    await this.apiClient.delete(`/reactions/${id}`);
+    await this.apiClient.delete(`/api/v1/reactions/${id}`);
   }
 
   /**
    * Start a reaction
    */
   async startReaction(id: string): Promise<void> {
-    await this.apiClient.post(`/reactions/${id}/start`);
+    await this.apiClient.post(`/api/v1/reactions/${id}/start`);
   }
 
   /**
    * Stop a reaction
    */
   async stopReaction(id: string): Promise<void> {
-    await this.apiClient.post(`/reactions/${id}/stop`);
+    await this.apiClient.post(`/api/v1/reactions/${id}/stop`);
   }
 
   // ========== Data Injection ==========
@@ -305,7 +305,7 @@ export class DrasiClient {
    */
   async injectData(sourceId: string, event: DataEvent): Promise<void> {
     // Fetch the source to get its port
-    const sourceResponse = await this.apiClient.get(`/sources/${sourceId}`);
+    const sourceResponse = await this.apiClient.get(`/api/v1/sources/${sourceId}`);
     const sourceData = sourceResponse.data.data || sourceResponse.data;
     const port = sourceData.port || 9000;
 
@@ -366,7 +366,7 @@ export class DrasiClient {
 
     try {
       // Check if reaction already exists
-      const checkResponse = await this.apiClient.get(`/reactions/${reactionId}`);
+      const checkResponse = await this.apiClient.get(`/api/v1/reactions/${reactionId}`);
 
       if (checkResponse.status === 200) {
         const reaction = checkResponse.data.data || checkResponse.data;
