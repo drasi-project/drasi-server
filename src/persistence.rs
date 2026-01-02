@@ -263,8 +263,8 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use drasi_lib::channels::dispatcher::ChangeDispatcher;
-    use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-    use drasi_lib::plugin_core::Source as SourceTrait;
+    use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+    use drasi_lib::Source as SourceTrait;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -333,7 +333,7 @@ mod tests {
             self
         }
 
-        async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+        async fn initialize(&self, _context: drasi_lib::SourceRuntimeContext) {
             // No-op for testing
         }
     }
