@@ -90,8 +90,13 @@ id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 host: "0.0.0.0"
 port: 8080
 log_level: "info"
-disable_persistence: false  # Enable persistence (default)
+persist_config: true  # Enable persistence (default)
 persist_index: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
+
+# Optional state store for plugin state persistence
+# state_store:
+#   kind: redb
+#   path: ./data/state.redb
 
 # Optional capacity defaults (cascades to queries/reactions)
 # Supports environment variables like other fields
@@ -130,11 +135,14 @@ For multiple DrasiLib instances, use the `instances` array (legacy single-instan
 host: "0.0.0.0"
 port: 8080
 log_level: "info"
-disable_persistence: false
+persist_config: true
 
 instances:
   - id: "analytics"
     persist_index: true
+    state_store:
+      kind: redb
+      path: ./data/analytics-state.redb
     sources:
       - kind: mock
         id: "sensors"
@@ -165,18 +173,18 @@ DrasiServer separates two independent concepts:
 **Persistence is enabled when:**
 - Config file is provided on startup (`--config path/to/config.yaml`)
 - Config file is writable
-- `disable_persistence: false` in server settings (default)
+- `persist_config: true` in server settings (default)
 
 **Persistence is disabled when:**
 - No config file provided (server starts with empty configuration)
 - Config file is read-only
-- `disable_persistence: true` in server settings
+- `persist_config: false` in server settings
 
 **Read-Only mode is enabled ONLY when:**
 - Config file is not writable (file permissions prevent writing)
 
 **Important distinction:**
-- `disable_persistence: true` → API mutations are allowed but NOT saved to config file
+- `persist_config: false` → API mutations are allowed but NOT saved to config file
 - Read-only config file → API mutations are blocked entirely
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
@@ -187,15 +195,21 @@ DrasiServer separates two independent concepts:
 
 ### Builder-Based Configuration
 
-DrasiServer also supports a builder pattern for programmatic configuration. Sources and reactions are provided as plugin instances:
+DrasiServer also supports a builder pattern for programmatic configuration. Sources, reactions, and state store providers are provided as plugin instances:
 
 ```rust
 use drasi_server::DrasiServerBuilder;
 use drasi_lib::Query;
+use drasi_state_store_redb::RedbStateStoreProvider;
+use std::sync::Arc;
+
+// Create a state store provider (optional)
+let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
 
 let server = DrasiServerBuilder::new()
     .with_id("my-server")
     .with_host_port("0.0.0.0", 8080)
+    .with_state_store_provider(Arc::new(state_store))  // Optional: for plugin state persistence
     .with_source(my_source_instance)  // Plugin instance
     .add_query(
         Query::cypher("my-query")

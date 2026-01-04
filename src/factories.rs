@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Factory functions for creating source and reaction instances from config.
+//! Factory functions for creating source, reaction, and state store instances from config.
 //!
 //! This module provides factory functions that match on the tagged enum config
 //! types and use the existing plugin constructors to create instances.
 
 use anyhow::Result;
 use drasi_lib::bootstrap::BootstrapProviderConfig;
+use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
+use std::sync::Arc;
 
 use crate::api::mappings::{
     ConfigMapper,
@@ -41,7 +43,7 @@ use crate::api::mappings::{
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
 };
-use crate::config::{ReactionConfig, SourceConfig};
+use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// Create a source instance from a SourceConfig.
 ///
@@ -390,6 +392,49 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                     .with_config(domain_config)
                     .build()?,
             ))
+        }
+    }
+}
+
+/// Create a state store provider from a StateStoreConfig.
+///
+/// This function matches on the config variant and creates the appropriate
+/// state store provider type using the plugin's constructor.
+///
+/// # Arguments
+///
+/// * `config` - The state store configuration
+///
+/// # Returns
+///
+/// An Arc-wrapped StateStoreProvider trait object
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use drasi_server::config::StateStoreConfig;
+/// use drasi_server::factories::create_state_store_provider;
+///
+/// let config = StateStoreConfig::Redb {
+///     path: ConfigValue::Static("./data/state.redb".to_string()),
+/// };
+///
+/// let provider = create_state_store_provider(config)?;
+/// ```
+pub fn create_state_store_provider(
+    config: StateStoreConfig,
+) -> Result<Arc<dyn StateStoreProvider + Send + Sync + 'static>> {
+    let mapper = DtoMapper::new();
+
+    match config {
+        StateStoreConfig::Redb { path } => {
+            use drasi_state_store_redb::RedbStateStoreProvider;
+
+            let resolved_path: String = mapper.resolve_typed(&path)?;
+            info!("Creating REDB state store provider with path: {resolved_path}");
+
+            let provider = RedbStateStoreProvider::new(&resolved_path)?;
+            Ok(Arc::new(provider))
         }
     }
 }

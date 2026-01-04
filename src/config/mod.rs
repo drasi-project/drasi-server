@@ -40,4 +40,4 @@ pub use loader::{from_json_str, from_yaml_str, load_config_file, save_config_fil
 pub use types::{DrasiLibInstanceConfig, DrasiServerConfig, ResolvedInstanceConfig};
 
 // Re-export config enums from api::models for backward compatibility
-pub use crate::api::models::{ReactionConfig, SourceConfig};
+pub use crate::api::models::{ReactionConfig, SourceConfig, StateStoreConfig};

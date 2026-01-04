@@ -31,7 +31,7 @@ pub struct ConfigPersistence {
     host: String,
     port: u16,
     log_level: String,
-    disable_persistence: bool,
+    persist_config: bool,
     persist_settings: IndexMap<String, bool>,
     /// Source configs by instance_id -> source_id -> config
     source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
@@ -48,7 +48,7 @@ impl ConfigPersistence {
         host: String,
         port: u16,
         log_level: String,
-        disable_persistence: bool,
+        persist_config: bool,
         persist_settings: IndexMap<String, bool>,
         initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
         initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
@@ -59,7 +59,7 @@ impl ConfigPersistence {
             host,
             port,
             log_level,
-            disable_persistence,
+            persist_config,
             persist_settings,
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
@@ -68,7 +68,7 @@ impl ConfigPersistence {
 
     /// Register a source config for persistence
     pub async fn register_source(&self, instance_id: &str, config: SourceConfig) {
-        if self.disable_persistence {
+        if !self.persist_config {
             return;
         }
         let mut source_configs = self.source_configs.write().await;
@@ -80,7 +80,7 @@ impl ConfigPersistence {
 
     /// Unregister a source config (called on deletion)
     pub async fn unregister_source(&self, instance_id: &str, source_id: &str) {
-        if self.disable_persistence {
+        if !self.persist_config {
             return;
         }
         let mut source_configs = self.source_configs.write().await;
@@ -91,7 +91,7 @@ impl ConfigPersistence {
 
     /// Register a reaction config for persistence
     pub async fn register_reaction(&self, instance_id: &str, config: ReactionConfig) {
-        if self.disable_persistence {
+        if !self.persist_config {
             return;
         }
         let mut reaction_configs = self.reaction_configs.write().await;
@@ -103,7 +103,7 @@ impl ConfigPersistence {
 
     /// Unregister a reaction config (called on deletion)
     pub async fn unregister_reaction(&self, instance_id: &str, reaction_id: &str) {
-        if self.disable_persistence {
+        if !self.persist_config {
             return;
         }
         let mut reaction_configs = self.reaction_configs.write().await;
@@ -117,8 +117,8 @@ impl ConfigPersistence {
     /// Includes source and reaction configs from the in-memory registry.
     /// Uses single-instance format when there's 1 instance, multi-instance format otherwise.
     pub async fn save(&self) -> Result<()> {
-        if self.disable_persistence {
-            debug!("Persistence disabled, skipping save");
+        if !self.persist_config {
+            debug!("Persistence disabled (persist_config: false), skipping save");
             return Ok(());
         }
 
@@ -153,6 +153,7 @@ impl ConfigPersistence {
             instance_configs.push(DrasiLibInstanceConfig {
                 id: ConfigValue::Static(lib_config.id.clone()),
                 persist_index,
+                state_store: None, // State store config not persisted dynamically
                 default_priority_queue_capacity: lib_config
                     .priority_queue_capacity
                     .map(ConfigValue::Static),
@@ -174,8 +175,9 @@ impl ConfigPersistence {
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
                 log_level: ConfigValue::Static(self.log_level.clone()),
-                disable_persistence: self.disable_persistence,
+                persist_config: self.persist_config,
                 persist_index: instance.persist_index,
+                state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
                 sources: instance.sources,
@@ -198,8 +200,9 @@ impl ConfigPersistence {
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
                 log_level: ConfigValue::Static(self.log_level.clone()),
-                disable_persistence: self.disable_persistence,
+                persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
+                state_store: None,    // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 sources: Vec::new(),
@@ -380,7 +383,7 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -407,7 +410,7 @@ mod tests {
             loaded_config.log_level,
             ConfigValue::Static("info".to_string())
         );
-        assert!(!loaded_config.disable_persistence);
+        assert!(loaded_config.persist_config);
 
         // With single instance, dynamic format selection outputs single-instance format
         // (queries at root level, instances array empty)
@@ -440,7 +443,7 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true, // disable_persistence = true
+            false, // persist_config = false (persistence disabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -473,7 +476,7 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -513,7 +516,7 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             persist_settings.clone(),
             IndexMap::new(),
             IndexMap::new(),
@@ -532,7 +535,7 @@ mod tests {
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -592,7 +595,7 @@ mod tests {
             "0.0.0.0".to_string(),
             8080,
             "debug".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -667,7 +670,7 @@ id: my-server
 host: localhost
 port: 9090
 log_level: info
-disable_persistence: false
+persist_config: true
 persist_index: true
 sources:
   - kind: mock
@@ -700,10 +703,7 @@ instances: []
         assert_eq!(config.queries.len(), 1, "Should have 1 query at root");
         assert_eq!(config.reactions.len(), 1, "Should have 1 reaction at root");
         assert!(config.persist_index, "persist_index should be true");
-        assert!(
-            !config.disable_persistence,
-            "disable_persistence should be false"
-        );
+        assert!(config.persist_config, "persist_config should be true");
 
         // Verify source details
         assert_eq!(config.sources[0].id(), "test-source");
@@ -721,7 +721,7 @@ instances: []
 host: 0.0.0.0
 port: 8080
 log_level: debug
-disable_persistence: false
+persist_config: true
 sources: []
 queries: []
 reactions: []
@@ -820,7 +820,7 @@ instances:
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false, // persistence ENABLED
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -894,7 +894,7 @@ instances:
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true, // persistence DISABLED
+            false, // persist_config = false (persistence disabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -986,7 +986,7 @@ instances:
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            true, // persistence DISABLED
+            false, // persist_config = false (persistence disabled)
             persist_settings,
             initial_sources,
             IndexMap::new(),
@@ -1025,7 +1025,7 @@ instances:
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false, // persistence ENABLED
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -1093,7 +1093,7 @@ log_level: warn
             "127.0.0.1".to_string(), // Different from initial
             8080,                    // Different from initial
             "info".to_string(),      // Different from initial
-            true,                    // persistence DISABLED
+            false,                   // persist_config = false (persistence disabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
@@ -1140,7 +1140,7 @@ log_level: warn
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
-            false,
+            true, // persist_config = true (persistence enabled)
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),

@@ -15,9 +15,10 @@
 //! Test configuration helpers for the new builder API
 
 use drasi_lib::{Query, Reaction, Source};
-use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
+use drasi_server::{QueryConfig, ReactionConfig, SourceConfig, StateStoreConfig};
 use serde_json::Value;
 use std::collections::HashMap;
+use tempfile::TempDir;
 
 /// Create a mock source config for testing
 pub fn mock_source(id: impl Into<String>) -> SourceConfig {
@@ -111,4 +112,24 @@ pub fn http_reaction_with_props(
     }
 
     builder.build()
+}
+
+// =============================================================================
+// State Store Helpers
+// =============================================================================
+
+/// Create a REDB state store config for testing with a specified path
+pub fn redb_state_store(path: impl Into<String>) -> StateStoreConfig {
+    StateStoreConfig::redb(path)
+}
+
+/// Create a REDB state store config using a TempDir for isolation
+///
+/// Returns the StateStoreConfig and the TempDir (which must be kept alive
+/// for the duration of the test to prevent cleanup).
+pub fn temp_redb_state_store(filename: &str) -> (StateStoreConfig, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let path = temp_dir.path().join(filename);
+    let config = StateStoreConfig::redb(path.to_string_lossy().to_string());
+    (config, temp_dir)
 }

@@ -340,3 +340,54 @@ impl ReactionConfig {
         }
     }
 }
+
+// =============================================================================
+// State Store Configuration
+// =============================================================================
+
+/// State store configuration with kind discriminator.
+///
+/// State store providers allow plugins (Sources, BootstrapProviders, and Reactions)
+/// to persist runtime state that survives restarts of DrasiLib.
+///
+/// Uses serde tagged enum to automatically deserialize into the correct
+/// provider-specific config struct based on the `kind` field.
+///
+/// # Example YAML
+///
+/// ```yaml
+/// state_store:
+///   kind: redb
+///   path: ./data/state.redb
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum StateStoreConfig {
+    /// REDB-based state store for persistent storage
+    ///
+    /// Uses redb embedded database for file-based persistence.
+    /// Data survives restarts and is stored in a single file.
+    #[serde(rename = "redb")]
+    Redb {
+        /// Path to the redb database file
+        ///
+        /// Supports environment variables: ${STATE_STORE_PATH:-./data/state.redb}
+        path: ConfigValue<String>,
+    },
+}
+
+impl StateStoreConfig {
+    /// Create a new REDB state store configuration
+    pub fn redb(path: impl Into<String>) -> Self {
+        StateStoreConfig::Redb {
+            path: ConfigValue::Static(path.into()),
+        }
+    }
+
+    /// Get a display name for this state store type
+    pub fn kind(&self) -> &str {
+        match self {
+            StateStoreConfig::Redb { .. } => "redb",
+        }
+    }
+}

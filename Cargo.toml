@@ -59,6 +59,9 @@ drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" 
 # Index plugins
 drasi-index-rocksdb = { path = "./drasi-core/components/indexes/rocksdb" }
 
+# State store plugins
+drasi-state-store-redb = { path = "./drasi-core/components/state_stores/redb" }
+
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
 axum = "0.7"

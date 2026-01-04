@@ -20,8 +20,8 @@ port: "${SERVER_PORT:-8080}"
 # Logging level: trace, debug, info, warn, error
 log_level: "${LOG_LEVEL:-info}"
 
-# Disable automatic persistence of API changes to this file
-disable_persistence: false
+# Enable automatic persistence of API changes to this file
+persist_config: true
 
 # Enable persistent indexing using RocksDB (default: false, uses in-memory indexes)
 # persist_index: false
