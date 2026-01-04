@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceTrait};
 use std::collections::HashMap;
@@ -78,6 +79,32 @@ impl DrasiServerBuilder {
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder).with_index_provider(provider);
+        self
+    }
+
+    /// Add a state store provider for plugin state persistence
+    ///
+    /// By default, DrasiLib uses an in-memory state store. Use this method to inject
+    /// a persistent state store provider like REDB for plugins to persist runtime state.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - An Arc-wrapped StateStoreProvider implementation
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use drasi_state_store_redb::RedbStateStoreProvider;
+    ///
+    /// let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
+    /// let server = DrasiServerBuilder::new()
+    ///     .with_state_store_provider(Arc::new(state_store))
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_state_store_provider(mut self, provider: Arc<dyn StateStoreProvider>) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_state_store_provider(provider);
         self
     }
 

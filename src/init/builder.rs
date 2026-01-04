@@ -67,6 +67,7 @@ pub fn build_config(
         log_level: ConfigValue::Static(server_settings.log_level),
         disable_persistence: false,
         persist_index: server_settings.persist_index,
+        state_store: server_settings.state_store,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources,
@@ -114,6 +115,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: false,
+            state_store: None,
         }
     }
 
@@ -269,6 +271,7 @@ mod tests {
             port: 9090,
             log_level: "debug".to_string(),
             persist_index: false,
+            state_store: None,
         };
         let sources = vec![mock_source_config("data-source")];
         let reactions = vec![log_reaction_config("my-log")];
@@ -331,6 +334,7 @@ mod tests {
             port: 3000,
             log_level: "warn".to_string(),
             persist_index: false,
+            state_store: None,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -454,6 +458,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: false,
+            state_store: None,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -470,6 +475,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: true,
+            state_store: None,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -486,6 +492,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: false,
+            state_store: None,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -504,6 +511,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: true,
+            state_store: None,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -522,6 +530,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: true,
+            state_store: None,
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -550,6 +559,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: false,
+            state_store: None,
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -578,6 +588,7 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: true,
+            state_store: None,
         };
         let sources = vec![mock_source_config("test-source")];
         let reactions = vec![log_reaction_config("test-reaction")];

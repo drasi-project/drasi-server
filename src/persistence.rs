@@ -153,6 +153,7 @@ impl ConfigPersistence {
             instance_configs.push(DrasiLibInstanceConfig {
                 id: ConfigValue::Static(lib_config.id.clone()),
                 persist_index,
+                state_store: None, // State store config not persisted dynamically
                 default_priority_queue_capacity: lib_config
                     .priority_queue_capacity
                     .map(ConfigValue::Static),
@@ -176,6 +177,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 disable_persistence: self.disable_persistence,
                 persist_index: instance.persist_index,
+                state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
                 sources: instance.sources,
@@ -200,6 +202,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 disable_persistence: self.disable_persistence,
                 persist_index: false, // Per-instance setting in multi-instance mode
+                state_store: None,    // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 sources: Vec::new(),

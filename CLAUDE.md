@@ -93,6 +93,11 @@ log_level: "info"
 disable_persistence: false  # Enable persistence (default)
 persist_index: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 
+# Optional state store for plugin state persistence
+# state_store:
+#   kind: redb
+#   path: ./data/state.redb
+
 # Optional capacity defaults (cascades to queries/reactions)
 # Supports environment variables like other fields
 # default_priority_queue_capacity: 10000
@@ -135,6 +140,9 @@ disable_persistence: false
 instances:
   - id: "analytics"
     persist_index: true
+    state_store:
+      kind: redb
+      path: ./data/analytics-state.redb
     sources:
       - kind: mock
         id: "sensors"
@@ -187,15 +195,21 @@ DrasiServer separates two independent concepts:
 
 ### Builder-Based Configuration
 
-DrasiServer also supports a builder pattern for programmatic configuration. Sources and reactions are provided as plugin instances:
+DrasiServer also supports a builder pattern for programmatic configuration. Sources, reactions, and state store providers are provided as plugin instances:
 
 ```rust
 use drasi_server::DrasiServerBuilder;
 use drasi_lib::Query;
+use drasi_state_store_redb::RedbStateStoreProvider;
+use std::sync::Arc;
+
+// Create a state store provider (optional)
+let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
 
 let server = DrasiServerBuilder::new()
     .with_id("my-server")
     .with_host_port("0.0.0.0", 8080)
+    .with_state_store_provider(Arc::new(state_store))  // Optional: for plugin state persistence
     .with_source(my_source_instance)  // Plugin instance
     .add_query(
         Query::cypher("my-query")

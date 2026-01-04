@@ -24,12 +24,15 @@ use drasi_server::api::models::{
     SseReactionConfigDto, SslModeDto,
 };
 
+use drasi_server::api::models::StateStoreConfig;
+
 /// Server settings collected from user prompts.
 pub struct ServerSettings {
     pub host: String,
     pub port: u16,
     pub log_level: String,
     pub persist_index: bool,
+    pub state_store: Option<StateStoreConfig>,
 }
 
 /// Source type selection options.
@@ -98,6 +101,22 @@ impl std::fmt::Display for ReactionType {
     }
 }
 
+/// State store type selection options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateStoreType {
+    None,
+    Redb,
+}
+
+impl std::fmt::Display for StateStoreType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StateStoreType::None => write!(f, "None - In-memory state (lost on restart)"),
+            StateStoreType::Redb => write!(f, "REDB - Persistent file-based state"),
+        }
+    }
+}
+
 /// Prompt for server settings (host, port, log level).
 pub fn prompt_server_settings() -> Result<ServerSettings> {
     println!("Server Settings");
@@ -126,6 +145,9 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         .with_help_message("Persists query index data to disk. Use for production workloads.")
         .prompt()?;
 
+    // Prompt for state store configuration
+    let state_store = prompt_state_store()?;
+
     println!();
 
     Ok(ServerSettings {
@@ -133,7 +155,32 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         port,
         log_level,
         persist_index,
+        state_store,
     })
+}
+
+/// Prompt for state store configuration.
+fn prompt_state_store() -> Result<Option<StateStoreConfig>> {
+    let state_store_types = vec![StateStoreType::None, StateStoreType::Redb];
+
+    let selected = Select::new(
+        "State store (for plugin state persistence):",
+        state_store_types,
+    )
+    .with_help_message("Allows plugins to persist runtime state that survives restarts")
+    .prompt()?;
+
+    match selected {
+        StateStoreType::None => Ok(None),
+        StateStoreType::Redb => {
+            let path = Text::new("State store file path:")
+                .with_default("./data/state.redb")
+                .with_help_message("Path to REDB database file for state persistence")
+                .prompt()?;
+
+            Ok(Some(StateStoreConfig::redb(path)))
+        }
+    }
 }
 
 /// Prompt for source selection and configuration.
@@ -689,12 +736,14 @@ mod tests {
             port: 9090,
             log_level: "debug".to_string(),
             persist_index: true,
+            state_store: None,
         };
 
         assert_eq!(settings.host, "127.0.0.1");
         assert_eq!(settings.port, 9090);
         assert_eq!(settings.log_level, "debug");
         assert!(settings.persist_index);
+        assert!(settings.state_store.is_none());
     }
 
     #[test]
@@ -704,12 +753,28 @@ mod tests {
             port: 8080,
             log_level: "info".to_string(),
             persist_index: false,
+            state_store: None,
         };
 
         assert_eq!(settings.host, "0.0.0.0");
         assert_eq!(settings.port, 8080);
         assert_eq!(settings.log_level, "info");
         assert!(!settings.persist_index);
+        assert!(settings.state_store.is_none());
+    }
+
+    #[test]
+    fn test_server_settings_with_state_store() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+            state_store: Some(StateStoreConfig::redb("./data/state.redb")),
+        };
+
+        assert!(settings.state_store.is_some());
+        assert_eq!(settings.state_store.as_ref().unwrap().kind(), "redb");
     }
 
     // ==================== SourceType enum tests ====================
@@ -968,5 +1033,56 @@ mod tests {
         assert!(ReactionType::Sse.to_string().len() > 15);
         assert!(ReactionType::Grpc.to_string().len() > 15);
         assert!(ReactionType::Platform.to_string().len() > 15);
+    }
+
+    // ==================== StateStoreType enum tests ====================
+
+    #[test]
+    fn test_state_store_type_display_none() {
+        let state_store_type = StateStoreType::None;
+        let display = state_store_type.to_string();
+        assert!(display.contains("None"));
+        assert!(display.contains("In-memory"));
+    }
+
+    #[test]
+    fn test_state_store_type_display_redb() {
+        let state_store_type = StateStoreType::Redb;
+        let display = state_store_type.to_string();
+        assert!(display.contains("REDB"));
+        assert!(display.contains("Persistent"));
+    }
+
+    #[test]
+    fn test_state_store_type_equality() {
+        assert_eq!(StateStoreType::None, StateStoreType::None);
+        assert_eq!(StateStoreType::Redb, StateStoreType::Redb);
+        assert_ne!(StateStoreType::None, StateStoreType::Redb);
+    }
+
+    #[test]
+    fn test_state_store_type_debug() {
+        let state_store_type = StateStoreType::Redb;
+        let debug = format!("{state_store_type:?}");
+        assert_eq!(debug, "Redb");
+    }
+
+    #[test]
+    fn test_all_state_store_types_have_display() {
+        let state_store_types = vec![StateStoreType::None, StateStoreType::Redb];
+
+        for state_store_type in state_store_types {
+            let display = state_store_type.to_string();
+            assert!(
+                !display.is_empty(),
+                "StateStoreType {state_store_type:?} has empty display"
+            );
+        }
+    }
+
+    #[test]
+    fn test_state_store_type_displays_are_descriptive() {
+        assert!(StateStoreType::None.to_string().len() > 10);
+        assert!(StateStoreType::Redb.to_string().len() > 10);
     }
 }

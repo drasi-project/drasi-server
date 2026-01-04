@@ -26,7 +26,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
-use crate::factories::{create_reaction, create_source};
+use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use drasi_index_rocksdb::RocksDbIndexProvider;
@@ -104,6 +104,17 @@ impl DrasiServer {
                     false, // direct_io - use OS page cache
                 );
                 builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+            }
+
+            // Create and add state store provider if configured
+            if let Some(state_store_config) = instance.state_store.clone() {
+                info!(
+                    "Enabling persistent state store for instance '{}' with {} provider",
+                    instance.id,
+                    state_store_config.kind()
+                );
+                let state_store_provider = create_state_store_provider(state_store_config)?;
+                builder = builder.with_state_store_provider(state_store_provider);
             }
 
             // Create and add sources from config

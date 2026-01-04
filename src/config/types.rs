@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 // Import the config enums from api::models
 use crate::api::mappings::DtoMapper;
-use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig};
+use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// DrasiServer configuration
 ///
@@ -51,6 +51,13 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Optional state store provider configuration for plugin state persistence
+    ///
+    /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
+    /// runtime state that survives restarts. If not set, an in-memory state
+    /// store is used (state is lost on restart).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_store: Option<StateStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +89,7 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             disable_persistence: false,
             persist_index: false,
+            state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
             sources: Vec::new(),
@@ -125,6 +133,13 @@ pub struct DrasiLibInstanceConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Optional state store provider configuration for plugin state persistence
+    ///
+    /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
+    /// runtime state that survives restarts. If not set, an in-memory state
+    /// store is used (state is lost on restart).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_store: Option<StateStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -149,6 +164,7 @@ pub struct DrasiLibInstanceConfig {
 pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
+    pub state_store: Option<StateStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
     pub sources: Vec<SourceConfig>,
@@ -200,6 +216,7 @@ impl DrasiServerConfig {
             vec![DrasiLibInstanceConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
+                state_store: self.state_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
                 default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
                 sources: self.sources.clone(),
@@ -239,6 +256,7 @@ impl DrasiServerConfig {
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
+                state_store: instance.state_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 sources: instance.sources.clone(),
@@ -478,6 +496,231 @@ mod tests {
         assert!(
             content.contains("persist_index: true"),
             "Saved file should contain persist_index setting"
+        );
+    }
+
+    // ==================== state_store tests ====================
+
+    #[test]
+    fn test_state_store_default_is_none() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            config.state_store.is_none(),
+            "state_store should default to None"
+        );
+    }
+
+    #[test]
+    fn test_state_store_deserialize_redb() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+              path: ./data/state.redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.state_store.is_some());
+        let state_store = config.state_store.unwrap();
+        assert_eq!(state_store.kind(), "redb");
+    }
+
+    #[test]
+    fn test_state_store_defaults_when_omitted() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.state_store.is_none(),
+            "state_store should default to None when omitted from YAML"
+        );
+    }
+
+    #[test]
+    fn test_state_store_serialization_roundtrip() {
+        let config = DrasiServerConfig {
+            state_store: Some(StateStoreConfig::redb("./data/test.redb")),
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(
+            yaml.contains("state_store:"),
+            "Serialized YAML should contain 'state_store:'"
+        );
+        assert!(
+            yaml.contains("kind: redb"),
+            "Serialized YAML should contain 'kind: redb'"
+        );
+
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert!(
+            deserialized.state_store.is_some(),
+            "Deserialized config should have state_store"
+        );
+        assert_eq!(deserialized.state_store.as_ref().unwrap().kind(), "redb");
+    }
+
+    #[test]
+    fn test_state_store_with_env_var_path() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+              path: ${STATE_STORE_PATH:-./data/default.redb}
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.state_store.is_some());
+    }
+
+    #[test]
+    fn test_state_store_with_other_settings() {
+        let yaml = r#"
+            id: my-production-server
+            host: 192.168.1.100
+            port: 9090
+            log_level: debug
+            disable_persistence: true
+            persist_index: true
+            state_store:
+              kind: redb
+              path: /var/lib/drasi/state.redb
+            sources: []
+            queries: []
+            reactions: []
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+
+        // Verify state_store is correctly parsed alongside other settings
+        assert!(config.state_store.is_some());
+        assert!(config.persist_index);
+        assert!(config.disable_persistence);
+    }
+
+    #[test]
+    fn test_state_store_in_instance_config() {
+        let yaml = r#"
+            id: multi-instance-server
+            host: 0.0.0.0
+            port: 8080
+            instances:
+              - id: instance-1
+                persist_index: true
+                state_store:
+                  kind: redb
+                  path: ./data/instance1.redb
+                sources: []
+                queries: []
+                reactions: []
+              - id: instance-2
+                persist_index: false
+                sources: []
+                queries: []
+                reactions: []
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.instances.len(), 2);
+
+        // First instance has state_store
+        assert!(config.instances[0].state_store.is_some());
+        assert_eq!(
+            config.instances[0].state_store.as_ref().unwrap().kind(),
+            "redb"
+        );
+
+        // Second instance doesn't have state_store
+        assert!(config.instances[1].state_store.is_none());
+    }
+
+    #[test]
+    fn test_resolved_instance_includes_state_store() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            state_store:
+              kind: redb
+              path: ./data/state.redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let mapper = DtoMapper::new();
+        let resolved = config.resolved_instances(&mapper).unwrap();
+
+        assert_eq!(resolved.len(), 1);
+        assert!(resolved[0].state_store.is_some());
+        assert_eq!(resolved[0].state_store.as_ref().unwrap().kind(), "redb");
+    }
+
+    #[test]
+    fn test_config_validation_succeeds_with_state_store() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            log_level: info
+            state_store:
+              kind: redb
+              path: ./data/state.redb
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            config.validate().is_ok(),
+            "Config with state_store should validate successfully"
+        );
+    }
+
+    #[test]
+    fn test_save_to_file_includes_state_store() {
+        use tempfile::NamedTempFile;
+
+        let config = DrasiServerConfig {
+            state_store: Some(StateStoreConfig::redb("./data/saved.redb")),
+            ..Default::default()
+        };
+
+        let temp_file = NamedTempFile::new().unwrap();
+        config.save_to_file(temp_file.path()).unwrap();
+
+        let content = std::fs::read_to_string(temp_file.path()).unwrap();
+        assert!(
+            content.contains("state_store:"),
+            "Saved file should contain state_store setting"
+        );
+        assert!(
+            content.contains("kind: redb"),
+            "Saved file should contain kind: redb"
+        );
+    }
+
+    #[test]
+    fn test_save_to_file_omits_none_state_store() {
+        use tempfile::NamedTempFile;
+
+        let config = DrasiServerConfig {
+            state_store: None,
+            ..Default::default()
+        };
+
+        let temp_file = NamedTempFile::new().unwrap();
+        config.save_to_file(temp_file.path()).unwrap();
+
+        let content = std::fs::read_to_string(temp_file.path()).unwrap();
+        assert!(
+            !content.contains("state_store:"),
+            "Saved file should not contain state_store when None"
         );
     }
 }
