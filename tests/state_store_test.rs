@@ -160,7 +160,7 @@ fn test_state_store_with_full_config() {
         host: 0.0.0.0
         port: 9090
         log_level: debug
-        disable_persistence: false
+        persist_config: true
         persist_index: true
         state_store:
           kind: redb
@@ -175,7 +175,7 @@ fn test_state_store_with_full_config() {
     assert!(config.state_store.is_some());
     assert_eq!(config.state_store.as_ref().unwrap().kind(), "redb");
     assert!(config.persist_index);
-    assert!(!config.disable_persistence);
+    assert!(config.persist_config);
 
     match &config.port {
         ConfigValue::Static(port) => assert_eq!(*port, 9090),

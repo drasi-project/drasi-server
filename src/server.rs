@@ -62,16 +62,16 @@ impl DrasiServer {
 
         // Determine persistence and read-only status
         // Read-only mode is ONLY enabled when the config file is not writable
-        // disable_persistence just means "don't save changes" but still allows API mutations
+        // persist_config: false means "don't save changes" but still allows API mutations
         let file_writable = Self::check_write_access(&config_path);
-        let persistence_disabled = resolved_settings.disable_persistence;
+        let persistence_enabled = resolved_settings.persist_config;
         let read_only = !file_writable; // Only read-only if file is not writable
 
         if !file_writable {
             warn!("Config file is not writable. API in READ-ONLY mode.");
             warn!("Cannot create or delete components via API.");
-        } else if persistence_disabled {
-            info!("Persistence disabled by configuration (disable_persistence: true).");
+        } else if !persistence_enabled {
+            info!("Persistence disabled by configuration (persist_config: false).");
             warn!("API modifications will not persist across restarts.");
         } else {
             info!("Persistence ENABLED. API modifications will be saved to config file.");
@@ -266,13 +266,13 @@ impl DrasiServer {
         // Initialize persistence if config file is provided and persistence is enabled
         let config_persistence = if let Some(config_file) = &self.config_file_path {
             if !*self.read_only {
-                // Need to reload config to check disable_persistence flag and get initial configs
+                // Need to reload config to check persist_config flag and get initial configs
                 let config = load_config_file(PathBuf::from(config_file))?;
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
-                let persistence_disabled = resolved_settings.disable_persistence;
+                let persistence_enabled = resolved_settings.persist_config;
 
-                if !persistence_disabled {
+                if persistence_enabled {
                     // Extract source and reaction configs from the loaded config
                     let resolved_instances = config.resolved_instances(&mapper)?;
                     let (initial_source_configs, initial_reaction_configs) =
@@ -285,7 +285,7 @@ impl DrasiServer {
                         self.host.clone(),
                         self.port,
                         resolved_settings.log_level,
-                        false,
+                        true, // persist_config = true
                         persist_settings.clone(),
                         initial_source_configs,
                         initial_reaction_configs,
@@ -293,7 +293,7 @@ impl DrasiServer {
                     info!("Configuration persistence enabled");
                     Some(persistence)
                 } else {
-                    info!("Configuration persistence disabled (disable_persistence: true)");
+                    info!("Configuration persistence disabled (persist_config: false)");
                     None
                 }
             } else {

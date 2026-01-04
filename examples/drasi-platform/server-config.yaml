@@ -6,7 +6,7 @@
 host: 0.0.0.0
 port: 8080
 log_level: info
-disable_persistence: true
+persist_config: false
 
 id: drasi-platform-example
 

@@ -30,7 +30,7 @@ async fn test_persistence_creates_config_file_on_save() {
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         sources: vec![],
         reactions: vec![],
         core_config: drasi_lib::config::DrasiLibConfig::default(),
@@ -50,7 +50,7 @@ async fn test_persistence_creates_config_file_on_save() {
         ConfigValue::Static("127.0.0.1".to_string())
     );
     assert_eq!(loaded_config.port, ConfigValue::Static(8080));
-    assert!(!loaded_config.disable_persistence);
+    assert!(loaded_config.persist_config);
 }
 
 #[tokio::test]
@@ -63,7 +63,7 @@ async fn test_persistence_disabled_by_flag() {
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
-        disable_persistence: true, // Disabled
+        persist_config: false, // Disabled
         sources: vec![],
         reactions: vec![],
         core_config: drasi_lib::config::DrasiLibConfig::default(),
@@ -75,7 +75,7 @@ async fn test_persistence_disabled_by_flag() {
     // Load and verify
     let loaded_config =
         drasi_server::load_config_file(&config_path).expect("Failed to load config");
-    assert!(loaded_config.disable_persistence);
+    assert!(!loaded_config.persist_config);
 }
 
 #[tokio::test]
@@ -88,7 +88,7 @@ async fn test_persistence_saves_complete_configuration() {
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         sources: vec![
             SourceConfig {
                 id: "test-source-1".to_string(),
@@ -151,7 +151,7 @@ async fn test_persistence_saves_complete_configuration() {
         loaded_config.log_level,
         ConfigValue::Static("debug".to_string())
     );
-    assert!(!loaded_config.disable_persistence);
+    assert!(loaded_config.persist_config);
 
     // Verify sources
     assert_eq!(loaded_config.sources.len(), 2);
@@ -193,7 +193,7 @@ async fn test_persistence_atomic_write() {
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         sources: vec![],
         reactions: vec![],
         core_config: drasi_lib::config::DrasiLibConfig::default(),
@@ -209,7 +209,7 @@ async fn test_persistence_atomic_write() {
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         sources: vec![SourceConfig {
             id: "new-source".to_string(),
             source_type: "mock".to_string(),
@@ -254,7 +254,7 @@ async fn test_persistence_validation_before_save() {
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(0), // Invalid port
         log_level: ConfigValue::Static("info".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         sources: vec![],
         reactions: vec![],
         core_config: drasi_lib::config::DrasiLibConfig::default(),
@@ -276,7 +276,7 @@ fn test_config_load_yaml_format() {
 host: 127.0.0.1
 port: 8080
 log_level: info
-disable_persistence: false
+persist_config: true
 sources:
   - id: test-source
     source_type: mock
@@ -318,5 +318,5 @@ reactions: []
         config.log_level,
         ConfigValue::Static("info".to_string())
     ); // Default
-    assert!(!config.disable_persistence); // Default false
+    assert!(config.persist_config); // Default true
 }

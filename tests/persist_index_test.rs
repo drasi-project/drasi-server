@@ -191,7 +191,7 @@ fn test_persist_index_with_full_config() {
         host: 0.0.0.0
         port: 9090
         log_level: debug
-        disable_persistence: false
+        persist_config: true
         persist_index: true
         sources: []
         queries: []
@@ -201,7 +201,7 @@ fn test_persist_index_with_full_config() {
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
 
     assert!(config.persist_index);
-    assert!(!config.disable_persistence);
+    assert!(config.persist_config);
 
     match &config.port {
         drasi_server::models::ConfigValue::Static(port) => assert_eq!(*port, 9090),

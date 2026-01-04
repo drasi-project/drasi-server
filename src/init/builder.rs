@@ -65,7 +65,7 @@ pub fn build_config(
         host: ConfigValue::Static(server_settings.host),
         port: ConfigValue::Static(server_settings.port),
         log_level: ConfigValue::Static(server_settings.log_level),
-        disable_persistence: false,
+        persist_config: true,
         persist_index: server_settings.persist_index,
         state_store: server_settings.state_store,
         default_priority_queue_capacity: None, // Use lib defaults
@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(config.host, ConfigValue::Static("0.0.0.0".to_string()));
         assert_eq!(config.port, ConfigValue::Static(8080));
         assert_eq!(config.log_level, ConfigValue::Static("info".to_string()));
-        assert!(!config.disable_persistence);
+        assert!(config.persist_config);
 
         // Check sources and reactions are empty
         assert!(config.sources.is_empty());

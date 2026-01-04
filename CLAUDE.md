@@ -90,7 +90,7 @@ id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 host: "0.0.0.0"
 port: 8080
 log_level: "info"
-disable_persistence: false  # Enable persistence (default)
+persist_config: true  # Enable persistence (default)
 persist_index: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 
 # Optional state store for plugin state persistence
@@ -135,7 +135,7 @@ For multiple DrasiLib instances, use the `instances` array (legacy single-instan
 host: "0.0.0.0"
 port: 8080
 log_level: "info"
-disable_persistence: false
+persist_config: true
 
 instances:
   - id: "analytics"
@@ -173,18 +173,18 @@ DrasiServer separates two independent concepts:
 **Persistence is enabled when:**
 - Config file is provided on startup (`--config path/to/config.yaml`)
 - Config file is writable
-- `disable_persistence: false` in server settings (default)
+- `persist_config: true` in server settings (default)
 
 **Persistence is disabled when:**
 - No config file provided (server starts with empty configuration)
 - Config file is read-only
-- `disable_persistence: true` in server settings
+- `persist_config: false` in server settings
 
 **Read-Only mode is enabled ONLY when:**
 - Config file is not writable (file permissions prevent writing)
 
 **Important distinction:**
-- `disable_persistence: true` → API mutations are allowed but NOT saved to config file
+- `persist_config: false` → API mutations are allowed but NOT saved to config file
 - Read-only config file → API mutations are blocked entirely
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 

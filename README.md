@@ -160,7 +160,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
 | `log_level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `disable_persistence` | boolean | `false` | Disable saving API changes to config file |
+| `persist_config` | boolean | `true` | Enable saving API changes to config file |
 | `persist_index` | boolean | `false` | Use RocksDB for persistent query indexes |
 | `state_store` | object | (none) | State store provider for plugin state persistence |
 | `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
@@ -173,7 +173,7 @@ id: my-server
 host: 0.0.0.0
 port: 8080
 log_level: info
-disable_persistence: false
+persist_config: true
 persist_index: false
 
 state_store:

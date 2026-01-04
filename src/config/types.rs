@@ -45,9 +45,9 @@ pub struct DrasiServerConfig {
     /// Log level (trace, debug, info, warn, error)
     #[serde(default = "default_log_level")]
     pub log_level: ConfigValue<String>,
-    /// Disable automatic persistence of API changes to config file
-    #[serde(default = "default_disable_persistence")]
-    pub disable_persistence: bool,
+    /// Enable automatic persistence of API changes to config file
+    #[serde(default = "default_persist_config")]
+    pub persist_config: bool,
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
@@ -87,7 +87,7 @@ impl Default for DrasiServerConfig {
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
             log_level: ConfigValue::Static("info".to_string()),
-            disable_persistence: false,
+            persist_config: true,
             persist_index: false,
             state_store: None,
             default_priority_queue_capacity: None,
@@ -116,8 +116,8 @@ fn default_log_level() -> ConfigValue<String> {
     ConfigValue::Static("info".to_string())
 }
 
-fn default_disable_persistence() -> bool {
-    false
+fn default_persist_config() -> bool {
+    true
 }
 
 fn default_persist_index() -> bool {
@@ -424,7 +424,7 @@ mod tests {
             host: 192.168.1.100
             port: 9090
             log_level: debug
-            disable_persistence: true
+            persist_config: false
             persist_index: true
             sources: []
             queries: []
@@ -435,7 +435,7 @@ mod tests {
 
         // Verify persist_index is correctly parsed alongside other settings
         assert!(config.persist_index);
-        assert!(config.disable_persistence);
+        assert!(!config.persist_config);
         match &config.log_level {
             ConfigValue::Static(level) => assert_eq!(level, "debug"),
             _ => panic!("Expected static log_level"),
@@ -450,14 +450,14 @@ mod tests {
         );
     }
 
-    // ==================== disable_persistence tests (for comparison) ====================
+    // ==================== persist_config tests ====================
 
     #[test]
-    fn test_disable_persistence_default_is_false() {
+    fn test_persist_config_default_is_true() {
         let config = DrasiServerConfig::default();
         assert!(
-            !config.disable_persistence,
-            "disable_persistence should default to false"
+            config.persist_config,
+            "persist_config should default to true"
         );
     }
 
@@ -589,7 +589,7 @@ mod tests {
             host: 192.168.1.100
             port: 9090
             log_level: debug
-            disable_persistence: true
+            persist_config: false
             persist_index: true
             state_store:
               kind: redb
@@ -604,7 +604,7 @@ mod tests {
         // Verify state_store is correctly parsed alongside other settings
         assert!(config.state_store.is_some());
         assert!(config.persist_index);
-        assert!(config.disable_persistence);
+        assert!(!config.persist_config);
     }
 
     #[test]
