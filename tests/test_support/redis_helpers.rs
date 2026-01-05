@@ -20,12 +20,30 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::Arc;
 use testcontainers_modules::redis::Redis;
 
-/// Setup a Redis testcontainer and return the connection URL
+/// Setup a Redis testcontainer and return a guard that manages cleanup
 ///
-/// Returns the connection URL for the Redis container
-pub async fn setup_redis() -> String {
+/// Returns a `RedisGuard` that manages the container lifecycle. The container
+/// will be stopped and removed via blocking cleanup when the guard is dropped.
+///
+/// **RECOMMENDED**: Call `.cleanup().await` explicitly before the test ends for
+/// the most reliable cleanup.
+///
+/// # Example
+/// ```ignore
+/// let redis = setup_redis().await;
+/// // Use redis.url() to get the connection string
+/// // ... test code ...
+/// redis.cleanup().await; // Explicit cleanup (recommended)
+/// ```
+pub async fn setup_redis() -> RedisGuard {
+    RedisGuard::new().await
+}
+
+/// Low-level setup function that returns raw container and URL
+async fn setup_redis_raw() -> (testcontainers::ContainerAsync<Redis>, String) {
     use testcontainers::runners::AsyncRunner;
 
     // Start Redis container
@@ -39,10 +57,104 @@ pub async fn setup_redis() -> String {
         .expect("Failed to get Redis port");
     let redis_url = format!("redis://127.0.0.1:{redis_port}");
 
-    // Keep container alive by leaking it (test framework will clean up)
-    std::mem::forget(container);
+    (container, redis_url)
+}
 
-    redis_url
+/// Guard wrapper for Redis container that ensures proper cleanup
+///
+/// This struct wraps the Redis container and uses blocking cleanup in Drop.
+/// The testcontainers library's async drop may not complete before tests exit,
+/// but we force a blocking cleanup using a runtime handle.
+#[derive(Clone)]
+pub struct RedisGuard {
+    inner: Arc<RedisGuardInner>,
+}
+
+struct RedisGuardInner {
+    container: std::sync::Mutex<Option<testcontainers::ContainerAsync<Redis>>>,
+    url: String,
+}
+
+impl RedisGuard {
+    /// Create a new Redis container with guaranteed cleanup
+    pub async fn new() -> Self {
+        let (container, url) = setup_redis_raw().await;
+        Self {
+            inner: Arc::new(RedisGuardInner {
+                container: std::sync::Mutex::new(Some(container)),
+                url,
+            }),
+        }
+    }
+
+    /// Get the Redis connection URL
+    pub fn url(&self) -> &str {
+        &self.inner.url
+    }
+
+    /// Explicitly stop and remove the container
+    ///
+    /// Call this at the end of your test to ensure the container is cleaned up.
+    /// This is an async method that properly stops and removes the container.
+    pub async fn cleanup(self) {
+        // Take the container out while holding the lock, then drop the lock before awaiting
+        let container_to_stop = {
+            if let Ok(mut container_guard) = self.inner.container.lock() {
+                container_guard.take()
+            } else {
+                None
+            }
+        };
+
+        // Now await without holding the lock
+        if let Some(container) = container_to_stop {
+            let container_id = container.id().to_string();
+
+            // Stop and remove the container
+            match container.stop().await {
+                Ok(_) => {
+                    log::debug!("Successfully stopped Redis container: {container_id}");
+                }
+                Err(e) => {
+                    log::warn!("Error stopping container {container_id}: {e}");
+                }
+            }
+
+            // Explicit drop to trigger removal
+            drop(container);
+        }
+    }
+}
+
+impl Drop for RedisGuardInner {
+    fn drop(&mut self) {
+        if let Ok(mut container_guard) = self.container.lock() {
+            if let Some(container) = container_guard.take() {
+                let container_id = container.id().to_string();
+
+                // Block on cleanup to ensure it completes
+                let cleanup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    // Try to get current runtime, if we're in one
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        // Spawn blocking task to stop container
+                        handle.block_on(async move {
+                            let _ = container.stop().await;
+                            drop(container);
+                        });
+                    } else {
+                        // We're not in a runtime, just drop it
+                        drop(container);
+                    }
+                }));
+
+                if cleanup_result.is_ok() {
+                    log::debug!("Redis container {container_id} cleaned up in Drop");
+                } else {
+                    log::warn!("Failed to cleanup Redis container {container_id} in Drop");
+                }
+            }
+        }
+    }
 }
 
 /// Publish a platform CloudEvent to a Redis stream
