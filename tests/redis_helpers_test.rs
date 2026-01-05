@@ -24,13 +24,16 @@ use test_support::redis_helpers::*;
 
 #[tokio::test]
 async fn test_setup_redis() {
-    let redis_url = setup_redis().await;
-    assert!(redis_url.starts_with("redis://127.0.0.1:"));
+    let redis = setup_redis().await;
+    assert!(redis.url().starts_with("redis://127.0.0.1:"));
 
     // Verify we can connect
-    let client = redis::Client::open(redis_url.as_str()).unwrap();
+    let client = redis::Client::open(redis.url()).unwrap();
     let mut conn = client.get_multiplexed_async_connection().await.unwrap();
     let _: String = redis::cmd("PING").query_async(&mut conn).await.unwrap();
+
+    // Explicitly cleanup the container
+    redis.cleanup().await;
 }
 
 #[test]
