@@ -46,7 +46,7 @@ pub mod reactions;
 
 // Re-export commonly used types at module root for convenience
 pub use core::*;
-pub use queries::*;
+pub use queries::QueryConfigMapper;
 pub use reactions::*;
 pub use server_settings::{map_server_settings, ResolvedServerSettings};
 pub use sources::*;

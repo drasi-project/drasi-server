@@ -55,7 +55,7 @@ queries:
         50 + (r.temperature - 72) + (r.humidity - 42) + (r.co2 / 25) AS ComfortLevel
     # Sources this query subscribes to
     sources:
-      - source_id: facilities-db
+      - sourceId: facilities-db
 
 # Reactions: Define what happens with query results
 reactions:

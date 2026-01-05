@@ -40,6 +40,9 @@ use serde::{Deserialize, Serialize};
 // Config value module
 pub mod config_value;
 
+// Query module
+pub mod query;
+
 // Source modules
 pub mod grpc_source;
 pub mod http_source;
@@ -73,6 +76,9 @@ pub use sse::SseReactionConfigDto;
 
 // Config value types
 pub use config_value::*;
+
+// Query types
+pub use query::*;
 
 // =============================================================================
 // Configuration Enums (Top-level aggregates)

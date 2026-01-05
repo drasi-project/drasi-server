@@ -24,7 +24,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::api::mappings::{map_server_settings, DtoMapper, QueryConfigMapper, ConfigMapper};
 use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
@@ -128,9 +128,11 @@ impl DrasiServer {
                 builder = builder.with_source(source);
             }
 
-            // Add queries from config
-            for query_config in &instance.queries {
-                builder = builder.with_query(query_config.clone());
+            // Add queries from config (map DTOs to drasi-lib QueryConfig)
+            let query_mapper = QueryConfigMapper;
+            for query_dto in &instance.queries {
+                let query_config = query_mapper.map(query_dto, &mapper)?;
+                builder = builder.with_query(query_config);
             }
 
             // Create and add reactions from config

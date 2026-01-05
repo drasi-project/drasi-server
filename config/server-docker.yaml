@@ -19,7 +19,7 @@ queries:
   queryLanguage: Cypher
   middleware: []
   source_subscriptions:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
   autoStart: true
   enableBootstrap: true
@@ -29,7 +29,7 @@ queries:
   queryLanguage: Cypher
   middleware: []
   source_subscriptions:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
   autoStart: true
   enableBootstrap: true

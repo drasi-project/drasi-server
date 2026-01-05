@@ -61,7 +61,7 @@ queries:
         m.From AS MessageFrom
     # Sources this query subscribes to
     sources:
-      - source_id: platform-redis-source
+      - sourceId: platform-redis-source
 
 # Reactions: Define what happens with query results
 reactions:

@@ -73,7 +73,7 @@ queries:
     enable_bootstrap: true
     
     source_subscriptions:
-      - source_id: my-postgres-db
+      - sourceId: my-postgres-db
 
 # Reactions (where to send query results)
 reactions:

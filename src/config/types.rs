@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use anyhow::Result;
-use drasi_lib::config::QueryConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -23,7 +22,7 @@ use std::str::FromStr;
 
 // Import the config enums from api::models
 use crate::api::mappings::DtoMapper;
-use crate::api::models::{ConfigValue, ReactionConfig, SourceConfig, StateStoreConfig};
+use crate::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// DrasiServer configuration
 ///
@@ -72,7 +71,7 @@ pub struct DrasiServerConfig {
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
-    pub queries: Vec<QueryConfig>,
+    pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
     pub reactions: Vec<ReactionConfig>,
@@ -155,7 +154,7 @@ pub struct DrasiLibInstanceConfig {
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
-    pub queries: Vec<QueryConfig>,
+    pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
     pub reactions: Vec<ReactionConfig>,
