@@ -60,13 +60,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),
         port: drasi_server::models::ConfigValue::Static(8080),
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
-        disable_persistence: false,
+        persist_config: true,
         persist_index: false,                  // Use in-memory indexes (default)
+        state_store: None,                     // Use in-memory state store (default)
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources: vec![],                       // Add sources using SourceConfig enum
         reactions: vec![],                     // Add reactions using ReactionConfig enum
         queries: vec![available_drivers_query, pending_orders_query],
+        instances: vec![], // Empty = use legacy single-instance mode
     };
 
     // Save configuration to file

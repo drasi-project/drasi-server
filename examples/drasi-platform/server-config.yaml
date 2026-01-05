@@ -6,7 +6,7 @@
 host: 0.0.0.0
 port: 8080
 log_level: info
-disable_persistence: true
+persist_config: false
 
 id: drasi-platform-example
 
@@ -61,7 +61,7 @@ queries:
         m.From AS MessageFrom
     # Sources this query subscribes to
     sources:
-      - platform-redis-source
+      - source_id: platform-redis-source
 
 # Reactions: Define what happens with query results
 reactions:

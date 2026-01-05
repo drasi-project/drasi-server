@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Factory functions for creating source and reaction instances from config.
+//! Factory functions for creating source, reaction, and state store instances from config.
 //!
 //! This module provides factory functions that match on the tagged enum config
 //! types and use the existing plugin constructors to create instances.
 
 use anyhow::Result;
 use drasi_lib::bootstrap::BootstrapProviderConfig;
-use drasi_lib::plugin_core::{Reaction, Source};
+use drasi_lib::state_store::StateStoreProvider;
+use drasi_lib::{Reaction, Source};
 use log::info;
+use std::sync::Arc;
 
 use crate::api::mappings::{
     ConfigMapper,
@@ -41,7 +43,7 @@ use crate::api::mappings::{
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
 };
-use crate::config::{ReactionConfig, SourceConfig};
+use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// Create a source instance from a SourceConfig.
 ///
@@ -391,5 +393,356 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                     .build()?,
             ))
         }
+    }
+}
+
+/// Create a state store provider from a StateStoreConfig.
+///
+/// This function matches on the config variant and creates the appropriate
+/// state store provider type using the plugin's constructor.
+///
+/// # Arguments
+///
+/// * `config` - The state store configuration
+///
+/// # Returns
+///
+/// An Arc-wrapped StateStoreProvider trait object
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use drasi_server::config::StateStoreConfig;
+/// use drasi_server::factories::create_state_store_provider;
+///
+/// let config = StateStoreConfig::Redb {
+///     path: ConfigValue::Static("./data/state.redb".to_string()),
+/// };
+///
+/// let provider = create_state_store_provider(config)?;
+/// ```
+pub fn create_state_store_provider(
+    config: StateStoreConfig,
+) -> Result<Arc<dyn StateStoreProvider + Send + Sync + 'static>> {
+    let mapper = DtoMapper::new();
+
+    match config {
+        StateStoreConfig::Redb { path } => {
+            use drasi_state_store_redb::RedbStateStoreProvider;
+
+            let resolved_path: String = mapper.resolve_typed(&path)?;
+            info!("Creating REDB state store provider with path: {resolved_path}");
+
+            let provider = RedbStateStoreProvider::new(&resolved_path)?;
+            Ok(Arc::new(provider))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
+    use tempfile::TempDir;
+
+    // ==========================================================================
+    // Source Factory Tests
+    // ==========================================================================
+
+    #[tokio::test]
+    async fn test_create_mock_source() {
+        let config = SourceConfig::Mock {
+            id: "test-mock-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let source = create_source(config)
+            .await
+            .expect("Failed to create mock source");
+        assert_eq!(source.id(), "test-mock-source");
+        assert_eq!(source.type_name(), "mock");
+    }
+
+    #[tokio::test]
+    async fn test_create_mock_source_auto_start_false() {
+        let config = SourceConfig::Mock {
+            id: "manual-source".to_string(),
+            auto_start: false,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(500),
+            },
+        };
+
+        let source = create_source(config)
+            .await
+            .expect("Failed to create mock source");
+        assert_eq!(source.id(), "manual-source");
+    }
+
+    #[tokio::test]
+    async fn test_create_mock_source_with_noop_bootstrap() {
+        let config = SourceConfig::Mock {
+            id: "bootstrap-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(BootstrapProviderConfig::Noop),
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let source = create_source(config)
+            .await
+            .expect("Failed to create source with bootstrap");
+        assert_eq!(source.id(), "bootstrap-source");
+    }
+
+    #[tokio::test]
+    async fn test_create_mock_source_with_scriptfile_bootstrap() {
+        use drasi_lib::bootstrap::ScriptFileBootstrapConfig;
+
+        let config = SourceConfig::Mock {
+            id: "script-bootstrap-source".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(BootstrapProviderConfig::ScriptFile(
+                ScriptFileBootstrapConfig {
+                    file_paths: vec!["test.jsonl".to_string()],
+                },
+            )),
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let source = create_source(config)
+            .await
+            .expect("Failed to create source with scriptfile bootstrap");
+        assert_eq!(source.id(), "script-bootstrap-source");
+    }
+
+    // ==========================================================================
+    // Reaction Factory Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_create_log_reaction() {
+        let config = ReactionConfig::Log {
+            id: "test-log-reaction".to_string(),
+            queries: vec!["query1".to_string()],
+            auto_start: true,
+            config: LogReactionConfigDto::default(),
+        };
+
+        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        assert_eq!(reaction.id(), "test-log-reaction");
+        assert_eq!(reaction.type_name(), "log");
+        assert_eq!(reaction.query_ids(), vec!["query1".to_string()]);
+    }
+
+    #[test]
+    fn test_create_log_reaction_multiple_queries() {
+        let config = ReactionConfig::Log {
+            id: "multi-query-reaction".to_string(),
+            queries: vec![
+                "query1".to_string(),
+                "query2".to_string(),
+                "query3".to_string(),
+            ],
+            auto_start: false,
+            config: LogReactionConfigDto::default(),
+        };
+
+        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        assert_eq!(reaction.id(), "multi-query-reaction");
+        assert_eq!(reaction.query_ids().len(), 3);
+    }
+
+    #[test]
+    fn test_create_profiler_reaction() {
+        use crate::models::ProfilerReactionConfigDto;
+
+        let config = ReactionConfig::Profiler {
+            id: "profiler-reaction".to_string(),
+            queries: vec!["perf-query".to_string()],
+            auto_start: true,
+            config: ProfilerReactionConfigDto {
+                window_size: ConfigValue::Static(1000),
+                report_interval_secs: ConfigValue::Static(60),
+            },
+        };
+
+        let reaction = create_reaction(config).expect("Failed to create profiler reaction");
+        assert_eq!(reaction.id(), "profiler-reaction");
+        assert_eq!(reaction.type_name(), "profiler");
+    }
+
+    // ==========================================================================
+    // State Store Provider Factory Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_create_redb_state_store_provider() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let path = temp_dir.path().join("state.redb");
+
+        let config = StateStoreConfig::Redb {
+            path: ConfigValue::Static(path.to_string_lossy().to_string()),
+        };
+
+        let provider = create_state_store_provider(config).expect("Failed to create REDB provider");
+        // Provider is created successfully - we can't test much more without internal access
+        assert!(std::sync::Arc::strong_count(&provider) >= 1);
+    }
+
+    #[test]
+    fn test_create_redb_state_store_provider_creates_file() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let path = temp_dir.path().join("test_store.redb");
+
+        let config = StateStoreConfig::Redb {
+            path: ConfigValue::Static(path.to_string_lossy().to_string()),
+        };
+
+        let _provider = create_state_store_provider(config).expect("Failed to create provider");
+
+        // Verify the file was created
+        assert!(path.exists(), "REDB file should be created");
+    }
+
+    // ==========================================================================
+    // Bootstrap Provider Factory Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_create_noop_bootstrap_provider() {
+        let bootstrap_config = BootstrapProviderConfig::Noop;
+        let source_config = SourceConfig::Mock {
+            id: "test".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
+        assert!(result.is_ok(), "Failed to create noop bootstrap provider");
+    }
+
+    #[test]
+    fn test_create_scriptfile_bootstrap_provider() {
+        use drasi_lib::bootstrap::ScriptFileBootstrapConfig;
+
+        let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfig {
+            file_paths: vec!["/path/to/data.jsonl".to_string()],
+        });
+        let source_config = SourceConfig::Mock {
+            id: "test".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let provider = create_bootstrap_provider(&bootstrap_config, &source_config)
+            .expect("Failed to create scriptfile bootstrap provider");
+
+        // Provider was created successfully
+        drop(provider);
+    }
+
+    #[test]
+    fn test_postgres_bootstrap_requires_postgres_source() {
+        use drasi_lib::bootstrap::PostgresBootstrapConfig;
+
+        let bootstrap_config = BootstrapProviderConfig::Postgres(PostgresBootstrapConfig {});
+        let source_config = SourceConfig::Mock {
+            id: "test".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("Postgres bootstrap provider can only be used with Postgres sources"),
+            "Unexpected error: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_application_bootstrap_returns_error() {
+        use drasi_lib::bootstrap::ApplicationBootstrapConfig;
+
+        let bootstrap_config =
+            BootstrapProviderConfig::Application(ApplicationBootstrapConfig::default());
+        let source_config = SourceConfig::Mock {
+            id: "test".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("Application bootstrap provider is managed internally"),
+            "Unexpected error: {err_msg}"
+        );
+    }
+
+    // ==========================================================================
+    // Edge Case Tests
+    // ==========================================================================
+
+    #[tokio::test]
+    async fn test_source_with_custom_interval() {
+        let config = SourceConfig::Mock {
+            id: "custom-interval".to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("generic".to_string()),
+                interval_ms: ConfigValue::Static(60000), // 60 seconds
+            },
+        };
+
+        let source = create_source(config)
+            .await
+            .expect("Failed to create source");
+        assert_eq!(source.id(), "custom-interval");
+    }
+
+    #[test]
+    fn test_reaction_with_empty_queries_list() {
+        let config = ReactionConfig::Log {
+            id: "no-queries".to_string(),
+            queries: vec![],
+            auto_start: true,
+            config: LogReactionConfigDto::default(),
+        };
+
+        let reaction = create_reaction(config).expect("Failed to create reaction");
+        assert!(reaction.query_ids().is_empty());
     }
 }

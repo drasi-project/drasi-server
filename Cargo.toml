@@ -59,6 +59,9 @@ drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" 
 # Index plugins
 drasi-index-rocksdb = { path = "./drasi-core/components/indexes/rocksdb" }
 
+# State store plugins
+drasi-state-store-redb = { path = "./drasi-core/components/state_stores/redb" }
+
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
 axum = "0.7"
@@ -74,6 +77,7 @@ clap = { version = "4.0", features = ["derive"] }
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1.0", features = ["v4"] }
+indexmap = "2.0"
 thiserror = "1.0"
 dotenvy = "0.15"
 inquire = "0.7"

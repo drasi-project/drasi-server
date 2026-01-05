@@ -24,6 +24,7 @@ pub struct LogReactionConfigMapper;
 fn map_template_spec(dto: &TemplateSpecDto) -> TemplateSpec {
     TemplateSpec {
         template: dto.template.clone(),
+        extension: (),
     }
 }
 

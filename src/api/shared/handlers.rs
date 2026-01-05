@@ -12,111 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Shared handler implementations used across API versions.
+//!
+//! These handler functions contain the core business logic that can be
+//! reused by version-specific handlers. Each API version may wrap these
+//! with version-specific path annotations.
+
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
     response::Json,
 };
-use serde::Serialize;
+use indexmap::IndexMap;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
+use super::responses::{
+    ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
+    StatusResponse,
+};
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
-use drasi_lib::{
-    // Internal types (doc-hidden but accessible)
-    channels::ComponentStatus,
-    queries::LabelExtractor, // For join validation
-    // Public config types
-    QueryConfig,
-};
+use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, QueryConfig};
 
 /// Helper function to persist configuration after a successful operation.
 /// Logs errors but does not fail the request - persistence failures are non-fatal.
-async fn persist_after_operation(
+pub async fn persist_after_operation(
     config_persistence: &Option<Arc<ConfigPersistence>>,
     operation: &str,
 ) {
     if let Some(persistence) = config_persistence {
         if let Err(e) = persistence.save().await {
             log::error!("Failed to persist configuration after {operation}: {e}");
-            // Don't fail the request, just log the error
         }
     }
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct HealthResponse {
-    /// Health status of the server
-    status: String,
-    /// Current server timestamp
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ComponentListItem {
-    /// ID of the component
-    id: String,
-    /// Current status of the component
-    status: ComponentStatus,
-}
-
-#[derive(Serialize)]
-pub struct ApiResponse<T> {
-    /// Whether the request was successful
-    success: bool,
-    /// Response data if successful
-    data: Option<T>,
-    /// Error message if unsuccessful
-    error: Option<String>,
-}
-
-/// Generic API Response schema for OpenAPI documentation
-#[derive(Serialize, ToSchema)]
-#[schema(as = ApiResponse)]
-pub struct ApiResponseSchema {
-    /// Whether the request was successful
-    success: bool,
-    /// Response data if successful
-    data: Option<serde_json::Value>,
-    /// Error message if unsuccessful
-    error: Option<String>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct StatusResponse {
-    /// Status message
-    message: String,
-}
-
-impl<T> ApiResponse<T> {
-    pub fn success(data: T) -> Self {
-        Self {
-            success: true,
-            data: Some(data),
-            error: None,
-        }
-    }
-
-    pub fn error(message: String) -> Self {
-        Self {
-            success: false,
-            data: None,
-            error: Some(message),
-        }
-    }
+/// List available API versions
+pub async fn list_api_versions() -> Json<ApiVersionsResponse> {
+    Json(ApiVersionsResponse {
+        versions: vec!["v1".to_string()],
+        current: "v1".to_string(),
+    })
 }
 
 /// Check server health
-#[utoipa::path(
-    get,
-    path = "/health",
-    responses(
-        (status = 200, description = "Server is healthy", body = HealthResponse),
-    ),
-    tag = "Health"
-)]
 pub async fn health_check() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
@@ -124,15 +64,20 @@ pub async fn health_check() -> Json<HealthResponse> {
     })
 }
 
-/// List all sources
-#[utoipa::path(
-    get,
-    path = "/sources",
-    responses(
-        (status = 200, description = "List of sources", body = ApiResponse),
-    ),
-    tag = "Sources"
-)]
+/// List configured DrasiLib instances
+pub async fn list_instances(
+    Extension(instances): Extension<Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>>,
+) -> Json<ApiResponse<Vec<InstanceListItem>>> {
+    let data = instances
+        .keys()
+        .cloned()
+        .map(|id| InstanceListItem { id })
+        .collect();
+
+    Json(ApiResponse::success(data))
+}
+
+/// List all sources for an instance
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
@@ -146,35 +91,11 @@ pub async fn list_sources(
 }
 
 /// Create a new source
-///
-/// Creates a source from a configuration object. The `kind` field determines
-/// the source type (mock, http, grpc, postgres, platform).
-///
-/// Example request body:
-/// ```json
-/// {
-///   "kind": "http",
-///   "id": "my-http-source",
-///   "auto_start": true,
-///   "host": "0.0.0.0",
-///   "port": 9000
-/// }
-/// ```
-#[utoipa::path(
-    post,
-    path = "/sources",
-    request_body = serde_json::Value,
-    responses(
-        (status = 200, description = "Source created successfully", body = ApiResponse),
-        (status = 400, description = "Invalid source configuration"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Sources"
-)]
 pub async fn create_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -183,7 +104,6 @@ pub async fn create_source_handler(
         )));
     }
 
-    // Parse the JSON into SourceConfig (tagged enum)
     let config: SourceConfig = match serde_json::from_value(config_json) {
         Ok(c) => c,
         Err(e) => {
@@ -197,8 +117,7 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    // Create the source instance using the factory function
-    let source = match create_source(config).await {
+    let source = match create_source(config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -208,12 +127,14 @@ pub async fn create_source_handler(
         }
     };
 
-    // Add the source to DrasiLib
     match core.add_source(source).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
-            // Auto-start if configured
+            if let Some(persistence) = &config_persistence {
+                persistence.register_source(&instance_id, config).await;
+            }
+
             if auto_start {
                 if let Err(e) = core.start_source(&source_id).await {
                     log::warn!("Failed to auto-start source '{source_id}': {e}");
@@ -241,21 +162,6 @@ pub async fn create_source_handler(
 }
 
 /// Get source status by ID
-///
-/// Note: Source configs are not stored - sources are instances.
-/// This endpoint returns the source status instead.
-#[utoipa::path(
-    get,
-    path = "/sources/{id}",
-    params(
-        ("id" = String, Path, description = "Source ID")
-    ),
-    responses(
-        (status = 200, description = "Source found", body = ApiResponse),
-        (status = 404, description = "Source not found"),
-    ),
-    tag = "Sources"
-)]
 pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -267,21 +173,11 @@ pub async fn get_source(
 }
 
 /// Delete a source
-#[utoipa::path(
-    delete,
-    path = "/sources/{id}",
-    params(
-        ("id" = String, Path, description = "Source ID")
-    ),
-    responses(
-        (status = 200, description = "Source deleted successfully", body = ApiResponse),
-    ),
-    tag = "Sources"
-)]
 pub async fn delete_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -292,6 +188,10 @@ pub async fn delete_source(
 
     match core.remove_source(&id).await {
         Ok(_) => {
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_source(&instance_id, &id).await;
+            }
+
             persist_after_operation(&config_persistence, "deleting source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -306,19 +206,6 @@ pub async fn delete_source(
 }
 
 /// Start a source
-#[utoipa::path(
-    post,
-    path = "/sources/{id}/start",
-    params(
-        ("id" = String, Path, description = "Source ID")
-    ),
-    responses(
-        (status = 200, description = "Source started successfully", body = ApiResponse),
-        (status = 404, description = "Source not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Sources"
-)]
 pub async fn start_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -339,19 +226,6 @@ pub async fn start_source(
 }
 
 /// Stop a source
-#[utoipa::path(
-    post,
-    path = "/sources/{id}/stop",
-    params(
-        ("id" = String, Path, description = "Source ID")
-    ),
-    responses(
-        (status = 200, description = "Source stopped successfully", body = ApiResponse),
-        (status = 404, description = "Source not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Sources"
-)]
 pub async fn stop_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -371,16 +245,7 @@ pub async fn stop_source(
     }
 }
 
-// Query endpoints
-/// List all queries
-#[utoipa::path(
-    get,
-    path = "/queries",
-    responses(
-        (status = 200, description = "List of queries", body = ApiResponse),
-    ),
-    tag = "Queries"
-)]
+/// List all queries for an instance
 pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
@@ -394,16 +259,6 @@ pub async fn list_queries(
 }
 
 /// Create a new query
-#[utoipa::path(
-    post,
-    path = "/queries",
-    request_body = QueryConfig,
-    responses(
-        (status = 200, description = "Query created successfully", body = ApiResponse),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Queries"
-)]
 pub async fn create_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
@@ -453,7 +308,6 @@ pub async fn create_query(
         log::debug!("Registering query '{query_id}' with no synthetic joins");
     }
 
-    // Use DrasiLib's public API to create query
     match core.add_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{query_id}' created successfully");
@@ -464,11 +318,9 @@ pub async fn create_query(
             })))
         }
         Err(e) => {
-            // Check if the query already exists
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                 log::info!("Query '{query_id}' already exists, skipping creation");
-                // Return success since the query exists (idempotent behavior)
                 return Ok(Json(ApiResponse::success(StatusResponse {
                     message: format!("Query '{query_id}' already exists"),
                 })));
@@ -480,19 +332,7 @@ pub async fn create_query(
     }
 }
 
-/// Get query by name
-#[utoipa::path(
-    get,
-    path = "/queries/{id}",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    responses(
-        (status = 200, description = "Query found", body = ApiResponse),
-        (status = 404, description = "Query not found"),
-    ),
-    tag = "Queries"
-)]
+/// Get query by ID
 pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -504,17 +344,6 @@ pub async fn get_query(
 }
 
 /// Delete a query
-#[utoipa::path(
-    delete,
-    path = "/queries/{id}",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    responses(
-        (status = 200, description = "Query deleted successfully", body = ApiResponse),
-    ),
-    tag = "Queries"
-)]
 pub async fn delete_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
@@ -543,19 +372,6 @@ pub async fn delete_query(
 }
 
 /// Start a query
-#[utoipa::path(
-    post,
-    path = "/queries/{id}/start",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    responses(
-        (status = 200, description = "Query started successfully", body = ApiResponse),
-        (status = 404, description = "Query not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Queries"
-)]
 pub async fn start_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -576,19 +392,6 @@ pub async fn start_query(
 }
 
 /// Stop a query
-#[utoipa::path(
-    post,
-    path = "/queries/{id}/stop",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    responses(
-        (status = 200, description = "Query stopped successfully", body = ApiResponse),
-        (status = 404, description = "Query not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Queries"
-)]
 pub async fn stop_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -609,19 +412,6 @@ pub async fn stop_query(
 }
 
 /// Get current results of a query
-#[utoipa::path(
-    get,
-    path = "/queries/{id}/results",
-    params(
-        ("id" = String, Path, description = "Query ID")
-    ),
-    responses(
-        (status = 200, description = "Current query results", body = ApiResponse<Vec<serde_json::Value>>),
-        (status = 404, description = "Query not found"),
-        (status = 400, description = "Query is not running"),
-    ),
-    tag = "Queries"
-)]
 pub async fn get_query_results(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -639,16 +429,7 @@ pub async fn get_query_results(
     }
 }
 
-// Reaction endpoints
-/// List all reactions
-#[utoipa::path(
-    get,
-    path = "/reactions",
-    responses(
-        (status = 200, description = "List of reactions", body = ApiResponse),
-    ),
-    tag = "Reactions"
-)]
+/// List all reactions for an instance
 pub async fn list_reactions(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
@@ -662,35 +443,11 @@ pub async fn list_reactions(
 }
 
 /// Create a new reaction
-///
-/// Creates a reaction from a configuration object. The `kind` field determines
-/// the reaction type (log, http, http-adaptive, grpc, grpc-adaptive, sse, platform, profiler).
-///
-/// Example request body:
-/// ```json
-/// {
-///   "kind": "log",
-///   "id": "my-log-reaction",
-///   "queries": ["my-query"],
-///   "auto_start": true,
-///   "log_level": "info"
-/// }
-/// ```
-#[utoipa::path(
-    post,
-    path = "/reactions",
-    request_body = serde_json::Value,
-    responses(
-        (status = 200, description = "Reaction created successfully", body = ApiResponse),
-        (status = 400, description = "Invalid reaction configuration"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Reactions"
-)]
 pub async fn create_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -699,7 +456,6 @@ pub async fn create_reaction_handler(
         )));
     }
 
-    // Parse the JSON into ReactionConfig (tagged enum)
     let config: ReactionConfig = match serde_json::from_value(config_json) {
         Ok(c) => c,
         Err(e) => {
@@ -713,8 +469,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    // Create the reaction instance using the factory function
-    let reaction = match create_reaction(config) {
+    let reaction = match create_reaction(config.clone()) {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");
@@ -724,12 +479,14 @@ pub async fn create_reaction_handler(
         }
     };
 
-    // Add the reaction to DrasiLib
     match core.add_reaction(reaction).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
-            // Auto-start if configured
+            if let Some(persistence) = &config_persistence {
+                persistence.register_reaction(&instance_id, config).await;
+            }
+
             if auto_start {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
                     log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
@@ -757,21 +514,6 @@ pub async fn create_reaction_handler(
 }
 
 /// Get reaction status by ID
-///
-/// Note: Reaction configs are not stored - reactions are instances.
-/// This endpoint returns the reaction status instead.
-#[utoipa::path(
-    get,
-    path = "/reactions/{id}",
-    params(
-        ("id" = String, Path, description = "Reaction ID")
-    ),
-    responses(
-        (status = 200, description = "Reaction found", body = ApiResponse),
-        (status = 404, description = "Reaction not found"),
-    ),
-    tag = "Reactions"
-)]
 pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -783,21 +525,11 @@ pub async fn get_reaction(
 }
 
 /// Delete a reaction
-#[utoipa::path(
-    delete,
-    path = "/reactions/{id}",
-    params(
-        ("id" = String, Path, description = "Reaction ID")
-    ),
-    responses(
-        (status = 200, description = "Reaction deleted successfully", body = ApiResponse),
-    ),
-    tag = "Reactions"
-)]
 pub async fn delete_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -808,6 +540,10 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id).await {
         Ok(_) => {
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_reaction(&instance_id, &id).await;
+            }
+
             persist_after_operation(&config_persistence, "deleting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -822,19 +558,6 @@ pub async fn delete_reaction(
 }
 
 /// Start a reaction
-#[utoipa::path(
-    post,
-    path = "/reactions/{id}/start",
-    params(
-        ("id" = String, Path, description = "Reaction ID")
-    ),
-    responses(
-        (status = 200, description = "Reaction started successfully", body = ApiResponse),
-        (status = 404, description = "Reaction not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Reactions"
-)]
 pub async fn start_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
@@ -855,19 +578,6 @@ pub async fn start_reaction(
 }
 
 /// Stop a reaction
-#[utoipa::path(
-    post,
-    path = "/reactions/{id}/stop",
-    params(
-        ("id" = String, Path, description = "Reaction ID")
-    ),
-    responses(
-        (status = 200, description = "Reaction stopped successfully", body = ApiResponse),
-        (status = 404, description = "Reaction not found"),
-        (status = 500, description = "Internal server error"),
-    ),
-    tag = "Reactions"
-)]
 pub async fn stop_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,

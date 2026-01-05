@@ -6,7 +6,7 @@
 host: 0.0.0.0
 port: 8080
 log_level: debug
-disable_persistence: true
+persist_config: false
 
 id: debug-platform-building-comfort
 
@@ -55,7 +55,7 @@ queries:
         50 + (r.temperature - 72) + (r.humidity - 42) + (r.co2 / 25) AS ComfortLevel
     # Sources this query subscribes to
     sources:
-      - facilities-db
+      - source_id: facilities-db
 
 # Reactions: Define what happens with query results
 reactions:

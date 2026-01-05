@@ -948,7 +948,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-postgres"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-scriptfile"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1075,14 +1075,14 @@ dependencies = [
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "drasi-core",
 ]
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc-adaptive"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1249,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http-adaptive"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1270,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-log"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1291,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-profiler"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-sse"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1380,9 +1380,11 @@ dependencies = [
  "drasi-source-mock",
  "drasi-source-platform",
  "drasi-source-postgres",
+ "drasi-state-store-redb",
  "env_logger",
  "futures",
  "hyper 1.7.0",
+ "indexmap 2.11.4",
  "inquire",
  "log",
  "mockall",
@@ -1410,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-grpc"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1432,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-http"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1457,7 +1459,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-mock"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1477,7 +1479,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1498,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-postgres"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1525,6 +1527,18 @@ dependencies = [
  "tokio-postgres",
  "tokio-stream",
  "uuid",
+]
+
+[[package]]
+name = "drasi-state-store-redb"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "drasi-lib",
+ "log",
+ "redb",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -3716,6 +3730,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
 dependencies = [
  "rand_core 0.3.1",
+]
+
+[[package]]
+name = "redb"
+version = "2.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eca1e9d98d5a7e9002d0013e18d5a9b000aee942eb134883a82f06ebffb6c01"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

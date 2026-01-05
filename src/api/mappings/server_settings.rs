@@ -24,7 +24,7 @@ pub struct ResolvedServerSettings {
     pub host: String,
     pub port: u16,
     pub log_level: String,
-    pub disable_persistence: bool,
+    pub persist_config: bool,
 }
 
 /// Maps DrasiServerConfig to ResolvedServerSettings domain model
@@ -36,6 +36,6 @@ pub fn map_server_settings(
         host: mapper.resolve_typed(&config.host)?,
         port: mapper.resolve_typed(&config.port)?,
         log_level: mapper.resolve_typed(&config.log_level)?,
-        disable_persistence: config.disable_persistence,
+        persist_config: config.persist_config,
     })
 }

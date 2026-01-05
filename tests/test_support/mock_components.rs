@@ -1,13 +1,25 @@
-//! Shared test utilities for API tests
-//!
-//! Provides mock sources and reactions for testing DrasiLib.
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Mock source and reaction implementations for testing DrasiLib.
 
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
-use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::QuerySubscriber;
-use drasi_lib::plugin_core::Reaction as ReactionTrait;
-use drasi_lib::plugin_core::Source as SourceTrait;
+use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
+use drasi_lib::Reaction as ReactionTrait;
+use drasi_lib::Source as SourceTrait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -75,7 +87,7 @@ impl SourceTrait for MockSource {
         self
     }
 
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
+    async fn initialize(&self, _context: SourceRuntimeContext) {
         // No-op for testing
     }
 }
@@ -115,7 +127,7 @@ impl ReactionTrait for MockReaction {
         self.queries.clone()
     }
 
-    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
+    async fn initialize(&self, _context: ReactionRuntimeContext) {
         // No-op for testing
     }
 
@@ -131,10 +143,6 @@ impl ReactionTrait for MockReaction {
 
     async fn status(&self) -> ComponentStatus {
         self.status.read().await.clone()
-    }
-
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
-        // No-op for testing
     }
 }
 

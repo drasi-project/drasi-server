@@ -16,15 +16,17 @@
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::sse::{SseQueryConfigDto, SseReactionConfigDto, SseTemplateSpecDto};
-use drasi_reaction_sse::{QueryConfig, SseReactionConfig, TemplateSpec};
+use drasi_reaction_sse::{QueryConfig, SseExtension, SseReactionConfig, TemplateSpec};
 use std::collections::HashMap;
 
 pub struct SseReactionConfigMapper;
 
 fn map_template_spec(dto: &SseTemplateSpecDto) -> TemplateSpec {
     TemplateSpec {
-        path: dto.path.clone(),
         template: dto.template.clone(),
+        extension: SseExtension {
+            path: dto.path.clone(),
+        },
     }
 }
 

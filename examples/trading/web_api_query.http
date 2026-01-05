@@ -28,18 +28,18 @@
 # @query_id = sector-performance-query
 
 ### GET LIST of all queries
-GET http://{{hostname}}:{{port}}/queries
+GET http://{{hostname}}:{{port}}/api/v1/queries
 
 ### GET STATE of a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}
+GET http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}
 
 ### GET RESULTS of a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/results
+GET http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/results
 
 ### START a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/start
+POST http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/start
 Content-Type: application/json
 
 ### STOP a specific query
-GET http://{{hostname}}:{{port}}/queries/{{query_id}}/stop
+POST http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/stop
 Content-Type: application/json

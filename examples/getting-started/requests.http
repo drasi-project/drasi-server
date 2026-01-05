@@ -16,7 +16,7 @@
 # Drasi Server Getting Started - HTTP Requests
 # =============================================================================
 # Use with VSCode REST Client extension or similar tools
-# API Documentation: http://localhost:8080/swagger-ui/
+# API Documentation: http://localhost:8080/api/v1/docs/
 
 @baseUrl = http://localhost:8080
 
@@ -27,80 +27,83 @@
 ### Health Check
 GET {{baseUrl}}/health
 
+### List API Versions
+GET {{baseUrl}}/api/versions
+
 ### OpenAPI Specification
-GET {{baseUrl}}/api-docs/openapi.json
+GET {{baseUrl}}/api/v1/openapi.json
 
 ### ==========================================================================
 ### Sources
 ### ==========================================================================
 
 ### List all sources
-GET {{baseUrl}}/sources
+GET {{baseUrl}}/api/v1/sources
 
 ### Get source status
-GET {{baseUrl}}/sources/postgres-messages
+GET {{baseUrl}}/api/v1/sources/postgres-messages
 
 ### Stop source
-POST {{baseUrl}}/sources/postgres-messages/stop
+POST {{baseUrl}}/api/v1/sources/postgres-messages/stop
 
 ### Start source
-POST {{baseUrl}}/sources/postgres-messages/start
+POST {{baseUrl}}/api/v1/sources/postgres-messages/start
 
 ### ==========================================================================
 ### Queries
 ### ==========================================================================
 
 ### List all queries
-GET {{baseUrl}}/queries
+GET {{baseUrl}}/api/v1/queries
 
 ### Get hello-world-from query results
-GET {{baseUrl}}/queries/hello-world-from/results
+GET {{baseUrl}}/api/v1/queries/hello-world-from/results
 
 ### Get message-count query results
-GET {{baseUrl}}/queries/message-count/results
+GET {{baseUrl}}/api/v1/queries/message-count/results
 
 ### Get inactive-people query results
-GET {{baseUrl}}/queries/inactive-people/results
+GET {{baseUrl}}/api/v1/queries/inactive-people/results
 
 ### Get hello-world-from query status
-GET {{baseUrl}}/queries/hello-world-from
+GET {{baseUrl}}/api/v1/queries/hello-world-from
 
 ### Get message-count query status
-GET {{baseUrl}}/queries/message-count
+GET {{baseUrl}}/api/v1/queries/message-count
 
 ### Get inactive-people query status
-GET {{baseUrl}}/queries/inactive-people
+GET {{baseUrl}}/api/v1/queries/inactive-people
 
 ### Stop hello-world-from query
-POST {{baseUrl}}/queries/hello-world-from/stop
+POST {{baseUrl}}/api/v1/queries/hello-world-from/stop
 
 ### Start hello-world-from query
-POST {{baseUrl}}/queries/hello-world-from/start
+POST {{baseUrl}}/api/v1/queries/hello-world-from/start
 
 ### ==========================================================================
 ### Reactions
 ### ==========================================================================
 
 ### List all reactions
-GET {{baseUrl}}/reactions
+GET {{baseUrl}}/api/v1/reactions
 
 ### Get log reaction status
-GET {{baseUrl}}/reactions/log-all-queries
+GET {{baseUrl}}/api/v1/reactions/log-all-queries
 
 ### Get SSE reaction status
-GET {{baseUrl}}/reactions/sse-stream
+GET {{baseUrl}}/api/v1/reactions/sse-stream
 
 ### Stop log reaction
-POST {{baseUrl}}/reactions/log-all-queries/stop
+POST {{baseUrl}}/api/v1/reactions/log-all-queries/stop
 
 ### Start log reaction
-POST {{baseUrl}}/reactions/log-all-queries/start
+POST {{baseUrl}}/api/v1/reactions/log-all-queries/start
 
 ### Stop SSE reaction
-POST {{baseUrl}}/reactions/sse-stream/stop
+POST {{baseUrl}}/api/v1/reactions/sse-stream/stop
 
 ### Start SSE reaction
-POST {{baseUrl}}/reactions/sse-stream/start
+POST {{baseUrl}}/api/v1/reactions/sse-stream/start
 
 ### ==========================================================================
 ### SSE Stream (connect in browser or use curl)
