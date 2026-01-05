@@ -17,11 +17,11 @@ if ! command -v curl &> /dev/null; then
 fi
 
 echo "Fetching results for query: $QUERY_ID"
-echo "Endpoint: http://$DRASI_HOST:$DRASI_PORT/api/queries/$QUERY_ID/results"
+echo "Endpoint: http://$DRASI_HOST:$DRASI_PORT/api/v1/queries/$QUERY_ID/results"
 echo ""
 
 # Fetch query results
-RESPONSE=$(curl -s -w "\n%{http_code}" "http://$DRASI_HOST:$DRASI_PORT/api/queries/$QUERY_ID/results")
+RESPONSE=$(curl -s -w "\n%{http_code}" "http://$DRASI_HOST:$DRASI_PORT/api/v1/queries/$QUERY_ID/results")
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 

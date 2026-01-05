@@ -15,21 +15,42 @@
 //! Log reaction configuration mapper.
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
-use crate::api::models::LogReactionConfigDto;
-use drasi_reaction_log::LogReactionConfig;
+use crate::api::models::log::{LogReactionConfigDto, QueryConfigDto, TemplateSpecDto};
+use drasi_reaction_log::{LogReactionConfig, QueryConfig, TemplateSpec};
+use std::collections::HashMap;
 
 pub struct LogReactionConfigMapper;
+
+fn map_template_spec(dto: &TemplateSpecDto) -> TemplateSpec {
+    TemplateSpec {
+        template: dto.template.clone(),
+        extension: (),
+    }
+}
+
+fn map_query_config(dto: &QueryConfigDto) -> QueryConfig {
+    QueryConfig {
+        added: dto.added.as_ref().map(map_template_spec),
+        updated: dto.updated.as_ref().map(map_template_spec),
+        deleted: dto.deleted.as_ref().map(map_template_spec),
+    }
+}
 
 impl ConfigMapper<LogReactionConfigDto, LogReactionConfig> for LogReactionConfigMapper {
     fn map(
         &self,
         dto: &LogReactionConfigDto,
-        resolver: &DtoMapper,
+        _resolver: &DtoMapper,
     ) -> Result<LogReactionConfig, MappingError> {
+        let routes: HashMap<String, QueryConfig> = dto
+            .routes
+            .iter()
+            .map(|(k, v)| (k.clone(), map_query_config(v)))
+            .collect();
+
         Ok(LogReactionConfig {
-            added_template: resolver.resolve_optional(&dto.added_template)?,
-            updated_template: resolver.resolve_optional(&dto.updated_template)?,
-            deleted_template: resolver.resolve_optional(&dto.deleted_template)?,
+            routes,
+            default_template: dto.default_template.as_ref().map(map_query_config),
         })
     }
 }

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 server:
   host: 0.0.0.0
   port: 8080
@@ -5,6 +6,13 @@ server:
   disablePersistence: false
 serverCore:
   id: 6e873215-38ab-4756-9d07-6c7a15c5811f
+=======
+id: 6e873215-38ab-4756-9d07-6c7a15c5811f
+host: 0.0.0.0
+port: 8080
+log_level: info
+persist_config: true
+>>>>>>> origin/feature-lib
 sources: []
 queries: []
 reactions: []

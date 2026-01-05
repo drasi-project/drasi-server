@@ -15,10 +15,28 @@
 //! SSE reaction configuration mapper.
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
-use crate::api::models::SseReactionConfigDto;
-use drasi_reaction_sse::SseReactionConfig;
+use crate::api::models::sse::{SseQueryConfigDto, SseReactionConfigDto, SseTemplateSpecDto};
+use drasi_reaction_sse::{QueryConfig, SseExtension, SseReactionConfig, TemplateSpec};
+use std::collections::HashMap;
 
 pub struct SseReactionConfigMapper;
+
+fn map_template_spec(dto: &SseTemplateSpecDto) -> TemplateSpec {
+    TemplateSpec {
+        template: dto.template.clone(),
+        extension: SseExtension {
+            path: dto.path.clone(),
+        },
+    }
+}
+
+fn map_query_config(dto: &SseQueryConfigDto) -> QueryConfig {
+    QueryConfig {
+        added: dto.added.as_ref().map(map_template_spec),
+        updated: dto.updated.as_ref().map(map_template_spec),
+        deleted: dto.deleted.as_ref().map(map_template_spec),
+    }
+}
 
 impl ConfigMapper<SseReactionConfigDto, SseReactionConfig> for SseReactionConfigMapper {
     fn map(
@@ -26,11 +44,19 @@ impl ConfigMapper<SseReactionConfigDto, SseReactionConfig> for SseReactionConfig
         dto: &SseReactionConfigDto,
         resolver: &DtoMapper,
     ) -> Result<SseReactionConfig, MappingError> {
+        let routes: HashMap<String, QueryConfig> = dto
+            .routes
+            .iter()
+            .map(|(k, v)| (k.clone(), map_query_config(v)))
+            .collect();
+
         Ok(SseReactionConfig {
             host: resolver.resolve_string(&dto.host)?,
             port: resolver.resolve_typed(&dto.port)?,
             sse_path: resolver.resolve_string(&dto.sse_path)?,
             heartbeat_interval_ms: resolver.resolve_typed(&dto.heartbeat_interval_ms)?,
+            routes,
+            default_template: dto.default_template.as_ref().map(map_query_config),
         })
     }
 }

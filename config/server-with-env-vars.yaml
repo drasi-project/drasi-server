@@ -11,29 +11,30 @@
 # Use environment variables for sensitive data like passwords, API keys,
 # and connection strings instead of hardcoding them in config files.
 
-server:
-  # Server bind address - uses environment variable with default
-  host: "${SERVER_HOST:-0.0.0.0}"
-  
-  # Server port - uses environment variable with default
-  port: "${SERVER_PORT:-8080}"
-  
-  # Logging level: trace, debug, info, warn, error
-  logLevel: "${LOG_LEVEL:-info}"
-  
-  # Disable automatic persistence of API changes to this file
-  disablePersistence: false
+# Server bind address - uses environment variable with default
+host: "${SERVER_HOST:-0.0.0.0}"
 
-serverCore:
-  # Unique server identifier
-  id: "${SERVER_ID:-drasi-server-1}"
+# Server port - uses environment variable with default
+port: "${SERVER_PORT:-8080}"
+
+# Logging level: trace, debug, info, warn, error
+log_level: "${LOG_LEVEL:-info}"
+
+# Enable automatic persistence of API changes to this file
+persist_config: true
+
+# Enable persistent indexing using RocksDB (default: false, uses in-memory indexes)
+# persist_index: false
+
+# Unique server identifier
+id: "${SERVER_ID:-drasi-server-1}"
 
 # Data sources
 sources:
   # PostgreSQL source with CDC (Change Data Capture)
   - kind: postgres
     id: my-postgres-db
-    autoStart: true
+    auto_start: true
     
     # Connection details - all use environment variables for security
     host: "${DB_HOST}"
@@ -43,9 +44,9 @@ sources:
     password: "${DB_PASSWORD}"  # NEVER hardcode passwords!
     
     # Optional: SSL configuration
-    # sslMode: "${DB_SSL_MODE:-prefer}"
+    # ssl_mode: "${DB_SSL_MODE:-prefer}"
     
-    bootstrapProvider:
+    bootstrap_provider:
       kind: postgres
       host: "${DB_HOST}"
       port: "${DB_PORT:-5432}"
@@ -56,7 +57,7 @@ sources:
   # HTTP source for receiving events
   - kind: http
     id: webhook-receiver
-    autoStart: true
+    auto_start: true
     host: "${WEBHOOK_HOST:-0.0.0.0}"
     port: "${WEBHOOK_PORT:-9000}"
 
@@ -67,12 +68,12 @@ queries:
       MATCH (o:Order)
       WHERE o.total > 1000
       RETURN o.id AS order_id, o.total AS total, o.customer AS customer
-    queryLanguage: Cypher
-    autoStart: true
-    enableBootstrap: true
+    query_language: Cypher
+    auto_start: true
+    enable_bootstrap: true
     
-    sourceSubscriptions:
-      - sourceId: my-postgres-db
+    source_subscriptions:
+      - source_id: my-postgres-db
 
 # Reactions (where to send query results)
 reactions:
@@ -81,18 +82,18 @@ reactions:
     id: log-high-value-orders
     queries:
       - high-value-orders
-    autoStart: true
-    logLevel: "${REACTION_LOG_LEVEL:-info}"
+    auto_start: true
+    log_level: "${REACTION_LOG_LEVEL:-info}"
 
   # HTTP webhook reaction
   - kind: http
     id: notify-high-value-orders
     queries:
       - high-value-orders
-    autoStart: true
+    auto_start: true
     
     # Webhook URL - uses environment variable
-    baseUrl: "${WEBHOOK_URL}"
+    base_url: "${WEBHOOK_URL}"
     
     # Optional: Authentication
     # headers:
@@ -105,7 +106,7 @@ reactions:
     id: sse-high-value-orders
     queries:
       - high-value-orders
-    autoStart: true
+    auto_start: true
     host: "${SSE_HOST:-0.0.0.0}"
     port: "${SSE_PORT:-8081}"
 

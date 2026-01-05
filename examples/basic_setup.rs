@@ -56,24 +56,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the configuration structure
     // Note: Sources and reactions can be defined in the config file using the tagged enum format
     let config = drasi_server::DrasiServerConfig {
-        server: drasi_server::ServerSettings::default(),
-        sources: vec![],   // Add sources using SourceConfig enum
-        reactions: vec![], // Add reactions using ReactionConfig enum
-        core_config: drasi_lib::config::DrasiLibConfig {
-            id: uuid::Uuid::new_v4().to_string(),
-            priority_queue_capacity: None,
-            dispatch_buffer_capacity: None,
-            queries: vec![available_drivers_query, pending_orders_query],
-            storage_backends: vec![],
-        },
+        id: drasi_server::models::ConfigValue::Static(uuid::Uuid::new_v4().to_string()),
+        host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),
+        port: drasi_server::models::ConfigValue::Static(8080),
+        log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
+        persist_config: true,
+        persist_index: false,                  // Use in-memory indexes (default)
+        state_store: None,                     // Use in-memory state store (default)
+        default_priority_queue_capacity: None, // Use lib defaults
+        default_dispatch_buffer_capacity: None, // Use lib defaults
+        sources: vec![],                       // Add sources using SourceConfig enum
+        reactions: vec![],                     // Add reactions using ReactionConfig enum
+        queries: vec![available_drivers_query, pending_orders_query],
+        instances: vec![], // Empty = use legacy single-instance mode
     };
 
     // Save configuration to file
     std::fs::create_dir_all("config")?;
-    config.save_to_file("config/example.yaml")?;
+    config.save_to_file("config/server-docker.yaml")?;
 
     println!("Example configuration created successfully!");
-    println!("Configuration saved to: config/example.yaml");
+    println!("Configuration saved to: config/server-docker.yaml");
     println!();
     println!("This example includes:");
     println!("  - Two Cypher queries (available drivers and pending orders)");

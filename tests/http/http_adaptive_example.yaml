@@ -1,20 +1,21 @@
 server:
   host: 0.0.0.0
   port: 18080
-  logLevel: drasi_server=info,drasi_core=warn
-  disablePersistence: false
+  log_level: drasi_server=info,drasi_core=warn
+  persist_config: true
 sources:
-- kind: http
-  id: events-http
-  autoStart: true
-  adaptiveEnabled: true
-  adaptiveMinBatchSize: 10
-  adaptiveWindowSecs: 5
-  adaptiveMinWaitMs: 1
-  host: 0.0.0.0
-  adaptiveMaxWaitMs: 100
-  adaptiveMaxBatchSize: 1000
-  port: 8081
+- id: events-http
+  source_type: http_adaptive
+  auto_start: true
+  properties:
+    adaptive_enabled: true
+    adaptive_min_batch_size: 10
+    adaptive_window_secs: 5
+    adaptive_min_wait_ms: 1
+    host: 0.0.0.0
+    adaptive_max_wait_ms: 100
+    adaptive_max_batch_size: 1000
+    port: 8081
 queries:
 - id: event-processing
   query: |
@@ -24,49 +25,51 @@ queries:
       elementId(r) AS RoomId,
       r.temperature, r.humidity, r.co2
   sources:
-  - sourceId: events-http
-  autoStart: true
+  - events-http
+  auto_start: true
+  properties: {}
 reactions:
-- kind: http-adaptive
-  id: webhook-adaptive
+- id: webhook-adaptive
+  reaction_type: http_adaptive
   queries:
   - event-processing
-  autoStart: true
-  adaptiveMaxWaitMs: 50
-  adaptiveEnabled: true
-  adaptiveMaxBatchSize: 500
-  batchEndpointsEnabled: true
-  adaptiveMinBatchSize: 5
-  queries:
-    event-processing:
-      added:
-        body: |
-          {
-            "id": "{{after.RoomId}}",
-            "temperature": {{after.temperature}},
-            "humidity": {{after.humidity}},
-            "co2": {{after.co2}}
-          }
-        method: POST
-        url: /events
-      deleted:
-        body: |
-          {
-            "id": "{{before.RoomId}}"
-          }
-        method: DELETE
-        url: /events/{{before.RoomId}}
-      updated:
-        body: |
-          {
-            "id": "{{after.RoomId}}",
-            "temperature": {{after.temperature}},
-            "humidity": {{after.humidity}},
-            "co2": {{after.co2}}
-          }
-        method: PUT
-        url: /events/{{after.RoomId}}
-  baseUrl: http://localhost:3000
-  adaptiveMinWaitMs: 5
-  adaptiveWindowSecs: 5
-  timeoutMs: 10000
+  auto_start: true
+  properties:
+    adaptive_max_wait_ms: 50
+    adaptive_enabled: true
+    adaptive_max_batch_size: 500
+    batch_endpoints_enabled: true
+    adaptive_min_batch_size: 5
+    queries:
+      event-processing:
+        added:
+          body: |
+            {
+              "id": "{{after.RoomId}}",
+              "temperature": {{after.temperature}},
+              "humidity": {{after.humidity}},
+              "co2": {{after.co2}}
+            }
+          method: POST
+          url: /events
+        deleted:
+          body: |
+            {
+              "id": "{{before.RoomId}}"
+            }
+          method: DELETE
+          url: /events/{{before.RoomId}}
+        updated:
+          body: |
+            {
+              "id": "{{after.RoomId}}",
+              "temperature": {{after.temperature}},
+              "humidity": {{after.humidity}},
+              "co2": {{after.co2}}
+            }
+          method: PUT
+          url: /events/{{after.RoomId}}
+    base_url: http://localhost:3000
+    adaptive_min_wait_ms: 5
+    adaptive_window_secs: 5
+    timeout_ms: 10000

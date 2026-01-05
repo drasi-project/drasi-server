@@ -12,30 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Test configuration helpers for the new builder API
+//! Test configuration helpers for creating config types.
+//!
+//! These helpers construct SourceConfig, ReactionConfig, and QueryConfig
+//! for use in tests.
 
-use drasi_lib::{Query, Reaction, Source};
-use drasi_server::{QueryConfig, ReactionConfig, SourceConfig};
-use serde_json::Value;
-use std::collections::HashMap;
+use drasi_lib::Query;
+use drasi_server::models::{LogReactionConfigDto, MockSourceConfigDto};
+use drasi_server::{QueryConfig, ReactionConfig, SourceConfig, StateStoreConfig};
+use tempfile::TempDir;
 
 /// Create a mock source config for testing
 pub fn mock_source(id: impl Into<String>) -> SourceConfig {
-    Source::mock(id).auto_start(true).build()
+    SourceConfig::Mock {
+        id: id.into(),
+        auto_start: true,
+        bootstrap_provider: None,
+        config: default_mock_config(),
+    }
 }
 
-/// Create a mock source config with properties
-pub fn mock_source_with_props(
-    id: impl Into<String>,
-    properties: HashMap<String, Value>,
-) -> SourceConfig {
-    let mut builder = Source::mock(id).auto_start(true);
-
-    for (key, value) in properties {
-        builder = builder.with_property_value(key, value);
+fn default_mock_config() -> MockSourceConfigDto {
+    MockSourceConfigDto {
+        data_type: drasi_server::models::ConfigValue::Static("generic".to_string()),
+        interval_ms: drasi_server::models::ConfigValue::Static(5000),
     }
+}
 
-    builder.build()
+/// Create a mock source config with auto_start disabled
+pub fn mock_source_manual(id: impl Into<String>) -> SourceConfig {
+    SourceConfig::Mock {
+        id: id.into(),
+        auto_start: false,
+        bootstrap_provider: None,
+        config: default_mock_config(),
+    }
 }
 
 /// Create a query config for testing
@@ -55,60 +66,40 @@ pub fn test_query(
 
 /// Create a log reaction config for testing
 pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
-    let mut builder = Reaction::log(id).auto_start(true);
-
-    for query in queries {
-        builder = builder.subscribe_to(query);
+    ReactionConfig::Log {
+        id: id.into(),
+        queries,
+        auto_start: true,
+        config: LogReactionConfigDto::default(),
     }
-
-    builder.build()
 }
 
-/// Create a log reaction config with properties
-pub fn log_reaction_with_props(
-    id: impl Into<String>,
-    queries: Vec<String>,
-    properties: HashMap<String, Value>,
-) -> ReactionConfig {
-    let mut builder = Reaction::log(id).auto_start(true);
-
-    for query in queries {
-        builder = builder.subscribe_to(query);
+/// Create a log reaction config with auto_start disabled
+pub fn log_reaction_manual(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
+    ReactionConfig::Log {
+        id: id.into(),
+        queries,
+        auto_start: false,
+        config: LogReactionConfigDto::default(),
     }
-
-    for (key, value) in properties {
-        builder = builder.with_property_value(key, value);
-    }
-
-    builder.build()
 }
 
-/// Create an HTTP reaction config for testing
-pub fn http_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
-    let mut builder = Reaction::http(id).auto_start(true);
+// =============================================================================
+// State Store Helpers
+// =============================================================================
 
-    for query in queries {
-        builder = builder.subscribe_to(query);
-    }
-
-    builder.build()
+/// Create a REDB state store config for testing with a specified path
+pub fn redb_state_store(path: impl Into<String>) -> StateStoreConfig {
+    StateStoreConfig::redb(path)
 }
 
-/// Create an HTTP reaction config with properties
-pub fn http_reaction_with_props(
-    id: impl Into<String>,
-    queries: Vec<String>,
-    properties: HashMap<String, Value>,
-) -> ReactionConfig {
-    let mut builder = Reaction::http(id).auto_start(true);
-
-    for query in queries {
-        builder = builder.subscribe_to(query);
-    }
-
-    for (key, value) in properties {
-        builder = builder.with_property_value(key, value);
-    }
-
-    builder.build()
+/// Create a REDB state store config using a TempDir for isolation
+///
+/// Returns the StateStoreConfig and the TempDir (which must be kept alive
+/// for the duration of the test to prevent cleanup).
+pub fn temp_redb_state_store(filename: &str) -> (StateStoreConfig, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let path = temp_dir.path().join(filename);
+    let config = StateStoreConfig::redb(path.to_string_lossy().to_string());
+    (config, temp_dir)
 }

@@ -116,7 +116,7 @@ where
                         return Ok(ConfigValue::EnvironmentVariable { name, default });
                     }
                     _ => {
-                        return Err(D::Error::custom(format!("Unknown kind: {}", kind)));
+                        return Err(D::Error::custom(format!("Unknown kind: {kind}")));
                     }
                 }
             }
@@ -130,9 +130,8 @@ where
         }
 
         // Otherwise, deserialize as static value
-        let static_value: T = serde_json::from_value(value).map_err(|e| {
-            D::Error::custom(format!("Failed to deserialize as static value: {}", e))
-        })?;
+        let static_value: T = serde_json::from_value(value)
+            .map_err(|e| D::Error::custom(format!("Failed to deserialize as static value: {e}")))?;
 
         Ok(ConfigValue::Static(static_value))
     }

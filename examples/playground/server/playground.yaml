@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
 server:
   host: 0.0.0.0
   port: 8080
@@ -19,6 +20,13 @@ server:
   disablePersistence: true
 serverCore:
   id: playground-server
+=======
+id: playground-server
+host: 0.0.0.0
+port: 8080
+log_level: info
+persist_config: false
+>>>>>>> origin/feature-lib
 sources: []
 queries: []
 reactions: []

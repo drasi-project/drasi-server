@@ -65,7 +65,7 @@ impl FromStr for SslModeDto {
             "disable" => Ok(SslModeDto::Disable),
             "prefer" => Ok(SslModeDto::Prefer),
             "require" => Ok(SslModeDto::Require),
-            _ => Err(format!("Invalid SSL mode: {}", s)),
+            _ => Err(format!("Invalid SSL mode: {s}")),
         }
     }
 }

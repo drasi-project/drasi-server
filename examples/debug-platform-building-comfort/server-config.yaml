@@ -3,52 +3,50 @@
 # with bootstrap data from a Query API service
 
 # Server: Drasi Server configuration
-server:
-  host: 0.0.0.0
-  port: 8080
-  logLevel: debug
-  disablePersistence: true
+host: 0.0.0.0
+port: 8080
+log_level: debug
+persist_config: false
 
-serverCore:
-  id: debug-platform-building-comfort
+id: debug-platform-building-comfort
 
 # Sources: Define where data comes from
 sources:
   # Platform source - connects to Redis Stream to consume events with platform bootstrap
   - kind: platform
     id: facilities-db
-    autoStart: true
+    auto_start: true
     # Platform bootstrap provider - fetches initial data from Query API
     # Redis connection URL
-    redisUrl: "redis://localhost:6379"
+    redis_url: "redis://localhost:6379"
 
     # Redis stream key to read from
-    streamKey: "facilities-db-change"
+    stream_key: "facilities-db-change"
 
     # Consumer group name for Redis Streams consumer group
-    consumerGroup: "drasi-server"
+    consumer_group: "drasi-server"
 
     # Unique consumer name within the consumer group
-    consumerName: "consumer-1"
+    consumer_name: "consumer-1"
 
     # Number of events to read per batch (default: 10)
-    batchSize: 10
+    batch_size: 10
 
     # Milliseconds to block waiting for new events (default: 5000)
-    blockMs: 5000
+    block_ms: 5000
 
     # Stream position: ">" for new events, "0" to replay all (default: ">")
-    startId: "0"
+    start_id: "0"
 
     # Always recreate consumer group on startup (default: false)
-    # If true, deletes and recreates the consumer group using startId
-    # If false, uses existing group position (ignores startId if group exists)
-    alwaysCreateConsumerGroup: true
+    # If true, deletes and recreates the consumer group using start_id
+    # If false, uses existing group position (ignores start_id if group exists)
+    always_create_consumer_group: true
 
 # Queries: Continuous Cypher queries that process incoming data
 queries:
   - id: room-comfort-level
-    autoStart: true
+    auto_start: true
     query: |
       MATCH
         (r:Room)
@@ -57,43 +55,43 @@ queries:
         50 + (r.temperature - 72) + (r.humidity - 42) + (r.co2 / 25) AS ComfortLevel
     # Sources this query subscribes to
     sources:
-      - facilities-db
+      - source_id: facilities-db
 
 # Reactions: Define what happens with query results
 reactions:
   # Log reaction - prints query results to console for debugging
   - kind: log
     id: log-room-comfort-level
-    autoStart: true
+    auto_start: true
     # Queries this reaction subscribes to
     queries:
       - room-comfort-level
 
   - kind: profiler
     id: profiler-room-comfort-level
-    autoStart: true
+    auto_start: true
     # Queries this reaction subscribes to
     queries:
       - room-comfort-level
 
   # - kind: platform
   #   id: platform-room-comfort-level
-  #   autoStart: true
+  #   auto_start: true
   #   # Queries this reaction subscribes to
   #   queries:
   #     - room-comfort-level
   #   # Redis connection URL (same Redis instance as platform source)
-  #   redisUrl: "redis://localhost:6379"
+  #   redis_url: "redis://localhost:6379"
   #
   #   # Dapr pubsub component name (used in CloudEvent metadata)
-  #   pubsubName: "drasi-pubsub"
+  #   pubsub_name: "drasi-pubsub"
   #
   #   # Event source identifier (used in CloudEvent source field)
-  #   sourceName: "drasi-core"
+  #   source_name: "drasi-core"
   #
   #   # Maximum number of messages to retain in the results stream
   #   # Uses Redis MAXLEN with approximate trimming (~)
-  #   maxStreamLength: 10000
+  #   max_stream_length: 10000
   #
   #   # Emit lifecycle control events (BootstrapStarted, Running, Stopped, etc.)
-  #   emitControlEvents: true
+  #   emit_control_events: true

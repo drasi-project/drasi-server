@@ -94,7 +94,7 @@ impl DtoMapper {
                 // Resolve to string first, then parse
                 let string_val = self.resolve_secret_to_string(name)?;
                 string_val.parse::<T>().map_err(|e| {
-                    ResolverError::ParseError(format!("Failed to parse secret '{}': {}", name, e))
+                    ResolverError::ParseError(format!("Failed to parse secret '{name}': {e}"))
                 })
             }
 
@@ -108,7 +108,7 @@ impl DtoMapper {
 
                 // Parse to target type
                 string_val.parse::<T>().map_err(|e| {
-                    ResolverError::ParseError(format!("Failed to parse env var '{}': {}", name, e))
+                    ResolverError::ParseError(format!("Failed to parse env var '{name}': {e}"))
                 })
             }
         }
@@ -129,8 +129,7 @@ impl DtoMapper {
     /// Helper to resolve secret name to string (used by resolve_typed)
     fn resolve_secret_to_string(&self, name: &str) -> Result<String, ResolverError> {
         Err(ResolverError::NotImplemented(format!(
-            "Secret resolution not yet implemented for '{}'",
-            name
+            "Secret resolution not yet implemented for '{name}'"
         )))
     }
 

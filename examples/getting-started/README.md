@@ -263,9 +263,13 @@ reactions:
       - hello-world-from
       - message-count
       - inactive-people
-    added_template: "[{{query_name}}] + {{after}}"
-    updated_template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-    deleted_template: "[{{query_name}}] - {{before}}"
+    default_template:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
 ```
 
 #### SSE Reaction
@@ -293,36 +297,37 @@ The server exposes a REST API on port 8080:
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Health check |
-| `GET /swagger-ui/` | Interactive API documentation |
-| `GET /api-docs/openapi.json` | OpenAPI specification |
+| `GET /api/versions` | List available API versions |
+| `GET /api/v1/docs/` | Interactive API documentation (Swagger UI) |
+| `GET /api/v1/openapi.json` | OpenAPI specification |
 
 ### Sources
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/sources` | List all sources |
-| `GET /api/sources/{id}` | Get source status |
-| `POST /api/sources/{id}/start` | Start a source |
-| `POST /api/sources/{id}/stop` | Stop a source |
+| `GET /api/v1/sources` | List all sources |
+| `GET /api/v1/sources/{id}` | Get source status |
+| `POST /api/v1/sources/{id}/start` | Start a source |
+| `POST /api/v1/sources/{id}/stop` | Stop a source |
 
 ### Queries
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/queries` | List all queries |
-| `GET /api/queries/{id}` | Get query status |
-| `GET /api/queries/{id}/results` | Get current query results |
-| `POST /api/queries/{id}/start` | Start a query |
-| `POST /api/queries/{id}/stop` | Stop a query |
+| `GET /api/v1/queries` | List all queries |
+| `GET /api/v1/queries/{id}` | Get query status |
+| `GET /api/v1/queries/{id}/results` | Get current query results |
+| `POST /api/v1/queries/{id}/start` | Start a query |
+| `POST /api/v1/queries/{id}/stop` | Stop a query |
 
 ### Reactions
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/reactions` | List all reactions |
-| `GET /api/reactions/{id}` | Get reaction status |
-| `POST /api/reactions/{id}/start` | Start a reaction |
-| `POST /api/reactions/{id}/stop` | Stop a reaction |
+| `GET /api/v1/reactions` | List all reactions |
+| `GET /api/v1/reactions/{id}` | Get reaction status |
+| `POST /api/v1/reactions/{id}/start` | Start a reaction |
+| `POST /api/v1/reactions/{id}/stop` | Stop a reaction |
 
 See `requests.http` for examples using VSCode REST Client.
 
@@ -357,7 +362,7 @@ See `requests.http` for examples using VSCode REST Client.
 1. Verify Drasi Server is running
 2. Check SSE reaction is started:
    ```bash
-   curl http://localhost:8080/api/reactions/sse-stream
+   curl http://localhost:8080/api/v1/reactions/sse-stream
    ```
 3. Check browser console for CORS errors
 4. Try the terminal stream: `./scripts/stream-events.sh`
@@ -369,12 +374,12 @@ See `requests.http` for examples using VSCode REST Client.
 **Solution**:
 1. Check if source is connected:
    ```bash
-   curl http://localhost:8080/api/sources/postgres-messages
+   curl http://localhost:8080/api/v1/sources/postgres-messages
    ```
 2. Verify bootstrap completed in server logs
 3. Check query status:
    ```bash
-   curl http://localhost:8080/api/queries/hello-world-from
+   curl http://localhost:8080/api/v1/queries/hello-world-from
    ```
 
 ### Port Already in Use

@@ -21,17 +21,17 @@ echo "Cleaning up all queries and reactions..."
 BASE_URL="http:#localhost:8080"
 
 # Delete all queries
-QUERIES=$(curl -s "$BASE_URL/queries" | jq -r '.data[]?.id')
+QUERIES=$(curl -s "$BASE_URL/api/v1/queries" | jq -r '.data[]?.id')
 for query in $QUERIES; do
     echo "Deleting query: $query"
-    curl -X DELETE "$BASE_URL/queries/$query" 2>/dev/null
+    curl -X DELETE "$BASE_URL/api/v1/queries/$query" 2>/dev/null
 done
 
 # Delete all reactions
-REACTIONS=$(curl -s "$BASE_URL/reactions" | jq -r '.data[]?.id')
+REACTIONS=$(curl -s "$BASE_URL/api/v1/reactions" | jq -r '.data[]?.id')
 for reaction in $REACTIONS; do
     echo "Deleting reaction: $reaction"
-    curl -X DELETE "$BASE_URL/reactions/$reaction" 2>/dev/null
+    curl -X DELETE "$BASE_URL/api/v1/reactions/$reaction" 2>/dev/null
 done
 
 echo "Cleanup complete!"

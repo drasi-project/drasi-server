@@ -40,9 +40,6 @@ use serde::{Deserialize, Serialize};
 // Config value module
 pub mod config_value;
 
-// Query module
-pub mod query;
-
 // Source modules
 pub mod grpc_source;
 pub mod http_source;
@@ -67,13 +64,12 @@ pub use postgres::*;
 
 pub use grpc_reaction::*;
 pub use http_reaction::*;
-pub use log::*;
+// Note: log and sse modules have types with similar names (QueryConfigDto, TemplateSpecDto)
+// They should be accessed via their module namespaces: log::*, sse::*
+pub use log::LogReactionConfigDto;
 pub use platform_reaction::*;
 pub use profiler::*;
-pub use sse::*;
-
-// Query types
-pub use query::*;
+pub use sse::SseReactionConfigDto;
 
 // Config value types
 pub use config_value::*;
@@ -108,15 +104,15 @@ fn default_true() -> bool {
 ///     port: 9000
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind")]
 pub enum SourceConfig {
     /// Mock source for testing
     #[serde(rename = "mock")]
     Mock {
         id: String,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: MockSourceConfigDto,
@@ -125,9 +121,9 @@ pub enum SourceConfig {
     #[serde(rename = "http")]
     Http {
         id: String,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: HttpSourceConfigDto,
@@ -136,9 +132,9 @@ pub enum SourceConfig {
     #[serde(rename = "grpc")]
     Grpc {
         id: String,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: GrpcSourceConfigDto,
@@ -147,9 +143,9 @@ pub enum SourceConfig {
     #[serde(rename = "postgres")]
     Postgres {
         id: String,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PostgresSourceConfigDto,
@@ -158,9 +154,9 @@ pub enum SourceConfig {
     #[serde(rename = "platform")]
     Platform {
         id: String,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "bootstrapProvider")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PlatformSourceConfigDto,
@@ -217,14 +213,14 @@ impl SourceConfig {
 /// Similar to SourceConfig, uses serde tagged enum for type-safe deserialization
 /// of different reaction types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind")]
 pub enum ReactionConfig {
     /// Log reaction for console output
     #[serde(rename = "log")]
     Log {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: LogReactionConfigDto,
@@ -234,7 +230,7 @@ pub enum ReactionConfig {
     Http {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpReactionConfigDto,
@@ -244,7 +240,7 @@ pub enum ReactionConfig {
     HttpAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpAdaptiveReactionConfigDto,
@@ -254,7 +250,7 @@ pub enum ReactionConfig {
     Grpc {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcReactionConfigDto,
@@ -264,7 +260,7 @@ pub enum ReactionConfig {
     GrpcAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcAdaptiveReactionConfigDto,
@@ -274,7 +270,7 @@ pub enum ReactionConfig {
     Sse {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: SseReactionConfigDto,
@@ -284,7 +280,7 @@ pub enum ReactionConfig {
     Platform {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: PlatformReactionConfigDto,
@@ -294,7 +290,7 @@ pub enum ReactionConfig {
     Profiler {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true", rename = "autoStart")]
+        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: ProfilerReactionConfigDto,
@@ -345,3 +341,53 @@ impl ReactionConfig {
     }
 }
 
+// =============================================================================
+// State Store Configuration
+// =============================================================================
+
+/// State store configuration with kind discriminator.
+///
+/// State store providers allow plugins (Sources, BootstrapProviders, and Reactions)
+/// to persist runtime state that survives restarts of DrasiLib.
+///
+/// Uses serde tagged enum to automatically deserialize into the correct
+/// provider-specific config struct based on the `kind` field.
+///
+/// # Example YAML
+///
+/// ```yaml
+/// state_store:
+///   kind: redb
+///   path: ./data/state.redb
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum StateStoreConfig {
+    /// REDB-based state store for persistent storage
+    ///
+    /// Uses redb embedded database for file-based persistence.
+    /// Data survives restarts and is stored in a single file.
+    #[serde(rename = "redb")]
+    Redb {
+        /// Path to the redb database file
+        ///
+        /// Supports environment variables: ${STATE_STORE_PATH:-./data/state.redb}
+        path: ConfigValue<String>,
+    },
+}
+
+impl StateStoreConfig {
+    /// Create a new REDB state store configuration
+    pub fn redb(path: impl Into<String>) -> Self {
+        StateStoreConfig::Redb {
+            path: ConfigValue::Static(path.into()),
+        }
+    }
+
+    /// Get a display name for this state store type
+    pub fn kind(&self) -> &str {
+        match self {
+            StateStoreConfig::Redb { .. } => "redb",
+        }
+    }
+}

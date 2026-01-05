@@ -27,14 +27,12 @@
 # Set these before running: source .env or use a secrets manager.
 
 # Server Configuration
-server:
-  host: "${SERVER_HOST:-0.0.0.0}"
-  port: ${SERVER_PORT:-8080}
-  logLevel: "${LOG_LEVEL:-info}"
-  disablePersistence: true
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8080}
+log_level: "${LOG_LEVEL:-info}"
+persist_config: false
 
-serverCore:
-  id: getting-started-server
+id: getting-started-server
 
 # =============================================================================
 # Sources
@@ -45,7 +43,7 @@ serverCore:
 sources:
   - kind: postgres
     id: postgres-messages
-    autoStart: true
+    auto_start: true
 
     # PostgreSQL connection settings
     # Using environment variables for security
@@ -54,24 +52,24 @@ sources:
     database: "${POSTGRES_DATABASE:-getting_started}"
     user: "${POSTGRES_USER:-drasi_user}"
     password: "${POSTGRES_PASSWORD}"
-    sslMode: prefer
+    ssl_mode: prefer
 
     # Tables to monitor for changes
     tables:
       - message
 
     # Replication settings for CDC
-    slotName: drasi_getting_started_slot
-    publicationName: drasi_getting_started_pub
+    slot_name: drasi_getting_started_slot
+    publication_name: drasi_getting_started_pub
 
     # Primary key configuration for change tracking
-    tableKeys:
+    table_keys:
       - table: message
-        keyColumns:
+        key_columns:
           - messageid
 
     # Bootstrap provider loads existing data on startup
-    bootstrapProvider:
+    bootstrap_provider:
       type: postgres
 
 # =============================================================================
@@ -85,29 +83,29 @@ queries:
   # Filters for messages containing "Hello World" and returns the sender
   # Similar to the Platform tutorial's hello-world-from query
   - id: hello-world-from
-    autoStart: true
+    auto_start: true
     query: |
       MATCH (m:message {message: 'Hello World'})
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
     sources:
-      - sourceId: postgres-messages
+      - source_id: postgres-messages
 
   # Query 2: message-count
   # Aggregates messages by content and counts frequency
   # Cypher equivalent of the Platform tutorial's GQL aggregation query
   - id: message-count
-    autoStart: true
+    auto_start: true
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency
     sources:
-      - sourceId: postgres-messages
+      - source_id: postgres-messages
 
   # Query 3: inactive-people
   # Identifies users who haven't sent a message in 20+ seconds
   # Uses drasi.trueLater for time-based triggering
   # - id: inactive-people
-  #   autoStart: true
+  #   auto_start: true
   #   query: |
   #     MATCH (m:message)
   #     WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
@@ -118,7 +116,7 @@ queries:
   #          )
   #     RETURN MessageFrom, LastMessageTimestamp
   #   sources:
-  #     - sourceId: postgres-messages
+  #     - source_id: postgres-messages
 
 # =============================================================================
 # Reactions
@@ -131,27 +129,32 @@ reactions:
   # Prints query results to the console with custom formatting
   - kind: log
     id: log-all-queries
-    autoStart: true
+    auto_start: true
     queries:
       - hello-world-from
       - message-count
       # - inactive-people
+    # Default template configuration for all queries
     # Templates use handlebars syntax for formatting
-    addedTemplate: "[{{query_name}}] + {{after}}"
-    updatedTemplate: "[{{query_name}}] ~ {{before}} -> {{after}}"
-    deletedTemplate: "[{{query_name}}] - {{before}}"
+    default_template:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
 
   # SSE Reaction - Real-time Browser Streaming
   # Streams query results to connected clients via Server-Sent Events
   # Access at: http://localhost:8081/events
   - kind: sse
     id: sse-stream
-    autoStart: true
+    auto_start: true
     queries:
       - hello-world-from
       - message-count
       # - inactive-people
     host: "${SSE_HOST:-0.0.0.0}"
     port: ${SSE_PORT:-8081}
-    ssePath: /events
-    heartbeatIntervalMs: 30000
+    sse_path: /events
+    heartbeat_interval_ms: 30000
