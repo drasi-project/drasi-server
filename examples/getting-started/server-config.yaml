@@ -29,8 +29,8 @@
 # Server Configuration
 host: "${SERVER_HOST:-0.0.0.0}"
 port: ${SERVER_PORT:-8080}
-log_level: "${LOG_LEVEL:-info}"
-persist_config: false
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
 
 id: getting-started-server
 
@@ -43,7 +43,7 @@ id: getting-started-server
 sources:
   - kind: postgres
     id: postgres-messages
-    auto_start: true
+    autoStart: true
 
     # PostgreSQL connection settings
     # Using environment variables for security
@@ -52,24 +52,24 @@ sources:
     database: "${POSTGRES_DATABASE:-getting_started}"
     user: "${POSTGRES_USER:-drasi_user}"
     password: "${POSTGRES_PASSWORD}"
-    ssl_mode: prefer
+    sslMode: prefer
 
     # Tables to monitor for changes
     tables:
       - message
 
     # Replication settings for CDC
-    slot_name: drasi_getting_started_slot
-    publication_name: drasi_getting_started_pub
+    slotName: drasi_getting_started_slot
+    publicationName: drasi_getting_started_pub
 
     # Primary key configuration for change tracking
-    table_keys:
+    tableKeys:
       - table: message
-        key_columns:
+        keyColumns:
           - messageid
 
     # Bootstrap provider loads existing data on startup
-    bootstrap_provider:
+    bootstrapProvider:
       type: postgres
 
 # =============================================================================
@@ -83,7 +83,7 @@ queries:
   # Filters for messages containing "Hello World" and returns the sender
   # Similar to the Platform tutorial's hello-world-from query
   - id: hello-world-from
-    auto_start: true
+    autoStart: true
     query: |
       MATCH (m:message {message: 'Hello World'})
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
@@ -94,7 +94,7 @@ queries:
   # Aggregates messages by content and counts frequency
   # Cypher equivalent of the Platform tutorial's GQL aggregation query
   - id: message-count
-    auto_start: true
+    autoStart: true
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency
@@ -105,7 +105,7 @@ queries:
   # Identifies users who haven't sent a message in 20+ seconds
   # Uses drasi.trueLater for time-based triggering
   # - id: inactive-people
-  #   auto_start: true
+  #   autoStart: true
   #   query: |
   #     MATCH (m:message)
   #     WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
@@ -129,7 +129,7 @@ reactions:
   # Prints query results to the console with custom formatting
   - kind: log
     id: log-all-queries
-    auto_start: true
+    autoStart: true
     queries:
       - hello-world-from
       - message-count
@@ -149,12 +149,12 @@ reactions:
   # Access at: http://localhost:8081/events
   - kind: sse
     id: sse-stream
-    auto_start: true
+    autoStart: true
     queries:
       - hello-world-from
       - message-count
       # - inactive-people
     host: "${SSE_HOST:-0.0.0.0}"
     port: ${SSE_PORT:-8081}
-    sse_path: /events
-    heartbeat_interval_ms: 30000
+    ssePath: /events
+    heartbeatIntervalMs: 30000
