@@ -170,3 +170,328 @@ pub fn drasi_error_to_status(err: &DrasiError) -> StatusCode {
         OperationFailed { .. } | Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==========================================================================
+    // ErrorResponse Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_error_response_new() {
+        let response = ErrorResponse::new("TEST_CODE", "Test message");
+        assert_eq!(response.code, "TEST_CODE");
+        assert_eq!(response.message, "Test message");
+        assert!(response.details.is_none());
+    }
+
+    #[test]
+    fn test_error_response_with_details() {
+        let details = ErrorDetail {
+            component_type: Some("source".to_string()),
+            component_id: Some("test-source".to_string()),
+            technical_details: Some("connection failed".to_string()),
+        };
+
+        let response = ErrorResponse::new("TEST_CODE", "Test message").with_details(details);
+
+        assert_eq!(response.code, "TEST_CODE");
+        assert!(response.details.is_some());
+        let d = response.details.unwrap();
+        assert_eq!(d.component_type, Some("source".to_string()));
+        assert_eq!(d.component_id, Some("test-source".to_string()));
+        assert_eq!(d.technical_details, Some("connection failed".to_string()));
+    }
+
+    #[test]
+    fn test_error_response_serialization() {
+        let response = ErrorResponse::new("TEST_CODE", "Test message");
+        let json = serde_json::to_string(&response).expect("Failed to serialize");
+
+        assert!(json.contains("\"code\":\"TEST_CODE\""));
+        assert!(json.contains("\"message\":\"Test message\""));
+        // details should be omitted when None
+        assert!(!json.contains("details"));
+    }
+
+    #[test]
+    fn test_error_response_serialization_with_details() {
+        let details = ErrorDetail {
+            component_type: Some("query".to_string()),
+            component_id: None,
+            technical_details: None,
+        };
+
+        let response = ErrorResponse::new("TEST_CODE", "Test message").with_details(details);
+        let json = serde_json::to_string(&response).expect("Failed to serialize");
+
+        assert!(json.contains("\"details\""));
+        assert!(json.contains("\"component_type\":\"query\""));
+        // Null fields should be omitted
+        assert!(!json.contains("component_id"));
+        assert!(!json.contains("technical_details"));
+    }
+
+    // ==========================================================================
+    // status_from_code Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_status_from_code_not_found() {
+        assert_eq!(
+            status_from_code(error_codes::SOURCE_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::QUERY_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::REACTION_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn test_status_from_code_conflict() {
+        assert_eq!(
+            status_from_code(error_codes::CONFIG_READ_ONLY),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status_from_code(error_codes::DUPLICATE_RESOURCE),
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[test]
+    fn test_status_from_code_bad_request() {
+        assert_eq!(
+            status_from_code(error_codes::INVALID_REQUEST),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn test_status_from_code_internal_error() {
+        assert_eq!(
+            status_from_code(error_codes::INTERNAL_ERROR),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        // Unknown codes should also be internal server error
+        assert_eq!(
+            status_from_code("UNKNOWN_CODE"),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn test_status_from_code_operation_failures() {
+        // All operation failures should be internal server error
+        assert_eq!(
+            status_from_code(error_codes::SOURCE_CREATE_FAILED),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            status_from_code(error_codes::QUERY_START_FAILED),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            status_from_code(error_codes::REACTION_DELETE_FAILED),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    // ==========================================================================
+    // DrasiError Conversion Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_drasi_error_component_not_found_source() {
+        let err = DrasiError::ComponentNotFound {
+            component_type: "source".to_string(),
+            component_id: "test-source".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::SOURCE_NOT_FOUND);
+        assert!(response.message.contains("source"));
+        assert!(response.message.contains("test-source"));
+    }
+
+    #[test]
+    fn test_drasi_error_component_not_found_query() {
+        let err = DrasiError::ComponentNotFound {
+            component_type: "query".to_string(),
+            component_id: "test-query".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::QUERY_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_drasi_error_component_not_found_reaction() {
+        let err = DrasiError::ComponentNotFound {
+            component_type: "reaction".to_string(),
+            component_id: "test-reaction".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::REACTION_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_drasi_error_already_exists() {
+        let err = DrasiError::AlreadyExists {
+            component_type: "source".to_string(),
+            component_id: "duplicate-source".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::DUPLICATE_RESOURCE);
+        assert!(response.message.contains("already exists"));
+    }
+
+    #[test]
+    fn test_drasi_error_invalid_config() {
+        let err = DrasiError::InvalidConfig {
+            message: "Missing required field".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::INVALID_REQUEST);
+        assert!(response.message.contains("Missing required field"));
+    }
+
+    #[test]
+    fn test_drasi_error_validation() {
+        let err = DrasiError::Validation {
+            message: "Port must be > 0".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::INVALID_REQUEST);
+    }
+
+    #[test]
+    fn test_drasi_error_operation_failed() {
+        let err = DrasiError::OperationFailed {
+            component_type: "source".to_string(),
+            component_id: "failing-source".to_string(),
+            operation: "start".to_string(),
+            reason: "connection refused".to_string(),
+        };
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::INTERNAL_ERROR);
+        assert!(response.message.contains("start"));
+        assert!(response.message.contains("connection refused"));
+    }
+
+    #[test]
+    fn test_drasi_error_internal() {
+        let err = DrasiError::Internal(anyhow::anyhow!("Something went wrong"));
+
+        let response: ErrorResponse = err.into();
+        assert_eq!(response.code, error_codes::INTERNAL_ERROR);
+        assert!(response.message.contains("Something went wrong"));
+    }
+
+    // ==========================================================================
+    // drasi_error_to_status Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_drasi_error_to_status_not_found() {
+        let err = DrasiError::ComponentNotFound {
+            component_type: "source".to_string(),
+            component_id: "test".to_string(),
+        };
+        assert_eq!(drasi_error_to_status(&err), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_drasi_error_to_status_conflict() {
+        let err = DrasiError::AlreadyExists {
+            component_type: "query".to_string(),
+            component_id: "test".to_string(),
+        };
+        assert_eq!(drasi_error_to_status(&err), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn test_drasi_error_to_status_bad_request() {
+        let err1 = DrasiError::InvalidConfig {
+            message: "test".to_string(),
+        };
+        let err2 = DrasiError::InvalidState {
+            message: "test".to_string(),
+        };
+        let err3 = DrasiError::Validation {
+            message: "test".to_string(),
+        };
+
+        assert_eq!(drasi_error_to_status(&err1), StatusCode::BAD_REQUEST);
+        assert_eq!(drasi_error_to_status(&err2), StatusCode::BAD_REQUEST);
+        assert_eq!(drasi_error_to_status(&err3), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_drasi_error_to_status_internal_error() {
+        let err1 = DrasiError::OperationFailed {
+            component_type: "source".to_string(),
+            component_id: "test".to_string(),
+            operation: "start".to_string(),
+            reason: "failed".to_string(),
+        };
+        let err2 = DrasiError::Internal(anyhow::anyhow!("test"));
+
+        assert_eq!(
+            drasi_error_to_status(&err1),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            drasi_error_to_status(&err2),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    // ==========================================================================
+    // Error Codes Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_error_codes_are_unique() {
+        let codes = vec![
+            error_codes::SOURCE_CREATE_FAILED,
+            error_codes::SOURCE_NOT_FOUND,
+            error_codes::SOURCE_START_FAILED,
+            error_codes::SOURCE_STOP_FAILED,
+            error_codes::SOURCE_DELETE_FAILED,
+            error_codes::QUERY_CREATE_FAILED,
+            error_codes::QUERY_NOT_FOUND,
+            error_codes::QUERY_START_FAILED,
+            error_codes::QUERY_STOP_FAILED,
+            error_codes::QUERY_DELETE_FAILED,
+            error_codes::QUERY_RESULTS_UNAVAILABLE,
+            error_codes::REACTION_CREATE_FAILED,
+            error_codes::REACTION_NOT_FOUND,
+            error_codes::REACTION_START_FAILED,
+            error_codes::REACTION_STOP_FAILED,
+            error_codes::REACTION_DELETE_FAILED,
+            error_codes::CONFIG_READ_ONLY,
+            error_codes::DUPLICATE_RESOURCE,
+            error_codes::INVALID_REQUEST,
+            error_codes::INTERNAL_ERROR,
+        ];
+
+        let mut unique: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for code in &codes {
+            assert!(unique.insert(code), "Duplicate error code found: {code}");
+        }
+        assert_eq!(unique.len(), codes.len());
+    }
+}

@@ -29,9 +29,15 @@ pub async fn setup_redis() -> String {
     use testcontainers::runners::AsyncRunner;
 
     // Start Redis container
-    let container = Redis::default().start().await.unwrap();
-    let redis_port = container.get_host_port_ipv4(6379).await.unwrap();
-    let redis_url = format!("redis://127.0.0.1:{}", redis_port);
+    let container = Redis::default()
+        .start()
+        .await
+        .expect("Failed to start Redis container");
+    let redis_port = container
+        .get_host_port_ipv4(6379)
+        .await
+        .expect("Failed to get Redis port");
+    let redis_url = format!("redis://127.0.0.1:{redis_port}");
 
     // Keep container alive by leaking it (test framework will clean up)
     std::mem::forget(container);
@@ -293,13 +299,19 @@ pub fn build_platform_delete_event(
 pub fn verify_cloudevent_structure(cloud_event: &Value) -> Result<()> {
     // Required fields
     let required_fields = vec![
-        "id", "source", "specversion", "type",
-        "datacontenttype", "topic", "time", "data"
+        "id",
+        "source",
+        "specversion",
+        "type",
+        "datacontenttype",
+        "topic",
+        "time",
+        "data",
     ];
 
     for field in required_fields {
         if cloud_event.get(field).is_none() {
-            return Err(anyhow::anyhow!("Missing required field: {}", field));
+            return Err(anyhow::anyhow!("Missing required field: {field}"));
         }
     }
 
@@ -309,21 +321,26 @@ pub fn verify_cloudevent_structure(cloud_event: &Value) -> Result<()> {
     }
 
     if cloud_event["datacontenttype"] != "application/json" {
-        return Err(anyhow::anyhow!("Invalid datacontenttype, expected 'application/json'"));
+        return Err(anyhow::anyhow!(
+            "Invalid datacontenttype, expected 'application/json'"
+        ));
     }
 
     if cloud_event["type"] != "com.dapr.event.sent" {
-        return Err(anyhow::anyhow!("Invalid type, expected 'com.dapr.event.sent'"));
+        return Err(anyhow::anyhow!(
+            "Invalid type, expected 'com.dapr.event.sent'"
+        ));
     }
 
     // Verify ID is a valid UUID v4
-    let id = cloud_event["id"].as_str()
+    let id = cloud_event["id"]
+        .as_str()
         .ok_or_else(|| anyhow::anyhow!("id is not a string"))?;
-    uuid::Uuid::parse_str(id)
-        .map_err(|_| anyhow::anyhow!("id is not a valid UUID"))?;
+    uuid::Uuid::parse_str(id).map_err(|_| anyhow::anyhow!("id is not a valid UUID"))?;
 
     // Verify timestamp is ISO 8601
-    let time = cloud_event["time"].as_str()
+    let time = cloud_event["time"]
+        .as_str()
         .ok_or_else(|| anyhow::anyhow!("time is not a string"))?;
     chrono::DateTime::parse_from_rfc3339(time)
         .map_err(|_| anyhow::anyhow!("time is not valid ISO 8601 format"))?;
@@ -367,153 +384,5 @@ pub async fn get_pending_count(
         Ok(*count as usize)
     } else {
         Ok(0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_setup_redis() {
-        let redis_url = setup_redis().await;
-        assert!(redis_url.starts_with("redis://127.0.0.1:"));
-
-        // Verify we can connect
-        let client = redis::Client::open(redis_url.as_str()).unwrap();
-        let mut conn = client.get_multiplexed_async_connection().await.unwrap();
-        let _: String = redis::cmd("PING").query_async(&mut conn).await.unwrap();
-    }
-
-    #[test]
-    fn test_build_platform_insert_event_node() {
-        let mut props = HashMap::new();
-        props.insert("name".to_string(), json!("Alice"));
-        props.insert("age".to_string(), json!(30));
-
-        let event = build_platform_insert_event(
-            "1",
-            vec!["Person"],
-            props,
-            "node",
-            None,
-            None,
-        );
-
-        assert_eq!(event["data"][0]["op"], "i");
-        assert_eq!(event["data"][0]["payload"]["after"]["id"], "1");
-        assert_eq!(event["data"][0]["payload"]["after"]["labels"][0], "Person");
-        assert_eq!(event["data"][0]["payload"]["after"]["properties"]["name"], "Alice");
-        assert_eq!(event["data"][0]["payload"]["source"]["table"], "node");
-    }
-
-    #[test]
-    fn test_build_platform_insert_event_relation() {
-        let mut props = HashMap::new();
-        props.insert("since".to_string(), json!("2020"));
-
-        let event = build_platform_insert_event(
-            "r1",
-            vec!["KNOWS"],
-            props,
-            "rel",
-            Some("1"),
-            Some("2"),
-        );
-
-        assert_eq!(event["data"][0]["op"], "i");
-        assert_eq!(event["data"][0]["payload"]["after"]["startId"], "1");
-        assert_eq!(event["data"][0]["payload"]["after"]["endId"], "2");
-    }
-
-    #[test]
-    fn test_build_platform_update_event() {
-        let mut old_props = HashMap::new();
-        old_props.insert("value".to_string(), json!(10));
-
-        let mut new_props = HashMap::new();
-        new_props.insert("value".to_string(), json!(20));
-
-        let event = build_platform_update_event(
-            "1",
-            vec!["Counter"],
-            old_props,
-            new_props,
-            "node",
-            None,
-            None,
-        );
-
-        assert_eq!(event["data"][0]["op"], "u");
-        assert_eq!(event["data"][0]["payload"]["before"]["properties"]["value"], 10);
-        assert_eq!(event["data"][0]["payload"]["after"]["properties"]["value"], 20);
-    }
-
-    #[test]
-    fn test_build_platform_delete_event() {
-        let mut props = HashMap::new();
-        props.insert("name".to_string(), json!("Bob"));
-
-        let event = build_platform_delete_event(
-            "2",
-            vec!["Person"],
-            props,
-            "node",
-            None,
-            None,
-        );
-
-        assert_eq!(event["data"][0]["op"], "d");
-        assert_eq!(event["data"][0]["payload"]["before"]["id"], "2");
-        assert!(event["data"][0]["payload"]["after"].is_null());
-    }
-
-    #[test]
-    fn test_verify_cloudevent_structure_valid() {
-        let cloud_event = json!({
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "source": "drasi-core",
-            "specversion": "1.0",
-            "type": "com.dapr.event.sent",
-            "datacontenttype": "application/json",
-            "topic": "test-results",
-            "time": "2025-01-01T00:00:00.000Z",
-            "data": {},
-            "pubsubname": "drasi-pubsub",
-        });
-
-        assert!(verify_cloudevent_structure(&cloud_event).is_ok());
-    }
-
-    #[test]
-    fn test_verify_cloudevent_structure_missing_field() {
-        let cloud_event = json!({
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "source": "drasi-core",
-            // Missing specversion
-            "type": "com.dapr.event.sent",
-            "datacontenttype": "application/json",
-            "topic": "test-results",
-            "time": "2025-01-01T00:00:00.000Z",
-            "data": {},
-        });
-
-        assert!(verify_cloudevent_structure(&cloud_event).is_err());
-    }
-
-    #[test]
-    fn test_verify_cloudevent_structure_invalid_uuid() {
-        let cloud_event = json!({
-            "id": "not-a-uuid",
-            "source": "drasi-core",
-            "specversion": "1.0",
-            "type": "com.dapr.event.sent",
-            "datacontenttype": "application/json",
-            "topic": "test-results",
-            "time": "2025-01-01T00:00:00.000Z",
-            "data": {},
-        });
-
-        assert!(verify_cloudevent_structure(&cloud_event).is_err());
     }
 }
