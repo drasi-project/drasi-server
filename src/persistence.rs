@@ -419,6 +419,7 @@ mod tests {
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed
@@ -479,6 +480,7 @@ mod tests {
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed but not write anything
@@ -510,6 +512,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -550,6 +553,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings.clone(),
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -629,6 +633,7 @@ mod tests {
             "debug".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -856,6 +861,7 @@ instances:
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Register a source config
@@ -928,6 +934,7 @@ instances:
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -1022,6 +1029,8 @@ instances:
             persist_settings,
             initial_sources,
             IndexMap::new(),
+            IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Try to unregister - should be skipped because persistence is disabled
@@ -1059,6 +1068,7 @@ instances:
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -1129,6 +1139,7 @@ log_level: warn
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Try to save - should be skipped
@@ -1174,6 +1185,7 @@ log_level: warn
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );

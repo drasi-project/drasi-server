@@ -400,11 +400,9 @@ impl DrasiServer {
             }
             reaction_configs.insert(instance.id.clone(), reactions);
             
-            let mut queries = IndexMap::new();
-            for query in &instance.queries {
-                queries.insert(query.id.clone(), query.clone());
-            }
-            query_configs.insert(instance.id.clone(), queries);
+            // Note: queries are not extracted because they're stored as QueryConfigDto
+            // during config load and managed separately in persistence layer
+            query_configs.insert(instance.id.clone(), IndexMap::new());
         }
 
         (source_configs, reaction_configs, query_configs)

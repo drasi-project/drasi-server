@@ -30,7 +30,7 @@ use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
-use crate::api::mappings::{QueryConfigMapper, ConfigMapper};
+use crate::api::mappings::{DtoMapper, QueryConfigMapper, ConfigMapper};
 use crate::api::models::QueryConfigDto;
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
@@ -277,8 +277,9 @@ pub async fn create_query(
     let query_id = config_dto.id.clone();
     
     // Convert QueryConfigDto to drasi-lib's QueryConfig
-    let mapper = QueryConfigMapper;
-    let config = match mapper.map_to_domain(&config_dto) {
+    let mapper = DtoMapper::default();
+    let query_mapper = QueryConfigMapper;
+    let config = match mapper.map_with(&config_dto, &query_mapper) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Failed to convert QueryConfigDto to QueryConfig: {e}");
