@@ -35,6 +35,16 @@ pub struct QueryConfigDto {
     pub enable_bootstrap: bool,
     #[serde(default = "default_bootstrap_buffer_size")]
     pub bootstrap_buffer_size: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub joins: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority_queue_capacity: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_buffer_capacity: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_backend: Option<serde_json::Value>,
 }
 
 /// Source subscription configuration DTO with camelCase serialization
@@ -42,6 +52,10 @@ pub struct QueryConfigDto {
 #[serde(rename_all = "camelCase")]
 pub struct SourceSubscriptionConfigDto {
     pub source_id: ConfigValue<String>,
+    #[serde(default)]
+    pub nodes: Vec<String>,
+    #[serde(default)]
+    pub relations: Vec<String>,
     #[serde(default)]
     pub pipeline: Vec<String>,
 }

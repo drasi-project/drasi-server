@@ -21,8 +21,9 @@ use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
-use crate::api::mappings::DtoMapper;
+use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig};
+use drasi_lib::config::QueryConfig;
 
 /// DrasiServer configuration
 ///
@@ -254,6 +255,14 @@ impl DrasiServerConfig {
                     None
                 };
 
+            // Map query DTOs to QueryConfig
+            let query_mapper = QueryConfigMapper;
+            let queries: Vec<QueryConfig> = instance
+                .queries
+                .iter()
+                .map(|dto| mapper.map_with(dto, &query_mapper))
+                .collect::<Result<Vec<_>, _>>()?;
+
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
@@ -261,7 +270,7 @@ impl DrasiServerConfig {
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 sources: instance.sources.clone(),
-                queries: instance.queries.clone(),
+                queries,
                 reactions: instance.reactions.clone(),
             });
         }

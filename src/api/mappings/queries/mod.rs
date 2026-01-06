@@ -16,7 +16,8 @@
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
-use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
+use drasi_lib::config::{QueryConfig, QueryLanguage, SourceSubscriptionConfig};
+use drasi_lib::channels::DispatchMode;
 
 pub struct QueryConfigMapper;
 
@@ -32,15 +33,67 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(|src| map_source_subscription(src, resolver))
             .collect::<Result<Vec<_>, _>>()?;
 
+        // Parse query language string to enum
+        let query_language_str = resolver.resolve_string(&dto.query_language)?;
+        let query_language = match query_language_str.as_str() {
+            "Cypher" => QueryLanguage::Cypher,
+            "GQL" => QueryLanguage::GQL,
+            _ => return Err(MappingError::SourceCreationError(format!(
+                "Invalid query language: {}. Must be 'Cypher' or 'GQL'", query_language_str
+            ))),
+        };
+
+        // Middleware is empty for now (optional field, defaults to empty vec)
+        let middleware = Vec::new();
+
+        // Parse dispatch mode if provided
+        let dispatch_mode = dto
+            .dispatch_mode
+            .as_ref()
+            .map(|dm| match dm.as_str() {
+                "Channel" => Ok(DispatchMode::Channel),
+                _ => Err(MappingError::SourceCreationError(format!(
+                    "Invalid dispatch mode: {}. Must be 'Channel'", dm
+                ))),
+            })
+            .transpose()?;
+
+        // Parse joins if provided
+        let joins = dto
+            .joins
+            .as_ref()
+            .map(|j| {
+                serde_json::from_value(j.clone()).map_err(|e| {
+                    MappingError::SourceCreationError(format!("Invalid joins config: {}", e))
+                })
+            })
+            .transpose()?;
+
+        // Parse storage_backend if provided
+        let storage_backend = dto
+            .storage_backend
+            .as_ref()
+            .map(|sb| {
+                serde_json::from_value(sb.clone()).map_err(|e| {
+                    MappingError::SourceCreationError(format!("Invalid storage backend config: {}", e))
+                })
+            })
+            .transpose()?;
+
         Ok(QueryConfig {
             id: dto.id.clone(),
             auto_start: dto.auto_start,
             query: resolver.resolve_string(&dto.query)?,
-            query_language: resolver.resolve_string(&dto.query_language)?,
-            middleware: dto.middleware.clone(),
+            query_language,
+            middleware,
             sources,
             enable_bootstrap: dto.enable_bootstrap,
             bootstrap_buffer_size: dto.bootstrap_buffer_size,
+            joins,
+            priority_queue_capacity: dto.priority_queue_capacity,
+            dispatch_buffer_capacity: dto.dispatch_buffer_capacity,
+            dispatch_mode,
+            storage_backend,
         })
     }
 }
@@ -51,6 +104,8 @@ fn map_source_subscription(
 ) -> Result<SourceSubscriptionConfig, MappingError> {
     Ok(SourceSubscriptionConfig {
         source_id: resolver.resolve_string(&dto.source_id)?,
+        nodes: dto.nodes.clone(),
+        relations: dto.relations.clone(),
         pipeline: dto.pipeline.clone(),
     })
 }

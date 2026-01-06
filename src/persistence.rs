@@ -162,7 +162,7 @@ impl ConfigPersistence {
                     .map(ConfigValue::Static),
                 sources,
                 reactions,
-                queries: lib_config.queries.clone(),
+                queries: Vec::new(), // Queries managed by drasi-lib, not persisted here
             });
         }
 

@@ -29,7 +29,7 @@ pub struct HttpReactionConfigDto {
     #[serde(default = "default_reaction_timeout_ms")]
     pub timeout_ms: ConfigValue<u64>,
     #[serde(default)]
-    pub routes: HashMap<String, QueryConfigDto>,
+    pub routes: HashMap<String, HttpQueryConfigDto>,
 }
 
 fn default_base_url() -> ConfigValue<String> {
@@ -42,7 +42,7 @@ fn default_reaction_timeout_ms() -> ConfigValue<u64> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct QueryConfigDto {
+pub struct HttpQueryConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added: Option<CallSpecDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,7 +73,7 @@ pub struct HttpAdaptiveReactionConfigDto {
     #[serde(default = "default_reaction_timeout_ms")]
     pub timeout_ms: ConfigValue<u64>,
     #[serde(default)]
-    pub routes: HashMap<String, QueryConfigDto>,
+    pub routes: HashMap<String, HttpQueryConfigDto>,
     #[serde(flatten)]
     pub adaptive: AdaptiveBatchConfigDto,
 }

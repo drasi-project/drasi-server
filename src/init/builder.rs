@@ -16,7 +16,7 @@
 
 use anyhow::Result;
 
-use drasi_server::api::models::{ConfigValue, ReactionConfig, SourceConfig};
+use drasi_server::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto};
 use drasi_server::DrasiServerConfig;
 
 use super::prompts::ServerSettings;
@@ -36,16 +36,16 @@ pub fn build_config(
             .first()
             .map(|s| s.id().to_string())
             .unwrap_or_default();
-        vec![drasi_lib::config::QueryConfig {
+        vec![QueryConfigDto {
             id: "my-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            query_language: drasi_lib::config::QueryLanguage::Cypher,
+            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
-            sources: vec![drasi_lib::config::SourceSubscriptionConfig {
-                source_id,
+            sources: vec![SourceSubscriptionConfigDto {
+                source_id: ConfigValue::Static(source_id),
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],

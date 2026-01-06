@@ -128,11 +128,9 @@ impl DrasiServer {
                 builder = builder.with_source(source);
             }
 
-            // Add queries from config (map DTOs to drasi-lib QueryConfig)
-            let query_mapper = QueryConfigMapper;
-            for query_dto in &instance.queries {
-                let query_config = query_mapper.map(query_dto, &mapper)?;
-                builder = builder.with_query(query_config);
+            // Add queries from config (already resolved in config/types.rs)
+            for query_config in &instance.queries {
+                builder = builder.with_query(query_config.clone());
             }
 
             // Create and add reactions from config
