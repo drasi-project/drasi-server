@@ -40,7 +40,7 @@ docker compose logs -f drasi-server
 curl http://localhost:8080/health
 ```
 
-By default, this uses the latest published image from `ghcr.io/drasi-project/drasi-server:latest`.
+By default, this uses the `ghcr.io/drasi-project/drasi-server:0.1.0` image.
 
 To use a different version:
 ```bash
