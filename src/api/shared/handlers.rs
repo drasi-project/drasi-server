@@ -30,6 +30,8 @@ use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
+use crate::api::mappings::{QueryConfigMapper, ConfigMapper};
+use crate::api::models::QueryConfigDto;
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
@@ -263,7 +265,8 @@ pub async fn create_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(config): Json<QueryConfig>,
+    Extension(instance_id): Extension<String>,
+    Json(config_dto): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
@@ -271,7 +274,19 @@ pub async fn create_query(
         )));
     }
 
-    let query_id = config.id.clone();
+    let query_id = config_dto.id.clone();
+    
+    // Convert QueryConfigDto to drasi-lib's QueryConfig
+    let mapper = QueryConfigMapper;
+    let config = match mapper.map_to_domain(&config_dto) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to convert QueryConfigDto to QueryConfig: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid query configuration: {e}"
+            ))));
+        }
+    };
 
     // Pre-flight join validation/logging (non-fatal warnings)
     if let Some(joins) = &config.joins {
@@ -311,6 +326,12 @@ pub async fn create_query(
     match core.add_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{query_id}' created successfully");
+            
+            // Register the QueryConfigDto for persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.register_query(&instance_id, config_dto).await;
+            }
+            
             persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -348,6 +369,7 @@ pub async fn delete_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -358,6 +380,11 @@ pub async fn delete_query(
 
     match core.remove_query(&id).await {
         Ok(_) => {
+            // Unregister the query from persistence
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_query(&instance_id, &id).await;
+            }
+            
             persist_after_operation(&config_persistence, "deleting query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {

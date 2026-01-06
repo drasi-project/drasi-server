@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::ConfigValue;
+use crate::api::models::{ConfigValue, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -23,8 +23,8 @@ use tokio::sync::RwLock;
 
 /// Handles persistence of DrasiServerConfig to a YAML file.
 /// Uses atomic writes (temp file + rename) to prevent corruption.
-/// Stores source and reaction configs in memory for persistence since
-/// they cannot be retrieved from running plugin instances.
+/// Stores source, reaction, and query configs in memory for persistence since
+/// they cannot be retrieved from running plugin instances or drasi-lib.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
     instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
@@ -37,6 +37,8 @@ pub struct ConfigPersistence {
     source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
     /// Reaction configs by instance_id -> reaction_id -> config
     reaction_configs: Arc<RwLock<IndexMap<String, IndexMap<String, ReactionConfig>>>>,
+    /// Query configs by instance_id -> query_id -> config
+    query_configs: Arc<RwLock<IndexMap<String, IndexMap<String, QueryConfigDto>>>>,
 }
 
 impl ConfigPersistence {
@@ -52,6 +54,7 @@ impl ConfigPersistence {
         persist_settings: IndexMap<String, bool>,
         initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
         initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
+        initial_query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>>,
     ) -> Self {
         Self {
             config_file_path,
@@ -63,6 +66,7 @@ impl ConfigPersistence {
             persist_settings,
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
+            query_configs: Arc::new(RwLock::new(initial_query_configs)),
         }
     }
 
@@ -112,6 +116,29 @@ impl ConfigPersistence {
         }
     }
 
+    /// Register a query config for persistence
+    pub async fn register_query(&self, instance_id: &str, config: QueryConfigDto) {
+        if !self.persist_config {
+            return;
+        }
+        let mut query_configs = self.query_configs.write().await;
+        query_configs
+            .entry(instance_id.to_string())
+            .or_default()
+            .insert(config.id.clone(), config);
+    }
+
+    /// Unregister a query config (called on deletion)
+    pub async fn unregister_query(&self, instance_id: &str, query_id: &str) {
+        if !self.persist_config {
+            return;
+        }
+        let mut query_configs = self.query_configs.write().await;
+        if let Some(instance_queries) = query_configs.get_mut(instance_id) {
+            instance_queries.swap_remove(query_id);
+        }
+    }
+
     /// Save the current configuration to the config file using atomic writes.
     /// Uses Core's public API to get current configuration snapshot.
     /// Includes source and reaction configs from the in-memory registry.
@@ -127,9 +154,10 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
 
-        // Get stored source and reaction configs
+        // Get stored source, reaction, and query configs
         let source_configs = self.source_configs.read().await;
         let reaction_configs = self.reaction_configs.read().await;
+        let query_configs = self.query_configs.read().await;
 
         let mut instance_configs = Vec::new();
 
@@ -140,12 +168,16 @@ impl ConfigPersistence {
 
             let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
 
-            // Get source and reaction configs for this instance
+            // Get source, reaction, and query configs for this instance from our DTO storage
             let sources: Vec<SourceConfig> = source_configs
                 .get(id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let reactions: Vec<ReactionConfig> = reaction_configs
+                .get(id)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default();
+            let queries: Vec<QueryConfigDto> = query_configs
                 .get(id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
@@ -162,7 +194,7 @@ impl ConfigPersistence {
                     .map(ConfigValue::Static),
                 sources,
                 reactions,
-                queries: Vec::new(), // Queries managed by drasi-lib, not persisted here
+                queries, // Now using stored QueryConfigDto instead of empty vec
             });
         }
 
