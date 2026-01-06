@@ -155,9 +155,8 @@ fn test_reaction_config_log_serializes_camelcase() {
         queries: vec!["query1".to_string()],
         auto_start: true,
         config: LogReactionConfigDto {
-            added_template: None,
-            updated_template: None,
-            deleted_template: None,
+            routes: std::collections::HashMap::new(),
+            default_template: None,
         },
     };
 
