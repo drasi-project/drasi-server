@@ -575,6 +575,7 @@ mod tests {
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Should not be writable
@@ -1028,7 +1029,6 @@ instances:
             false, // persist_config = false (persistence disabled)
             persist_settings,
             initial_sources,
-            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
