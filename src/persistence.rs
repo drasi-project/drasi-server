@@ -446,17 +446,18 @@ mod tests {
         assert!(loaded_config.persist_config);
 
         // With single instance, dynamic format selection outputs single-instance format
-        // (queries at root level, instances array empty)
+        // (instances array empty)
+        // Note: Queries are only persisted if they were registered via register_query()
+        // Since this test doesn't register any queries, we expect an empty queries array
         assert!(
             loaded_config.instances.is_empty(),
             "Expected empty instances array for single-instance format"
         );
         assert_eq!(
             loaded_config.queries.len(),
-            1,
-            "Expected query at root level"
+            0,
+            "Expected no queries since none were registered"
         );
-        assert_eq!(loaded_config.queries[0].id, "test-query");
     }
 
     #[tokio::test]
@@ -707,25 +708,25 @@ mod tests {
 id: my-server
 host: localhost
 port: 9090
-log_level: info
-persist_config: true
-persist_index: true
+logLevel: info
+persistConfig: true
+persistIndex: true
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 queries:
   - id: test-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
     sources:
-      - source_id: test-source
+      - sourceId: test-source
 reactions:
   - kind: log
     id: test-reaction
     queries:
       - test-query
-    auto_start: true
+    autoStart: true
 instances: []
 "#;
 
@@ -758,42 +759,42 @@ instances: []
         let config_yaml = r#"
 host: 0.0.0.0
 port: 8080
-log_level: debug
-persist_config: true
+logLevel: debug
+persistConfig: true
 sources: []
 queries: []
 reactions: []
 instances:
   - id: analytics
-    persist_index: true
+    persistIndex: true
     sources:
       - kind: mock
         id: analytics-source
-        auto_start: true
+        autoStart: true
     queries:
       - id: analytics-query
         query: "MATCH (n) RETURN n"
         queryLanguage: Cypher
         sources:
-          - source_id: analytics-source
+          - sourceId: analytics-source
     reactions:
       - kind: log
         id: analytics-reaction
         queries:
           - analytics-query
-        auto_start: true
+        autoStart: true
   - id: monitoring
-    persist_index: false
+    persistIndex: false
     sources:
       - kind: mock
         id: monitoring-source
-        auto_start: false
+        autoStart: false
     queries:
       - id: monitoring-query
         query: "MATCH (m) RETURN m"
         queryLanguage: Cypher
         sources:
-          - source_id: monitoring-source
+          - sourceId: monitoring-source
     reactions: []
 "#;
 
@@ -1119,7 +1120,7 @@ instances:
         let initial_content = r#"
 host: localhost
 port: 9999
-log_level: warn
+logLevel: warn
 "#;
         std::fs::write(&config_path, initial_content).expect("Failed to create initial file");
 

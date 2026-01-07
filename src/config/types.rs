@@ -351,7 +351,7 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            persist_index: true
+            persistIndex: true
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -367,7 +367,7 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            persist_index: false
+            persistIndex: false
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -401,8 +401,8 @@ mod tests {
 
         let yaml = serde_yaml::to_string(&config).unwrap();
         assert!(
-            yaml.contains("persist_index: true"),
-            "Serialized YAML should contain 'persist_index: true'"
+            yaml.contains("persistIndex: true"),
+            "Serialized YAML should contain 'persistIndex: true'"
         );
 
         let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -433,9 +433,9 @@ mod tests {
             id: my-production-server
             host: 192.168.1.100
             port: 9090
-            log_level: debug
-            persist_config: false
-            persist_index: true
+            logLevel: debug
+            persistConfig: false
+            persistIndex: true
             sources: []
             queries: []
             reactions: []
@@ -479,8 +479,8 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            log_level: info
-            persist_index: true
+            logLevel: info
+            persistIndex: true
         "#;
 
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
@@ -504,8 +504,8 @@ mod tests {
 
         let content = std::fs::read_to_string(temp_file.path()).unwrap();
         assert!(
-            content.contains("persist_index: true"),
-            "Saved file should contain persist_index setting"
+            content.contains("persistIndex: true"),
+            "Saved file should contain persistIndex setting"
         );
     }
 
@@ -526,7 +526,7 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            state_store:
+            stateStore:
               kind: redb
               path: ./data/state.redb
         "#;
@@ -561,8 +561,8 @@ mod tests {
 
         let yaml = serde_yaml::to_string(&config).unwrap();
         assert!(
-            yaml.contains("state_store:"),
-            "Serialized YAML should contain 'state_store:'"
+            yaml.contains("stateStore:"),
+            "Serialized YAML should contain 'stateStore:'"
         );
         assert!(
             yaml.contains("kind: redb"),
@@ -583,7 +583,7 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            state_store:
+            stateStore:
               kind: redb
               path: ${STATE_STORE_PATH:-./data/default.redb}
         "#;
@@ -598,10 +598,10 @@ mod tests {
             id: my-production-server
             host: 192.168.1.100
             port: 9090
-            log_level: debug
-            persist_config: false
-            persist_index: true
-            state_store:
+            logLevel: debug
+            persistConfig: false
+            persistIndex: true
+            stateStore:
               kind: redb
               path: /var/lib/drasi/state.redb
             sources: []
@@ -625,15 +625,15 @@ mod tests {
             port: 8080
             instances:
               - id: instance-1
-                persist_index: true
-                state_store:
+                persistIndex: true
+                stateStore:
                   kind: redb
                   path: ./data/instance1.redb
                 sources: []
                 queries: []
                 reactions: []
               - id: instance-2
-                persist_index: false
+                persistIndex: false
                 sources: []
                 queries: []
                 reactions: []
@@ -659,7 +659,7 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            state_store:
+            stateStore:
               kind: redb
               path: ./data/state.redb
         "#;
@@ -679,8 +679,8 @@ mod tests {
             id: test-server
             host: 0.0.0.0
             port: 8080
-            log_level: info
-            state_store:
+            logLevel: info
+            stateStore:
               kind: redb
               path: ./data/state.redb
         "#;
@@ -706,8 +706,8 @@ mod tests {
 
         let content = std::fs::read_to_string(temp_file.path()).unwrap();
         assert!(
-            content.contains("state_store:"),
-            "Saved file should contain state_store setting"
+            content.contains("stateStore:"),
+            "Saved file should contain stateStore setting"
         );
         assert!(
             content.contains("kind: redb"),
@@ -729,8 +729,8 @@ mod tests {
 
         let content = std::fs::read_to_string(temp_file.path()).unwrap();
         assert!(
-            !content.contains("state_store:"),
-            "Saved file should not contain state_store when None"
+            !content.contains("stateStore:"),
+            "Saved file should not contain stateStore when None"
         );
     }
 }
