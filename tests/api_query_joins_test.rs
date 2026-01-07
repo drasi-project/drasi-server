@@ -6,8 +6,8 @@ use drasi_lib::{
     DrasiLib, Query, QueryConfig,
 };
 use drasi_server::api::models::query::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::models::ConfigValue;
 use drasi_server::api::shared::handlers::create_query;
-use drasi_server::config::ConfigValue;
 use std::sync::Arc;
 
 // Helper to build a minimal QueryConfig with joins
