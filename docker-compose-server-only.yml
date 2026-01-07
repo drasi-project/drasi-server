@@ -28,10 +28,7 @@ name: drasi-server-standalone
 
 services:
   drasi-server:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: drasi-server:latest
+    image: ${DRASI_SERVER_IMAGE:-ghcr.io/drasi-project/drasi-server:0.1.0}
     container_name: drasi-server
     ports:
       - "${DRASI_API_PORT:-8080}:8080"    # REST API

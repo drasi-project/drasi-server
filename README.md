@@ -24,11 +24,60 @@ Traditional approaches require manual polling, parsing ambiguous payloads, filte
 
 ### Quick Start
 
+#### Using Pre-built Images from GHCR (Fastest)
+
+```bash
+# Start the full stack (Drasi Server + PostgreSQL)
+docker compose up -d
+
+# Or server only (bring your own database)
+docker compose -f docker-compose-server-only.yml up -d
+
+# View logs
+docker compose logs -f drasi-server
+
+# Check health
+curl http://localhost:8080/health
+```
+
+By default, this uses the `ghcr.io/drasi-project/drasi-server:0.1.0` image.
+
+To use a different version:
+```bash
+# Set image via environment variable
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:v1.0.0
+docker compose up -d
+
+# Or inline
+DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -d
+```
+
+#### Building Locally from Source
+
 ```bash
 # Clone with all submodules
 git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
+# Build the Docker image
+make docker-build DOCKER_TAG_VERSION=local
+
+# Update docker-compose to use local image
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:local
+docker compose up -d
+```
+
+See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
+
+### Option 3: Manual Setup
+
+```bash
+# Ensure Rust is installed (1.70+)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Clone the repository with all submodules (including nested ones)
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+cd drasi-server
 # Build the server
 cargo build --release
 
