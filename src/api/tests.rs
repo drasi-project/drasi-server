@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod handler_tests {
     use super::super::*;
     use drasi_lib::channels::ComponentStatus;
@@ -49,6 +50,7 @@ mod handler_tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod serialization_tests {
     use drasi_lib::Query;
 

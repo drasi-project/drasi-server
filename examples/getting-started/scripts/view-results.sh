@@ -33,7 +33,7 @@ fi
 get_results() {
     local query_id=$1
     echo "=== Query: $query_id ==="
-    curl -s "http://${API_HOST}:${API_PORT}/api/queries/${query_id}/results" | $FORMAT_CMD
+    curl -s "http://${API_HOST}:${API_PORT}/api/v1/queries/${query_id}/results" | $FORMAT_CMD
     echo
 }
 
@@ -41,7 +41,7 @@ get_results() {
 get_status() {
     local query_id=$1
     echo "=== Status: $query_id ==="
-    curl -s "http://${API_HOST}:${API_PORT}/api/queries/${query_id}" | $FORMAT_CMD
+    curl -s "http://${API_HOST}:${API_PORT}/api/v1/queries/${query_id}" | $FORMAT_CMD
     echo
 }
 

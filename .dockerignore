@@ -1,0 +1,59 @@
+# Drasi Server Docker Ignore
+# Exclude files not needed in Docker build context
+
+# Build artifacts (including submodules)
+target/
+**/target/
+debug/
+**/debug/
+
+# Git (including submodules)
+.git/
+**/.git/
+.gitignore
+.gitmodules
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+
+# Documentation (not needed in image)
+*.md
+!README.md
+docs/
+.plans/
+
+# Test files (not needed for production build)
+tests/
+**/tests/
+*_test.rs
+
+# Examples (keep separate, not baked into image)
+examples/
+**/examples/
+
+# Logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+
+# Environment files (contain secrets)
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github/
+
+# Development tools
+.cargo/
+rustfmt.toml
+clippy.toml

@@ -381,7 +381,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "regex",
@@ -779,6 +779,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "crossterm"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e64e6c0fbe2c17357405f7c758c1ef960fce08bdfb2c03d88d2a18d7e09c4b67"
+dependencies = [
+ "bitflags 1.3.2",
+ "crossterm_winapi",
+ "libc",
+ "mio 0.8.11",
+ "parking_lot",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -910,6 +935,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
 name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -917,7 +948,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -939,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -962,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-postgres"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -986,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-scriptfile"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1044,39 +1075,16 @@ dependencies = [
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.2.0"
-dependencies = [
- "drasi-core",
-]
-
-[[package]]
-name = "drasi-index-garnet"
 version = "0.1.0"
 dependencies = [
- "async-recursion",
- "async-stream",
- "async-trait",
- "bit-set",
  "drasi-core",
- "drasi-query-ast",
- "fnv",
- "hashers",
- "log",
- "ordered-float",
- "prost",
- "redis 0.25.4",
- "serde",
- "serde_json",
- "siphasher 0.3.11",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -1111,8 +1119,6 @@ dependencies = [
  "drasi-core",
  "drasi-functions-cypher",
  "drasi-functions-gql",
- "drasi-index-garnet",
- "drasi-index-rocksdb",
  "drasi-middleware",
  "drasi-query-ast",
  "drasi-query-cypher",
@@ -1177,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1199,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc-adaptive"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1221,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1243,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http-adaptive"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1264,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-log"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1285,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1305,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-profiler"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1323,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-sse"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1331,6 +1337,7 @@ dependencies = [
  "chrono",
  "drasi-lib",
  "futures",
+ "handlebars",
  "log",
  "ordered-float",
  "prost-types",
@@ -1353,10 +1360,12 @@ dependencies = [
  "axum 0.7.9",
  "chrono",
  "clap",
+ "dotenvy",
  "drasi-bootstrap-noop",
  "drasi-bootstrap-platform",
  "drasi-bootstrap-postgres",
  "drasi-bootstrap-scriptfile",
+ "drasi-index-rocksdb",
  "drasi-lib",
  "drasi-reaction-grpc",
  "drasi-reaction-grpc-adaptive",
@@ -1371,9 +1380,12 @@ dependencies = [
  "drasi-source-mock",
  "drasi-source-platform",
  "drasi-source-postgres",
+ "drasi-state-store-redb",
  "env_logger",
  "futures",
  "hyper 1.7.0",
+ "indexmap 2.11.4",
+ "inquire",
  "log",
  "mockall",
  "pretty_assertions",
@@ -1387,6 +1399,7 @@ dependencies = [
  "test-case",
  "testcontainers",
  "testcontainers-modules",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-test",
  "tower 0.4.13",
@@ -1399,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-grpc"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1421,7 +1434,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-http"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1446,7 +1459,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-mock"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1466,7 +1479,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-platform"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1487,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-postgres"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1514,6 +1527,18 @@ dependencies = [
  "tokio-postgres",
  "tokio-stream",
  "uuid",
+]
+
+[[package]]
+name = "drasi-state-store-redb"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "drasi-lib",
+ "log",
+ "redb",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -1800,6 +1825,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
 ]
 
 [[package]]
@@ -2388,6 +2422,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64e9829a50b42bb782c1df523f78d332fe371b10c661e78b7a3c34b0198e9fac"
 
 [[package]]
+name = "inquire"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fddf93031af70e75410a2511ec04d49e758ed2f26dad3404a934e0fb45cc12a"
+dependencies = [
+ "bitflags 2.9.4",
+ "crossterm",
+ "dyn-clone",
+ "fuzzy-matcher",
+ "fxhash",
+ "newline-converter",
+ "once_cell",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2444,15 +2495,6 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -2681,6 +2723,18 @@ dependencies = [
 
 [[package]]
 name = "mio"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a650543ca06a924e8b371db273b2756685faae30f8487da1b56505a8f78b0c"
+dependencies = [
+ "libc",
+ "log",
+ "wasi 0.11.1+wasi-snapshot-preview1",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "mio"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
@@ -2738,6 +2792,15 @@ dependencies = [
  "security-framework 2.11.1",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "newline-converter"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47b6b097ecb1cbfed438542d16e84fd7ad9b0c76c8a65b7f9039212a3d14dc7f"
+dependencies = [
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -3143,7 +3206,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -3152,7 +3215,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -3378,7 +3441,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.12.1",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -3398,7 +3461,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -3667,6 +3730,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
 dependencies = [
  "rand_core 0.3.1",
+]
+
+[[package]]
+name = "redb"
+version = "2.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eca1e9d98d5a7e9002d0013e18d5a9b000aee942eb134883a82f06ebffb6c01"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -4402,6 +4474,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio 0.8.11",
+ "signal-hook",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4415,12 +4508,6 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
-
-[[package]]
-name = "siphasher"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "siphasher"
@@ -4744,6 +4831,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "time"
 version = "0.3.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4809,7 +4905,7 @@ dependencies = [
  "bytes",
  "io-uring",
  "libc",
- "mio",
+ "mio 1.0.4",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
@@ -5205,6 +5301,18 @@ name = "unicode-properties"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unsafe-libyaml"

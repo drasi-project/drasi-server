@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
-use drasi_lib::plugin_core::{Reaction as ReactionTrait, Source as SourceTrait};
+use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceTrait};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
-    core_builder: DrasiLibBuilder,
+    core_builders: Vec<DrasiLibBuilder>,
     enable_api: bool,
     port: Option<u16>,
     host: Option<String>,
@@ -28,7 +30,7 @@ pub struct DrasiServerBuilder {
 impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
-            core_builder: DrasiLib::builder(),
+            core_builders: vec![DrasiLib::builder()],
             enable_api: false,
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
@@ -38,6 +40,12 @@ impl Default for DrasiServerBuilder {
 }
 
 impl DrasiServerBuilder {
+    fn primary_builder_mut(&mut self) -> &mut DrasiLibBuilder {
+        self.core_builders
+            .first_mut()
+            .expect("DrasiServerBuilder must have at least one DrasiLibBuilder; call new() to create the default builder")
+    }
+
     /// Create a new DrasiServerBuilder with default settings
     pub fn new() -> Self {
         Self::default()
@@ -45,19 +53,58 @@ impl DrasiServerBuilder {
 
     /// Set the server ID
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
-        self.core_builder = self.core_builder.with_id(id);
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_id(id);
         self
     }
 
     /// Add a pre-built source instance (ownership transferred)
     pub fn with_source(mut self, source: impl SourceTrait + 'static) -> Self {
-        self.core_builder = self.core_builder.with_source(source);
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_source(source);
         self
     }
 
     /// Add a pre-built reaction instance (ownership transferred)
     pub fn with_reaction(mut self, reaction: impl ReactionTrait + 'static) -> Self {
-        self.core_builder = self.core_builder.with_reaction(reaction);
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_reaction(reaction);
+        self
+    }
+
+    /// Add an index provider for persistent storage
+    ///
+    /// By default, DrasiLib uses in-memory indexes. Use this method to inject
+    /// a persistent index provider like RocksDB.
+    pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_index_provider(provider);
+        self
+    }
+
+    /// Add a state store provider for plugin state persistence
+    ///
+    /// By default, DrasiLib uses an in-memory state store. Use this method to inject
+    /// a persistent state store provider like REDB for plugins to persist runtime state.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - An Arc-wrapped StateStoreProvider implementation
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use drasi_state_store_redb::RedbStateStoreProvider;
+    ///
+    /// let state_store = RedbStateStoreProvider::new("./data/state.redb")?;
+    /// let server = DrasiServerBuilder::new()
+    ///     .with_state_store_provider(Arc::new(state_store))
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_state_store_provider(mut self, provider: Arc<dyn StateStoreProvider>) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_state_store_provider(provider);
         self
     }
 
@@ -75,7 +122,8 @@ impl DrasiServerBuilder {
             query_builder = query_builder.from_source(source);
         }
 
-        self.core_builder = self.core_builder.with_query(query_builder.build());
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_query(query_builder.build());
         self
     }
 
@@ -87,6 +135,12 @@ impl DrasiServerBuilder {
         sources: Vec<String>,
     ) -> Self {
         self.with_query_config(id, query_str, sources)
+    }
+
+    /// Add an additional DrasiLibBuilder to run as a separate DrasiLib instance
+    pub fn add_instance_builder(mut self, builder: DrasiLibBuilder) -> Self {
+        self.core_builders.push(builder);
+        self
     }
 
     /// Enable the REST API on the default port
@@ -112,7 +166,12 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiLib instance
     pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
-        self.core_builder.build().await
+        let mut builders = self.core_builders;
+        let primary = builders
+            .into_iter()
+            .next()
+            .expect("At least one DrasiLibBuilder should be configured");
+        primary.build().await
     }
 
     /// Set the config file path for persistence
@@ -128,12 +187,16 @@ impl DrasiServerBuilder {
         let port = self.port.unwrap_or(8080);
         let config_file = self.config_file_path.clone();
 
-        // Build the core server
-        let core = self.build_core().await?;
+        // Build all configured cores
+        let mut cores = Vec::new();
+        for builder in self.core_builders {
+            let core = builder.build().await?;
+            cores.push((core, None, false));
+        }
 
         // Create the full server with optional features
         let server =
-            crate::server::DrasiServer::from_core(core, api_enabled, host, port, config_file);
+            crate::server::DrasiServer::from_cores(cores, api_enabled, host, port, config_file);
 
         Ok(server)
     }
@@ -145,14 +208,27 @@ impl DrasiServerBuilder {
     pub async fn build_with_handles(
         self,
     ) -> Result<crate::builder_result::DrasiServerWithHandles, DrasiError> {
-        // Build the core server (already initialized by builder)
-        let core = self.build_core().await?;
+        let mut servers = HashMap::new();
+        let mut primary: Option<Arc<DrasiLib>> = None;
 
-        // Start the server
-        core.start().await?;
+        for builder in self.core_builders {
+            let core = builder.build().await?;
+            core.start().await?;
+            let id = core
+                .get_current_config()
+                .await
+                .map(|c| c.id)
+                .unwrap_or_else(|_| "default".to_string());
+            let core = Arc::new(core);
+            if primary.is_none() {
+                primary = Some(core.clone());
+            }
+            servers.insert(id, core);
+        }
 
         Ok(crate::builder_result::DrasiServerWithHandles {
-            server: Arc::new(core),
+            server: primary.expect("At least one DrasiLib should be built"),
+            servers,
         })
     }
 }

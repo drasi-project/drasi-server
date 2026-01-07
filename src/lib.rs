@@ -23,9 +23,16 @@ pub mod server;
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
-pub use config::{DrasiServerConfig, ReactionConfig, ServerSettings, SourceConfig};
-pub use factories::{create_reaction, create_source};
+pub use config::{
+    load_config_file, save_config_file, ConfigError, DrasiLibInstanceConfig, DrasiServerConfig,
+    ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
+};
+pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use server::DrasiServer;
+
+// Re-export API models and mappings for external use
+pub use api::mappings;
+pub use api::models;
 
 // Re-export from drasi-lib (public API only)
 pub use drasi_lib::{

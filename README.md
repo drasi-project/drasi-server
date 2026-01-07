@@ -1,34 +1,75 @@
 # Drasi Server
 
-A production-ready standalone server for building change-driven solutions with Microsoft Drasi. DrasiServer provides a REST API, configuration management, and lifecycle control around the powerful [DrasiLib](https://github.com/drasi-project/drasi-lib/blob/main/README.md) event processing engine.
+Drasi Server is a standalone server for the [Drasi](https://drasi.io) data change processing platform. It wraps the [DrasiLib](https://github.com/drasi-project/drasi-lib) library with enterprise-ready features including a REST API, YAML-based configuration, and production lifecycle management.
 
-## Overview
+## What is Drasi?
 
-DrasiServer enables you to build intelligent, event-driven applications that continuously detect and react to critical changes in your data systems - without polling, without delays, and without complexity. It wraps the DrasiLib library with enterprise-ready features including:
+Drasi is an open-source Data Change Processing platform that simplifies the creation and operation of change-driven solutions. Rather than functioning as a generic event processor, Drasi specializes in detecting meaningful data modifications through continuous monitoring.
 
-- **REST API with OpenAPI/Swagger documentation** for programmatic control
-- **YAML-based configuration management** with hot-reload support
-- **Production lifecycle management** (graceful shutdown, health checks, monitoring)
-- **Builder pattern** for embedding in your applications
-- **Read-only mode** support for secure deployments
+Traditional approaches require manual polling, parsing ambiguous payloads, filtering high-volume event streams, and maintaining external state—introducing brittleness and complexity. Drasi eliminates these overhead costs by letting you declaratively specify what changes matter to your solution through **continuous queries**.
 
-### What is Change-Driven Architecture?
+### Core Concepts
 
-Traditional applications struggle to identify and respond to meaningful changes across complex, distributed systems. They resort to inefficient polling, complex event processing pipelines, or miss critical state transitions entirely. 
+- **Sources**: Data ingestion points that connect to your systems and stream changes
+- **Continuous Queries**: Cypher or GQL queries that run perpetually, maintaining current results and generating notifications when they change
+- **Reactions**: Automated responses triggered when query results change (webhooks, SSE streams, gRPC, logging)
+- **Bootstrap Providers**: Pluggable components that deliver initial data to queries before streaming begins
 
-Drasi solves this by providing **continuous queries** that watch for specific patterns of change across multiple data sources, automatically triggering **reactions** when those patterns are detected. This change-driven approach enables:
+## Getting Started
 
-- **Real-time fraud detection** across payment systems
-- **Instant inventory alerts** when stock levels hit thresholds
-- **Automated compliance monitoring** for regulatory changes
-- **Dynamic resource scaling** based on usage patterns
-- **Intelligent alert correlation** across monitoring systems
+### Prerequisites
 
-## Quick Start
+- Rust 1.70 or higher
+- Git with submodule support
 
-Get DrasiServer running in under 5 minutes:
+### Quick Start
 
-### 1. Install Prerequisites
+#### Using Pre-built Images from GHCR (Fastest)
+
+```bash
+# Start the full stack (Drasi Server + PostgreSQL)
+docker compose up -d
+
+# Or server only (bring your own database)
+docker compose -f docker-compose-server-only.yml up -d
+
+# View logs
+docker compose logs -f drasi-server
+
+# Check health
+curl http://localhost:8080/health
+```
+
+By default, this uses the `ghcr.io/drasi-project/drasi-server:0.1.0` image.
+
+To use a different version:
+```bash
+# Set image via environment variable
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:v1.0.0
+docker compose up -d
+
+# Or inline
+DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -d
+```
+
+#### Building Locally from Source
+
+```bash
+# Clone with all submodules
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+cd drasi-server
+
+# Build the Docker image
+make docker-build DOCKER_TAG_VERSION=local
+
+# Update docker-compose to use local image
+export DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:local
+docker compose up -d
+```
+
+See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
+
+### Option 3: Manual Setup
 
 ```bash
 # Ensure Rust is installed (1.70+)
@@ -37,913 +78,873 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Clone the repository with all submodules (including nested ones)
 git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
 cd drasi-server
+# Build the server
+cargo build --release
 
-# If you already cloned without submodules, initialize them:
-git submodule update --init --recursive
+# Create a minimal configuration interactively
+cargo run -- init --output config/my-config.yaml
+
+# Start the server
+cargo run -- --config config/my-config.yaml
 ```
 
-### 2. Create a Configuration
-
-```yaml
-# config/server.yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-  disable_persistence: false
-
-sources:
-  - id: inventory-db
-    source_type: postgres
-    auto_start: true
-    # PostgreSQL source configuration (flattened typed fields)
-    host: localhost
-    port: 5432
-    database: inventory
-    user: postgres
-    password: postgres
-    tables: [products]
-    slot_name: drasi_inventory_slot
-    publication_name: drasi_inventory_pub
-    ssl_mode: prefer
-
-queries:
-  - id: low-stock-detector
-    query: |
-      MATCH (p:Product)
-      WHERE p.quantity < p.reorder_threshold
-      RETURN p.id, p.name, p.quantity, p.reorder_threshold
-    queryLanguage: Cypher
-    sources: [inventory-db]
-    auto_start: true
-    enableBootstrap: true
-    bootstrapBufferSize: 10000
-
-reactions:
-  - id: alert-webhook
-    reaction_type: http
-    auto_start: true
-    queries: [low-stock-detector]
-    # HTTP reaction configuration (flattened typed fields)
-    base_url: https://alerts.example.com
-    timeout_ms: 5000
-    routes:
-      low-stock-detector:
-        path: /webhook
-        method: POST
-```
-
-### 3. Run the Server
+### Verify Installation
 
 ```bash
-# Build and run
-cargo run
-
-# Or with custom config
-cargo run -- --config my-config.yaml --port 9000
-```
-
-### 4. Verify It's Working
-
-```bash
-# Check health
+# Check server health
 curl http://localhost:8080/health
 
 # View API documentation
-open http://localhost:8080/docs
+open http://localhost:8080/api/v1/docs/
 
-# List running queries
-curl http://localhost:8080/queries
+# List configured queries
+curl http://localhost:8080/api/v1/queries
 ```
 
-## Core Concepts
+### Minimal Configuration Example
 
-DrasiServer orchestrates three types of components that work together to create change-driven solutions:
+```yaml
+# config/server.yaml
+host: 0.0.0.0
+port: 8080
+log_level: info
 
-### Sources
-Data ingestion points that connect to your systems:
-- **PostgreSQL** (`postgres`) - Monitor table changes via WAL replication (formerly `postgres_replication`)
-- **HTTP Endpoints** (`http`) - Poll REST APIs for updates
-- **gRPC Streams** (`grpc`) - Subscribe to real-time data feeds
-- **Platform** (`platform`) - Redis Streams integration for Drasi Platform
-- **Mock** (`mock`) - Test data generation
-- **Application** (`application`) - Programmatically inject events in embedded usage
+sources:
+  - kind: mock
+    id: test-source
+    auto_start: true
 
-**Note:** Source configurations use strongly-typed fields that are flattened at the source level. Each source type has its own specific configuration fields. See the [Configuration](#configuration) section for details.
+queries:
+  - id: my-query
+    query: "MATCH (n:Node) RETURN n"
+    sources:
+      - source_id: test-source
 
-### Continuous Queries
-Cypher-based queries that continuously evaluate incoming changes:
-```cypher
-// Detect correlated events across systems
-MATCH (order:Order)-[:CONTAINS]->(item:Item)
-WHERE order.status = 'pending' 
-  AND item.inventory_count < item.quantity
-RETURN order.id, item.sku, item.quantity - item.inventory_count as shortage
+reactions:
+  - kind: log
+    id: log-output
+    queries: [my-query]
 ```
 
-### Reactions
-Automated responses triggered by query results:
-- **HTTP Webhooks** (`http`) - Call external APIs
-- **HTTP Adaptive** (`http_adaptive` or `adaptive_http`) - Adaptive HTTP webhooks with retry logic
-- **Server-Sent Events** (`sse`) - Stream to browsers
-- **gRPC Streams** (`grpc`) - Push to services
-- **gRPC Adaptive** (`grpc_adaptive` or `adaptive_grpc`) - Adaptive gRPC streams with retry logic
-- **Log** (`log`) - Console logging for debugging
-- **Platform** (`platform`) - Redis Streams publishing with CloudEvent format
-- **Profiler** (`profiler`) - Performance profiling for queries
-- **Application** (`application`) - Custom code handlers for embedded usage
+## Command Line Reference
 
-## Building from Source
+### Synopsis
 
-### Prerequisites
-- Rust 1.70 or higher
-- Git with submodule support
+```
+drasi-server [OPTIONS] [COMMAND]
+```
 
-### Build Steps
+### Global Options
 
-#### Important: Submodule Initialization
-This project uses nested Git submodules (drasi-lib contains drasi-core as a submodule).
-You must initialize all submodules recursively for the build to work.
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
+| `--port <PORT>` | `-p` | (from config) | Override the server port |
+| `--help` | `-h` | | Print help information |
+| `--version` | `-V` | | Print version information |
+
+### Commands
+
+#### `run` (default)
+
+Run the server. This is the default command when no subcommand is specified.
 
 ```bash
-# Method 1: Clone with all submodules in one command
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-
-# Method 2: If you already cloned without submodules
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-git submodule update --init --recursive
-
-# Verify submodules are initialized (should show drasi-lib and drasi-lib/drasi-core)
-git submodule status --recursive
-
-# Build debug version
-cargo build
-
-# Build optimized release version
-cargo build --release
-
-# Run tests
-cargo test
-
-# Run with logging
-RUST_LOG=debug cargo run
+# These are equivalent
+drasi-server --config config/server.yaml
+drasi-server run --config config/server.yaml
 ```
 
-## Configuration
+**Options:**
+- `--config <PATH>`: Path to configuration file (default: `config/server.yaml`)
+- `--port <PORT>`: Override the server port from config
 
-### Configuration File Structure
+#### `init`
 
-DrasiServer uses YAML configuration files with the following structure:
+Create a new configuration file interactively. Guides you through setting up sources, queries, and reactions.
 
-```yaml
-# Server settings
-server:
-  host: 0.0.0.0              # Bind address
-  port: 8080                 # API port
-  log_level: info            # Log level (trace, debug, info, warn, error)
-  disable_persistence: false # Disable automatic config file persistence
-
-# Server core settings (optional)
-server_core:
-  id: my-server-id                      # Unique server ID (auto-generated if not set)
-  priority_queue_capacity: 10000        # Default capacity for query/reaction priority queues
-  broadcast_channel_capacity: 1000      # Capacity for broadcast channels (optional)
-
-# Data sources
-sources:
-  - id: unique-source-id
-    source_type: postgres               # Source type (postgres, http, grpc, platform, mock, application)
-    auto_start: true                    # Start automatically
-
-    # Bootstrap provider (optional) - Load initial data independently from streaming
-    bootstrap_provider:
-      type: scriptfile                  # Provider type: postgres, application, scriptfile, platform, noop
-      file_paths:                       # For scriptfile provider
-        - path/to/data.jsonl
-
-    # Source-specific configuration fields (flattened, not nested under "properties")
-    # Each source type has its own typed configuration fields
-    # Example for PostgreSQL source:
-    host: localhost
-    port: 5432
-    database: mydb
-    user: postgres
-    password: secret
-    tables: [table1, table2]
-    slot_name: drasi_slot
-    publication_name: drasi_pub
-    ssl_mode: prefer
-    dispatch_buffer_capacity: 1000      # Optional: Buffer size for dispatching
-    dispatch_mode: channel              # Optional: Dispatch mode (channel, direct)
-
-# Continuous queries
-queries:
-  - id: unique-query-id
-    query: |                            # Cypher or GQL query
-      MATCH (n:Node)
-      RETURN n
-    queryLanguage: Cypher               # Query language (Cypher or GQL, default: Cypher)
-    sources: [source-id]                # Source subscriptions
-    auto_start: true                    # Start automatically (default: true)
-    enableBootstrap: true               # Enable bootstrap data (default: true)
-    bootstrapBufferSize: 10000          # Buffer size during bootstrap (default: 10000)
-    priority_queue_capacity: 5000       # Override default priority queue capacity (optional)
-    joins:                              # Optional synthetic joins
-      - id: RELATIONSHIP_TYPE
-        keys:
-          - label: Node1
-            property: join_key
-          - label: Node2
-            property: join_key
-
-# Reactions
-reactions:
-  - id: unique-reaction-id
-    reaction_type: http                 # Reaction type (http, grpc, sse, log, platform, profiler, etc.)
-    queries: [query-id]                 # Query subscriptions
-    auto_start: true                    # Start automatically (default: true)
-    priority_queue_capacity: 5000       # Override default priority queue capacity (optional)
-
-    # Reaction-specific configuration fields (flattened, not nested under "properties")
-    # Each reaction type has its own typed configuration fields
-    # Example for HTTP reaction:
-    base_url: https://example.com
-    timeout_ms: 5000
-    token: optional-bearer-token
-    routes:
-      query-id:
-        path: /webhook
-        method: POST
+```bash
+drasi-server init --output config/my-config.yaml
+drasi-server init --output config/server.yaml --force  # Overwrite existing
 ```
 
-### Source Configuration Patterns
+**Options:**
+- `--output <PATH>`, `-o`: Output path for configuration (default: `config/server.yaml`)
+- `--force`: Overwrite existing configuration file
 
-DrasiServer supports **strongly-typed configuration** where each source type has its own specific configuration fields that are flattened at the source level (not nested under a `properties` key).
+#### `validate`
 
-**PostgreSQL Source Example:**
-```yaml
-sources:
-  - id: my-postgres
-    source_type: postgres
-    auto_start: true
-    # PostgreSQL-specific typed fields
-    host: localhost
-    port: 5432
-    database: mydb
-    user: postgres
-    password: secret
-    tables: [orders, customers]
-    slot_name: drasi_replication_slot
-    publication_name: drasi_publication
-    ssl_mode: prefer  # Options: disable, prefer, require
+Validate a configuration file without starting the server. Useful for CI/CD pipelines.
+
+```bash
+drasi-server validate --config config/server.yaml
+drasi-server validate --config config/server.yaml --show-resolved
 ```
 
-**HTTP Source Example:**
-```yaml
-sources:
-  - id: my-http-api
-    source_type: http
-    auto_start: true
-    # HTTP-specific typed fields
-    host: 0.0.0.0
-    port: 9000
-    timeout_ms: 10000
+**Options:**
+- `--config <PATH>`: Path to configuration file to validate (default: `config/server.yaml`)
+- `--show-resolved`: Display configuration with environment variables expanded
+
+#### `doctor`
+
+Check system dependencies and requirements.
+
+```bash
+drasi-server doctor
+drasi-server doctor --all  # Include optional dependencies
 ```
 
-**Platform Source Example (Redis Streams):**
-```yaml
-sources:
-  - id: redis-stream
-    source_type: platform
-    auto_start: true
-    # Platform-specific typed fields
-    redis_url: redis://localhost:6379
-    stream_key: my-stream
-    consumer_group: my-consumer-group
-    batch_size: 10
-    block_ms: 1000
-```
+**Options:**
+- `--all`: Check for optional dependencies (Docker, etc.)
 
-### Reaction Configuration Patterns
+## Configuration Reference
 
-Similar to sources, reactions use strongly-typed configuration fields:
+Drasi Server uses YAML configuration files. All configuration values support environment variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
 
-**HTTP Reaction Example:**
-```yaml
-reactions:
-  - id: webhook-reaction
-    reaction_type: http
-    queries: [my-query]
-    auto_start: true
-    # HTTP reaction typed fields
-    base_url: https://api.example.com
-    timeout_ms: 5000
-    token: my-bearer-token
-    routes:
-      my-query:
-        path: /events
-        method: POST
-```
+### Server Settings
 
-**Adaptive HTTP Reaction Example (with retry logic):**
-```yaml
-reactions:
-  - id: adaptive-webhook
-    reaction_type: http_adaptive  # or adaptive_http
-    queries: [my-query]
-    auto_start: true
-    base_url: https://api.example.com
-    timeout_ms: 5000
-    max_retries: 3
-    retry_delay_ms: 1000
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | string | (auto-generated UUID) | Unique server identifier |
+| `host` | string | `0.0.0.0` | Server bind address |
+| `port` | integer | `8080` | Server port |
+| `log_level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `persist_config` | boolean | `true` | Enable saving API changes to config file |
+| `persist_index` | boolean | `false` | Use RocksDB for persistent query indexes |
+| `state_store` | object | (none) | State store provider for plugin state persistence |
+| `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
+| `default_dispatch_buffer_capacity` | integer | `1000` | Default buffer capacity for event dispatching |
 
-**Platform Reaction Example (Redis Streams with CloudEvents):**
-```yaml
-reactions:
-  - id: redis-publisher
-    reaction_type: platform
-    queries: [my-query]
-    auto_start: true
-    redis_url: redis://localhost:6379
-    stream_key: output-stream
-```
-
-### Capacity Configuration
-
-DrasiServer supports hierarchical capacity configuration for query and reaction priority queues:
+**Example:**
 
 ```yaml
-server_core:
-  priority_queue_capacity: 10000  # Default for all queries and reactions
+id: my-server
+host: 0.0.0.0
+port: 8080
+log_level: info
+persist_config: true
+persist_index: false
 
-queries:
-  - id: high-volume-query
-    priority_queue_capacity: 50000  # Override for this specific query
-    query: "MATCH (n) RETURN n"
-    sources: [my-source]
+state_store:
+  kind: redb
+  path: ./data/state.redb
 
-reactions:
-  - id: high-volume-reaction
-    priority_queue_capacity: 50000  # Override for this specific reaction
-    reaction_type: http
-    queries: [high-volume-query]
-```
-
-**Capacity Settings:**
-- `server_core.priority_queue_capacity` - Default capacity for all query/reaction priority queues
-- `server_core.broadcast_channel_capacity` - Capacity for broadcast channels
-- `queries[].priority_queue_capacity` - Override default for a specific query
-- `reactions[].priority_queue_capacity` - Override default for a specific reaction
-- `sources[].dispatch_buffer_capacity` - Buffer size for source event dispatching
-
-### Configuration Validation
-
-DrasiServer validates all configuration on startup and when creating components via API:
-
-**Server Settings Validation:**
-- Port must be non-zero (1-65535)
-- Host must be a valid IP address, hostname, "localhost", "0.0.0.0", or "*"
-- Hostnames are validated per RFC 1123 standards
-
-**Component Validation:**
-- All component IDs must be unique within their type
-- Source types must be valid and supported
-- Query Cypher syntax is validated
-- Reaction types must be valid and supported
-- All referenced sources/queries in subscriptions must exist
-- Component configuration is delegated to DrasiLib for detailed validation
-
-### Configuration Persistence
-
-DrasiServer supports automatic persistence of runtime configuration changes made through the REST API:
-
-**Persistence is enabled when:**
-- A config file is provided on startup (`--config path/to/config.yaml`)
-- The config file has write permissions
-- `disable_persistence: false` in server settings (default)
-
-**Persistence is disabled when:**
-- No config file is provided (server starts with empty configuration)
-- Config file is read-only
-- `disable_persistence: true` in server settings
-
-**Read-Only Mode:**
-- Enabled ONLY when the config file is not writable (file permissions)
-- Blocks all API mutations (create/delete operations)
-- Different from `disable_persistence: true` which allows mutations but doesn't save them
-
-**Behavior:**
-- When persistence enabled: all API mutations are automatically saved to the config file
-- Uses atomic writes (temp file + rename) to prevent corruption
-- When persistence disabled: changes work but are lost on restart
-- When read-only: all create/delete operations via API are rejected with an error
-
-**Example Configuration:**
-```yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-  log_level: info
-  disable_persistence: false  # Enable persistence (default)
 sources: []
 queries: []
 reactions: []
 ```
 
-### Configuration Migration Guide
+### State Store Configuration
 
-If you're upgrading from an older version of DrasiServer, you may need to update your configuration files:
+State stores allow plugins (Sources, Bootstrap Providers, Reactions) to persist runtime state that survives server restarts. If not configured, an in-memory state store is used (state is lost on restart).
 
-#### Source Type Renames (Breaking Change)
+#### REDB State Store
 
-**PostgreSQL sources:**
+File-based persistent storage using the REDB embedded database.
+
 ```yaml
-# OLD (no longer supported)
-source_type: postgres_replication
-
-# NEW
-source_type: postgres
+state_store:
+  kind: redb
+  path: ./data/state.redb  # Supports ${ENV_VAR:-default}
 ```
 
-#### Flattened Source Configuration (Recommended)
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `kind` | string | Yes | Must be `redb` |
+| `path` | string | Yes | Path to the database file |
 
-Source configurations now use strongly-typed fields flattened at the source level instead of nested under `properties`:
+---
 
-**OLD pattern (still supported for backward compatibility):**
+### Sources
+
+Sources connect to data systems and stream changes to queries. Each source type has specific configuration fields.
+
+#### Common Source Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kind` | string | (required) | Source type: `postgres`, `http`, `grpc`, `mock`, `platform` |
+| `id` | string | (required) | Unique source identifier |
+| `auto_start` | boolean | `true` | Start source automatically on server startup |
+| `bootstrap_provider` | object | (none) | Bootstrap provider configuration |
+
+#### PostgreSQL Source (`postgres`)
+
+Streams changes from PostgreSQL using logical replication (WAL).
+
 ```yaml
 sources:
-  - id: my-source
-    source_type: postgres
+  - kind: postgres
+    id: my-postgres
     auto_start: true
-    properties:
-      host: localhost
-      port: 5432
-      database: mydb
-```
-
-**NEW pattern (recommended - provides better type safety):**
-```yaml
-sources:
-  - id: my-source
-    source_type: postgres
-    auto_start: true
-    # Flattened typed fields
     host: localhost
     port: 5432
     database: mydb
     user: postgres
-    password: secret
-    tables: [table1]
+    password: ${DB_PASSWORD}
+    tables: [orders, customers]
     slot_name: drasi_slot
     publication_name: drasi_pub
     ssl_mode: prefer
+    table_keys:
+      - table: orders
+        key_columns: [id]
+    bootstrap_provider:
+      type: postgres
 ```
 
-**Note:** The flattened pattern is recommended as it provides compile-time type checking and validation. The nested `properties` pattern may be deprecated in future versions.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `host` | string | `localhost` | Database host |
+| `port` | integer | `5432` | Database port |
+| `database` | string | (required) | Database name |
+| `user` | string | (required) | Database user |
+| `password` | string | `""` | Database password |
+| `tables` | array | `[]` | Tables to monitor |
+| `slot_name` | string | `drasi_slot` | Replication slot name |
+| `publication_name` | string | `drasi_publication` | Publication name |
+| `ssl_mode` | string | `prefer` | SSL mode: `disable`, `prefer`, `require` |
+| `table_keys` | array | `[]` | Primary key definitions for tables |
 
-#### Reaction Configuration
+#### HTTP Source (`http`)
 
-Similar to sources, reactions should use flattened typed fields:
+Receives events via HTTP endpoints.
 
-**OLD pattern:**
 ```yaml
-reactions:
-  - id: my-reaction
-    reaction_type: http
-    queries: [my-query]
-    properties:
-      endpoint: https://example.com
-      method: POST
+sources:
+  - kind: http
+    id: my-http
+    auto_start: true
+    host: 0.0.0.0
+    port: 9000
+    timeout_ms: 10000
 ```
 
-**NEW pattern:**
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `host` | string | (required) | Listen address |
+| `port` | integer | (required) | Listen port |
+| `endpoint` | string | (auto) | Custom endpoint path |
+| `timeout_ms` | integer | `10000` | Request timeout in milliseconds |
+
+#### gRPC Source (`grpc`)
+
+Receives events via gRPC streaming.
+
 ```yaml
-reactions:
-  - id: my-reaction
-    reaction_type: http
-    queries: [my-query]
-    base_url: https://example.com
+sources:
+  - kind: grpc
+    id: my-grpc
+    auto_start: true
+    host: 0.0.0.0
+    port: 50051
     timeout_ms: 5000
-    routes:
-      my-query:
-        path: /webhook
-        method: POST
 ```
 
-### Environment Variables
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `host` | string | `0.0.0.0` | Listen address |
+| `port` | integer | `50051` | Listen port |
+| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
 
-```bash
-# Set log level
-RUST_LOG=drasi_server=debug
-```
+#### Mock Source (`mock`)
 
-## Library Usage
+Generates test data for development.
 
-Embed DrasiServer in your Rust application:
-
-```rust
-use drasi_server::{DrasiServerBuilder, DrasiServer};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Using builder pattern
-    let server = DrasiServerBuilder::new()
-        .with_port(8080)
-        .with_log_level("info")
-        .with_source("my-source", source_config)
-        .with_query("my-query", "MATCH (n) RETURN n", vec!["my-source"])
-        .with_reaction("my-reaction", reaction_config)
-        .build()
-        .await?;
-
-    server.run().await?;
-    
-    // Or load from config file
-    let server = DrasiServer::new(
-        PathBuf::from("config.yaml"),
-        8080
-    ).await?;
-    
-    server.run().await
-}
-```
-
-## REST API
-
-DrasiServer provides a comprehensive REST API for runtime control:
-
-### Health Check
-
-```bash
-# Check server health
-GET /health
-# Returns: {"status": "ok", "timestamp": "2025-01-15T12:00:00Z"}
-```
-
-### Sources API
-
-```bash
-# List all sources
-GET /sources
-
-# Get source details
-GET /sources/{id}
-
-# Create a new source
-POST /sources
-Content-Type: application/json
-{
-  "id": "new-source",
-  "source_type": "postgres",
-  "auto_start": true,
-  "host": "localhost",
-  "port": 5432,
-  "database": "mydb",
-  "user": "postgres",
-  "password": "secret",
-  "tables": ["table1"],
-  "slot_name": "drasi_slot",
-  "publication_name": "drasi_pub",
-  "ssl_mode": "prefer"
-}
-
-# Delete a source
-DELETE /sources/{id}
-
-# Start a source
-POST /sources/{id}/start
-
-# Stop a source
-POST /sources/{id}/stop
-```
-
-### Queries API
-
-```bash
-# List all queries
-GET /queries
-
-# Get query details
-GET /queries/{id}
-
-# Create a new query
-POST /queries
-Content-Type: application/json
-{
-  "id": "new-query",
-  "query": "MATCH (n:Node) RETURN n",
-  "queryLanguage": "Cypher",
-  "sources": ["source-id"],
-  "auto_start": true,
-  "enableBootstrap": true,
-  "bootstrapBufferSize": 10000
-}
-
-# Delete a query
-DELETE /queries/{id}
-
-# Start a query
-POST /queries/{id}/start
-
-# Stop a query
-POST /queries/{id}/stop
-
-# Get current query results
-GET /queries/{id}/results
-```
-
-### Reactions API
-
-```bash
-# List all reactions
-GET /reactions
-
-# Get reaction details
-GET /reactions/{id}
-
-# Create a new reaction
-POST /reactions
-Content-Type: application/json
-{
-  "id": "new-reaction",
-  "reaction_type": "http",
-  "queries": ["query-id"],
-  "auto_start": true,
-  "base_url": "https://api.example.com",
-  "timeout_ms": 5000,
-  "routes": {
-    "query-id": {
-      "path": "/webhook",
-      "method": "POST"
-    }
-  }
-}
-
-# Delete a reaction
-DELETE /reactions/{id}
-
-# Start a reaction
-POST /reactions/{id}/start
-
-# Stop a reaction
-POST /reactions/{id}/stop
-```
-
-### API Documentation
-
-Interactive API documentation is available at:
-- Swagger UI: `http://localhost:8080/docs/`
-- OpenAPI spec: `http://localhost:8080/api-docs/openapi.json`
-
-### API Response Format
-
-All API responses use a consistent format:
-
-```json
-{
-  "success": true,
-  "data": {...},
-  "error": null
-}
-```
-
-Error responses:
-
-```json
-{
-  "success": false,
-  "data": null,
-  "error": "Error message"
-}
-```
-
-## Use Cases
-
-### Real-Time Inventory Management
 ```yaml
-queries:
-  - id: reorder-alert
-    query: |
-      MATCH (p:Product)
-      WHERE p.quantity <= p.reorder_point
-        AND p.reorder_status = 'none'
-      RETURN p.sku, p.name, p.quantity, p.supplier
+sources:
+  - kind: mock
+    id: test-source
+    auto_start: true
+    data_type: sensor
+    interval_ms: 5000
 ```
 
-### Fraud Detection Pipeline
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data_type` | string | `generic` | Type of mock data to generate |
+| `interval_ms` | integer | `5000` | Data generation interval in milliseconds |
+
+#### Platform Source (`platform`)
+
+Consumes events from Redis Streams for Drasi Platform integration.
+
 ```yaml
-queries:
-  - id: suspicious-activity
-    query: |
-      MATCH (t:Transaction)
-      WHERE t.amount > 10000
-        AND t.country <> t.account.home_country
-        AND t.timestamp > timestamp() - 3600
-      RETURN t.id, t.account_id, t.amount, t.country
+sources:
+  - kind: platform
+    id: platform-source
+    auto_start: true
+    redis_url: redis://localhost:6379
+    stream_key: my-stream
+    consumer_group: drasi-core
+    batch_size: 100
+    block_ms: 5000
 ```
 
-### Service Health Monitoring
-```yaml
-queries:
-  - id: service-degradation
-    query: |
-      MATCH (s:Service)-[:DEPENDS_ON]->(d:Dependency)
-      WHERE s.status = 'healthy'
-        AND d.status = 'unhealthy'
-      RETURN s.name, collect(d.name) as affected_dependencies
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `redis_url` | string | (required) | Redis connection URL |
+| `stream_key` | string | (required) | Redis stream key to consume |
+| `consumer_group` | string | `drasi-core` | Consumer group name |
+| `consumer_name` | string | (auto) | Consumer name within group |
+| `batch_size` | integer | `100` | Events to read per batch |
+| `block_ms` | integer | `5000` | Block timeout in milliseconds |
 
-## Bootstrap Providers
+---
 
-DrasiServer supports pluggable bootstrap providers that supply initial data to queries independently from source streaming. Any source can use any bootstrap provider, enabling powerful patterns like "bootstrap from database, stream changes from HTTP."
+### Bootstrap Providers
 
-### Available Bootstrap Providers
+Bootstrap providers deliver initial data to queries before streaming begins. Any source can use any bootstrap provider.
 
-#### PostgreSQL Provider (`postgres`)
-Loads initial data from PostgreSQL using snapshot-based bootstrap with LSN coordination:
+#### PostgreSQL Bootstrap (`postgres`)
+
+Loads initial data from PostgreSQL using the COPY protocol.
+
 ```yaml
 bootstrap_provider:
   type: postgres
-  # Uses source properties for connection details
+  # Uses source connection details
 ```
 
-#### Script File Provider (`scriptfile`)
-Loads initial data from JSONL (JSON Lines) files, useful for testing and development:
+#### Script File Bootstrap (`scriptfile`)
+
+Loads initial data from JSONL files.
+
 ```yaml
 bootstrap_provider:
   type: scriptfile
   file_paths:
-    - /path/to/initial_data.jsonl
-    - /path/to/more_data.jsonl  # Multiple files processed in order
+    - /data/initial_nodes.jsonl
+    - /data/initial_relations.jsonl
 ```
 
-#### Platform Provider (`platform`)
-Fetches initial data from a Query API service in a remote Drasi environment:
+#### Platform Bootstrap (`platform`)
+
+Loads initial data from a remote Drasi Query API.
+
 ```yaml
 bootstrap_provider:
   type: platform
-  query_api_url: http://remote-drasi:8080  # Query API endpoint
-  timeout_seconds: 300                      # Request timeout (default: 300)
+  query_api_url: http://remote-drasi:8080
+  timeout_seconds: 300
 ```
 
-#### Application Provider (`application`)
-Replays stored insert events for application sources:
-```yaml
-bootstrap_provider:
-  type: application
-  # Automatically used for application sources
-```
+#### No-Op Bootstrap (`noop`)
 
-#### No-Op Provider (`noop`)
-Returns no bootstrap data (useful for streaming-only sources):
+Returns no initial data.
+
 ```yaml
 bootstrap_provider:
   type: noop
 ```
 
-### Script File Format
+---
 
-Script files use JSONL format with these record types:
-- **Header** (required first): Metadata about the script
-- **Node**: Graph nodes with labels and properties
-- **Relation**: Relationships between nodes
-- **Comment**: Filtered out during processing
-- **Label**: Checkpoint markers
-- **Finish** (optional): Marks end of data
+### Queries
 
-Example script file:
-```jsonl
-{"type": "Header", "version": "1.0", "description": "Initial product data"}
-{"type": "Node", "id": "1", "labels": ["Product"], "properties": {"name": "Widget", "price": 99.99}}
-{"type": "Node", "id": "2", "labels": ["Category"], "properties": {"name": "Hardware"}}
-{"type": "Relation", "id": "r1", "startId": "1", "endId": "2", "type": "IN_CATEGORY", "properties": {}}
-{"type": "Finish"}
+Continuous queries process data changes and maintain materialized results.
+
+```yaml
+queries:
+  - id: active-orders
+    query: |
+      MATCH (o:Order)
+      WHERE o.status = 'active'
+      RETURN o.id, o.customer_id, o.total
+    queryLanguage: Cypher
+    sources:
+      - source_id: orders-db
+    auto_start: true
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
 ```
 
-## Production Deployment
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | string | (required) | Unique query identifier |
+| `query` | string | (required) | Query string (Cypher or GQL) |
+| `queryLanguage` | string | `Cypher` | Query language: `Cypher` or `GQL` |
+| `sources` | array | (required) | Source subscriptions |
+| `auto_start` | boolean | `true` | Start query automatically |
+| `enableBootstrap` | boolean | `true` | Process initial data from sources |
+| `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
+| `priority_queue_capacity` | integer | (global) | Override queue capacity for this query |
+| `dispatch_buffer_capacity` | integer | (global) | Override buffer capacity for this query |
+| `joins` | array | (none) | Synthetic join definitions |
 
-### Health Checks
+**Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
+
+#### Source Subscriptions
+
+```yaml
+sources:
+  - source_id: orders-db
+    nodes: [Order, Customer]      # Optional: filter node labels
+    relations: [PLACED_BY]        # Optional: filter relation labels
+    pipeline: [decoder, mapper]   # Optional: middleware pipeline
+```
+
+#### Synthetic Joins
+
+Create virtual relationships between nodes from different sources:
+
+```yaml
+queries:
+  - id: order-customer-join
+    query: |
+      MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
+      RETURN o.id, c.name
+    sources:
+      - source_id: orders-db
+      - source_id: customers-db
+    joins:
+      - id: CUSTOMER
+        keys:
+          - label: Order
+            property: customer_id
+          - label: Customer
+            property: id
+```
+
+---
+
+### Reactions
+
+Reactions respond to query result changes.
+
+#### Common Reaction Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kind` | string | (required) | Reaction type |
+| `id` | string | (required) | Unique reaction identifier |
+| `queries` | array | (required) | Query IDs to subscribe to |
+| `auto_start` | boolean | `true` | Start reaction automatically |
+
+#### Log Reaction (`log`)
+
+Writes query results to console output.
+
+```yaml
+reactions:
+  - kind: log
+    id: log-output
+    queries: [my-query]
+    auto_start: true
+    default_template:
+      added:
+        template: "Added: {{json this}}"
+      updated:
+        template: "Updated: {{json this}}"
+      deleted:
+        template: "Deleted: {{json this}}"
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `routes` | object | `{}` | Query-specific template configurations |
+| `default_template` | object | (none) | Default template for all queries |
+
+#### HTTP Reaction (`http`)
+
+Sends query results to HTTP endpoints.
+
+```yaml
+reactions:
+  - kind: http
+    id: webhook
+    queries: [my-query]
+    base_url: https://api.example.com
+    timeout_ms: 5000
+    token: ${API_TOKEN}
+    routes:
+      my-query:
+        added:
+          url: /events
+          method: POST
+          headers:
+            Content-Type: application/json
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `base_url` | string | `http://localhost` | Base URL for requests |
+| `timeout_ms` | integer | `5000` | Request timeout in milliseconds |
+| `token` | string | (none) | Bearer token for authorization |
+| `routes` | object | `{}` | Query-specific endpoint configurations |
+
+#### HTTP Adaptive Reaction (`http-adaptive`)
+
+HTTP reaction with adaptive batching and retry logic.
+
+```yaml
+reactions:
+  - kind: http-adaptive
+    id: adaptive-webhook
+    queries: [my-query]
+    base_url: https://api.example.com
+    timeout_ms: 5000
+    adaptive_min_batch_size: 1
+    adaptive_max_batch_size: 1000
+    adaptive_window_size: 100
+    adaptive_batch_timeout_ms: 1000
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `adaptive_min_batch_size` | integer | `1` | Minimum batch size |
+| `adaptive_max_batch_size` | integer | `1000` | Maximum batch size |
+| `adaptive_window_size` | integer | `100` | Window size for adaptive calculations |
+| `adaptive_batch_timeout_ms` | integer | `1000` | Batch timeout in milliseconds |
+
+#### gRPC Reaction (`grpc`)
+
+Streams query results via gRPC.
+
+```yaml
+reactions:
+  - kind: grpc
+    id: grpc-stream
+    queries: [my-query]
+    endpoint: grpc://localhost:50052
+    timeout_ms: 5000
+    batch_size: 100
+    max_retries: 3
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `endpoint` | string | `grpc://localhost:50052` | gRPC endpoint URL |
+| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
+| `batch_size` | integer | `100` | Events per batch |
+| `batch_flush_timeout_ms` | integer | `1000` | Batch flush timeout |
+| `max_retries` | integer | `3` | Maximum retry attempts |
+| `connection_retry_attempts` | integer | `5` | Connection retry attempts |
+| `initial_connection_timeout_ms` | integer | `10000` | Initial connection timeout |
+
+#### gRPC Adaptive Reaction (`grpc-adaptive`)
+
+gRPC reaction with adaptive batching.
+
+```yaml
+reactions:
+  - kind: grpc-adaptive
+    id: adaptive-grpc
+    queries: [my-query]
+    endpoint: grpc://localhost:50052
+    adaptive_min_batch_size: 1
+    adaptive_max_batch_size: 1000
+```
+
+#### SSE Reaction (`sse`)
+
+Streams query results via Server-Sent Events.
+
+```yaml
+reactions:
+  - kind: sse
+    id: sse-stream
+    queries: [my-query]
+    host: 0.0.0.0
+    port: 8081
+    sse_path: /events
+    heartbeat_interval_ms: 30000
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `host` | string | `0.0.0.0` | Listen address |
+| `port` | integer | `8080` | Listen port |
+| `sse_path` | string | `/events` | SSE endpoint path |
+| `heartbeat_interval_ms` | integer | `30000` | Heartbeat interval in milliseconds |
+
+#### Platform Reaction (`platform`)
+
+Publishes query results to Redis Streams in CloudEvent format.
+
+```yaml
+reactions:
+  - kind: platform
+    id: redis-publisher
+    queries: [my-query]
+    redis_url: redis://localhost:6379
+    emit_control_events: false
+    batch_enabled: true
+    batch_max_size: 100
+    batch_max_wait_ms: 100
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `redis_url` | string | (required) | Redis connection URL |
+| `pubsub_name` | string | (auto) | Pub/sub channel name |
+| `source_name` | string | (auto) | Source identifier in events |
+| `max_stream_length` | integer | (unlimited) | Maximum stream length |
+| `emit_control_events` | boolean | `false` | Emit control events |
+| `batch_enabled` | boolean | `false` | Enable batching |
+| `batch_max_size` | integer | `100` | Maximum batch size |
+| `batch_max_wait_ms` | integer | `100` | Maximum wait time for batch |
+
+#### Profiler Reaction (`profiler`)
+
+Collects performance metrics for queries.
+
+```yaml
+reactions:
+  - kind: profiler
+    id: query-profiler
+    queries: [my-query]
+    window_size: 100
+    report_interval_secs: 60
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `window_size` | integer | `100` | Metrics window size |
+| `report_interval_secs` | integer | `60` | Report interval in seconds |
+
+---
+
+### Multi-Instance Configuration
+
+For advanced use cases requiring isolated processing environments, configure multiple DrasiLib instances:
+
+```yaml
+host: 0.0.0.0
+port: 8080
+log_level: info
+
+instances:
+  - id: analytics
+    persist_index: true
+    state_store:
+      kind: redb
+      path: ./data/analytics-state.redb
+    sources:
+      - kind: postgres
+        id: analytics-db
+        # ... source config
+    queries:
+      - id: high-value-orders
+        query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
+        sources:
+          - source_id: analytics-db
+    reactions:
+      - kind: log
+        id: analytics-log
+        queries: [high-value-orders]
+
+  - id: monitoring
+    persist_index: false
+    sources:
+      - kind: http
+        id: metrics-api
+        host: 0.0.0.0
+        port: 9001
+    queries:
+      - id: alert-threshold
+        query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
+        sources:
+          - source_id: metrics-api
+    reactions:
+      - kind: sse
+        id: alert-stream
+        queries: [alert-threshold]
+        port: 8082
+```
+
+Each instance has:
+- Its own isolated namespace for sources, queries, and reactions
+- Optional separate state store and index persistence settings
+- API access via `/api/v1/instances/{instanceId}/...`
+
+---
+
+### Environment Variable Interpolation
+
+All configuration values support environment variable substitution:
+
+```yaml
+host: ${SERVER_HOST:-0.0.0.0}
+port: ${SERVER_PORT:-8080}
+
+sources:
+  - kind: postgres
+    id: production-db
+    host: ${DB_HOST}
+    password: ${DB_PASSWORD}  # Required - fails if not set
+```
+
+**Syntax:**
+- `${VAR}` - Required variable, fails if not set
+- `${VAR:-default}` - Optional variable with default value
+
+## REST API
+
+The server exposes a REST API at `http://localhost:8080` (default).
+
+### API Versioning
+
+- `GET /health` - Health check (unversioned)
+- `GET /api/versions` - List available API versions
+- `GET /api/v1/docs/` - Interactive Swagger UI
+- `GET /api/v1/openapi.json` - OpenAPI specification
+
+### Instances API
 
 ```bash
-# Health check endpoint
-GET /health
-
-# Component status checks
-GET /sources/{id}
-GET /queries/{id}
-GET /reactions/{id}
+GET /api/v1/instances           # List all instances
 ```
 
-### Security Considerations
+### Sources API
 
-- Run in **read-only mode** for production deployments
-- Use **TLS/HTTPS** for API endpoints
-- Implement **authentication** via reverse proxy
-- **Validate** all query inputs to prevent injection
-- **Limit** resource consumption per query
+```bash
+GET    /api/v1/sources          # List sources (first instance)
+POST   /api/v1/sources          # Create source
+GET    /api/v1/sources/{id}     # Get source details
+DELETE /api/v1/sources/{id}     # Delete source
+POST   /api/v1/sources/{id}/start  # Start source
+POST   /api/v1/sources/{id}/stop   # Stop source
+
+# Instance-specific routes
+GET    /api/v1/instances/{instanceId}/sources
+```
+
+### Queries API
+
+```bash
+GET    /api/v1/queries          # List queries
+POST   /api/v1/queries          # Create query
+GET    /api/v1/queries/{id}     # Get query details
+DELETE /api/v1/queries/{id}     # Delete query
+POST   /api/v1/queries/{id}/start   # Start query
+POST   /api/v1/queries/{id}/stop    # Stop query
+GET    /api/v1/queries/{id}/results # Get current results
+
+# Instance-specific routes
+GET    /api/v1/instances/{instanceId}/queries
+```
+
+### Reactions API
+
+```bash
+GET    /api/v1/reactions        # List reactions
+POST   /api/v1/reactions        # Create reaction
+GET    /api/v1/reactions/{id}   # Get reaction details
+DELETE /api/v1/reactions/{id}   # Delete reaction
+POST   /api/v1/reactions/{id}/start  # Start reaction
+POST   /api/v1/reactions/{id}/stop   # Stop reaction
+
+# Instance-specific routes
+GET    /api/v1/instances/{instanceId}/reactions
+```
+
+### Response Format
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "error": null
+}
+```
+
+## Use Cases
+
+### Real-Time Inventory Alerts
+
+```yaml
+queries:
+  - id: low-stock-alert
+    query: |
+      MATCH (p:Product)
+      WHERE p.quantity <= p.reorder_point
+      RETURN p.sku, p.name, p.quantity, p.reorder_point
+    sources:
+      - source_id: inventory-db
+
+reactions:
+  - kind: http
+    id: reorder-webhook
+    queries: [low-stock-alert]
+    base_url: https://purchasing.example.com
+    routes:
+      low-stock-alert:
+        added:
+          url: /reorder
+          method: POST
+```
+
+### Fraud Detection
+
+```yaml
+queries:
+  - id: suspicious-transactions
+    query: |
+      MATCH (t:Transaction)
+      WHERE t.amount > 10000
+        AND t.country <> t.account_country
+      RETURN t.id, t.account_id, t.amount, t.country
+    sources:
+      - source_id: transactions-db
+
+reactions:
+  - kind: sse
+    id: fraud-alerts
+    queries: [suspicious-transactions]
+    port: 8081
+```
 
 ## Troubleshooting
 
-### Common Issues
+### Build Fails with Submodule Error
 
-**Build fails with "failed to get `drasi-core` as a dependency":**
-This error occurs when nested submodules aren't initialized. DrasiServer uses nested submodules:
-- `drasi-lib` is a submodule of `drasi-server`
-- `drasi-core` is a submodule of `drasi-lib`
-
-Solution:
 ```bash
 # Initialize all submodules recursively
 git submodule update --init --recursive
-
-# Verify both submodules are present
-ls -la drasi-lib/         # Should exist
-ls -la drasi-lib/drasi-core/  # Should also exist
-
-# If issues persist, force update
-git submodule update --init --recursive --force
 ```
 
-**Submodule shows as modified after build:**
-This is normal if the submodule was updated. To reset:
-```bash
-git submodule update --recursive
-```
+### Port Already in Use
 
-**Port already in use:**
 ```bash
 # Use a different port
 cargo run -- --port 9090
 ```
 
-**Query not receiving data:**
-- Verify source is running: `GET /sources/{id}`
-- Check source subscription: `GET /queries/{id}`
-- Review logs: `RUST_LOG=debug cargo run`
+### Query Not Receiving Data
+
+1. Check source status: `GET /api/v1/sources/{id}`
+2. Verify query subscription: `GET /api/v1/queries/{id}`
+3. Enable debug logging: `RUST_LOG=debug cargo run`
 
 ### Debug Logging
 
-Enable detailed logging for troubleshooting:
-
 ```bash
-# All components
 RUST_LOG=debug cargo run
-
-# Specific components
-RUST_LOG=drasi_server=debug,drasi_server_core::queries=trace cargo run
+RUST_LOG=drasi_server=trace cargo run
 ```
 
-## Examples
+## Building from Source
 
-Learn Drasi through practical examples:
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+cd drasi-server
 
-### Getting Started Example
-**[`examples/getting-started/`](examples/getting-started/)**
+# Build
+cargo build --release
 
-A minimal, beginner-friendly example perfect for first-time users:
-- Single HTTP source for data ingestion
-- Script file bootstrap provider for initial data
-- Simple Cypher query filtering products over $50
-- Log reaction for viewing results
-- Complete with helper scripts and curl examples
+# Run tests
+cargo test
 
-**Start here** if you're new to Drasi Server!
-
-### Platform Integration Examples
-**[`examples/drasi-platform/`](examples/drasi-platform/)** and **[`examples/drasi-platform-read/`](examples/drasi-platform-read/)**
-
-Demonstrates integration with Drasi Platform via Redis Streams:
-- Platform source consuming from Redis Streams
-- Platform bootstrap provider for initial data loading
-- Platform reaction publishing results to Redis in CloudEvent format
-- Consumer group management for horizontal scaling
-- Examples show both bootstrap-enabled and read-only modes
-
-### Trading Demo
-**[`examples/trading/`](examples/trading/)**
-
-A comprehensive real-world example demonstrating advanced features:
-- PostgreSQL replication source with bootstrap
-- HTTP sources for live data
-- Complex multi-source queries with joins
-- Full production-like configuration
-
-## Important Limitations
-
-- **Query Language**: Drasi Core does not support Cypher and GQL queries with `ORDER BY`, `TOP`, and `LIMIT` clauses
-- **Nested Submodules**: The project uses nested Git submodules which must be initialized recursively
-- **Bootstrap Providers**: Not all sources may work correctly with all bootstrap providers - refer to the examples for tested combinations
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+# Format and lint
+cargo fmt
+cargo clippy
+```
 
 ## License
 
-DrasiServer is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
@@ -955,8 +956,3 @@ DrasiServer is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for
 
 - **Issues**: [GitHub Issues](https://github.com/drasi-project/drasi-server/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/drasi-project/drasi/discussions)
-- **Blog**: [Drasi Blog](https://techcommunity.microsoft.com/blog/linuxandopensourceblog)
-
----
-
-*Built with d by the Drasi Project team*

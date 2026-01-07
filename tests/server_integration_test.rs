@@ -17,159 +17,15 @@
 //! Note: Sources and reactions must be provided as instances when building DrasiLib.
 //! Dynamic creation via config is not supported.
 
+mod test_support;
+
 use anyhow::Result;
-use async_trait::async_trait;
-use drasi_lib::channels::dispatcher::ChangeDispatcher;
-use drasi_lib::channels::{ComponentEventSender, ComponentStatus, SubscriptionResponse};
-use drasi_lib::plugin_core::QuerySubscriber;
-use drasi_lib::plugin_core::Reaction as ReactionTrait;
-use drasi_lib::plugin_core::Source as SourceTrait;
 use drasi_lib::Query;
 use drasi_server::DrasiLib;
-use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use test_support::mock_components::{create_mock_reaction, create_mock_source};
 use tokio::time::{sleep, Duration};
-
-/// A mock source for testing
-struct MockSource {
-    id: String,
-    status: Arc<RwLock<ComponentStatus>>,
-}
-
-impl MockSource {
-    fn new(id: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        }
-    }
-}
-
-#[async_trait]
-impl SourceTrait for MockSource {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn type_name(&self) -> &str {
-        "mock"
-    }
-
-    fn properties(&self) -> HashMap<String, serde_json::Value> {
-        HashMap::new()
-    }
-
-    async fn start(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Running;
-        Ok(())
-    }
-
-    async fn stop(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Stopped;
-        Ok(())
-    }
-
-    async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
-    }
-
-    async fn subscribe(
-        &self,
-        query_id: String,
-        _enable_bootstrap: bool,
-        _node_labels: Vec<String>,
-        _relation_labels: Vec<String>,
-    ) -> anyhow::Result<SubscriptionResponse> {
-        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
-        let dispatcher =
-            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
-        let receiver = dispatcher.create_receiver().await?;
-        Ok(SubscriptionResponse {
-            query_id,
-            source_id: self.id.clone(),
-            receiver,
-            bootstrap_receiver: None,
-        })
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
-        // No-op for testing
-    }
-}
-
-/// A mock reaction for testing
-struct MockReaction {
-    id: String,
-    queries: Vec<String>,
-    status: Arc<RwLock<ComponentStatus>>,
-}
-
-impl MockReaction {
-    fn new(id: &str, queries: Vec<String>) -> Self {
-        Self {
-            id: id.to_string(),
-            queries,
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
-        }
-    }
-}
-
-#[async_trait]
-impl ReactionTrait for MockReaction {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn type_name(&self) -> &str {
-        "log"
-    }
-
-    fn properties(&self) -> HashMap<String, serde_json::Value> {
-        HashMap::new()
-    }
-
-    fn query_ids(&self) -> Vec<String> {
-        self.queries.clone()
-    }
-
-    async fn inject_query_subscriber(&self, _query_subscriber: Arc<dyn QuerySubscriber>) {
-        // No-op for testing
-    }
-
-    async fn start(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Running;
-        Ok(())
-    }
-
-    async fn stop(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Stopped;
-        Ok(())
-    }
-
-    async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
-    }
-
-    async fn inject_event_tx(&self, _tx: ComponentEventSender) {
-        // No-op for testing
-    }
-}
-
-/// Create a mock source for testing
-fn create_mock_source(id: &str) -> MockSource {
-    MockSource::new(id)
-}
-
-/// Create a mock reaction for testing
-fn create_mock_reaction(id: &str, queries: Vec<String>) -> MockReaction {
-    MockReaction::new(id, queries)
-}
 
 /// Integration test demonstrating data flow continues after server restart
 #[tokio::test]
@@ -389,7 +245,7 @@ async fn test_concurrent_operations() -> Result<()> {
         let handle = tokio::spawn(async move {
             // Alternate between starting and stopping sources
             if i % 2 == 0 {
-                let source_id = format!("concurrent-source-{}", i);
+                let source_id = format!("concurrent-source-{i}");
                 core_clone.start_source(&source_id).await
             } else {
                 sleep(Duration::from_millis(10)).await;

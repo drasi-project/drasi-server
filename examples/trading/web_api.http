@@ -18,15 +18,42 @@
 
 @hostname = localhost
 @port = 8080
+@instanceId = trading-server
 
 ### Health Check
 GET http://{{hostname}}:{{port}}/health
 
-### GET LIST of all Source
-GET http://{{hostname}}:{{port}}/sources
+### List API Versions
+GET http://{{hostname}}:{{port}}/api/versions
 
-### GET LIST of all Queries
-GET http://{{hostname}}:{{port}}/queries
+### GET LIST of all Instances
+GET http://{{hostname}}:{{port}}/api/v1/instances
 
-### GET LIST of all Reactions
-GET http://{{hostname}}:{{port}}/reactions
+###############################################################################
+# Single instance routes (routes to first/default instance)
+###############################################################################
+
+### GET LIST of all Sources (single instance)
+GET http://{{hostname}}:{{port}}/api/v1/sources
+
+### GET LIST of all Queries (single instance)
+GET http://{{hostname}}:{{port}}/api/v1/queries
+
+### GET LIST of all Reactions (single instance)
+GET http://{{hostname}}:{{port}}/api/v1/reactions
+
+###############################################################################
+# Instance-specific routes (use instance ID in path)
+###############################################################################
+
+### GET LIST of Sources for specific instance
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/sources
+
+### GET LIST of Queries for specific instance
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/queries
+
+### GET LIST of Reactions for specific instance
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/reactions
+
+### GET specific query results
+GET http://{{hostname}}:{{port}}/api/v1/instances/{{instanceId}}/queries/watchlist-query/results

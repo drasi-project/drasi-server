@@ -1,0 +1,74 @@
+name: Getting Started Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature-lib
+  push:
+    branches:
+      - main
+      - feature-lib
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  integration-test:
+    name: Getting Started Integration Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: getting_started
+          POSTGRES_USER: drasi_user
+          POSTGRES_PASSWORD: drasi_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler postgresql-client
+
+      - name: Set JQ_LIB_DIR
+        run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Setup PostgreSQL database
+        run: |
+          export RESTART_CONTAINER=true
+          ./tests/integration/getting-started/setup-postgres.sh
+
+      - name: Build Drasi Server
+        run: cargo build --release
+
+      - name: Run integration tests
+        run: ./tests/integration/getting-started/run-integration-test.sh
+
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server logs ==="
+          if [ -f tests/integration/getting-started/server.log ]; then
+            cat tests/integration/getting-started/server.log
+          else
+            echo "No server log file found"
+          fi

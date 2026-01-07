@@ -5,16 +5,31 @@ This directory contains practical examples demonstrating different features and 
 ## Available Examples
 
 ### 🚀 [getting-started/](getting-started/)
-**Perfect for beginners** - A minimal example demonstrating core Drasi concepts.
+**Perfect for beginners** - A complete tutorial demonstrating core Drasi concepts with PostgreSQL CDC.
 
 **Features:**
-- HTTP source for data ingestion
-- Script file bootstrap provider (loads initial data from JSONL)
-- Simple Cypher query filtering products over $50
+- PostgreSQL source with Change Data Capture (WAL replication)
+- Bootstrap provider for initial data loading
+- Multiple Cypher queries (filtering, aggregation, time-based)
 - Log reaction for console output
+- SSE reaction for real-time browser streaming
 - Helper scripts for testing
 
 **Start here if you're new to Drasi Server!**
+
+---
+
+### 🎮 [playground/](playground/)
+**Interactive Web UI** - A hands-on environment to explore Drasi's continuous query capabilities.
+
+**Features:**
+- Dynamic source management via web UI
+- Interactive query builder with Monaco Editor
+- Real-time data tables with instant updates
+- Live results streaming via SSE
+- No external dependencies required
+
+**Use this for:** Experimenting with Drasi without writing configuration files
 
 ---
 
@@ -29,19 +44,6 @@ Platform integration example with Redis Streams and bootstrap support.
 - Complete event lifecycle demonstration
 
 **Use this for:** Integrating with Drasi Platform infrastructure
-
----
-
-### 📖 [drasi-platform-read/](drasi-platform-read/)
-Simplified platform integration without bootstrap (read-only mode).
-
-**Features:**
-- Platform source without bootstrap provider
-- Direct Redis Stream consumption
-- Log reaction for output
-- Simplified configuration
-
-**Use this for:** Consuming pre-existing Redis Streams without initial data loading
 
 ---
 
@@ -77,9 +79,9 @@ cat README.md
 
 ## Example Progression
 
-1. **Start with:** `getting-started/` - Learn the basics
-2. **Then try:** `drasi-platform-read/` - Understand platform integration
-3. **Explore:** `drasi-platform/` - See bootstrap and dual reactions
+1. **Start with:** `getting-started/` - Learn the basics with PostgreSQL CDC
+2. **Experiment:** `playground/` - Interactive exploration via web UI
+3. **Integrate:** `drasi-platform/` - Redis Streams and platform integration
 4. **Master:** `trading/` - Study production patterns
 
 ## Common Patterns

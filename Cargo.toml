@@ -30,10 +30,6 @@ path = "src/lib.rs"
 name = "drasi-server"
 path = "src/main.rs"
 
-[[bin]]
-name = "basic_setup"
-path = "src/bin/basic_setup.rs"
-
 [dependencies]
 drasi-lib = { path = "./drasi-core/lib" }
 
@@ -60,6 +56,12 @@ drasi-reaction-sse = { path = "./drasi-core/components/reactions/sse" }
 drasi-reaction-platform = { path = "./drasi-core/components/reactions/platform" }
 drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" }
 
+# Index plugins
+drasi-index-rocksdb = { path = "./drasi-core/components/indexes/rocksdb" }
+
+# State store plugins
+drasi-state-store-redb = { path = "./drasi-core/components/state_stores/redb" }
+
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
 axum = "0.7"
@@ -75,6 +77,10 @@ clap = { version = "4.0", features = ["derive"] }
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1.0", features = ["v4"] }
+indexmap = "2.0"
+thiserror = "1.0"
+dotenvy = "0.15"
+inquire = "0.7"
 
 [dev-dependencies]
 # Testing utilities
@@ -98,3 +104,16 @@ rstest = "0.18"
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["redis"] }
 redis = { version = "0.24", features = ["tokio-comp", "streams"] }
+
+[lints.rust]
+warnings = "deny"
+unused = "allow"
+
+[lints.clippy]
+print_stdout = "warn"
+unwrap_used = "warn"
+uninlined_format_args = "warn"
+module_inception = "allow"
+ptr_arg = "allow"
+type_complexity = "allow"
+large_enum_variant = "allow"
