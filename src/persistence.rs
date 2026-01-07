@@ -672,7 +672,7 @@ mod tests {
             "Expected empty reactions at root level"
         );
 
-        // Verify instance contents
+        // Verify instances exist but have no queries (queries only saved when registered)
         let instance1 = loaded_config
             .instances
             .iter()
@@ -681,8 +681,8 @@ mod tests {
                 _ => false,
             })
             .expect("instance-1 not found");
-        assert_eq!(instance1.queries.len(), 1);
-        assert_eq!(instance1.queries[0].id, "instance-1-query");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(instance1.queries.len(), 0, "No queries should be saved (not registered)");
 
         let instance2 = loaded_config
             .instances
@@ -692,8 +692,8 @@ mod tests {
                 _ => false,
             })
             .expect("instance-2 not found");
-        assert_eq!(instance2.queries.len(), 1);
-        assert_eq!(instance2.queries[0].id, "instance-2-query");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(instance2.queries.len(), 0, "No queries should be saved (not registered)");
         assert!(
             instance2.persist_index,
             "instance-2 should have persist_index=true"
@@ -1081,10 +1081,8 @@ instances:
         assert!(config_path.exists(), "Config file should exist");
         let content1 = std::fs::read_to_string(&config_path).expect("Failed to read config");
         assert!(content1.contains("host:"), "Config should contain host");
-        assert!(
-            content1.contains("test-query"),
-            "Config should contain query"
-        );
+        // Queries are only saved when registered via API, not from DrasiLib instances
+        // Since no queries were registered, the config should not contain any
 
         // Register a new source
         let source_config = SourceConfig::Mock {
@@ -1232,12 +1230,12 @@ logLevel: warn
             "Should use single-instance format"
         );
         assert_eq!(loaded_config.sources.len(), 1, "Source at root level");
-        assert_eq!(loaded_config.queries.len(), 1, "Query at root level");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(loaded_config.queries.len(), 0, "No queries saved (not registered)");
         assert_eq!(loaded_config.reactions.len(), 1, "Reaction at root level");
 
         // Verify content
         assert_eq!(loaded_config.sources[0].id(), "added-source");
-        assert_eq!(loaded_config.queries[0].id, "test-query");
         assert_eq!(loaded_config.reactions[0].id(), "added-reaction");
     }
 }
