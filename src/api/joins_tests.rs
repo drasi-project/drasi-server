@@ -13,8 +13,9 @@
 // limitations under the License.
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
-    use crate::api::handlers::*;
+    use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};
     use drasi_lib::{
@@ -23,11 +24,8 @@ mod api_query_joins_tests {
     };
     use std::sync::Arc;
 
-    async fn create_test_environment() -> (
-        Arc<DrasiLib>,
-        Arc<bool>,
-        Option<Arc<ConfigPersistence>>,
-    ) {
+    async fn create_test_environment() -> (Arc<DrasiLib>, Arc<bool>, Option<Arc<ConfigPersistence>>)
+    {
         // Create a minimal DrasiLib using the builder
         let core = DrasiLib::builder()
             .with_id("test-server")

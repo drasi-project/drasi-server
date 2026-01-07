@@ -433,7 +433,7 @@ Query the API to see accumulated results:
 Or use curl directly:
 
 ```bash
-curl http://localhost:8080/api/queries/hello-world-from/results | jq
+curl http://localhost:8080/api/v1/queries/hello-world-from/results | jq
 ```
 
 ## API Reference
@@ -445,38 +445,43 @@ The Drasi server exposes a REST API on port 8080:
 GET http://localhost:8080/health
 ```
 
+### API Versions
+```bash
+GET http://localhost:8080/api/versions
+```
+
 ### Query Results
 ```bash
-GET http://localhost:8080/api/queries/hello-world-from/results
+GET http://localhost:8080/api/v1/queries/hello-world-from/results
 ```
 
 ### OpenAPI Documentation
 ```bash
-GET http://localhost:8080/openapi.json
-GET http://localhost:8080/swagger-ui/
+GET http://localhost:8080/api/v1/openapi.json
+GET http://localhost:8080/api/v1/docs/
 ```
 
 ### Component Management
 ```bash
 # Get source status
-GET http://localhost:8080/api/sources/platform-redis-source
+GET http://localhost:8080/api/v1/sources/platform-redis-source
 
 # Get query status
-GET http://localhost:8080/api/queries/hello-world-from
+GET http://localhost:8080/api/v1/queries/hello-world-from
 
 # Get log reaction status
-GET http://localhost:8080/api/reactions/log-hello-world
+GET http://localhost:8080/api/v1/reactions/log-hello-world
 
 # Get platform reaction status
-GET http://localhost:8080/api/reactions/platform-hello-world-results
+GET http://localhost:8080/api/v1/reactions/platform-hello-world-results
 
 # Stop a reaction
-POST http://localhost:8080/api/reactions/log-hello-world/stop
-POST http://localhost:8080/api/reactions/platform-hello-world-results/stop
+POST http://localhost:8080/api/v1/reactions/log-hello-world/stop
+POST http://localhost:8080/api/v1/reactions/platform-hello-world-results/stop
 
 # Start a reaction
-POST http://localhost:8080/api/reactions/log-hello-world/start
-POST http://localhost:8080/api/reactions/platform-hello-world-results/start
+POST http://localhost:8080/api/v1/reactions/log-hello-world/start
+POST http://localhost:8080/api/v1/reactions/platform-hello-world-results/start
 ```
 
 See `requests.http` for more examples using VSCode REST Client.
@@ -506,7 +511,7 @@ See `requests.http` for more examples using VSCode REST Client.
 4. Ensure `Message` property equals `"Hello World"` (case-sensitive)
 5. Confirm source, query, and reaction are all running:
    ```bash
-   curl http://localhost:8080/api/sources/platform-redis-source
+   curl http://localhost:8080/api/v1/sources/platform-redis-source
    ```
 
 ### Consumer Group Issues
@@ -527,11 +532,11 @@ docker exec -it drasi-redis redis-cli XGROUP DESTROY hello-world-change drasi-co
 **Checklist**:
 1. Verify platform reaction is running:
    ```bash
-   curl http://localhost:8080/api/reactions/platform-hello-world-results
+   curl http://localhost:8080/api/v1/reactions/platform-hello-world-results
    ```
 2. Check that query has results:
    ```bash
-   curl http://localhost:8080/api/queries/hello-world-from/results
+   curl http://localhost:8080/api/v1/queries/hello-world-from/results
    ```
 3. Verify results stream exists:
    ```bash

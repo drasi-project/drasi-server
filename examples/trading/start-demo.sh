@@ -173,7 +173,7 @@ fi
 
 # Verify sources are running
 echo "Verifying Drasi sources..."
-SOURCE_STATUS=$(curl -s http://localhost:8080/sources)
+SOURCE_STATUS=$(curl -s http://localhost:8080/api/v1/sources)
 if echo "$SOURCE_STATUS" | grep -q '"status":"running"'; then
     echo -e "PostgreSQL replication source: ${GREEN}✓ Running${NC}"
     echo -e "HTTP source: ${GREEN}✓ Running${NC}"

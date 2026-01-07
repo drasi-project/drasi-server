@@ -1,0 +1,58 @@
+name: Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature-lib
+  push:
+    branches:
+      - main
+      - feature-lib
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Check formatting
+        run: make fmt-check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
+
+      - name: Set JQ_LIB_DIR
+        run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Run clippy
+        run: make clippy

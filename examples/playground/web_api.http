@@ -22,11 +22,14 @@
 ### Health Check
 GET http://{{hostname}}:{{port}}/health
 
+### List API Versions
+GET http://{{hostname}}:{{port}}/api/versions
+
 ### GET LIST of all Source
-GET http://{{hostname}}:{{port}}/sources
+GET http://{{hostname}}:{{port}}/api/v1/sources
 
 ### GET LIST of all Queries
-GET http://{{hostname}}:{{port}}/queries
+GET http://{{hostname}}:{{port}}/api/v1/queries
 
 ### GET LIST of all Reactions
-GET http://{{hostname}}:{{port}}/reactions
+GET http://{{hostname}}:{{port}}/api/v1/reactions

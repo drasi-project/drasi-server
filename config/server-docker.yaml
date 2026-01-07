@@ -1,0 +1,52 @@
+id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
+# persist_index: false  # Enable RocksDB persistent indexing (default: false)
+sources:
+- id: vehicle-location-source
+  auto_start: true
+  source_type: mock
+  interval_seconds: 5
+  data_type: vehicle_location
+  description: Mock vehicle location data
+- id: order-status-source
+  auto_start: true
+  source_type: mock
+  data_type: order_status
+  interval_seconds: 3
+  description: Mock order status updates
+queries:
+- id: available-drivers-query
+  query: "\n            MATCH (d:Driver {status: 'available'})\n            WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL\n            RETURN elementId(d) AS driverId, d.driver_name AS driverName,\n                   d.latitude AS lat, d.longitude AS lng, d.status AS status\n        "
+  queryLanguage: Cypher
+  middleware: []
+  source_subscriptions:
+  - source_id: vehicle-location-source
+    pipeline: []
+  auto_start: true
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
+- id: pending-orders-query
+  query: "\n            MATCH (o:Order)\n            WHERE o.status IN ['pending', 'preparing', 'ready']\n            RETURN elementId(o) AS orderId, o.status AS status,\n                   o.restaurant AS restaurant, o.delivery_address AS address\n        "
+  queryLanguage: Cypher
+  middleware: []
+  source_subscriptions:
+  - source_id: vehicle-location-source
+    pipeline: []
+  auto_start: true
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
+reactions:
+- id: driver-availability-logger
+  queries:
+  - available-drivers-query
+  auto_start: true
+  reaction_type: log
+  log_level: info
+  description: Log driver availability changes
+- id: order-notification-handler
+  queries:
+  - available-drivers-query
+  auto_start: true
+  reaction_type: http
+  endpoint: http://localhost:9000/notifications
+  method: POST
+  description: Send notifications for query results
