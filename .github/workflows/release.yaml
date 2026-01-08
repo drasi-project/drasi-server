@@ -79,8 +79,8 @@ jobs:
             clang \
             libclang-dev
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        run: rustup show
 
       - name: Determine target triple
         id: target
