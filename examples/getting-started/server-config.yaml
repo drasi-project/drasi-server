@@ -136,7 +136,7 @@ reactions:
       # - inactive-people
     # Default template configuration for all queries
     # Templates use handlebars syntax for formatting
-    default_template:
+    defaultTemplate:
       added:
         template: "[{{query_name}}] + {{after}}"
       updated:
