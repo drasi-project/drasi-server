@@ -22,7 +22,9 @@ use std::str::FromStr;
 
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
-use crate::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig};
+use crate::api::models::{
+    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig,
+};
 use drasi_lib::config::QueryConfig;
 
 /// DrasiServer configuration

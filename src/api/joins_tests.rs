@@ -49,26 +49,32 @@ mod api_query_joins_tests {
     // Helper function to convert QueryConfig to QueryConfigDto for testing
     fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
         use crate::api::models::query::SourceSubscriptionConfigDto;
-        
+
         QueryConfigDto {
             id: config.id,
             auto_start: config.auto_start,
             query: ConfigValue::Static(config.query),
             query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
             middleware: vec![], // Simplified for testing - middleware is complex
-            sources: config.sources.iter().map(|s| SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static(s.source_id.clone()),
-                nodes: s.nodes.clone(),
-                relations: s.relations.clone(),
-                pipeline: s.pipeline.clone(),
-            }).collect(),
+            sources: config
+                .sources
+                .iter()
+                .map(|s| SourceSubscriptionConfigDto {
+                    source_id: ConfigValue::Static(s.source_id.clone()),
+                    nodes: s.nodes.clone(),
+                    relations: s.relations.clone(),
+                    pipeline: s.pipeline.clone(),
+                })
+                .collect(),
             enable_bootstrap: config.enable_bootstrap,
             bootstrap_buffer_size: config.bootstrap_buffer_size,
             joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
             priority_queue_capacity: config.priority_queue_capacity,
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,
             dispatch_mode: config.dispatch_mode.map(|d| format!("{:?}", d)),
-            storage_backend: config.storage_backend.map(|s| serde_json::to_value(s).unwrap()),
+            storage_backend: config
+                .storage_backend
+                .map(|s| serde_json::to_value(s).unwrap()),
         }
     }
 

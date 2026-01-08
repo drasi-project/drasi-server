@@ -26,11 +26,11 @@ use axum::{
 use indexmap::IndexMap;
 use std::sync::Arc;
 
+use crate::api::models::QueryConfigDto;
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
-use crate::api::models::QueryConfigDto;
 use crate::persistence::ConfigPersistence;
 use drasi_lib::QueryConfig;
 

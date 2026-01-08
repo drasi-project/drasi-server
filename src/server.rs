@@ -24,7 +24,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::api::mappings::{map_server_settings, DtoMapper, QueryConfigMapper, ConfigMapper};
+use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
 use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
@@ -381,7 +381,7 @@ impl DrasiServer {
         IndexMap<String, IndexMap<String, crate::api::models::QueryConfigDto>>,
     ) {
         use crate::api::models::QueryConfigDto;
-        
+
         let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
         let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
             IndexMap::new();
@@ -399,7 +399,7 @@ impl DrasiServer {
                 reactions.insert(reaction.id().to_string(), reaction.clone());
             }
             reaction_configs.insert(instance.id.clone(), reactions);
-            
+
             // Note: queries are not extracted because they're stored as QueryConfigDto
             // during config load and managed separately in persistence layer
             query_configs.insert(instance.id.clone(), IndexMap::new());

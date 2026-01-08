@@ -16,17 +16,13 @@
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
-use drasi_lib::config::{QueryConfig, QueryLanguage, SourceSubscriptionConfig};
 use drasi_lib::channels::DispatchMode;
+use drasi_lib::config::{QueryConfig, QueryLanguage, SourceSubscriptionConfig};
 
 pub struct QueryConfigMapper;
 
 impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
-    fn map(
-        &self,
-        dto: &QueryConfigDto,
-        resolver: &DtoMapper,
-    ) -> Result<QueryConfig, MappingError> {
+    fn map(&self, dto: &QueryConfigDto, resolver: &DtoMapper) -> Result<QueryConfig, MappingError> {
         let sources = dto
             .sources
             .iter()
@@ -38,9 +34,12 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
         let query_language = match query_language_str.as_str() {
             "Cypher" => QueryLanguage::Cypher,
             "GQL" => QueryLanguage::GQL,
-            _ => return Err(MappingError::SourceCreationError(format!(
-                "Invalid query language: {}. Must be 'Cypher' or 'GQL'", query_language_str
-            ))),
+            _ => {
+                return Err(MappingError::SourceCreationError(format!(
+                    "Invalid query language: {}. Must be 'Cypher' or 'GQL'",
+                    query_language_str
+                )))
+            }
         };
 
         // Middleware is empty for now (optional field, defaults to empty vec)
@@ -53,7 +52,8 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(|dm| match dm.as_str() {
                 "Channel" => Ok(DispatchMode::Channel),
                 _ => Err(MappingError::SourceCreationError(format!(
-                    "Invalid dispatch mode: {}. Must be 'Channel'", dm
+                    "Invalid dispatch mode: {}. Must be 'Channel'",
+                    dm
                 ))),
             })
             .transpose()?;
@@ -75,7 +75,10 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .as_ref()
             .map(|sb| {
                 serde_json::from_value(sb.clone()).map_err(|e| {
-                    MappingError::SourceCreationError(format!("Invalid storage backend config: {}", e))
+                    MappingError::SourceCreationError(format!(
+                        "Invalid storage backend config: {}",
+                        e
+                    ))
                 })
             })
             .transpose()?;

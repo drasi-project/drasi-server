@@ -682,7 +682,11 @@ mod tests {
             })
             .expect("instance-1 not found");
         // Queries are only saved when registered, not from DrasiLib instances
-        assert_eq!(instance1.queries.len(), 0, "No queries should be saved (not registered)");
+        assert_eq!(
+            instance1.queries.len(),
+            0,
+            "No queries should be saved (not registered)"
+        );
 
         let instance2 = loaded_config
             .instances
@@ -693,7 +697,11 @@ mod tests {
             })
             .expect("instance-2 not found");
         // Queries are only saved when registered, not from DrasiLib instances
-        assert_eq!(instance2.queries.len(), 0, "No queries should be saved (not registered)");
+        assert_eq!(
+            instance2.queries.len(),
+            0,
+            "No queries should be saved (not registered)"
+        );
         assert!(
             instance2.persist_index,
             "instance-2 should have persist_index=true"
@@ -1231,7 +1239,11 @@ logLevel: warn
         );
         assert_eq!(loaded_config.sources.len(), 1, "Source at root level");
         // Queries are only saved when registered, not from DrasiLib instances
-        assert_eq!(loaded_config.queries.len(), 0, "No queries saved (not registered)");
+        assert_eq!(
+            loaded_config.queries.len(),
+            0,
+            "No queries saved (not registered)"
+        );
         assert_eq!(loaded_config.reactions.len(), 1, "Reaction at root level");
 
         // Verify content

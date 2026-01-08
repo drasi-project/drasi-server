@@ -30,7 +30,7 @@ use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
-use crate::api::mappings::{DtoMapper, QueryConfigMapper, ConfigMapper};
+use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use crate::api::models::QueryConfigDto;
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
@@ -275,7 +275,7 @@ pub async fn create_query(
     }
 
     let query_id = config_dto.id.clone();
-    
+
     // Convert QueryConfigDto to drasi-lib's QueryConfig
     let mapper = DtoMapper::default();
     let query_mapper = QueryConfigMapper;
@@ -327,12 +327,12 @@ pub async fn create_query(
     match core.add_query(config.clone()).await {
         Ok(_) => {
             log::info!("Query '{query_id}' created successfully");
-            
+
             // Register the QueryConfigDto for persistence
             if let Some(persistence) = &config_persistence {
                 persistence.register_query(&instance_id, config_dto).await;
             }
-            
+
             persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -385,7 +385,7 @@ pub async fn delete_query(
             if let Some(persistence) = &config_persistence {
                 persistence.unregister_query(&instance_id, &id).await;
             }
-            
+
             persist_after_operation(&config_persistence, "deleting query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {

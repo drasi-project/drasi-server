@@ -16,7 +16,9 @@
 
 use anyhow::Result;
 
-use drasi_server::api::models::{ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto};
+use drasi_server::api::models::{
+    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
+};
 use drasi_server::DrasiServerConfig;
 
 use super::prompts::ServerSettings;
@@ -223,14 +225,20 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         let query = &config.queries[0];
         assert_eq!(query.id, "my-query");
-        assert_eq!(query.query, ConfigValue::Static("MATCH (n) RETURN n".to_string()));
+        assert_eq!(
+            query.query,
+            ConfigValue::Static("MATCH (n) RETURN n".to_string())
+        );
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
         assert_eq!(query.bootstrap_buffer_size, 10000);
 
         // Check query subscribes to the source
         assert_eq!(query.sources.len(), 1);
-        assert_eq!(query.sources[0].source_id, ConfigValue::Static("my-mock".to_string()));
+        assert_eq!(
+            query.sources[0].source_id,
+            ConfigValue::Static("my-mock".to_string())
+        );
     }
 
     #[test]
@@ -249,7 +257,10 @@ mod tests {
 
         // Query should subscribe to the first source
         assert_eq!(config.queries.len(), 1);
-        assert_eq!(config.queries[0].sources[0].source_id, ConfigValue::Static("source-1".to_string()));
+        assert_eq!(
+            config.queries[0].sources[0].source_id,
+            ConfigValue::Static("source-1".to_string())
+        );
     }
 
     #[test]
