@@ -90,6 +90,12 @@ jobs:
             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64 \
             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64
 
+      - name: Create and push 'latest' tag
+        run: |
+          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64 \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64
+
       - name: Generate summary
         run: |
           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
@@ -97,11 +103,16 @@ jobs:
           echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tags Created" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
