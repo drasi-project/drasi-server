@@ -71,6 +71,49 @@ jobs:
         run: |
           make docker-build
 
+      - name: Extract binary from Docker image
+        run: |
+          # Create a temporary container from the built image
+          container_id=$(docker create ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-${{ matrix.suffix }})
+
+          # Extract the binary
+          docker cp ${container_id}:/usr/local/bin/drasi-server ./drasi-server
+
+          # Clean up the container
+          docker rm ${container_id}
+
+          # Make binary executable
+          chmod +x ./drasi-server
+
+      - name: Determine target triple
+        id: target
+        run: |
+          if [ "${{ matrix.suffix }}" = "amd64" ]; then
+            echo "triple=x86_64-unknown-linux-gnu" >> $GITHUB_OUTPUT
+          else
+            echo "triple=aarch64-unknown-linux-gnu" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rename binary with version and architecture
+        id: binary
+        run: |
+          # Get version from tag (strip 'v' prefix if present)
+          VERSION="${{ inputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          # Rename binary following Rust best practices: drasid-<version>-<target-triple>
+          BINARY_NAME="drasid-${VERSION}-${{ steps.target.outputs.triple }}"
+          mv drasi-server "${BINARY_NAME}"
+          echo "name=${BINARY_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ inputs.tag }}-${{ matrix.suffix }}
+          path: ${{ steps.binary.outputs.name }}
+          if-no-files-found: error
+          retention-days: 90
+
   # Create multi-arch manifest
   create-manifest:
     name: Create Multi-Arch Manifest
@@ -98,6 +141,10 @@ jobs:
 
       - name: Generate summary
         run: |
+          # Strip 'v' prefix from tag for binary names
+          VERSION="${{ inputs.tag }}"
+          VERSION="${VERSION#v}"
+
           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
@@ -116,3 +163,9 @@ jobs:
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Binary artifacts are available as workflow artifacts:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
