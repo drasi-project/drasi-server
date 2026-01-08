@@ -63,27 +63,24 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push platform-specific image
-        env:
-          IMAGE_PREFIX: ${{ inputs.image_prefix }}
-          DOCKER_TAG_VERSION: ${{ inputs.tag }}-${{ matrix.suffix }}
-          DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
+      - name: Install build dependencies
         run: |
-          make docker-build
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libpq-dev \
+            libjq-dev \
+            libonig-dev \
+            protobuf-compiler \
+            libprotobuf-dev \
+            cmake \
+            clang \
+            libclang-dev
 
-      - name: Extract binary from Docker image
-        run: |
-          # Create a temporary container from the built image
-          container_id=$(docker create ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-${{ matrix.suffix }})
-
-          # Extract the binary
-          docker cp ${container_id}:/usr/local/bin/drasi-server ./drasi-server
-
-          # Clean up the container
-          docker rm ${container_id}
-
-          # Make binary executable
-          chmod +x ./drasi-server
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Determine target triple
         id: target
@@ -94,25 +91,41 @@ jobs:
             echo "triple=aarch64-unknown-linux-gnu" >> $GITHUB_OUTPUT
           fi
 
-      - name: Rename binary with version and architecture
-        id: binary
+      - name: Build binary
+        id: build
         run: |
           # Get version from tag (strip 'v' prefix if present)
           VERSION="${{ inputs.tag }}"
           VERSION="${VERSION#v}"
 
+          # Set JQ_LIB_DIR for multiarch support
+          export JQ_LIB_DIR=$(dirname $(find /usr/lib -name 'libjq.so*' | head -1))
+
+          # Build the release binary
+          cargo build --release --bin drasi-server
+
           # Rename binary following Rust best practices: drasid-<version>-<target-triple>
           BINARY_NAME="drasid-${VERSION}-${{ steps.target.outputs.triple }}"
-          mv drasi-server "${BINARY_NAME}"
+          cp target/release/drasi-server "${BINARY_NAME}"
+          chmod +x "${BINARY_NAME}"
+
           echo "name=${BINARY_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ inputs.tag }}-${{ matrix.suffix }}
-          path: ${{ steps.binary.outputs.name }}
+          path: ${{ steps.build.outputs.name }}
           if-no-files-found: error
           retention-days: 90
+
+      - name: Build and push platform-specific image
+        env:
+          IMAGE_PREFIX: ${{ inputs.image_prefix }}
+          DOCKER_TAG_VERSION: ${{ inputs.tag }}-${{ matrix.suffix }}
+          DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
+        run: |
+          make docker-build
 
   # Create multi-arch manifest
   create-manifest:
