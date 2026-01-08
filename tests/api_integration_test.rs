@@ -450,10 +450,11 @@ async fn test_dynamic_reaction_creation_via_api() {
     let base = "/instances/test-server";
 
     // Create a log reaction via API using the tagged enum format
+    // Use empty queries list since autoStart is false - queries can be added later
     let reaction_config = json!({
         "kind": "log",
         "id": "dynamic-reaction",
-        "queries": ["some-query"],
+        "queries": [],
         "autoStart": false
     });
 

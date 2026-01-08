@@ -18,10 +18,10 @@ fn test_source_config_mock_serializes_camelcase() {
 
     let json = serde_json::to_value(&source).unwrap();
 
-    // Verify enum fields are camelCase (from enum-level rename_all)
+    // Verify enum fields are snake_case (no rename_all on enum)
     assert!(json.get("id").is_some(), "id should exist");
-    assert!(json.get("autoStart").is_some(), "autoStart should exist");
-    assert!(json.get("auto_start").is_none(), "auto_start should NOT exist");
+    assert!(json.get("auto_start").is_some(), "auto_start should exist");
+    assert!(json.get("autoStart").is_none(), "autoStart should NOT exist");
 
     // Verify flattened config fields are also camelCase (from DTO struct-level rename_all)
     assert!(json.get("dataType").is_some(), "dataType should exist");
@@ -39,11 +39,11 @@ fn test_source_config_mock_serializes_camelcase() {
 
     // Verify values are correct
     assert_eq!(json["id"], "test-mock");
-    assert_eq!(json["autoStart"], true);
+    assert_eq!(json["auto_start"], true);
     assert_eq!(json["dataType"], "sensor");
     assert_eq!(json["intervalMs"], 1000);
 
-    println!("✅ SourceConfig::Mock serializes as camelCase");
+    println!("✅ SourceConfig::Mock serializes correctly");
 }
 
 #[test]
@@ -68,9 +68,9 @@ fn test_source_config_postgres_serializes_camelcase() {
 
     let json = serde_json::to_value(&source).unwrap();
 
-    // Verify enum fields are camelCase (from enum-level rename_all)
-    assert!(json.get("autoStart").is_some(), "autoStart should exist");
-    assert!(json.get("auto_start").is_none(), "auto_start should NOT exist");
+    // Verify enum fields are snake_case (no rename_all on enum)
+    assert!(json.get("auto_start").is_some(), "auto_start should exist");
+    assert!(json.get("autoStart").is_none(), "autoStart should NOT exist");
 
     // Verify flattened Postgres config fields are also camelCase
     assert!(json.get("slotName").is_some(), "slotName should exist");
@@ -162,11 +162,11 @@ fn test_reaction_config_log_serializes_camelcase() {
 
     let json = serde_json::to_value(&reaction).unwrap();
 
-    // Verify enum fields are camelCase
+    // Verify enum fields are snake_case
     assert!(json.get("id").is_some(), "id should exist");
     assert!(json.get("queries").is_some(), "queries should exist");
-    assert!(json.get("autoStart").is_some(), "autoStart should exist");
-    assert!(json.get("auto_start").is_none(), "auto_start should NOT exist");
+    assert!(json.get("auto_start").is_some(), "auto_start should exist");
+    assert!(json.get("autoStart").is_none(), "autoStart should NOT exist");
 
     println!("✅ ReactionConfig::Log serializes as camelCase");
 }
@@ -187,9 +187,9 @@ fn test_reaction_config_http_serializes_camelcase() {
 
     let json = serde_json::to_value(&reaction).unwrap();
 
-    // Verify enum fields are camelCase
-    assert!(json.get("autoStart").is_some(), "autoStart should exist");
-    assert!(json.get("auto_start").is_none(), "auto_start should NOT exist");
+    // Verify enum fields are snake_case
+    assert!(json.get("auto_start").is_some(), "auto_start should exist");
+    assert!(json.get("autoStart").is_none(), "autoStart should NOT exist");
 
     // Verify flattened HTTP reaction config fields are also camelCase
     assert!(json.get("baseUrl").is_some(), "baseUrl should exist");
@@ -225,9 +225,9 @@ fn test_reaction_config_grpc_serializes_camelcase() {
 
     let json = serde_json::to_value(&reaction).unwrap();
 
-    // Verify enum fields are camelCase
-    assert!(json.get("autoStart").is_some(), "autoStart should exist");
-    assert!(json.get("auto_start").is_none(), "auto_start should NOT exist");
+    // Verify enum fields are snake_case
+    assert!(json.get("auto_start").is_some(), "auto_start should exist");
+    assert!(json.get("autoStart").is_none(), "autoStart should NOT exist");
 
     // Verify flattened gRPC reaction config fields are also camelCase
     assert!(json.get("timeoutMs").is_some(), "timeoutMs should exist");

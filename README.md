@@ -58,18 +58,18 @@ curl http://localhost:8080/api/v1/queries
 # config/server.yaml
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 
 queries:
   - id: my-query
     query: "MATCH (n:Node) RETURN n"
     sources:
-      - source_id: test-source
+      - sourceId: test-source
 
 reactions:
   - kind: log
@@ -159,9 +159,9 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `id` | string | (auto-generated UUID) | Unique server identifier |
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
-| `log_level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `persist_config` | boolean | `true` | Enable saving API changes to config file |
-| `persist_index` | boolean | `false` | Use RocksDB for persistent query indexes |
+| `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `persistConfig` | boolean | `true` | Enable saving API changes to config file |
+| `persistIndex` | boolean | `false` | Use RocksDB for persistent query indexes |
 | `state_store` | object | (none) | State store provider for plugin state persistence |
 | `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `default_dispatch_buffer_capacity` | integer | `1000` | Default buffer capacity for event dispatching |
@@ -172,11 +172,11 @@ Drasi Server uses YAML configuration files. All configuration values support env
 id: my-server
 host: 0.0.0.0
 port: 8080
-log_level: info
-persist_config: true
-persist_index: false
+logLevel: info
+persistConfig: true
+persistIndex: false
 
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb
 
@@ -194,7 +194,7 @@ State stores allow plugins (Sources, Bootstrap Providers, Reactions) to persist 
 File-based persistent storage using the REDB embedded database.
 
 ```yaml
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb  # Supports ${ENV_VAR:-default}
 ```
@@ -216,7 +216,7 @@ Sources connect to data systems and stream changes to queries. Each source type 
 |-------|------|---------|-------------|
 | `kind` | string | (required) | Source type: `postgres`, `http`, `grpc`, `mock`, `platform` |
 | `id` | string | (required) | Unique source identifier |
-| `auto_start` | boolean | `true` | Start source automatically on server startup |
+| `autoStart` | boolean | `true` | Start source automatically on server startup |
 | `bootstrap_provider` | object | (none) | Bootstrap provider configuration |
 
 #### PostgreSQL Source (`postgres`)
@@ -227,7 +227,7 @@ Streams changes from PostgreSQL using logical replication (WAL).
 sources:
   - kind: postgres
     id: my-postgres
-    auto_start: true
+    autoStart: true
     host: localhost
     port: 5432
     database: mydb
@@ -265,7 +265,7 @@ Receives events via HTTP endpoints.
 sources:
   - kind: http
     id: my-http
-    auto_start: true
+    autoStart: true
     host: 0.0.0.0
     port: 9000
     timeout_ms: 10000
@@ -286,7 +286,7 @@ Receives events via gRPC streaming.
 sources:
   - kind: grpc
     id: my-grpc
-    auto_start: true
+    autoStart: true
     host: 0.0.0.0
     port: 50051
     timeout_ms: 5000
@@ -306,7 +306,7 @@ Generates test data for development.
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
     data_type: sensor
     interval_ms: 5000
 ```
@@ -324,7 +324,7 @@ Consumes events from Redis Streams for Drasi Platform integration.
 sources:
   - kind: platform
     id: platform-source
-    auto_start: true
+    autoStart: true
     redis_url: redis://localhost:6379
     stream_key: my-stream
     consumer_group: drasi-core
@@ -404,8 +404,8 @@ queries:
       RETURN o.id, o.customer_id, o.total
     queryLanguage: Cypher
     sources:
-      - source_id: orders-db
-    auto_start: true
+      - sourceId: orders-db
+    autoStart: true
     enableBootstrap: true
     bootstrapBufferSize: 10000
 ```
@@ -416,7 +416,7 @@ queries:
 | `query` | string | (required) | Query string (Cypher or GQL) |
 | `queryLanguage` | string | `Cypher` | Query language: `Cypher` or `GQL` |
 | `sources` | array | (required) | Source subscriptions |
-| `auto_start` | boolean | `true` | Start query automatically |
+| `autoStart` | boolean | `true` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
 | `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
 | `priority_queue_capacity` | integer | (global) | Override queue capacity for this query |
@@ -429,7 +429,7 @@ queries:
 
 ```yaml
 sources:
-  - source_id: orders-db
+  - sourceId: orders-db
     nodes: [Order, Customer]      # Optional: filter node labels
     relations: [PLACED_BY]        # Optional: filter relation labels
     pipeline: [decoder, mapper]   # Optional: middleware pipeline
@@ -446,8 +446,8 @@ queries:
       MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
       RETURN o.id, c.name
     sources:
-      - source_id: orders-db
-      - source_id: customers-db
+      - sourceId: orders-db
+      - sourceId: customers-db
     joins:
       - id: CUSTOMER
         keys:
@@ -481,7 +481,7 @@ reactions:
   - kind: log
     id: log-output
     queries: [my-query]
-    auto_start: true
+    autoStart: true
     default_template:
       added:
         template: "Added: {{json this}}"
@@ -668,7 +668,7 @@ log_level: info
 instances:
   - id: analytics
     persist_index: true
-    state_store:
+    stateStore:
       kind: redb
       path: ./data/analytics-state.redb
     sources:
@@ -679,7 +679,7 @@ instances:
       - id: high-value-orders
         query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
         sources:
-          - source_id: analytics-db
+          - sourceId: analytics-db
     reactions:
       - kind: log
         id: analytics-log
@@ -696,7 +696,7 @@ instances:
       - id: alert-threshold
         query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
         sources:
-          - source_id: metrics-api
+          - sourceId: metrics-api
     reactions:
       - kind: sse
         id: alert-stream
@@ -812,7 +812,7 @@ queries:
       WHERE p.quantity <= p.reorder_point
       RETURN p.sku, p.name, p.quantity, p.reorder_point
     sources:
-      - source_id: inventory-db
+      - sourceId: inventory-db
 
 reactions:
   - kind: http
@@ -837,7 +837,7 @@ queries:
         AND t.country <> t.account_country
       RETURN t.id, t.account_id, t.amount, t.country
     sources:
-      - source_id: transactions-db
+      - sourceId: transactions-db
 
 reactions:
   - kind: sse

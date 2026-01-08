@@ -342,7 +342,7 @@ mod tests {
 
         assert!(yaml.contains("host: 192.168.1.1"));
         assert!(yaml.contains("port: 3000"));
-        assert!(yaml.contains("log_level: warn"));
+        assert!(yaml.contains("logLevel: warn"));
     }
 
     #[test]
@@ -499,8 +499,8 @@ mod tests {
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(
-            yaml.contains("persist_index: false"),
-            "YAML should contain persist_index: false"
+            yaml.contains("persistIndex: false"),
+            "YAML should contain persistIndex: false"
         );
     }
 
@@ -518,8 +518,9 @@ mod tests {
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(
-            yaml.contains("persist_index: true"),
-            "YAML should contain persist_index: true"
+            yaml.contains("persistIndex: true"),
+            "YAML should contain persistIndex: true. Actual YAML:\n{}",
+            yaml
         );
     }
 
