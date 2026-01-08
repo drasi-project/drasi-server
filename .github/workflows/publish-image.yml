@@ -117,7 +117,6 @@ jobs:
           name: drasid-${{ inputs.tag }}-${{ matrix.suffix }}
           path: ${{ steps.build.outputs.name }}
           if-no-files-found: error
-          retention-days: 90
 
       - name: Build and push platform-specific image
         env:
