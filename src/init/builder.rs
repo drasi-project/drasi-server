@@ -530,8 +530,7 @@ mod tests {
 
         assert!(
             yaml.contains("persistIndex: true"),
-            "YAML should contain persistIndex: true. Actual YAML:\n{}",
-            yaml
+            "YAML should contain persistIndex: true. Actual YAML:\n{yaml}"
         );
     }
 

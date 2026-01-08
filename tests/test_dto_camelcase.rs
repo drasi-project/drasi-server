@@ -1,7 +1,6 @@
 // Test to verify that DTO fields serialize as camelCase
 
 use drasi_server::api::models::*;
-use serde_json;
 
 #[test]
 fn test_postgres_dto_serializes_camelcase() {

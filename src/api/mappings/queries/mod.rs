@@ -36,8 +36,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             "GQL" => QueryLanguage::GQL,
             _ => {
                 return Err(MappingError::SourceCreationError(format!(
-                    "Invalid query language: {}. Must be 'Cypher' or 'GQL'",
-                    query_language_str
+                    "Invalid query language: {query_language_str}. Must be 'Cypher' or 'GQL'"
                 )))
             }
         };
@@ -52,8 +51,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(|dm| match dm.as_str() {
                 "Channel" => Ok(DispatchMode::Channel),
                 _ => Err(MappingError::SourceCreationError(format!(
-                    "Invalid dispatch mode: {}. Must be 'Channel'",
-                    dm
+                    "Invalid dispatch mode: {dm}. Must be 'Channel'"
                 ))),
             })
             .transpose()?;
@@ -64,7 +62,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .as_ref()
             .map(|j| {
                 serde_json::from_value(j.clone()).map_err(|e| {
-                    MappingError::SourceCreationError(format!("Invalid joins config: {}", e))
+                    MappingError::SourceCreationError(format!("Invalid joins config: {e}"))
                 })
             })
             .transpose()?;
@@ -76,8 +74,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(|sb| {
                 serde_json::from_value(sb.clone()).map_err(|e| {
                     MappingError::SourceCreationError(format!(
-                        "Invalid storage backend config: {}",
-                        e
+                        "Invalid storage backend config: {e}"
                     ))
                 })
             })

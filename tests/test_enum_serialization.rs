@@ -2,7 +2,6 @@
 // This tests the full enum wrappers with flattened DTO config structs
 
 use drasi_server::api::models::*;
-use serde_json;
 
 #[test]
 fn test_source_config_mock_serializes_camelcase() {
