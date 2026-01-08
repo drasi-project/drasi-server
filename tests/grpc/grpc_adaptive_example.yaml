@@ -1,8 +1,8 @@
 server:
   host: 0.0.0.0
   port: 18080
-  log_level: drasi_server=info,drasi_core=warn
-  persist_config: false
+  logLevel: drasi_server=info,drasi_core=warn
+  persistConfig: false
 sources:
 - id: facilities-db
   source_type: grpc
@@ -36,18 +36,18 @@ reactions:
     retry_delay_ms: 500
     tls:
       enabled: false
-    adaptive_max_batch_size: 2000
-    timeout_ms: 5000
+    adaptiveMaxBatchSize: 2000
+    timeoutMs: 5000
     metadata:
       x-api-key: test-key-12345
       x-client-id: drasi-test
     adaptive_max_wait_ms: 100
     endpoint: http://127.0.0.1:50052
-    adaptive_min_batch_size: 10
+    adaptiveMinBatchSize: 10
     adaptive_window_secs: 5
     keepalive:
       interval_seconds: 10
       timeout_seconds: 10
     adaptive_min_wait_ms: 1
-    max_retries: 3
+    maxRetries: 3
     compression: false

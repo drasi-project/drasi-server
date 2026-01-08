@@ -12,24 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Mock source configuration DTOs.
+//! Query configuration DTOs
 
-use crate::api::models::ConfigValue;
-use serde::{Deserialize, Serialize};
+pub mod query;
 
-/// Local copy of mock source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MockSourceConfigDto {
-    #[serde(default = "default_data_type")]
-    pub data_type: ConfigValue<String>,
-    #[serde(default = "default_interval_ms")]
-    pub interval_ms: ConfigValue<u64>,
-}
-
-fn default_data_type() -> ConfigValue<String> {
-    ConfigValue::Static("generic".to_string())
-}
-
-fn default_interval_ms() -> ConfigValue<u64> {
-    ConfigValue::Static(5000)
-}
+pub use query::*;

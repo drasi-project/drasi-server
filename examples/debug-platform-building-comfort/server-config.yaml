@@ -5,8 +5,8 @@
 # Server: Drasi Server configuration
 host: 0.0.0.0
 port: 8080
-log_level: debug
-persist_config: false
+logLevel: debug
+persistConfig: false
 
 id: debug-platform-building-comfort
 
@@ -15,38 +15,38 @@ sources:
   # Platform source - connects to Redis Stream to consume events with platform bootstrap
   - kind: platform
     id: facilities-db
-    auto_start: true
+    autoStart: true
     # Platform bootstrap provider - fetches initial data from Query API
     # Redis connection URL
-    redis_url: "redis://localhost:6379"
+    redisUrl: "redis://localhost:6379"
 
     # Redis stream key to read from
-    stream_key: "facilities-db-change"
+    streamKey: "facilities-db-change"
 
     # Consumer group name for Redis Streams consumer group
-    consumer_group: "drasi-server"
+    consumerGroup: "drasi-server"
 
     # Unique consumer name within the consumer group
-    consumer_name: "consumer-1"
+    consumerName: "consumer-1"
 
     # Number of events to read per batch (default: 10)
-    batch_size: 10
+    batchSize: 10
 
     # Milliseconds to block waiting for new events (default: 5000)
-    block_ms: 5000
+    blockMs: 5000
 
     # Stream position: ">" for new events, "0" to replay all (default: ">")
-    start_id: "0"
+    startId: "0"
 
     # Always recreate consumer group on startup (default: false)
     # If true, deletes and recreates the consumer group using start_id
     # If false, uses existing group position (ignores start_id if group exists)
-    always_create_consumer_group: true
+    alwaysCreateConsumerGroup: true
 
 # Queries: Continuous Cypher queries that process incoming data
 queries:
   - id: room-comfort-level
-    auto_start: true
+    autoStart: true
     query: |
       MATCH
         (r:Room)
@@ -55,28 +55,28 @@ queries:
         50 + (r.temperature - 72) + (r.humidity - 42) + (r.co2 / 25) AS ComfortLevel
     # Sources this query subscribes to
     sources:
-      - source_id: facilities-db
+      - sourceId: facilities-db
 
 # Reactions: Define what happens with query results
 reactions:
   # Log reaction - prints query results to console for debugging
   - kind: log
     id: log-room-comfort-level
-    auto_start: true
+    autoStart: true
     # Queries this reaction subscribes to
     queries:
       - room-comfort-level
 
   - kind: profiler
     id: profiler-room-comfort-level
-    auto_start: true
+    autoStart: true
     # Queries this reaction subscribes to
     queries:
       - room-comfort-level
 
   # - kind: platform
   #   id: platform-room-comfort-level
-  #   auto_start: true
+  #   autoStart: true
   #   # Queries this reaction subscribes to
   #   queries:
   #     - room-comfort-level

@@ -15,6 +15,8 @@
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
+    use crate::api::models::query::QueryConfigDto;
+    use crate::api::models::ConfigValue;
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};
@@ -42,6 +44,38 @@ mod api_query_joins_tests {
         let config_persistence: Option<Arc<ConfigPersistence>> = None;
 
         (core, read_only, config_persistence)
+    }
+
+    // Helper function to convert QueryConfig to QueryConfigDto for testing
+    fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
+        use crate::api::models::query::SourceSubscriptionConfigDto;
+
+        QueryConfigDto {
+            id: config.id,
+            auto_start: config.auto_start,
+            query: ConfigValue::Static(config.query),
+            query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+            middleware: vec![], // Simplified for testing - middleware is complex
+            sources: config
+                .sources
+                .iter()
+                .map(|s| SourceSubscriptionConfigDto {
+                    source_id: ConfigValue::Static(s.source_id.clone()),
+                    nodes: s.nodes.clone(),
+                    relations: s.relations.clone(),
+                    pipeline: s.pipeline.clone(),
+                })
+                .collect(),
+            enable_bootstrap: config.enable_bootstrap,
+            bootstrap_buffer_size: config.bootstrap_buffer_size,
+            joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
+            priority_queue_capacity: config.priority_queue_capacity,
+            dispatch_buffer_capacity: config.dispatch_buffer_capacity,
+            dispatch_mode: config.dispatch_mode.map(|d| format!("{d:?}")),
+            storage_backend: config
+                .storage_backend
+                .map(|s| serde_json::to_value(s).unwrap()),
+        }
     }
 
     #[tokio::test]
@@ -78,7 +112,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config.clone()),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -136,7 +171,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config.clone()),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -163,7 +199,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config.clone()),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -191,7 +228,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config.clone()),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -234,7 +272,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config.clone()),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config.clone())),
         )
         .await
         .unwrap();
@@ -352,7 +391,8 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(read_only),
             Extension(config_persistence),
-            Json(query_config),
+            Extension("test-server".to_string()),
+            Json(query_config_to_dto(query_config)),
         )
         .await;
 

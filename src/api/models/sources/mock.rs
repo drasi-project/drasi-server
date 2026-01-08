@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Profiler reaction configuration DTOs.
+//! Mock source configuration DTOs.
 
 use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 
-/// Local copy of profiler reaction configuration
+/// Local copy of mock source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProfilerReactionConfigDto {
-    #[serde(default = "default_profiler_window_size")]
-    pub window_size: ConfigValue<usize>,
-    #[serde(default = "default_report_interval_secs")]
-    pub report_interval_secs: ConfigValue<u64>,
+#[serde(rename_all = "camelCase")]
+pub struct MockSourceConfigDto {
+    #[serde(default = "default_data_type")]
+    pub data_type: ConfigValue<String>,
+    #[serde(default = "default_interval_ms")]
+    pub interval_ms: ConfigValue<u64>,
 }
 
-fn default_profiler_window_size() -> ConfigValue<usize> {
-    ConfigValue::Static(100)
+fn default_data_type() -> ConfigValue<String> {
+    ConfigValue::Static("generic".to_string())
 }
 
-fn default_report_interval_secs() -> ConfigValue<u64> {
-    ConfigValue::Static(60)
+fn default_interval_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
 }

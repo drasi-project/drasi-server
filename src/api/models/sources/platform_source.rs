@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of platform source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PlatformSourceConfigDto {
     pub redis_url: ConfigValue<String>,
     pub stream_key: ConfigValue<String>,

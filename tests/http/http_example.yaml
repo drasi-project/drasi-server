@@ -1,8 +1,8 @@
 server:
   host: 0.0.0.0
   port: 8080
-  log_level: drasi_server=info,drasi_core=warn
-  persist_config: true
+  logLevel: drasi_server=info,drasi_core=warn
+  persistConfig: true
 sources:
 - id: facilities-db
   source_type: http
@@ -29,8 +29,8 @@ reactions:
   - all-rooms
   auto_start: true
   properties:
-    timeout_ms: 5000
-    base_url: http://localhost:9001
+    timeoutMs: 5000
+    baseUrl: http://localhost:9001
     token: demo-token-12345
     queries:
       all-rooms:

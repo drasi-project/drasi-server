@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::ConfigValue;
+use crate::api::models::{ConfigValue, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -23,8 +23,8 @@ use tokio::sync::RwLock;
 
 /// Handles persistence of DrasiServerConfig to a YAML file.
 /// Uses atomic writes (temp file + rename) to prevent corruption.
-/// Stores source and reaction configs in memory for persistence since
-/// they cannot be retrieved from running plugin instances.
+/// Stores source, reaction, and query configs in memory for persistence since
+/// they cannot be retrieved from running plugin instances or drasi-lib.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
     instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
@@ -37,6 +37,8 @@ pub struct ConfigPersistence {
     source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
     /// Reaction configs by instance_id -> reaction_id -> config
     reaction_configs: Arc<RwLock<IndexMap<String, IndexMap<String, ReactionConfig>>>>,
+    /// Query configs by instance_id -> query_id -> config
+    query_configs: Arc<RwLock<IndexMap<String, IndexMap<String, QueryConfigDto>>>>,
 }
 
 impl ConfigPersistence {
@@ -52,6 +54,7 @@ impl ConfigPersistence {
         persist_settings: IndexMap<String, bool>,
         initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
         initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
+        initial_query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>>,
     ) -> Self {
         Self {
             config_file_path,
@@ -63,6 +66,7 @@ impl ConfigPersistence {
             persist_settings,
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
+            query_configs: Arc::new(RwLock::new(initial_query_configs)),
         }
     }
 
@@ -112,6 +116,29 @@ impl ConfigPersistence {
         }
     }
 
+    /// Register a query config for persistence
+    pub async fn register_query(&self, instance_id: &str, config: QueryConfigDto) {
+        if !self.persist_config {
+            return;
+        }
+        let mut query_configs = self.query_configs.write().await;
+        query_configs
+            .entry(instance_id.to_string())
+            .or_default()
+            .insert(config.id.clone(), config);
+    }
+
+    /// Unregister a query config (called on deletion)
+    pub async fn unregister_query(&self, instance_id: &str, query_id: &str) {
+        if !self.persist_config {
+            return;
+        }
+        let mut query_configs = self.query_configs.write().await;
+        if let Some(instance_queries) = query_configs.get_mut(instance_id) {
+            instance_queries.swap_remove(query_id);
+        }
+    }
+
     /// Save the current configuration to the config file using atomic writes.
     /// Uses Core's public API to get current configuration snapshot.
     /// Includes source and reaction configs from the in-memory registry.
@@ -127,9 +154,10 @@ impl ConfigPersistence {
             self.config_file_path.display()
         );
 
-        // Get stored source and reaction configs
+        // Get stored source, reaction, and query configs
         let source_configs = self.source_configs.read().await;
         let reaction_configs = self.reaction_configs.read().await;
+        let query_configs = self.query_configs.read().await;
 
         let mut instance_configs = Vec::new();
 
@@ -140,12 +168,16 @@ impl ConfigPersistence {
 
             let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
 
-            // Get source and reaction configs for this instance
+            // Get source, reaction, and query configs for this instance from our DTO storage
             let sources: Vec<SourceConfig> = source_configs
                 .get(id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let reactions: Vec<ReactionConfig> = reaction_configs
+                .get(id)
+                .map(|m| m.values().cloned().collect())
+                .unwrap_or_default();
+            let queries: Vec<QueryConfigDto> = query_configs
                 .get(id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
@@ -162,7 +194,7 @@ impl ConfigPersistence {
                     .map(ConfigValue::Static),
                 sources,
                 reactions,
-                queries: lib_config.queries.clone(),
+                queries, // Now using stored QueryConfigDto instead of empty vec
             });
         }
 
@@ -387,6 +419,7 @@ mod tests {
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed
@@ -413,17 +446,18 @@ mod tests {
         assert!(loaded_config.persist_config);
 
         // With single instance, dynamic format selection outputs single-instance format
-        // (queries at root level, instances array empty)
+        // (instances array empty)
+        // Note: Queries are only persisted if they were registered via register_query()
+        // Since this test doesn't register any queries, we expect an empty queries array
         assert!(
             loaded_config.instances.is_empty(),
             "Expected empty instances array for single-instance format"
         );
         assert_eq!(
             loaded_config.queries.len(),
-            1,
-            "Expected query at root level"
+            0,
+            "Expected no queries since none were registered"
         );
-        assert_eq!(loaded_config.queries[0].id, "test-query");
     }
 
     #[tokio::test]
@@ -445,6 +479,7 @@ mod tests {
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -478,6 +513,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -520,6 +556,7 @@ mod tests {
             persist_settings.clone(),
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Should be writable
@@ -536,6 +573,7 @@ mod tests {
             8080,
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -599,6 +637,7 @@ mod tests {
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Save should succeed
@@ -633,7 +672,7 @@ mod tests {
             "Expected empty reactions at root level"
         );
 
-        // Verify instance contents
+        // Verify instances exist but have no queries (queries only saved when registered)
         let instance1 = loaded_config
             .instances
             .iter()
@@ -642,8 +681,12 @@ mod tests {
                 _ => false,
             })
             .expect("instance-1 not found");
-        assert_eq!(instance1.queries.len(), 1);
-        assert_eq!(instance1.queries[0].id, "instance-1-query");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(
+            instance1.queries.len(),
+            0,
+            "No queries should be saved (not registered)"
+        );
 
         let instance2 = loaded_config
             .instances
@@ -653,8 +696,12 @@ mod tests {
                 _ => false,
             })
             .expect("instance-2 not found");
-        assert_eq!(instance2.queries.len(), 1);
-        assert_eq!(instance2.queries[0].id, "instance-2-query");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(
+            instance2.queries.len(),
+            0,
+            "No queries should be saved (not registered)"
+        );
         assert!(
             instance2.persist_index,
             "instance-2 should have persist_index=true"
@@ -669,25 +716,25 @@ mod tests {
 id: my-server
 host: localhost
 port: 9090
-log_level: info
-persist_config: true
-persist_index: true
+logLevel: info
+persistConfig: true
+persistIndex: true
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 queries:
   - id: test-query
     query: "MATCH (n) RETURN n"
     queryLanguage: Cypher
     sources:
-      - source_id: test-source
+      - sourceId: test-source
 reactions:
   - kind: log
     id: test-reaction
     queries:
       - test-query
-    auto_start: true
+    autoStart: true
 instances: []
 "#;
 
@@ -720,42 +767,42 @@ instances: []
         let config_yaml = r#"
 host: 0.0.0.0
 port: 8080
-log_level: debug
-persist_config: true
+logLevel: debug
+persistConfig: true
 sources: []
 queries: []
 reactions: []
 instances:
   - id: analytics
-    persist_index: true
+    persistIndex: true
     sources:
       - kind: mock
         id: analytics-source
-        auto_start: true
+        autoStart: true
     queries:
       - id: analytics-query
         query: "MATCH (n) RETURN n"
         queryLanguage: Cypher
         sources:
-          - source_id: analytics-source
+          - sourceId: analytics-source
     reactions:
       - kind: log
         id: analytics-reaction
         queries:
           - analytics-query
-        auto_start: true
+        autoStart: true
   - id: monitoring
-    persist_index: false
+    persistIndex: false
     sources:
       - kind: mock
         id: monitoring-source
-        auto_start: false
+        autoStart: false
     queries:
       - id: monitoring-query
         query: "MATCH (m) RETURN m"
         queryLanguage: Cypher
         sources:
-          - source_id: monitoring-source
+          - sourceId: monitoring-source
     reactions: []
 "#;
 
@@ -822,6 +869,7 @@ instances:
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -896,6 +944,7 @@ instances:
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -990,6 +1039,7 @@ instances:
             persist_settings,
             initial_sources,
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Try to unregister - should be skipped because persistence is disabled
@@ -1029,6 +1079,7 @@ instances:
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // First save
@@ -1038,10 +1089,8 @@ instances:
         assert!(config_path.exists(), "Config file should exist");
         let content1 = std::fs::read_to_string(&config_path).expect("Failed to read config");
         assert!(content1.contains("host:"), "Config should contain host");
-        assert!(
-            content1.contains("test-query"),
-            "Config should contain query"
-        );
+        // Queries are only saved when registered via API, not from DrasiLib instances
+        // Since no queries were registered, the config should not contain any
 
         // Register a new source
         let source_config = SourceConfig::Mock {
@@ -1077,7 +1126,7 @@ instances:
         let initial_content = r#"
 host: localhost
 port: 9999
-log_level: warn
+logLevel: warn
 "#;
         std::fs::write(&config_path, initial_content).expect("Failed to create initial file");
 
@@ -1095,6 +1144,7 @@ log_level: warn
             "info".to_string(),      // Different from initial
             false,                   // persist_config = false (persistence disabled)
             persist_settings,
+            IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
         );
@@ -1144,6 +1194,7 @@ log_level: warn
             persist_settings,
             IndexMap::new(),
             IndexMap::new(),
+            IndexMap::new(),
         );
 
         // Register some configs
@@ -1187,12 +1238,16 @@ log_level: warn
             "Should use single-instance format"
         );
         assert_eq!(loaded_config.sources.len(), 1, "Source at root level");
-        assert_eq!(loaded_config.queries.len(), 1, "Query at root level");
+        // Queries are only saved when registered, not from DrasiLib instances
+        assert_eq!(
+            loaded_config.queries.len(),
+            0,
+            "No queries saved (not registered)"
+        );
         assert_eq!(loaded_config.reactions.len(), 1, "Reaction at root level");
 
         // Verify content
         assert_eq!(loaded_config.sources[0].id(), "added-source");
-        assert_eq!(loaded_config.queries[0].id, "test-query");
         assert_eq!(loaded_config.reactions[0].id(), "added-reaction");
     }
 }
