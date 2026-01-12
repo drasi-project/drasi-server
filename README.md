@@ -211,9 +211,9 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
 | `persistIndex` | boolean | `false` | Use RocksDB for persistent query indexes |
-| `state_store` | object | (none) | State store provider for plugin state persistence |
-| `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
-| `default_dispatch_buffer_capacity` | integer | `1000` | Default buffer capacity for event dispatching |
+| `stateStore` | object | (none) | State store provider for plugin state persistence |
+| `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
+| `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 
 **Example:**
 
@@ -519,7 +519,7 @@ Reactions respond to query result changes.
 | `kind` | string | (required) | Reaction type |
 | `id` | string | (required) | Unique reaction identifier |
 | `queries` | array | (required) | Query IDs to subscribe to |
-| `auto_start` | boolean | `true` | Start reaction automatically |
+| `autoStart` | boolean | `true` | Start reaction automatically |
 
 #### Log Reaction (`log`)
 
@@ -712,11 +712,11 @@ For advanced use cases requiring isolated processing environments, configure mul
 ```yaml
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 instances:
   - id: analytics
-    persist_index: true
+    persistIndex: true
     stateStore:
       kind: redb
       path: ./data/analytics-state.redb
@@ -735,7 +735,7 @@ instances:
         queries: [high-value-orders]
 
   - id: monitoring
-    persist_index: false
+    persistIndex: false
     sources:
       - kind: http
         id: metrics-api
