@@ -123,7 +123,7 @@ fn test_state_store_config_deserialization() {
         id: test-server
         host: 127.0.0.1
         port: 8080
-        state_store:
+        stateStore:
           kind: redb
           path: ./data/state.redb
     "#;
@@ -159,10 +159,10 @@ fn test_state_store_with_full_config() {
         id: production-server
         host: 0.0.0.0
         port: 9090
-        log_level: debug
-        persist_config: true
-        persist_index: true
-        state_store:
+        logLevel: debug
+        persistConfig: true
+        persistIndex: true
+        stateStore:
           kind: redb
           path: /var/lib/drasi/state.redb
         sources: []
@@ -194,8 +194,8 @@ fn test_state_store_serialization_roundtrip() {
     let yaml = serde_yaml::to_string(&original).expect("Failed to serialize config");
 
     assert!(
-        yaml.contains("state_store:"),
-        "Serialized config should contain 'state_store:'"
+        yaml.contains("stateStore:"),
+        "Serialized config should contain 'stateStore:'"
     );
     assert!(
         yaml.contains("kind: redb"),
@@ -320,7 +320,7 @@ fn test_state_store_with_env_var_path() {
         id: test-server
         host: 127.0.0.1
         port: 8080
-        state_store:
+        stateStore:
           kind: redb
           path: ${STATE_STORE_PATH:-./data/default.redb}
     "#;
@@ -338,23 +338,23 @@ fn test_multi_instance_state_store_config() {
         port: 8080
         instances:
           - id: instance-1
-            persist_index: true
-            state_store:
+            persistIndex: true
+            stateStore:
               kind: redb
               path: ./data/instance1-state.redb
             sources: []
             queries: []
             reactions: []
           - id: instance-2
-            persist_index: false
-            state_store:
+            persistIndex: false
+            stateStore:
               kind: redb
               path: ./data/instance2-state.redb
             sources: []
             queries: []
             reactions: []
           - id: instance-3
-            persist_index: false
+            persistIndex: false
             sources: []
             queries: []
             reactions: []

@@ -195,13 +195,13 @@ password:
 tables:
   - users
   - orders
-slot_name: "yaml_slot"
-publication_name: "yaml_pub"
-ssl_mode:
+slotName: "yaml_slot"
+publicationName: "yaml_pub"
+sslMode:
   kind: EnvironmentVariable
   name: SSL_MODE
   default: "prefer"
-table_keys: []
+tableKeys: []
         "#;
 
         let dto: PostgresSourceConfigDto = serde_yaml::from_str(yaml).unwrap();

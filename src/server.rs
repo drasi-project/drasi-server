@@ -24,7 +24,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
 use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
@@ -128,7 +128,7 @@ impl DrasiServer {
                 builder = builder.with_source(source);
             }
 
-            // Add queries from config
+            // Add queries from config (already resolved in config/types.rs)
             for query_config in &instance.queries {
                 builder = builder.with_query(query_config.clone());
             }
@@ -273,9 +273,9 @@ impl DrasiServer {
                 let persistence_enabled = resolved_settings.persist_config;
 
                 if persistence_enabled {
-                    // Extract source and reaction configs from the loaded config
+                    // Extract source, reaction, and query configs from the loaded config
                     let resolved_instances = config.resolved_instances(&mapper)?;
-                    let (initial_source_configs, initial_reaction_configs) =
+                    let (initial_source_configs, initial_reaction_configs, initial_query_configs) =
                         Self::extract_component_configs(&resolved_instances);
 
                     // Persistence is enabled - create ConfigPersistence instance
@@ -289,6 +289,7 @@ impl DrasiServer {
                         persist_settings.clone(),
                         initial_source_configs,
                         initial_reaction_configs,
+                        initial_query_configs,
                     ));
                     info!("Configuration persistence enabled");
                     Some(persistence)
@@ -377,10 +378,14 @@ impl DrasiServer {
     ) -> (
         IndexMap<String, IndexMap<String, SourceConfig>>,
         IndexMap<String, IndexMap<String, ReactionConfig>>,
+        IndexMap<String, IndexMap<String, crate::api::models::QueryConfigDto>>,
     ) {
+        use crate::api::models::QueryConfigDto;
+
         let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
         let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
             IndexMap::new();
+        let mut query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>> = IndexMap::new();
 
         for instance in resolved_instances {
             let mut sources = IndexMap::new();
@@ -394,8 +399,12 @@ impl DrasiServer {
                 reactions.insert(reaction.id().to_string(), reaction.clone());
             }
             reaction_configs.insert(instance.id.clone(), reactions);
+
+            // Note: queries are not extracted because they're stored as QueryConfigDto
+            // during config load and managed separately in persistence layer
+            query_configs.insert(instance.id.clone(), IndexMap::new());
         }
 
-        (source_configs, reaction_configs)
+        (source_configs, reaction_configs, query_configs)
     }
 }

@@ -1,17 +1,17 @@
 id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
-# persist_index: false  # Enable RocksDB persistent indexing (default: false)
+# persistIndex: false  # Enable RocksDB persistent indexing (default: false)
 sources:
 - id: vehicle-location-source
-  auto_start: true
-  source_type: mock
-  interval_seconds: 5
-  data_type: vehicle_location
+  autoStart: true
+  kind: mock
+  intervalSeconds: 5
+  dataType: vehicle_location
   description: Mock vehicle location data
 - id: order-status-source
-  auto_start: true
-  source_type: mock
-  data_type: order_status
-  interval_seconds: 3
+  autoStart: true
+  kind: mock
+  dataType: order_status
+  intervalSeconds: 3
   description: Mock order status updates
 queries:
 - id: available-drivers-query
@@ -19,9 +19,9 @@ queries:
   queryLanguage: Cypher
   middleware: []
   source_subscriptions:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
-  auto_start: true
+  autoStart: true
   enableBootstrap: true
   bootstrapBufferSize: 10000
 - id: pending-orders-query
@@ -29,24 +29,24 @@ queries:
   queryLanguage: Cypher
   middleware: []
   source_subscriptions:
-  - source_id: vehicle-location-source
+  - sourceId: vehicle-location-source
     pipeline: []
-  auto_start: true
+  autoStart: true
   enableBootstrap: true
   bootstrapBufferSize: 10000
 reactions:
 - id: driver-availability-logger
   queries:
   - available-drivers-query
-  auto_start: true
-  reaction_type: log
-  log_level: info
+  autoStart: true
+  kind: log
+  logLevel: info
   description: Log driver availability changes
 - id: order-notification-handler
   queries:
   - available-drivers-query
-  auto_start: true
-  reaction_type: http
+  autoStart: true
+  kind: http
   endpoint: http://localhost:9000/notifications
   method: POST
   description: Send notifications for query results
