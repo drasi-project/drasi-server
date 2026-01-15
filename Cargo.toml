@@ -126,23 +126,23 @@ large_enum_variant = "allow"
 
 # Uncomment this section for local development to use path-based dependencies
 # [patch.crates-io]
-# drasi-lib = { path = "./drasi-core/lib" }
-# drasi-source-mock = { path = "./drasi-core/components/sources/mock" }
-# drasi-source-http = { path = "./drasi-core/components/sources/http" }
-# drasi-source-grpc = { path = "./drasi-core/components/sources/grpc" }
-# drasi-source-postgres = { path = "./drasi-core/components/sources/postgres" }
-# drasi-source-platform = { path = "./drasi-core/components/sources/platform" }
-# drasi-bootstrap-postgres = { path = "./drasi-core/components/bootstrappers/postgres" }
-# drasi-bootstrap-scriptfile = { path = "./drasi-core/components/bootstrappers/scriptfile" }
-# drasi-bootstrap-platform = { path = "./drasi-core/components/bootstrappers/platform" }
-# drasi-bootstrap-noop = { path = "./drasi-core/components/bootstrappers/noop" }
-# drasi-reaction-log = { path = "./drasi-core/components/reactions/log" }
-# drasi-reaction-http = { path = "./drasi-core/components/reactions/http" }
-# drasi-reaction-http-adaptive = { path = "./drasi-core/components/reactions/http-adaptive" }
-# drasi-reaction-grpc = { path = "./drasi-core/components/reactions/grpc" }
-# drasi-reaction-grpc-adaptive = { path = "./drasi-core/components/reactions/grpc-adaptive" }
-# drasi-reaction-sse = { path = "./drasi-core/components/reactions/sse" }
-# drasi-reaction-platform = { path = "./drasi-core/components/reactions/platform" }
-# drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" }
-# drasi-index-rocksdb = { path = "./drasi-core/components/indexes/rocksdb" }
-# drasi-state-store-redb = { path = "./drasi-core/components/state_stores/redb" }
+# drasi-lib = { path = "../drasi-core/lib" }
+# drasi-source-mock = { path = "../drasi-core/components/sources/mock" }
+# drasi-source-http = { path = "../drasi-core/components/sources/http" }
+# drasi-source-grpc = { path = "../drasi-core/components/sources/grpc" }
+# drasi-source-postgres = { path = "../drasi-core/components/sources/postgres" }
+# drasi-source-platform = { path = "../drasi-core/components/sources/platform" }
+# drasi-bootstrap-postgres = { path = "../drasi-core/components/bootstrappers/postgres" }
+# drasi-bootstrap-scriptfile = { path = "../drasi-core/components/bootstrappers/scriptfile" }
+# drasi-bootstrap-platform = { path = "../drasi-core/components/bootstrappers/platform" }
+# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+# drasi-reaction-log = { path = "../drasi-core/components/reactions/log" }
+# drasi-reaction-http = { path = "../drasi-core/components/reactions/http" }
+# drasi-reaction-http-adaptive = { path = "../drasi-core/components/reactions/http-adaptive" }
+# drasi-reaction-grpc = { path = "../drasi-core/components/reactions/grpc" }
+# drasi-reaction-grpc-adaptive = { path = "../drasi-core/components/reactions/grpc-adaptive" }
+# drasi-reaction-sse = { path = "../drasi-core/components/reactions/sse" }
+# drasi-reaction-platform = { path = "../drasi-core/components/reactions/platform" }
+# drasi-reaction-profiler = { path = "../drasi-core/components/reactions/profiler" }
+# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
