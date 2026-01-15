@@ -20,7 +20,6 @@ Traditional approaches require manual polling, parsing ambiguous payloads, filte
 ### Prerequisites
 
 - Rust 1.70 or higher
-- Git with submodule support
 
 ### Quick Start
 
@@ -55,8 +54,8 @@ DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -
 #### Building Locally from Source
 
 ```bash
-# Clone with all submodules
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
 # Build the Docker image
@@ -75,9 +74,10 @@ See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
 # Ensure Rust is installed (1.70+)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone the repository with all submodules (including nested ones)
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
+
 # Build the server
 cargo build --release
 
@@ -897,13 +897,6 @@ reactions:
 
 ## Troubleshooting
 
-### Build Fails with Submodule Error
-
-```bash
-# Initialize all submodules recursively
-git submodule update --init --recursive
-```
-
 ### Port Already in Use
 
 ```bash
@@ -927,8 +920,8 @@ RUST_LOG=drasi_server=trace cargo run
 ## Building from Source
 
 ```bash
-# Clone with submodules
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
 # Build
