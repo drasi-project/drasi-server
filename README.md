@@ -211,9 +211,9 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
 | `persistIndex` | boolean | `false` | Use RocksDB for persistent query indexes |
-| `state_store` | object | (none) | State store provider for plugin state persistence |
-| `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
-| `default_dispatch_buffer_capacity` | integer | `1000` | Default buffer capacity for event dispatching |
+| `stateStore` | object | (none) | State store provider for plugin state persistence |
+| `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
+| `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 
 **Example:**
 
@@ -519,7 +519,7 @@ Reactions respond to query result changes.
 | `kind` | string | (required) | Reaction type |
 | `id` | string | (required) | Unique reaction identifier |
 | `queries` | array | (required) | Query IDs to subscribe to |
-| `auto_start` | boolean | `true` | Start reaction automatically |
+| `autoStart` | boolean | `true` | Start reaction automatically |
 
 #### Log Reaction (`log`)
 
@@ -531,7 +531,7 @@ reactions:
     id: log-output
     queries: [my-query]
     autoStart: true
-    default_template:
+    defaultTemplate:
       added:
         template: "Added: {{json this}}"
       updated:
@@ -543,7 +543,7 @@ reactions:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `routes` | object | `{}` | Query-specific template configurations |
-| `default_template` | object | (none) | Default template for all queries |
+| `defaultTemplate` | object | (none) | Default template for all queries |
 
 #### HTTP Reaction (`http`)
 
@@ -647,16 +647,16 @@ reactions:
     queries: [my-query]
     host: 0.0.0.0
     port: 8081
-    sse_path: /events
-    heartbeat_interval_ms: 30000
+    ssePath: /events
+    heartbeatIntervalMs: 30000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `host` | string | `0.0.0.0` | Listen address |
 | `port` | integer | `8080` | Listen port |
-| `sse_path` | string | `/events` | SSE endpoint path |
-| `heartbeat_interval_ms` | integer | `30000` | Heartbeat interval in milliseconds |
+| `ssePath` | string | `/events` | SSE endpoint path |
+| `heartbeatIntervalMs` | integer | `30000` | Heartbeat interval in milliseconds |
 
 #### Platform Reaction (`platform`)
 
