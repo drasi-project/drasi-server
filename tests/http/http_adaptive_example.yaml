@@ -1,20 +1,20 @@
 server:
   host: 0.0.0.0
   port: 18080
-  log_level: drasi_server=info,drasi_core=warn
-  persist_config: true
+  logLevel: drasi_server=info,drasi_core=warn
+  persistConfig: true
 sources:
 - id: events-http
   source_type: http_adaptive
   auto_start: true
   properties:
     adaptive_enabled: true
-    adaptive_min_batch_size: 10
+    adaptiveMinBatchSize: 10
     adaptive_window_secs: 5
     adaptive_min_wait_ms: 1
     host: 0.0.0.0
     adaptive_max_wait_ms: 100
-    adaptive_max_batch_size: 1000
+    adaptiveMaxBatchSize: 1000
     port: 8081
 queries:
 - id: event-processing
@@ -37,9 +37,9 @@ reactions:
   properties:
     adaptive_max_wait_ms: 50
     adaptive_enabled: true
-    adaptive_max_batch_size: 500
+    adaptiveMaxBatchSize: 500
     batch_endpoints_enabled: true
-    adaptive_min_batch_size: 5
+    adaptiveMinBatchSize: 5
     queries:
       event-processing:
         added:
@@ -69,7 +69,7 @@ reactions:
             }
           method: PUT
           url: /events/{{after.RoomId}}
-    base_url: http://localhost:3000
+    baseUrl: http://localhost:3000
     adaptive_min_wait_ms: 5
     adaptive_window_secs: 5
-    timeout_ms: 10000
+    timeoutMs: 10000
