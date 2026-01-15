@@ -15,64 +15,45 @@
 //! API models module - DTO types for configuration.
 //!
 //! This module contains all Data Transfer Object (DTO) types used in the API.
-//! DTOs are organized by the external library they mirror, making it easy to
-//! locate and maintain the corresponding types.
+//! DTOs are organized into submodules matching the structure of the mappings module.
 //!
 //! # Organization
 //!
-//! - **Sources**: DTOs for data source configurations
+//! - **`sources/`**: DTOs for data source configurations
 //!   - `postgres` - PostgreSQL source
 //!   - `http_source` - HTTP source
 //!   - `grpc_source` - gRPC source
 //!   - `mock` - Mock source for testing
 //!   - `platform_source` - Platform/Redis source
 //!
-//! - **Reactions**: DTOs for reaction configurations
+//! - **`reactions/`**: DTOs for reaction configurations
 //!   - `http_reaction` - HTTP and HTTP Adaptive reactions
 //!   - `grpc_reaction` - gRPC and gRPC Adaptive reactions
 //!   - `sse` - Server-Sent Events reaction
 //!   - `log` - Log reaction
 //!   - `platform_reaction` - Platform reaction
 //!   - `profiler` - Profiler reaction
+//!
+//! - **`queries/`**: DTOs for query configurations
+//!   - `query` - Continuous query configuration
+//!
+//! - **`config_value`**: Generic configuration value types for static/environment variable/secret references
 
 use serde::{Deserialize, Serialize};
 
 // Config value module
 pub mod config_value;
 
-// Source modules
-pub mod grpc_source;
-pub mod http_source;
-pub mod mock;
-pub mod platform_source;
-pub mod postgres;
-
-// Reaction modules
-pub mod grpc_reaction;
-pub mod http_reaction;
-pub mod log;
-pub mod platform_reaction;
-pub mod profiler;
-pub mod sse;
+// Organized submodules
+pub mod queries;
+pub mod reactions;
+pub mod sources;
 
 // Re-export all DTO types for convenient access
-pub use grpc_source::*;
-pub use http_source::*;
-pub use mock::*;
-pub use platform_source::*;
-pub use postgres::*;
-
-pub use grpc_reaction::*;
-pub use http_reaction::*;
-// Note: log and sse modules have types with similar names (QueryConfigDto, TemplateSpecDto)
-// They should be accessed via their module namespaces: log::*, sse::*
-pub use log::LogReactionConfigDto;
-pub use platform_reaction::*;
-pub use profiler::*;
-pub use sse::SseReactionConfigDto;
-
-// Config value types
 pub use config_value::*;
+pub use queries::*;
+pub use reactions::*;
+pub use sources::*;
 
 // =============================================================================
 // Configuration Enums (Top-level aggregates)
