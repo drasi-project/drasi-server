@@ -34,3 +34,50 @@ fn default_data_type() -> ConfigValue<String> {
 fn default_interval_ms() -> ConfigValue<u64> {
     ConfigValue::Static(5000)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::SourceConfig;
+
+    #[test]
+    fn test_mock_source_config_deserializes_camelcase() {
+        let yaml = r#"
+kind: mock
+id: test-source
+autoStart: true
+dataType: "sensor_live"
+intervalMs: 3000
+"#;
+
+        let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        match config {
+            SourceConfig::Mock { id, auto_start, config, .. } => {
+                assert_eq!(id, "test-source");
+                assert!(auto_start);
+                assert_eq!(config.data_type, ConfigValue::Static("sensor_live".to_string()));
+                assert_eq!(config.interval_ms, ConfigValue::Static(3000));
+            }
+            _ => panic!("Expected Mock variant"),
+        }
+    }
+
+    #[test]
+    fn test_mock_source_config_uses_defaults() {
+        let yaml = r#"
+kind: mock
+id: default-source
+"#;
+
+        let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        match config {
+            SourceConfig::Mock { id, auto_start, config, .. } => {
+                assert_eq!(id, "default-source");
+                assert!(auto_start, "auto_start should default to true");
+                assert_eq!(config.data_type, ConfigValue::Static("generic".to_string()));
+                assert_eq!(config.interval_ms, ConfigValue::Static(5000));
+            }
+            _ => panic!("Expected Mock variant"),
+        }
+    }
+}

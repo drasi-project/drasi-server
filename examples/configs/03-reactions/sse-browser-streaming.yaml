@@ -46,18 +46,18 @@ logLevel: info
 persistConfig: false
 
 sources:
-  # dataType "sensor_live" produces label "Sensor" with stable IDs that get updated
+  # Mock source generates SensorReading nodes with temperature, humidity, sensor_id
   - kind: mock
     id: live-data
     autoStart: true
-    dataType: "sensor_live"
+    dataType: "sensor"
     intervalMs: 1000
 
 queries:
   - id: sensor-readings
     autoStart: true
     query: |
-      MATCH (s:Sensor)
+      MATCH (s:SensorReading)
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
     sources:
       - sourceId: live-data
@@ -65,7 +65,7 @@ queries:
   - id: sensor-alerts
     autoStart: true
     query: |
-      MATCH (s:Sensor)
+      MATCH (s:SensorReading)
       WHERE s.temperature > 27
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
     sources:
@@ -74,7 +74,7 @@ queries:
   - id: sensor-summary
     autoStart: true
     query: |
-      MATCH (s:Sensor)
+      MATCH (s:SensorReading)
       RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
     sources:
       - sourceId: live-data

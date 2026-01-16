@@ -118,7 +118,7 @@ sources:
   - kind: mock
     id: my-source
     autoStart: true              # Start source automatically (default: true)
-    dataType: "sensor_live"      # Mock data type: sensor_live, sensor, counter, generic
+    dataType: "sensor"           # Mock data type: sensor, counter, generic
     intervalMs: 1000             # Generation interval in milliseconds
 
   - kind: http

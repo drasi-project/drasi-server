@@ -37,20 +37,21 @@ logLevel: info
 persistConfig: false
 
 # A simple mock source that generates test data
-# data_type options: "sensor_live" (Sensor), "sensor" (SensorReading), "counter" (Counter), "generic" (Generic)
+# dataType options: "sensor" (Sensor), "counter" (Counter), "generic" (Generic)
 sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: "sensor_live"
+    dataType: "sensor"
     intervalMs: 3000
 
 # A query that matches all data from the source
+# Note: The mock source with dataType "sensor" generates SensorReading nodes
 queries:
   - id: all-sensors
     autoStart: true
     query: |
-      MATCH (s:Sensor)
+      MATCH (s:SensorReading)
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
     sources:
       - sourceId: test-source
