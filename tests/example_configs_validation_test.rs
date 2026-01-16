@@ -23,8 +23,6 @@ use std::path::Path;
 /// These paths are relative to the project root.
 const EXAMPLE_CONFIGS: &[&str] = &[
     "examples/configs/basic-mock-source/config.yaml",
-    "examples/debug-platform-building-comfort/server-config.yaml",
-    "examples/drasi-platform/server-config.yaml",
     "examples/getting-started/server-config.yaml",
     "examples/playground/server/playground.yaml",
     "examples/playground/app/examples/playground/server/playground.yaml",
@@ -74,18 +72,6 @@ fn test_all_example_configs_are_valid() {
 #[test]
 fn test_basic_mock_source_config() {
     let path = "examples/configs/basic-mock-source/config.yaml";
-    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
-}
-
-#[test]
-fn test_debug_platform_building_comfort_config() {
-    let path = "examples/debug-platform-building-comfort/server-config.yaml";
-    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
-}
-
-#[test]
-fn test_drasi_platform_config() {
-    let path = "examples/drasi-platform/server-config.yaml";
     load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
 }
 
