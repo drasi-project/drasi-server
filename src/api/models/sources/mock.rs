@@ -52,10 +52,18 @@ intervalMs: 3000
 
         let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
         match config {
-            SourceConfig::Mock { id, auto_start, config, .. } => {
+            SourceConfig::Mock {
+                id,
+                auto_start,
+                config,
+                ..
+            } => {
                 assert_eq!(id, "test-source");
                 assert!(auto_start);
-                assert_eq!(config.data_type, ConfigValue::Static("sensor_live".to_string()));
+                assert_eq!(
+                    config.data_type,
+                    ConfigValue::Static("sensor_live".to_string())
+                );
                 assert_eq!(config.interval_ms, ConfigValue::Static(3000));
             }
             _ => panic!("Expected Mock variant"),
@@ -71,7 +79,12 @@ id: default-source
 
         let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
         match config {
-            SourceConfig::Mock { id, auto_start, config, .. } => {
+            SourceConfig::Mock {
+                id,
+                auto_start,
+                config,
+                ..
+            } => {
                 assert_eq!(id, "default-source");
                 assert!(auto_start, "auto_start should default to true");
                 assert_eq!(config.data_type, ConfigValue::Static("generic".to_string()));

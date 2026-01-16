@@ -24,6 +24,8 @@
 
 use std::collections::HashSet;
 
+use handlebars::Handlebars;
+
 /// Validation error for unknown configuration fields.
 #[derive(Debug, thiserror::Error)]
 pub enum ValidationError {
@@ -291,7 +293,11 @@ fn validate_sources(sources: &serde_yaml::Value, errors: &mut Vec<String>) {
 
                 // Validate bootstrapProvider if present
                 if let Some(bp) = map.get("bootstrapProvider") {
-                    validate_bootstrap_provider(bp, &format!("{context} bootstrapProvider"), errors);
+                    validate_bootstrap_provider(
+                        bp,
+                        &format!("{context} bootstrapProvider"),
+                        errors,
+                    );
                 }
 
                 // Validate tableKeys for postgres
@@ -349,7 +355,11 @@ fn validate_reactions(reactions: &serde_yaml::Value, errors: &mut Vec<String>) {
                         validate_template_routes(routes, &context, errors);
                     }
                     if let Some(dt) = map.get("defaultTemplate") {
-                        validate_template_query_config(dt, &format!("{context} defaultTemplate"), errors);
+                        validate_template_query_config(
+                            dt,
+                            &format!("{context} defaultTemplate"),
+                            errors,
+                        );
                     }
                 }
             }
@@ -384,7 +394,11 @@ fn validate_instances(instances: &serde_yaml::Value, errors: &mut Vec<String>) {
     }
 }
 
-fn validate_http_routes(routes: &serde_yaml::Value, parent_context: &str, errors: &mut Vec<String>) {
+fn validate_http_routes(
+    routes: &serde_yaml::Value,
+    parent_context: &str,
+    errors: &mut Vec<String>,
+) {
     if let Some(map) = routes.as_mapping() {
         for (key, route) in map {
             let route_name = key.as_str().unwrap_or("unknown");
@@ -397,7 +411,35 @@ fn validate_http_routes(routes: &serde_yaml::Value, parent_context: &str, errors
                 for field in ["added", "updated", "deleted"] {
                     if let Some(call_spec) = route_map.get(field) {
                         if let Some(spec_map) = call_spec.as_mapping() {
-                            validate_fields(spec_map, HTTP_CALL_SPEC_FIELDS, &format!("{context}.{field}"), errors);
+                            let field_context = format!("{context}.{field}");
+                            validate_fields(
+                                spec_map,
+                                HTTP_CALL_SPEC_FIELDS,
+                                &field_context,
+                                errors,
+                            );
+
+                            // Validate body field as Handlebars template
+                            if let Some(body_val) = spec_map.get("body") {
+                                if let Some(body_str) = body_val.as_str() {
+                                    validate_template_syntax(
+                                        body_str,
+                                        &format!("{field_context}.body"),
+                                        errors,
+                                    );
+                                }
+                            }
+
+                            // Validate url field as Handlebars template (can contain {{variable}})
+                            if let Some(url_val) = spec_map.get("url") {
+                                if let Some(url_str) = url_val.as_str() {
+                                    validate_template_syntax(
+                                        url_str,
+                                        &format!("{field_context}.url"),
+                                        errors,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -406,7 +448,11 @@ fn validate_http_routes(routes: &serde_yaml::Value, parent_context: &str, errors
     }
 }
 
-fn validate_template_routes(routes: &serde_yaml::Value, parent_context: &str, errors: &mut Vec<String>) {
+fn validate_template_routes(
+    routes: &serde_yaml::Value,
+    parent_context: &str,
+    errors: &mut Vec<String>,
+) {
     if let Some(map) = routes.as_mapping() {
         for (key, route) in map {
             let route_name = key.as_str().unwrap_or("unknown");
@@ -419,26 +465,50 @@ fn validate_template_routes(routes: &serde_yaml::Value, parent_context: &str, er
     }
 }
 
-fn validate_template_query_config(value: &serde_yaml::Value, context: &str, errors: &mut Vec<String>) {
+fn validate_template_query_config(
+    value: &serde_yaml::Value,
+    context: &str,
+    errors: &mut Vec<String>,
+) {
     if let Some(map) = value.as_mapping() {
         validate_template_query_config_inner(map, context, errors);
     }
 }
 
-fn validate_template_query_config_inner(map: &serde_yaml::Mapping, context: &str, errors: &mut Vec<String>) {
+fn validate_template_query_config_inner(
+    map: &serde_yaml::Mapping,
+    context: &str,
+    errors: &mut Vec<String>,
+) {
     validate_fields(map, TEMPLATE_QUERY_FIELDS, context, errors);
 
     // Validate each template spec (added/updated/deleted)
     for field in ["added", "updated", "deleted"] {
         if let Some(spec) = map.get(field) {
             if let Some(spec_map) = spec.as_mapping() {
-                validate_fields(spec_map, TEMPLATE_SPEC_FIELDS, &format!("{context}.{field}"), errors);
+                let field_context = format!("{context}.{field}");
+                validate_fields(spec_map, TEMPLATE_SPEC_FIELDS, &field_context, errors);
+
+                // Validate template syntax if template field is present
+                if let Some(template_val) = spec_map.get("template") {
+                    if let Some(template_str) = template_val.as_str() {
+                        validate_template_syntax(
+                            template_str,
+                            &format!("{field_context}.template"),
+                            errors,
+                        );
+                    }
+                }
             }
         }
     }
 }
 
-fn validate_table_keys(table_keys: &serde_yaml::Value, parent_context: &str, errors: &mut Vec<String>) {
+fn validate_table_keys(
+    table_keys: &serde_yaml::Value,
+    parent_context: &str,
+    errors: &mut Vec<String>,
+) {
     if let Some(arr) = table_keys.as_sequence() {
         for (i, tk) in arr.iter().enumerate() {
             if let Some(map) = tk.as_mapping() {
@@ -451,7 +521,10 @@ fn validate_table_keys(table_keys: &serde_yaml::Value, parent_context: &str, err
 
 fn validate_state_store(value: &serde_yaml::Value, context: &str, errors: &mut Vec<String>) {
     if let Some(map) = value.as_mapping() {
-        let kind = map.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let kind = map
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         match kind {
             "redb" => validate_fields(map, STATE_STORE_REDB_FIELDS, context, errors),
             _ => errors.push(format!("Unknown state store kind '{kind}' in {context}")),
@@ -462,6 +535,23 @@ fn validate_state_store(value: &serde_yaml::Value, context: &str, errors: &mut V
 fn validate_bootstrap_provider(value: &serde_yaml::Value, context: &str, errors: &mut Vec<String>) {
     if let Some(map) = value.as_mapping() {
         validate_fields(map, BOOTSTRAP_PROVIDER_FIELDS, context, errors);
+    }
+}
+
+/// Validates that a Handlebars template string is syntactically valid.
+/// Uses Handlebars' own register_template_string() which parses and compiles
+/// the template, returning errors for invalid syntax.
+fn validate_template_syntax(template: &str, context: &str, errors: &mut Vec<String>) {
+    let mut hb = Handlebars::new();
+
+    // Handlebars::register_template_string() performs full parsing and compilation.
+    // It will catch:
+    // - Unclosed braces: "{{name"
+    // - Empty expressions: "{{}}"
+    // - Invalid syntax: "{{#if}}" without closing
+    // - Malformed helpers: "{{#each items}}...{{/each}" with mismatched tags
+    if let Err(e) = hb.register_template_string("_validation_", template) {
+        errors.push(format!("{context}: invalid Handlebars template - {e}"));
     }
 }
 
@@ -515,10 +605,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "snake_case fields should be detected as errors");
+        assert!(
+            result.is_err(),
+            "snake_case fields should be detected as errors"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start") || err.contains("data_type"),
-            "Error should mention the snake_case field: {err}");
+        assert!(
+            err.contains("auto_start") || err.contains("data_type"),
+            "Error should mention the snake_case field: {err}"
+        );
     }
 
     #[test]
@@ -538,7 +633,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "Typo should be detected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("dataTypo"), "Error should mention the typo: {err}");
+        assert!(
+            err.contains("dataTypo"),
+            "Error should mention the typo: {err}"
+        );
     }
 
     #[test]
@@ -554,7 +652,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "Unknown server field should be detected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("unknownField"), "Error should mention unknownField: {err}");
+        assert!(
+            err.contains("unknownField"),
+            "Error should mention unknownField: {err}"
+        );
     }
 
     #[test]
@@ -580,7 +681,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "Unknown nested field should be detected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("unknownSpec"), "Error should mention unknownSpec: {err}");
+        assert!(
+            err.contains("unknownSpec"),
+            "Error should mention unknownSpec: {err}"
+        );
     }
 
     #[test]
@@ -611,7 +715,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid postgres config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid postgres config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -633,10 +740,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "Invalid tableKey fields should be detected");
+        assert!(
+            result.is_err(),
+            "Invalid tableKey fields should be detected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("tableName") || err.contains("columns"),
-            "Error should mention invalid field: {err}");
+        assert!(
+            err.contains("tableName") || err.contains("columns"),
+            "Error should mention invalid field: {err}"
+        );
     }
 
     // ==================== Server-level field validation ====================
@@ -654,7 +766,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "log_level (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("log_level"), "Error should mention log_level: {err}");
+        assert!(
+            err.contains("log_level"),
+            "Error should mention log_level: {err}"
+        );
     }
 
     #[test]
@@ -668,9 +783,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "persist_config (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "persist_config (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("persist_config"), "Error should mention persist_config: {err}");
+        assert!(
+            err.contains("persist_config"),
+            "Error should mention persist_config: {err}"
+        );
     }
 
     #[test]
@@ -684,9 +805,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "persist_index (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "persist_index (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("persist_index"), "Error should mention persist_index: {err}");
+        assert!(
+            err.contains("persist_index"),
+            "Error should mention persist_index: {err}"
+        );
     }
 
     #[test]
@@ -702,9 +829,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "state_store (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "state_store (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("state_store"), "Error should mention state_store: {err}");
+        assert!(
+            err.contains("state_store"),
+            "Error should mention state_store: {err}"
+        );
     }
 
     // ==================== Source field validation ====================
@@ -721,9 +854,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "auto_start (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "auto_start (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
     }
 
     #[test]
@@ -741,9 +880,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "bootstrap_provider (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "bootstrap_provider (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("bootstrap_provider"), "Error should mention bootstrap_provider: {err}");
+        assert!(
+            err.contains("bootstrap_provider"),
+            "Error should mention bootstrap_provider: {err}"
+        );
     }
 
     #[test]
@@ -761,7 +906,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "data_type (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("data_type"), "Error should mention data_type: {err}");
+        assert!(
+            err.contains("data_type"),
+            "Error should mention data_type: {err}"
+        );
     }
 
     #[test]
@@ -777,9 +925,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "interval_ms (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "interval_ms (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("interval_ms"), "Error should mention interval_ms: {err}");
+        assert!(
+            err.contains("interval_ms"),
+            "Error should mention interval_ms: {err}"
+        );
     }
 
     #[test]
@@ -798,7 +952,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "slot_name (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("slot_name"), "Error should mention slot_name: {err}");
+        assert!(
+            err.contains("slot_name"),
+            "Error should mention slot_name: {err}"
+        );
     }
 
     #[test]
@@ -815,9 +972,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "publication_name (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "publication_name (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("publication_name"), "Error should mention publication_name: {err}");
+        assert!(
+            err.contains("publication_name"),
+            "Error should mention publication_name: {err}"
+        );
     }
 
     #[test]
@@ -836,7 +999,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "ssl_mode (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("ssl_mode"), "Error should mention ssl_mode: {err}");
+        assert!(
+            err.contains("ssl_mode"),
+            "Error should mention ssl_mode: {err}"
+        );
     }
 
     #[test]
@@ -856,9 +1022,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "table_keys (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "table_keys (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("table_keys"), "Error should mention table_keys: {err}");
+        assert!(
+            err.contains("table_keys"),
+            "Error should mention table_keys: {err}"
+        );
     }
 
     #[test]
@@ -878,9 +1050,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "key_columns (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "key_columns (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("key_columns"), "Error should mention key_columns: {err}");
+        assert!(
+            err.contains("key_columns"),
+            "Error should mention key_columns: {err}"
+        );
     }
 
     #[test]
@@ -897,9 +1075,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "timeout_ms (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "timeout_ms (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("timeout_ms"), "Error should mention timeout_ms: {err}");
+        assert!(
+            err.contains("timeout_ms"),
+            "Error should mention timeout_ms: {err}"
+        );
     }
 
     #[test]
@@ -916,9 +1100,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "timeout_ms (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "timeout_ms (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("timeout_ms"), "Error should mention timeout_ms: {err}");
+        assert!(
+            err.contains("timeout_ms"),
+            "Error should mention timeout_ms: {err}"
+        );
     }
 
     // ==================== Query field validation ====================
@@ -937,9 +1127,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "auto_start (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "auto_start (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
     }
 
     #[test]
@@ -956,9 +1152,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "query_language (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "query_language (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("query_language"), "Error should mention query_language: {err}");
+        assert!(
+            err.contains("query_language"),
+            "Error should mention query_language: {err}"
+        );
     }
 
     #[test]
@@ -975,9 +1177,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "enable_bootstrap (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "enable_bootstrap (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("enable_bootstrap"), "Error should mention enable_bootstrap: {err}");
+        assert!(
+            err.contains("enable_bootstrap"),
+            "Error should mention enable_bootstrap: {err}"
+        );
     }
 
     #[test]
@@ -994,9 +1202,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "bootstrap_buffer_size (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "bootstrap_buffer_size (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("bootstrap_buffer_size"), "Error should mention bootstrap_buffer_size: {err}");
+        assert!(
+            err.contains("bootstrap_buffer_size"),
+            "Error should mention bootstrap_buffer_size: {err}"
+        );
     }
 
     #[test]
@@ -1013,9 +1227,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "priority_queue_capacity (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "priority_queue_capacity (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("priority_queue_capacity"), "Error should mention priority_queue_capacity: {err}");
+        assert!(
+            err.contains("priority_queue_capacity"),
+            "Error should mention priority_queue_capacity: {err}"
+        );
     }
 
     #[test]
@@ -1032,9 +1252,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "dispatch_buffer_capacity (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "dispatch_buffer_capacity (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("dispatch_buffer_capacity"), "Error should mention dispatch_buffer_capacity: {err}");
+        assert!(
+            err.contains("dispatch_buffer_capacity"),
+            "Error should mention dispatch_buffer_capacity: {err}"
+        );
     }
 
     // ==================== Reaction field validation ====================
@@ -1052,9 +1278,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "auto_start (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "auto_start (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
     }
 
     #[test]
@@ -1073,9 +1305,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "default_template (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "default_template (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("default_template"), "Error should mention default_template: {err}");
+        assert!(
+            err.contains("default_template"),
+            "Error should mention default_template: {err}"
+        );
     }
 
     #[test]
@@ -1094,7 +1332,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "base_url (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("base_url"), "Error should mention base_url: {err}");
+        assert!(
+            err.contains("base_url"),
+            "Error should mention base_url: {err}"
+        );
     }
 
     #[test]
@@ -1112,9 +1353,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "timeout_ms (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "timeout_ms (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("timeout_ms"), "Error should mention timeout_ms: {err}");
+        assert!(
+            err.contains("timeout_ms"),
+            "Error should mention timeout_ms: {err}"
+        );
     }
 
     #[test]
@@ -1132,9 +1379,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "adaptive_min_batch_size (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "adaptive_min_batch_size (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("adaptive_min_batch_size"), "Error should mention adaptive_min_batch_size: {err}");
+        assert!(
+            err.contains("adaptive_min_batch_size"),
+            "Error should mention adaptive_min_batch_size: {err}"
+        );
     }
 
     #[test]
@@ -1153,7 +1406,10 @@ mod tests {
         let result = validate_config(&value);
         assert!(result.is_err(), "sse_path (snake_case) should be rejected");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("sse_path"), "Error should mention sse_path: {err}");
+        assert!(
+            err.contains("sse_path"),
+            "Error should mention sse_path: {err}"
+        );
     }
 
     #[test]
@@ -1170,9 +1426,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "heartbeat_interval_ms (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "heartbeat_interval_ms (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("heartbeat_interval_ms"), "Error should mention heartbeat_interval_ms: {err}");
+        assert!(
+            err.contains("heartbeat_interval_ms"),
+            "Error should mention heartbeat_interval_ms: {err}"
+        );
     }
 
     #[test]
@@ -1190,9 +1452,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "batch_size (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "batch_size (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("batch_size"), "Error should mention batch_size: {err}");
+        assert!(
+            err.contains("batch_size"),
+            "Error should mention batch_size: {err}"
+        );
     }
 
     #[test]
@@ -1210,9 +1478,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "max_retries (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "max_retries (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("max_retries"), "Error should mention max_retries: {err}");
+        assert!(
+            err.contains("max_retries"),
+            "Error should mention max_retries: {err}"
+        );
     }
 
     #[test]
@@ -1229,9 +1503,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "window_size (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "window_size (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("window_size"), "Error should mention window_size: {err}");
+        assert!(
+            err.contains("window_size"),
+            "Error should mention window_size: {err}"
+        );
     }
 
     #[test]
@@ -1248,9 +1528,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "report_interval_secs (snake_case) should be rejected");
+        assert!(
+            result.is_err(),
+            "report_interval_secs (snake_case) should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("report_interval_secs"), "Error should mention report_interval_secs: {err}");
+        assert!(
+            err.contains("report_interval_secs"),
+            "Error should mention report_interval_secs: {err}"
+        );
     }
 
     // ==================== Multiple errors ====================
@@ -1281,10 +1567,22 @@ mod tests {
         let err = result.unwrap_err().to_string();
 
         // Should contain multiple error mentions
-        assert!(err.contains("log_level"), "Error should mention log_level: {err}");
-        assert!(err.contains("persist_config"), "Error should mention persist_config: {err}");
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
-        assert!(err.contains("data_type"), "Error should mention data_type: {err}");
+        assert!(
+            err.contains("log_level"),
+            "Error should mention log_level: {err}"
+        );
+        assert!(
+            err.contains("persist_config"),
+            "Error should mention persist_config: {err}"
+        );
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
+        assert!(
+            err.contains("data_type"),
+            "Error should mention data_type: {err}"
+        );
     }
 
     // ==================== Instance config validation ====================
@@ -1305,9 +1603,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "persist_index (snake_case) in instance should be rejected");
+        assert!(
+            result.is_err(),
+            "persist_index (snake_case) in instance should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("persist_index"), "Error should mention persist_index: {err}");
+        assert!(
+            err.contains("persist_index"),
+            "Error should mention persist_index: {err}"
+        );
     }
 
     #[test]
@@ -1328,9 +1632,15 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_err(), "state_store (snake_case) in instance should be rejected");
+        assert!(
+            result.is_err(),
+            "state_store (snake_case) in instance should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("state_store"), "Error should mention state_store: {err}");
+        assert!(
+            err.contains("state_store"),
+            "Error should mention state_store: {err}"
+        );
     }
 
     // ==================== Unknown source/reaction kinds ====================
@@ -1350,9 +1660,15 @@ mod tests {
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
         // Should error on unknownField since it's not in common fields
-        assert!(result.is_err(), "Unknown field in custom source should be rejected");
+        assert!(
+            result.is_err(),
+            "Unknown field in custom source should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("unknownField"), "Error should mention unknownField: {err}");
+        assert!(
+            err.contains("unknownField"),
+            "Error should mention unknownField: {err}"
+        );
     }
 
     #[test]
@@ -1371,9 +1687,15 @@ mod tests {
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
         // Should error on unknownField since it's not in common fields
-        assert!(result.is_err(), "Unknown field in custom reaction should be rejected");
+        assert!(
+            result.is_err(),
+            "Unknown field in custom reaction should be rejected"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("unknownField"), "Error should mention unknownField: {err}");
+        assert!(
+            err.contains("unknownField"),
+            "Error should mention unknownField: {err}"
+        );
     }
 
     // ==================== Valid configurations (positive tests) ====================
@@ -1400,7 +1722,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid HTTP source config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid HTTP source config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1419,7 +1744,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid gRPC source config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid gRPC source config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1454,7 +1782,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid HTTP reaction with routes should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid HTTP reaction with routes should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1486,7 +1817,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid SSE reaction config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid SSE reaction config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1511,7 +1845,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid gRPC reaction config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid gRPC reaction config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1536,7 +1873,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid gRPC adaptive reaction config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid gRPC adaptive reaction config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1554,7 +1894,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid profiler reaction config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid profiler reaction config should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1578,7 +1921,10 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid query with all fields should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid query with all fields should pass: {result:?}"
+        );
     }
 
     #[test]
@@ -1616,6 +1962,252 @@ mod tests {
 
         let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let result = validate_config(&value);
-        assert!(result.is_ok(), "Valid multi-instance config should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Valid multi-instance config should pass: {result:?}"
+        );
+    }
+
+    // ==================== Template syntax validation ====================
+
+    #[test]
+    fn test_valid_template_passes() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "{{after.Name}} - {{after.Value}}"
+                  updated:
+                    template: "Changed from {{before.Value}} to {{after.Value}}"
+                  deleted:
+                    template: "Removed: {{before.Name}}"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(result.is_ok(), "Valid templates should pass: {result:?}");
+    }
+
+    #[test]
+    fn test_template_unclosed_brace_rejected() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "{{after.Name"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_err(),
+            "Unclosed brace template should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid Handlebars template"),
+            "Error should mention invalid template: {err}"
+        );
+    }
+
+    #[test]
+    fn test_template_empty_expression_rejected() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "Value: {{}}"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_err(),
+            "Empty expression template should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid Handlebars template"),
+            "Error should mention invalid template: {err}"
+        );
+    }
+
+    #[test]
+    fn test_template_unclosed_block_rejected() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "{{#if condition}}true branch"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_err(),
+            "Unclosed block template should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid Handlebars template"),
+            "Error should mention invalid template: {err}"
+        );
+    }
+
+    #[test]
+    fn test_http_body_template_validated() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: http
+                id: test-http
+                queries: [q1]
+                autoStart: true
+                baseUrl: "http://localhost"
+                routes:
+                  q1:
+                    added:
+                      url: "/api/events"
+                      method: "POST"
+                      body: '{"data": {{after.Name}'
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_err(),
+            "Invalid HTTP body template should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("body") && err.contains("invalid Handlebars template"),
+            "Error should mention body and invalid template: {err}"
+        );
+    }
+
+    #[test]
+    fn test_valid_http_body_template_passes() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: http
+                id: test-http
+                queries: [q1]
+                autoStart: true
+                baseUrl: "http://localhost"
+                routes:
+                  q1:
+                    added:
+                      url: "/api/events"
+                      method: "POST"
+                      body: '{"name": "{{after.Name}}", "value": {{after.Value}}}'
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_ok(),
+            "Valid HTTP body template should pass: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_sse_template_validated() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: sse
+                id: test-sse
+                queries: [q1]
+                autoStart: true
+                routes:
+                  q1:
+                    added:
+                      template: "{{after.Name"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(result.is_err(), "Invalid SSE template should be rejected");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid Handlebars template"),
+            "Error should mention invalid template: {err}"
+        );
+    }
+
+    #[test]
+    fn test_template_with_helpers_passes() {
+        // Handlebars allows unknown helpers (they just evaluate to empty at runtime)
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "{{#each items}}{{this}}{{/each}}"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_ok(),
+            "Template with valid helper syntax should pass: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_template_errors_all_reported() {
+        let yaml = r#"
+            id: test-server
+            reactions:
+              - kind: log
+                id: test-log
+                queries: [q1]
+                autoStart: true
+                defaultTemplate:
+                  added:
+                    template: "{{after.Name"
+                  updated:
+                    template: "{{before"
+                  deleted:
+                    template: "{{}}"
+        "#;
+
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_config(&value);
+        assert!(
+            result.is_err(),
+            "Multiple invalid templates should be rejected"
+        );
+        let err = result.unwrap_err().to_string();
+        // Should contain multiple error messages
+        assert!(
+            err.contains("added") || err.contains("updated") || err.contains("deleted"),
+            "Error should mention which template field has the error: {err}"
+        );
     }
 }

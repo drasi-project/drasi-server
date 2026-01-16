@@ -583,8 +583,14 @@ reactions:
 
     // Should contain multiple error mentions
     assert!(err.contains("log_level"), "Error should mention log_level");
-    assert!(err.contains("persist_config"), "Error should mention persist_config");
-    assert!(err.contains("auto_start"), "Error should mention auto_start");
+    assert!(
+        err.contains("persist_config"),
+        "Error should mention persist_config"
+    );
+    assert!(
+        err.contains("auto_start"),
+        "Error should mention auto_start"
+    );
     assert!(err.contains("data_type"), "Error should mention data_type");
 }
 
@@ -637,7 +643,10 @@ queries: []
 reactions: []
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_ok(), "Valid minimal config should load: {result:?}");
+    assert!(
+        result.is_ok(),
+        "Valid minimal config should load: {result:?}"
+    );
 }
 
 #[test]
@@ -674,7 +683,10 @@ reactions:
         template: "{{after}}"
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_ok(), "Valid camelCase config should load: {result:?}");
+    assert!(
+        result.is_ok(),
+        "Valid camelCase config should load: {result:?}"
+    );
 }
 
 #[test]
@@ -707,7 +719,10 @@ queries: []
 reactions: []
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_ok(), "Valid postgres source config should load: {result:?}");
+    assert!(
+        result.is_ok(),
+        "Valid postgres source config should load: {result:?}"
+    );
 }
 
 #[test]
@@ -735,7 +750,10 @@ reactions:
             Content-Type: "application/json"
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_ok(), "Valid HTTP reaction config should load: {result:?}");
+    assert!(
+        result.is_ok(),
+        "Valid HTTP reaction config should load: {result:?}"
+    );
 }
 
 #[test]
@@ -771,5 +789,8 @@ instances:
     reactions: []
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_ok(), "Valid multi-instance config should load: {result:?}");
+    assert!(
+        result.is_ok(),
+        "Valid multi-instance config should load: {result:?}"
+    );
 }
