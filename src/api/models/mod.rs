@@ -86,6 +86,7 @@ fn default_true() -> bool {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
+#[serde(rename_all = "camelCase")]
 pub enum SourceConfig {
     /// Mock source for testing
     #[serde(rename = "mock")]
@@ -195,6 +196,7 @@ impl SourceConfig {
 /// of different reaction types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
+#[serde(rename_all = "camelCase")]
 pub enum ReactionConfig {
     /// Log reaction for console output
     #[serde(rename = "log")]
