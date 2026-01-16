@@ -45,6 +45,7 @@ persistConfig: false
 
 sources:
   # Fast-generating source for performance testing
+  # Generic mock data: value (int), message (string), timestamp
   - kind: mock
     id: high-volume
     autoStart: true
@@ -56,18 +57,18 @@ queries:
   - id: simple-query
     autoStart: true
     query: |
-      MATCH (n)
-      RETURN n
+      MATCH (g:Generic)
+      RETURN g.value AS Value, g.message AS Message
     sources:
       - sourceId: high-volume
 
-  # Filtered query
+  # Filtered query (positive values only)
   - id: filtered-query
     autoStart: true
     query: |
-      MATCH (n)
-      WHERE n.value > 50
-      RETURN n.id, n.value
+      MATCH (g:Generic)
+      WHERE g.value > 0
+      RETURN g.value AS Value, g.timestamp AS Timestamp
     sources:
       - sourceId: high-volume
 
@@ -75,8 +76,8 @@ queries:
   - id: aggregation-query
     autoStart: true
     query: |
-      MATCH (n)
-      RETURN count(n) AS Count, avg(n.value) AS Average
+      MATCH (g:Generic)
+      RETURN count(g) AS Count, avg(g.value) AS Average
     sources:
       - sourceId: high-volume
 
@@ -100,4 +101,4 @@ reactions:
     autoStart: true
     defaultTemplate:
       updated:
-        template: "[STATS] {{after}}"
+        template: "[STATS] Count={{after.Count}} Average={{after.Average}}"

@@ -101,18 +101,24 @@ reactions:
     ssePath: "/events"
     heartbeatIntervalMs: 15000
 
-    # Default template for all queries
-    defaultTemplate:
-      added:
-        template: '{"event": "add", "query": "{{query_name}}", "data": {{after}}}'
-      updated:
-        template: '{"event": "update", "query": "{{query_name}}", "data": {{after}}}'
-      deleted:
-        template: '{"event": "delete", "query": "{{query_name}}", "data": {{before}}}'
-
-    # Custom routes with paths for multi-endpoint streaming
+    # Per-query routes with specific field access
     routes:
+      sensor-readings:
+        added:
+          template: '{"event": "add", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
+        updated:
+          template: '{"event": "update", "query": "sensor-readings", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "humidity": {{after.Humidity}}}'
+        deleted:
+          template: '{"event": "delete", "query": "sensor-readings", "sensorId": "{{before.SensorId}}"}'
       sensor-alerts:
         added:
           path: "/alerts"
-          template: '{"alert": true, "sensor": {{after}}}'
+          template: '{"alert": true, "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "status": "{{after.Status}}"}'
+        deleted:
+          path: "/alerts"
+          template: '{"alert": false, "sensorId": "{{before.SensorId}}", "status": "resolved"}'
+      sensor-summary:
+        added:
+          template: '{"event": "add", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'
+        updated:
+          template: '{"event": "update", "query": "sensor-summary", "totalSensors": {{after.TotalSensors}}, "avgTemp": {{after.AverageTemperature}}}'

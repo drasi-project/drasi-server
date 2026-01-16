@@ -125,11 +125,23 @@ reactions:
       - full-order-view
     autoStart: true
     routes:
+      customer-orders:
+        added:
+          template: "[customer-orders] + {{after.CustomerName}}: Order {{after.OrderId}} (${{after.OrderTotal}})"
+        updated:
+          template: "[customer-orders] ~ {{after.CustomerName}}: Order {{after.OrderId}} (${{after.OrderTotal}})"
+      order-inventory:
+        added:
+          template: "[order-inventory] + Order {{after.OrderId}}: Product {{after.ProductId}} (ordered={{after.Ordered}}, stock={{after.InStock}})"
+        updated:
+          template: "[order-inventory] ~ Order {{after.OrderId}}: Product {{after.ProductId}} (ordered={{after.Ordered}}, stock={{after.InStock}})"
       stock-shortage-alert:
         added:
-          template: "[ALERT] Stock shortage detected: {{after}}"
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] {{after}}"
-      updated:
-        template: "[{{query_name}}] Updated: {{after}}"
+          template: "[ALERT] Stock shortage: Order {{after.OrderId}} needs {{after.Ordered}} of {{after.ProductId}} (only {{after.Available}} available)"
+        updated:
+          template: "[ALERT] Stock shortage update: Order {{after.OrderId}} needs {{after.Ordered}} of {{after.ProductId}} (only {{after.Available}} available)"
+      full-order-view:
+        added:
+          template: "[full-order-view] + {{after.Customer}}: Order {{after.OrderId}} - {{after.Product}} (qty={{after.Ordered}}, stock={{after.InStock}})"
+        updated:
+          template: "[full-order-view] ~ {{after.Customer}}: Order {{after.OrderId}} - {{after.Product}} (qty={{after.Ordered}}, stock={{after.InStock}})"

@@ -98,20 +98,20 @@ reactions:
         added:
           url: "/webhooks/orders/created"
           method: "POST"
-          body: '{"event": "order.created", "data": {{after}}}'
+          body: '{"event": "order.created", "orderId": "{{after.OrderId}}", "customer": "{{after.Customer}}", "total": {{after.Total}}}'
           headers:
             Content-Type: "application/json"
             X-Event-Type: "order.created"
         updated:
           url: "/webhooks/orders/updated"
           method: "POST"
-          body: '{"event": "order.updated", "before": {{before}}, "after": {{after}}}'
+          body: '{"event": "order.updated", "orderId": "{{after.OrderId}}", "before": {"customer": "{{before.Customer}}", "total": {{before.Total}}}, "after": {"customer": "{{after.Customer}}", "total": {{after.Total}}}}'
           headers:
             Content-Type: "application/json"
         deleted:
           url: "/webhooks/orders/cancelled"
           method: "POST"
-          body: '{"event": "order.cancelled", "data": {{before}}}'
+          body: '{"event": "order.cancelled", "orderId": "{{before.OrderId}}", "customer": "{{before.Customer}}", "total": {{before.Total}}}'
           headers:
             Content-Type: "application/json"
 
@@ -119,7 +119,7 @@ reactions:
         added:
           url: "/webhooks/alerts/high-value"
           method: "POST"
-          body: '{"alert": "high_value_order", "order": {{after}}}'
+          body: '{"alert": "high_value_order", "orderId": "{{after.OrderId}}", "total": {{after.Total}}}'
           headers:
             Content-Type: "application/json"
             X-Priority: "high"

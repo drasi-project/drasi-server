@@ -82,11 +82,17 @@ reactions:
       - production-query
       - monitoring-query
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[PROD] {{query_name}}: {{after}}"
-      updated:
-        template: "[PROD] {{query_name}}: {{after}}"
+    routes:
+      production-query:
+        added:
+          template: "[PROD] production-query: + Id={{after.Id}} Status={{after.Status}}"
+        updated:
+          template: "[PROD] production-query: ~ Id={{after.Id}} Status={{after.Status}}"
+      monitoring-query:
+        added:
+          template: "[PROD] monitoring-query: + Total records={{after.TotalRecords}}"
+        updated:
+          template: "[PROD] monitoring-query: ~ Total records={{after.TotalRecords}}"
 
   # SSE for external monitoring
   - kind: sse

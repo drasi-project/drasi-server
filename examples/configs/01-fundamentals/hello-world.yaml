@@ -57,6 +57,8 @@ queries:
       - sourceId: test-source
 
 # Log the query results to console
+# Template variables: query_name, after (for added/updated), before (for deleted/updated)
+# Access result fields with dot notation: {{after.FieldName}}
 reactions:
   - kind: log
     id: console-logger
@@ -65,8 +67,8 @@ reactions:
     autoStart: true
     defaultTemplate:
       added:
-        template: "[{{query_name}}] + {{after}}"
+        template: "[+] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
       updated:
-        template: "[{{query_name}}] ~ {{after}}"
+        template: "[~] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
       deleted:
-        template: "[{{query_name}}] - {{before}}"
+        template: "[-] Sensor {{before.SensorId}} removed"

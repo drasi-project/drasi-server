@@ -151,19 +151,19 @@ reactions:
     routes:
       inactive-users:
         added:
-          template: "[INACTIVITY] User inactive: {{after}}"
+          template: "[INACTIVITY] User {{after.UserId}} inactive - Session {{after.SessionId}}, last activity: {{after.LastActivity}} ({{after.AlertType}})"
       missing-heartbeats:
         added:
-          template: "[HEALTH] Missing heartbeat: {{after}}"
+          template: "[HEALTH] {{after.AlertType}}: Service {{after.ServiceId}} ({{after.ServiceName}}) - last: {{after.LastHeartbeat}}, expected: {{after.ExpectedInterval}}"
       sla-breaches:
         added:
-          template: "[SLA] SLA breach detected: {{after}}"
+          template: "[SLA] {{after.AlertType}}: Ticket {{after.TicketId}} ({{after.Priority}}) assigned to {{after.AssignedTo}} - deadline: {{after.Deadline}}"
       stale-records:
         added:
-          template: "[DATA] Stale data detected: {{after}}"
+          template: "[DATA] {{after.AlertType}}: Record {{after.RecordId}} from {{after.Source}} - last updated: {{after.LastUpdated}} (threshold: {{after.Threshold}})"
       missing-events:
         added:
-          template: "[SCHEDULE] Missing expected event: {{after}}"
+          template: "[SCHEDULE] {{after.AlertType}}: {{after.EventType}} from {{after.Source}} - expected: {{after.ExpectedAt}}, last: {{after.LastOccurrence}}"
 
   # SSE for monitoring dashboard
   - kind: sse
@@ -180,9 +180,25 @@ reactions:
     port: 8081
     ssePath: "/absence-alerts"
     heartbeatIntervalMs: 10000
-    defaultTemplate:
-      added:
-        template: '{"type": "absence_alert", "query": "{{query_name}}", "data": {{after}}}'
+    routes:
+      inactive-users:
+        added:
+          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "userId": "{{after.UserId}}", "sessionId": "{{after.SessionId}}", "lastActivity": "{{after.LastActivity}}"}'
+      missing-heartbeats:
+        added:
+          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
+      sla-breaches:
+        added:
+          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "createdAt": "{{after.CreatedAt}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
+      stale-records:
+        added:
+          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "recordId": "{{after.RecordId}}", "source": "{{after.Source}}", "lastUpdated": "{{after.LastUpdated}}", "threshold": "{{after.Threshold}}"}'
+      missing-events:
+        added:
+          template: '{"type": "absence_alert", "alertType": "{{after.AlertType}}", "eventType": "{{after.EventType}}", "expectedAt": "{{after.ExpectedAt}}", "source": "{{after.Source}}", "lastOccurrence": "{{after.LastOccurrence}}"}'
+      active-alerts:
+        added:
+          template: '{"type": "active_alert", "alertId": "{{after.AlertId}}", "alertType": "{{after.AlertType}}", "severity": "{{after.Severity}}", "createdAt": "{{after.CreatedAt}}", "message": "{{after.Message}}"}'
 
   # HTTP webhook for critical alerts
   - kind: http
@@ -198,7 +214,7 @@ reactions:
         added:
           url: "/alerts/health"
           method: "POST"
-          body: '{"alert": "service_health", "severity": "critical", "data": {{after}}}'
+          body: '{"alert": "service_health", "severity": "critical", "serviceId": "{{after.ServiceId}}", "serviceName": "{{after.ServiceName}}", "lastHeartbeat": "{{after.LastHeartbeat}}", "expectedInterval": "{{after.ExpectedInterval}}"}'
           headers:
             Content-Type: "application/json"
             X-Alert-Severity: "critical"
@@ -206,7 +222,7 @@ reactions:
         added:
           url: "/alerts/sla"
           method: "POST"
-          body: '{"alert": "sla_breach", "severity": "high", "data": {{after}}}'
+          body: '{"alert": "sla_breach", "severity": "high", "ticketId": "{{after.TicketId}}", "priority": "{{after.Priority}}", "deadline": "{{after.Deadline}}", "assignedTo": "{{after.AssignedTo}}"}'
           headers:
             Content-Type: "application/json"
             X-Alert-Severity: "high"

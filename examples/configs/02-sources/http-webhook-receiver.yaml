@@ -77,6 +77,10 @@ reactions:
       - all-events
       - high-value-events
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[HTTP Event] {{query_name}}: {{after}}"
+    routes:
+      all-events:
+        added:
+          template: "[HTTP] Event {{after.EventId}} ({{after.EventType}}): {{after.Data}}"
+      high-value-events:
+        added:
+          template: "[HTTP] HIGH VALUE: Event {{after.EventId}} amount={{after.Amount}}"

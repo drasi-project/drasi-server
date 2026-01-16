@@ -121,10 +121,25 @@ reactions:
       - high-value-orders
       - low-inventory
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[CDC ADD] {{query_name}}: {{after}}"
-      updated:
-        template: "[CDC UPDATE] {{query_name}}: {{before}} -> {{after}}"
-      deleted:
-        template: "[CDC DELETE] {{query_name}}: {{before}}"
+    routes:
+      user-changes:
+        added:
+          template: "[CDC] + User {{after.UserId}}: {{after.Email}} (created {{after.CreatedAt}})"
+        updated:
+          template: "[CDC] ~ User {{after.UserId}}: {{after.Email}}"
+        deleted:
+          template: "[CDC] - User {{before.UserId}} removed"
+      high-value-orders:
+        added:
+          template: "[CDC] + HIGH VALUE Order {{after.OrderId}}: ${{after.Total}} for customer {{after.CustomerId}}"
+        updated:
+          template: "[CDC] ~ Order {{after.OrderId}}: ${{after.Total}}"
+        deleted:
+          template: "[CDC] - Order {{before.OrderId}} cancelled"
+      low-inventory:
+        added:
+          template: "[CDC] ⚠ LOW STOCK: {{after.ProductName}} ({{after.SKU}}) only {{after.Quantity}} left"
+        updated:
+          template: "[CDC] ⚠ STOCK UPDATE: {{after.ProductName}} now {{after.Quantity}} units"
+        deleted:
+          template: "[CDC] Product {{before.SKU}} removed from inventory"

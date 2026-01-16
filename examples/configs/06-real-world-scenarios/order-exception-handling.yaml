@@ -167,16 +167,16 @@ reactions:
     routes:
       high-value-orders:
         added:
-          template: "[EXCEPTION] HIGH VALUE ORDER: {{after}}"
+          template: "[EXCEPTION] HIGH VALUE ORDER: Order {{after.OrderId}} for ${{after.Amount}} (Customer: {{after.CustomerId}}) - {{after.ExceptionType}}"
       stuck-orders:
         added:
-          template: "[EXCEPTION] STUCK ORDER: {{after}}"
+          template: "[EXCEPTION] STUCK ORDER: Order {{after.OrderId}} in {{after.Status}} since {{after.CreatedAt}} - {{after.ExceptionType}}"
       payment-failures:
         added:
-          template: "[EXCEPTION] PAYMENT FAILED: {{after}}"
+          template: "[EXCEPTION] PAYMENT FAILED: Payment {{after.PaymentId}} for Order {{after.OrderId}} (${{after.Amount}}) - {{after.ErrorCode}}: {{after.ErrorMessage}}"
       inventory-shortage:
         added:
-          template: "[EXCEPTION] INVENTORY SHORTAGE: {{after}}"
+          template: "[EXCEPTION] INVENTORY SHORTAGE: Order {{after.OrderId}} needs {{after.OrderedQuantity}} of {{after.ProductId}} (only {{after.AvailableStock}} available)"
 
   # SSE for operations dashboard
   - kind: sse
@@ -193,9 +193,29 @@ reactions:
     port: 8081
     ssePath: "/orders"
     heartbeatIntervalMs: 15000
-    defaultTemplate:
-      added:
-        template: '{"event": "exception", "query": "{{query_name}}", "data": {{after}}}'
+    routes:
+      high-value-orders:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "customerId": "{{after.CustomerId}}", "amount": {{after.Amount}}, "createdAt": "{{after.CreatedAt}}"}'
+      stuck-orders:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "createdAt": "{{after.CreatedAt}}"}'
+      payment-failures:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "paymentId": "{{after.PaymentId}}", "orderId": "{{after.OrderId}}", "amount": {{after.Amount}}, "errorCode": "{{after.ErrorCode}}", "errorMessage": "{{after.ErrorMessage}}"}'
+      inventory-shortage:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "productId": "{{after.ProductId}}", "ordered": {{after.OrderedQuantity}}, "available": {{after.AvailableStock}}}'
+      pending-orders:
+        added:
+          template: '{"event": "pending_order", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "amount": {{after.Amount}}, "createdAt": "{{after.CreatedAt}}"}'
+        updated:
+          template: '{"event": "order_update", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "amount": {{after.Amount}}}'
+      order-stats:
+        added:
+          template: '{"event": "stats", "status": "{{after.Status}}", "count": {{after.OrderCount}}, "totalAmount": {{after.TotalAmount}}}'
+        updated:
+          template: '{"event": "stats", "status": "{{after.Status}}", "count": {{after.OrderCount}}, "totalAmount": {{after.TotalAmount}}}'
 
   # HTTP webhook for critical exceptions
   - kind: http
@@ -211,13 +231,13 @@ reactions:
         added:
           url: "/alerts/payment-failure"
           method: "POST"
-          body: '{"type": "payment_failure", "data": {{after}}}'
+          body: '{"type": "payment_failure", "paymentId": "{{after.PaymentId}}", "orderId": "{{after.OrderId}}", "amount": {{after.Amount}}, "errorCode": "{{after.ErrorCode}}", "errorMessage": "{{after.ErrorMessage}}"}'
           headers:
             Content-Type: "application/json"
       inventory-shortage:
         added:
           url: "/alerts/inventory-shortage"
           method: "POST"
-          body: '{"type": "inventory_shortage", "data": {{after}}}'
+          body: '{"type": "inventory_shortage", "orderId": "{{after.OrderId}}", "productId": "{{after.ProductId}}", "orderedQuantity": {{after.OrderedQuantity}}, "availableStock": {{after.AvailableStock}}}'
           headers:
             Content-Type: "application/json"

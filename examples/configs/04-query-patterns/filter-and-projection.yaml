@@ -38,6 +38,7 @@ logLevel: info
 persistConfig: false
 
 sources:
+  # Generic mock data: value (int), message (string), timestamp
   - kind: mock
     id: data-source
     autoStart: true
@@ -45,64 +46,42 @@ sources:
     intervalMs: 2000
 
 queries:
-  # Basic equality filter
-  - id: exact-match
+  # Working example: Numeric comparison with mock data
+  - id: positive-values
     autoStart: true
     query: |
-      MATCH (p:Product)
-      WHERE p.category = 'electronics'
-      RETURN p.id AS ProductId, p.name AS Name, p.price AS Price
+      MATCH (g:Generic)
+      WHERE g.value > 0
+      RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
     sources:
       - sourceId: data-source
 
-  # Numeric comparison
-  - id: price-range
+  # Working example: Negative value filter
+  - id: negative-values
     autoStart: true
     query: |
-      MATCH (p:Product)
-      WHERE p.price >= 100 AND p.price <= 500
-      RETURN p.id AS ProductId, p.name AS Name, p.price AS Price
+      MATCH (g:Generic)
+      WHERE g.value < 0
+      RETURN g.value AS Value, g.timestamp AS Timestamp
     sources:
       - sourceId: data-source
 
-  # String pattern matching
-  - id: name-pattern
+  # Working example: String pattern matching
+  - id: message-pattern
     autoStart: true
     query: |
-      MATCH (p:Product)
-      WHERE p.name STARTS WITH 'Pro'
-      RETURN p.id AS ProductId, p.name AS Name
+      MATCH (g:Generic)
+      WHERE g.message CONTAINS 'mock'
+      RETURN g.value AS Value, g.message AS Message
     sources:
       - sourceId: data-source
 
-  # Multiple conditions with OR
-  - id: priority-items
+  # Working example: All values (no filter)
+  - id: all-values
     autoStart: true
     query: |
-      MATCH (i:Item)
-      WHERE i.priority = 'high' OR i.quantity < 5
-      RETURN i.id AS ItemId, i.priority AS Priority, i.quantity AS Quantity
-    sources:
-      - sourceId: data-source
-
-  # Projection with computed fields
-  - id: calculated-fields
-    autoStart: true
-    query: |
-      MATCH (o:Order)
-      RETURN o.id AS OrderId,
-             o.quantity AS Qty,
-             o.unit_price AS UnitPrice,
-             o.quantity * o.unit_price AS TotalPrice
-    sources:
-      - sourceId: data-source
-
-  # Distinct values
-  - id: unique-categories
-    autoStart: true
-    query: |
-      MATCH (p:Product)
-      RETURN DISTINCT p.category AS Category
+      MATCH (g:Generic)
+      RETURN g.value AS Value, g.message AS Message
     sources:
       - sourceId: data-source
 
@@ -110,15 +89,21 @@ reactions:
   - kind: log
     id: query-results
     queries:
-      - exact-match
-      - price-range
-      - name-pattern
-      - priority-items
-      - calculated-fields
-      - unique-categories
+      - positive-values
+      - negative-values
+      - message-pattern
+      - all-values
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] {{after}}"
-      updated:
-        template: "[{{query_name}}] Updated: {{after}}"
+    routes:
+      positive-values:
+        added:
+          template: "[positive] Value={{after.Value}} at {{after.Timestamp}}"
+      negative-values:
+        added:
+          template: "[negative] Value={{after.Value}} at {{after.Timestamp}}"
+      message-pattern:
+        added:
+          template: "[pattern] Matched: {{after.Message}} (value={{after.Value}})"
+      all-values:
+        added:
+          template: "[all] Value={{after.Value}} Message={{after.Message}}"

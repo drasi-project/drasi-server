@@ -128,18 +128,20 @@ reactions:
       - humidity-alerts
     autoStart: true
     routes:
+      all-readings:
+        added:
+          template: "[SENSOR] + {{after.SensorId}} ({{after.SensorType}}): {{after.Value}}{{after.Unit}} at {{after.Location}}"
+        updated:
+          template: "[SENSOR] ~ {{after.SensorId}}: {{after.Value}}{{after.Unit}}"
       high-temp-alerts:
         added:
-          template: "[ALERT] HIGH TEMP: {{after}}"
+          template: "[ALERT] HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
       freeze-alerts:
         added:
-          template: "[ALERT] FREEZING: {{after}}"
+          template: "[ALERT] FREEZING: Sensor {{after.SensorId}} at {{after.Temperature}}F ({{after.Location}}) - {{after.AlertType}}"
       humidity-alerts:
         added:
-          template: "[ALERT] HIGH HUMIDITY: {{after}}"
-    defaultTemplate:
-      added:
-        template: "[SENSOR] {{after}}"
+          template: "[ALERT] HIGH HUMIDITY: Sensor {{after.SensorId}} at {{after.Humidity}}% ({{after.Location}}) - {{after.AlertType}}"
 
   # SSE for real-time dashboard
   - kind: sse
@@ -156,17 +158,25 @@ reactions:
     ssePath: "/sensors"
     heartbeatIntervalMs: 15000
     routes:
+      all-readings:
+        added:
+          template: '{"type": "reading", "sensorId": "{{after.SensorId}}", "sensorType": "{{after.SensorType}}", "value": {{after.Value}}, "unit": "{{after.Unit}}", "location": "{{after.Location}}"}'
       high-temp-alerts:
         added:
           path: "/alerts"
-          template: '{"type": "alert", "severity": "warning", "data": {{after}}}'
+          template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
       freeze-alerts:
         added:
           path: "/alerts"
-          template: '{"type": "alert", "severity": "critical", "data": {{after}}}'
-    defaultTemplate:
-      added:
-        template: '{"type": "reading", "query": "{{query_name}}", "data": {{after}}}'
+          template: '{"type": "alert", "severity": "critical", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}"}'
+      humidity-alerts:
+        added:
+          template: '{"type": "alert", "severity": "warning", "alertType": "{{after.AlertType}}", "sensorId": "{{after.SensorId}}", "humidity": {{after.Humidity}}, "location": "{{after.Location}}"}'
+      sensor-stats:
+        added:
+          template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
+        updated:
+          template: '{"type": "stats", "sensorType": "{{after.SensorType}}", "count": {{after.SensorCount}}, "avg": {{after.AverageValue}}, "min": {{after.MinValue}}, "max": {{after.MaxValue}}}'
 
   # HTTP webhook for critical alerts
   - kind: http
@@ -181,7 +191,7 @@ reactions:
         added:
           url: "/alerts/critical"
           method: "POST"
-          body: '{"alert": "FREEZING_DETECTED", "sensor": {{after}}, "priority": "critical"}'
+          body: '{"alert": "FREEZING_DETECTED", "sensorId": "{{after.SensorId}}", "temperature": {{after.Temperature}}, "location": "{{after.Location}}", "alertType": "{{after.AlertType}}", "priority": "critical"}'
           headers:
             Content-Type: "application/json"
             X-Alert-Priority: "critical"

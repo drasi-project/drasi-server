@@ -141,17 +141,33 @@ reactions:
       - sla-violations
     autoStart: true
     routes:
+      activity-times:
+        added:
+          template: "[activity-times] + Activity {{after.ActivityId}}: User {{after.UserId}} - {{after.ActivityType}} at {{after.Timestamp}}"
+        updated:
+          template: "[activity-times] ~ Activity {{after.ActivityId}}: User {{after.UserId}} - {{after.ActivityType}}"
+      recent-activity:
+        added:
+          template: "[recent-activity] + User {{after.UserId}} is {{after.Status}} (last: {{after.LastActivity}})"
+        updated:
+          template: "[recent-activity] ~ User {{after.UserId}} status: {{after.Status}}"
+      stale-sessions:
+        added:
+          template: "[stale-sessions] + Session {{after.SessionId}}: User {{after.UserId}} - {{after.Status}} (last: {{after.LastActivity}})"
+        updated:
+          template: "[stale-sessions] ~ Session {{after.SessionId}}: User {{after.UserId}} - {{after.Status}}"
       processing-timeouts:
         added:
-          template: "[TIMEOUT ALERT] Order processing timeout: {{after}}"
+          template: "[TIMEOUT ALERT] Order {{after.OrderId}}: {{after.AlertType}} (created: {{after.CreatedAt}}, status: {{after.Status}})"
+        updated:
+          template: "[TIMEOUT ALERT] Order {{after.OrderId}} still in {{after.Status}}"
       missing-heartbeats:
         added:
-          template: "[HEALTH ALERT] Missing heartbeat: {{after}}"
+          template: "[HEALTH ALERT] {{after.Alert}}: Service {{after.ServiceId}} ({{after.ServiceName}}) - last: {{after.LastHeartbeat}}"
+        updated:
+          template: "[HEALTH ALERT] Service {{after.ServiceId}} still missing heartbeat"
       sla-violations:
         added:
-          template: "[SLA ALERT] SLA breach detected: {{after}}"
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] {{after}}"
-      updated:
-        template: "[{{query_name}}] Updated: {{after}}"
+          template: "[SLA ALERT] {{after.Alert}}: Ticket {{after.TicketId}} ({{after.Priority}}) - deadline: {{after.Deadline}}, created: {{after.Created}}"
+        updated:
+          template: "[SLA ALERT] Ticket {{after.TicketId}} still breaching SLA"

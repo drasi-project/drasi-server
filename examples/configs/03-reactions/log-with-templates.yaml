@@ -25,9 +25,10 @@
 # - {{query_name}} - Name of the query that produced the result
 # - {{before}} - Previous state (updates/deletes)
 # - {{after}} - New state (adds/updates)
+# - Access fields: {{after.FieldName}} based on query's RETURN clause
 #
 # You can configure:
-# - default_template: Applied to all queries unless overridden
+# - defaultTemplate: Applied to all queries unless overridden
 # - routes: Per-query template overrides
 #
 # Run with: cargo run -- --config examples/configs/03-reactions/log-with-templates.yaml
@@ -39,6 +40,7 @@ logLevel: info
 persistConfig: false
 
 sources:
+  # Generic mock data generates: value (int), message (string), timestamp
   - kind: mock
     id: events
     autoStart: true
@@ -46,28 +48,32 @@ sources:
     intervalMs: 2000
 
 queries:
+  # Simulated "alerts" - negative values are alerts
   - id: alerts
     autoStart: true
     query: |
-      MATCH (e:Event)
-      WHERE e.severity = 'high'
-      RETURN e.id AS AlertId, e.message AS Message
+      MATCH (g:Generic)
+      WHERE g.value < 0
+      RETURN g.value AS AlertValue, g.message AS Message, g.timestamp AS Timestamp
     sources:
       - sourceId: events
 
+  # Simulated "metrics" - positive values are metrics
   - id: metrics
     autoStart: true
     query: |
-      MATCH (m:Metric)
-      RETURN m.name AS MetricName, m.value AS Value
+      MATCH (g:Generic)
+      WHERE g.value >= 0
+      RETURN g.value AS MetricValue, g.timestamp AS Timestamp
     sources:
       - sourceId: events
 
+  # All events with full data
   - id: all-events
     autoStart: true
     query: |
-      MATCH (n)
-      RETURN n
+      MATCH (g:Generic)
+      RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
     sources:
       - sourceId: events
 
@@ -80,27 +86,27 @@ reactions:
       - all-events
     autoStart: true
 
-    # Default template for all queries
+    # Default template for all queries - uses specific field access
     defaultTemplate:
       added:
-        template: "[INFO] New record from {{query_name}}: {{after}}"
+        template: "[INFO] {{query_name}}: value={{after.Value}} message={{after.Message}}"
       updated:
-        template: "[INFO] Updated in {{query_name}}: {{before}} -> {{after}}"
+        template: "[INFO] {{query_name}} updated: value={{after.Value}}"
       deleted:
-        template: "[INFO] Deleted from {{query_name}}: {{before}}"
+        template: "[INFO] {{query_name}}: removed value={{before.Value}}"
 
     # Per-query overrides using routes
     routes:
-      # Special formatting for alerts
+      # Special formatting for alerts (negative values)
       alerts:
         added:
-          template: "[ALERT] NEW ALERT: {{after}}"
+          template: "[ALERT] ⚠ Value={{after.AlertValue}} at {{after.Timestamp}}"
         deleted:
-          template: "[ALERT] Alert resolved: {{before}}"
+          template: "[ALERT] ✓ Alert cleared (was {{before.AlertValue}})"
 
-      # Custom format for metrics
+      # Custom format for metrics (positive values)
       metrics:
         added:
-          template: "[METRIC] {{after}}"
+          template: "[METRIC] + value={{after.MetricValue}} at {{after.Timestamp}}"
         updated:
-          template: "[METRIC] Changed: {{after}}"
+          template: "[METRIC] ~ value={{after.MetricValue}}"

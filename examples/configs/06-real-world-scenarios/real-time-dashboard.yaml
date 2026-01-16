@@ -167,9 +167,16 @@ reactions:
       - kpi-active-users
       - kpi-system-health
     autoStart: true
-    defaultTemplate:
-      updated:
-        template: "[KPI] {{query_name}}: {{after}}"
+    routes:
+      kpi-total-sales:
+        updated:
+          template: "[KPI] kpi-total-sales: Transactions={{after.TotalTransactions}} Revenue={{after.TotalRevenue}} AOV={{after.AverageOrderValue}}"
+      kpi-active-users:
+        updated:
+          template: "[KPI] kpi-active-users: Active={{after.ActiveUsers}}"
+      kpi-system-health:
+        updated:
+          template: "[KPI] kpi-system-health: CPU={{after.AvgCPU}}% Memory={{after.AvgMemory}}% Latency={{after.MaxLatency}}ms"
 
   # SSE for KPIs (main dashboard)
   - kind: sse
@@ -184,11 +191,27 @@ reactions:
     port: 8081
     ssePath: "/kpis"
     heartbeatIntervalMs: 5000
-    defaultTemplate:
-      added:
-        template: '{"widget": "{{query_name}}", "data": {{after}}}'
-      updated:
-        template: '{"widget": "{{query_name}}", "data": {{after}}}'
+    routes:
+      kpi-total-sales:
+        added:
+          template: '{"widget": "kpi-total-sales", "totalTransactions": {{after.TotalTransactions}}, "totalRevenue": {{after.TotalRevenue}}, "avgOrderValue": {{after.AverageOrderValue}}}'
+        updated:
+          template: '{"widget": "kpi-total-sales", "totalTransactions": {{after.TotalTransactions}}, "totalRevenue": {{after.TotalRevenue}}, "avgOrderValue": {{after.AverageOrderValue}}}'
+      kpi-active-users:
+        added:
+          template: '{"widget": "kpi-active-users", "activeUsers": {{after.ActiveUsers}}}'
+        updated:
+          template: '{"widget": "kpi-active-users", "activeUsers": {{after.ActiveUsers}}}'
+      kpi-system-health:
+        added:
+          template: '{"widget": "kpi-system-health", "avgCpu": {{after.AvgCPU}}, "avgMemory": {{after.AvgMemory}}, "maxLatency": {{after.MaxLatency}}}'
+        updated:
+          template: '{"widget": "kpi-system-health", "avgCpu": {{after.AvgCPU}}, "avgMemory": {{after.AvgMemory}}, "maxLatency": {{after.MaxLatency}}}'
+      sales-by-category:
+        added:
+          template: '{"widget": "sales-by-category", "category": "{{after.Category}}", "count": {{after.Count}}, "total": {{after.Total}}}'
+        updated:
+          template: '{"widget": "sales-by-category", "category": "{{after.Category}}", "count": {{after.Count}}, "total": {{after.Total}}}'
 
   # SSE for Activity Feed
   - kind: sse
@@ -201,9 +224,13 @@ reactions:
     port: 8082
     ssePath: "/activity"
     heartbeatIntervalMs: 10000
-    defaultTemplate:
-      added:
-        template: '{"type": "activity", "source": "{{query_name}}", "data": {{after}}}'
+    routes:
+      recent-sales:
+        added:
+          template: '{"type": "activity", "source": "recent-sales", "saleId": "{{after.SaleId}}", "customer": "{{after.Customer}}", "amount": {{after.Amount}}, "product": "{{after.Product}}", "timestamp": "{{after.Timestamp}}"}'
+      user-events:
+        added:
+          template: '{"type": "activity", "source": "user-events", "userId": "{{after.UserId}}", "action": "{{after.Action}}", "timestamp": "{{after.Timestamp}}"}'
 
   # SSE for Alerts
   - kind: sse
@@ -219,7 +246,7 @@ reactions:
     routes:
       high-value-sales:
         added:
-          template: '{"severity": "info", "type": "high_value_sale", "data": {{after}}}'
+          template: '{"severity": "info", "type": "high_value_sale", "saleId": "{{after.SaleId}}", "amount": {{after.Amount}}, "customer": "{{after.Customer}}", "alertType": "{{after.AlertType}}"}'
       system-warnings:
         added:
-          template: '{"severity": "warning", "type": "resource_alert", "data": {{after}}}'
+          template: '{"severity": "warning", "type": "resource_alert", "host": "{{after.Host}}", "cpu": {{after.CPU}}, "memory": {{after.Memory}}, "alertType": "{{after.AlertType}}"}'

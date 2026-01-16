@@ -27,6 +27,7 @@
 # - {{query_name}} - The name of the query that produced the result
 # - {{before}} - The previous state of the record (for updates/deletes)
 # - {{after}} - The new state of the record (for adds/updates)
+# - Access fields with dot notation: {{after.FieldName}}
 
 id: mock-logging-demo
 host: "0.0.0.0"
@@ -35,6 +36,7 @@ logLevel: info
 persistConfig: false
 
 sources:
+  # Generic mock data generates nodes with: value (int), message (string), timestamp
   - kind: mock
     id: data-generator
     autoStart: true
@@ -45,8 +47,8 @@ queries:
   - id: track-all-changes
     autoStart: true
     query: |
-      MATCH (n)
-      RETURN n
+      MATCH (n:Generic)
+      RETURN n.value AS Value, n.message AS Message, n.timestamp AS Timestamp
     sources:
       - sourceId: data-generator
 
@@ -57,10 +59,11 @@ reactions:
       - track-all-changes
     autoStart: true
     # Custom templates for different event types
+    # Access query result fields with dot notation: {{after.FieldName}}
     defaultTemplate:
       added:
-        template: "[ADD] Query: {{query_name}} | New Record: {{after}}"
+        template: "[ADD] {{query_name}} | Value: {{after.Value}} | Message: {{after.Message}}"
       updated:
-        template: "[UPDATE] Query: {{query_name}} | Before: {{before}} | After: {{after}}"
+        template: "[UPDATE] {{query_name}} | Value: {{after.Value}} (was {{before.Value}})"
       deleted:
-        template: "[DELETE] Query: {{query_name}} | Removed: {{before}}"
+        template: "[DELETE] {{query_name}} | Removed value: {{before.Value}}"

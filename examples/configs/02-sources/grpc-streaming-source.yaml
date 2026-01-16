@@ -74,8 +74,14 @@ reactions:
       - stream-data
       - stream-stats
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[gRPC] {{query_name}}: {{after}}"
-      updated:
-        template: "[gRPC] {{query_name}} updated: {{after}}"
+    routes:
+      stream-data:
+        added:
+          template: "[gRPC] Message {{after.MessageId}}: {{after.Payload}} ({{after.Timestamp}})"
+        updated:
+          template: "[gRPC] Message {{after.MessageId}} updated: {{after.Payload}}"
+      stream-stats:
+        added:
+          template: "[gRPC] Stats: {{after.MessageCount}} messages received"
+        updated:
+          template: "[gRPC] Stats: {{after.MessageCount}} messages total"

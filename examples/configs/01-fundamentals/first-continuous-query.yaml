@@ -85,10 +85,29 @@ reactions:
       - high-values
       - value-summary
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] + {{after}}"
-      updated:
-        template: "[{{query_name}}] ~ {{after}}"
-      deleted:
-        template: "[{{query_name}}] - {{before}}"
+    # Use routes to define per-query templates since each query returns different fields
+    routes:
+      # all-data returns the whole node as 'n'
+      all-data:
+        added:
+          template: "[all-data] + Node: {{after.n}}"
+        updated:
+          template: "[all-data] ~ Node: {{after.n}}"
+        deleted:
+          template: "[all-data] - Node removed"
+      # high-values returns SensorId, Temperature, Timestamp
+      high-values:
+        added:
+          template: "[high-values] + HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C ({{after.Timestamp}})"
+        updated:
+          template: "[high-values] ~ HIGH TEMP: Sensor {{after.SensorId}} at {{after.Temperature}}°C"
+        deleted:
+          template: "[high-values] - Sensor {{before.SensorId}} no longer high"
+      # value-summary returns TotalSensors, AverageTemperature
+      value-summary:
+        added:
+          template: "[value-summary] + Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
+        updated:
+          template: "[value-summary] ~ Summary: {{after.TotalSensors}} sensors, avg temp {{after.AverageTemperature}}°C"
+        deleted:
+          template: "[value-summary] - Summary cleared"

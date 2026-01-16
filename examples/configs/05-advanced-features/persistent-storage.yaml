@@ -85,8 +85,14 @@ reactions:
       - persisted-query
       - running-totals
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[PERSISTENT] {{query_name}}: {{after}}"
-      updated:
-        template: "[PERSISTENT] {{query_name}} updated: {{after}}"
+    routes:
+      persisted-query:
+        added:
+          template: "[PERSISTENT] persisted-query: + Id={{after.Id}} Value={{after.Value}}"
+        updated:
+          template: "[PERSISTENT] persisted-query: ~ Id={{after.Id}} Value={{after.Value}}"
+      running-totals:
+        added:
+          template: "[PERSISTENT] running-totals: + Records={{after.TotalRecords}} Sum={{after.TotalValue}}"
+        updated:
+          template: "[PERSISTENT] running-totals: ~ Records={{after.TotalRecords}} Sum={{after.TotalValue}}"

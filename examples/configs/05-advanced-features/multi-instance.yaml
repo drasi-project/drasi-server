@@ -82,9 +82,13 @@ instances:
           - event-count
           - event-by-type
         autoStart: true
-        defaultTemplate:
-          updated:
-            template: "[ANALYTICS] {{after}}"
+        routes:
+          event-count:
+            updated:
+              template: "[ANALYTICS] Event count: {{after.TotalEvents}}"
+          event-by-type:
+            updated:
+              template: "[ANALYTICS] Type={{after.EventType}} Count={{after.Count}}"
 
   # Instance 2: Real-time monitoring
   - id: monitoring
@@ -123,12 +127,16 @@ instances:
           - unhealthy-services
         autoStart: true
         routes:
+          health-status:
+            added:
+              template: "[MONITORING] + Service={{after.Service}} Status={{after.Status}}"
+            updated:
+              template: "[MONITORING] ~ Service={{after.Service}} Status={{after.Status}}"
           unhealthy-services:
             added:
-              template: "[ALERT] Unhealthy service: {{after}}"
-        defaultTemplate:
-          added:
-            template: "[MONITORING] {{after}}"
+              template: "[ALERT] Unhealthy service: {{after.Service}} - {{after.Status}}: {{after.Message}}"
+            updated:
+              template: "[ALERT] Service {{after.Service}} still unhealthy: {{after.Status}}"
 
   # Instance 3: Audit logging
   - id: audit
@@ -163,4 +171,4 @@ instances:
         autoStart: true
         defaultTemplate:
           added:
-            template: "[AUDIT] {{after}}"
+            template: "[AUDIT] + Id={{after.AuditId}} User={{after.User}} Action={{after.Action}} at {{after.Timestamp}}"

@@ -106,11 +106,22 @@ reactions:
       - high-capacity-query
       - low-capacity-query
     autoStart: true
-    defaultTemplate:
-      added:
-        template: "[{{query_name}}] Record added"
-      updated:
-        template: "[{{query_name}}] {{after}}"
+    routes:
+      default-capacity:
+        added:
+          template: "[default-capacity] + New record"
+        updated:
+          template: "[default-capacity] ~ Record updated"
+      high-capacity-query:
+        added:
+          template: "[high-capacity-query] + Id={{after.Id}} Data={{after.Data}}"
+        updated:
+          template: "[high-capacity-query] ~ Id={{after.Id}} Data={{after.Data}}"
+      low-capacity-query:
+        added:
+          template: "[low-capacity-query] + Count={{after.Count}}"
+        updated:
+          template: "[low-capacity-query] ~ Count={{after.Count}}"
 
   # Profiler to monitor performance
   - kind: profiler
