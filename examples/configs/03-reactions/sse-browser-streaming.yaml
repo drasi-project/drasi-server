@@ -1,0 +1,118 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# SSE Reaction - Real-time Browser Streaming
+# =============================================================================
+#
+# The SSE (Server-Sent Events) reaction streams query results to web browsers.
+# Perfect for:
+# - Real-time dashboards
+# - Live data feeds
+# - Browser-based monitoring tools
+# - Any web UI that needs live updates
+#
+# Configuration options:
+# - host: Address to bind (default: 0.0.0.0)
+# - port: Port to listen on (default: 8080)
+# - sse_path: Event stream endpoint path (default: /events)
+# - heartbeat_interval_ms: Keep-alive interval (default: 30000)
+# - routes: Per-query template configuration
+# - default_template: Default template for all queries
+#
+# Templates can include a 'path' field for multi-endpoint routing.
+#
+# Run with: cargo run -- --config examples/configs/03-reactions/sse-browser-streaming.yaml
+#
+# Connect from browser:
+#   const events = new EventSource('http://localhost:8081/events');
+#   events.onmessage = (e) => console.log(JSON.parse(e.data));
+
+id: sse-streaming-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # dataType "sensor_live" produces label "Sensor" with stable IDs that get updated
+  - kind: mock
+    id: live-data
+    autoStart: true
+    dataType: "sensor_live"
+    intervalMs: 1000
+
+queries:
+  - id: sensor-readings
+    autoStart: true
+    query: |
+      MATCH (s:Sensor)
+      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+    sources:
+      - sourceId: live-data
+
+  - id: sensor-alerts
+    autoStart: true
+    query: |
+      MATCH (s:Sensor)
+      WHERE s.temperature > 27
+      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
+    sources:
+      - sourceId: live-data
+
+  - id: sensor-summary
+    autoStart: true
+    query: |
+      MATCH (s:Sensor)
+      RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
+    sources:
+      - sourceId: live-data
+
+reactions:
+  # Console logging for debugging
+  - kind: log
+    id: console
+    queries:
+      - sensor-readings
+      - sensor-alerts
+    autoStart: true
+
+  # SSE reaction for browser streaming
+  - kind: sse
+    id: live-stream
+    queries:
+      - sensor-readings
+      - sensor-alerts
+      - sensor-summary
+    autoStart: true
+    host: "0.0.0.0"
+    port: 8081
+    ssePath: "/events"
+    heartbeatIntervalMs: 15000
+
+    # Default template for all queries
+    defaultTemplate:
+      added:
+        template: '{"event": "add", "query": "{{query_name}}", "data": {{after}}}'
+      updated:
+        template: '{"event": "update", "query": "{{query_name}}", "data": {{after}}}'
+      deleted:
+        template: '{"event": "delete", "query": "{{query_name}}", "data": {{before}}}'
+
+    # Custom routes with paths for multi-endpoint streaming
+    routes:
+      sensor-alerts:
+        added:
+          path: "/alerts"
+          template: '{"alert": true, "sensor": {{after}}}'

@@ -1,0 +1,225 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Real-World Scenario: Real-Time Dashboard Backend
+# =============================================================================
+#
+# This example demonstrates building a complete real-time dashboard backend:
+# - Multiple data sources feeding into aggregation queries
+# - SSE streaming for live updates to web clients
+# - Structured events for different dashboard widgets
+# - Multiple SSE paths for different dashboard sections
+#
+# Dashboard sections:
+# 1. KPIs - Key performance indicators (counts, totals, averages)
+# 2. Activity Feed - Recent events and changes
+# 3. Alerts - Active alerts and warnings
+# 4. Charts - Time-series data for charts
+#
+# Frontend integration:
+#   // Connect to different streams
+#   const kpiStream = new EventSource('http://localhost:8081/kpis');
+#   const activityStream = new EventSource('http://localhost:8081/activity');
+#   const alertStream = new EventSource('http://localhost:8081/alerts');
+#
+# Run with: cargo run -- --config examples/configs/06-real-world-scenarios/real-time-dashboard.yaml
+
+id: dashboard-backend
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # Sales data source
+  - kind: mock
+    id: sales-data
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 1000
+
+  # User activity source
+  - kind: mock
+    id: user-activity
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 500
+
+  # System metrics source
+  - kind: mock
+    id: system-metrics
+    autoStart: true
+    dataType: "sensor"
+    intervalMs: 2000
+
+queries:
+  # KPI: Total sales
+  - id: kpi-total-sales
+    autoStart: true
+    query: |
+      MATCH (s:Sale)
+      RETURN count(s) AS TotalTransactions,
+             sum(s.amount) AS TotalRevenue,
+             avg(s.amount) AS AverageOrderValue
+    sources:
+      - sourceId: sales-data
+
+  # KPI: Active users
+  - id: kpi-active-users
+    autoStart: true
+    query: |
+      MATCH (u:User)
+      WHERE u.status = 'active'
+      RETURN count(u) AS ActiveUsers
+    sources:
+      - sourceId: user-activity
+
+  # KPI: System health
+  - id: kpi-system-health
+    autoStart: true
+    query: |
+      MATCH (m:Metric)
+      RETURN avg(m.cpu) AS AvgCPU,
+             avg(m.memory) AS AvgMemory,
+             max(m.latency) AS MaxLatency
+    sources:
+      - sourceId: system-metrics
+
+  # Activity Feed: Recent sales
+  - id: recent-sales
+    autoStart: true
+    query: |
+      MATCH (s:Sale)
+      RETURN s.id AS SaleId,
+             s.customer AS Customer,
+             s.amount AS Amount,
+             s.product AS Product,
+             s.timestamp AS Timestamp
+    sources:
+      - sourceId: sales-data
+
+  # Activity Feed: User events
+  - id: user-events
+    autoStart: true
+    query: |
+      MATCH (e:UserEvent)
+      RETURN e.user_id AS UserId,
+             e.action AS Action,
+             e.timestamp AS Timestamp
+    sources:
+      - sourceId: user-activity
+
+  # Alerts: High-value sales
+  - id: high-value-sales
+    autoStart: true
+    query: |
+      MATCH (s:Sale)
+      WHERE s.amount > 1000
+      RETURN s.id AS SaleId,
+             s.amount AS Amount,
+             s.customer AS Customer,
+             'HIGH_VALUE' AS AlertType
+    sources:
+      - sourceId: sales-data
+
+  # Alerts: System warnings
+  - id: system-warnings
+    autoStart: true
+    query: |
+      MATCH (m:Metric)
+      WHERE m.cpu > 80 OR m.memory > 90
+      RETURN m.host AS Host,
+             m.cpu AS CPU,
+             m.memory AS Memory,
+             'RESOURCE_WARNING' AS AlertType
+    sources:
+      - sourceId: system-metrics
+
+  # Charts: Sales by category
+  - id: sales-by-category
+    autoStart: true
+    query: |
+      MATCH (s:Sale)
+      RETURN s.category AS Category,
+             count(s) AS Count,
+             sum(s.amount) AS Total
+    sources:
+      - sourceId: sales-data
+
+reactions:
+  # Console logging for debugging
+  - kind: log
+    id: dashboard-debug
+    queries:
+      - kpi-total-sales
+      - kpi-active-users
+      - kpi-system-health
+    autoStart: true
+    defaultTemplate:
+      updated:
+        template: "[KPI] {{query_name}}: {{after}}"
+
+  # SSE for KPIs (main dashboard)
+  - kind: sse
+    id: kpi-stream
+    queries:
+      - kpi-total-sales
+      - kpi-active-users
+      - kpi-system-health
+      - sales-by-category
+    autoStart: true
+    host: "0.0.0.0"
+    port: 8081
+    ssePath: "/kpis"
+    heartbeatIntervalMs: 5000
+    defaultTemplate:
+      added:
+        template: '{"widget": "{{query_name}}", "data": {{after}}}'
+      updated:
+        template: '{"widget": "{{query_name}}", "data": {{after}}}'
+
+  # SSE for Activity Feed
+  - kind: sse
+    id: activity-stream
+    queries:
+      - recent-sales
+      - user-events
+    autoStart: true
+    host: "0.0.0.0"
+    port: 8082
+    ssePath: "/activity"
+    heartbeatIntervalMs: 10000
+    defaultTemplate:
+      added:
+        template: '{"type": "activity", "source": "{{query_name}}", "data": {{after}}}'
+
+  # SSE for Alerts
+  - kind: sse
+    id: alert-stream
+    queries:
+      - high-value-sales
+      - system-warnings
+    autoStart: true
+    host: "0.0.0.0"
+    port: 8083
+    ssePath: "/alerts"
+    heartbeatIntervalMs: 10000
+    routes:
+      high-value-sales:
+        added:
+          template: '{"severity": "info", "type": "high_value_sale", "data": {{after}}}'
+      system-warnings:
+        added:
+          template: '{"severity": "warning", "type": "resource_alert", "data": {{after}}}'

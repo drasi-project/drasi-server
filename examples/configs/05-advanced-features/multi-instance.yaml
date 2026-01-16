@@ -1,0 +1,166 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Advanced Features - Multi-Instance Configuration
+# =============================================================================
+#
+# DrasiServer can run multiple DrasiLib instances in a single process.
+# Each instance has its own:
+# - Sources
+# - Queries
+# - Reactions
+# - State store (optional)
+# - Index persistence settings
+#
+# Use multi-instance when you need:
+# - Multi-tenant architectures
+# - Isolated processing pipelines
+# - Different persistence strategies per workload
+# - Logical separation of concerns
+#
+# API access:
+# - /api/v1/instances - List all instances
+# - /api/v1/instances/{instanceId}/sources - Instance-specific sources
+# - /api/v1/instances/{instanceId}/queries - Instance-specific queries
+# - /api/v1/instances/{instanceId}/reactions - Instance-specific reactions
+# - /api/v1/sources (convenience) - First instance sources
+#
+# Run with: cargo run -- --config examples/configs/05-advanced-features/multi-instance.yaml
+
+# Server-level settings (shared across all instances)
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+# Multiple DrasiLib instances
+instances:
+  # Instance 1: Analytics workload
+  - id: analytics
+    persistIndex: true  # Use RocksDB for persistence
+
+    sources:
+      - kind: mock
+        id: analytics-events
+        autoStart: true
+        dataType: "generic"
+        intervalMs: 1000
+
+    queries:
+      - id: event-count
+        autoStart: true
+        query: |
+          MATCH (e:Event)
+          RETURN count(e) AS TotalEvents
+        sources:
+          - sourceId: analytics-events
+
+      - id: event-by-type
+        autoStart: true
+        query: |
+          MATCH (e:Event)
+          RETURN e.type AS EventType, count(e) AS Count
+        sources:
+          - sourceId: analytics-events
+
+    reactions:
+      - kind: log
+        id: analytics-log
+        queries:
+          - event-count
+          - event-by-type
+        autoStart: true
+        defaultTemplate:
+          updated:
+            template: "[ANALYTICS] {{after}}"
+
+  # Instance 2: Real-time monitoring
+  - id: monitoring
+    persistIndex: false  # In-memory for low latency
+
+    sources:
+      - kind: mock
+        id: health-checks
+        autoStart: true
+        dataType: "sensor"
+        intervalMs: 500
+
+    queries:
+      - id: health-status
+        autoStart: true
+        query: |
+          MATCH (h:Health)
+          RETURN h.service AS Service, h.status AS Status
+        sources:
+          - sourceId: health-checks
+
+      - id: unhealthy-services
+        autoStart: true
+        query: |
+          MATCH (h:Health)
+          WHERE h.status <> 'healthy'
+          RETURN h.service AS Service, h.status AS Status, h.message AS Message
+        sources:
+          - sourceId: health-checks
+
+    reactions:
+      - kind: log
+        id: monitoring-log
+        queries:
+          - health-status
+          - unhealthy-services
+        autoStart: true
+        routes:
+          unhealthy-services:
+            added:
+              template: "[ALERT] Unhealthy service: {{after}}"
+        defaultTemplate:
+          added:
+            template: "[MONITORING] {{after}}"
+
+  # Instance 3: Audit logging
+  - id: audit
+    persistIndex: true
+
+    # Optional: State store for persistent plugin state
+    stateStore:
+      kind: redb
+      path: "./data/audit-state.redb"
+
+    sources:
+      - kind: mock
+        id: audit-events
+        autoStart: true
+        dataType: "generic"
+        intervalMs: 2000
+
+    queries:
+      - id: all-audits
+        autoStart: true
+        query: |
+          MATCH (a:Audit)
+          RETURN a.id AS AuditId, a.user AS User, a.action AS Action, a.timestamp AS Timestamp
+        sources:
+          - sourceId: audit-events
+
+    reactions:
+      - kind: log
+        id: audit-log
+        queries:
+          - all-audits
+        autoStart: true
+        defaultTemplate:
+          added:
+            template: "[AUDIT] {{after}}"

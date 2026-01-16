@@ -1,0 +1,124 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Advanced Features - Capacity Tuning
+# =============================================================================
+#
+# DrasiServer provides several knobs for tuning performance:
+#
+# 1. Priority Queue Capacity
+#    - Controls the size of internal priority queues
+#    - Higher values: More buffering, uses more memory
+#    - Lower values: Less memory, may cause backpressure sooner
+#    - Default: 10000
+#
+# 2. Dispatch Buffer Capacity
+#    - Controls the size of dispatch buffers between components
+#    - Higher values: Better burst handling
+#    - Lower values: Lower memory footprint
+#    - Default: 1000
+#
+# 3. Bootstrap Buffer Size
+#    - Controls how much data is buffered during bootstrap
+#    - Per-query setting
+#    - Default: 10000
+#
+# Settings can be specified at:
+# - Server level (defaultPriorityQueueCapacity, defaultDispatchBufferCapacity)
+# - Instance level (same fields in instances array)
+# - Query level (priorityQueueCapacity, dispatchBufferCapacity)
+#
+# Environment variables are supported for all capacity settings!
+#
+# Run with: cargo run -- --config examples/configs/05-advanced-features/capacity-tuning.yaml
+
+id: capacity-tuning-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+# Server-level defaults (can use environment variables)
+defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-15000}"
+defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-2000}"
+
+sources:
+  # High-volume source for testing capacity
+  - kind: mock
+    id: high-throughput
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 50
+
+queries:
+  # Query with default capacity (inherits server defaults)
+  - id: default-capacity
+    autoStart: true
+    query: |
+      MATCH (n)
+      RETURN n
+    sources:
+      - sourceId: high-throughput
+    bootstrapBufferSize: 10000
+
+  # Query with custom high capacity (for burst handling)
+  - id: high-capacity-query
+    autoStart: true
+    query: |
+      MATCH (n)
+      WHERE n.priority = 'high'
+      RETURN n.id AS Id, n.data AS Data
+    sources:
+      - sourceId: high-throughput
+    priorityQueueCapacity: 50000
+    dispatchBufferCapacity: 5000
+    bootstrapBufferSize: 20000
+
+  # Query with low capacity (memory constrained)
+  - id: low-capacity-query
+    autoStart: true
+    query: |
+      MATCH (n)
+      RETURN count(n) AS Count
+    sources:
+      - sourceId: high-throughput
+    priorityQueueCapacity: 1000
+    dispatchBufferCapacity: 100
+    bootstrapBufferSize: 500
+
+reactions:
+  - kind: log
+    id: capacity-monitor
+    queries:
+      - default-capacity
+      - high-capacity-query
+      - low-capacity-query
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[{{query_name}}] Record added"
+      updated:
+        template: "[{{query_name}}] {{after}}"
+
+  # Profiler to monitor performance
+  - kind: profiler
+    id: throughput-profiler
+    queries:
+      - default-capacity
+      - high-capacity-query
+      - low-capacity-query
+    autoStart: true
+    windowSize: 500
+    reportIntervalSecs: 15
