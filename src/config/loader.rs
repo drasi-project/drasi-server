@@ -44,6 +44,9 @@ pub enum ConfigError {
 
     #[error("Validation error: {0}")]
     ValidationError(#[from] anyhow::Error),
+
+    #[error("Unknown fields in configuration: {0}")]
+    FieldValidationError(#[from] super::validation::ValidationError),
 }
 
 /// Deserialize YAML.
@@ -113,6 +116,12 @@ pub fn from_json_str<T: DeserializeOwned>(s: &str) -> Result<T, ConfigError> {
 pub fn load_config_file<P: AsRef<Path>>(path: P) -> Result<DrasiServerConfig, ConfigError> {
     let path_ref = path.as_ref();
     let content = fs::read_to_string(path_ref)?;
+
+    // First, try to parse as YAML Value to validate field names
+    // This catches typos and snake_case fields before they get silently ignored
+    if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        super::validation::validate_config(&value)?;
+    }
 
     // Try YAML first, then JSON
     let config = match serde_yaml::from_str::<DrasiServerConfig>(&content) {
@@ -204,7 +213,7 @@ mod tests {
         let config_content = r#"
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 id: test-server-id
 sources: []
 queries: []

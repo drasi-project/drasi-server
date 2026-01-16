@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 /// Template specification for SSE output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SseTemplateSpecDto {
     /// Optional custom path for this template
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,6 +32,7 @@ pub struct SseTemplateSpecDto {
 
 /// Configuration for query-specific SSE output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SseQueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]

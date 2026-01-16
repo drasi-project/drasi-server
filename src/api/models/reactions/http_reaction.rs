@@ -41,7 +41,7 @@ fn default_reaction_timeout_ms() -> ConfigValue<u64> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpQueryConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added: Option<CallSpecDto>,
@@ -52,7 +52,7 @@ pub struct HttpQueryConfigDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallSpecDto {
     pub url: ConfigValue<String>,
     pub method: ConfigValue<String>,

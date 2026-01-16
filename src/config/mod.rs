@@ -34,9 +34,11 @@
 
 pub mod loader;
 pub mod types;
+pub mod validation;
 
 // Re-export commonly used types
 pub use loader::{from_json_str, from_yaml_str, load_config_file, save_config_file, ConfigError};
+pub use validation::{validate_config, ValidationError};
 pub use types::{DrasiLibInstanceConfig, DrasiServerConfig, ResolvedInstanceConfig};
 
 // Re-export config enums from api::models for backward compatibility
