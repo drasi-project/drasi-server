@@ -1,0 +1,112 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Log Reaction - Advanced Templating
+# =============================================================================
+#
+# The log reaction outputs query results to the console. It's perfect for:
+# - Debugging and development
+# - Monitoring and observability
+# - Quick prototyping before adding other reactions
+#
+# Templates use Handlebars syntax with these variables:
+# - {{query_name}} - Name of the query that produced the result
+# - {{before}} - Previous state (updates/deletes)
+# - {{after}} - New state (adds/updates)
+# - Access fields: {{after.FieldName}} based on query's RETURN clause
+#
+# You can configure:
+# - defaultTemplate: Applied to all queries unless overridden
+# - routes: Per-query template overrides
+#
+# Run with: cargo run -- --config examples/configs/03-reactions/log-with-templates.yaml
+
+id: log-templates-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # Generic mock data generates: value (int), message (string), timestamp
+  - kind: mock
+    id: events
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 2000
+
+queries:
+  # Simulated "alerts" - negative values are alerts
+  - id: alerts
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      WHERE g.value < 0
+      RETURN g.value AS AlertValue, g.message AS Message, g.timestamp AS Timestamp
+    sources:
+      - sourceId: events
+
+  # Simulated "metrics" - positive values are metrics
+  - id: metrics
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      WHERE g.value >= 0
+      RETURN g.value AS MetricValue, g.timestamp AS Timestamp
+    sources:
+      - sourceId: events
+
+  # All events with full data
+  - id: all-events
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
+    sources:
+      - sourceId: events
+
+reactions:
+  - kind: log
+    id: formatted-output
+    queries:
+      - alerts
+      - metrics
+      - all-events
+    autoStart: true
+
+    # Default template for all queries - uses specific field access
+    defaultTemplate:
+      added:
+        template: "[INFO] {{query_name}}: value={{after.Value}} message={{after.Message}}"
+      updated:
+        template: "[INFO] {{query_name}} updated: value={{after.Value}}"
+      deleted:
+        template: "[INFO] {{query_name}}: removed value={{before.Value}}"
+
+    # Per-query overrides using routes
+    routes:
+      # Special formatting for alerts (negative values)
+      alerts:
+        added:
+          template: "[ALERT] ⚠ Value={{after.AlertValue}} at {{after.Timestamp}}"
+        deleted:
+          template: "[ALERT] ✓ Alert cleared (was {{before.AlertValue}})"
+
+      # Custom format for metrics (positive values)
+      metrics:
+        added:
+          template: "[METRIC] + value={{after.MetricValue}} at {{after.Timestamp}}"
+        updated:
+          template: "[METRIC] ~ value={{after.MetricValue}}"

@@ -220,7 +220,7 @@ logLevel: info
 persistConfig: true
 persistIndex: false
 
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb
 

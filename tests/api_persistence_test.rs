@@ -281,12 +281,12 @@ fn test_config_load_yaml_format() {
     let yaml_content = r#"
 host: 127.0.0.1
 port: 8080
-log_level: info
-persist_config: true
+logLevel: info
+persistConfig: true
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 queries: []
 reactions: []
 "#;

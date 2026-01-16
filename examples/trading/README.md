@@ -1,253 +1,416 @@
 # Drasi Trading Demo
 
-A real-time stock trading application demonstrating Drasi Server's powerful continuous query capabilities. This example showcases how to build a change-driven application that reacts instantly to data changes from multiple sources, using Drasi's graph-based query engine to create synthetic relationships between disparate data sources.
+A real-time stock trading dashboard that demonstrates **change-driven web application development** using Drasi Server. This example teaches you how to build applications that react instantly to data changes from multiple sources, without polling or complex event processing.
 
-## Overview
+## What You'll Learn
 
-The Trading Demo illustrates key Drasi Server concepts:
-- **Continuous Queries**: Queries that automatically update as underlying data changes
-- **Multi-Source Integration**: Combining PostgreSQL CDC with HTTP-delivered events
-- **Synthetic Joins**: Creating relationships between data from different sources without explicit foreign keys
-- **Push-Based Architecture**: All UI updates are pushed via Server-Sent Events (SSE)
-- **Change-Driven Design**: The application only updates when data actually changes
+By exploring this example, you'll understand:
+
+1. **What Drasi Is** - A data change processing platform that detects meaningful changes through continuous queries
+2. **Continuous Queries** - Queries that maintain live result sets and notify you when results change
+3. **Multi-Source Integration** - Combining data from PostgreSQL (CDC) and HTTP sources in a single query
+4. **Synthetic Joins** - Creating relationships between data from different sources without database foreign keys
+5. **Change-Driven Architecture** - Building UIs that update only when data actually changes (no polling)
+6. **Server-Sent Events (SSE)** - Using Drasi's reaction system to push changes to connected clients
+
+## Understanding Drasi
+
+### The Problem Drasi Solves
+
+Traditional approaches to building reactive applications require:
+- **Polling**: Repeatedly querying databases for changes (wasteful, laggy)
+- **Event Parsing**: Writing complex code to interpret generic database events
+- **State Management**: Manually tracking what data you've seen before
+- **Multi-Source Coordination**: Building custom pipelines to join data from different systems
+
+### Drasi's Approach
+
+Drasi inverts this model. Instead of reacting to low-level database events, you write **continuous queries** that define exactly what changes matter to you:
+
+```cypher
+-- "Notify me when any stock in my watchlist has a price change"
+MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+WHERE s.symbol IN ['AAPL', 'MSFT', 'GOOGL']
+RETURN s.symbol, sp.price, sp.previous_close
+```
+
+Drasi continuously evaluates this query against your data sources and notifies you **only when the result set changes**—not on every database change.
+
+### Core Concepts
+
+| Concept | Description | In This Example |
+|---------|-------------|-----------------|
+| **Source** | A data repository that Drasi monitors for changes | PostgreSQL (stocks, portfolio tables) + HTTP (real-time prices) |
+| **Continuous Query** | A graph query that maintains a live result set | 6 queries: watchlist, portfolio, gainers, losers, volume, ticker |
+| **Reaction** | An action triggered when query results change | SSE reaction pushes changes to the React app |
+| **Synthetic Join** | A relationship defined in queries, not in the database | `HAS_PRICE` links stocks to prices across sources |
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
-│  PostgreSQL DB  │────▶│    Drasi Server      │◀────│  HTTP Source    │
-│  (Replication)  │ WAL │                      │HTTP │  (Port 9000)    │
-│                 │     │  Sources:            │     │                 │
-│  Tables:        │     │  - postgres-stocks   │     │  Price Updates  │
-│  • stocks       │     │  - price-feed        │     │  from Python    │
-│  • portfolio    │     │                      │     │  Generator      │
-└─────────────────┘     │  Continuous Queries: │     └─────────────────┘
-                        │  - watchlist-query   │
-                        │  - portfolio-query   │
-                        │  - top-gainers      │
-                        │  - top-losers       │
-                        │  - high-volume      │
-                        │  - ticker-query     │
-                        │                      │
-                        │  Reaction:           │
-                        │  - SSE Stream        │
-                        └──────────┬───────────┘
-                                   │
-                              SSE (Port 50051)
-                                   │
-                                   ▼
-                        ┌──────────────────────┐
-                        │     React App        │
-                        │                      │
-                        │  Panels:             │
-                        │  • Watchlist         │
-                        │  • Portfolio         │
-                        │  • Top Gainers      │
-                        │  • Top Losers       │
-                        │  • High Volume      │
-                        │  • Stock Ticker     │
-                        └──────────────────────┘
-```
+```mermaid
+flowchart TB
+    subgraph Sources["Data Sources"]
+        PG[(PostgreSQL DB<br/>Port 5432<br/>stocks & portfolio)]
+        GEN[Python Price<br/>Generator]
+    end
 
-## How It Works
+    subgraph Drasi["Drasi Server · Port 8080"]
+        SRC1[postgres-stocks<br/>CDC Source]
+        SRC2[price-feed<br/>HTTP Source<br/>Port 9000]
 
-### Data Flow
+        subgraph QE["Continuous Query Engine"]
+            Q1[watchlist-query]
+            Q2[portfolio-query]
+            Q3[top-gainers-query]
+            Q4[top-losers-query]
+            Q5[high-volume-query]
+            Q6[price-ticker-query]
+        end
 
-1. **PostgreSQL Source** (`postgres-stocks`):
-   - Uses logical replication (WAL) to stream changes from `stocks` and `portfolio` tables
-   - Provides initial bootstrap data and tracks portfolio positions
-   - Changes are captured in real-time using CDC (Change Data Capture)
+        SSE[SSE Reaction<br/>Port 50051]
+    end
 
-2. **HTTP Source** (`price-feed`):
-   - Receives real-time price updates from the Python price generator
-   - Simulates market data feeds with continuous price changes
+    subgraph App["React App · Port 5173"]
+        UI[Trading Dashboard]
+        W[Watchlist]
+        P[Portfolio]
+        G[Top Gainers]
+        L[Top Losers]
+        V[High Volume]
+        T[Stock Ticker]
+    end
 
-3. **Continuous Queries**:
-   - Process changes from both sources using Cypher graph queries
-   - Create synthetic `HAS_PRICE` and `OWNS_STOCK` relationships
-   - Automatically recalculate when any underlying data changes
-
-4. **SSE Reaction**:
-   - Pushes query result changes to connected clients
-   - No polling required - updates flow instantly when data changes
-
-5. **React Application**:
-   - Connects to SSE stream for real-time updates
-   - Updates UI components only when relevant data changes
-
-### Synthetic Joins
-
-The demo uses Drasi's synthetic join capability to connect data without explicit database relationships:
-
-```cypher
-# Example: Portfolio Query
-MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+    PG -->|WAL/CDC| SRC1
+    GEN -->|HTTP POST| SRC2
+    SRC1 --> QE
+    SRC2 --> QE
+    QE --> SSE
+    SSE -->|Server-Sent Events| UI
+    UI --- W & P & G & L & V & T
 ```
 
-- `OWNS_STOCK`: Links portfolio positions to stock information (both from PostgreSQL)
-- `HAS_PRICE`: Links stocks to their current prices (PostgreSQL to HTTP source)
+**Key Data Flows:**
 
-These relationships are defined in the query configuration, not in the database schema.
+1. **PostgreSQL → PostgreSQL Source**: Logical replication streams changes from `stocks` and `portfolio` tables
+2. **Price Generator → HTTP Source**: Python script POSTs price updates to the HTTP source endpoint
+3. **Sources → Query Engine**: Both sources feed data into the continuous query engine
+4. **Query Engine → SSE Reaction**: Query result changes trigger the SSE reaction
+5. **SSE → React App**: Server-Sent Events push updates to the browser in real-time
 
-## UI Components
+## Quick Start
 
-### Watchlist Panel
-- **Query**: `watchlist-query`
-- **Purpose**: Displays real-time prices for selected stocks (AAPL, MSFT, GOOGL, TSLA, NVDA)
-- **Updates**: When price changes arrive via HTTP source
+### Prerequisites
 
-### Portfolio Panel
-- **Query**: `portfolio-query`
-- **Purpose**: Shows current portfolio holdings with profit/loss calculations
-- **Features**:
-  - Total portfolio value and returns
-  - Individual position P&L
-  - Real-time value updates as prices change
-- **Updates**: When prices change or portfolio positions are modified
+- **Docker** and Docker Compose (for PostgreSQL)
+- **Node.js 16+** and npm (for the React app)
+- **Python 3.7+** (for the price generator)
+- **Rust toolchain** (if building Drasi Server from source)
 
-### Top Gainers Panel
-- **Query**: `top-gainers-query`
-- **Purpose**: Lists stocks with highest positive price changes
-- **Updates**: Dynamically reorders as prices fluctuate
-
-### Top Losers Panel
-- **Query**: `top-losers-query`
-- **Purpose**: Lists stocks with largest price declines
-- **Updates**: Dynamically reorders as prices fluctuate
-
-### High Volume Panel
-- **Query**: `high-volume-query`
-- **Purpose**: Shows most actively traded stocks by volume
-- **Updates**: When volume data changes
-
-### Stock Ticker
-- **Query**: `ticker-query`
-- **Purpose**: Scrolling ticker showing all stocks with price changes
-- **Updates**: Continuously with all price updates
-
-## Quick Start (Easy Mode)
-
-The simplest way to run the demo:
+### One-Command Start
 
 ```bash
 # From the examples/trading directory
 ./start-demo.sh
 ```
 
-This script will:
-1. Check prerequisites (Docker, Node.js, Python 3)
-2. Start PostgreSQL database
-3. Build and start Drasi Server (if needed)
-4. Create queries and reactions
-5. Start the React app
-6. Start the price generator
-7. Open the browser to http://localhost:5173
+This script:
+1. Starts PostgreSQL with sample data (50 stocks, 8 portfolio positions)
+2. Builds and starts Drasi Server with sources configured
+3. Installs dependencies and starts the React app
+4. Starts the Python price generator
 
-To stop the demo:
+**Open http://localhost:5173** to see the live trading dashboard.
+
+To stop everything:
 ```bash
 ./stop-demo.sh
 ```
 
-## Manual Setup (Advanced)
+### Manual Setup (For Learning)
 
-For developers who want more control over the components:
+For a deeper understanding, start each component individually:
 
-### 1. Start PostgreSQL Database
+#### Step 1: Start the Database
+
 ```bash
 cd database
 docker-compose up -d
 ```
 
-### 2. Start Drasi Server
+This starts PostgreSQL with:
+- `stocks` table: 50 stocks with symbol, name, sector, market cap
+- `portfolio` table: 8 demo positions
+- Logical replication configured for CDC
+
+#### Step 2: Build and Start Drasi Server
+
 ```bash
-# From drasi-server root
+# From drasi-server root directory
 cargo build --release
 ./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
 ```
 
-The server starts with only sources configured. Queries will be created dynamically.
+The server starts with two sources pre-configured:
+- `postgres-stocks`: CDC source monitoring stocks and portfolio tables
+- `price-feed`: HTTP source receiving real-time price updates
 
-### 3. Create Queries and Reactions
-```bash
-# Create all queries for the app
-./create-app-queries.sh
-```
+#### Step 3: Start the React Application
 
-### 4. Start the React Application
 ```bash
 cd app
-npm install  # First time only
+npm install
 npm run dev
 ```
 
-The app will be available at http://localhost:5173
+At startup the app automatically:
+1. Creates all 6 continuous queries via the REST API
+2. Creates an SSE reaction to receive live updates
+3. Connects to the SSE stream for real-time data
 
-### 5. Start Price Generator
+#### Step 4: Start the Price Generator
+
 ```bash
 cd mock-generator
-pip install -r requirements.txt  # First time only
+pip install -r requirements.txt
 python3 simple_price_generator.py
 ```
 
-This will start sending price updates every 2 seconds.
+Watch the React app update in real-time as prices change!
+
+## How It Works
+
+### Data Flow
+
+1. **PostgreSQL Source** (`postgres-stocks`) streams changes from PostgreSQL
+2. **Price Generator** sends HTTP POST requests with price updates
+3. **HTTP Source** (`price-feed`) ingests prices as `stock_prices` nodes
+4. **Continuous Queries** join data from both sources using synthetic relationships
+5. **Query Engine** detects when result sets change
+6. **SSE Reaction** pushes changes to connected clients
+7. **React App** updates only the affected UI components
+
+### Synthetic Joins Explained
+
+The magic of this demo is **synthetic joins**—relationships that exist in queries, not in the database.
+
+Consider the portfolio query:
+```cypher
+MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+RETURN p.symbol, s.name, sp.price, ...
+```
+
+There's no `OWNS_STOCK` or `HAS_PRICE` relationship in PostgreSQL. Instead, the query defines these relationships:
+
+```typescript
+// In DrasiClient.ts
+const hasPrice: QueryJoin = {
+  id: 'HAS_PRICE',
+  keys: [
+    { label: 'stocks', property: 'symbol' },      // stocks.symbol
+    { label: 'stock_prices', property: 'symbol' } // stock_prices.symbol (from HTTP)
+  ]
+};
+```
+
+Drasi automatically creates and maintains these relationships when:
+- `stocks.symbol === stock_prices.symbol`
+
+This lets you:
+- **Join data across different sources** (PostgreSQL + HTTP)
+- **Avoid schema changes** in your existing databases
+- **Define relationships semantically** based on your query needs
+
+### The React Integration
+
+The `useDrasi.ts` hook provides a simple interface:
+
+```typescript
+// Subscribe to a continuous query
+const { data, loading, lastUpdate } = useQuery<Stock>('watchlist-query');
+
+// data updates automatically when query results change
+// No polling. No manual refetching. No WebSocket plumbing.
+```
+
+Under the hood:
+1. `DrasiClient` creates queries and an SSE reaction via REST API
+2. `DrasiSSEClient` maintains an EventSource connection
+3. Query results flow as Server-Sent Events
+4. The hook updates component state when relevant data changes
+
+## Code Examples
+
+### Creating a Query
+
+```typescript
+const queryConfig = {
+  id: 'my-query',
+  query: `
+    MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+    WHERE sp.price > 100
+    RETURN s.symbol, sp.price
+  `,
+  sources: [
+    { sourceId: 'postgres-stocks', pipeline: [] },
+    { sourceId: 'price-feed', pipeline: [] }
+  ],
+  joins: [{
+    id: 'HAS_PRICE',
+    keys: [
+      { label: 'stocks', property: 'symbol' },
+      { label: 'stock_prices', property: 'symbol' }
+    ]
+  }],
+  autoStart: true
+};
+
+await fetch('http://localhost:8080/api/v1/queries', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(queryConfig)
+});
+```
+
+### Creating an SSE Reaction
+
+```typescript
+const reactionConfig = {
+  kind: 'sse',
+  id: 'my-stream',
+  queries: ['my-query'],
+  auto_start: true,
+  host: '0.0.0.0',
+  port: 50051,
+  ssePath: '/events',
+  heartbeatIntervalMs: 15000
+};
+
+await fetch('http://localhost:8080/api/v1/reactions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(reactionConfig)
+});
+```
+
+### Listening to SSE Events
+
+```typescript
+const eventSource = new EventSource('http://localhost:50051/events');
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // data.queryId - which query result changed
+  // data.results - array of changes [{type: 'ADD'|'UPDATE'|'DELETE', data: {...}}]
+  // data.timestamp - when the change occurred
+
+  for (const result of data.results) {
+    if (result.type === 'ADD') {
+      // New row entered the query result set
+    } else if (result.type === 'UPDATE') {
+      // Existing row's values changed
+    } else if (result.type === 'DELETE') {
+      // Row exited the query result set
+    }
+  }
+};
+```
+
+### Sending Data to HTTP Source
+
+```python
+# The price generator sends events like this:
+event = {
+    "operation": "update",
+    "element": {
+        "type": "node",
+        "id": "price_AAPL",
+        "labels": ["stock_prices"],
+        "properties": {
+            "symbol": "AAPL",
+            "price": 175.50,
+            "previous_close": 174.00,
+            "volume": 45000000
+        }
+    },
+    "timestamp": 1234567890000000000  # nanoseconds
+}
+
+requests.post('http://localhost:9000/sources/price-feed/events', json=event)
+```
+
+## UI Components
+
+| Component | Query | What It Shows |
+|-----------|-------|---------------|
+| **Watchlist** | `watchlist-query` | 5 selected stocks (AAPL, MSFT, GOOGL, TSLA, NVDA) with live prices |
+| **Portfolio** | `portfolio-query` | Your holdings with real-time P/L calculations |
+| **Top Gainers** | `top-gainers-query` | Stocks where `price > previous_close` |
+| **Top Losers** | `top-losers-query` | Stocks where `price < previous_close` |
+| **High Volume** | `high-volume-query` | Stocks with `volume > 10,000,000` |
+| **Stock Ticker** | `price-ticker-query` | All price updates in a scrolling ticker |
 
 ## Configuration Files
 
-- `server/trading-sources-only.yaml`: Drasi Server configuration with sources only
-- `database/docker-compose.yml`: PostgreSQL database setup
-- `database/init.sql`: Database schema and sample data
-- `app/src/hooks/useDrasi.ts`: React hook for Drasi integration
-- `create-app-queries.sh`: Script to create all queries via REST API
+| File | Purpose |
+|------|---------|
+| `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
+| `database/docker-compose.yml` | PostgreSQL container with replication |
+| `database/init.sql` | Schema, sample data, replication setup |
+| `app/src/services/DrasiClient.ts` | Query definitions and Drasi integration |
+| `app/src/hooks/useDrasi.ts` | React hook for consuming Drasi queries |
+| `mock-generator/simple_price_generator.py` | Simulated market data feed |
 
 ## Troubleshooting
 
-### Replication Slot Issues
-If you see "replication slot already exists" errors:
+### "Replication slot already exists"
+
 ```bash
+cd database
 ./clean-replication.sh
 ```
 
-### Clean Start
-To remove all queries and start fresh:
-```bash
-./cleanup-app-queries.sh
-```
+### Queries not updating
 
-### Database Reset
-To completely reset the database:
+1. Check sources are running: `curl http://localhost:8080/api/v1/sources`
+2. Check queries exist: `curl http://localhost:8080/api/v1/queries`
+3. Check SSE connection in browser DevTools (Network tab, filter by EventSource)
+
+### Database reset
+
 ```bash
 cd database
 docker-compose down -v
 docker-compose up -d
 ```
 
+### Port conflicts
+
+```bash
+# Check what's using ports
+lsof -i :8080  # Drasi Server
+lsof -i :9000  # HTTP Source
+lsof -i :50051 # SSE Reaction
+lsof -i :5173  # React app
+lsof -i :5432  # PostgreSQL
+```
+
 ## Key Concepts Demonstrated
 
-1. **Change-Driven Architecture**: The UI updates only when data changes, no polling
-2. **Multi-Source Queries**: Joining data from PostgreSQL and HTTP sources
-3. **Synthetic Relationships**: Creating graph relationships without database foreign keys
-4. **Continuous Processing**: Queries automatically update as source data changes
-5. **Push-Based Updates**: SSE delivers changes instantly to the UI
-6. **Bootstrap + Incremental**: Initial data load followed by incremental updates
-
-## Development Notes
-
-- The app uses TypeScript and React with Vite for fast development
-- TailwindCSS provides the dark trading terminal aesthetic
-- All queries use Cypher graph query language
-- The PostgreSQL source uses logical replication for zero-polling CDC
-- Price updates demonstrate high-frequency data ingestion
-
-## Requirements
-
-- Docker and Docker Compose
-- Node.js 16+ and npm
-- Python 3.7+
-- Rust toolchain (if building Drasi Server from source)
-- 4GB+ RAM recommended
+| Concept | Traditional Approach | Drasi Approach |
+|---------|---------------------|----------------|
+| **Detecting changes** | Poll database every N seconds | Continuous query notifies on change |
+| **Multi-source data** | ETL pipeline or manual coordination | Single query spans multiple sources |
+| **Real-time UI** | WebSocket + custom message handling | SSE reaction + standard EventSource |
+| **Join across systems** | Denormalize or build join service | Synthetic joins in query definition |
+| **Filtering changes** | Parse all events, filter in code | Query defines what matters |
 
 ## Learn More
 
 - [Drasi Documentation](https://drasi.io/)
-- [Drasi Core](https://github.com/drasi-project/drasi-core) - The query engine
-- [Cypher Query Language](https://neo4j.com/developer/cypher/) - Query syntax reference
+- [Drasi Project on GitHub](https://github.com/drasi-project)
+- [Cypher Query Language](https://neo4j.com/developer/cypher/)
+- [PostgreSQL Logical Replication](https://www.postgresql.org/docs/current/logical-replication.html)
+
+## License
+
+Copyright 2025 The Drasi Authors. Licensed under the Apache License, Version 2.0.

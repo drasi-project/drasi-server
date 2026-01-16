@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 /// Template specification for log output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TemplateSpecDto {
     /// Output template as a Handlebars template
     #[serde(default)]
@@ -27,6 +28,7 @@ pub struct TemplateSpecDto {
 
 /// Configuration for query-specific log output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct QueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]

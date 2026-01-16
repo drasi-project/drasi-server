@@ -1,0 +1,134 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Query Patterns - Aggregation
+# =============================================================================
+#
+# This example demonstrates aggregation patterns in Cypher:
+# - COUNT() - Count matching records
+# - SUM() - Sum numeric values
+# - AVG() - Calculate averages
+# - MIN()/MAX() - Find extremes
+# - COLLECT() - Collect values into lists
+# - GROUP BY (implicit via non-aggregated columns)
+#
+# Key concept: Continuous aggregations automatically update when source data changes!
+#
+# Run with: cargo run -- --config examples/configs/04-query-patterns/aggregation-queries.yaml
+
+id: aggregation-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # Generic mock data: value (int), message (string), timestamp
+  - kind: mock
+    id: data-source
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 1500
+
+queries:
+  # Simple count
+  - id: total-count
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      RETURN count(g) AS TotalCount
+    sources:
+      - sourceId: data-source
+
+  # Sum and average
+  - id: value-stats
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      RETURN sum(g.value) AS TotalValue,
+             avg(g.value) AS AverageValue,
+             count(g) AS RecordCount
+    sources:
+      - sourceId: data-source
+
+  # Min and Max
+  - id: value-extremes
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      RETURN min(g.value) AS MinValue,
+             max(g.value) AS MaxValue
+    sources:
+      - sourceId: data-source
+
+  # Filtered aggregation - positive values only
+  - id: positive-stats
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      WHERE g.value > 0
+      RETURN count(g) AS PositiveCount,
+             sum(g.value) AS PositiveSum,
+             avg(g.value) AS PositiveAvg
+    sources:
+      - sourceId: data-source
+
+  # Filtered aggregation - negative values only
+  - id: negative-stats
+    autoStart: true
+    query: |
+      MATCH (g:Generic)
+      WHERE g.value < 0
+      RETURN count(g) AS NegativeCount,
+             sum(g.value) AS NegativeSum
+    sources:
+      - sourceId: data-source
+
+reactions:
+  - kind: log
+    id: aggregation-results
+    queries:
+      - total-count
+      - value-stats
+      - value-extremes
+      - positive-stats
+      - negative-stats
+    autoStart: true
+    routes:
+      total-count:
+        added:
+          template: "[count] Total records: {{after.TotalCount}}"
+        updated:
+          template: "[count] Total records: {{after.TotalCount}}"
+      value-stats:
+        added:
+          template: "[stats] Sum={{after.TotalValue}} Avg={{after.AverageValue}} Count={{after.RecordCount}}"
+        updated:
+          template: "[stats] Sum={{after.TotalValue}} Avg={{after.AverageValue}} Count={{after.RecordCount}}"
+      value-extremes:
+        added:
+          template: "[extremes] Min={{after.MinValue}} Max={{after.MaxValue}}"
+        updated:
+          template: "[extremes] Min={{after.MinValue}} Max={{after.MaxValue}}"
+      positive-stats:
+        added:
+          template: "[positive] Count={{after.PositiveCount}} Sum={{after.PositiveSum}} Avg={{after.PositiveAvg}}"
+        updated:
+          template: "[positive] Count={{after.PositiveCount}} Sum={{after.PositiveSum}} Avg={{after.PositiveAvg}}"
+      negative-stats:
+        added:
+          template: "[negative] Count={{after.NegativeCount}} Sum={{after.NegativeSum}}"
+        updated:
+          template: "[negative] Count={{after.NegativeCount}} Sum={{after.NegativeSum}}"

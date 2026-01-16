@@ -22,11 +22,41 @@ use std::path::Path;
 /// List of example config files to validate.
 /// These paths are relative to the project root.
 const EXAMPLE_CONFIGS: &[&str] = &[
-    "examples/configs/basic-mock-source/config.yaml",
+    // Solution examples
     "examples/getting-started/server-config.yaml",
     "examples/playground/server/playground.yaml",
     "examples/playground/app/examples/playground/server/playground.yaml",
     "examples/trading/server/trading-sources-only.yaml",
+    // 01-fundamentals
+    "examples/configs/01-fundamentals/hello-world.yaml",
+    "examples/configs/01-fundamentals/mock-with-logging.yaml",
+    "examples/configs/01-fundamentals/first-continuous-query.yaml",
+    // 02-sources
+    "examples/configs/02-sources/http-webhook-receiver.yaml",
+    "examples/configs/02-sources/grpc-streaming-source.yaml",
+    "examples/configs/02-sources/postgres-cdc-complete.yaml",
+    // 03-reactions
+    "examples/configs/03-reactions/log-with-templates.yaml",
+    "examples/configs/03-reactions/http-webhook-sender.yaml",
+    "examples/configs/03-reactions/sse-browser-streaming.yaml",
+    "examples/configs/03-reactions/grpc-streaming-reaction.yaml",
+    "examples/configs/03-reactions/profiler-performance.yaml",
+    // 04-query-patterns
+    "examples/configs/04-query-patterns/filter-and-projection.yaml",
+    "examples/configs/04-query-patterns/aggregation-queries.yaml",
+    "examples/configs/04-query-patterns/multi-source-queries.yaml",
+    "examples/configs/04-query-patterns/time-based-triggers.yaml",
+    // 05-advanced-features
+    "examples/configs/05-advanced-features/adaptive-batching.yaml",
+    "examples/configs/05-advanced-features/multi-instance.yaml",
+    "examples/configs/05-advanced-features/persistent-storage.yaml",
+    "examples/configs/05-advanced-features/capacity-tuning.yaml",
+    "examples/configs/05-advanced-features/read-only-deployment.yaml",
+    // 06-real-world-scenarios
+    "examples/configs/06-real-world-scenarios/iot-sensor-alerts.yaml",
+    "examples/configs/06-real-world-scenarios/order-exception-handling.yaml",
+    "examples/configs/06-real-world-scenarios/absence-of-change.yaml",
+    "examples/configs/06-real-world-scenarios/real-time-dashboard.yaml",
 ];
 
 #[test]
@@ -69,11 +99,7 @@ fn test_all_example_configs_are_valid() {
 
 // Individual tests for each config file provide better granularity in test output
 
-#[test]
-fn test_basic_mock_source_config() {
-    let path = "examples/configs/basic-mock-source/config.yaml";
-    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
-}
+// ==================== Existing Examples ====================
 
 #[test]
 fn test_getting_started_config() {
@@ -96,5 +122,161 @@ fn test_playground_app_config() {
 #[test]
 fn test_trading_sources_only_config() {
     let path = "examples/trading/server/trading-sources-only.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 01-fundamentals ====================
+
+#[test]
+fn test_01_hello_world() {
+    let path = "examples/configs/01-fundamentals/hello-world.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_01_mock_with_logging() {
+    let path = "examples/configs/01-fundamentals/mock-with-logging.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_01_first_continuous_query() {
+    let path = "examples/configs/01-fundamentals/first-continuous-query.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 02-sources ====================
+
+#[test]
+fn test_02_http_webhook_receiver() {
+    let path = "examples/configs/02-sources/http-webhook-receiver.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_02_grpc_streaming_source() {
+    let path = "examples/configs/02-sources/grpc-streaming-source.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_02_postgres_cdc_complete() {
+    let path = "examples/configs/02-sources/postgres-cdc-complete.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 03-reactions ====================
+
+#[test]
+fn test_03_log_with_templates() {
+    let path = "examples/configs/03-reactions/log-with-templates.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_03_http_webhook_sender() {
+    let path = "examples/configs/03-reactions/http-webhook-sender.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_03_sse_browser_streaming() {
+    let path = "examples/configs/03-reactions/sse-browser-streaming.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_03_grpc_streaming_reaction() {
+    let path = "examples/configs/03-reactions/grpc-streaming-reaction.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_03_profiler_performance() {
+    let path = "examples/configs/03-reactions/profiler-performance.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 04-query-patterns ====================
+
+#[test]
+fn test_04_filter_and_projection() {
+    let path = "examples/configs/04-query-patterns/filter-and-projection.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_04_aggregation_queries() {
+    let path = "examples/configs/04-query-patterns/aggregation-queries.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_04_multi_source_queries() {
+    let path = "examples/configs/04-query-patterns/multi-source-queries.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_04_time_based_triggers() {
+    let path = "examples/configs/04-query-patterns/time-based-triggers.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 05-advanced-features ====================
+
+#[test]
+fn test_05_adaptive_batching() {
+    let path = "examples/configs/05-advanced-features/adaptive-batching.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_05_multi_instance() {
+    let path = "examples/configs/05-advanced-features/multi-instance.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_05_persistent_storage() {
+    let path = "examples/configs/05-advanced-features/persistent-storage.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_05_capacity_tuning() {
+    let path = "examples/configs/05-advanced-features/capacity-tuning.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_05_read_only_deployment() {
+    let path = "examples/configs/05-advanced-features/read-only-deployment.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== 06-real-world-scenarios ====================
+
+#[test]
+fn test_06_iot_sensor_alerts() {
+    let path = "examples/configs/06-real-world-scenarios/iot-sensor-alerts.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_06_order_exception_handling() {
+    let path = "examples/configs/06-real-world-scenarios/order-exception-handling.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_06_absence_of_change() {
+    let path = "examples/configs/06-real-world-scenarios/absence-of-change.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_06_real_time_dashboard() {
+    let path = "examples/configs/06-real-world-scenarios/real-time-dashboard.yaml";
     load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
 }
