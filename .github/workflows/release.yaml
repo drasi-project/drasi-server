@@ -34,9 +34,83 @@ env:
   IMAGE_NAME: drasi-server
 
 jobs:
-  # Build job for each platform using matrix strategy
-  build-platform:
-    name: Build ${{ matrix.platform }}
+  # Build binaries for multiple platforms using cross-compilation
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os_name: macos
+            arch: aarch64
+          - target: aarch64-pc-windows-msvc
+            os_name: windows
+            arch: aarch64
+          - target: aarch64-unknown-linux-gnu
+            os_name: linux
+            arch: aarch64
+          - target: x86_64-pc-windows-msvc
+            os_name: windows
+            arch: x86_64
+          - target: x86_64-unknown-linux-gnu
+            os_name: linux
+            arch: x86_64
+          - target: x86_64-apple-darwin
+            os_name: macos
+            arch: x86_64
+          - target: aarch64-unknown-linux-musl
+            os_name: linux-musl
+            arch: aarch64
+          - target: x86_64-unknown-linux-musl
+            os_name: linux-musl
+            arch: x86_64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install cross-compilation tool
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build binary
+        id: build
+        run: |
+          # Get version from tag (strip 'v' prefix if present)
+          VERSION="${{ inputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          # Build the release binary for target
+          cross build --release --target ${{ matrix.target }} --bin drasi-server
+
+          # Determine binary extension
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            BINARY_EXT=".exe"
+          else
+            BINARY_EXT=""
+          fi
+
+          # Rename binary following Rust best practices: drasid-<version>-<target>
+          BINARY_NAME="drasid-${VERSION}-${{ matrix.target }}${BINARY_EXT}"
+          cp target/${{ matrix.target }}/release/drasi-server${BINARY_EXT} "${BINARY_NAME}"
+          chmod +x "${BINARY_NAME}" || true
+
+          echo "name=${BINARY_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ inputs.tag }}-${{ matrix.target }}
+          path: ${{ steps.build.outputs.name }}
+          if-no-files-found: error
+
+  # Build Docker images for Linux platforms
+  build-docker:
+    name: Build Docker ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -74,7 +148,7 @@ jobs:
   # Create multi-arch manifest
   create-manifest:
     name: Create Multi-Arch Manifest
-    needs: build-platform
+    needs: build-docker
     runs-on: ubuntu-latest
     steps:
       - name: Log in to GitHub Container Registry
@@ -98,6 +172,10 @@ jobs:
 
       - name: Generate summary
         run: |
+          # Strip 'v' prefix from tag for binary names
+          VERSION="${{ inputs.tag }}"
+          VERSION="${VERSION#v}"
+
           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
@@ -116,3 +194,15 @@ jobs:
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
