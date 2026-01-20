@@ -18,12 +18,15 @@ use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// Re-use adaptive config from http_reaction
-use super::http_reaction::AdaptiveBatchConfigDto;
+// Import adaptive default functions from http_reaction
+use super::http_reaction::{
+    default_adaptive_batch_timeout_ms, default_adaptive_max_batch_size,
+    default_adaptive_min_batch_size, default_adaptive_window_size,
+};
 
 /// Local copy of gRPC reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]
     pub endpoint: ConfigValue<String>,
@@ -73,7 +76,7 @@ fn default_initial_connection_timeout_ms() -> ConfigValue<u64> {
 
 /// Local copy of gRPC adaptive reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcAdaptiveReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]
     pub endpoint: ConfigValue<String>,
@@ -87,6 +90,12 @@ pub struct GrpcAdaptiveReactionConfigDto {
     pub initial_connection_timeout_ms: ConfigValue<u64>,
     #[serde(default)]
     pub metadata: HashMap<String, ConfigValue<String>>,
-    #[serde(flatten)]
-    pub adaptive: AdaptiveBatchConfigDto,
+    #[serde(default = "default_adaptive_min_batch_size")]
+    pub adaptive_min_batch_size: ConfigValue<usize>,
+    #[serde(default = "default_adaptive_max_batch_size")]
+    pub adaptive_max_batch_size: ConfigValue<usize>,
+    #[serde(default = "default_adaptive_window_size")]
+    pub adaptive_window_size: ConfigValue<usize>,
+    #[serde(default = "default_adaptive_batch_timeout_ms")]
+    pub adaptive_batch_timeout_ms: ConfigValue<u64>,
 }

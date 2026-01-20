@@ -43,7 +43,7 @@ pub struct QueryConfigDto {
 
 /// Local copy of log reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogReactionConfigDto {
     /// Query-specific template configurations
     #[serde(default)]

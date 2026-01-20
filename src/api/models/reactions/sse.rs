@@ -47,7 +47,7 @@ pub struct SseQueryConfigDto {
 
 /// Local copy of SSE reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SseReactionConfigDto {
     #[serde(default = "default_sse_host")]
     pub host: ConfigValue<String>,
