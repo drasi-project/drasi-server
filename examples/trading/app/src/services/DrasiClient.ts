@@ -273,12 +273,12 @@ export class DrasiClient {
           kind: 'sse',
           id: this.reactionId,
           queries: Array.from(this.queries.keys()), // This will include price-ticker-query
-          auto_start: true,
+          autoStart: true,
           // SSE reaction config fields (camelCase for nested SseReactionConfigDto)
           host: '0.0.0.0',
           port: 50051,
-          sse_path: '/events',
-          heartbeat_interval_ms: 15000
+          ssePath: '/events',
+          heartbeatIntervalMs: 15000
         };
 
         const createResponse = await fetch(`${this.baseUrl}/api/v1/reactions`, {
@@ -306,7 +306,7 @@ export class DrasiClient {
         const props = reaction.config?.properties || reaction.properties || {};
         const host = props.host || 'localhost';
         const port = props.port || 50051;
-        const path = props.sse_path || '/events';
+        const path = props.ssePath || '/events';
         return `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${path}`;
       }
     } catch (error) {

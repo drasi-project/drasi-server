@@ -21,7 +21,7 @@ use std::str::FromStr;
 
 /// Local copy of PostgreSQL source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PostgresSourceConfigDto {
     #[serde(default = "default_postgres_host")]
     pub host: ConfigValue<String>,
@@ -91,7 +91,7 @@ impl From<SslMode> for SslModeDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableKeyConfigDto {
     pub table: String,
     pub key_columns: Vec<String>,

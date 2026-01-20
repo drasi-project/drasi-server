@@ -1,0 +1,173 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Query Patterns - Time-Based Triggers
+# =============================================================================
+#
+# Drasi provides powerful time-based functions for detecting:
+# - Delayed conditions (something will become true at a future time)
+# - Sustained conditions (something has been true for a duration)
+# - Timeout detection (something hasn't happened within a time window)
+#
+# Key Drasi time functions:
+# - drasi.trueLater(condition, timestamp) - Triggers when condition becomes true at timestamp
+# - drasi.trueFor(condition, duration) - Triggers when condition has been true for duration
+# - drasi.changeDateTime(node) - Returns when a node was last changed
+# - datetime.realtime() - Current real-time
+# - duration({seconds: N, minutes: N, hours: N}) - Duration literals
+#
+# Note: These queries demonstrate the PATTERNS. The trueLater/trueFor functions
+# require the full Drasi runtime for proper time-based evaluation.
+#
+# Run with: cargo run -- --config examples/configs/04-query-patterns/time-based-triggers.yaml
+
+id: time-triggers-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  - kind: mock
+    id: activity-stream
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 5000
+
+queries:
+  # Track timestamps of activities
+  - id: activity-times
+    autoStart: true
+    query: |
+      MATCH (a:Activity)
+      RETURN a.id AS ActivityId,
+             a.user_id AS UserId,
+             a.timestamp AS Timestamp,
+             a.type AS ActivityType
+    sources:
+      - sourceId: activity-stream
+
+  # Find recently active users (within last 60 seconds)
+  # Note: This is a simplified pattern - full time comparison requires datetime support
+  - id: recent-activity
+    autoStart: true
+    query: |
+      MATCH (a:Activity)
+      WHERE a.is_recent = true
+      RETURN a.user_id AS UserId,
+             a.timestamp AS LastActivity,
+             'ACTIVE' AS Status
+    sources:
+      - sourceId: activity-stream
+
+  # Detect stale sessions
+  # Pattern: Sessions that haven't been updated recently
+  - id: stale-sessions
+    autoStart: true
+    query: |
+      MATCH (s:Session)
+      WHERE s.is_stale = true
+      RETURN s.id AS SessionId,
+             s.user_id AS UserId,
+             s.last_activity AS LastActivity,
+             'STALE' AS Status
+    sources:
+      - sourceId: activity-stream
+
+  # Order processing timeout pattern
+  # Detect orders stuck in 'processing' state
+  - id: processing-timeouts
+    autoStart: true
+    query: |
+      MATCH (o:Order)
+      WHERE o.status = 'processing' AND o.is_overdue = true
+      RETURN o.id AS OrderId,
+             o.created_at AS CreatedAt,
+             o.status AS Status,
+             'TIMEOUT' AS AlertType
+    sources:
+      - sourceId: activity-stream
+
+  # Heartbeat monitoring pattern
+  # Detect services that haven't sent heartbeat
+  - id: missing-heartbeats
+    autoStart: true
+    query: |
+      MATCH (s:Service)
+      WHERE s.heartbeat_missing = true
+      RETURN s.id AS ServiceId,
+             s.name AS ServiceName,
+             s.last_heartbeat AS LastHeartbeat,
+             'HEARTBEAT_MISSING' AS Alert
+    sources:
+      - sourceId: activity-stream
+
+  # SLA violation pattern
+  # Tickets not resolved within SLA window
+  - id: sla-violations
+    autoStart: true
+    query: |
+      MATCH (t:Ticket)
+      WHERE t.status <> 'resolved' AND t.sla_breached = true
+      RETURN t.id AS TicketId,
+             t.priority AS Priority,
+             t.created_at AS Created,
+             t.sla_deadline AS Deadline,
+             'SLA_BREACH' AS Alert
+    sources:
+      - sourceId: activity-stream
+
+reactions:
+  - kind: log
+    id: time-trigger-logger
+    queries:
+      - activity-times
+      - recent-activity
+      - stale-sessions
+      - processing-timeouts
+      - missing-heartbeats
+      - sla-violations
+    autoStart: true
+    routes:
+      activity-times:
+        added:
+          template: "[activity-times] + Activity {{after.ActivityId}}: User {{after.UserId}} - {{after.ActivityType}} at {{after.Timestamp}}"
+        updated:
+          template: "[activity-times] ~ Activity {{after.ActivityId}}: User {{after.UserId}} - {{after.ActivityType}}"
+      recent-activity:
+        added:
+          template: "[recent-activity] + User {{after.UserId}} is {{after.Status}} (last: {{after.LastActivity}})"
+        updated:
+          template: "[recent-activity] ~ User {{after.UserId}} status: {{after.Status}}"
+      stale-sessions:
+        added:
+          template: "[stale-sessions] + Session {{after.SessionId}}: User {{after.UserId}} - {{after.Status}} (last: {{after.LastActivity}})"
+        updated:
+          template: "[stale-sessions] ~ Session {{after.SessionId}}: User {{after.UserId}} - {{after.Status}}"
+      processing-timeouts:
+        added:
+          template: "[TIMEOUT ALERT] Order {{after.OrderId}}: {{after.AlertType}} (created: {{after.CreatedAt}}, status: {{after.Status}})"
+        updated:
+          template: "[TIMEOUT ALERT] Order {{after.OrderId}} still in {{after.Status}}"
+      missing-heartbeats:
+        added:
+          template: "[HEALTH ALERT] {{after.Alert}}: Service {{after.ServiceId}} ({{after.ServiceName}}) - last: {{after.LastHeartbeat}}"
+        updated:
+          template: "[HEALTH ALERT] Service {{after.ServiceId}} still missing heartbeat"
+      sla-violations:
+        added:
+          template: "[SLA ALERT] {{after.Alert}}: Ticket {{after.TicketId}} ({{after.Priority}}) - deadline: {{after.Deadline}}, created: {{after.Created}}"
+        updated:
+          template: "[SLA ALERT] Ticket {{after.TicketId}} still breaching SLA"

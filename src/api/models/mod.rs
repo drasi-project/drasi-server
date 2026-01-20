@@ -39,7 +39,9 @@
 //!
 //! - **`config_value`**: Generic configuration value types for static/environment variable/secret references
 
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 // Config value module
 pub mod config_value;
@@ -66,8 +68,8 @@ fn default_true() -> bool {
 
 /// Source configuration with kind discriminator.
 ///
-/// Uses serde tagged enum to automatically deserialize into the correct
-/// plugin-specific config struct based on the `kind` field.
+/// Uses a custom deserializer to handle the `kind` field and validate unknown fields.
+/// The inner config DTOs use `#[serde(deny_unknown_fields)]` to catch typos.
 ///
 /// # Example YAML
 ///
@@ -75,23 +77,23 @@ fn default_true() -> bool {
 /// sources:
 ///   - kind: mock
 ///     id: test-source
-///     auto_start: true
-///     data_type: sensor
-///     interval_ms: 1000
+///     autoStart: true
+///     dataType: sensor
+///     intervalMs: 1000
 ///
 ///   - kind: http
 ///     id: http-source
 ///     host: "0.0.0.0"
 ///     port: 9000
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SourceConfig {
     /// Mock source for testing
     #[serde(rename = "mock")]
     Mock {
         id: String,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
@@ -102,7 +104,6 @@ pub enum SourceConfig {
     #[serde(rename = "http")]
     Http {
         id: String,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
@@ -113,7 +114,6 @@ pub enum SourceConfig {
     #[serde(rename = "grpc")]
     Grpc {
         id: String,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
@@ -124,7 +124,6 @@ pub enum SourceConfig {
     #[serde(rename = "postgres")]
     Postgres {
         id: String,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
@@ -135,13 +134,162 @@ pub enum SourceConfig {
     #[serde(rename = "platform")]
     Platform {
         id: String,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PlatformSourceConfigDto,
     },
+}
+
+// Known source kinds for error messages
+const SOURCE_KINDS: &[&str] = &["mock", "http", "grpc", "postgres", "platform"];
+
+impl<'de> Deserialize<'de> for SourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SourceConfigVisitor;
+
+        impl<'de> Visitor<'de> for SourceConfigVisitor {
+            type Value = SourceConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a source configuration with 'kind' and 'id' fields")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                // Storage for common fields
+                let mut kind: Option<String> = None;
+                let mut id: Option<String> = None;
+                let mut auto_start: Option<bool> = None;
+                let mut bootstrap_provider: Option<serde_json::Value> = None;
+
+                // Collect remaining fields for the inner config
+                let mut remaining = serde_json::Map::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "kind" => {
+                            if kind.is_some() {
+                                return Err(de::Error::duplicate_field("kind"));
+                            }
+                            kind = Some(map.next_value()?);
+                        }
+                        "id" => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
+                            }
+                            id = Some(map.next_value()?);
+                        }
+                        "autoStart" => {
+                            if auto_start.is_some() {
+                                return Err(de::Error::duplicate_field("autoStart"));
+                            }
+                            auto_start = Some(map.next_value()?);
+                        }
+                        "bootstrapProvider" => {
+                            if bootstrap_provider.is_some() {
+                                return Err(de::Error::duplicate_field("bootstrapProvider"));
+                            }
+                            bootstrap_provider = Some(map.next_value()?);
+                        }
+                        // Collect all other fields for the inner config
+                        other => {
+                            let value: serde_json::Value = map.next_value()?;
+                            remaining.insert(other.to_string(), value);
+                        }
+                    }
+                }
+
+                // Validate required fields
+                let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
+                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let auto_start = auto_start.unwrap_or(true);
+
+                // Deserialize bootstrap_provider if present
+                let bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig> =
+                    bootstrap_provider
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| {
+                            de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
+                        })?;
+
+                let remaining_value = serde_json::Value::Object(remaining);
+
+                match kind.as_str() {
+                    "mock" => {
+                        let config: MockSourceConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                            de::Error::custom(format!("in source '{id}' (kind=mock): {e}"))
+                        })?;
+                        Ok(SourceConfig::Mock {
+                            id,
+                            auto_start,
+                            bootstrap_provider,
+                            config,
+                        })
+                    }
+                    "http" => {
+                        let config: HttpSourceConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                            de::Error::custom(format!("in source '{id}' (kind=http): {e}"))
+                        })?;
+                        Ok(SourceConfig::Http {
+                            id,
+                            auto_start,
+                            bootstrap_provider,
+                            config,
+                        })
+                    }
+                    "grpc" => {
+                        let config: GrpcSourceConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                            de::Error::custom(format!("in source '{id}' (kind=grpc): {e}"))
+                        })?;
+                        Ok(SourceConfig::Grpc {
+                            id,
+                            auto_start,
+                            bootstrap_provider,
+                            config,
+                        })
+                    }
+                    "postgres" => {
+                        let config: PostgresSourceConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!("in source '{id}' (kind=postgres): {e}"))
+                            })?;
+                        Ok(SourceConfig::Postgres {
+                            id,
+                            auto_start,
+                            bootstrap_provider,
+                            config,
+                        })
+                    }
+                    "platform" => {
+                        let config: PlatformSourceConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!("in source '{id}' (kind=platform): {e}"))
+                            })?;
+                        Ok(SourceConfig::Platform {
+                            id,
+                            auto_start,
+                            bootstrap_provider,
+                            config,
+                        })
+                    }
+                    unknown => Err(de::Error::unknown_variant(unknown, SOURCE_KINDS)),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(SourceConfigVisitor)
+    }
 }
 
 impl SourceConfig {
@@ -191,17 +339,17 @@ impl SourceConfig {
 
 /// Reaction configuration with kind discriminator.
 ///
-/// Similar to SourceConfig, uses serde tagged enum for type-safe deserialization
-/// of different reaction types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Uses a custom deserializer to handle the `kind` field and validate unknown fields.
+/// The inner config DTOs use `#[serde(deny_unknown_fields)]` to catch typos.
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ReactionConfig {
     /// Log reaction for console output
     #[serde(rename = "log")]
     Log {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: LogReactionConfigDto,
@@ -211,7 +359,6 @@ pub enum ReactionConfig {
     Http {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpReactionConfigDto,
@@ -221,7 +368,6 @@ pub enum ReactionConfig {
     HttpAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: HttpAdaptiveReactionConfigDto,
@@ -231,7 +377,6 @@ pub enum ReactionConfig {
     Grpc {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcReactionConfigDto,
@@ -241,7 +386,6 @@ pub enum ReactionConfig {
     GrpcAdaptive {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: GrpcAdaptiveReactionConfigDto,
@@ -251,7 +395,6 @@ pub enum ReactionConfig {
     Sse {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: SseReactionConfigDto,
@@ -261,7 +404,6 @@ pub enum ReactionConfig {
     Platform {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: PlatformReactionConfigDto,
@@ -271,11 +413,206 @@ pub enum ReactionConfig {
     Profiler {
         id: String,
         queries: Vec<String>,
-        #[serde(default = "default_true")]
         auto_start: bool,
         #[serde(flatten)]
         config: ProfilerReactionConfigDto,
     },
+}
+
+// Known reaction kinds for error messages
+const REACTION_KINDS: &[&str] = &[
+    "log",
+    "http",
+    "http-adaptive",
+    "grpc",
+    "grpc-adaptive",
+    "sse",
+    "platform",
+    "profiler",
+];
+
+impl<'de> Deserialize<'de> for ReactionConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ReactionConfigVisitor;
+
+        impl<'de> Visitor<'de> for ReactionConfigVisitor {
+            type Value = ReactionConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter
+                    .write_str("a reaction configuration with 'kind', 'id', and 'queries' fields")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                // Storage for common fields
+                let mut kind: Option<String> = None;
+                let mut id: Option<String> = None;
+                let mut queries: Option<Vec<String>> = None;
+                let mut auto_start: Option<bool> = None;
+
+                // Collect remaining fields for the inner config
+                let mut remaining = serde_json::Map::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "kind" => {
+                            if kind.is_some() {
+                                return Err(de::Error::duplicate_field("kind"));
+                            }
+                            kind = Some(map.next_value()?);
+                        }
+                        "id" => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
+                            }
+                            id = Some(map.next_value()?);
+                        }
+                        "queries" => {
+                            if queries.is_some() {
+                                return Err(de::Error::duplicate_field("queries"));
+                            }
+                            queries = Some(map.next_value()?);
+                        }
+                        "autoStart" => {
+                            if auto_start.is_some() {
+                                return Err(de::Error::duplicate_field("autoStart"));
+                            }
+                            auto_start = Some(map.next_value()?);
+                        }
+                        // Collect all other fields for the inner config
+                        other => {
+                            let value: serde_json::Value = map.next_value()?;
+                            remaining.insert(other.to_string(), value);
+                        }
+                    }
+                }
+
+                // Validate required fields
+                let kind = kind.ok_or_else(|| de::Error::missing_field("kind"))?;
+                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let queries = queries.ok_or_else(|| de::Error::missing_field("queries"))?;
+                let auto_start = auto_start.unwrap_or(true);
+
+                let remaining_value = serde_json::Value::Object(remaining);
+
+                match kind.as_str() {
+                    "log" => {
+                        let config: LogReactionConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                                de::Error::custom(format!("in reaction '{id}' (kind=log): {e}"))
+                            })?;
+                        Ok(ReactionConfig::Log {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "http" => {
+                        let config: HttpReactionConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                                de::Error::custom(format!("in reaction '{id}' (kind=http): {e}"))
+                            })?;
+                        Ok(ReactionConfig::Http {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "http-adaptive" => {
+                        let config: HttpAdaptiveReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=http-adaptive): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::HttpAdaptive {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "grpc" => {
+                        let config: GrpcReactionConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                                de::Error::custom(format!("in reaction '{id}' (kind=grpc): {e}"))
+                            })?;
+                        Ok(ReactionConfig::Grpc {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "grpc-adaptive" => {
+                        let config: GrpcAdaptiveReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=grpc-adaptive): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::GrpcAdaptive {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "sse" => {
+                        let config: SseReactionConfigDto = serde_json::from_value(remaining_value)
+                            .map_err(|e| {
+                                de::Error::custom(format!("in reaction '{id}' (kind=sse): {e}"))
+                            })?;
+                        Ok(ReactionConfig::Sse {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "platform" => {
+                        let config: PlatformReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=platform): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::Platform {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "profiler" => {
+                        let config: ProfilerReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=profiler): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::Profiler {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    unknown => Err(de::Error::unknown_variant(unknown, REACTION_KINDS)),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(ReactionConfigVisitor)
+    }
 }
 
 impl ReactionConfig {
@@ -369,6 +706,719 @@ impl StateStoreConfig {
     pub fn kind(&self) -> &str {
         match self {
             StateStoreConfig::Redb { .. } => "redb",
+        }
+    }
+}
+
+// =============================================================================
+// Tests for Custom Deserializers
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // SourceConfig Deserialization Tests
+    // =========================================================================
+
+    #[test]
+    fn test_source_deserialize_mock_valid() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "autoStart": true,
+            "dataType": "sensor",
+            "intervalMs": 1000
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert!(source.auto_start());
+        assert!(matches!(source, SourceConfig::Mock { .. }));
+    }
+
+    #[test]
+    fn test_source_deserialize_mock_minimal() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert!(source.auto_start()); // default is true
+    }
+
+    #[test]
+    fn test_source_deserialize_auto_start_defaults_true() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert!(source.auto_start());
+    }
+
+    #[test]
+    fn test_source_deserialize_auto_start_explicit_false() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "autoStart": false
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert!(!source.auto_start());
+    }
+
+    #[test]
+    fn test_source_deserialize_http_valid() {
+        let json = r#"{
+            "kind": "http",
+            "id": "http-source",
+            "autoStart": true,
+            "host": "localhost",
+            "port": 8080,
+            "timeoutMs": 5000
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "http-source");
+        assert!(matches!(source, SourceConfig::Http { .. }));
+    }
+
+    #[test]
+    fn test_source_deserialize_grpc_valid() {
+        let json = r#"{
+            "kind": "grpc",
+            "id": "grpc-source",
+            "endpoint": "http://localhost:50051"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "grpc-source");
+        assert!(matches!(source, SourceConfig::Grpc { .. }));
+    }
+
+    #[test]
+    fn test_source_deserialize_postgres_valid() {
+        let json = r#"{
+            "kind": "postgres",
+            "id": "pg-source",
+            "host": "localhost",
+            "port": 5432,
+            "database": "testdb",
+            "user": "postgres",
+            "password": "secret",
+            "slotName": "test_slot",
+            "publicationName": "test_pub"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "pg-source");
+        assert!(matches!(source, SourceConfig::Postgres { .. }));
+    }
+
+    #[test]
+    fn test_source_deserialize_platform_valid() {
+        let json = r#"{
+            "kind": "platform",
+            "id": "platform-source",
+            "redisUrl": "redis://localhost:6379",
+            "streamKey": "events"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "platform-source");
+        assert!(matches!(source, SourceConfig::Platform { .. }));
+    }
+
+    #[test]
+    fn test_source_deserialize_missing_kind() {
+        let json = r#"{
+            "id": "test-source"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("kind"), "Error should mention 'kind': {err}");
+    }
+
+    #[test]
+    fn test_source_deserialize_missing_id() {
+        let json = r#"{
+            "kind": "mock"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("id"), "Error should mention 'id': {err}");
+    }
+
+    #[test]
+    fn test_source_deserialize_unknown_kind() {
+        let json = r#"{
+            "kind": "unknown-source-type",
+            "id": "test-source"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown-source-type") || err.contains("unknown variant"),
+            "Error should mention unknown kind: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_unknown_field_rejected() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "unknownField": "value"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknownField") || err.contains("unknown field"),
+            "Error should mention unknown field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_snake_case_auto_start_rejected() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "auto_start": true
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention snake_case field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_snake_case_data_type_rejected() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "data_type": "sensor"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("data_type"),
+            "Error should mention snake_case field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_error_includes_source_id() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "my-unique-source",
+            "badField": "value"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("my-unique-source"),
+            "Error should include source id for context: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_error_includes_kind() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "badField": "value"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("mock"),
+            "Error should include kind for context: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_with_bootstrap_provider() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "bootstrapProvider": {
+                "type": "noop"
+            }
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert!(source.bootstrap_provider().is_some());
+    }
+
+    #[test]
+    fn test_source_deserialize_yaml_format() {
+        let yaml = r#"
+kind: mock
+id: yaml-source
+autoStart: true
+dataType: sensor
+intervalMs: 1000
+"#;
+
+        let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(source.id(), "yaml-source");
+        assert!(source.auto_start());
+    }
+
+    // =========================================================================
+    // ReactionConfig Deserialization Tests
+    // =========================================================================
+
+    #[test]
+    fn test_reaction_deserialize_log_valid() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-log",
+            "queries": ["query1", "query2"],
+            "autoStart": true
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "test-log");
+        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert!(reaction.auto_start());
+        assert!(matches!(reaction, ReactionConfig::Log { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_log_minimal() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-log",
+            "queries": ["query1"]
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "test-log");
+        assert!(reaction.auto_start()); // default is true
+    }
+
+    #[test]
+    fn test_reaction_deserialize_auto_start_defaults_true() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-log",
+            "queries": ["query1"]
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert!(reaction.auto_start());
+    }
+
+    #[test]
+    fn test_reaction_deserialize_auto_start_explicit_false() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-log",
+            "queries": ["query1"],
+            "autoStart": false
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert!(!reaction.auto_start());
+    }
+
+    #[test]
+    fn test_reaction_deserialize_http_valid() {
+        let json = r#"{
+            "kind": "http",
+            "id": "http-reaction",
+            "queries": ["query1"],
+            "baseUrl": "http://localhost:8080",
+            "timeoutMs": 5000,
+            "routes": {}
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "http-reaction");
+        assert!(matches!(reaction, ReactionConfig::Http { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_http_adaptive_valid() {
+        let json = r#"{
+            "kind": "http-adaptive",
+            "id": "http-adaptive-reaction",
+            "queries": ["query1"],
+            "baseUrl": "http://localhost:8080",
+            "timeoutMs": 5000,
+            "routes": {}
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "http-adaptive-reaction");
+        assert!(matches!(reaction, ReactionConfig::HttpAdaptive { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_grpc_valid() {
+        let json = r#"{
+            "kind": "grpc",
+            "id": "grpc-reaction",
+            "queries": ["query1"],
+            "endpoint": "http://localhost:50051"
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "grpc-reaction");
+        assert!(matches!(reaction, ReactionConfig::Grpc { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_grpc_adaptive_valid() {
+        let json = r#"{
+            "kind": "grpc-adaptive",
+            "id": "grpc-adaptive-reaction",
+            "queries": ["query1"],
+            "endpoint": "http://localhost:50051"
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "grpc-adaptive-reaction");
+        assert!(matches!(reaction, ReactionConfig::GrpcAdaptive { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_sse_valid() {
+        let json = r#"{
+            "kind": "sse",
+            "id": "sse-reaction",
+            "queries": ["query1"]
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "sse-reaction");
+        assert!(matches!(reaction, ReactionConfig::Sse { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_platform_valid() {
+        let json = r#"{
+            "kind": "platform",
+            "id": "platform-reaction",
+            "queries": ["query1"],
+            "redisUrl": "redis://localhost:6379"
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "platform-reaction");
+        assert!(matches!(reaction, ReactionConfig::Platform { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_profiler_valid() {
+        let json = r#"{
+            "kind": "profiler",
+            "id": "profiler-reaction",
+            "queries": ["query1"]
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "profiler-reaction");
+        assert!(matches!(reaction, ReactionConfig::Profiler { .. }));
+    }
+
+    #[test]
+    fn test_reaction_deserialize_missing_kind() {
+        let json = r#"{
+            "id": "test-reaction",
+            "queries": ["query1"]
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("kind"), "Error should mention 'kind': {err}");
+    }
+
+    #[test]
+    fn test_reaction_deserialize_missing_id() {
+        let json = r#"{
+            "kind": "log",
+            "queries": ["query1"]
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("id"), "Error should mention 'id': {err}");
+    }
+
+    #[test]
+    fn test_reaction_deserialize_missing_queries() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction"
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("queries"),
+            "Error should mention 'queries': {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_unknown_kind() {
+        let json = r#"{
+            "kind": "unknown-reaction-type",
+            "id": "test-reaction",
+            "queries": ["query1"]
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown-reaction-type") || err.contains("unknown variant"),
+            "Error should mention unknown kind: {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_unknown_field_rejected() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction",
+            "queries": ["query1"],
+            "unknownField": "value"
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknownField") || err.contains("unknown field"),
+            "Error should mention unknown field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_snake_case_auto_start_rejected() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction",
+            "queries": ["query1"],
+            "auto_start": true
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention snake_case field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_error_includes_reaction_id() {
+        let json = r#"{
+            "kind": "log",
+            "id": "my-unique-reaction",
+            "queries": ["query1"],
+            "badField": "value"
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("my-unique-reaction"),
+            "Error should include reaction id for context: {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_error_includes_kind() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction",
+            "queries": ["query1"],
+            "badField": "value"
+        }"#;
+
+        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("log"),
+            "Error should include kind for context: {err}"
+        );
+    }
+
+    #[test]
+    fn test_reaction_deserialize_yaml_format() {
+        let yaml = r#"
+kind: log
+id: yaml-reaction
+queries:
+  - query1
+  - query2
+autoStart: true
+"#;
+
+        let reaction: ReactionConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(reaction.id(), "yaml-reaction");
+        assert_eq!(reaction.queries(), &["query1", "query2"]);
+        assert!(reaction.auto_start());
+    }
+
+    #[test]
+    fn test_reaction_deserialize_empty_queries() {
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction",
+            "queries": []
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert!(reaction.queries().is_empty());
+    }
+
+    // =========================================================================
+    // Serialization Round-Trip Tests
+    // =========================================================================
+
+    #[test]
+    fn test_source_serialize_deserialize_roundtrip() {
+        let original = SourceConfig::Mock {
+            id: "roundtrip-source".to_string(),
+            auto_start: false,
+            bootstrap_provider: None,
+            config: MockSourceConfigDto {
+                data_type: ConfigValue::Static("sensor".to_string()),
+                interval_ms: ConfigValue::Static(1000),
+            },
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: SourceConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id(), "roundtrip-source");
+        assert!(!deserialized.auto_start());
+    }
+
+    #[test]
+    fn test_reaction_serialize_deserialize_roundtrip() {
+        let original = ReactionConfig::Log {
+            id: "roundtrip-reaction".to_string(),
+            queries: vec!["q1".to_string(), "q2".to_string()],
+            auto_start: false,
+            config: LogReactionConfigDto::default(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ReactionConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id(), "roundtrip-reaction");
+        assert_eq!(deserialized.queries(), &["q1", "q2"]);
+        assert!(!deserialized.auto_start());
+    }
+
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    #[test]
+    fn test_source_deserialize_duplicate_field_rejected() {
+        // JSON with duplicate fields - serde_json rejects this
+        let json = r#"{
+            "kind": "mock",
+            "id": "first-id",
+            "id": "second-id"
+        }"#;
+
+        let result: Result<SourceConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("duplicate"),
+            "Error should mention duplicate field: {err}"
+        );
+    }
+
+    #[test]
+    fn test_source_deserialize_with_env_var_syntax() {
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "dataType": "${DATA_TYPE:-sensor}",
+            "intervalMs": 1000
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        // ConfigValue parses env var syntax into EnvironmentVariable variant
+        if let SourceConfig::Mock { config, .. } = source {
+            assert!(
+                matches!(
+                    &config.data_type,
+                    ConfigValue::EnvironmentVariable { name, default }
+                    if name == "DATA_TYPE" && *default == Some("sensor".to_string())
+                ),
+                "Expected EnvironmentVariable variant, got {:?}",
+                config.data_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_reaction_deserialize_with_env_var_syntax() {
+        let json = r#"{
+            "kind": "http",
+            "id": "test-http",
+            "queries": ["query1"],
+            "baseUrl": "${BASE_URL:-http://localhost:8080}",
+            "timeoutMs": 5000,
+            "routes": {}
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "test-http");
+        // ConfigValue parses env var syntax into EnvironmentVariable variant
+        if let ReactionConfig::Http { config, .. } = reaction {
+            assert!(
+                matches!(
+                    &config.base_url,
+                    ConfigValue::EnvironmentVariable { name, default }
+                    if name == "BASE_URL" && *default == Some("http://localhost:8080".to_string())
+                ),
+                "Expected EnvironmentVariable variant, got {:?}",
+                config.base_url
+            );
         }
     }
 }

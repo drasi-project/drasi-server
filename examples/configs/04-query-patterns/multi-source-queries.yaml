@@ -1,0 +1,147 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Query Patterns - Multi-Source Queries
+# =============================================================================
+#
+# One of Drasi's most powerful features is the ability to write queries
+# that span multiple data sources. This enables:
+# - Joining data from different databases
+# - Correlating events from different systems
+# - Building unified views across microservices
+# - Creating cross-system alerts and triggers
+#
+# Key concept: The query doesn't care where data comes from - you define
+# what changes matter, and Drasi handles the rest!
+#
+# Run with: cargo run -- --config examples/configs/04-query-patterns/multi-source-queries.yaml
+
+id: multi-source-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # Source 1: Customer data
+  - kind: mock
+    id: customer-service
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 3000
+
+  # Source 2: Order data
+  - kind: mock
+    id: order-service
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 2000
+
+  # Source 3: Inventory data
+  - kind: mock
+    id: inventory-service
+    autoStart: true
+    dataType: "generic"
+    intervalMs: 2500
+
+queries:
+  # Query spanning customers and orders
+  - id: customer-orders
+    autoStart: true
+    query: |
+      MATCH (c:Customer), (o:Order)
+      WHERE c.id = o.customer_id
+      RETURN c.name AS CustomerName,
+             o.id AS OrderId,
+             o.total AS OrderTotal
+    sources:
+      - sourceId: customer-service
+      - sourceId: order-service
+
+  # Query spanning orders and inventory
+  - id: order-inventory
+    autoStart: true
+    query: |
+      MATCH (o:Order), (i:Inventory)
+      WHERE o.product_id = i.product_id
+      RETURN o.id AS OrderId,
+             i.product_id AS ProductId,
+             i.quantity AS InStock,
+             o.quantity AS Ordered
+    sources:
+      - sourceId: order-service
+      - sourceId: inventory-service
+
+  # Alert: Order quantity exceeds inventory
+  - id: stock-shortage-alert
+    autoStart: true
+    query: |
+      MATCH (o:Order), (i:Inventory)
+      WHERE o.product_id = i.product_id AND o.quantity > i.quantity
+      RETURN o.id AS OrderId,
+             i.product_id AS ProductId,
+             o.quantity AS Ordered,
+             i.quantity AS Available,
+             'STOCK_SHORTAGE' AS AlertType
+    sources:
+      - sourceId: order-service
+      - sourceId: inventory-service
+
+  # Full customer-order-inventory join
+  - id: full-order-view
+    autoStart: true
+    query: |
+      MATCH (c:Customer), (o:Order), (i:Inventory)
+      WHERE c.id = o.customer_id AND o.product_id = i.product_id
+      RETURN c.name AS Customer,
+             o.id AS OrderId,
+             i.product_name AS Product,
+             o.quantity AS Ordered,
+             i.quantity AS InStock
+    sources:
+      - sourceId: customer-service
+      - sourceId: order-service
+      - sourceId: inventory-service
+
+reactions:
+  - kind: log
+    id: multi-source-logger
+    queries:
+      - customer-orders
+      - order-inventory
+      - stock-shortage-alert
+      - full-order-view
+    autoStart: true
+    routes:
+      customer-orders:
+        added:
+          template: "[customer-orders] + {{after.CustomerName}}: Order {{after.OrderId}} (${{after.OrderTotal}})"
+        updated:
+          template: "[customer-orders] ~ {{after.CustomerName}}: Order {{after.OrderId}} (${{after.OrderTotal}})"
+      order-inventory:
+        added:
+          template: "[order-inventory] + Order {{after.OrderId}}: Product {{after.ProductId}} (ordered={{after.Ordered}}, stock={{after.InStock}})"
+        updated:
+          template: "[order-inventory] ~ Order {{after.OrderId}}: Product {{after.ProductId}} (ordered={{after.Ordered}}, stock={{after.InStock}})"
+      stock-shortage-alert:
+        added:
+          template: "[ALERT] Stock shortage: Order {{after.OrderId}} needs {{after.Ordered}} of {{after.ProductId}} (only {{after.Available}} available)"
+        updated:
+          template: "[ALERT] Stock shortage update: Order {{after.OrderId}} needs {{after.Ordered}} of {{after.ProductId}} (only {{after.Available}} available)"
+      full-order-view:
+        added:
+          template: "[full-order-view] + {{after.Customer}}: Order {{after.OrderId}} - {{after.Product}} (qty={{after.Ordered}}, stock={{after.InStock}})"
+        updated:
+          template: "[full-order-view] ~ {{after.Customer}}: Order {{after.OrderId}} - {{after.Product}} (qty={{after.Ordered}}, stock={{after.InStock}})"

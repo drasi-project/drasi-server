@@ -1,8 +1,0 @@
-id: 6e873215-38ab-4756-9d07-6c7a15c5811f
-host: 0.0.0.0
-port: 8080
-logLevel: info
-persistConfig: true
-sources: []
-queries: []
-reactions: []

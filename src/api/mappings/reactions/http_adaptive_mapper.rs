@@ -77,13 +77,10 @@ impl ConfigMapper<HttpAdaptiveReactionConfigDto, HttpAdaptiveReactionConfig>
         }
 
         let adaptive = AdaptiveBatchConfig {
-            adaptive_min_batch_size: resolver
-                .resolve_typed(&dto.adaptive.adaptive_min_batch_size)?,
-            adaptive_max_batch_size: resolver
-                .resolve_typed(&dto.adaptive.adaptive_max_batch_size)?,
-            adaptive_window_size: resolver.resolve_typed(&dto.adaptive.adaptive_window_size)?,
-            adaptive_batch_timeout_ms: resolver
-                .resolve_typed(&dto.adaptive.adaptive_batch_timeout_ms)?,
+            adaptive_min_batch_size: resolver.resolve_typed(&dto.adaptive_min_batch_size)?,
+            adaptive_max_batch_size: resolver.resolve_typed(&dto.adaptive_max_batch_size)?,
+            adaptive_window_size: resolver.resolve_typed(&dto.adaptive_window_size)?,
+            adaptive_batch_timeout_ms: resolver.resolve_typed(&dto.adaptive_batch_timeout_ms)?,
         };
 
         Ok(HttpAdaptiveReactionConfig {
