@@ -89,27 +89,27 @@ id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 # Server settings
 host: "0.0.0.0"
 port: 8080
-log_level: "info"
-persist_config: true  # Enable persistence (default)
-persist_index: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
+logLevel: "info"
+persistConfig: true  # Enable persistence (default)
+persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 
 # Optional state store for plugin state persistence
-# state_store:
+# stateStore:
 #   kind: redb
 #   path: ./data/state.redb
 
 # Optional capacity defaults (cascades to queries/reactions)
 # Supports environment variables like other fields
-# default_priority_queue_capacity: 10000
-# default_priority_queue_capacity: "${PRIORITY_QUEUE_CAPACITY:-10000}"
-# default_dispatch_buffer_capacity: 1000
-# default_dispatch_buffer_capacity: "${DISPATCH_BUFFER_CAPACITY:-1000}"
+# defaultPriorityQueueCapacity: 10000
+# defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-10000}"
+# defaultDispatchBufferCapacity: 1000
+# defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-1000}"
 
 # Sources (parsed into plugin instances)
 sources:
   - kind: mock
     id: "sensors"
-    auto_start: true
+    autoStart: true
 
 # Queries
 queries:
@@ -117,8 +117,8 @@ queries:
     query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
     queryLanguage: Cypher
     sources:
-      - source_id: "sensors"
-    auto_start: true
+      - sourceId: "sensors"
+    autoStart: true
 
 # Reactions
 reactions:
@@ -126,7 +126,7 @@ reactions:
     id: "log-temps"
     queries:
       - "high-temp"
-    auto_start: true
+    autoStart: true
 ```
 
 For multiple DrasiLib instances, use the `instances` array (legacy single-instance fields continue to work and map to the first instance):
@@ -134,25 +134,25 @@ For multiple DrasiLib instances, use the `instances` array (legacy single-instan
 ```yaml
 host: "0.0.0.0"
 port: 8080
-log_level: "info"
-persist_config: true
+logLevel: "info"
+persistConfig: true
 
 instances:
   - id: "analytics"
-    persist_index: true
-    state_store:
+    persistIndex: true
+    stateStore:
       kind: redb
       path: ./data/analytics-state.redb
     sources:
       - kind: mock
         id: "sensors"
-        auto_start: true
+        autoStart: true
     queries:
       - id: "high-temp"
         query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s"
         queryLanguage: Cypher
         sources:
-          - source_id: "sensors"
+          - sourceId: "sensors"
   - id: "monitoring"
     sources: []
     queries: []
@@ -173,12 +173,12 @@ DrasiServer separates two independent concepts:
 **Persistence is enabled when:**
 - Config file is provided on startup (`--config path/to/config.yaml`)
 - Config file is writable
-- `persist_config: true` in server settings (default)
+- `persistConfig: true` in server settings (default)
 
 **Persistence is disabled when:**
 - No config file provided (server starts with empty configuration)
 - Config file is read-only
-- `persist_config: false` in server settings
+- `persistConfig: false` in server settings
 
 **Read-Only mode is enabled ONLY when:**
 - Config file is not writable (file permissions prevent writing)
