@@ -559,7 +559,8 @@ reactions:
 
 #[test]
 fn test_load_fails_with_multiple_server_snake_case_fields() {
-    // Server-level errors are caught by validate_config() which accumulates all errors
+    // With deny_unknown_fields, serde fails on the first unknown field.
+    // This is different from the previous manual validation which accumulated errors.
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -571,14 +572,14 @@ queries: []
 reactions: []
 "#;
     let result = try_load_config(yaml);
-    assert!(result.is_err(), "Config should fail with multiple errors");
+    assert!(result.is_err(), "Config should fail with unknown field");
     let err = result.unwrap_err();
 
-    // Both server-level errors should be reported together
-    assert!(err.contains("log_level"), "Error should mention log_level");
+    // Serde fails-fast on the first unknown field (order depends on YAML parsing)
+    // At least one of the snake_case fields should be mentioned
     assert!(
-        err.contains("persist_config"),
-        "Error should mention persist_config"
+        err.contains("log_level") || err.contains("persist_config"),
+        "Error should mention one of the unknown fields: {err}"
     );
 }
 
