@@ -21,14 +21,12 @@ sources:
 - kind: http
   id: price-feed
   autoStart: true
-  # HttpSourceConfig fields
   host: 0.0.0.0
   port: 9000
   timeoutMs: 10000
 - kind: postgres
   id: postgres-stocks
   autoStart: true
-  # PostgresSourceConfig fields
   host: localhost
   port: 5432
   database: trading_demo
@@ -48,6 +46,6 @@ sources:
     keyColumns:
     - id
   bootstrapProvider:
-    type: postgres
+    kind: postgres
 queries: []
 reactions: []

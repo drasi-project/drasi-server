@@ -2,67 +2,157 @@
 
 This directory contains the comprehensive test suite for Drasi Server, including unit tests, integration tests, and test utilities.
 
-## Test Summary
-
-**Total Automated Tests: 282**
-
-| Category | Count | Command |
-|----------|-------|---------|
-| Unit tests (src/) | 170 | `cargo test --lib` |
-| Integration tests (tests/) | 106 | `cargo test --test '*'` |
-| Doc tests | 3 | `cargo test --doc` |
-| **Total** | **282** | `cargo test` |
-
 ## Quick Start
 
 ```bash
-# Run all automated tests (RECOMMENDED)
+# Run all automated tests (recommended)
 cargo test
 
-# Run with logging
+# Run with verbose output
+cargo test -- --nocapture
+
+# Run with debug logging
 RUST_LOG=debug cargo test -- --nocapture
 
-# Run specific test file
+# Run a specific test file
 cargo test --test api_integration_test
 ```
 
+## Test Summary
+
+| Category | Count | Command |
+|----------|------:|---------|
+| Unit tests (in `src/`) | 206 | `cargo test --lib` |
+| Integration tests (in `tests/`) | 218 | `cargo test --test '*'` |
+| Doc tests | 3 | `cargo test --doc` |
+| Binary tests (`main.rs`) | 59 | (included in `cargo test`) |
+| **Total Automated** | **486** | `cargo test` |
+
+---
+
 ## Integration Test Files
 
-All integration tests are at the top level of `tests/` and run automatically with `cargo test`.
+All `.rs` files in this directory are integration tests that run automatically with `cargo test`.
 
-### API Tests
-
-| File | Tests | Description |
-|------|-------|-------------|
-| `api_contract_test.rs` | 17 | API contract validation, request/response serialization |
-| `api_integration_test.rs` | 9 | Full REST API integration with DrasiLib core |
-| `api_persistence_test.rs` | 7 | Configuration persistence and atomic write operations |
-| `api_query_joins_test.rs` | 1 | Query creation with synthetic joins via API |
-| `api_state_consistency_test.rs` | 7 | Component state management and consistency |
-
-### Server Tests
+### API Tests (41 tests)
 
 | File | Tests | Description |
-|------|-------|-------------|
-| `server_integration_test.rs` | 4 | Server components working together, data flow |
-| `server_start_stop_test.rs` | 2 | Server lifecycle (start/stop/restart) |
-| `library_integration_test.rs` | 7 | Using DrasiServer as an embedded library |
+|------|------:|-------------|
+| `api_contract_test.rs` | 17 | REST API contract validation - request/response formats, status codes, JSON schemas |
+| `api_integration_test.rs` | 9 | Full API integration with DrasiLib core - dynamic source/reaction creation |
+| `api_persistence_test.rs` | 7 | Configuration persistence - atomic file writes, YAML format validation |
+| `api_query_joins_test.rs` | 1 | Query creation with synthetic joins via API handlers |
+| `api_state_consistency_test.rs` | 7 | Component state management and lifecycle consistency |
 
-### Configuration Tests
-
-| File | Tests | Description |
-|------|-------|-------------|
-| `config_value_integration_test.rs` | 5 | ConfigValue static/env variable handling |
-| `example_configs_validation_test.rs` | 8 | Validates all example YAML configs in config/ |
-| `readme_examples_validation_test.rs` | 4 | Validates YAML examples from README.md |
-
-### Storage Tests
+### Server Tests (13 tests)
 
 | File | Tests | Description |
-|------|-------|-------------|
-| `persist_index_test.rs` | 13 | RocksDB persistent index provider tests |
-| `state_store_test.rs` | 14 | State store provider integration tests |
-| `redis_helpers_test.rs` | 8 | Redis helper utilities for platform source |
+|------|------:|-------------|
+| `server_integration_test.rs` | 4 | Server data flow, restart handling, error recovery |
+| `server_start_stop_test.rs` | 2 | Basic server lifecycle (start/stop cycles) |
+| `library_integration_test.rs` | 7 | DrasiServerBuilder as embedded library, graceful shutdown |
+
+### Configuration Tests (83 tests)
+
+| File | Tests | Description |
+|------|------:|-------------|
+| `config_parsing_failure_test.rs` | 45 | Config validation - rejects snake_case fields, unknown fields, invalid values |
+| `config_value_integration_test.rs` | 5 | ConfigValue with static values and environment variable resolution |
+| `example_configs_validation_test.rs` | 29 | Validates all YAML configs in `examples/` directory |
+| `readme_examples_validation_test.rs` | 4 | Validates YAML code blocks extracted from README.md |
+
+### CLI Command Tests (37 tests)
+
+| File | Tests | Description |
+|------|------:|-------------|
+| `init_output_test.rs` | 18 | Validates `drasi-server init` generates valid configs with camelCase fields |
+| `validate_command_test.rs` | 19 | Tests `drasi-server validate` CLI command - valid/invalid configs, error messages |
+
+### Storage Tests (35 tests)
+
+| File | Tests | Description |
+|------|------:|-------------|
+| `persist_index_test.rs` | 13 | RocksDB persistent index provider creation and integration |
+| `state_store_test.rs` | 14 | REDB state store provider - serialization, multi-instance configs |
+| `redis_helpers_test.rs` | 8 | Redis helper utilities - CloudEvent building, platform integration |
+
+### Serialization Tests (9 tests)
+
+| File | Tests | Description |
+|------|------:|-------------|
+| `dto_camelcase_test.rs` | 3 | Verifies DTO fields serialize to camelCase (Postgres, Mock, HTTP) |
+| `enum_serialization_test.rs` | 6 | Enum serialization for SourceConfig/ReactionConfig with flattened DTOs |
+
+---
+
+## Running Tests
+
+### Run All Tests
+
+```bash
+cargo test
+```
+
+### Run by Category
+
+```bash
+# Unit tests only (tests inside src/)
+cargo test --lib
+
+# Integration tests only (tests in tests/)
+cargo test --test '*'
+
+# Doc tests only
+cargo test --doc
+```
+
+### Run Specific Test Files
+
+```bash
+# Single test file
+cargo test --test api_integration_test
+
+# Multiple related test files
+cargo test --test 'api_*'
+cargo test --test 'server_*'
+cargo test --test '*_validation_test'
+```
+
+### Run Specific Test Functions
+
+```bash
+# By exact name
+cargo test test_create_and_delete_query
+
+# By pattern
+cargo test query
+cargo test config
+```
+
+### Run with Options
+
+```bash
+# Show all output (including println!)
+cargo test -- --nocapture
+
+# Run tests sequentially (useful for debugging)
+cargo test -- --test-threads=1
+
+# Show which tests are running
+cargo test -- --show-output
+```
+
+### Run with Logging
+
+```bash
+# Debug logging
+RUST_LOG=debug cargo test -- --nocapture
+
+# Trace logging for specific module
+RUST_LOG=drasi_server::api=trace cargo test --test api_integration_test -- --nocapture
+```
+
+---
 
 ## Test Support Module
 
@@ -73,10 +163,10 @@ test_support/
 ├── mod.rs              # Module exports
 ├── mock_components.rs  # MockSource and MockReaction implementations
 ├── config_helpers.rs   # Configuration test utilities
-└── redis_helpers.rs    # Redis test utilities
+└── redis_helpers.rs    # Redis testcontainer setup
 ```
 
-### Using Test Support
+### Using Test Support in Your Tests
 
 ```rust
 mod test_support;
@@ -85,62 +175,61 @@ use test_support::mock_components::{create_mock_source, create_mock_reaction};
 use test_support::config_helpers::create_temp_config_file;
 ```
 
-## Manual Protocol Tests
+---
 
-These tests require manual execution and are **NOT** run by `cargo test`:
+## Manual Tests
 
-### gRPC Tests (tests/grpc/)
+### PostgreSQL Integration Test
 
-Protocol-based testing for gRPC sources and reactions.
+The `integration/getting-started/` directory contains an end-to-end test with a real PostgreSQL database.
 
-```bash
-cd tests/grpc
-./run_test.sh           # Standard gRPC test
-./run_test_adaptive.sh  # Adaptive mode with batching
-./run_test_debug.sh     # Debug mode
-```
+**Location:** `tests/integration/getting-started/`
 
-**Configuration files:**
-- `grpc_example.yaml` - Standard gRPC configuration
-- `grpc_adaptive_example.yaml` - Adaptive gRPC with batching
+**Prerequisites:**
+- PostgreSQL installed and running
+- Database configured with the setup script
 
-### HTTP Tests (tests/http/)
-
-HTTP source and reaction testing.
+**How to Run:**
 
 ```bash
-cd tests/http
-./run_test.sh           # Standard HTTP test
-./run_test_adaptive.sh  # Adaptive mode with batching
+cd tests/integration/getting-started
+
+# Set up the PostgreSQL database
+./setup-postgres.sh
+
+# Run the integration test
+./run-integration-test.sh
 ```
 
-**Configuration files:**
-- `http_example.yaml` - Standard HTTP configuration
-- `http_adaptive_example.yaml` - Adaptive HTTP with batching
+**Configuration:** The test uses `config.yaml` which follows the current schema format.
 
-### SSE Console (tests/sse-console/)
+---
 
-Interactive Server-Sent Events testing utility.
+## Helper Scripts
+
+### `run_all_cargo_tests.sh`
+
+Runs all Cargo tests with formatted output and summary.
 
 ```bash
-cd tests/sse-console
-npm install
-npm start <config-name>  # e.g., npm start watchlist
+./tests/run_all_cargo_tests.sh
 ```
 
-**Requirements:**
-- Node.js 16+
-- Running Drasi Server instance
-- Active data sources
+**Features:**
+- Builds the server first
+- Runs tests in categories
+- Provides pass/fail summary
+- Color-coded output
 
-### PostgreSQL Tests (tests/integration/)
+### `run_all.sh`
 
-End-to-end tests with real PostgreSQL databases.
+Legacy test runner script. Note: Some referenced tests may not exist.
 
 ```bash
-cd tests/integration
-./run_e2e_test.sh
+./tests/run_all.sh
 ```
+
+---
 
 ## Directory Structure
 
@@ -148,237 +237,185 @@ cd tests/integration
 tests/
 ├── api_contract_test.rs           # API contract validation
 ├── api_integration_test.rs        # API integration tests
-├── api_persistence_test.rs        # Persistence tests
+├── api_persistence_test.rs        # Config persistence tests
 ├── api_query_joins_test.rs        # Query joins tests
 ├── api_state_consistency_test.rs  # State consistency tests
-├── config_value_integration_test.rs
-├── example_configs_validation_test.rs
+├── config_parsing_failure_test.rs # Config validation (snake_case rejection)
+├── config_value_integration_test.rs # ConfigValue tests
+├── dto_camelcase_test.rs          # DTO camelCase serialization
+├── enum_serialization_test.rs     # Enum serialization tests
+├── example_configs_validation_test.rs # Example config validation
+├── init_output_test.rs            # Init command output tests
 ├── library_integration_test.rs    # Library mode tests
 ├── persist_index_test.rs          # RocksDB index tests
-├── readme_examples_validation_test.rs
+├── readme_examples_validation_test.rs # README YAML validation
 ├── redis_helpers_test.rs          # Redis utilities tests
-├── server_integration_test.rs     # Server integration
-├── server_start_stop_test.rs      # Server lifecycle
+├── server_integration_test.rs     # Server integration tests
+├── server_start_stop_test.rs      # Server lifecycle tests
 ├── state_store_test.rs            # State store tests
+├── validate_command_test.rs       # Validate CLI command tests
 ├── test_support/                  # Shared test utilities
 │   ├── mod.rs
 │   ├── mock_components.rs
 │   ├── config_helpers.rs
 │   └── redis_helpers.rs
-├── grpc/                          # Manual gRPC tests
-│   ├── grpc_example.yaml
-│   ├── grpc_adaptive_example.yaml
-│   ├── run_test.sh
-│   ├── run_test_adaptive.sh
-│   ├── run_test_debug.sh
-│   └── README.md
-├── http/                          # Manual HTTP tests
-│   ├── http_example.yaml
-│   ├── http_adaptive_example.yaml
-│   ├── run_test.sh
-│   └── run_test_adaptive.sh
-├── sse-console/                   # SSE testing utility
-│   ├── package.json
-│   ├── configs.json
-│   ├── index.ts
-│   └── README.md
-├── integration/                   # PostgreSQL e2e tests
-│   └── run_e2e_test.sh
+├── integration/                   # Manual integration tests
+│   └── getting-started/
+│       ├── config.yaml
+│       ├── run-integration-test.sh
+│       ├── setup-postgres.sh
+│       └── README.md
+├── run_all.sh                     # Test runner script
+├── run_all_cargo_tests.sh         # Cargo test wrapper
 └── README.md                      # This file
 ```
 
-## Running Tests
+---
 
-### All Automated Tests
+## Writing New Tests
 
-```bash
-# Run everything
-cargo test
+### Adding an Integration Test
 
-# Run with verbose output
-cargo test -- --nocapture
+1. Create a new file in `tests/` with the `_test.rs` suffix:
 
-# Run with debug logging
-RUST_LOG=debug cargo test -- --nocapture
+```rust
+// tests/my_feature_test.rs
+
+mod test_support;
+
+use test_support::mock_components::create_mock_source;
+
+#[tokio::test]
+async fn test_my_feature() {
+    let source = create_mock_source("test-source");
+    // Test implementation
+}
 ```
 
-### Specific Categories
+2. Run your test:
 
 ```bash
-# Unit tests only (in src/)
-cargo test --lib
-
-# Integration tests only
-cargo test --test '*'
-
-# Single test file
-cargo test --test api_integration_test
-
-# Single test function
-cargo test test_create_and_delete_query
-
-# Tests matching pattern
-cargo test query
+cargo test --test my_feature_test
 ```
 
-### By Component
+### Adding a Unit Test
 
-```bash
-# API tests
-cargo test --test 'api_*'
+Add tests in the source file using a `tests` module:
 
-# Server tests
-cargo test --test 'server_*'
-
-# Storage tests
-cargo test --test persist_index_test
-cargo test --test state_store_test
-
-# Config validation
-cargo test --test '*_validation_test'
-```
-
-## Unit Tests in Source
-
-The `src/` directory contains 170 unit tests across these modules:
-
-| Module | Tests | Description |
-|--------|-------|-------------|
-| `src/init/builder.rs` | 22 | Initialization builder tests |
-| `src/init/prompts.rs` | 22+ | CLI prompt tests |
-| `src/config/loader.rs` | 15+ | Config loading tests |
-| `src/api/joins_tests.rs` | 15+ | Query join logic tests |
-| `src/factories.rs` | 15 | Source/reaction factory tests |
-| `src/api/shared/error.rs` | 22 | Error handling tests |
-
-Run unit tests:
-```bash
-cargo test --lib
-```
-
-## Test Coverage
-
-**Well-tested areas:**
-- REST API endpoints and contracts
-- Server lifecycle (start/stop/restart)
-- Component state management
-- Configuration persistence
-- Library mode usage
-- Query joins functionality
-- Configuration validation
-- Error handling and conversion
-- Factory pattern (sources, reactions, state stores)
-
-**Manual testing required:**
-- gRPC protocol integration
-- HTTP protocol integration
-- SSE streaming
-- PostgreSQL replication
-
-## Test Development Guidelines
-
-### Adding Integration Tests
-
-1. Create file in `tests/` with `_test.rs` suffix:
-   ```rust
-   // tests/my_feature_test.rs
-   mod test_support;
-
-   use test_support::mock_components::create_mock_source;
-
-   #[tokio::test]
-   async fn test_my_feature() {
-       let source = create_mock_source("test-source");
-       // Test implementation
-   }
-   ```
-
-2. Run the test:
-   ```bash
-   cargo test --test my_feature_test
-   ```
-
-### Adding Unit Tests
-
-Add tests in the source file:
 ```rust
 // src/my_module.rs
+
+pub fn my_function() -> bool {
+    true
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_function() {
-        // Test implementation
+    fn test_my_function() {
+        assert!(my_function());
     }
 }
 ```
 
-### Test Best Practices
+### Test Naming Conventions
 
-1. **Use test_support**: Import shared mocks from `test_support/mock_components.rs`
-2. **Async tests**: Use `#[tokio::test]` for async functions
-3. **Isolation**: Each test should be independent
-4. **Cleanup**: Use temp files and directories that auto-cleanup
-5. **Timeouts**: Add timeouts for operations that could hang
-6. **Naming**: Use descriptive names like `test_create_query_returns_error_for_invalid_config`
+- **Files:** Use `_test.rs` suffix (e.g., `my_feature_test.rs`)
+- **Functions:** Use `test_` prefix with descriptive names
+- **Example:** `test_create_query_returns_error_for_invalid_config`
+
+### Best Practices
+
+1. **Use test_support:** Import shared mocks from `test_support/`
+2. **Async tests:** Use `#[tokio::test]` for async functions
+3. **Isolation:** Each test should be independent and not rely on other tests
+4. **Cleanup:** Use `tempfile` crate for temporary files that auto-cleanup
+5. **Timeouts:** Add timeouts for operations that could hang
+6. **Assertions:** Use descriptive assertion messages
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Port Conflicts
 
-1. **Port conflicts**: Tests may use ports 8080, 9000, 50051, 50052
-   ```bash
-   lsof -i :8080  # Find process using port
-   ```
-
-2. **Test isolation failures**: Run tests sequentially
-   ```bash
-   cargo test -- --test-threads=1
-   ```
-
-3. **Redis tests failing**: Some tests require Redis
-   ```bash
-   # Skip Redis tests
-   cargo test -- --skip redis
-   ```
-
-4. **RocksDB lock errors**: Clean up stale lock files
-   ```bash
-   rm -rf /tmp/drasi_test_*
-   ```
-
-### Debug Mode
+Tests may use ports 8080, 9000, 50051, 50052. If you see "address in use" errors:
 
 ```bash
-# All output
-cargo test -- --nocapture
+# Find process using a port
+lsof -i :8080
 
-# Debug logs
-RUST_LOG=debug cargo test -- --nocapture
-
-# Trace logs for specific module
-RUST_LOG=drasi_server::api=trace cargo test --test api_integration_test -- --nocapture
+# Kill a specific process
+kill <PID>
 ```
+
+### Test Isolation Failures
+
+If tests interfere with each other, run them sequentially:
+
+```bash
+cargo test -- --test-threads=1
+```
+
+### Redis Tests Failing
+
+Some tests require Redis. Skip them if Redis is not available:
+
+```bash
+cargo test -- --skip redis
+```
+
+### RocksDB Lock Errors
+
+Clean up stale lock files:
+
+```bash
+rm -rf /tmp/drasi_test_*
+```
+
+### Seeing Test Output
+
+By default, Rust captures test output. To see it:
+
+```bash
+cargo test -- --nocapture
+```
+
+---
 
 ## CI/CD Integration
 
 Example GitHub Actions workflow:
 
 ```yaml
-- name: Run All Tests
-  run: cargo test
+name: Tests
 
-- name: Run with Coverage
-  run: |
-    cargo install cargo-tarpaulin
-    cargo tarpaulin --out Xml
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          
+      - name: Run Tests
+        run: cargo test
+        
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features
 ```
+
+---
 
 ## Additional Resources
 
-- Main repository README: `../README.md`
-- CLAUDE.md for development context: `../CLAUDE.md`
-- gRPC test documentation: `tests/grpc/README.md`
-- SSE console documentation: `tests/sse-console/README.md`
+- [Main README](../README.md) - Repository overview and usage
+- [CLAUDE.md](../CLAUDE.md) - Development context and conventions
+- [PostgreSQL Integration Test](integration/getting-started/README.md) - E2E test documentation
