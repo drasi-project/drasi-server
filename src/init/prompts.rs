@@ -18,10 +18,11 @@ use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::{
-    ConfigValue, GrpcReactionConfigDto, GrpcSourceConfigDto, HttpReactionConfigDto,
-    HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, PlatformReactionConfigDto,
-    PlatformSourceConfigDto, PostgresSourceConfigDto, ReactionConfig, SourceConfig,
-    SseReactionConfigDto, SslModeDto,
+    ApplicationBootstrapConfigDto, BootstrapProviderConfig, ConfigValue, GrpcReactionConfigDto,
+    GrpcSourceConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto,
+    MockSourceConfigDto, PlatformBootstrapConfigDto, PlatformReactionConfigDto,
+    PlatformSourceConfigDto, PostgresBootstrapConfigDto, PostgresSourceConfigDto, ReactionConfig,
+    ScriptFileBootstrapConfigDto, SourceConfig, SseReactionConfigDto, SslModeDto,
 };
 
 use drasi_server::api::models::StateStoreConfig;
@@ -300,8 +301,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
 }
 
 /// Prompt for bootstrap provider for PostgreSQL source.
-fn prompt_bootstrap_provider_for_postgres(
-) -> Result<Option<drasi_lib::bootstrap::BootstrapProviderConfig>> {
+fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderConfig>> {
     let bootstrap_types = vec![
         BootstrapType::Postgres,
         BootstrapType::ScriptFile,
@@ -319,11 +319,9 @@ fn prompt_bootstrap_provider_for_postgres(
         BootstrapType::None => Ok(None),
         BootstrapType::Postgres => {
             // PostgresBootstrapConfig is now an empty struct - connection details come from source
-            Ok(Some(
-                drasi_lib::bootstrap::BootstrapProviderConfig::Postgres(
-                    drasi_lib::bootstrap::PostgresBootstrapConfig::default(),
-                ),
-            ))
+            Ok(Some(BootstrapProviderConfig::Postgres(
+                PostgresBootstrapConfigDto::default(),
+            )))
         }
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
         BootstrapType::Platform => prompt_platform_bootstrap(),
@@ -470,8 +468,7 @@ fn prompt_platform_source() -> Result<SourceConfig> {
 }
 
 /// Prompt for generic bootstrap provider selection (for non-Postgres sources).
-fn prompt_bootstrap_provider_generic(
-) -> Result<Option<drasi_lib::bootstrap::BootstrapProviderConfig>> {
+fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>> {
     let bootstrap_types = vec![
         BootstrapType::None,
         BootstrapType::ScriptFile,
@@ -494,36 +491,32 @@ fn prompt_bootstrap_provider_generic(
 }
 
 /// Prompt for ScriptFile bootstrap configuration.
-fn prompt_scriptfile_bootstrap() -> Result<Option<drasi_lib::bootstrap::BootstrapProviderConfig>> {
+fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
     let file_path = Text::new("Bootstrap file path:")
         .with_default("data/bootstrap.jsonl")
         .with_help_message("Path to JSONL file with initial data")
         .prompt()?;
 
-    Ok(Some(
-        drasi_lib::bootstrap::BootstrapProviderConfig::ScriptFile(
-            drasi_lib::bootstrap::ScriptFileBootstrapConfig {
-                file_paths: vec![file_path],
-            },
-        ),
-    ))
+    Ok(Some(BootstrapProviderConfig::ScriptFile(
+        ScriptFileBootstrapConfigDto {
+            file_paths: vec![file_path],
+        },
+    )))
 }
 
 /// Prompt for Platform bootstrap configuration.
-fn prompt_platform_bootstrap() -> Result<Option<drasi_lib::bootstrap::BootstrapProviderConfig>> {
+fn prompt_platform_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
     let query_api_url = Text::new("Query API URL:")
         .with_default("http://localhost:8080")
         .with_help_message("URL of the Query API service for bootstrap data")
         .prompt()?;
 
-    Ok(Some(
-        drasi_lib::bootstrap::BootstrapProviderConfig::Platform(
-            drasi_lib::bootstrap::PlatformBootstrapConfig {
-                query_api_url: Some(query_api_url),
-                timeout_seconds: 300,
-            },
-        ),
-    ))
+    Ok(Some(BootstrapProviderConfig::Platform(
+        PlatformBootstrapConfigDto {
+            query_api_url: Some(query_api_url),
+            timeout_seconds: 300,
+        },
+    )))
 }
 
 /// Prompt for reaction selection and configuration.

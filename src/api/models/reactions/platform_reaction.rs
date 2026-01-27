@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of platform reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlatformReactionConfigDto {
     pub redis_url: ConfigValue<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

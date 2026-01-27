@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 /// Local copy of HTTP reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpReactionConfigDto {
     #[serde(default = "default_base_url")]
     pub base_url: ConfigValue<String>,
@@ -41,7 +41,7 @@ fn default_reaction_timeout_ms() -> ConfigValue<u64> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpQueryConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added: Option<CallSpecDto>,
@@ -52,7 +52,7 @@ pub struct HttpQueryConfigDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallSpecDto {
     pub url: ConfigValue<String>,
     pub method: ConfigValue<String>,
@@ -64,7 +64,7 @@ pub struct CallSpecDto {
 
 /// Local copy of HTTP adaptive reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpAdaptiveReactionConfigDto {
     #[serde(default = "default_base_url")]
     pub base_url: ConfigValue<String>,
@@ -74,13 +74,6 @@ pub struct HttpAdaptiveReactionConfigDto {
     pub timeout_ms: ConfigValue<u64>,
     #[serde(default)]
     pub routes: HashMap<String, HttpQueryConfigDto>,
-    #[serde(flatten)]
-    pub adaptive: AdaptiveBatchConfigDto,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct AdaptiveBatchConfigDto {
     #[serde(default = "default_adaptive_min_batch_size")]
     pub adaptive_min_batch_size: ConfigValue<usize>,
     #[serde(default = "default_adaptive_max_batch_size")]
@@ -91,18 +84,19 @@ pub struct AdaptiveBatchConfigDto {
     pub adaptive_batch_timeout_ms: ConfigValue<u64>,
 }
 
-fn default_adaptive_window_size() -> ConfigValue<usize> {
+// Public default functions for adaptive batching (shared with grpc_reaction)
+pub fn default_adaptive_window_size() -> ConfigValue<usize> {
     ConfigValue::Static(100)
 }
 
-fn default_adaptive_batch_timeout_ms() -> ConfigValue<u64> {
+pub fn default_adaptive_batch_timeout_ms() -> ConfigValue<u64> {
     ConfigValue::Static(1000)
 }
 
-fn default_adaptive_max_batch_size() -> ConfigValue<usize> {
+pub fn default_adaptive_max_batch_size() -> ConfigValue<usize> {
     ConfigValue::Static(1000)
 }
 
-fn default_adaptive_min_batch_size() -> ConfigValue<usize> {
+pub fn default_adaptive_min_batch_size() -> ConfigValue<usize> {
     ConfigValue::Static(1)
 }

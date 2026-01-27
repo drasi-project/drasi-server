@@ -197,10 +197,10 @@ sources:
     database: getting_started
     tables:
       - message
-    slot_name: drasi_getting_started_slot
-    publication_name: drasi_getting_started_pub
-    bootstrap_provider:
-      type: postgres
+    slotName: drasi_getting_started_slot
+    publicationName: drasi_getting_started_pub
+    bootstrapProvider:
+      kind: postgres
 ```
 
 Key features:

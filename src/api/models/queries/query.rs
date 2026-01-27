@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Query configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryConfigDto {
     pub id: String,
     #[serde(default = "default_auto_start")]
@@ -49,7 +49,7 @@ pub struct QueryConfigDto {
 
 /// Source subscription configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSubscriptionConfigDto {
     pub source_id: ConfigValue<String>,
     #[serde(default)]

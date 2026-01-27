@@ -70,7 +70,7 @@ sources:
 
     # Bootstrap provider loads existing data on startup
     bootstrapProvider:
-      type: postgres
+      kind: postgres
 
 # =============================================================================
 # Queries
