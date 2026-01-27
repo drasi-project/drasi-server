@@ -948,4 +948,4 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/drasi-project/drasi-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/drasi-project/discussions)
+- **Discussions**: [GitHub Discussions](https://github.com/drasi-project/drasi-server/discussions)
