@@ -71,7 +71,7 @@ sources:
         keyColumns:
           - product_id
     bootstrapProvider:
-      type: postgres
+      kind: postgres
 
 queries:
   # Exception 1: High-value orders requiring approval

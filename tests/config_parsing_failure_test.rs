@@ -134,7 +134,7 @@ sources:
     database: testdb
     user: testuser
     bootstrap_provider:
-      type: postgres
+      kind: postgres
 queries: []
 reactions: []
 "#;
@@ -732,7 +732,7 @@ sources:
       - table: orders
         keyColumns: [order_id]
     bootstrapProvider:
-      type: postgres
+      kind: postgres
 queries: []
 reactions: []
 "#;
@@ -810,5 +810,140 @@ instances:
     assert!(
         result.is_ok(),
         "Valid multi-instance config should load: {result:?}"
+    );
+}
+
+// =============================================================================
+// Bootstrap Provider Unknown Field Tests
+// =============================================================================
+
+#[test]
+fn test_load_fails_with_unknown_field_in_bootstrap_provider_scriptfile() {
+    let yaml = r#"
+id: test-server
+host: 0.0.0.0
+port: 8080
+sources:
+  - kind: mock
+    id: test-mock
+    bootstrapProvider:
+      kind: scriptfile
+      filePaths: ["/test.jsonl"]
+      unknownField: "should fail"
+queries: []
+reactions: []
+"#;
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_err(),
+        "Unknown field in bootstrapProvider should fail"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unknown field"),
+        "Error should mention unknown field: {err}"
+    );
+}
+
+#[test]
+fn test_load_fails_with_unknown_field_in_bootstrap_provider_platform() {
+    let yaml = r#"
+id: test-server
+host: 0.0.0.0
+port: 8080
+sources:
+  - kind: mock
+    id: test-mock
+    bootstrapProvider:
+      kind: platform
+      queryApiUrl: "http://localhost:8080"
+      typoField: 123
+queries: []
+reactions: []
+"#;
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_err(),
+        "Unknown field in bootstrapProvider should fail"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unknown field"),
+        "Error should mention unknown field: {err}"
+    );
+}
+
+#[test]
+fn test_load_fails_with_unknown_field_in_bootstrap_provider_postgres() {
+    let yaml = r#"
+id: test-server
+host: 0.0.0.0
+port: 8080
+sources:
+  - kind: mock
+    id: test-mock
+    bootstrapProvider:
+      kind: postgres
+      extraField: "should fail"
+queries: []
+reactions: []
+"#;
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_err(),
+        "Unknown field in bootstrapProvider should fail"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unknown field"),
+        "Error should mention unknown field: {err}"
+    );
+}
+
+#[test]
+fn test_load_fails_with_unknown_bootstrap_provider_type() {
+    let yaml = r#"
+id: test-server
+host: 0.0.0.0
+port: 8080
+sources:
+  - kind: mock
+    id: test-mock
+    bootstrapProvider:
+      kind: unknown
+queries: []
+reactions: []
+"#;
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_err(),
+        "Unknown bootstrap provider kind should fail"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unknown bootstrap provider kind"),
+        "Error should mention unknown kind: {err}"
+    );
+}
+
+#[test]
+fn test_load_succeeds_with_valid_scriptfile_bootstrap() {
+    let yaml = r#"
+id: test-server
+host: 0.0.0.0
+port: 8080
+sources:
+  - kind: mock
+    id: test-mock
+    bootstrapProvider:
+      kind: scriptfile
+      filePaths: ["/data/test.jsonl"]
+queries: []
+reactions: []
+"#;
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_ok(),
+        "Valid scriptfile bootstrap should load: {result:?}"
     );
 }

@@ -46,6 +46,6 @@ sources:
     keyColumns:
     - id
   bootstrapProvider:
-    type: postgres
+    kind: postgres
 queries: []
 reactions: []

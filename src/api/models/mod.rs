@@ -46,12 +46,19 @@ use std::fmt;
 // Config value module
 pub mod config_value;
 
+// Bootstrap provider module
+pub mod bootstrap;
+
 // Organized submodules
 pub mod queries;
 pub mod reactions;
 pub mod sources;
 
 // Re-export all DTO types for convenient access
+pub use bootstrap::{
+    ApplicationBootstrapConfigDto, BootstrapProviderConfig, PlatformBootstrapConfigDto,
+    PostgresBootstrapConfigDto, ScriptFileBootstrapConfigDto,
+};
 pub use config_value::*;
 pub use queries::*;
 pub use reactions::*;
@@ -96,7 +103,7 @@ pub enum SourceConfig {
         id: String,
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
+        bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: MockSourceConfigDto,
     },
@@ -106,7 +113,7 @@ pub enum SourceConfig {
         id: String,
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
+        bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: HttpSourceConfigDto,
     },
@@ -116,7 +123,7 @@ pub enum SourceConfig {
         id: String,
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
+        bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: GrpcSourceConfigDto,
     },
@@ -126,7 +133,7 @@ pub enum SourceConfig {
         id: String,
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
+        bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PostgresSourceConfigDto,
     },
@@ -136,7 +143,7 @@ pub enum SourceConfig {
         id: String,
         auto_start: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig>,
+        bootstrap_provider: Option<BootstrapProviderConfig>,
         #[serde(flatten)]
         config: PlatformSourceConfigDto,
     },
@@ -212,13 +219,12 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 let auto_start = auto_start.unwrap_or(true);
 
                 // Deserialize bootstrap_provider if present
-                let bootstrap_provider: Option<drasi_lib::bootstrap::BootstrapProviderConfig> =
-                    bootstrap_provider
-                        .map(serde_json::from_value)
-                        .transpose()
-                        .map_err(|e| {
-                            de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
-                        })?;
+                let bootstrap_provider: Option<BootstrapProviderConfig> = bootstrap_provider
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|e| {
+                        de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
+                    })?;
 
                 let remaining_value = serde_json::Value::Object(remaining);
 
@@ -316,7 +322,7 @@ impl SourceConfig {
     }
 
     /// Get the bootstrap provider configuration if any
-    pub fn bootstrap_provider(&self) -> Option<&drasi_lib::bootstrap::BootstrapProviderConfig> {
+    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
         match self {
             SourceConfig::Mock {
                 bootstrap_provider, ..
@@ -1040,7 +1046,7 @@ mod tests {
             "kind": "mock",
             "id": "test-source",
             "bootstrapProvider": {
-                "type": "noop"
+                "kind": "noop"
             }
         }"#;
 

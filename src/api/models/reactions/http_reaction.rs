@@ -84,19 +84,6 @@ pub struct HttpAdaptiveReactionConfigDto {
     pub adaptive_batch_timeout_ms: ConfigValue<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct AdaptiveBatchConfigDto {
-    #[serde(default = "default_adaptive_min_batch_size")]
-    pub adaptive_min_batch_size: ConfigValue<usize>,
-    #[serde(default = "default_adaptive_max_batch_size")]
-    pub adaptive_max_batch_size: ConfigValue<usize>,
-    #[serde(default = "default_adaptive_window_size")]
-    pub adaptive_window_size: ConfigValue<usize>,
-    #[serde(default = "default_adaptive_batch_timeout_ms")]
-    pub adaptive_batch_timeout_ms: ConfigValue<u64>,
-}
-
 // Public default functions for adaptive batching (shared with grpc_reaction)
 pub fn default_adaptive_window_size() -> ConfigValue<usize> {
     ConfigValue::Static(100)
