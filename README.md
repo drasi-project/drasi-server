@@ -266,7 +266,7 @@ Sources connect to data systems and stream changes to queries. Each source type 
 | `kind` | string | (required) | Source type: `postgres`, `http`, `grpc`, `mock`, `platform` |
 | `id` | string | (required) | Unique source identifier |
 | `autoStart` | boolean | `true` | Start source automatically on server startup |
-| `bootstrap_provider` | object | (none) | Bootstrap provider configuration |
+| `bootstrapProvider` | object | (none) | Bootstrap provider configuration |
 
 #### PostgreSQL Source (`postgres`)
 
@@ -283,14 +283,14 @@ sources:
     user: postgres
     password: ${DB_PASSWORD}
     tables: [orders, customers]
-    slot_name: drasi_slot
-    publication_name: drasi_pub
-    ssl_mode: prefer
-    table_keys:
+    slotName: drasi_slot
+    publicationName: drasi_pub
+    sslMode: prefer
+    tableKeys:
       - table: orders
-        key_columns: [id]
-    bootstrap_provider:
-      type: postgres
+        keyColumns: [id]
+    bootstrapProvider:
+      kind: postgres
 ```
 
 | Field | Type | Default | Description |
@@ -301,10 +301,10 @@ sources:
 | `user` | string | (required) | Database user |
 | `password` | string | `""` | Database password |
 | `tables` | array | `[]` | Tables to monitor |
-| `slot_name` | string | `drasi_slot` | Replication slot name |
-| `publication_name` | string | `drasi_publication` | Publication name |
-| `ssl_mode` | string | `prefer` | SSL mode: `disable`, `prefer`, `require` |
-| `table_keys` | array | `[]` | Primary key definitions for tables |
+| `slotName` | string | `drasi_slot` | Replication slot name |
+| `publicationName` | string | `drasi_publication` | Publication name |
+| `sslMode` | string | `prefer` | SSL mode: `disable`, `prefer`, `require` |
+| `tableKeys` | array | `[]` | Primary key definitions for tables |
 
 #### HTTP Source (`http`)
 
@@ -317,7 +317,7 @@ sources:
     autoStart: true
     host: 0.0.0.0
     port: 9000
-    timeout_ms: 10000
+    timeoutMs: 10000
 ```
 
 | Field | Type | Default | Description |
@@ -325,7 +325,7 @@ sources:
 | `host` | string | (required) | Listen address |
 | `port` | integer | (required) | Listen port |
 | `endpoint` | string | (auto) | Custom endpoint path |
-| `timeout_ms` | integer | `10000` | Request timeout in milliseconds |
+| `timeoutMs` | integer | `10000` | Request timeout in milliseconds |
 
 #### gRPC Source (`grpc`)
 
@@ -338,14 +338,14 @@ sources:
     autoStart: true
     host: 0.0.0.0
     port: 50051
-    timeout_ms: 5000
+    timeoutMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `host` | string | `0.0.0.0` | Listen address |
 | `port` | integer | `50051` | Listen port |
-| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
+| `timeoutMs` | integer | `5000` | Connection timeout in milliseconds |
 
 #### Mock Source (`mock`)
 
@@ -356,14 +356,14 @@ sources:
   - kind: mock
     id: test-source
     autoStart: true
-    data_type: sensor
-    interval_ms: 5000
+    dataType: sensor
+    intervalMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `data_type` | string | `generic` | Type of mock data to generate |
-| `interval_ms` | integer | `5000` | Data generation interval in milliseconds |
+| `dataType` | string | `generic` | Type of mock data to generate |
+| `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
 
 #### Platform Source (`platform`)
 
@@ -374,21 +374,21 @@ sources:
   - kind: platform
     id: platform-source
     autoStart: true
-    redis_url: redis://localhost:6379
-    stream_key: my-stream
-    consumer_group: drasi-core
-    batch_size: 100
-    block_ms: 5000
+    redisUrl: redis://localhost:6379
+    streamKey: my-stream
+    consumerGroup: drasi-core
+    batchSize: 100
+    blockMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `redis_url` | string | (required) | Redis connection URL |
-| `stream_key` | string | (required) | Redis stream key to consume |
-| `consumer_group` | string | `drasi-core` | Consumer group name |
-| `consumer_name` | string | (auto) | Consumer name within group |
-| `batch_size` | integer | `100` | Events to read per batch |
-| `block_ms` | integer | `5000` | Block timeout in milliseconds |
+| `redisUrl` | string | (required) | Redis connection URL |
+| `streamKey` | string | (required) | Redis stream key to consume |
+| `consumerGroup` | string | `drasi-core` | Consumer group name |
+| `consumerName` | string | (auto) | Consumer name within group |
+| `batchSize` | integer | `100` | Events to read per batch |
+| `blockMs` | integer | `5000` | Block timeout in milliseconds |
 
 ---
 
@@ -401,8 +401,8 @@ Bootstrap providers deliver initial data to queries before streaming begins. Any
 Loads initial data from PostgreSQL using the COPY protocol.
 
 ```yaml
-bootstrap_provider:
-  type: postgres
+bootstrapProvider:
+  kind: postgres
   # Uses source connection details
 ```
 
@@ -411,9 +411,9 @@ bootstrap_provider:
 Loads initial data from JSONL files.
 
 ```yaml
-bootstrap_provider:
-  type: scriptfile
-  file_paths:
+bootstrapProvider:
+  kind: scriptfile
+  filePaths:
     - /data/initial_nodes.jsonl
     - /data/initial_relations.jsonl
 ```
@@ -423,10 +423,10 @@ bootstrap_provider:
 Loads initial data from a remote Drasi Query API.
 
 ```yaml
-bootstrap_provider:
-  type: platform
-  query_api_url: http://remote-drasi:8080
-  timeout_seconds: 300
+bootstrapProvider:
+  kind: platform
+  queryApiUrl: http://remote-drasi:8080
+  timeoutSeconds: 300
 ```
 
 #### No-Op Bootstrap (`noop`)
@@ -434,8 +434,8 @@ bootstrap_provider:
 Returns no initial data.
 
 ```yaml
-bootstrap_provider:
-  type: noop
+bootstrapProvider:
+  kind: noop
 ```
 
 ---
@@ -468,8 +468,8 @@ queries:
 | `autoStart` | boolean | `true` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
 | `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
-| `priority_queue_capacity` | integer | (global) | Override queue capacity for this query |
-| `dispatch_buffer_capacity` | integer | (global) | Override buffer capacity for this query |
+| `priorityQueueCapacity` | integer | (global) | Override queue capacity for this query |
+| `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
 | `joins` | array | (none) | Synthetic join definitions |
 
 **Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
@@ -554,8 +554,8 @@ reactions:
   - kind: http
     id: webhook
     queries: [my-query]
-    base_url: https://api.example.com
-    timeout_ms: 5000
+    baseUrl: https://api.example.com
+    timeoutMs: 5000
     token: ${API_TOKEN}
     routes:
       my-query:
@@ -568,8 +568,8 @@ reactions:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `base_url` | string | `http://localhost` | Base URL for requests |
-| `timeout_ms` | integer | `5000` | Request timeout in milliseconds |
+| `baseUrl` | string | `http://localhost` | Base URL for requests |
+| `timeoutMs` | integer | `5000` | Request timeout in milliseconds |
 | `token` | string | (none) | Bearer token for authorization |
 | `routes` | object | `{}` | Query-specific endpoint configurations |
 
@@ -582,20 +582,20 @@ reactions:
   - kind: http-adaptive
     id: adaptive-webhook
     queries: [my-query]
-    base_url: https://api.example.com
-    timeout_ms: 5000
-    adaptive_min_batch_size: 1
-    adaptive_max_batch_size: 1000
-    adaptive_window_size: 100
-    adaptive_batch_timeout_ms: 1000
+    baseUrl: https://api.example.com
+    timeoutMs: 5000
+    adaptiveMinBatchSize: 1
+    adaptiveMaxBatchSize: 1000
+    adaptiveWindowSize: 100
+    adaptiveBatchTimeoutMs: 1000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `adaptive_min_batch_size` | integer | `1` | Minimum batch size |
-| `adaptive_max_batch_size` | integer | `1000` | Maximum batch size |
-| `adaptive_window_size` | integer | `100` | Window size for adaptive calculations |
-| `adaptive_batch_timeout_ms` | integer | `1000` | Batch timeout in milliseconds |
+| `adaptiveMinBatchSize` | integer | `1` | Minimum batch size |
+| `adaptiveMaxBatchSize` | integer | `1000` | Maximum batch size |
+| `adaptiveWindowSize` | integer | `100` | Window size for adaptive calculations |
+| `adaptiveBatchTimeoutMs` | integer | `1000` | Batch timeout in milliseconds |
 
 #### gRPC Reaction (`grpc`)
 
@@ -607,20 +607,20 @@ reactions:
     id: grpc-stream
     queries: [my-query]
     endpoint: grpc://localhost:50052
-    timeout_ms: 5000
-    batch_size: 100
-    max_retries: 3
+    timeoutMs: 5000
+    batchSize: 100
+    maxRetries: 3
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `endpoint` | string | `grpc://localhost:50052` | gRPC endpoint URL |
-| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
-| `batch_size` | integer | `100` | Events per batch |
-| `batch_flush_timeout_ms` | integer | `1000` | Batch flush timeout |
-| `max_retries` | integer | `3` | Maximum retry attempts |
-| `connection_retry_attempts` | integer | `5` | Connection retry attempts |
-| `initial_connection_timeout_ms` | integer | `10000` | Initial connection timeout |
+| `timeoutMs` | integer | `5000` | Connection timeout in milliseconds |
+| `batchSize` | integer | `100` | Events per batch |
+| `batchFlushTimeoutMs` | integer | `1000` | Batch flush timeout |
+| `maxRetries` | integer | `3` | Maximum retry attempts |
+| `connectionRetryAttempts` | integer | `5` | Connection retry attempts |
+| `initialConnectionTimeoutMs` | integer | `10000` | Initial connection timeout |
 
 #### gRPC Adaptive Reaction (`grpc-adaptive`)
 
@@ -632,8 +632,8 @@ reactions:
     id: adaptive-grpc
     queries: [my-query]
     endpoint: grpc://localhost:50052
-    adaptive_min_batch_size: 1
-    adaptive_max_batch_size: 1000
+    adaptiveMinBatchSize: 1
+    adaptiveMaxBatchSize: 1000
 ```
 
 #### SSE Reaction (`sse`)
@@ -667,23 +667,23 @@ reactions:
   - kind: platform
     id: redis-publisher
     queries: [my-query]
-    redis_url: redis://localhost:6379
-    emit_control_events: false
-    batch_enabled: true
-    batch_max_size: 100
-    batch_max_wait_ms: 100
+    redisUrl: redis://localhost:6379
+    emitControlEvents: false
+    batchEnabled: true
+    batchMaxSize: 100
+    batchMaxWaitMs: 100
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `redis_url` | string | (required) | Redis connection URL |
-| `pubsub_name` | string | (auto) | Pub/sub channel name |
-| `source_name` | string | (auto) | Source identifier in events |
-| `max_stream_length` | integer | (unlimited) | Maximum stream length |
-| `emit_control_events` | boolean | `false` | Emit control events |
-| `batch_enabled` | boolean | `false` | Enable batching |
-| `batch_max_size` | integer | `100` | Maximum batch size |
-| `batch_max_wait_ms` | integer | `100` | Maximum wait time for batch |
+| `redisUrl` | string | (required) | Redis connection URL |
+| `pubsubName` | string | (auto) | Pub/sub channel name |
+| `sourceName` | string | (auto) | Source identifier in events |
+| `maxStreamLength` | integer | (unlimited) | Maximum stream length |
+| `emitControlEvents` | boolean | `false` | Emit control events |
+| `batchEnabled` | boolean | `false` | Enable batching |
+| `batchMaxSize` | integer | `100` | Maximum batch size |
+| `batchMaxWaitMs` | integer | `100` | Maximum wait time for batch |
 
 #### Profiler Reaction (`profiler`)
 
@@ -694,14 +694,14 @@ reactions:
   - kind: profiler
     id: query-profiler
     queries: [my-query]
-    window_size: 100
-    report_interval_secs: 60
+    windowSize: 100
+    reportIntervalSecs: 60
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `window_size` | integer | `100` | Metrics window size |
-| `report_interval_secs` | integer | `60` | Report interval in seconds |
+| `windowSize` | integer | `100` | Metrics window size |
+| `reportIntervalSecs` | integer | `60` | Report interval in seconds |
 
 ---
 
@@ -712,11 +712,11 @@ For advanced use cases requiring isolated processing environments, configure mul
 ```yaml
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 instances:
   - id: analytics
-    persist_index: true
+    persistIndex: true
     stateStore:
       kind: redb
       path: ./data/analytics-state.redb
@@ -735,7 +735,7 @@ instances:
         queries: [high-value-orders]
 
   - id: monitoring
-    persist_index: false
+    persistIndex: false
     sources:
       - kind: http
         id: metrics-api
@@ -867,7 +867,7 @@ reactions:
   - kind: http
     id: reorder-webhook
     queries: [low-stock-alert]
-    base_url: https://purchasing.example.com
+    baseUrl: https://purchasing.example.com
     routes:
       low-stock-alert:
         added:

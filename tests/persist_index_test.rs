@@ -150,14 +150,14 @@ fn test_persist_index_config_deserialization_true() {
     );
 }
 
-/// Test that persist_index: false is correctly deserialized
+/// Test that persistIndex: false is correctly deserialized
 #[test]
 fn test_persist_index_config_deserialization_false() {
     let yaml = r#"
         id: test-server
         host: 127.0.0.1
         port: 8080
-        persist_index: false
+        persistIndex: false
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");

@@ -34,7 +34,7 @@ use drasi_lib::config::QueryConfig;
 /// `default_dispatch_buffer_capacity`, and `queries` fields are used to construct
 /// a DrasiLibConfig when creating a DrasiLib instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiServerConfig {
     /// Unique identifier for this server instance (defaults to UUID)
     #[serde(default = "default_id")]
@@ -129,7 +129,7 @@ fn default_persist_index() -> bool {
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiLibInstanceConfig {
     /// Unique identifier for this DrasiLib instance
     #[serde(default = "default_id")]

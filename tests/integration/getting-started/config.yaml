@@ -27,7 +27,7 @@ sources:
         keyColumns:
           - messageid
     bootstrapProvider:
-      type: postgres
+      kind: postgres
 
 queries:
   - id: hello-world-from
@@ -54,6 +54,10 @@ reactions:
     queries:
       - hello-world-from
       - message-count
-    addedTemplate: "[{{query_name}}] + {{after}}"
-    updatedTemplate: "[{{query_name}}] ~ {{before}} -> {{after}}"
-    deletedTemplate: "[{{query_name}}] - {{before}}"
+    defaultTemplate:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"

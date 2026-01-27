@@ -1,0 +1,243 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Real-World Scenario: Order Exception Handling
+# =============================================================================
+#
+# This example demonstrates an e-commerce order monitoring system that:
+# - Tracks orders from a PostgreSQL database via CDC
+# - Detects high-value orders requiring manual review
+# - Identifies orders stuck in processing
+# - Alerts on payment failures
+# - Monitors inventory shortages
+#
+# Exception types detected:
+# 1. High-value orders (> $10,000) requiring approval
+# 2. Orders in 'pending' status for too long
+# 3. Payment failures
+# 4. Inventory shortages (order quantity > stock)
+#
+# Run with: cargo run -- --config examples/configs/06-real-world-scenarios/order-exception-handling.yaml
+#
+# Requires PostgreSQL with logical replication enabled.
+
+id: order-exception-system
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  # PostgreSQL CDC for orders database
+  - kind: postgres
+    id: orders-db
+    autoStart: true
+    host: "${DB_HOST:-localhost}"
+    port: 5432
+    database: "${DB_NAME:-ecommerce}"
+    user: "${DB_USER:-drasi_user}"
+    password: "${DB_PASSWORD:-drasi_password}"
+    sslMode: prefer
+    tables:
+      - orders
+      - order_items
+      - payments
+      - inventory
+    slotName: drasi_orders_slot
+    publicationName: drasi_orders_pub
+    tableKeys:
+      - table: orders
+        keyColumns:
+          - order_id
+      - table: order_items
+        keyColumns:
+          - item_id
+      - table: payments
+        keyColumns:
+          - payment_id
+      - table: inventory
+        keyColumns:
+          - product_id
+    bootstrapProvider:
+      kind: postgres
+
+queries:
+  # Exception 1: High-value orders requiring approval
+  - id: high-value-orders
+    autoStart: true
+    query: |
+      MATCH (o:orders)
+      WHERE o.total_amount > 10000 AND o.status = 'pending_approval'
+      RETURN o.order_id AS OrderId,
+             o.customer_id AS CustomerId,
+             o.total_amount AS Amount,
+             o.created_at AS CreatedAt,
+             'HIGH_VALUE_REVIEW' AS ExceptionType
+    sources:
+      - sourceId: orders-db
+
+  # Exception 2: Orders stuck in pending
+  - id: stuck-orders
+    autoStart: true
+    query: |
+      MATCH (o:orders)
+      WHERE o.status = 'pending' AND o.is_stale = true
+      RETURN o.order_id AS OrderId,
+             o.status AS Status,
+             o.created_at AS CreatedAt,
+             'STUCK_ORDER' AS ExceptionType
+    sources:
+      - sourceId: orders-db
+
+  # Exception 3: Payment failures
+  - id: payment-failures
+    autoStart: true
+    query: |
+      MATCH (p:payments)
+      WHERE p.status = 'failed'
+      RETURN p.payment_id AS PaymentId,
+             p.order_id AS OrderId,
+             p.amount AS Amount,
+             p.error_code AS ErrorCode,
+             p.error_message AS ErrorMessage,
+             'PAYMENT_FAILED' AS ExceptionType
+    sources:
+      - sourceId: orders-db
+
+  # Exception 4: Inventory shortages
+  - id: inventory-shortage
+    autoStart: true
+    query: |
+      MATCH (i:order_items), (inv:inventory)
+      WHERE i.product_id = inv.product_id AND i.quantity > inv.stock_quantity
+      RETURN i.order_id AS OrderId,
+             i.product_id AS ProductId,
+             i.quantity AS OrderedQuantity,
+             inv.stock_quantity AS AvailableStock,
+             'INVENTORY_SHORTAGE' AS ExceptionType
+    sources:
+      - sourceId: orders-db
+
+  # Dashboard: All pending orders
+  - id: pending-orders
+    autoStart: true
+    query: |
+      MATCH (o:orders)
+      WHERE o.status IN ['pending', 'pending_approval', 'processing']
+      RETURN o.order_id AS OrderId,
+             o.status AS Status,
+             o.total_amount AS Amount,
+             o.created_at AS CreatedAt
+    sources:
+      - sourceId: orders-db
+
+  # Dashboard: Order statistics
+  - id: order-stats
+    autoStart: true
+    query: |
+      MATCH (o:orders)
+      RETURN o.status AS Status,
+             count(o) AS OrderCount,
+             sum(o.total_amount) AS TotalAmount
+    sources:
+      - sourceId: orders-db
+
+reactions:
+  # Console logging for all exceptions
+  - kind: log
+    id: exception-logger
+    queries:
+      - high-value-orders
+      - stuck-orders
+      - payment-failures
+      - inventory-shortage
+    autoStart: true
+    routes:
+      high-value-orders:
+        added:
+          template: "[EXCEPTION] HIGH VALUE ORDER: Order {{after.OrderId}} for ${{after.Amount}} (Customer: {{after.CustomerId}}) - {{after.ExceptionType}}"
+      stuck-orders:
+        added:
+          template: "[EXCEPTION] STUCK ORDER: Order {{after.OrderId}} in {{after.Status}} since {{after.CreatedAt}} - {{after.ExceptionType}}"
+      payment-failures:
+        added:
+          template: "[EXCEPTION] PAYMENT FAILED: Payment {{after.PaymentId}} for Order {{after.OrderId}} (${{after.Amount}}) - {{after.ErrorCode}}: {{after.ErrorMessage}}"
+      inventory-shortage:
+        added:
+          template: "[EXCEPTION] INVENTORY SHORTAGE: Order {{after.OrderId}} needs {{after.OrderedQuantity}} of {{after.ProductId}} (only {{after.AvailableStock}} available)"
+
+  # SSE for operations dashboard
+  - kind: sse
+    id: ops-dashboard
+    queries:
+      - high-value-orders
+      - stuck-orders
+      - payment-failures
+      - inventory-shortage
+      - pending-orders
+      - order-stats
+    autoStart: true
+    host: "0.0.0.0"
+    port: 8081
+    ssePath: "/orders"
+    heartbeatIntervalMs: 15000
+    routes:
+      high-value-orders:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "customerId": "{{after.CustomerId}}", "amount": {{after.Amount}}, "createdAt": "{{after.CreatedAt}}"}'
+      stuck-orders:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "createdAt": "{{after.CreatedAt}}"}'
+      payment-failures:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "paymentId": "{{after.PaymentId}}", "orderId": "{{after.OrderId}}", "amount": {{after.Amount}}, "errorCode": "{{after.ErrorCode}}", "errorMessage": "{{after.ErrorMessage}}"}'
+      inventory-shortage:
+        added:
+          template: '{"event": "exception", "type": "{{after.ExceptionType}}", "orderId": "{{after.OrderId}}", "productId": "{{after.ProductId}}", "ordered": {{after.OrderedQuantity}}, "available": {{after.AvailableStock}}}'
+      pending-orders:
+        added:
+          template: '{"event": "pending_order", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "amount": {{after.Amount}}, "createdAt": "{{after.CreatedAt}}"}'
+        updated:
+          template: '{"event": "order_update", "orderId": "{{after.OrderId}}", "status": "{{after.Status}}", "amount": {{after.Amount}}}'
+      order-stats:
+        added:
+          template: '{"event": "stats", "status": "{{after.Status}}", "count": {{after.OrderCount}}, "totalAmount": {{after.TotalAmount}}}'
+        updated:
+          template: '{"event": "stats", "status": "{{after.Status}}", "count": {{after.OrderCount}}, "totalAmount": {{after.TotalAmount}}}'
+
+  # HTTP webhook for critical exceptions
+  - kind: http
+    id: exception-alerts
+    queries:
+      - payment-failures
+      - inventory-shortage
+    autoStart: true
+    baseUrl: "${ALERT_WEBHOOK_URL:-http://localhost:3000}"
+    timeoutMs: 5000
+    routes:
+      payment-failures:
+        added:
+          url: "/alerts/payment-failure"
+          method: "POST"
+          body: '{"type": "payment_failure", "paymentId": "{{after.PaymentId}}", "orderId": "{{after.OrderId}}", "amount": {{after.Amount}}, "errorCode": "{{after.ErrorCode}}", "errorMessage": "{{after.ErrorMessage}}"}'
+          headers:
+            Content-Type: "application/json"
+      inventory-shortage:
+        added:
+          url: "/alerts/inventory-shortage"
+          method: "POST"
+          body: '{"type": "inventory_shortage", "orderId": "{{after.OrderId}}", "productId": "{{after.ProductId}}", "orderedQuantity": {{after.OrderedQuantity}}, "availableStock": {{after.AvailableStock}}}'
+          headers:
+            Content-Type: "application/json"

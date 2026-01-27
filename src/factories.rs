@@ -18,7 +18,6 @@
 //! types and use the existing plugin constructors to create instances.
 
 use anyhow::Result;
-use drasi_lib::bootstrap::BootstrapProviderConfig;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
@@ -43,6 +42,7 @@ use crate::api::mappings::{
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
 };
+use crate::api::models::BootstrapProviderConfig;
 use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 
 /// Create a source instance from a SourceConfig.
@@ -198,15 +198,15 @@ fn create_bootstrap_provider(
         }
         BootstrapProviderConfig::ScriptFile(script_config) => {
             use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
-            Ok(Box::new(ScriptFileBootstrapProvider::new(
-                script_config.clone(),
-            )))
+            // Convert local DTO to drasi-lib type
+            let lib_config: drasi_lib::bootstrap::ScriptFileBootstrapConfig = script_config.into();
+            Ok(Box::new(ScriptFileBootstrapProvider::new(lib_config)))
         }
         BootstrapProviderConfig::Platform(platform_config) => {
             use drasi_bootstrap_platform::PlatformBootstrapProvider;
-            Ok(Box::new(PlatformBootstrapProvider::new(
-                platform_config.clone(),
-            )?))
+            // Convert local DTO to drasi-lib type
+            let lib_config: drasi_lib::bootstrap::PlatformBootstrapConfig = platform_config.into();
+            Ok(Box::new(PlatformBootstrapProvider::new(lib_config)?))
         }
         BootstrapProviderConfig::Application(_) => {
             // Application bootstrap is typically handled internally by application sources
@@ -506,13 +506,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_mock_source_with_scriptfile_bootstrap() {
-        use drasi_lib::bootstrap::ScriptFileBootstrapConfig;
+        use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
 
         let config = SourceConfig::Mock {
             id: "script-bootstrap-source".to_string(),
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::ScriptFile(
-                ScriptFileBootstrapConfig {
+                ScriptFileBootstrapConfigDto {
                     file_paths: vec!["test.jsonl".to_string()],
                 },
             )),
@@ -640,9 +640,9 @@ mod tests {
 
     #[test]
     fn test_create_scriptfile_bootstrap_provider() {
-        use drasi_lib::bootstrap::ScriptFileBootstrapConfig;
+        use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
 
-        let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfig {
+        let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfigDto {
             file_paths: vec!["/path/to/data.jsonl".to_string()],
         });
         let source_config = SourceConfig::Mock {
@@ -664,9 +664,10 @@ mod tests {
 
     #[test]
     fn test_postgres_bootstrap_requires_postgres_source() {
-        use drasi_lib::bootstrap::PostgresBootstrapConfig;
+        use crate::api::models::bootstrap::PostgresBootstrapConfigDto;
 
-        let bootstrap_config = BootstrapProviderConfig::Postgres(PostgresBootstrapConfig {});
+        let bootstrap_config =
+            BootstrapProviderConfig::Postgres(PostgresBootstrapConfigDto::default());
         let source_config = SourceConfig::Mock {
             id: "test".to_string(),
             auto_start: true,
@@ -688,10 +689,10 @@ mod tests {
 
     #[test]
     fn test_application_bootstrap_returns_error() {
-        use drasi_lib::bootstrap::ApplicationBootstrapConfig;
+        use crate::api::models::bootstrap::ApplicationBootstrapConfigDto;
 
         let bootstrap_config =
-            BootstrapProviderConfig::Application(ApplicationBootstrapConfig::default());
+            BootstrapProviderConfig::Application(ApplicationBootstrapConfigDto::default());
         let source_config = SourceConfig::Mock {
             id: "test".to_string(),
             auto_start: true,
