@@ -41,7 +41,7 @@ pub fn build_config(
         vec![QueryConfigDto {
             id: "my-query".to_string(),
             query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("Cypher".to_string()),
+            query_language: ConfigValue::Static("GQL".to_string()),
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,

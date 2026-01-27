@@ -32,6 +32,7 @@ sources:
 queries:
   - id: hello-world-from
     autoStart: true
+    queryLanguage: Cypher
     query: |
       MATCH (m:message)
       WHERE m.message = 'Hello World'
@@ -41,6 +42,7 @@ queries:
 
   - id: message-count
     autoStart: true
+    queryLanguage: Cypher
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency

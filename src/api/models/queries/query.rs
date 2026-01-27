@@ -65,7 +65,7 @@ fn default_auto_start() -> bool {
 }
 
 fn default_query_language() -> ConfigValue<String> {
-    ConfigValue::Static("Cypher".to_string())
+    ConfigValue::Static("GQL".to_string())
 }
 
 fn default_enable_bootstrap() -> bool {
@@ -74,4 +74,84 @@ fn default_enable_bootstrap() -> bool {
 
 fn default_bootstrap_buffer_size() -> usize {
     10000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_query_language_defaults_to_gql() {
+        // Test that when queryLanguage is omitted, it defaults to GQL
+        let json = r#"{
+            "id": "test-query",
+            "query": "MATCH (n) RETURN n",
+            "sources": []
+        }"#;
+
+        let dto: QueryConfigDto = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(
+            dto.query_language,
+            ConfigValue::Static("GQL".to_string()),
+            "Default query language should be GQL"
+        );
+    }
+
+    #[test]
+    fn test_query_language_can_be_explicitly_set_to_cypher() {
+        // Test that Cypher can still be explicitly set
+        let json = r#"{
+            "id": "test-query",
+            "query": "MATCH (n) RETURN n",
+            "queryLanguage": "Cypher",
+            "sources": []
+        }"#;
+
+        let dto: QueryConfigDto = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(
+            dto.query_language,
+            ConfigValue::Static("Cypher".to_string()),
+            "Should accept explicit Cypher setting"
+        );
+    }
+
+    #[test]
+    fn test_query_language_can_be_explicitly_set_to_gql() {
+        // Test that GQL can be explicitly set
+        let json = r#"{
+            "id": "test-query",
+            "query": "MATCH (n) RETURN n",
+            "queryLanguage": "GQL",
+            "sources": []
+        }"#;
+
+        let dto: QueryConfigDto = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(
+            dto.query_language,
+            ConfigValue::Static("GQL".to_string()),
+            "Should accept explicit GQL setting"
+        );
+    }
+
+    #[test]
+    fn test_other_defaults_unchanged() {
+        // Ensure other defaults haven't changed
+        let json = r#"{
+            "id": "test-query",
+            "query": "MATCH (n) RETURN n",
+            "sources": []
+        }"#;
+
+        let dto: QueryConfigDto = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(dto.auto_start, false, "auto_start should default to false");
+        assert_eq!(
+            dto.enable_bootstrap, true,
+            "enable_bootstrap should default to true"
+        );
+        assert_eq!(
+            dto.bootstrap_buffer_size, 10000,
+            "bootstrap_buffer_size should default to 10000"
+        );
+    }
 }

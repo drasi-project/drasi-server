@@ -84,6 +84,7 @@ queries:
   # Similar to the Platform tutorial's hello-world-from query
   - id: hello-world-from
     autoStart: true
+    queryLanguage: Cypher
     query: |
       MATCH (m:message {message: 'Hello World'})
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
@@ -95,6 +96,7 @@ queries:
   # Cypher equivalent of the Platform tutorial's GQL aggregation query
   - id: message-count
     autoStart: true
+    queryLanguage: Cypher
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency
