@@ -274,18 +274,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Check if release already exists
+          # Check if release already exists and fail if it does
           if gh release view "${{ inputs.tag }}" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "Release ${{ inputs.tag }} already exists, uploading assets..."
-            gh release upload "${{ inputs.tag }}" release-assets/* --repo ${{ github.repository }} --clobber
-          else
-            echo "Creating new release ${{ inputs.tag }}..."
-            gh release create "${{ inputs.tag }}" \
-              release-assets/* \
-              --repo ${{ github.repository }} \
-              --title "Release ${{ inputs.tag }}" \
-              --notes-file release-notes.md
+            echo "::error::Release ${{ inputs.tag }} already exists. Please use a new version number."
+            echo "Existing release found at: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}"
+            exit 1
           fi
+          
+          # Create new release
+          echo "Creating new release ${{ inputs.tag }}..."
+          gh release create "${{ inputs.tag }}" \
+            release-assets/* \
+            --repo ${{ github.repository }} \
+            --title "Release ${{ inputs.tag }}" \
+            --notes-file release-notes.md
 
       - name: Update summary
         run: |
