@@ -18,8 +18,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version Tag'
-        required: true
+        description: 'Version Tag (optional, defaults to version from Cargo.toml)'
+        required: false
       image_prefix:
         description: 'Image Prefix'
         required: false
@@ -34,10 +34,35 @@ env:
   IMAGE_NAME: drasi-server
 
 jobs:
+  # Determine the version tag to use
+  determine-version:
+    name: Determine Version Tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "Using provided tag: ${{ inputs.tag }}"
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            # Extract version from Cargo.toml
+            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            TAG="v${VERSION}"
+            echo "Using version from Cargo.toml: ${TAG}"
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          fi
+
   # Build binaries for multiple platforms using cross-compilation
   build-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    needs: determine-version
     strategy:
       matrix:
         include:
@@ -79,7 +104,7 @@ jobs:
         id: build
         run: |
           # Get version from tag (strip 'v' prefix if present)
-          VERSION="${{ inputs.tag }}"
+          VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
           # Build the release binary for target
@@ -102,7 +127,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ inputs.tag }}-${{ matrix.target }}
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.target }}
           path: ${{ steps.build.outputs.name }}
           if-no-files-found: error
 
@@ -110,6 +135,7 @@ jobs:
   build-docker:
     name: Build Docker ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
+    needs: determine-version
     strategy:
       matrix:
         include:
@@ -136,7 +162,7 @@ jobs:
       - name: Build and push platform-specific image
         env:
           IMAGE_PREFIX: ${{ inputs.image_prefix }}
-          DOCKER_TAG_VERSION: ${{ inputs.tag }}-${{ matrix.suffix }}
+          DOCKER_TAG_VERSION: ${{ needs.determine-version.outputs.tag }}-${{ matrix.suffix }}
           DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
         run: |
           make docker-build
@@ -144,7 +170,7 @@ jobs:
   # Create multi-arch manifest
   create-manifest:
     name: Create Multi-Arch Manifest
-    needs: build-docker
+    needs: [determine-version, build-docker]
     runs-on: ubuntu-latest
     steps:
       - name: Log in to GitHub Container Registry
@@ -156,38 +182,38 @@ jobs:
 
       - name: Create and push manifest list
         run: |
-          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }} \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64 \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64
+          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }} \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
 
       - name: Create and push 'latest' tag
         run: |
           docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64 \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
 
       - name: Generate summary
         run: |
           # Strip 'v' prefix from tag for binary names
-          VERSION="${{ inputs.tag }}"
+          VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Tags Created" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -206,7 +232,7 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
-    needs: [build-binaries, create-manifest]
+    needs: [determine-version, build-binaries, create-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -215,7 +241,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: drasid-${{ inputs.tag }}-*
+          pattern: drasid-${{ needs.determine-version.outputs.tag }}-*
           merge-multiple: false
 
       - name: Prepare release assets
@@ -260,7 +286,7 @@ jobs:
           ## Docker Images
 
           Multi-arch Docker images are available at:
-          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}`
+          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}`
           - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest`
 
           Supported architectures: `linux/amd64`, `linux/arm64`
@@ -270,23 +296,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ needs.determine-version.outputs.tag }}"
+          
           # Check if release already exists
-          if gh release view "${{ inputs.tag }}" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "Release ${{ inputs.tag }} already exists. Updating with new artifacts..."
-            gh release upload "${{ inputs.tag }}" release-assets/* --repo ${{ github.repository }} --clobber
+          if gh release view "${TAG}" --repo ${{ github.repository }} 2>/dev/null; then
+            echo "Release ${TAG} already exists. Updating with new artifacts..."
+            gh release upload "${TAG}" release-assets/* --repo ${{ github.repository }} --clobber
           else
-            echo "Creating new release ${{ inputs.tag }}..."
-            gh release create "${{ inputs.tag }}" \
+            echo "Creating new release ${TAG}..."
+            gh release create "${TAG}" \
               release-assets/* \
               --repo ${{ github.repository }} \
-              --title "Release ${{ inputs.tag }}" \
+              --title "Release ${TAG}" \
               --notes-file release-notes.md
           fi
 
       - name: Update summary
         run: |
+          TAG="${{ needs.determine-version.outputs.tag }}"
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release [\`${{ inputs.tag }}\`](https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
 
