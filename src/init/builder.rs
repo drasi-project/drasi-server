@@ -16,7 +16,9 @@
 
 use anyhow::Result;
 
-use drasi_server::api::models::{ConfigValue, ReactionConfig, SourceConfig};
+use drasi_server::api::models::{
+    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
+};
 use drasi_server::DrasiServerConfig;
 
 use super::prompts::ServerSettings;
@@ -36,16 +38,16 @@ pub fn build_config(
             .first()
             .map(|s| s.id().to_string())
             .unwrap_or_default();
-        vec![drasi_lib::config::QueryConfig {
+        vec![QueryConfigDto {
             id: "my-query".to_string(),
-            query: "MATCH (n) RETURN n".to_string(),
-            query_language: drasi_lib::config::QueryLanguage::Cypher,
+            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
-            sources: vec![drasi_lib::config::SourceSubscriptionConfig {
-                source_id,
+            sources: vec![SourceSubscriptionConfigDto {
+                source_id: ConfigValue::Static(source_id),
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],
@@ -223,14 +225,20 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         let query = &config.queries[0];
         assert_eq!(query.id, "my-query");
-        assert_eq!(query.query, "MATCH (n) RETURN n");
+        assert_eq!(
+            query.query,
+            ConfigValue::Static("MATCH (n) RETURN n".to_string())
+        );
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
         assert_eq!(query.bootstrap_buffer_size, 10000);
 
         // Check query subscribes to the source
         assert_eq!(query.sources.len(), 1);
-        assert_eq!(query.sources[0].source_id, "my-mock");
+        assert_eq!(
+            query.sources[0].source_id,
+            ConfigValue::Static("my-mock".to_string())
+        );
     }
 
     #[test]
@@ -249,7 +257,10 @@ mod tests {
 
         // Query should subscribe to the first source
         assert_eq!(config.queries.len(), 1);
-        assert_eq!(config.queries[0].sources[0].source_id, "source-1");
+        assert_eq!(
+            config.queries[0].sources[0].source_id,
+            ConfigValue::Static("source-1".to_string())
+        );
     }
 
     #[test]
@@ -342,7 +353,7 @@ mod tests {
 
         assert!(yaml.contains("host: 192.168.1.1"));
         assert!(yaml.contains("port: 3000"));
-        assert!(yaml.contains("log_level: warn"));
+        assert!(yaml.contains("logLevel: warn"));
     }
 
     #[test]
@@ -499,8 +510,8 @@ mod tests {
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(
-            yaml.contains("persist_index: false"),
-            "YAML should contain persist_index: false"
+            yaml.contains("persistIndex: false"),
+            "YAML should contain persistIndex: false"
         );
     }
 
@@ -518,8 +529,8 @@ mod tests {
         let yaml = generate_yaml(&config).unwrap();
 
         assert!(
-            yaml.contains("persist_index: true"),
-            "YAML should contain persist_index: true"
+            yaml.contains("persistIndex: true"),
+            "YAML should contain persistIndex: true. Actual YAML:\n{yaml}"
         );
     }
 

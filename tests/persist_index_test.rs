@@ -133,14 +133,14 @@ async fn test_drasi_server_builder_with_index_provider() -> Result<()> {
     Ok(())
 }
 
-/// Test that persist_index: true is correctly deserialized
+/// Test that persistIndex: true is correctly deserialized
 #[test]
 fn test_persist_index_config_deserialization_true() {
     let yaml = r#"
         id: test-server
         host: 127.0.0.1
         port: 8080
-        persist_index: true
+        persistIndex: true
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
@@ -150,14 +150,14 @@ fn test_persist_index_config_deserialization_true() {
     );
 }
 
-/// Test that persist_index: false is correctly deserialized
+/// Test that persistIndex: false is correctly deserialized
 #[test]
 fn test_persist_index_config_deserialization_false() {
     let yaml = r#"
         id: test-server
         host: 127.0.0.1
         port: 8080
-        persist_index: false
+        persistIndex: false
     "#;
 
     let config: DrasiServerConfig = serde_yaml::from_str(yaml).expect("Failed to parse config");
@@ -190,9 +190,9 @@ fn test_persist_index_with_full_config() {
         id: production-server
         host: 0.0.0.0
         port: 9090
-        log_level: debug
-        persist_config: true
-        persist_index: true
+        logLevel: debug
+        persistConfig: true
+        persistIndex: true
         sources: []
         queries: []
         reactions: []
@@ -220,8 +220,8 @@ fn test_persist_index_serialization_roundtrip() {
     let yaml = serde_yaml::to_string(&original).expect("Failed to serialize config");
 
     assert!(
-        yaml.contains("persist_index: true"),
-        "Serialized config should contain 'persist_index: true'"
+        yaml.contains("persistIndex: true"),
+        "Serialized config should contain 'persistIndex: true'"
     );
 
     let deserialized: DrasiServerConfig =

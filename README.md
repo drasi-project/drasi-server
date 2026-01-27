@@ -20,7 +20,6 @@ Traditional approaches require manual polling, parsing ambiguous payloads, filte
 ### Prerequisites
 
 - Rust 1.70 or higher
-- Git with submodule support
 
 ### Quick Start
 
@@ -55,8 +54,8 @@ DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -
 #### Building Locally from Source
 
 ```bash
-# Clone with all submodules
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
 # Build the Docker image
@@ -75,9 +74,10 @@ See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
 # Ensure Rust is installed (1.70+)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone the repository with all submodules (including nested ones)
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
+
 # Build the server
 cargo build --release
 
@@ -107,18 +107,18 @@ curl http://localhost:8080/api/v1/queries
 # config/server.yaml
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 
 queries:
   - id: my-query
     query: "MATCH (n:Node) RETURN n"
     sources:
-      - source_id: test-source
+      - sourceId: test-source
 
 reactions:
   - kind: log
@@ -208,12 +208,12 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `id` | string | (auto-generated UUID) | Unique server identifier |
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
-| `log_level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `persist_config` | boolean | `true` | Enable saving API changes to config file |
-| `persist_index` | boolean | `false` | Use RocksDB for persistent query indexes |
-| `state_store` | object | (none) | State store provider for plugin state persistence |
-| `default_priority_queue_capacity` | integer | `10000` | Default capacity for query/reaction event queues |
-| `default_dispatch_buffer_capacity` | integer | `1000` | Default buffer capacity for event dispatching |
+| `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `persistConfig` | boolean | `true` | Enable saving API changes to config file |
+| `persistIndex` | boolean | `false` | Use RocksDB for persistent query indexes |
+| `stateStore` | object | (none) | State store provider for plugin state persistence |
+| `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
+| `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 
 **Example:**
 
@@ -221,11 +221,11 @@ Drasi Server uses YAML configuration files. All configuration values support env
 id: my-server
 host: 0.0.0.0
 port: 8080
-log_level: info
-persist_config: true
-persist_index: false
+logLevel: info
+persistConfig: true
+persistIndex: false
 
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb
 
@@ -243,7 +243,7 @@ State stores allow plugins (Sources, Bootstrap Providers, Reactions) to persist 
 File-based persistent storage using the REDB embedded database.
 
 ```yaml
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb  # Supports ${ENV_VAR:-default}
 ```
@@ -265,8 +265,8 @@ Sources connect to data systems and stream changes to queries. Each source type 
 |-------|------|---------|-------------|
 | `kind` | string | (required) | Source type: `postgres`, `http`, `grpc`, `mock`, `platform` |
 | `id` | string | (required) | Unique source identifier |
-| `auto_start` | boolean | `true` | Start source automatically on server startup |
-| `bootstrap_provider` | object | (none) | Bootstrap provider configuration |
+| `autoStart` | boolean | `true` | Start source automatically on server startup |
+| `bootstrapProvider` | object | (none) | Bootstrap provider configuration |
 
 #### PostgreSQL Source (`postgres`)
 
@@ -276,21 +276,21 @@ Streams changes from PostgreSQL using logical replication (WAL).
 sources:
   - kind: postgres
     id: my-postgres
-    auto_start: true
+    autoStart: true
     host: localhost
     port: 5432
     database: mydb
     user: postgres
     password: ${DB_PASSWORD}
     tables: [orders, customers]
-    slot_name: drasi_slot
-    publication_name: drasi_pub
-    ssl_mode: prefer
-    table_keys:
+    slotName: drasi_slot
+    publicationName: drasi_pub
+    sslMode: prefer
+    tableKeys:
       - table: orders
-        key_columns: [id]
-    bootstrap_provider:
-      type: postgres
+        keyColumns: [id]
+    bootstrapProvider:
+      kind: postgres
 ```
 
 | Field | Type | Default | Description |
@@ -301,10 +301,10 @@ sources:
 | `user` | string | (required) | Database user |
 | `password` | string | `""` | Database password |
 | `tables` | array | `[]` | Tables to monitor |
-| `slot_name` | string | `drasi_slot` | Replication slot name |
-| `publication_name` | string | `drasi_publication` | Publication name |
-| `ssl_mode` | string | `prefer` | SSL mode: `disable`, `prefer`, `require` |
-| `table_keys` | array | `[]` | Primary key definitions for tables |
+| `slotName` | string | `drasi_slot` | Replication slot name |
+| `publicationName` | string | `drasi_publication` | Publication name |
+| `sslMode` | string | `prefer` | SSL mode: `disable`, `prefer`, `require` |
+| `tableKeys` | array | `[]` | Primary key definitions for tables |
 
 #### HTTP Source (`http`)
 
@@ -314,10 +314,10 @@ Receives events via HTTP endpoints.
 sources:
   - kind: http
     id: my-http
-    auto_start: true
+    autoStart: true
     host: 0.0.0.0
     port: 9000
-    timeout_ms: 10000
+    timeoutMs: 10000
 ```
 
 | Field | Type | Default | Description |
@@ -325,7 +325,7 @@ sources:
 | `host` | string | (required) | Listen address |
 | `port` | integer | (required) | Listen port |
 | `endpoint` | string | (auto) | Custom endpoint path |
-| `timeout_ms` | integer | `10000` | Request timeout in milliseconds |
+| `timeoutMs` | integer | `10000` | Request timeout in milliseconds |
 
 #### gRPC Source (`grpc`)
 
@@ -335,17 +335,17 @@ Receives events via gRPC streaming.
 sources:
   - kind: grpc
     id: my-grpc
-    auto_start: true
+    autoStart: true
     host: 0.0.0.0
     port: 50051
-    timeout_ms: 5000
+    timeoutMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `host` | string | `0.0.0.0` | Listen address |
 | `port` | integer | `50051` | Listen port |
-| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
+| `timeoutMs` | integer | `5000` | Connection timeout in milliseconds |
 
 #### Mock Source (`mock`)
 
@@ -355,15 +355,15 @@ Generates test data for development.
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
-    data_type: sensor
-    interval_ms: 5000
+    autoStart: true
+    dataType: sensor
+    intervalMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `data_type` | string | `generic` | Type of mock data to generate |
-| `interval_ms` | integer | `5000` | Data generation interval in milliseconds |
+| `dataType` | string | `generic` | Type of mock data to generate |
+| `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
 
 #### Platform Source (`platform`)
 
@@ -373,22 +373,22 @@ Consumes events from Redis Streams for Drasi Platform integration.
 sources:
   - kind: platform
     id: platform-source
-    auto_start: true
-    redis_url: redis://localhost:6379
-    stream_key: my-stream
-    consumer_group: drasi-core
-    batch_size: 100
-    block_ms: 5000
+    autoStart: true
+    redisUrl: redis://localhost:6379
+    streamKey: my-stream
+    consumerGroup: drasi-core
+    batchSize: 100
+    blockMs: 5000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `redis_url` | string | (required) | Redis connection URL |
-| `stream_key` | string | (required) | Redis stream key to consume |
-| `consumer_group` | string | `drasi-core` | Consumer group name |
-| `consumer_name` | string | (auto) | Consumer name within group |
-| `batch_size` | integer | `100` | Events to read per batch |
-| `block_ms` | integer | `5000` | Block timeout in milliseconds |
+| `redisUrl` | string | (required) | Redis connection URL |
+| `streamKey` | string | (required) | Redis stream key to consume |
+| `consumerGroup` | string | `drasi-core` | Consumer group name |
+| `consumerName` | string | (auto) | Consumer name within group |
+| `batchSize` | integer | `100` | Events to read per batch |
+| `blockMs` | integer | `5000` | Block timeout in milliseconds |
 
 ---
 
@@ -401,8 +401,8 @@ Bootstrap providers deliver initial data to queries before streaming begins. Any
 Loads initial data from PostgreSQL using the COPY protocol.
 
 ```yaml
-bootstrap_provider:
-  type: postgres
+bootstrapProvider:
+  kind: postgres
   # Uses source connection details
 ```
 
@@ -411,9 +411,9 @@ bootstrap_provider:
 Loads initial data from JSONL files.
 
 ```yaml
-bootstrap_provider:
-  type: scriptfile
-  file_paths:
+bootstrapProvider:
+  kind: scriptfile
+  filePaths:
     - /data/initial_nodes.jsonl
     - /data/initial_relations.jsonl
 ```
@@ -423,10 +423,10 @@ bootstrap_provider:
 Loads initial data from a remote Drasi Query API.
 
 ```yaml
-bootstrap_provider:
-  type: platform
-  query_api_url: http://remote-drasi:8080
-  timeout_seconds: 300
+bootstrapProvider:
+  kind: platform
+  queryApiUrl: http://remote-drasi:8080
+  timeoutSeconds: 300
 ```
 
 #### No-Op Bootstrap (`noop`)
@@ -434,8 +434,8 @@ bootstrap_provider:
 Returns no initial data.
 
 ```yaml
-bootstrap_provider:
-  type: noop
+bootstrapProvider:
+  kind: noop
 ```
 
 ---
@@ -453,8 +453,8 @@ queries:
       RETURN o.id, o.customer_id, o.total
     queryLanguage: Cypher
     sources:
-      - source_id: orders-db
-    auto_start: true
+      - sourceId: orders-db
+    autoStart: true
     enableBootstrap: true
     bootstrapBufferSize: 10000
 ```
@@ -465,11 +465,11 @@ queries:
 | `query` | string | (required) | Query string (Cypher or GQL) |
 | `queryLanguage` | string | `Cypher` | Query language: `Cypher` or `GQL` |
 | `sources` | array | (required) | Source subscriptions |
-| `auto_start` | boolean | `true` | Start query automatically |
+| `autoStart` | boolean | `true` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
 | `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
-| `priority_queue_capacity` | integer | (global) | Override queue capacity for this query |
-| `dispatch_buffer_capacity` | integer | (global) | Override buffer capacity for this query |
+| `priorityQueueCapacity` | integer | (global) | Override queue capacity for this query |
+| `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
 | `joins` | array | (none) | Synthetic join definitions |
 
 **Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
@@ -478,7 +478,7 @@ queries:
 
 ```yaml
 sources:
-  - source_id: orders-db
+  - sourceId: orders-db
     nodes: [Order, Customer]      # Optional: filter node labels
     relations: [PLACED_BY]        # Optional: filter relation labels
     pipeline: [decoder, mapper]   # Optional: middleware pipeline
@@ -495,8 +495,8 @@ queries:
       MATCH (o:Order)-[:CUSTOMER]->(c:Customer)
       RETURN o.id, c.name
     sources:
-      - source_id: orders-db
-      - source_id: customers-db
+      - sourceId: orders-db
+      - sourceId: customers-db
     joins:
       - id: CUSTOMER
         keys:
@@ -519,7 +519,7 @@ Reactions respond to query result changes.
 | `kind` | string | (required) | Reaction type |
 | `id` | string | (required) | Unique reaction identifier |
 | `queries` | array | (required) | Query IDs to subscribe to |
-| `auto_start` | boolean | `true` | Start reaction automatically |
+| `autoStart` | boolean | `true` | Start reaction automatically |
 
 #### Log Reaction (`log`)
 
@@ -530,8 +530,8 @@ reactions:
   - kind: log
     id: log-output
     queries: [my-query]
-    auto_start: true
-    default_template:
+    autoStart: true
+    defaultTemplate:
       added:
         template: "Added: {{json this}}"
       updated:
@@ -543,7 +543,7 @@ reactions:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `routes` | object | `{}` | Query-specific template configurations |
-| `default_template` | object | (none) | Default template for all queries |
+| `defaultTemplate` | object | (none) | Default template for all queries |
 
 #### HTTP Reaction (`http`)
 
@@ -554,8 +554,8 @@ reactions:
   - kind: http
     id: webhook
     queries: [my-query]
-    base_url: https://api.example.com
-    timeout_ms: 5000
+    baseUrl: https://api.example.com
+    timeoutMs: 5000
     token: ${API_TOKEN}
     routes:
       my-query:
@@ -568,8 +568,8 @@ reactions:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `base_url` | string | `http://localhost` | Base URL for requests |
-| `timeout_ms` | integer | `5000` | Request timeout in milliseconds |
+| `baseUrl` | string | `http://localhost` | Base URL for requests |
+| `timeoutMs` | integer | `5000` | Request timeout in milliseconds |
 | `token` | string | (none) | Bearer token for authorization |
 | `routes` | object | `{}` | Query-specific endpoint configurations |
 
@@ -582,20 +582,20 @@ reactions:
   - kind: http-adaptive
     id: adaptive-webhook
     queries: [my-query]
-    base_url: https://api.example.com
-    timeout_ms: 5000
-    adaptive_min_batch_size: 1
-    adaptive_max_batch_size: 1000
-    adaptive_window_size: 100
-    adaptive_batch_timeout_ms: 1000
+    baseUrl: https://api.example.com
+    timeoutMs: 5000
+    adaptiveMinBatchSize: 1
+    adaptiveMaxBatchSize: 1000
+    adaptiveWindowSize: 100
+    adaptiveBatchTimeoutMs: 1000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `adaptive_min_batch_size` | integer | `1` | Minimum batch size |
-| `adaptive_max_batch_size` | integer | `1000` | Maximum batch size |
-| `adaptive_window_size` | integer | `100` | Window size for adaptive calculations |
-| `adaptive_batch_timeout_ms` | integer | `1000` | Batch timeout in milliseconds |
+| `adaptiveMinBatchSize` | integer | `1` | Minimum batch size |
+| `adaptiveMaxBatchSize` | integer | `1000` | Maximum batch size |
+| `adaptiveWindowSize` | integer | `100` | Window size for adaptive calculations |
+| `adaptiveBatchTimeoutMs` | integer | `1000` | Batch timeout in milliseconds |
 
 #### gRPC Reaction (`grpc`)
 
@@ -607,20 +607,20 @@ reactions:
     id: grpc-stream
     queries: [my-query]
     endpoint: grpc://localhost:50052
-    timeout_ms: 5000
-    batch_size: 100
-    max_retries: 3
+    timeoutMs: 5000
+    batchSize: 100
+    maxRetries: 3
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `endpoint` | string | `grpc://localhost:50052` | gRPC endpoint URL |
-| `timeout_ms` | integer | `5000` | Connection timeout in milliseconds |
-| `batch_size` | integer | `100` | Events per batch |
-| `batch_flush_timeout_ms` | integer | `1000` | Batch flush timeout |
-| `max_retries` | integer | `3` | Maximum retry attempts |
-| `connection_retry_attempts` | integer | `5` | Connection retry attempts |
-| `initial_connection_timeout_ms` | integer | `10000` | Initial connection timeout |
+| `timeoutMs` | integer | `5000` | Connection timeout in milliseconds |
+| `batchSize` | integer | `100` | Events per batch |
+| `batchFlushTimeoutMs` | integer | `1000` | Batch flush timeout |
+| `maxRetries` | integer | `3` | Maximum retry attempts |
+| `connectionRetryAttempts` | integer | `5` | Connection retry attempts |
+| `initialConnectionTimeoutMs` | integer | `10000` | Initial connection timeout |
 
 #### gRPC Adaptive Reaction (`grpc-adaptive`)
 
@@ -632,8 +632,8 @@ reactions:
     id: adaptive-grpc
     queries: [my-query]
     endpoint: grpc://localhost:50052
-    adaptive_min_batch_size: 1
-    adaptive_max_batch_size: 1000
+    adaptiveMinBatchSize: 1
+    adaptiveMaxBatchSize: 1000
 ```
 
 #### SSE Reaction (`sse`)
@@ -647,16 +647,16 @@ reactions:
     queries: [my-query]
     host: 0.0.0.0
     port: 8081
-    sse_path: /events
-    heartbeat_interval_ms: 30000
+    ssePath: /events
+    heartbeatIntervalMs: 30000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `host` | string | `0.0.0.0` | Listen address |
 | `port` | integer | `8080` | Listen port |
-| `sse_path` | string | `/events` | SSE endpoint path |
-| `heartbeat_interval_ms` | integer | `30000` | Heartbeat interval in milliseconds |
+| `ssePath` | string | `/events` | SSE endpoint path |
+| `heartbeatIntervalMs` | integer | `30000` | Heartbeat interval in milliseconds |
 
 #### Platform Reaction (`platform`)
 
@@ -667,23 +667,23 @@ reactions:
   - kind: platform
     id: redis-publisher
     queries: [my-query]
-    redis_url: redis://localhost:6379
-    emit_control_events: false
-    batch_enabled: true
-    batch_max_size: 100
-    batch_max_wait_ms: 100
+    redisUrl: redis://localhost:6379
+    emitControlEvents: false
+    batchEnabled: true
+    batchMaxSize: 100
+    batchMaxWaitMs: 100
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `redis_url` | string | (required) | Redis connection URL |
-| `pubsub_name` | string | (auto) | Pub/sub channel name |
-| `source_name` | string | (auto) | Source identifier in events |
-| `max_stream_length` | integer | (unlimited) | Maximum stream length |
-| `emit_control_events` | boolean | `false` | Emit control events |
-| `batch_enabled` | boolean | `false` | Enable batching |
-| `batch_max_size` | integer | `100` | Maximum batch size |
-| `batch_max_wait_ms` | integer | `100` | Maximum wait time for batch |
+| `redisUrl` | string | (required) | Redis connection URL |
+| `pubsubName` | string | (auto) | Pub/sub channel name |
+| `sourceName` | string | (auto) | Source identifier in events |
+| `maxStreamLength` | integer | (unlimited) | Maximum stream length |
+| `emitControlEvents` | boolean | `false` | Emit control events |
+| `batchEnabled` | boolean | `false` | Enable batching |
+| `batchMaxSize` | integer | `100` | Maximum batch size |
+| `batchMaxWaitMs` | integer | `100` | Maximum wait time for batch |
 
 #### Profiler Reaction (`profiler`)
 
@@ -694,14 +694,14 @@ reactions:
   - kind: profiler
     id: query-profiler
     queries: [my-query]
-    window_size: 100
-    report_interval_secs: 60
+    windowSize: 100
+    reportIntervalSecs: 60
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `window_size` | integer | `100` | Metrics window size |
-| `report_interval_secs` | integer | `60` | Report interval in seconds |
+| `windowSize` | integer | `100` | Metrics window size |
+| `reportIntervalSecs` | integer | `60` | Report interval in seconds |
 
 ---
 
@@ -712,12 +712,12 @@ For advanced use cases requiring isolated processing environments, configure mul
 ```yaml
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 instances:
   - id: analytics
-    persist_index: true
-    state_store:
+    persistIndex: true
+    stateStore:
       kind: redb
       path: ./data/analytics-state.redb
     sources:
@@ -728,14 +728,14 @@ instances:
       - id: high-value-orders
         query: "MATCH (o:Order) WHERE o.total > 1000 RETURN o"
         sources:
-          - source_id: analytics-db
+          - sourceId: analytics-db
     reactions:
       - kind: log
         id: analytics-log
         queries: [high-value-orders]
 
   - id: monitoring
-    persist_index: false
+    persistIndex: false
     sources:
       - kind: http
         id: metrics-api
@@ -745,7 +745,7 @@ instances:
       - id: alert-threshold
         query: "MATCH (m:Metric) WHERE m.value > m.threshold RETURN m"
         sources:
-          - source_id: metrics-api
+          - sourceId: metrics-api
     reactions:
       - kind: sse
         id: alert-stream
@@ -861,13 +861,13 @@ queries:
       WHERE p.quantity <= p.reorder_point
       RETURN p.sku, p.name, p.quantity, p.reorder_point
     sources:
-      - source_id: inventory-db
+      - sourceId: inventory-db
 
 reactions:
   - kind: http
     id: reorder-webhook
     queries: [low-stock-alert]
-    base_url: https://purchasing.example.com
+    baseUrl: https://purchasing.example.com
     routes:
       low-stock-alert:
         added:
@@ -886,7 +886,7 @@ queries:
         AND t.country <> t.account_country
       RETURN t.id, t.account_id, t.amount, t.country
     sources:
-      - source_id: transactions-db
+      - sourceId: transactions-db
 
 reactions:
   - kind: sse
@@ -896,13 +896,6 @@ reactions:
 ```
 
 ## Troubleshooting
-
-### Build Fails with Submodule Error
-
-```bash
-# Initialize all submodules recursively
-git submodule update --init --recursive
-```
 
 ### Port Already in Use
 
@@ -927,8 +920,8 @@ RUST_LOG=drasi_server=trace cargo run
 ## Building from Source
 
 ```bash
-# Clone with submodules
-git clone --recurse-submodules https://github.com/drasi-project/drasi-server.git
+# Clone the repository
+git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
 # Build

@@ -1,0 +1,96 @@
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Mock source configuration DTOs.
+
+use crate::api::models::ConfigValue;
+use serde::{Deserialize, Serialize};
+
+/// Local copy of mock source configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MockSourceConfigDto {
+    #[serde(default = "default_data_type")]
+    pub data_type: ConfigValue<String>,
+    #[serde(default = "default_interval_ms")]
+    pub interval_ms: ConfigValue<u64>,
+}
+
+fn default_data_type() -> ConfigValue<String> {
+    ConfigValue::Static("generic".to_string())
+}
+
+fn default_interval_ms() -> ConfigValue<u64> {
+    ConfigValue::Static(5000)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::SourceConfig;
+
+    #[test]
+    fn test_mock_source_config_deserializes_camelcase() {
+        let yaml = r#"
+kind: mock
+id: test-source
+autoStart: true
+dataType: "sensor_live"
+intervalMs: 3000
+"#;
+
+        let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        match config {
+            SourceConfig::Mock {
+                id,
+                auto_start,
+                config,
+                ..
+            } => {
+                assert_eq!(id, "test-source");
+                assert!(auto_start);
+                assert_eq!(
+                    config.data_type,
+                    ConfigValue::Static("sensor_live".to_string())
+                );
+                assert_eq!(config.interval_ms, ConfigValue::Static(3000));
+            }
+            _ => panic!("Expected Mock variant"),
+        }
+    }
+
+    #[test]
+    fn test_mock_source_config_uses_defaults() {
+        let yaml = r#"
+kind: mock
+id: default-source
+"#;
+
+        let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        match config {
+            SourceConfig::Mock {
+                id,
+                auto_start,
+                config,
+                ..
+            } => {
+                assert_eq!(id, "default-source");
+                assert!(auto_start, "auto_start should default to true");
+                assert_eq!(config.data_type, ConfigValue::Static("generic".to_string()));
+                assert_eq!(config.interval_ms, ConfigValue::Static(5000));
+            }
+            _ => panic!("Expected Mock variant"),
+        }
+    }
+}

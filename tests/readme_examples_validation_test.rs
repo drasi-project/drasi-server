@@ -182,18 +182,18 @@ fn test_readme_minimal_config_example() {
     let yaml = r#"
 host: 0.0.0.0
 port: 8080
-log_level: info
+logLevel: info
 
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 
 queries:
   - id: my-query
     query: "MATCH (n:Node) RETURN n"
     sources:
-      - source_id: test-source
+      - sourceId: test-source
 
 reactions:
   - kind: log
@@ -216,11 +216,11 @@ fn test_readme_server_settings_example() {
 id: my-server
 host: 0.0.0.0
 port: 8080
-log_level: info
-persist_config: true
-persist_index: false
+logLevel: info
+persistConfig: true
+persistIndex: false
 
-state_store:
+stateStore:
   kind: redb
   path: ./data/state.redb
 

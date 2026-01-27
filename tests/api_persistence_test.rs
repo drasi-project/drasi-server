@@ -17,8 +17,10 @@
 
 mod test_support;
 
-use drasi_lib::Query;
-use drasi_server::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
+use drasi_server::models::{
+    ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto,
+    SourceSubscriptionConfigDto,
+};
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use std::fs;
 use tempfile::TempDir;
@@ -105,12 +107,27 @@ async fn test_persistence_saves_complete_configuration() {
         config: default_mock_config(),
     };
 
-    // Create query using the builder API
-    let query = Query::cypher("test-query-1")
-        .query("MATCH (n) RETURN n")
-        .from_source("test-source-1")
-        .auto_start(true)
-        .build();
+    // Create query using QueryConfigDto
+    let query = QueryConfigDto {
+        id: "test-query-1".to_string(),
+        auto_start: true,
+        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+        query_language: ConfigValue::Static("Cypher".to_string()),
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: ConfigValue::Static("test-source-1".to_string()),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        joins: None,
+        priority_queue_capacity: None,
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
 
     // Create reaction using enum variant
     let reaction = ReactionConfig::Log {
@@ -162,11 +179,14 @@ async fn test_persistence_saves_complete_configuration() {
     // Verify queries
     assert_eq!(loaded_config.queries.len(), 1);
     assert_eq!(loaded_config.queries[0].id, "test-query-1");
-    assert_eq!(loaded_config.queries[0].query, "MATCH (n) RETURN n");
+    assert_eq!(
+        loaded_config.queries[0].query,
+        ConfigValue::Static("MATCH (n) RETURN n".to_string())
+    );
     assert_eq!(loaded_config.queries[0].sources.len(), 1);
     assert_eq!(
         loaded_config.queries[0].sources[0].source_id,
-        "test-source-1"
+        ConfigValue::Static("test-source-1".to_string())
     );
 
     // Verify reactions
@@ -261,12 +281,12 @@ fn test_config_load_yaml_format() {
     let yaml_content = r#"
 host: 127.0.0.1
 port: 8080
-log_level: info
-persist_config: true
+logLevel: info
+persistConfig: true
 sources:
   - kind: mock
     id: test-source
-    auto_start: true
+    autoStart: true
 queries: []
 reactions: []
 "#;

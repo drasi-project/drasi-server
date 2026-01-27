@@ -31,36 +31,42 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-drasi-lib = { path = "./drasi-core/lib" }
+# Drasi core library
+drasi-lib = "0.2.1"
 
 # Source plugins
-drasi-source-mock = { path = "./drasi-core/components/sources/mock" }
-drasi-source-http = { path = "./drasi-core/components/sources/http" }
-drasi-source-grpc = { path = "./drasi-core/components/sources/grpc" }
-drasi-source-postgres = { path = "./drasi-core/components/sources/postgres" }
-drasi-source-platform = { path = "./drasi-core/components/sources/platform" }
+drasi-source-mock = "0.1.1"
+drasi-source-http = "0.1.1"
+drasi-source-grpc = "0.1.1"
+drasi-source-postgres = "0.1.1"
+drasi-source-platform = "0.1.1"
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = { path = "./drasi-core/components/bootstrappers/postgres" }
-drasi-bootstrap-scriptfile = { path = "./drasi-core/components/bootstrappers/scriptfile" }
-drasi-bootstrap-platform = { path = "./drasi-core/components/bootstrappers/platform" }
-drasi-bootstrap-noop = { path = "./drasi-core/components/bootstrappers/noop" }
+drasi-bootstrap-postgres = "0.1.1"
+drasi-bootstrap-scriptfile = "0.1.1"
+drasi-bootstrap-platform = "0.1.1"
+drasi-bootstrap-noop = "0.1.1"
+drasi-bootstrap-application = "0.1.1"
 
 # Reaction plugins
-drasi-reaction-log = { path = "./drasi-core/components/reactions/log" }
-drasi-reaction-http = { path = "./drasi-core/components/reactions/http" }
-drasi-reaction-http-adaptive = { path = "./drasi-core/components/reactions/http-adaptive" }
-drasi-reaction-grpc = { path = "./drasi-core/components/reactions/grpc" }
-drasi-reaction-grpc-adaptive = { path = "./drasi-core/components/reactions/grpc-adaptive" }
-drasi-reaction-sse = { path = "./drasi-core/components/reactions/sse" }
-drasi-reaction-platform = { path = "./drasi-core/components/reactions/platform" }
-drasi-reaction-profiler = { path = "./drasi-core/components/reactions/profiler" }
+drasi-reaction-log = "0.1.1"
+drasi-reaction-http = "0.1.1"
+drasi-reaction-http-adaptive = "0.1.1"
+drasi-reaction-grpc = "0.1.1"
+drasi-reaction-grpc-adaptive = "0.1.1"
+drasi-reaction-sse = "0.1.1"
+drasi-reaction-platform = "0.1.1"
+drasi-reaction-profiler = "0.1.1"
+drasi-reaction-storedproc-postgres = "0.1.0"
+drasi-reaction-storedproc-mysql = "0.1.0"
+drasi-reaction-storedproc-mssql = "0.1.0"
 
 # Index plugins
-drasi-index-rocksdb = { path = "./drasi-core/components/indexes/rocksdb" }
+drasi-index-rocksdb = "0.1.1"
+drasi-index-garnet = "0.1.1"
 
 # State store plugins
-drasi-state-store-redb = { path = "./drasi-core/components/state_stores/redb" }
+drasi-state-store-redb = "0.1.0"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -81,6 +87,7 @@ indexmap = "2.0"
 thiserror = "1.0"
 dotenvy = "0.15"
 inquire = "0.7"
+handlebars = "6"
 
 [dev-dependencies]
 # Testing utilities
@@ -117,3 +124,26 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
+# Uncomment this section for local development to use path-based dependencies
+# [patch.crates-io]
+# drasi-lib = { path = "../drasi-core/lib" }
+# drasi-source-mock = { path = "../drasi-core/components/sources/mock" }
+# drasi-source-http = { path = "../drasi-core/components/sources/http" }
+# drasi-source-grpc = { path = "../drasi-core/components/sources/grpc" }
+# drasi-source-postgres = { path = "../drasi-core/components/sources/postgres" }
+# drasi-source-platform = { path = "../drasi-core/components/sources/platform" }
+# drasi-bootstrap-postgres = { path = "../drasi-core/components/bootstrappers/postgres" }
+# drasi-bootstrap-scriptfile = { path = "../drasi-core/components/bootstrappers/scriptfile" }
+# drasi-bootstrap-platform = { path = "../drasi-core/components/bootstrappers/platform" }
+# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+# drasi-reaction-log = { path = "../drasi-core/components/reactions/log" }
+# drasi-reaction-http = { path = "../drasi-core/components/reactions/http" }
+# drasi-reaction-http-adaptive = { path = "../drasi-core/components/reactions/http-adaptive" }
+# drasi-reaction-grpc = { path = "../drasi-core/components/reactions/grpc" }
+# drasi-reaction-grpc-adaptive = { path = "../drasi-core/components/reactions/grpc-adaptive" }
+# drasi-reaction-sse = { path = "../drasi-core/components/reactions/sse" }
+# drasi-reaction-platform = { path = "../drasi-core/components/reactions/platform" }
+# drasi-reaction-profiler = { path = "../drasi-core/components/reactions/profiler" }
+# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }

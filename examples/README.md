@@ -33,20 +33,6 @@ This directory contains practical examples demonstrating different features and 
 
 ---
 
-### 🔄 [drasi-platform/](drasi-platform/)
-Platform integration example with Redis Streams and bootstrap support.
-
-**Features:**
-- Platform source consuming from Redis Streams
-- Platform bootstrap provider for initial data loading
-- Dual reactions: log (console) + platform (Redis CloudEvents)
-- Consumer group management
-- Complete event lifecycle demonstration
-
-**Use this for:** Integrating with Drasi Platform infrastructure
-
----
-
 ### 📊 [trading/](trading/)
 Comprehensive example demonstrating advanced features and production patterns.
 
@@ -81,8 +67,7 @@ cat README.md
 
 1. **Start with:** `getting-started/` - Learn the basics with PostgreSQL CDC
 2. **Experiment:** `playground/` - Interactive exploration via web UI
-3. **Integrate:** `drasi-platform/` - Redis Streams and platform integration
-4. **Master:** `trading/` - Study production patterns
+3. **Master:** `trading/` - Study production patterns
 
 ## Common Patterns
 

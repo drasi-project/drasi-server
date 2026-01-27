@@ -1,52 +1,69 @@
+# Docker example configuration for Drasi Server
+# This is an example config showing sources, queries, and reactions
+
 id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
-# persist_index: false  # Enable RocksDB persistent indexing (default: false)
+host: 0.0.0.0
+port: 8080
+logLevel: info
+persistConfig: true
+persistIndex: false
+
 sources:
-- id: vehicle-location-source
-  auto_start: true
-  source_type: mock
-  interval_seconds: 5
-  data_type: vehicle_location
-  description: Mock vehicle location data
-- id: order-status-source
-  auto_start: true
-  source_type: mock
-  data_type: order_status
-  interval_seconds: 3
-  description: Mock order status updates
+  - id: vehicle-location-source
+    autoStart: true
+    kind: mock
+    intervalMs: 5000
+    dataType: vehicle_location
+
+  - id: order-status-source
+    autoStart: true
+    kind: mock
+    dataType: order_status
+    intervalMs: 3000
+
 queries:
-- id: available-drivers-query
-  query: "\n            MATCH (d:Driver {status: 'available'})\n            WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL\n            RETURN elementId(d) AS driverId, d.driver_name AS driverName,\n                   d.latitude AS lat, d.longitude AS lng, d.status AS status\n        "
-  queryLanguage: Cypher
-  middleware: []
-  source_subscriptions:
-  - source_id: vehicle-location-source
-    pipeline: []
-  auto_start: true
-  enableBootstrap: true
-  bootstrapBufferSize: 10000
-- id: pending-orders-query
-  query: "\n            MATCH (o:Order)\n            WHERE o.status IN ['pending', 'preparing', 'ready']\n            RETURN elementId(o) AS orderId, o.status AS status,\n                   o.restaurant AS restaurant, o.delivery_address AS address\n        "
-  queryLanguage: Cypher
-  middleware: []
-  source_subscriptions:
-  - source_id: vehicle-location-source
-    pipeline: []
-  auto_start: true
-  enableBootstrap: true
-  bootstrapBufferSize: 10000
+  - id: available-drivers-query
+    query: |
+      MATCH (d:Driver {status: 'available'})
+      WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
+      RETURN elementId(d) AS driverId, d.driver_name AS driverName,
+             d.latitude AS lat, d.longitude AS lng, d.status AS status
+    queryLanguage: Cypher
+    autoStart: true
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
+    sources:
+      - sourceId: vehicle-location-source
+
+  - id: pending-orders-query
+    query: |
+      MATCH (o:Order)
+      WHERE o.status IN ['pending', 'preparing', 'ready']
+      RETURN elementId(o) AS orderId, o.status AS status,
+             o.restaurant AS restaurant, o.delivery_address AS address
+    queryLanguage: Cypher
+    autoStart: true
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
+    sources:
+      - sourceId: vehicle-location-source
+
 reactions:
-- id: driver-availability-logger
-  queries:
-  - available-drivers-query
-  auto_start: true
-  reaction_type: log
-  log_level: info
-  description: Log driver availability changes
-- id: order-notification-handler
-  queries:
-  - available-drivers-query
-  auto_start: true
-  reaction_type: http
-  endpoint: http://localhost:9000/notifications
-  method: POST
-  description: Send notifications for query results
+  - id: driver-availability-logger
+    queries:
+      - available-drivers-query
+    autoStart: true
+    kind: log
+
+  - id: order-notification-handler
+    queries:
+      - available-drivers-query
+    autoStart: true
+    kind: http
+    baseUrl: http://localhost:9000
+    routes:
+      available-drivers-query:
+        added:
+          url: /notifications
+          method: POST
+

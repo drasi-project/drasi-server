@@ -26,6 +26,7 @@ use axum::{
 use indexmap::IndexMap;
 use std::sync::Arc;
 
+use crate::api::models::QueryConfigDto;
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
@@ -275,12 +276,14 @@ pub async fn create_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(config): Json<QueryConfig>,
+    Extension(instance_id): Extension<String>,
+    Json(config): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     shared::create_query(
         Extension(core),
         Extension(read_only),
         Extension(config_persistence),
+        Extension(instance_id),
         Json(config),
     )
     .await
@@ -324,12 +327,14 @@ pub async fn delete_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     shared::delete_query(
         Extension(core),
         Extension(read_only),
         Extension(config_persistence),
+        Extension(instance_id),
         Path(id),
     )
     .await

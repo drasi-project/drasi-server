@@ -418,7 +418,7 @@ async fn test_dynamic_source_creation_via_api() {
     let source_config = json!({
         "kind": "mock",
         "id": "dynamic-source",
-        "auto_start": false
+        "autoStart": false
     });
 
     let response = router
@@ -450,11 +450,12 @@ async fn test_dynamic_reaction_creation_via_api() {
     let base = "/instances/test-server";
 
     // Create a log reaction via API using the tagged enum format
+    // Use empty queries list since autoStart is false - queries can be added later
     let reaction_config = json!({
         "kind": "log",
         "id": "dynamic-reaction",
-        "queries": ["some-query"],
-        "auto_start": false
+        "queries": [],
+        "autoStart": false
     });
 
     let response = router

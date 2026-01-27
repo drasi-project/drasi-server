@@ -1,9 +1,9 @@
 id: 5fe76da1-bce9-4a6d-896a-23a0f9afb762
 host: 0.0.0.0
 port: 8080
-log_level: info
-persist_config: true
-# persist_index: false  # Enable RocksDB persistent indexing (default: false)
+logLevel: info
+persistConfig: true
+# persistIndex: false  # Enable RocksDB persistent indexing (default: false)
 sources: []
 reactions: []
 queries: []
