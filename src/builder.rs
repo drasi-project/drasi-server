@@ -108,8 +108,8 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add a query using the builder API
-    /// The query should be built using Query::gql("id").build() or Query::cypher("id").build()
+    /// Add a query configuration helper (creates a Cypher query)
+    /// For GQL queries, use with_query() with Query::gql() builder instead
     pub fn with_query_config(
         mut self,
         id: impl Into<String>,

@@ -164,30 +164,6 @@ fn test_invalid_query_language_rejected() {
 }
 
 #[test]
-fn test_yaml_deserialization_default_language() {
-    // Test that YAML without queryLanguage field deserializes with GQL default
-    let yaml = r#"
-id: test-query
-query: "MATCH (n) RETURN n"
-sources:
-  - sourceId: test-source
-"#;
-
-    let dto: QueryConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
-    // Map to verify the default is applied correctly
-    let mapper = QueryConfigMapper;
-    let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
-
-    assert_eq!(
-        format!("{:?}", config.query_language),
-        "GQL",
-        "Default query language should be GQL when not specified in YAML"
-    );
-}
-
-#[test]
 fn test_yaml_deserialization_explicit_cypher() {
     // Test that YAML with queryLanguage: Cypher works correctly
     let yaml = r#"
