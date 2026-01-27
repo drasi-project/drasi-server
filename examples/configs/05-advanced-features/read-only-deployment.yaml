@@ -64,6 +64,7 @@ queries:
     query: |
       MATCH (n)
       RETURN n.id AS Id, n.status AS Status
+    queryLanguage: Cypher
     sources:
       - sourceId: readonly-source
 
@@ -72,6 +73,7 @@ queries:
     query: |
       MATCH (n)
       RETURN count(n) AS TotalRecords
+    queryLanguage: Cypher
     sources:
       - sourceId: readonly-source
 

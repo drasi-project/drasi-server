@@ -57,6 +57,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN e.id AS EventId, e.type AS EventType, e.data AS Data
+    queryLanguage: Cypher
     sources:
       - sourceId: webhook-receiver
 
@@ -67,6 +68,7 @@ queries:
       MATCH (e:Event)
       WHERE e.amount > 1000
       RETURN e.id AS EventId, e.amount AS Amount
+    queryLanguage: Cypher
     sources:
       - sourceId: webhook-receiver
 

@@ -85,6 +85,7 @@ queries:
              o.total_amount AS Amount,
              o.created_at AS CreatedAt,
              'HIGH_VALUE_REVIEW' AS ExceptionType
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 
@@ -98,6 +99,7 @@ queries:
              o.status AS Status,
              o.created_at AS CreatedAt,
              'STUCK_ORDER' AS ExceptionType
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 
@@ -113,6 +115,7 @@ queries:
              p.error_code AS ErrorCode,
              p.error_message AS ErrorMessage,
              'PAYMENT_FAILED' AS ExceptionType
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 
@@ -127,6 +130,7 @@ queries:
              i.quantity AS OrderedQuantity,
              inv.stock_quantity AS AvailableStock,
              'INVENTORY_SHORTAGE' AS ExceptionType
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 
@@ -140,6 +144,7 @@ queries:
              o.status AS Status,
              o.total_amount AS Amount,
              o.created_at AS CreatedAt
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 
@@ -151,6 +156,7 @@ queries:
       RETURN o.status AS Status,
              count(o) AS OrderCount,
              sum(o.total_amount) AS TotalAmount
+    queryLanguage: Cypher
     sources:
       - sourceId: orders-db
 

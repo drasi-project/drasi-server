@@ -59,6 +59,7 @@ queries:
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 
@@ -68,6 +69,7 @@ queries:
       MATCH (s:SensorReading)
       WHERE s.temperature > 27
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 
@@ -76,6 +78,7 @@ queries:
     query: |
       MATCH (s:SensorReading)
       RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 

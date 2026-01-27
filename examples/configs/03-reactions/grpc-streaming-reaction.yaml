@@ -54,6 +54,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN e.id AS EventId, e.type AS Type, e.payload AS Payload
+    queryLanguage: Cypher
     sources:
       - sourceId: events
 
@@ -63,6 +64,7 @@ queries:
       MATCH (e:Event)
       WHERE e.priority = 'critical'
       RETURN e.id AS EventId, e.message AS Message
+    queryLanguage: Cypher
     sources:
       - sourceId: events
 
