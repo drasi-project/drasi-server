@@ -463,7 +463,7 @@ queries:
 |-------|------|---------|-------------|
 | `id` | string | (required) | Unique query identifier |
 | `query` | string | (required) | Query string (Cypher or GQL) |
-| `queryLanguage` | string | `Cypher` | Query language: `Cypher` or `GQL` |
+| `queryLanguage` | string | `GQL` | Query language: `Cypher` or `GQL` |
 | `sources` | array | (required) | Source subscriptions |
 | `autoStart` | boolean | `true` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
