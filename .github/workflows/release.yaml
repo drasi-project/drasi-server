@@ -206,3 +206,91 @@ jobs:
           echo "- \`drasid-${VERSION}-x86_64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
+
+  # Create GitHub Release with binary artifacts
+  create-release:
+    name: Create GitHub Release
+    needs: [build-binaries, create-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: drasid-${{ inputs.tag }}-*
+          merge-multiple: false
+
+      - name: Prepare release assets
+        id: prepare
+        run: |
+          # Create a directory for release assets
+          mkdir -p release-assets
+          
+          # Move all binaries to release-assets directory
+          find artifacts -type f -name 'drasid-*' -exec cp {} release-assets/ \;
+          
+          # List what we have
+          ls -lh release-assets/
+          
+          # Count assets
+          ASSET_COUNT=$(ls -1 release-assets/ | wc -l)
+          echo "asset_count=${ASSET_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: Create release notes
+        run: |
+          cat > release-notes.md << 'NOTES_EOF'
+          ## Binary Artifacts
+
+          This release includes pre-built binaries for the following platforms:
+
+          ### macOS
+          - ARM64 (Apple Silicon)
+          - x86_64 (Intel)
+
+          ### Windows
+          - ARM64
+          - x86_64
+
+          ### Linux (glibc)
+          - ARM64
+          - x86_64
+
+          ### Linux (musl - static)
+          - ARM64
+          - x86_64
+
+          ## Docker Images
+
+          Multi-arch Docker images are available at:
+          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}`
+          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest`
+
+          Supported architectures: `linux/amd64`, `linux/arm64`
+          NOTES_EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Check if release already exists
+          if gh release view "${{ inputs.tag }}" --repo ${{ github.repository }} 2>/dev/null; then
+            echo "Release ${{ inputs.tag }} already exists, uploading assets..."
+            gh release upload "${{ inputs.tag }}" release-assets/* --repo ${{ github.repository }} --clobber
+          else
+            echo "Creating new release ${{ inputs.tag }}..."
+            gh release create "${{ inputs.tag }}" \
+              release-assets/* \
+              --repo ${{ github.repository }} \
+              --title "Release ${{ inputs.tag }}" \
+              --notes-file release-notes.md
+          fi
+
+      - name: Update summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## GitHub Release Created :tada:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release [\`${{ inputs.tag }}\`](https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}) created with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+
