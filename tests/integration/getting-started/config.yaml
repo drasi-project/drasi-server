@@ -27,7 +27,7 @@ sources:
         keyColumns:
           - messageid
     bootstrapProvider:
-      type: postgres
+      kind: postgres
 
 queries:
   - id: hello-world-from
