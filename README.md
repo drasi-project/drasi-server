@@ -1,6 +1,6 @@
 # Drasi Server
 
-Drasi Server is a standalone server for the [Drasi](https://drasi.io) data change processing platform. It wraps the [DrasiLib](https://github.com/drasi-project/drasi-lib) library with enterprise-ready features including a REST API, YAML-based configuration, and production lifecycle management.
+Drasi Server is a standalone server for the [Drasi](https://drasi.io) data change processing platform. It wraps the [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) library with enterprise-ready features including a REST API, YAML-based configuration, and production lifecycle management.
 
 ## What is Drasi?
 
@@ -941,11 +941,11 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [DrasiLib](https://github.com/drasi-project/drasi-lib) - Core event processing engine
-- [Drasi](https://github.com/drasi-project/drasi) - Main Drasi project
+- [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) - Core event processing engine
+- [Drasi](https://github.com/drasi-project/drasi-project) - Main Drasi project
 - [Drasi Documentation](https://drasi.io/docs) - Complete documentation
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/drasi-project/drasi-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/drasi-project/drasi/discussions)
+- **Discussions**: [GitHub Discussions](https://github.com/drasi-project/drasi-project/discussions)
