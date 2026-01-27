@@ -266,29 +266,27 @@ jobs:
           Supported architectures: `linux/amd64`, `linux/arm64`
           NOTES_EOF
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Check if release already exists and fail if it does
+          # Check if release already exists
           if gh release view "${{ inputs.tag }}" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "::error::Release ${{ inputs.tag }} already exists. Please use a new version number."
-            echo "Existing release found at: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}"
-            exit 1
+            echo "Release ${{ inputs.tag }} already exists. Updating with new artifacts..."
+            gh release upload "${{ inputs.tag }}" release-assets/* --repo ${{ github.repository }} --clobber
+          else
+            echo "Creating new release ${{ inputs.tag }}..."
+            gh release create "${{ inputs.tag }}" \
+              release-assets/* \
+              --repo ${{ github.repository }} \
+              --title "Release ${{ inputs.tag }}" \
+              --notes-file release-notes.md
           fi
-          
-          # Create new release
-          echo "Creating new release ${{ inputs.tag }}..."
-          gh release create "${{ inputs.tag }}" \
-            release-assets/* \
-            --repo ${{ github.repository }} \
-            --title "Release ${{ inputs.tag }}" \
-            --notes-file release-notes.md
 
       - name: Update summary
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## GitHub Release Created :tada:" >> $GITHUB_STEP_SUMMARY
+          echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release [\`${{ inputs.tag }}\`](https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}) created with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "Release [\`${{ inputs.tag }}\`](https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
 
