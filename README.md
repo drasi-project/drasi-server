@@ -943,7 +943,7 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 - [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) - Core event processing engine
 - [Drasi](https://github.com/drasi-project) - Main Drasi project
-- [Drasi Documentation](https://drasi.io/docs) - Complete documentation
+- [Drasi Documentation](https://drasi.io/) - Complete documentation
 
 ## Support
 
