@@ -407,7 +407,7 @@ lsof -i :5432  # PostgreSQL
 ## Learn More
 
 - [Drasi Documentation](https://drasi.io/)
-- [Drasi Project on GitHub](https://github.com/drasi-project/drasi-project)
+- [Drasi Project on GitHub](https://github.com/drasi-project)
 - [Cypher Query Language](https://neo4j.com/developer/cypher/)
 - [PostgreSQL Logical Replication](https://www.postgresql.org/docs/current/logical-replication.html)
 
