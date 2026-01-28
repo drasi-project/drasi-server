@@ -1,6 +1,6 @@
 # Drasi Server
 
-Drasi Server is a standalone server for the [Drasi](https://drasi.io) data change processing platform. It wraps the [DrasiLib](https://github.com/drasi-project/drasi-lib) library with enterprise-ready features including a REST API, YAML-based configuration, and production lifecycle management.
+Drasi Server is a standalone server for the [Drasi](https://drasi.io) data change processing platform. It wraps the [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) library with enterprise-ready features including a REST API, YAML-based configuration, and production lifecycle management.
 
 ## What is Drasi?
 
@@ -284,7 +284,7 @@ sources:
     password: ${DB_PASSWORD}
     tables: [orders, customers]
     slotName: drasi_slot
-    publicationName: drasi_pub
+    publicationName: drasi_publication
     sslMode: prefer
     tableKeys:
       - table: orders
@@ -362,7 +362,7 @@ sources:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataType` | string | `generic` | Type of mock data to generate |
+| `dataType` | string | `generic` | Type of mock data: `sensor` (SensorReading nodes), `counter` (Counter nodes), `generic` (Generic nodes) |
 | `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
 
 #### Platform Source (`platform`)
@@ -465,7 +465,7 @@ queries:
 | `query` | string | (required) | Query string (Cypher or GQL) |
 | `queryLanguage` | string | `GQL` | Query language: `Cypher` or `GQL` |
 | `sources` | array | (required) | Source subscriptions |
-| `autoStart` | boolean | `true` | Start query automatically |
+| `autoStart` | boolean | `false` | Start query automatically |
 | `enableBootstrap` | boolean | `true` | Process initial data from sources |
 | `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
 | `priorityQueueCapacity` | integer | (global) | Override queue capacity for this query |
@@ -621,6 +621,7 @@ reactions:
 | `maxRetries` | integer | `3` | Maximum retry attempts |
 | `connectionRetryAttempts` | integer | `5` | Connection retry attempts |
 | `initialConnectionTimeoutMs` | integer | `10000` | Initial connection timeout |
+| `metadata` | object | `{}` | Custom gRPC metadata key-value pairs |
 
 #### gRPC Adaptive Reaction (`grpc-adaptive`)
 
@@ -635,6 +636,19 @@ reactions:
     adaptiveMinBatchSize: 1
     adaptiveMaxBatchSize: 1000
 ```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `endpoint` | string | `grpc://localhost:50052` | gRPC endpoint URL |
+| `timeoutMs` | integer | `5000` | Connection timeout in milliseconds |
+| `maxRetries` | integer | `3` | Maximum retry attempts |
+| `connectionRetryAttempts` | integer | `5` | Connection retry attempts |
+| `initialConnectionTimeoutMs` | integer | `10000` | Initial connection timeout |
+| `metadata` | object | `{}` | Custom gRPC metadata key-value pairs |
+| `adaptiveMinBatchSize` | integer | `1` | Minimum batch size |
+| `adaptiveMaxBatchSize` | integer | `1000` | Maximum batch size |
+| `adaptiveWindowSize` | integer | `100` | Window size for adaptive calculations |
+| `adaptiveBatchTimeoutMs` | integer | `1000` | Batch timeout in milliseconds |
 
 #### SSE Reaction (`sse`)
 
@@ -941,11 +955,10 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [DrasiLib](https://github.com/drasi-project/drasi-lib) - Core event processing engine
-- [Drasi](https://github.com/drasi-project/drasi) - Main Drasi project
-- [Drasi Documentation](https://drasi.io/docs) - Complete documentation
+- [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) - Core event processing engine
+- [Drasi](https://github.com/drasi-project) - Main Drasi project
+- [Drasi Documentation](https://drasi.io/) - Complete documentation
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/drasi-project/drasi-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/drasi-project/drasi/discussions)

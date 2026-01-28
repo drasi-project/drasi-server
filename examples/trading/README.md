@@ -278,7 +278,7 @@ const reactionConfig = {
   kind: 'sse',
   id: 'my-stream',
   queries: ['my-query'],
-  auto_start: true,
+  autoStart: true,
   host: '0.0.0.0',
   port: 50051,
   ssePath: '/events',
