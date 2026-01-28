@@ -24,13 +24,13 @@
 # - Building event-driven architectures
 #
 # Configuration options:
-# - base_url: Base URL for all requests
+# - baseUrl: Base URL for all requests
 # - token: Authentication token (added to Authorization header)
-# - timeout_ms: Request timeout in milliseconds
+# - timeoutMs: Request timeout in milliseconds
 # - routes: Per-query endpoint configuration
 #
 # Each route can specify:
-# - url: Endpoint path (appended to base_url)
+# - url: Endpoint path (appended to baseUrl)
 # - method: HTTP method (GET, POST, PUT, PATCH, DELETE)
 # - body: Request body template (Handlebars)
 # - headers: Custom HTTP headers

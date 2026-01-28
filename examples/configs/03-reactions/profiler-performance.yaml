@@ -24,8 +24,8 @@
 # - Performance regression testing
 #
 # Configuration options:
-# - window_size: Number of samples in the observation window (default: 100)
-# - report_interval_secs: Seconds between performance reports (default: 60)
+# - windowSize: Number of samples in the observation window (default: 100)
+# - reportIntervalSecs: Seconds between performance reports (default: 60)
 #
 # The profiler tracks:
 # - Event throughput (events/second)
