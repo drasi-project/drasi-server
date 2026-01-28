@@ -335,7 +335,7 @@ mod tests {
 
         assert!(yaml.contains("# Tips:"));
         assert!(yaml.contains("# - Use environment variables: ${VAR_NAME:-default}"));
-        assert!(yaml.contains("# - Update 'my-query' with your actual Cypher query"));
+        assert!(yaml.contains("# - Update 'my-query' with your actual GQL query"));
     }
 
     #[test]
