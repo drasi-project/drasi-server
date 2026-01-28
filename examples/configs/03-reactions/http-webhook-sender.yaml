@@ -58,6 +58,7 @@ queries:
     query: |
       MATCH (o:Order)
       RETURN o.id AS OrderId, o.customer AS Customer, o.total AS Total
+    queryLanguage: Cypher
     sources:
       - sourceId: orders
 
@@ -67,6 +68,7 @@ queries:
       MATCH (o:Order)
       WHERE o.total > 500
       RETURN o.id AS OrderId, o.total AS Total
+    queryLanguage: Cypher
     sources:
       - sourceId: orders
 

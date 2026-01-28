@@ -62,6 +62,7 @@ queries:
              s.value AS Value,
              s.unit AS Unit,
              s.location AS Location
+    queryLanguage: Cypher
     sources:
       - sourceId: sensor-ingest
 
@@ -75,6 +76,7 @@ queries:
              s.value AS Temperature,
              s.location AS Location,
              'HIGH_TEMPERATURE' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: sensor-ingest
 
@@ -88,6 +90,7 @@ queries:
              s.value AS Temperature,
              s.location AS Location,
              'FREEZING' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: sensor-ingest
 
@@ -101,6 +104,7 @@ queries:
              s.value AS Humidity,
              s.location AS Location,
              'HIGH_HUMIDITY' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: sensor-ingest
 
@@ -114,6 +118,7 @@ queries:
              avg(s.value) AS AverageValue,
              min(s.value) AS MinValue,
              max(s.value) AS MaxValue
+    queryLanguage: Cypher
     sources:
       - sourceId: sensor-ingest
 

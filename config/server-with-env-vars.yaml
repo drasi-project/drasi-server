@@ -68,11 +68,11 @@ queries:
       MATCH (o:Order)
       WHERE o.total > 1000
       RETURN o.id AS order_id, o.total AS total, o.customer AS customer
-    query_language: Cypher
+    queryLanguage: Cypher
     autoStart: true
-    enable_bootstrap: true
+    enableBootstrap: true
     
-    source_subscriptions:
+    sources:
       - sourceId: my-postgres-db
 
 # Reactions (where to send query results)
@@ -83,7 +83,7 @@ reactions:
     queries:
       - high-value-orders
     autoStart: true
-    log_level: "${REACTION_LOG_LEVEL:-info}"
+    logLevel: "${REACTION_LOG_LEVEL:-info}"
 
   # HTTP webhook reaction
   - kind: http

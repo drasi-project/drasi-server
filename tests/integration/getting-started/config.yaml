@@ -36,6 +36,7 @@ queries:
       MATCH (m:message)
       WHERE m.message = 'Hello World'
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
+    queryLanguage: Cypher
     sources:
       - sourceId: postgres-messages
 
@@ -44,6 +45,7 @@ queries:
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency
+    queryLanguage: Cypher
     sources:
       - sourceId: postgres-messages
 

@@ -53,6 +53,7 @@ queries:
       MATCH (g:Generic)
       WHERE g.value > 0
       RETURN g.value AS Value, g.message AS Message, g.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: data-source
 
@@ -63,6 +64,7 @@ queries:
       MATCH (g:Generic)
       WHERE g.value < 0
       RETURN g.value AS Value, g.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: data-source
 
@@ -73,6 +75,7 @@ queries:
       MATCH (g:Generic)
       WHERE g.message CONTAINS 'mock'
       RETURN g.value AS Value, g.message AS Message
+    queryLanguage: Cypher
     sources:
       - sourceId: data-source
 
@@ -82,6 +85,7 @@ queries:
     query: |
       MATCH (g:Generic)
       RETURN g.value AS Value, g.message AS Message
+    queryLanguage: Cypher
     sources:
       - sourceId: data-source
 

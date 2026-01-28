@@ -49,6 +49,7 @@ queries:
     query: |
       MATCH (n:Generic)
       RETURN n.value AS Value, n.message AS Message, n.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: data-generator
 
