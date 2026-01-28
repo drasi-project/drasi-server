@@ -19,8 +19,8 @@
 //! 2. The default can be overridden by explicitly setting queryLanguage
 //! 3. Both GQL and Cypher are supported
 
-use drasi_server::api::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
 use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
+use drasi_server::api::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[test]
 fn test_default_query_language_is_gql() {
@@ -34,11 +34,13 @@ sources:
 "#;
 
     let dto: QueryConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
+
     // Map to verify the default is applied correctly
     let mapper = QueryConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     assert_eq!(
         format!("{:?}", config.query_language),
@@ -74,7 +76,9 @@ fn test_explicit_cypher_language() {
     // Map the DTO to a QueryConfig
     let mapper = QueryConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     // Verify the language is Cypher
     assert_eq!(
@@ -111,7 +115,9 @@ fn test_explicit_gql_language() {
     // Map the DTO to a QueryConfig
     let mapper = QueryConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     // Verify the language is GQL
     assert_eq!(
@@ -150,13 +156,10 @@ fn test_invalid_query_language_rejected() {
     let resolver = DtoMapper::new();
     let result = mapper.map(&dto, &resolver);
 
-    assert!(
-        result.is_err(),
-        "Invalid query language should be rejected"
-    );
-    
+    assert!(result.is_err(), "Invalid query language should be rejected");
+
     let err = result.unwrap_err();
-    let err_msg = format!("{:?}", err);
+    let err_msg = format!("{err:?}");
     assert!(
         err_msg.contains("Invalid query language"),
         "Error should mention invalid query language, got: {err_msg}"
@@ -175,11 +178,13 @@ sources:
 "#;
 
     let dto: QueryConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
+
     // Map to verify Cypher is used
     let mapper = QueryConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     assert_eq!(
         format!("{:?}", config.query_language),
