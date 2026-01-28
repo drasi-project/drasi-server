@@ -184,7 +184,7 @@ DrasiServer separates two independent concepts:
 - Config file is not writable (file permissions prevent writing)
 
 **Important distinction:**
-- `persist_config: false` → API mutations are allowed but NOT saved to config file
+- `persistConfig: false` → API mutations are allowed but NOT saved to config file
 - Read-only config file → API mutations are blocked entirely
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
