@@ -66,6 +66,7 @@ queries:
       RETURN c.name AS CustomerName,
              o.id AS OrderId,
              o.total AS OrderTotal
+    queryLanguage: Cypher
     sources:
       - sourceId: customer-service
       - sourceId: order-service
@@ -80,6 +81,7 @@ queries:
              i.product_id AS ProductId,
              i.quantity AS InStock,
              o.quantity AS Ordered
+    queryLanguage: Cypher
     sources:
       - sourceId: order-service
       - sourceId: inventory-service
@@ -95,6 +97,7 @@ queries:
              o.quantity AS Ordered,
              i.quantity AS Available,
              'STOCK_SHORTAGE' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: order-service
       - sourceId: inventory-service
@@ -110,6 +113,7 @@ queries:
              i.product_name AS Product,
              o.quantity AS Ordered,
              i.quantity AS InStock
+    queryLanguage: Cypher
     sources:
       - sourceId: customer-service
       - sourceId: order-service

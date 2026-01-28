@@ -55,6 +55,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN e.id AS EventId, e.type AS Type, e.data AS Data
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume-stream
 
@@ -63,6 +64,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN count(e) AS TotalEvents
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume-stream
 
