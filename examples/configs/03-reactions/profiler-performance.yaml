@@ -59,6 +59,7 @@ queries:
     query: |
       MATCH (g:Generic)
       RETURN g.value AS Value, g.message AS Message
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume
 
@@ -69,6 +70,7 @@ queries:
       MATCH (g:Generic)
       WHERE g.value > 0
       RETURN g.value AS Value, g.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume
 
@@ -78,6 +80,7 @@ queries:
     query: |
       MATCH (g:Generic)
       RETURN count(g) AS Count, avg(g.value) AS Average
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume
 
