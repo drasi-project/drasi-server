@@ -263,7 +263,7 @@ reactions:
       - hello-world-from
       - message-count
       - inactive-people
-    default_template:
+    defaultTemplate:
       added:
         template: "[{{query_name}}] + {{after}}"
       updated:
@@ -285,7 +285,7 @@ Streams results to browser via Server-Sent Events:
       - inactive-people
     host: 0.0.0.0
     port: 8081
-    sse_path: /events
+    ssePath: /events
 ```
 
 ## API Reference

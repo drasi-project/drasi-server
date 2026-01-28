@@ -26,10 +26,10 @@
 # Configuration options:
 # - host: Address to bind (default: 0.0.0.0)
 # - port: Port to listen on (default: 8080)
-# - sse_path: Event stream endpoint path (default: /events)
-# - heartbeat_interval_ms: Keep-alive interval (default: 30000)
+# - ssePath: Event stream endpoint path (default: /events)
+# - heartbeatIntervalMs: Keep-alive interval (default: 30000)
 # - routes: Per-query template configuration
-# - default_template: Default template for all queries
+# - defaultTemplate: Default template for all queries
 #
 # Templates can include a 'path' field for multi-endpoint routing.
 #

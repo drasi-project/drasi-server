@@ -22,6 +22,12 @@ use std::path::Path;
 /// List of example config files to validate.
 /// These paths are relative to the project root.
 const EXAMPLE_CONFIGS: &[&str] = &[
+    // Top-level config directory (Docker and quick-start templates)
+    "config/server-minimal.yaml",
+    "config/server-docker.yaml",
+    "config/server-with-env-vars.yaml",
+    // Integration test configs
+    "tests/integration/getting-started/config.yaml",
     // Solution examples
     "examples/getting-started/server-config.yaml",
     "examples/playground/server/playground.yaml",
@@ -98,6 +104,34 @@ fn test_all_example_configs_are_valid() {
 }
 
 // Individual tests for each config file provide better granularity in test output
+
+// ==================== Top-level Config Directory ====================
+
+#[test]
+fn test_config_server_minimal() {
+    let path = "config/server-minimal.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_config_server_docker() {
+    let path = "config/server-docker.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_config_server_with_env_vars() {
+    let path = "config/server-with-env-vars.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+// ==================== Integration Test Configs ====================
+
+#[test]
+fn test_integration_getting_started_config() {
+    let path = "tests/integration/getting-started/config.yaml";
+    load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
 
 // ==================== Existing Examples ====================
 

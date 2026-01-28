@@ -25,12 +25,12 @@
 #
 # Configuration options:
 # - endpoint: gRPC endpoint URL (default: grpc://localhost:50052)
-# - timeout_ms: Request timeout (default: 5000)
-# - batch_size: Number of events per batch (default: 100)
-# - batch_flush_timeout_ms: Max wait before flushing batch (default: 1000)
-# - max_retries: Retry attempts for failed sends (default: 3)
-# - connection_retry_attempts: Connection retry attempts (default: 5)
-# - initial_connection_timeout_ms: Initial connection timeout (default: 10000)
+# - timeoutMs: Request timeout (default: 5000)
+# - batchSize: Number of events per batch (default: 100)
+# - batchFlushTimeoutMs: Max wait before flushing batch (default: 1000)
+# - maxRetries: Retry attempts for failed sends (default: 3)
+# - connectionRetryAttempts: Connection retry attempts (default: 5)
+# - initialConnectionTimeoutMs: Initial connection timeout (default: 10000)
 # - metadata: Custom gRPC metadata headers
 #
 # Run with: cargo run -- --config examples/configs/03-reactions/grpc-streaming-reaction.yaml

@@ -46,13 +46,9 @@ sources:
     # Optional: SSL configuration
     # ssl_mode: "${DB_SSL_MODE:-prefer}"
     
+    # Bootstrap provider uses the parent source's connection details
     bootstrapProvider:
       kind: postgres
-      host: "${DB_HOST}"
-      port: "${DB_PORT:-5432}"
-      database: "${DB_NAME}"
-      user: "${DB_USER}"
-      password: "${DB_PASSWORD}"
 
   # HTTP source for receiving events
   - kind: http
@@ -83,7 +79,6 @@ reactions:
     queries:
       - high-value-orders
     autoStart: true
-    logLevel: "${REACTION_LOG_LEVEL:-info}"
 
   # HTTP webhook reaction
   - kind: http
@@ -94,12 +89,16 @@ reactions:
     
     # Webhook URL - uses environment variable
     baseUrl: "${WEBHOOK_URL}"
+    # Optional: Authentication token
+    # token: "${API_TOKEN}"
     
-    # Optional: Authentication
-    # headers:
-    #   Authorization: "Bearer ${API_TOKEN}"
-    
-    method: POST
+    # Routes define per-query endpoints
+    routes:
+      high-value-orders:
+        added:
+          url: "/notifications/high-value"
+          method: "POST"
+          body: '{"orderId": "{{after.order_id}}", "total": {{after.total}}}'
     
   # Server-Sent Events (SSE) for real-time updates
   - kind: sse

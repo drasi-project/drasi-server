@@ -144,7 +144,7 @@ sources:
       - table: users
         keyColumns: [id]
     bootstrapProvider:           # Load existing data on startup
-      type: postgres
+      kind: postgres
 ```
 
 ### Reaction Types
