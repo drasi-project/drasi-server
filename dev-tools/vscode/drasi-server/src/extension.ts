@@ -45,6 +45,43 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('drasi.schema.useConnection', async () => {
+      await vscode.commands.executeCommand('drasi.connection.use');
+      await schemaProvider.refreshSchemas(context.globalStorageUri);
+      drasiExplorer.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('drasi.schema.toggleFile', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
+
+      if (editor.document.languageId !== 'yaml') {
+        vscode.window.showWarningMessage('Open a YAML file to mark as a Drasi config.');
+        return;
+      }
+
+      const documentPath = vscode.workspace.asRelativePath(editor.document.uri, false);
+      const config = vscode.workspace.getConfiguration('drasiServer');
+      const existing = config.get<string[]>('schemaFiles') ?? [];
+      const normalized = documentPath.replace(/\\/g, '/');
+      const isMarked = existing.includes(normalized);
+      const updated = isMarked
+        ? existing.filter((value) => value !== normalized)
+        : [...existing, normalized];
+
+      await config.update('schemaFiles', updated, vscode.ConfigurationTarget.Workspace);
+      await schemaProvider.refreshSchemas(context.globalStorageUri);
+      vscode.window.showInformationMessage(
+        isMarked ? 'Removed file from Drasi schema list.' : 'Marked file as Drasi config.'
+      );
+    })
+  );
 }
 
 export function deactivate() {

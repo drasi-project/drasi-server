@@ -124,11 +124,22 @@
         "command": "drasi.connection.use",
         "title": "Use server"
       },
-      {
-        "command": "drasi.schema.refresh",
-        "title": "Refresh Schemas"
-      }
-    ],
+        {
+          "command": "drasi.schema.refresh",
+          "category": "Drasi Server",
+          "title": "Refresh Schemas"
+        },
+        {
+          "command": "drasi.schema.useConnection",
+          "category": "Drasi Server",
+          "title": "Use Server for Schemas"
+        },
+        {
+          "command": "drasi.schema.toggleFile",
+          "category": "Drasi Server",
+          "title": "Drasi Config"
+        }
+      ],
     "menus": {
       "view/title": [
         {
@@ -143,6 +154,11 @@
         },
         {
           "command": "drasi.connection.add",
+          "when": "view == drasi",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.schema.useConnection",
           "when": "view == drasi",
           "group": "navigation"
         }
@@ -218,6 +234,20 @@
           "when": "view == drasi && viewItem == drasi.instanceNode"
         }
       ],
+      "editor/context": [
+        {
+          "command": "drasi.schema.toggleFile",
+          "when": "resourceLangId == yaml",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context.palette": [
+        {
+          "command": "drasi.schema.toggleFile",
+          "when": "resourceLangId == yaml",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
         {
           "command": "drasi.connection.add",
@@ -230,6 +260,10 @@
         {
           "command": "drasi.connection.use",
           "when": "true"
+        },
+        {
+          "command": "drasi.schema.toggleFile",
+          "when": "resourceLangId == yaml"
         }
       ]
     },
@@ -264,6 +298,14 @@
           "type": "string",
           "default": "",
           "description": "Active Drasi Server connection ID."
+        },
+        "drasiServer.schemaFiles": {
+          "type": "array",
+          "default": [],
+          "description": "Workspace-relative YAML files to treat as Drasi configs.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 /// Template specification for SSE output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseTemplateSpec)]
 #[serde(deny_unknown_fields)]
 pub struct SseTemplateSpecDto {
     /// Optional custom path for this template
@@ -32,6 +33,7 @@ pub struct SseTemplateSpecDto {
 
 /// Configuration for query-specific SSE output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseQueryConfig)]
 #[serde(deny_unknown_fields)]
 pub struct SseQueryConfigDto {
     /// Template for ADD operations
@@ -47,6 +49,7 @@ pub struct SseQueryConfigDto {
 
 /// Local copy of SSE reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SseReactionConfigDto {
     #[serde(default = "default_sse_host")]

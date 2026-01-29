@@ -22,6 +22,7 @@ The **Drasi Server** extension provides tools for managing and debugging Drasi S
 - `drasiServer.connections` - Saved server connections
 - `drasiServer.currentConnectionId` - Active connection ID
 - `drasiServer.url` / `drasiServer.instanceId` - Legacy single-connection fields (used to seed the first connection)
+- `drasiServer.schemaFiles` - Workspace-relative YAML files to treat as Drasi configs
 
 ## Add a Server
 
@@ -32,6 +33,17 @@ Use the **Drasi** view in the activity bar:
 3. Provide the server URL and a friendly name
 
 To edit the active server URL, choose **Edit server URL**.
+
+## Mark a YAML File as Drasi
+
+If a YAML file does not match the default naming patterns, you can mark it manually:
+
+1. Open the YAML file
+2. Right-click in the editor
+3. Toggle **Drasi Config**
+
+This stores the file in workspace settings and enables schema validation.
+Toggle it again to unmark.
 
 ## Development
 

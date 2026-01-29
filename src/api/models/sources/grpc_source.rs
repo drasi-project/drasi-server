@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of gRPC source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = GrpcSourceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcSourceConfigDto {
     #[serde(default = "default_grpc_host")]

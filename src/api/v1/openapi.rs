@@ -20,6 +20,8 @@
 
 use utoipa::OpenApi;
 
+use utoipa::openapi::schema::{OneOf, Ref, Schema};
+use utoipa::openapi::RefOr;
 use crate::api::models::{
     ApplicationBootstrapConfigDto, BootstrapProviderConfig, CallSpecDto, ConfigValueBoolSchema,
     ConfigValueSslModeSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
@@ -73,6 +75,8 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,
+            DrasiServerConfig,
+            DrasiLibInstanceConfig,
             ConfigValueStringSchema,
             ConfigValueU16Schema,
             ConfigValueU32Schema,
@@ -108,6 +112,7 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
             RedbStateStoreConfigDto,
         )
     ),
+    modifiers(&SourceReactionConfigSchemas),
     tags(
         (name = "API", description = "API version information"),
         (name = "Health", description = "Health check endpoints"),
@@ -131,3 +136,56 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
     )
 )]
 pub struct ApiDocV1;
+
+struct SourceReactionConfigSchemas;
+
+impl utoipa::Modify for SourceReactionConfigSchemas {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        let schemas = &mut components.schemas;
+
+        let source_variants = vec![
+            "MockSourceConfig",
+            "HttpSourceConfig",
+            "GrpcSourceConfig",
+            "PostgresSourceConfig",
+            "PlatformSourceConfig",
+        ];
+        let reaction_variants = vec![
+            "LogReactionConfig",
+            "HttpReactionConfig",
+            "HttpAdaptiveReactionConfig",
+            "GrpcReactionConfig",
+            "GrpcAdaptiveReactionConfig",
+            "SseReactionConfig",
+            "PlatformReactionConfig",
+            "ProfilerReactionConfig",
+        ];
+
+        if !schemas.contains_key("SourceConfig") {
+            schemas.insert(
+                "SourceConfig".to_string(),
+                RefOr::T(Schema::OneOf(OneOf {
+                    items: source_variants
+                        .iter()
+                        .map(|name| RefOr::Ref(Ref::from_schema_name(*name)))
+                        .collect(),
+                    ..Default::default()
+                })),
+            );
+        }
+
+        if !schemas.contains_key("ReactionConfig") {
+            schemas.insert(
+                "ReactionConfig".to_string(),
+                RefOr::T(Schema::OneOf(OneOf {
+                    items: reaction_variants
+                        .iter()
+                        .map(|name| RefOr::Ref(Ref::from_schema_name(*name)))
+                        .collect(),
+                    ..Default::default()
+                })),
+            );
+        }
+    }
+}

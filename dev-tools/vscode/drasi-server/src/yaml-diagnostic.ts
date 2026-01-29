@@ -6,6 +6,7 @@ export class DrasiYamlDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
   private ajv: Ajv;
   private validator: ((data: any) => boolean) | undefined;
+  private configValidator: ((data: any) => boolean) | undefined;
 
   constructor() {
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('drasi-yaml');
@@ -26,6 +27,8 @@ export class DrasiYamlDiagnosticProvider {
 
   updateSchema(schema: any) {
     this.validator = this.ajv.compile(schema);
+    const configSchema = findConfigSchema(schema);
+    this.configValidator = configSchema ? this.ajv.compile(configSchema) : undefined;
     vscode.workspace.textDocuments.forEach((doc) => this.validateDocument(doc));
   }
 
@@ -34,7 +37,7 @@ export class DrasiYamlDiagnosticProvider {
       return;
     }
 
-    if (!this.isDrasiFile(document.fileName.toLowerCase())) {
+    if (!this.isDrasiFile(document)) {
       return;
     }
 
@@ -46,6 +49,7 @@ export class DrasiYamlDiagnosticProvider {
     const content = document.getText();
 
     try {
+      this.diagnosticCollection.delete(document.uri);
       const docs = yaml.parseAllDocuments(content);
       let currentLine = 0;
 
@@ -58,9 +62,21 @@ export class DrasiYamlDiagnosticProvider {
 
         const validatedItems = extractDrasiItems(obj);
         for (const item of validatedItems) {
-          const valid = this.validator(item.payload);
-          if (!valid && this.validator.errors) {
-            for (const error of this.validator.errors) {
+          const activeValidator = item.kindLabel === 'config' && this.configValidator
+            ? this.configValidator
+            : this.validator;
+          if (!activeValidator) {
+            continue;
+          }
+          const valid = activeValidator(item.payload);
+          if (!valid && activeValidator.errors) {
+            for (const error of activeValidator.errors) {
+              if (error.keyword === 'additionalProperties') {
+                continue;
+              }
+              if (item.kindLabel === 'config' && error.keyword === 'oneOf') {
+                continue;
+              }
               const diagnostic = this.createDiagnostic(document, doc, error, currentLine, item.kindLabel);
               if (diagnostic) {
                 diagnostics.push(diagnostic);
@@ -78,7 +94,13 @@ export class DrasiYamlDiagnosticProvider {
     this.diagnosticCollection.set(document.uri, diagnostics);
   }
 
-  private isDrasiFile(fileName: string): boolean {
+  private isDrasiFile(document: vscode.TextDocument): boolean {
+    const fileName = document.fileName.toLowerCase();
+    const markedFiles = vscode.workspace.getConfiguration('drasiServer').get<string[]>('schemaFiles') ?? [];
+    const relativePath = vscode.workspace.asRelativePath(document.uri, false).replace(/\\/g, '/');
+    if (markedFiles.includes(relativePath)) {
+      return true;
+    }
     return fileName.includes('query') ||
       fileName.includes('source') ||
       fileName.includes('reaction') ||
@@ -140,29 +162,51 @@ export class DrasiYamlDiagnosticProvider {
 }
 
 function extractDrasiItems(document: any) {
-  const items: Array<{ payload: any; kindLabel: string }> = [];
-
-  if (document.kind && document.id) {
-    items.push({ payload: document, kindLabel: `${document.kind} ${document.id}` });
+  if (document && isConfigDocument(document)) {
+    return [{ payload: document, kindLabel: 'config' }];
   }
+  return [{ payload: document, kindLabel: '' }];
+}
 
-  if (document.sources || document.queries || document.reactions) {
-    for (const source of document.sources ?? []) {
-      if (source?.id) {
-        items.push({ payload: { kind: 'Source', ...source }, kindLabel: `Source ${source.id}` });
-      }
-    }
-    for (const query of document.queries ?? []) {
-      if (query?.id) {
-        items.push({ payload: { kind: 'Query', ...query }, kindLabel: `Query ${query.id}` });
-      }
-    }
-    for (const reaction of document.reactions ?? []) {
-      if (reaction?.id) {
-        items.push({ payload: { kind: 'Reaction', ...reaction }, kindLabel: `Reaction ${reaction.id}` });
-      }
-    }
+function isConfigDocument(document: any) {
+  const keys = [
+    'sources',
+    'queries',
+    'reactions',
+    'instances',
+    'host',
+    'port',
+    'logLevel',
+    'persistConfig',
+    'persistIndex',
+    'id',
+    'defaultPriorityQueueCapacity',
+    'defaultDispatchBufferCapacity',
+    'stateStore',
+  ];
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(document, key));
+}
+
+function findConfigSchema(schema: any) {
+  if (!schema) {
+    return undefined;
   }
-
-  return items;
+  if (schema.definitions?.DrasiServerConfig) {
+    return {
+      $schema: schema.$schema,
+      definitions: schema.definitions,
+      $ref: '#/definitions/DrasiServerConfig',
+    };
+  }
+  if (!Array.isArray(schema.oneOf)) {
+    return undefined;
+  }
+  const configSchema = schema.oneOf.find((item: any) => item?.properties?.sources && item?.properties?.queries);
+  if (!configSchema) {
+    return undefined;
+  }
+  return {
+    ...schema,
+    oneOf: [configSchema],
+  };
 }

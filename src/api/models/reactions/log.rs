@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 /// Template specification for log output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = LogTemplateSpec)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateSpecDto {
     /// Output template as a Handlebars template
@@ -28,6 +29,7 @@ pub struct TemplateSpecDto {
 
 /// Configuration for query-specific log output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = LogQueryConfig)]
 #[serde(deny_unknown_fields)]
 pub struct QueryConfigDto {
     /// Template for ADD operations
@@ -43,6 +45,7 @@ pub struct QueryConfigDto {
 
 /// Local copy of log reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
+#[schema(as = LogReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogReactionConfigDto {
     /// Query-specific template configurations

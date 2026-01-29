@@ -32,6 +32,7 @@ const BOOTSTRAP_PROVIDER_TYPES: &[&str] =
 /// This provider bootstraps initial data from a PostgreSQL database.
 /// No additional configuration is needed - it uses the parent source's connection details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, ToSchema)]
+#[schema(as = PostgresBootstrapConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PostgresBootstrapConfigDto {
     // Empty - uses parent source config for connection details
@@ -43,6 +44,7 @@ pub struct PostgresBootstrapConfigDto {
 /// This provider bootstraps data from in-memory storage maintained by application sources.
 /// No additional configuration is required.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, ToSchema)]
+#[schema(as = ApplicationBootstrapConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplicationBootstrapConfigDto {
     // Empty - uses shared state from application source
@@ -53,6 +55,7 @@ pub struct ApplicationBootstrapConfigDto {
 ///
 /// This provider reads bootstrap data from JSONL (JSON Lines) files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[schema(as = ScriptFileBootstrapConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ScriptFileBootstrapConfigDto {
     /// List of JSONL files to read (in order)
@@ -63,6 +66,7 @@ pub struct ScriptFileBootstrapConfigDto {
 ///
 /// This provider bootstraps data from a Query API service in a remote Drasi environment.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[schema(as = PlatformBootstrapConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlatformBootstrapConfigDto {
     /// URL of the Query API service (e.g., "http://my-source-query-api:8080")

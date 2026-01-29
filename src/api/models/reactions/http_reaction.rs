@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 /// Local copy of HTTP reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = HttpReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpReactionConfigDto {
     #[serde(default = "default_base_url")]
@@ -41,6 +42,7 @@ fn default_reaction_timeout_ms() -> ConfigValue<u64> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = HttpQueryConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpQueryConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,6 +54,7 @@ pub struct HttpQueryConfigDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = CallSpec)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallSpecDto {
     pub url: ConfigValue<String>,
@@ -64,6 +67,7 @@ pub struct CallSpecDto {
 
 /// Local copy of HTTP adaptive reaction configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = HttpAdaptiveReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpAdaptiveReactionConfigDto {
     #[serde(default = "default_base_url")]

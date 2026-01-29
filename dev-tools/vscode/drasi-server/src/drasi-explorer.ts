@@ -203,12 +203,29 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     this.refresh();
   }
 
-  async useConnection(connectionNode: ConnectionNode) {
-    if (!connectionNode) {
-      return;
+  async useConnection(connectionNode?: ConnectionNode) {
+    let target = connectionNode?.connection;
+    if (!target) {
+      await this.registry.ensureDefaultConnection();
+      const connections = this.registry.getConnections();
+      const currentId = this.registry.getCurrentConnectionId();
+      const options = connections.map((connection) => ({
+        label: connection.name,
+        description: connection.url,
+        detail: connection.id === currentId ? 'Current' : undefined,
+        connection,
+      }));
+      const picked = await vscode.window.showQuickPick(options, {
+        placeHolder: 'Select Drasi server',
+        matchOnDescription: true,
+      });
+      if (!picked) {
+        return;
+      }
+      target = picked.connection;
     }
 
-    await this.registry.setCurrentConnectionId(connectionNode.connection.id);
+    await this.registry.setCurrentConnectionId(target.id);
     this.refresh();
   }
 

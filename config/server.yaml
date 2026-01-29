@@ -49,6 +49,21 @@ sources:
   - table: products
     keyColumns:
     - sku
-queries: []
+queries:
+- id: high-values
+  autoStart: true
+  query: |
+    MATCH (s:SensorReading)
+    WHERE s.temperature > 25
+    RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.timestamp AS Timestamp
+  queryLanguage: Cypher
+  middleware: []
+  sources:
+  - sourceId: sensor-data
+    nodes: []
+    relations: []
+    pipeline: []
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
 reactions: []
 instances: []

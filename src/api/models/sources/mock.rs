@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Local copy of mock source configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = MockSourceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MockSourceConfigDto {
     #[serde(default = "default_data_type")]

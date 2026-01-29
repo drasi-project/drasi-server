@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Query configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = QueryConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryConfigDto {
     pub id: String,
@@ -49,6 +50,7 @@ pub struct QueryConfigDto {
 
 /// Source subscription configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SourceSubscriptionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSubscriptionConfigDto {
     pub source_id: ConfigValue<String>,

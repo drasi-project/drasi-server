@@ -117,7 +117,7 @@ pub async fn list_sources(
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID")
     ),
-    request_body = SourceConfig,
+    request_body = ref("#/components/schemas/SourceConfig"),
     responses(
         (status = 200, description = "Source created successfully", body = ApiResponse),
         (status = 400, description = "Invalid source configuration"),
@@ -445,7 +445,7 @@ pub async fn list_reactions(
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID")
     ),
-    request_body = ReactionConfig,
+    request_body = ref("#/components/schemas/ReactionConfig"),
     responses(
         (status = 200, description = "Reaction created successfully", body = ApiResponse),
         (status = 400, description = "Invalid reaction configuration"),
