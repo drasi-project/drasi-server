@@ -1,0 +1,54 @@
+id: 557a4f2d-d472-4081-869e-85ffa08713fc
+host: 0.0.0.0
+port: 8080
+logLevel: info
+persistConfig: true
+persistIndex: false
+sources:
+- kind: mock
+  id: sensor-data
+  autoStart: true
+  dataType: sensor
+  intervalMs: 2000
+- kind: postgres
+  id: app-database
+  autoStart: true
+  bootstrapProvider:
+    kind: postgres
+  host:
+    kind: EnvironmentVariable
+    name: POSTGRES_HOST
+    default: localhost
+  port: 5432
+  database:
+    kind: EnvironmentVariable
+    name: POSTGRES_DB
+    default: myapp
+  user:
+    kind: EnvironmentVariable
+    name: POSTGRES_USER
+    default: drasi_user
+  password:
+    kind: EnvironmentVariable
+    name: POSTGRES_PASSWORD
+    default: drasi_password
+  tables:
+  - users
+  - orders
+  - products
+  slotName: drasi_cdc_slot
+  publicationName: drasi_cdc_publication
+  sslMode: prefer
+  tableKeys:
+  - table: users
+    keyColumns:
+    - id
+  - table: orders
+    keyColumns:
+    - order_id
+  - table: products
+    keyColumns:
+    - sku
+queries: []
+reactions: []
+instances: []

@@ -1,0 +1,28 @@
+{
+    "yaml.schemas": {
+        "file:///Volumes/KINGSTON/dev/drasi/drasi-platform/dev-tools/vscode/drasi/schemas/continuous-query.schema.json": [
+            "**/*query*.yaml",
+            "**/*query*.yml"
+        ],
+        "file:///Volumes/KINGSTON/dev/drasi/drasi-platform/dev-tools/vscode/drasi/schemas/source.schema.json": [
+            "**/*source*.yaml",
+            "**/*source*.yml"
+        ],
+        "file:///Volumes/KINGSTON/dev/drasi/drasi-platform/dev-tools/vscode/drasi/schemas/reaction.schema.json": [
+            "**/*reaction*.yaml",
+            "**/*reaction*.yml"
+        ],
+        "file:///Users/danielgerlag/.vscode/extensions/drasiproject.drasi-0.3.6/schemas/drasi-resources.schema.json": [
+            "**/*query*.yaml",
+            "**/*query*.yml",
+            "**/*source*.yaml",
+            "**/*source*.yml",
+            "**/*reaction*.yaml",
+            "**/*reaction*.yml",
+            "**/resources.yaml",
+            "**/resources.yml",
+            "**/*drasi*.yaml",
+            "**/*drasi*.yml"
+        ]
+    }
+}
