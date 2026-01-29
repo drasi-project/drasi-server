@@ -702,7 +702,7 @@ pub enum StateStoreConfig {
 }
 
 /// Inner configuration DTO for REDB state store with strict field validation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RedbStateStoreConfigDto {
     /// Path to the redb database file

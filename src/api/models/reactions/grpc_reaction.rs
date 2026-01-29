@@ -25,7 +25,7 @@ use super::http_reaction::{
 };
 
 /// Local copy of gRPC reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]
@@ -75,7 +75,7 @@ fn default_initial_connection_timeout_ms() -> ConfigValue<u64> {
 }
 
 /// Local copy of gRPC adaptive reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrpcAdaptiveReactionConfigDto {
     #[serde(default = "default_grpc_endpoint")]

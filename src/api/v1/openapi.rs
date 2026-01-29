@@ -20,10 +20,22 @@
 
 use utoipa::OpenApi;
 
+use crate::api::models::{
+    ApplicationBootstrapConfigDto, BootstrapProviderConfig, CallSpecDto, ConfigValueBoolSchema,
+    ConfigValueSslModeSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
+    ConfigValueU64Schema, ConfigValueUsizeSchema, GrpcAdaptiveReactionConfigDto,
+    GrpcReactionConfigDto, GrpcSourceConfigDto, HttpAdaptiveReactionConfigDto, HttpQueryConfigDto,
+    HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto,
+    PlatformBootstrapConfigDto, PlatformReactionConfigDto, PlatformSourceConfigDto,
+    PostgresBootstrapConfigDto, PostgresSourceConfigDto, ProfilerReactionConfigDto, QueryConfigDto,
+    RedbStateStoreConfigDto, ScriptFileBootstrapConfigDto, SourceSubscriptionConfigDto,
+    StateStoreConfig, TableKeyConfigDto,
+};
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
     HealthResponse, InstanceListItem, StatusResponse,
 };
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -61,6 +73,39 @@ use crate::api::shared::{
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,
+            ConfigValueStringSchema,
+            ConfigValueU16Schema,
+            ConfigValueU32Schema,
+            ConfigValueU64Schema,
+            ConfigValueUsizeSchema,
+            ConfigValueBoolSchema,
+            ConfigValueSslModeSchema,
+            MockSourceConfigDto,
+            HttpSourceConfigDto,
+            GrpcSourceConfigDto,
+            PostgresSourceConfigDto,
+            PlatformSourceConfigDto,
+            TableKeyConfigDto,
+            PostgresBootstrapConfigDto,
+            ApplicationBootstrapConfigDto,
+            ScriptFileBootstrapConfigDto,
+            PlatformBootstrapConfigDto,
+            BootstrapProviderConfig,
+            LogReactionConfigDto,
+            HttpReactionConfigDto,
+            HttpAdaptiveReactionConfigDto,
+            HttpQueryConfigDto,
+            CallSpecDto,
+            GrpcReactionConfigDto,
+            GrpcAdaptiveReactionConfigDto,
+            crate::api::models::reactions::sse::SseReactionConfigDto,
+            crate::api::models::reactions::sse::SseQueryConfigDto,
+            crate::api::models::reactions::sse::SseTemplateSpecDto,
+            PlatformReactionConfigDto,
+            ProfilerReactionConfigDto,
+            QueryConfigDto,
+            SourceSubscriptionConfigDto,
+            RedbStateStoreConfigDto,
         )
     ),
     tags(

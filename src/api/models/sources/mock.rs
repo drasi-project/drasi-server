@@ -18,7 +18,7 @@ use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 
 /// Local copy of mock source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MockSourceConfigDto {
     #[serde(default = "default_data_type")]

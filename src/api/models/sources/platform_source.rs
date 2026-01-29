@@ -18,7 +18,7 @@ use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 
 /// Local copy of platform source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlatformSourceConfigDto {
     pub redis_url: ConfigValue<String>,

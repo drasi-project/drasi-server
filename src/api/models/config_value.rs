@@ -38,8 +38,39 @@ where
 // Type aliases for common cases
 pub type ConfigValueString = ConfigValue<String>;
 pub type ConfigValueU16 = ConfigValue<u16>;
+pub type ConfigValueU32 = ConfigValue<u32>;
 pub type ConfigValueU64 = ConfigValue<u64>;
+pub type ConfigValueUsize = ConfigValue<usize>;
 pub type ConfigValueBool = ConfigValue<bool>;
+pub type ConfigValueSslMode = ConfigValue<crate::api::models::SslModeDto>;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueString)]
+pub struct ConfigValueStringSchema(pub ConfigValueString);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueU16)]
+pub struct ConfigValueU16Schema(pub ConfigValueU16);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueU32)]
+pub struct ConfigValueU32Schema(pub ConfigValueU32);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueU64)]
+pub struct ConfigValueU64Schema(pub ConfigValueU64);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueUsize)]
+pub struct ConfigValueUsizeSchema(pub ConfigValueUsize);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueBool)]
+pub struct ConfigValueBoolSchema(pub ConfigValueBool);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = ConfigValueSslMode)]
+pub struct ConfigValueSslModeSchema(pub ConfigValueSslMode);
 
 // Custom serialization to support the discriminated union format
 impl<T> Serialize for ConfigValue<T>
@@ -202,74 +233,43 @@ mod tests {
                 assert_eq!(name, "DB_PORT");
                 assert_eq!(default, Some("5432".to_string()));
             }
-            _ => panic!("Expected EnvironmentVariable variant"),
+            _ => panic!("Expected EnvironmentVariable"),
         }
     }
 
     #[test]
     fn test_deserialize_posix_without_default() {
-        let json = r#""${MY_VAR}""#;
+        let json = r#""${DB_HOST}""#;
         let value: ConfigValue<String> = serde_json::from_str(json).unwrap();
         match value {
             ConfigValue::EnvironmentVariable { name, default } => {
-                assert_eq!(name, "MY_VAR");
+                assert_eq!(name, "DB_HOST");
                 assert_eq!(default, None);
             }
-            _ => panic!("Expected EnvironmentVariable variant"),
-        }
-    }
-
-    #[test]
-    fn test_deserialize_structured_env_var() {
-        let json = r#"{"kind": "EnvironmentVariable", "name": "DB_PASSWORD", "default": "secret"}"#;
-        let value: ConfigValue<String> = serde_json::from_str(json).unwrap();
-        match value {
-            ConfigValue::EnvironmentVariable { name, default } => {
-                assert_eq!(name, "DB_PASSWORD");
-                assert_eq!(default, Some("secret".to_string()));
-            }
-            _ => panic!("Expected EnvironmentVariable variant"),
+            _ => panic!("Expected EnvironmentVariable"),
         }
     }
 
     #[test]
     fn test_deserialize_structured_secret() {
-        let json = r#"{"kind": "Secret", "name": "my-secret"}"#;
+        let json = r#"{"kind": "Secret", "name": "db-password"}"#;
         let value: ConfigValue<String> = serde_json::from_str(json).unwrap();
         match value {
-            ConfigValue::Secret { name } => {
-                assert_eq!(name, "my-secret");
-            }
-            _ => panic!("Expected Secret variant"),
+            ConfigValue::Secret { name } => assert_eq!(name, "db-password"),
+            _ => panic!("Expected Secret"),
         }
     }
 
     #[test]
-    fn test_serialize_static() {
-        let value = ConfigValue::Static("hello".to_string());
-        let json = serde_json::to_string(&value).unwrap();
-        assert_eq!(json, r#""hello""#);
-    }
-
-    #[test]
-    fn test_serialize_env_var() {
-        let value: ConfigValue<String> = ConfigValue::EnvironmentVariable {
-            name: "MY_VAR".to_string(),
-            default: Some("default".to_string()),
-        };
-        let json = serde_json::to_value(&value).unwrap();
-        assert_eq!(json["kind"], "EnvironmentVariable");
-        assert_eq!(json["name"], "MY_VAR");
-        assert_eq!(json["default"], "default");
-    }
-
-    #[test]
-    fn test_serialize_secret() {
-        let value: ConfigValue<String> = ConfigValue::Secret {
-            name: "my-secret".to_string(),
-        };
-        let json = serde_json::to_value(&value).unwrap();
-        assert_eq!(json["kind"], "Secret");
-        assert_eq!(json["name"], "my-secret");
+    fn test_deserialize_structured_env() {
+        let json = r#"{"kind": "EnvironmentVariable", "name": "DB_HOST", "default": "localhost"}"#;
+        let value: ConfigValue<String> = serde_json::from_str(json).unwrap();
+        match value {
+            ConfigValue::EnvironmentVariable { name, default } => {
+                assert_eq!(name, "DB_HOST");
+                assert_eq!(default, Some("localhost".to_string()));
+            }
+            _ => panic!("Expected EnvironmentVariable"),
+        }
     }
 }

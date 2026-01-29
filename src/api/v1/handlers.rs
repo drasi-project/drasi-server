@@ -26,7 +26,7 @@ use axum::{
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-use crate::api::models::QueryConfigDto;
+use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
@@ -117,7 +117,7 @@ pub async fn list_sources(
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID")
     ),
-    request_body = serde_json::Value,
+    request_body = SourceConfig,
     responses(
         (status = 200, description = "Source created successfully", body = ApiResponse),
         (status = 400, description = "Invalid source configuration"),
@@ -265,7 +265,7 @@ pub async fn list_queries(
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID")
     ),
-    request_body = QueryConfig,
+    request_body = QueryConfigDto,
     responses(
         (status = 200, description = "Query created successfully", body = ApiResponse),
         (status = 500, description = "Internal server error"),
@@ -445,7 +445,7 @@ pub async fn list_reactions(
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID")
     ),
-    request_body = serde_json::Value,
+    request_body = ReactionConfig,
     responses(
         (status = 200, description = "Reaction created successfully", body = ApiResponse),
         (status = 400, description = "Invalid reaction configuration"),

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Template specification for log output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateSpecDto {
     /// Output template as a Handlebars template
@@ -27,7 +27,7 @@ pub struct TemplateSpecDto {
 }
 
 /// Configuration for query-specific log output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QueryConfigDto {
     /// Template for ADD operations
@@ -42,7 +42,7 @@ pub struct QueryConfigDto {
 }
 
 /// Local copy of log reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogReactionConfigDto {
     /// Query-specific template configurations
