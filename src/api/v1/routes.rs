@@ -102,6 +102,7 @@ fn build_instance_router(
         .route("/queries/:id/start", post(handlers::start_query))
         .route("/queries/:id/stop", post(handlers::stop_query))
         .route("/queries/:id/results", get(handlers::get_query_results))
+        .route("/queries/:id/attach", get(handlers::attach_query_stream))
         // Reaction routes
         .route("/reactions", get(handlers::list_reactions))
         .route("/reactions", post(handlers::create_reaction_handler))

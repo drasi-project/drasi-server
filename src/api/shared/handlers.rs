@@ -20,9 +20,10 @@
 
 use axum::{
     extract::{Extension, Path},
-    http::StatusCode,
-    response::Json,
+    http::{header, HeaderValue, StatusCode},
+    response::{IntoResponse, Json},
 };
+use bytes::Bytes;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
@@ -36,6 +37,12 @@ use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, QueryConfig};
+use futures_util::StreamExt;
+use tokio::sync::oneshot;
+use tokio_stream::wrappers::ReceiverStream;
+use uuid::Uuid;
+use drasi_reaction_application::ApplicationReaction;
+use drasi_reaction_application::subscription::SubscriptionOptions;
 
 /// Helper function to persist configuration after a successful operation.
 /// Logs errors but does not fail the request - persistence failures are non-fatal.
@@ -84,10 +91,25 @@ pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let sources = core.list_sources().await.unwrap_or_default();
-    let items: Vec<ComponentListItem> = sources
-        .into_iter()
-        .map(|(id, status)| ComponentListItem { id, status })
-        .collect();
+    let mut items = Vec::with_capacity(sources.len());
+    for (id, status) in sources {
+        let error_message = if matches!(status, ComponentStatus::Error) {
+            match core.get_source_info(&id).await {
+                Ok(info) => info.error_message,
+                Err(e) => {
+                    log::warn!("Failed to fetch source info for '{id}': {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        items.push(ComponentListItem {
+            id,
+            status,
+            error_message,
+        });
+    }
 
     Json(ApiResponse::success(items))
 }
@@ -168,8 +190,12 @@ pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    match core.get_source_status(&id).await {
-        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
+    match core.get_source_info(&id).await {
+        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
+            id: info.id,
+            status: info.status,
+            error_message: info.error_message,
+        }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -252,10 +278,25 @@ pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let queries = core.list_queries().await.unwrap_or_default();
-    let items: Vec<ComponentListItem> = queries
-        .into_iter()
-        .map(|(id, status)| ComponentListItem { id, status })
-        .collect();
+    let mut items = Vec::with_capacity(queries.len());
+    for (id, status) in queries {
+        let error_message = if matches!(status, ComponentStatus::Error) {
+            match core.get_query_info(&id).await {
+                Ok(info) => info.error_message,
+                Err(e) => {
+                    log::warn!("Failed to fetch query info for '{id}': {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        items.push(ComponentListItem {
+            id,
+            status,
+            error_message,
+        });
+    }
 
     Json(ApiResponse::success(items))
 }
@@ -457,15 +498,152 @@ pub async fn get_query_results(
     }
 }
 
+/// Attach to a running query and stream results as NDJSON.
+pub async fn attach_query_stream(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(e) = core.get_query_config(&id).await {
+        let error_msg = e.to_string();
+        let status = if error_msg.contains("not found") {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        return (
+            status,
+            Json(ApiResponse::<StatusResponse>::error(error_msg)),
+        )
+            .into_response();
+    }
+
+    let reaction_id = format!("__attach_{}_{}", id, Uuid::new_v4());
+    let (reaction, handle) = ApplicationReaction::new(reaction_id.clone(), vec![id.clone()]);
+    if let Err(e) = core.add_reaction(reaction).await {
+        let error_msg = format!("Failed to add attach reaction: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<StatusResponse>::error(error_msg)),
+        )
+            .into_response();
+    }
+
+    if let Err(e) = core.start_reaction(&reaction_id).await {
+        let error_msg = e.to_string();
+        if !error_msg.contains("already running") {
+            let _ = core.remove_reaction(&reaction_id).await;
+            let error_msg = format!("Failed to start attach reaction: {error_msg}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<StatusResponse>::error(error_msg)),
+            )
+                .into_response();
+        }
+    }
+
+    let (drop_tx, mut drop_rx) = oneshot::channel::<()>();
+    let options = SubscriptionOptions::default().with_query_filter(vec![id.clone()]);
+    let subscription = match handle.subscribe_with_options(options).await {
+        Ok(subscription) => subscription,
+        Err(e) => {
+            let _ = core.remove_reaction(&reaction_id).await;
+            let error_msg = format!("Failed to subscribe to attach reaction: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<StatusResponse>::error(error_msg)),
+            )
+                .into_response();
+        }
+    };
+
+    let mut stream = subscription.into_stream();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(100);
+    let cleanup_core = core.clone();
+    let cleanup_id = reaction_id.clone();
+
+    tokio::spawn(async move {
+        let _guard = DropCleanup::new(drop_tx);
+        loop {
+            tokio::select! {
+                _ = &mut drop_rx => {
+                    break;
+                }
+                result = stream.next() => {
+                    match result {
+                        Some(result) => {
+                            if let Ok(json) = serde_json::to_vec(&result) {
+                                let mut payload = json;
+                                payload.push(b'\n');
+                                if tx.send(Ok(Bytes::from(payload))).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = cleanup_core.remove_reaction(&cleanup_id).await;
+    });
+
+    let body = axum::body::Body::from_stream(ReceiverStream::new(rx));
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-ndjson"),
+        )],
+        body,
+    )
+        .into_response()
+}
+
+struct DropCleanup {
+    tx: Option<oneshot::Sender<()>>,
+}
+
+impl DropCleanup {
+    fn new(tx: oneshot::Sender<()>) -> Self {
+        Self { tx: Some(tx) }
+    }
+}
+
+impl Drop for DropCleanup {
+    fn drop(&mut self) {
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
 /// List all reactions for an instance
 pub async fn list_reactions(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let reactions = core.list_reactions().await.unwrap_or_default();
-    let items: Vec<ComponentListItem> = reactions
-        .into_iter()
-        .map(|(id, status)| ComponentListItem { id, status })
-        .collect();
+    let mut items = Vec::with_capacity(reactions.len());
+    for (id, status) in reactions {
+        let error_message = if matches!(status, ComponentStatus::Error) {
+            match core.get_reaction_info(&id).await {
+                Ok(info) => info.error_message,
+                Err(e) => {
+                    log::warn!("Failed to fetch reaction info for '{id}': {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        items.push(ComponentListItem {
+            id,
+            status,
+            error_message,
+        });
+    }
 
     Json(ApiResponse::success(items))
 }
@@ -546,8 +724,12 @@ pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    match core.get_reaction_status(&id).await {
-        Ok(status) => Ok(Json(ApiResponse::success(ComponentListItem { id, status }))),
+    match core.get_reaction_info(&id).await {
+        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
+            id: info.id,
+            status: info.status,
+            error_message: info.error_message,
+        }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }

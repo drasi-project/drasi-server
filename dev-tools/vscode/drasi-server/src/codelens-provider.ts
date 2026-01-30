@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import { DrasiClient } from './drasi-client';
-import { QueryDebugger } from './query-debugger';
 
 export class CodeLensProvider implements vscode.CodeLensProvider {
   private extensionUri: vscode.Uri;
@@ -12,9 +11,6 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     this.drasiClient = drasiClient;
 
     vscode.commands.getCommands(true).then((commands) => {
-      if (!commands.includes('editor.query.run')) {
-        vscode.commands.registerCommand('editor.query.run', this.runQuery.bind(this));
-      }
       if (!commands.includes('editor.resource.apply')) {
         vscode.commands.registerCommand('editor.resource.apply', this.applyResource.bind(this));
       }
@@ -27,40 +23,24 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     const docs = yaml.parseAllDocuments(docStr);
 
     docs.forEach((doc) => {
-      const kind = doc.get('kind');
-      const id = doc.get('id');
-      if (!kind || !id) {
+      const items = extractItems(doc);
+      if (items.length === 0) {
         return;
       }
 
-      const range = new vscode.Range(getPosition(docStr, doc.range[0]), getPosition(docStr, doc.range[1]));
-
-      if (kind === 'Query') {
-        codeLenses.push(new vscode.CodeLens(range, {
-          command: 'editor.query.run',
-          title: 'Debug',
-          arguments: [doc.toJS()]
-        }));
-      }
-
-      if (kind === 'Query' || kind === 'Source' || kind === 'Reaction') {
-        codeLenses.push(new vscode.CodeLens(range, {
-          command: 'editor.resource.apply',
-          title: 'Apply',
-          arguments: [doc.toJS()]
-        }));
-      }
+      items.forEach((item) => {
+        const range = new vscode.Range(getPosition(docStr, item.range.start), getPosition(docStr, item.range.end));
+        if (item.kind === 'Query' || item.kind === 'Source' || item.kind === 'Reaction') {
+          codeLenses.push(new vscode.CodeLens(range, {
+            command: 'editor.resource.apply',
+            title: 'Apply',
+            arguments: [item.payload]
+          }));
+        }
+      });
     });
 
     return codeLenses;
-  }
-
-  async runQuery(query: any) {
-    if (!query?.id) {
-      return;
-    }
-    const dbg = new QueryDebugger(query.id, this.extensionUri, this.drasiClient);
-    dbg.start();
   }
 
   async applyResource(resource: any) {
@@ -109,6 +89,87 @@ async function applyResourceByKind(client: DrasiClient, resource: any) {
     default:
       throw new Error(`Unsupported resource kind: ${resource.kind}`);
   }
+}
+
+type ItemRange = { start: number; end: number };
+type ExtractedItem = { kind: string; payload: any; range: ItemRange };
+
+function extractItems(doc: yaml.Document): ExtractedItem[] {
+  const items: ExtractedItem[] = [];
+  const docContents = doc.contents;
+  if (!docContents || !yaml.isMap(docContents)) {
+    return items;
+  }
+  const map = docContents as yaml.YAMLMap;
+  const kindNode = map.get('kind', true);
+  if (kindNode) {
+    const kind = doc.get('kind');
+    const id = doc.get('id');
+    if (kind && id) {
+      items.push({
+        kind,
+        payload: doc.toJS(),
+        range: rangeFromNode(docContents),
+      });
+    }
+    return items;
+  }
+
+  addListItems(doc, map, 'sources', 'Source', items);
+  addListItems(doc, map, 'queries', 'Query', items);
+  addListItems(doc, map, 'reactions', 'Reaction', items);
+  if (items.length === 0) {
+    const kind = doc.get('kind');
+    const id = doc.get('id');
+    if (kind && id) {
+      items.push({
+        kind,
+        payload: doc.toJS(),
+        range: rangeFromNode(docContents),
+      });
+    }
+  }
+  return items;
+}
+
+function addListItems(
+  doc: yaml.Document,
+  map: yaml.YAMLMap,
+  key: string,
+  kind: string,
+  items: ExtractedItem[]
+) {
+  const node = map.get(key, true);
+  if (!node || !yaml.isSeq(node)) {
+    return;
+  }
+  const seq = node as yaml.YAMLSeq;
+  seq.items.forEach((entry) => {
+    if (!entry || !yaml.isMap(entry)) {
+      return;
+    }
+    const entryMap = entry as yaml.YAMLMap;
+    const idNode = entryMap.get('id', true);
+    if (!idNode) {
+      return;
+    }
+    const spec = entry.toJS(doc);
+    const payload = {
+      kind,
+      id: spec?.id,
+      spec,
+    };
+    items.push({
+      kind,
+      payload,
+      range: rangeFromNode(entry),
+    });
+  });
+}
+
+function rangeFromNode(node: yaml.Node): ItemRange {
+  const range = node.range ?? [0, 0, 0];
+  return { start: range[0], end: range[1] };
 }
 
 function getPosition(yamlString: string, index: number): vscode.Position {

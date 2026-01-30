@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as yaml from 'js-yaml';
 import { DrasiClient } from './drasi-client';
-import { QueryDebugger } from './query-debugger';
 
 export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<ExplorerNode | undefined | void> = new vscode.EventEmitter<ExplorerNode | undefined | void>();
@@ -13,7 +12,6 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
     this.extensionUri = extensionUri;
     this.drasiClient = drasiClient;
     vscode.commands.registerCommand('workspace.refresh', this.refresh.bind(this));
-    vscode.commands.registerCommand('workspace.query.run', this.runQuery.bind(this));
     vscode.commands.registerCommand('workspace.resource.apply', this.applyResource.bind(this));
     vscode.workspace.onDidSaveTextDocument((evt) => {
       if (evt.languageId === 'yaml') {
@@ -115,15 +113,6 @@ export class WorkspaceExplorer implements vscode.TreeDataProvider<ExplorerNode> 
     }
 
     return result;
-  }
-
-  async runQuery(queryNode: QueryNode) {
-    if (!queryNode?.resource?.id) {
-      return;
-    }
-
-    const dbg = new QueryDebugger(queryNode.resource.id, this.extensionUri, this.drasiClient);
-    dbg.start();
   }
 
   async applyResource(resourceNode: ResourceNode) {

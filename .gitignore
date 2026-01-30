@@ -28,3 +28,4 @@ logs/
 
 # Exception: Allow .env files in examples (for tutorials)
 !examples/**/.env
+config/server.yaml

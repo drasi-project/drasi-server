@@ -60,6 +60,7 @@ drasi-reaction-profiler = "0.2.1"
 drasi-reaction-storedproc-postgres = "0.2.1"
 drasi-reaction-storedproc-mysql = "0.2.1"
 drasi-reaction-storedproc-mssql = "0.2.1"
+drasi-reaction-application = "0.2.0"
 
 # Index plugins
 drasi-index-rocksdb = "0.2.1"
@@ -71,6 +72,9 @@ drasi-state-store-redb = "0.1.1"
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
 axum = "0.7"
+bytes = "1.6"
+futures-util = "0.3"
+tokio-stream = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"

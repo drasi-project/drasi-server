@@ -7,6 +7,7 @@ export interface ApiResponse<T> {
 export interface ComponentListItem {
   id: string;
   status: ComponentStatus;
+  error_message?: string;
 }
 
 export interface InstanceListItem {
@@ -18,6 +19,7 @@ export type ComponentStatus =
   | 'Starting'
   | 'Running'
   | 'Stopping'
+  | 'Error'
   | 'Failed'
   | 'TerminalError'
   | 'Unknown';

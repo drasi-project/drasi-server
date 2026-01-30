@@ -61,16 +61,8 @@
         }
       },
       {
-        "command": "workspace.query.run",
-        "title": "Debug"
-      },
-      {
         "command": "workspace.resource.apply",
         "title": "Apply"
-      },
-      {
-        "command": "editor.query.run",
-        "title": "Debug"
       },
       {
         "command": "editor.resource.apply",
@@ -167,11 +159,6 @@
         {
           "command": "workspace.resource.apply",
           "when": "view == workspace && (viewItem == workspace.queryNode || viewItem == workspace.sourceNode || viewItem == workspace.reactionNode)",
-          "group": "inline"
-        },
-        {
-          "command": "workspace.query.run",
-          "when": "view == workspace && viewItem == workspace.queryNode",
           "group": "inline"
         },
         {

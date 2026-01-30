@@ -1401,6 +1401,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-reaction-application"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c5fde45d67b35c5de8dfc4096cfca681e2251c78821de2677775556d3ccc858"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-lib",
+ "log",
+ "ordered-float",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-reaction-grpc"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1648,6 +1668,7 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "axum 0.7.9",
+ "bytes",
  "chrono",
  "clap",
  "dotenvy",
@@ -1659,6 +1680,7 @@ dependencies = [
  "drasi-index-garnet",
  "drasi-index-rocksdb",
  "drasi-lib",
+ "drasi-reaction-application",
  "drasi-reaction-grpc",
  "drasi-reaction-grpc-adaptive",
  "drasi-reaction-http",
@@ -1678,6 +1700,7 @@ dependencies = [
  "drasi-state-store-redb",
  "env_logger",
  "futures",
+ "futures-util",
  "handlebars 6.4.0",
  "hyper 1.8.1",
  "indexmap 2.13.0",
@@ -1697,6 +1720,7 @@ dependencies = [
  "testcontainers-modules",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "tower 0.4.13",
  "tower-http",

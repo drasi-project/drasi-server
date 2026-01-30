@@ -163,6 +163,14 @@ export class DrasiClient {
     return res.data.data ?? [];
   }
 
+  getQueryAttachUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for query attach');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/attach`;
+  }
+
   async applySource(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.post<ApiResponse<any>>(

@@ -49,17 +49,33 @@ sources:
   - table: products
     keyColumns:
     - sku
-queries:
-- id: high-values
+- kind: postgres
+  id: daniel-test3
   autoStart: true
-  query: |
-    MATCH (s:SensorReading)
-    WHERE s.temperature > 25
-    RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.timestamp AS Timestamp
+  bootstrapProvider:
+    kind: postgres
+  host: localhost
+  port: 5432
+  database: test
+  user: postgres
+  password: test
+  tables:
+  - Freezer
+  slotName: daniel_test_slot
+  publicationName: rg_daniel_test3
+  sslMode: prefer
+  tableKeys:
+  - table: Freezer
+    keyColumns:
+    - id
+queries:
+- id: freezer-warm
+  autoStart: true
+  query: "MATCH \n  (f:Freezer)\nWHERE drasi.trueFor(f.temp > 32, duration( { seconds: 10 } ))\nRETURN\n  f.id AS id,\n  f.temp AS temp\n"
   queryLanguage: Cypher
   middleware: []
   sources:
-  - sourceId: sensor-data
+  - sourceId: daniel-test3
     nodes: []
     relations: []
     pipeline: []

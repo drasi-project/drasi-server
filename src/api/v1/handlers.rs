@@ -406,6 +406,28 @@ pub async fn get_query_results(
     shared::get_query_results(Extension(core), Path(id)).await
 }
 
+/// Attach to a running query and stream results as NDJSON.
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/queries/{id}/attach",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query ID")
+    ),
+    responses(
+        (status = 200, description = "Streaming query results (NDJSON)"),
+        (status = 404, description = "Query not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "Queries"
+)]
+pub async fn attach_query_stream(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    shared::attach_query_stream(Extension(core), Path(id)).await
+}
+
 /// List all reactions
 #[utoipa::path(
     get,

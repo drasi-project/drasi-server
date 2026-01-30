@@ -330,6 +330,9 @@ class ResourceNode extends ExplorerNode {
     this.component = component;
     this.instance = instance;
     this.description = component.status;
+    if (component.error_message) {
+      this.tooltip = component.error_message;
+    }
   }
 }
 
@@ -365,8 +368,8 @@ function statusIcon(status: ComponentStatus, icon: string) {
   switch (normalized) {
     case 'Running':
       return new vscode.ThemeIcon(icon, new vscode.ThemeColor('testing.iconPassed'));
+    case 'Error':
     case 'Failed':
-      return new vscode.ThemeIcon(icon, new vscode.ThemeColor('testing.iconFailed'));
     case 'TerminalError':
       return new vscode.ThemeIcon(icon, new vscode.ThemeColor('testing.iconFailed'));
     default:

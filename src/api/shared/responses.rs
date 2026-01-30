@@ -34,6 +34,9 @@ pub struct ComponentListItem {
     pub id: String,
     /// Current status of the component
     pub status: ComponentStatus,
+    /// Error message if the component is in error state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
 }
 
 /// Response listing a DrasiLib instance

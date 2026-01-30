@@ -58,6 +58,7 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
         super::handlers::start_query,
         super::handlers::stop_query,
         super::handlers::get_query_results,
+        super::handlers::attach_query_stream,
         super::handlers::list_reactions,
         super::handlers::create_reaction_handler,
         super::handlers::get_reaction,
