@@ -6,6 +6,7 @@ import { DrasiExplorer } from './drasi-explorer';
 import { CodeLensProvider } from './codelens-provider';
 import { SchemaProvider } from './schema-provider';
 import { DrasiYamlDiagnosticProvider } from './yaml-diagnostic';
+import { ComponentYamlGenerator } from './component-yaml-generator';
 
 let drasiClient: DrasiClient | undefined;
 
@@ -29,6 +30,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const schemaProvider = new SchemaProvider(registry, diagnosticProvider);
   await schemaProvider.activate(context);
+  const yamlGenerator = new ComponentYamlGenerator(schemaProvider);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('drasi.schema.refresh', async () => {
@@ -81,6 +83,12 @@ export async function activate(context: vscode.ExtensionContext) {
         isMarked ? 'Removed file from Drasi schema list.' : 'Marked file as Drasi config.'
       );
     })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('drasi.yaml.createSource', () => yamlGenerator.createSourceYaml()),
+    vscode.commands.registerCommand('drasi.yaml.createQuery', () => yamlGenerator.createQueryYaml()),
+    vscode.commands.registerCommand('drasi.yaml.createReaction', () => yamlGenerator.createReactionYaml())
   );
 }
 

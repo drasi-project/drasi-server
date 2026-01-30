@@ -57,6 +57,13 @@ export class SchemaProvider {
     }
   }
 
+  async getOrRefreshSchema() {
+    if (!this.lastSchema && this.storageUri) {
+      await this.refreshSchemas(this.storageUri);
+    }
+    return this.lastSchema;
+  }
+
   private async fetchOpenApi(baseUrl: string) {
     const res = await axios.get(`${baseUrl}/api/v1/openapi.json`, {
       validateStatus: () => true,

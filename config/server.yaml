@@ -68,18 +68,64 @@ sources:
   - table: Freezer
     keyColumns:
     - id
-queries:
-- id: freezer-warm
+- kind: postgres
+  id: postgres-messages
   autoStart: true
-  query: "MATCH \n  (f:Freezer)\nWHERE drasi.trueFor(f.temp > 32, duration( { seconds: 10 } ))\nRETURN\n  f.id AS id,\n  f.temp AS temp\n"
+  bootstrapProvider:
+    kind: postgres
+  host:
+    kind: EnvironmentVariable
+    name: POSTGRES_HOST
+    default: localhost
+  port:
+    kind: EnvironmentVariable
+    name: POSTGRES_PORT
+    default: '5432'
+  database:
+    kind: EnvironmentVariable
+    name: POSTGRES_DATABASE
+    default: getting_started
+  user:
+    kind: EnvironmentVariable
+    name: POSTGRES_USER
+    default: drasi_user
+  password: drasi_password
+  tables:
+  - message
+  slotName: drasi_getting_started_slot_2
+  publicationName: drasi_getting_started_pub
+  sslMode: prefer
+  tableKeys:
+  - table: message
+    keyColumns:
+    - messageid
+queries:
+- id: message-count
+  autoStart: true
+  query: |
+    MATCH (m:message)
+    RETURN m.message AS Message, count(m) AS Frequency
   queryLanguage: Cypher
   middleware: []
   sources:
-  - sourceId: daniel-test3
+  - sourceId: postgres-messages
     nodes: []
     relations: []
     pipeline: []
   enableBootstrap: true
   bootstrapBufferSize: 10000
-reactions: []
+reactions:
+- kind: log
+  id: log-all-queries
+  queries:
+  - freezer-warm
+  autoStart: true
+  routes: {}
+  defaultTemplate:
+    added:
+      template: '[{{query_name}}] + {{after}}'
+    updated:
+      template: '[{{query_name}}] ~ {{before}} -> {{after}}'
+    deleted:
+      template: '[{{query_name}}] - {{before}}'
 instances: []

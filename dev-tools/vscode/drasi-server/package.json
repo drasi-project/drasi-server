@@ -130,6 +130,21 @@
           "command": "drasi.schema.toggleFile",
           "category": "Drasi Server",
           "title": "Drasi Config"
+        },
+        {
+          "command": "drasi.yaml.createSource",
+          "category": "Drasi Server",
+          "title": "Create Source YAML"
+        },
+        {
+          "command": "drasi.yaml.createQuery",
+          "category": "Drasi Server",
+          "title": "Create Query YAML"
+        },
+        {
+          "command": "drasi.yaml.createReaction",
+          "category": "Drasi Server",
+          "title": "Create Reaction YAML"
         }
       ],
     "menus": {
@@ -226,11 +241,41 @@
           "command": "drasi.schema.toggleFile",
           "when": "resourceLangId == yaml",
           "group": "navigation@1"
+        },
+        {
+          "command": "drasi.yaml.createSource",
+          "when": "resourceLangId == yaml",
+          "group": "navigation@2"
+        },
+        {
+          "command": "drasi.yaml.createQuery",
+          "when": "resourceLangId == yaml",
+          "group": "navigation@2"
+        },
+        {
+          "command": "drasi.yaml.createReaction",
+          "when": "resourceLangId == yaml",
+          "group": "navigation@2"
         }
       ],
       "editor/context.palette": [
         {
           "command": "drasi.schema.toggleFile",
+          "when": "resourceLangId == yaml",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.yaml.createSource",
+          "when": "resourceLangId == yaml",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.yaml.createQuery",
+          "when": "resourceLangId == yaml",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.yaml.createReaction",
           "when": "resourceLangId == yaml",
           "group": "navigation"
         }
@@ -250,6 +295,18 @@
         },
         {
           "command": "drasi.schema.toggleFile",
+          "when": "resourceLangId == yaml"
+        },
+        {
+          "command": "drasi.yaml.createSource",
+          "when": "resourceLangId == yaml"
+        },
+        {
+          "command": "drasi.yaml.createQuery",
+          "when": "resourceLangId == yaml"
+        },
+        {
+          "command": "drasi.yaml.createReaction",
           "when": "resourceLangId == yaml"
         }
       ]
