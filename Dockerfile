@@ -45,14 +45,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files first for dependency caching
-COPY Cargo.toml Cargo.lock ./
+COPY drasi-server/Cargo.toml drasi-server/Cargo.lock ./
 
 # Copy the drasi-core submodule (required dependency)
 COPY drasi-core ./drasi-core
 
 # Copy source code
-COPY src ./src
-COPY config ./config
+COPY drasi-server/src ./src
+COPY drasi-server/config ./config
 
 # Build release binary
 # Set JQ_LIB_DIR dynamically for multiarch support (no pkg-config file in Debian's libjq-dev)
@@ -84,7 +84,7 @@ COPY --from=builder /app/target/release/drasi-server /usr/local/bin/drasi-server
 RUN mkdir -p /app/config && chown -R drasi:drasi /app
 
 # Copy default config (will be overridden by volume mount)
-COPY --chown=drasi:drasi config/server-docker.yaml /app/config/server.yaml
+COPY --chown=drasi:drasi drasi-server/config/server-docker.yaml /app/config/server.yaml
 
 # Switch to non-root user
 USER drasi

@@ -137,6 +137,7 @@ fn test_empty_config_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![],
@@ -165,6 +166,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         }),
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![],
@@ -198,6 +200,7 @@ fn test_mock_source_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,
@@ -235,6 +238,7 @@ fn test_http_source_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Http {
             id: "http-source".to_string(),
             auto_start: true,
@@ -279,6 +283,7 @@ fn test_grpc_source_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Grpc {
             id: "grpc-source".to_string(),
             auto_start: true,
@@ -316,6 +321,7 @@ fn test_postgres_source_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Postgres {
             id: "postgres-source".to_string(),
             auto_start: true,
@@ -375,6 +381,7 @@ fn test_platform_source_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Platform {
             id: "platform-source".to_string(),
             auto_start: true,
@@ -429,6 +436,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,
@@ -478,6 +486,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,
@@ -525,6 +534,7 @@ fn test_platform_bootstrap_provider_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,
@@ -573,6 +583,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,
@@ -615,6 +626,7 @@ fn test_log_reaction_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![ReactionConfig::Log {
@@ -648,6 +660,7 @@ fn test_http_reaction_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![ReactionConfig::Http {
@@ -687,6 +700,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![ReactionConfig::Sse {
@@ -731,6 +745,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![ReactionConfig::Grpc {
@@ -778,6 +793,7 @@ fn test_platform_reaction_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![],
         reactions: vec![ReactionConfig::Platform {
@@ -840,6 +856,7 @@ fn test_query_generates_valid_yaml() {
         state_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
+        identity_providers: vec![],
         sources: vec![],
         queries: vec![QueryConfigDto {
             id: "my-query".to_string(),
@@ -904,6 +921,7 @@ fn test_full_config_roundtrip() {
         }),
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
+        identity_providers: vec![],
         sources: vec![SourceConfig::Mock {
             id: "mock-source".to_string(),
             auto_start: true,

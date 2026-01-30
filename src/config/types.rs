@@ -23,7 +23,8 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig,
+    ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SourceConfig,
+    StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -69,6 +70,12 @@ pub struct DrasiServerConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Identity provider configurations for authentication
+    ///
+    /// Define reusable identity providers that can be referenced by sources and reactions.
+    /// Supports password-based, Azure AD, and AWS IAM authentication.
+    #[serde(default)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
@@ -95,6 +102,7 @@ impl Default for DrasiServerConfig {
             state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            identity_providers: Vec::new(),
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
@@ -152,6 +160,12 @@ pub struct DrasiLibInstanceConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Identity provider configurations for authentication
+    ///
+    /// Define reusable identity providers that can be referenced by sources and reactions.
+    /// Supports password-based, Azure AD, and AWS IAM authentication.
+    #[serde(default)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
@@ -171,6 +185,7 @@ pub struct ResolvedInstanceConfig {
     pub state_store: Option<StateStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
+    pub identity_providers: Vec<IdentityProviderConfig>,
     pub sources: Vec<SourceConfig>,
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
@@ -223,6 +238,7 @@ impl DrasiServerConfig {
                 state_store: self.state_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
                 default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
+                identity_providers: self.identity_providers.clone(),
                 sources: self.sources.clone(),
                 queries: self.queries.clone(),
                 reactions: self.reactions.clone(),
@@ -271,6 +287,7 @@ impl DrasiServerConfig {
                 state_store: instance.state_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
+                identity_providers: instance.identity_providers.clone(),
                 sources: instance.sources.clone(),
                 queries,
                 reactions: instance.reactions.clone(),

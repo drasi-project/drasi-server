@@ -185,11 +185,34 @@ fn create_bootstrap_provider(
         BootstrapProviderConfig::Postgres(_) => {
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::PostgresBootstrapProvider;
+                use drasi_bootstrap_postgres::{PostgresBootstrapConfig, PostgresBootstrapProvider};
                 let mapper = DtoMapper::new();
                 let postgres_mapper = PostgresConfigMapper;
-                let domain_config = postgres_mapper.map(config, &mapper)?;
-                Ok(Box::new(PostgresBootstrapProvider::new(domain_config)))
+                let source_config = postgres_mapper.map(config, &mapper)?;
+
+                // Convert PostgresSourceConfig to PostgresBootstrapConfig
+                // They have identical structures, just different types
+                let bootstrap_config = PostgresBootstrapConfig {
+                    host: source_config.host,
+                    port: source_config.port,
+                    database: source_config.database,
+                    user: source_config.user,
+                    password: source_config.password,
+                    tables: source_config.tables,
+                    slot_name: source_config.slot_name,
+                    publication_name: source_config.publication_name,
+                    ssl_mode: match source_config.ssl_mode {
+                        drasi_source_postgres::SslMode::Disable => drasi_bootstrap_postgres::SslMode::Disable,
+                        drasi_source_postgres::SslMode::Prefer => drasi_bootstrap_postgres::SslMode::Prefer,
+                        drasi_source_postgres::SslMode::Require => drasi_bootstrap_postgres::SslMode::Require,
+                    },
+                    table_keys: source_config.table_keys.into_iter().map(|tk| drasi_bootstrap_postgres::TableKeyConfig {
+                        table: tk.table,
+                        key_columns: tk.key_columns,
+                    }).collect(),
+                };
+
+                Ok(Box::new(PostgresBootstrapProvider::new(bootstrap_config)))
             } else {
                 Err(anyhow::anyhow!(
                     "Postgres bootstrap provider can only be used with Postgres sources"

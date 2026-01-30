@@ -49,6 +49,9 @@ pub mod config_value;
 // Bootstrap provider module
 pub mod bootstrap;
 
+// Identity provider module
+pub mod identity_provider;
+
 // Organized submodules
 pub mod queries;
 pub mod reactions;
@@ -60,6 +63,7 @@ pub use bootstrap::{
     PostgresBootstrapConfigDto, ScriptFileBootstrapConfigDto,
 };
 pub use config_value::*;
+pub use identity_provider::*;
 pub use queries::*;
 pub use reactions::*;
 pub use sources::*;

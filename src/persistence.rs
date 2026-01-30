@@ -192,6 +192,7 @@ impl ConfigPersistence {
                 default_dispatch_buffer_capacity: lib_config
                     .dispatch_buffer_capacity
                     .map(ConfigValue::Static),
+                identity_providers: Vec::new(), // Identity providers not persisted dynamically
                 sources,
                 reactions,
                 queries, // Now using stored QueryConfigDto instead of empty vec
@@ -212,6 +213,7 @@ impl ConfigPersistence {
                 state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
+                identity_providers: instance.identity_providers,
                 sources: instance.sources,
                 reactions: instance.reactions,
                 queries: instance.queries,
@@ -237,6 +239,7 @@ impl ConfigPersistence {
                 state_store: None,    // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
+                identity_providers: Vec::new(), // Per-instance setting in multi-instance mode
                 sources: Vec::new(),
                 reactions: Vec::new(),
                 queries: Vec::new(),
