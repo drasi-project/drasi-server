@@ -427,11 +427,41 @@ pub enum ReactionConfig {
         #[serde(flatten)]
         config: ProfilerReactionConfigDto,
     },
+    /// PostgreSQL stored procedure reaction
+    #[serde(rename = "storedprocPostgres")]
+    StoredprocPostgres {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: PostgresStoredProcReactionConfigDto,
+    },
+    /// MySQL stored procedure reaction
+    #[serde(rename = "storedprocMysql")]
+    StoredprocMysql {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: MysqlStoredProcReactionConfigDto,
+    },
+    /// MSSQL stored procedure reaction
+    #[serde(rename = "storedprocMssql")]
+    StoredprocMssql {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: MssqlStoredProcReactionConfigDto,
+    },
 }
 
 // Known reaction kinds for error messages
 const REACTION_KINDS: &[&str] = &[
     "log",
+    "storedprocPostgres",
+    "storedprocMysql",
+    "storedprocMssql",
     "http",
     "http-adaptive",
     "grpc",
@@ -637,6 +667,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { id, .. } => id,
             ReactionConfig::Platform { id, .. } => id,
             ReactionConfig::Profiler { id, .. } => id,
+            ReactionConfig::StoredprocPostgres { id, .. } => id,
+            ReactionConfig::StoredprocMysql { id, .. } => id,
+            ReactionConfig::StoredprocMssql { id, .. } => id,
         }
     }
 
@@ -651,6 +684,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { queries, .. } => queries,
             ReactionConfig::Platform { queries, .. } => queries,
             ReactionConfig::Profiler { queries, .. } => queries,
+            ReactionConfig::StoredprocPostgres { queries, .. } => queries,
+            ReactionConfig::StoredprocMysql { queries, .. } => queries,
+            ReactionConfig::StoredprocMssql { queries, .. } => queries,
         }
     }
 
@@ -665,6 +701,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { auto_start, .. } => *auto_start,
             ReactionConfig::Platform { auto_start, .. } => *auto_start,
             ReactionConfig::Profiler { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocPostgres { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocMysql { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocMssql { auto_start, .. } => *auto_start,
         }
     }
 }

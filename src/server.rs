@@ -135,7 +135,7 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
-                let reaction = create_reaction(reaction_config)?;
+                let reaction = create_reaction(reaction_config).await?;
                 builder = builder.with_reaction(reaction);
             }
 

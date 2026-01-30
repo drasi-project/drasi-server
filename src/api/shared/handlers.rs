@@ -497,7 +497,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let reaction = match create_reaction(config.clone()) {
+    let reaction = match create_reaction(config.clone()).await {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");

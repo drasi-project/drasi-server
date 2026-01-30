@@ -35,8 +35,11 @@ use crate::api::mappings::{
     HttpSourceConfigMapper,
     LogReactionConfigMapper,
     MockSourceConfigMapper,
+    MsSqlStoredProcReactionConfigMapper,
+    MySqlStoredProcReactionConfigMapper,
     PlatformReactionConfigMapper,
     PlatformSourceConfigMapper,
+    PostgresStoredProcReactionConfigMapper,
     // Source mappers
     PostgresConfigMapper,
     ProfilerReactionConfigMapper,
@@ -270,9 +273,9 @@ fn create_bootstrap_provider(
 ///     config: LogReactionConfig::default(),
 /// };
 ///
-/// let reaction = create_reaction(config)?;
+/// let reaction = create_reaction(config).await?;
 /// ```
-pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'static>> {
+pub async fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'static>> {
     let mapper = DtoMapper::new();
 
     match config {
@@ -416,6 +419,156 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                     .build()?,
             ))
         }
+        ReactionConfig::StoredprocPostgres {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_postgres::PostgresStoredProcReaction;
+            let postgres_mapper = PostgresStoredProcReactionConfigMapper;
+            let domain_config = postgres_mapper.map(&config, &mapper)?;
+
+            // TODO: If identity_provider_id is specified, look it up from global registry
+            if let Some(provider_id) = &config.identity_provider_id {
+                return Err(anyhow::anyhow!(
+                    "Identity provider lookup not yet implemented in factories. Provider ID: {}",
+                    provider_id
+                ));
+            }
+
+            let mut builder = PostgresStoredProcReaction::builder(&id)
+                .with_hostname(&domain_config.hostname)
+                .with_database(&domain_config.database)
+                .with_ssl(domain_config.ssl)
+                .with_command_timeout_ms(domain_config.command_timeout_ms)
+                .with_retry_attempts(domain_config.retry_attempts)
+                .with_queries(queries)
+                .with_auto_start(auto_start);
+
+            if let Some(port) = domain_config.port {
+                builder = builder.with_port(port);
+            }
+
+            // Set authentication using user/password (identity provider support to be added)
+            if !domain_config.user.is_empty() {
+                builder = builder
+                    .with_user(&domain_config.user)
+                    .with_password(&domain_config.password);
+            }
+
+            // Set default template if provided
+            if let Some(default_template) = domain_config.default_template {
+                builder = builder.with_default_template(default_template);
+            }
+
+            // Set routes
+            for (query_id, route_config) in domain_config.routes {
+                builder = builder.with_route(query_id, route_config);
+            }
+
+            Ok(Box::new(builder.build().await?))
+        }
+        ReactionConfig::StoredprocMysql {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_mysql::MySqlStoredProcReaction;
+            let mysql_mapper = MySqlStoredProcReactionConfigMapper;
+            let domain_config = mysql_mapper.map(&config, &mapper)?;
+
+            // TODO: If identity_provider_id is specified, look it up from global registry
+            if let Some(provider_id) = &config.identity_provider_id {
+                return Err(anyhow::anyhow!(
+                    "Identity provider lookup not yet implemented in factories. Provider ID: {}",
+                    provider_id
+                ));
+            }
+
+            let mut builder = MySqlStoredProcReaction::builder(&id)
+                .with_hostname(&domain_config.hostname)
+                .with_database(&domain_config.database)
+                .with_ssl(domain_config.ssl)
+                .with_command_timeout_ms(domain_config.command_timeout_ms)
+                .with_retry_attempts(domain_config.retry_attempts)
+                .with_queries(queries)
+                .with_auto_start(auto_start);
+
+            if let Some(port) = domain_config.port {
+                builder = builder.with_port(port);
+            }
+
+            // Set authentication using user/password (identity provider support to be added)
+            if !domain_config.user.is_empty() {
+                builder = builder
+                    .with_user(&domain_config.user)
+                    .with_password(&domain_config.password);
+            }
+
+            // Set default template if provided
+            if let Some(default_template) = domain_config.default_template {
+                builder = builder.with_default_template(default_template);
+            }
+
+            // Set routes
+            for (query_id, route_config) in domain_config.routes {
+                builder = builder.with_route(query_id, route_config);
+            }
+
+            Ok(Box::new(builder.build().await?))
+        }
+        ReactionConfig::StoredprocMssql {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_mssql::MsSqlStoredProcReaction;
+            let mssql_mapper = MsSqlStoredProcReactionConfigMapper;
+            let domain_config = mssql_mapper.map(&config, &mapper)?;
+
+            // TODO: If identity_provider_id is specified, look it up from global registry
+            if let Some(provider_id) = &config.identity_provider_id {
+                return Err(anyhow::anyhow!(
+                    "Identity provider lookup not yet implemented in factories. Provider ID: {}",
+                    provider_id
+                ));
+            }
+
+            let mut builder = MsSqlStoredProcReaction::builder(&id)
+                .with_hostname(&domain_config.hostname)
+                .with_database(&domain_config.database)
+                .with_ssl(domain_config.ssl)
+                .with_command_timeout_ms(domain_config.command_timeout_ms)
+                .with_retry_attempts(domain_config.retry_attempts)
+                .with_queries(queries)
+                .with_auto_start(auto_start);
+
+            if let Some(port) = domain_config.port {
+                builder = builder.with_port(port);
+            }
+
+            // Set authentication using user/password (identity provider support to be added)
+            if !domain_config.user.is_empty() {
+                builder = builder
+                    .with_user(&domain_config.user)
+                    .with_password(&domain_config.password);
+            }
+
+            // Set default template if provided
+            if let Some(default_template) = domain_config.default_template {
+                builder = builder.with_default_template(default_template);
+            }
+
+            // Set routes
+            for (query_id, route_config) in domain_config.routes {
+                builder = builder.with_route(query_id, route_config);
+            }
+
+            Ok(Box::new(builder.build().await?))
+        }
     }
 }
 
@@ -555,8 +708,8 @@ mod tests {
     // Reaction Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_log_reaction() {
+    #[tokio::test]
+    async fn test_create_log_reaction() {
         let config = ReactionConfig::Log {
             id: "test-log-reaction".to_string(),
             queries: vec!["query1".to_string()],
@@ -564,14 +717,14 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(config).await.expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "test-log-reaction");
         assert_eq!(reaction.type_name(), "log");
         assert_eq!(reaction.query_ids(), vec!["query1".to_string()]);
     }
 
-    #[test]
-    fn test_create_log_reaction_multiple_queries() {
+    #[tokio::test]
+    async fn test_create_log_reaction_multiple_queries() {
         let config = ReactionConfig::Log {
             id: "multi-query-reaction".to_string(),
             queries: vec![
@@ -583,13 +736,13 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(config).await.expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "multi-query-reaction");
         assert_eq!(reaction.query_ids().len(), 3);
     }
 
-    #[test]
-    fn test_create_profiler_reaction() {
+    #[tokio::test]
+    async fn test_create_profiler_reaction() {
         use crate::models::ProfilerReactionConfigDto;
 
         let config = ReactionConfig::Profiler {
@@ -602,7 +755,7 @@ mod tests {
             },
         };
 
-        let reaction = create_reaction(config).expect("Failed to create profiler reaction");
+        let reaction = create_reaction(config).await.expect("Failed to create profiler reaction");
         assert_eq!(reaction.id(), "profiler-reaction");
         assert_eq!(reaction.type_name(), "profiler");
     }
@@ -611,8 +764,8 @@ mod tests {
     // State Store Provider Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_redb_state_store_provider() {
+    #[tokio::test]
+    async fn test_create_redb_state_store_provider() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let path = temp_dir.path().join("state.redb");
 
@@ -625,8 +778,8 @@ mod tests {
         assert!(std::sync::Arc::strong_count(&provider) >= 1);
     }
 
-    #[test]
-    fn test_create_redb_state_store_provider_creates_file() {
+    #[tokio::test]
+    async fn test_create_redb_state_store_provider_creates_file() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let path = temp_dir.path().join("test_store.redb");
 
@@ -644,8 +797,8 @@ mod tests {
     // Bootstrap Provider Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_noop_bootstrap_provider() {
+    #[tokio::test]
+    async fn test_create_noop_bootstrap_provider() {
         let bootstrap_config = BootstrapProviderConfig::Noop;
         let source_config = SourceConfig::Mock {
             id: "test".to_string(),
@@ -661,8 +814,8 @@ mod tests {
         assert!(result.is_ok(), "Failed to create noop bootstrap provider");
     }
 
-    #[test]
-    fn test_create_scriptfile_bootstrap_provider() {
+    #[tokio::test]
+    async fn test_create_scriptfile_bootstrap_provider() {
         use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
 
         let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfigDto {
@@ -685,8 +838,8 @@ mod tests {
         drop(provider);
     }
 
-    #[test]
-    fn test_postgres_bootstrap_requires_postgres_source() {
+    #[tokio::test]
+    async fn test_postgres_bootstrap_requires_postgres_source() {
         use crate::api::models::bootstrap::PostgresBootstrapConfigDto;
 
         let bootstrap_config =
@@ -710,8 +863,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_application_bootstrap_returns_error() {
+    #[tokio::test]
+    async fn test_application_bootstrap_returns_error() {
         use crate::api::models::bootstrap::ApplicationBootstrapConfigDto;
 
         let bootstrap_config =
@@ -757,8 +910,8 @@ mod tests {
         assert_eq!(source.id(), "custom-interval");
     }
 
-    #[test]
-    fn test_reaction_with_empty_queries_list() {
+    #[tokio::test]
+    async fn test_reaction_with_empty_queries_list() {
         let config = ReactionConfig::Log {
             id: "no-queries".to_string(),
             queries: vec![],
@@ -766,7 +919,7 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create reaction");
+        let reaction = create_reaction(config).await.expect("Failed to create reaction");
         assert!(reaction.query_ids().is_empty());
     }
 }

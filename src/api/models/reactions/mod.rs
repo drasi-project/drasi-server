@@ -20,6 +20,7 @@ pub mod log;
 pub mod platform_reaction;
 pub mod profiler;
 pub mod sse;
+pub mod storedproc;
 
 pub use grpc_reaction::*;
 pub use http_reaction::*;
@@ -29,3 +30,4 @@ pub use log::LogReactionConfigDto;
 pub use platform_reaction::*;
 pub use profiler::*;
 pub use sse::SseReactionConfigDto;
+pub use storedproc::*;
