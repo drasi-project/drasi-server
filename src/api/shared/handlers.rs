@@ -19,30 +19,54 @@
 //! with version-specific path annotations.
 
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Json},
 };
 use bytes::Bytes;
 use indexmap::IndexMap;
+use serde::Deserialize;
 use std::sync::Arc;
 
 use super::responses::{
-    ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
-    StatusResponse,
+    ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
+    InstanceListItem, StatusResponse,
 };
 use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use crate::api::models::QueryConfigDto;
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
-use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, QueryConfig};
+use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
 use futures_util::StreamExt;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 use drasi_reaction_application::ApplicationReaction;
 use drasi_reaction_application::subscription::SubscriptionOptions;
+
+fn component_links(instance_id: &str, kind: &str, id: &str) -> ComponentLinks {
+    let self_link = format!("/api/v1/instances/{instance_id}/{kind}/{id}");
+    ComponentLinks {
+        self_link: self_link.clone(),
+        full: format!("{self_link}?view=full"),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ComponentViewQuery {
+    view: Option<String>,
+}
+
+impl ComponentViewQuery {
+    pub fn new(view: Option<String>) -> Self {
+        Self { view }
+    }
+
+    fn include_config(&self) -> bool {
+        matches!(self.view.as_deref(), Some("full"))
+    }
+}
 
 /// Helper function to persist configuration after a successful operation.
 /// Logs errors but does not fail the request - persistence failures are non-fatal.
@@ -56,6 +80,7 @@ pub async fn persist_after_operation(
         }
     }
 }
+
 
 /// List available API versions
 pub async fn list_api_versions() -> Json<ApiVersionsResponse> {
@@ -89,10 +114,12 @@ pub async fn list_instances(
 /// List all sources for an instance
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let sources = core.list_sources().await.unwrap_or_default();
     let mut items = Vec::with_capacity(sources.len());
     for (id, status) in sources {
+        let links = component_links(&instance_id, "sources", &id);
         let error_message = if matches!(status, ComponentStatus::Error) {
             match core.get_source_info(&id).await {
                 Ok(info) => info.error_message,
@@ -108,6 +135,8 @@ pub async fn list_sources(
             id,
             status,
             error_message,
+            links,
+            config: None,
         });
     }
 
@@ -188,13 +217,30 @@ pub async fn create_source_handler(
 /// Get source status by ID
 pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let config = if view.include_config() {
+        if let Some(persistence) = &config_persistence {
+            persistence
+                .get_source_config(&instance_id, &id)
+                .await
+                .map(|value| serde_json::to_value(value).unwrap())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     match core.get_source_info(&id).await {
         Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
             id: info.id,
             status: info.status,
             error_message: info.error_message,
+            links: component_links(&instance_id, "sources", &id),
+            config,
         }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
@@ -276,10 +322,12 @@ pub async fn stop_source(
 /// List all queries for an instance
 pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let queries = core.list_queries().await.unwrap_or_default();
     let mut items = Vec::with_capacity(queries.len());
     for (id, status) in queries {
+        let links = component_links(&instance_id, "queries", &id);
         let error_message = if matches!(status, ComponentStatus::Error) {
             match core.get_query_info(&id).await {
                 Ok(info) => info.error_message,
@@ -295,6 +343,8 @@ pub async fn list_queries(
             id,
             status,
             error_message,
+            links,
+            config: None,
         });
     }
 
@@ -398,10 +448,41 @@ pub async fn create_query(
 /// Get query by ID
 pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<QueryConfig>>, StatusCode> {
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
     match core.get_query_config(&id).await {
-        Ok(config) => Ok(Json(ApiResponse::success(config))),
+        Ok(query_config) => {
+            let config = if view.include_config() {
+                let stored = if let Some(persistence) = &config_persistence {
+                    persistence.get_query_config(&instance_id, &id).await
+                } else {
+                    None
+                };
+                let dto = stored.unwrap_or_else(|| QueryConfigDto::from(query_config.clone()));
+                Some(serde_json::to_value(dto).unwrap())
+            } else {
+                None
+            };
+            let status = core
+                .get_query_status(&query_config.id)
+                .await
+                .unwrap_or(ComponentStatus::Error);
+            let error_message = if let Ok(info) = core.get_query_info(&query_config.id).await {
+                info.error_message
+            } else {
+                None
+            };
+            Ok(Json(ApiResponse::success(ComponentListItem {
+                id: query_config.id.clone(),
+                status,
+                error_message,
+                links: component_links(&instance_id, "queries", &id),
+                config,
+            })))
+        }
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -623,10 +704,12 @@ impl Drop for DropCleanup {
 /// List all reactions for an instance
 pub async fn list_reactions(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
     let reactions = core.list_reactions().await.unwrap_or_default();
     let mut items = Vec::with_capacity(reactions.len());
     for (id, status) in reactions {
+        let links = component_links(&instance_id, "reactions", &id);
         let error_message = if matches!(status, ComponentStatus::Error) {
             match core.get_reaction_info(&id).await {
                 Ok(info) => info.error_message,
@@ -642,6 +725,8 @@ pub async fn list_reactions(
             id,
             status,
             error_message,
+            links,
+            config: None,
         });
     }
 
@@ -722,13 +807,30 @@ pub async fn create_reaction_handler(
 /// Get reaction status by ID
 pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let config = if view.include_config() {
+        if let Some(persistence) = &config_persistence {
+            persistence
+                .get_reaction_config(&instance_id, &id)
+                .await
+                .map(|value| serde_json::to_value(value).unwrap())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     match core.get_reaction_info(&id).await {
         Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
             id: info.id,
             status: info.status,
             error_message: info.error_message,
+            links: component_links(&instance_id, "reactions", &id),
+            config,
         }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }

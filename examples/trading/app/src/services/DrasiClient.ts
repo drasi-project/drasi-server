@@ -196,12 +196,14 @@ export class DrasiClient {
       }
 
       // Check if sources exist
-      const sourcesResponse = await fetch(`${this.baseUrl}/api/v1/sources`);
-      const sourcesData = await sourcesResponse.json();
-      const sources = sourcesData.data || sourcesData; // Handle both wrapped and unwrapped responses
-      
-      const requiredSources = ['postgres-stocks', 'price-feed'];
-      const existingSources = Array.isArray(sources) ? sources.map((s: any) => s.id) : [];
+    const sourcesResponse = await fetch(`${this.baseUrl}/api/v1/sources`);
+    const sourcesData = await sourcesResponse.json();
+    const sources = sourcesData.data || sourcesData; // Handle both wrapped and unwrapped responses
+
+    const requiredSources = ['postgres-stocks', 'price-feed'];
+    const existingSources = Array.isArray(sources)
+      ? sources.map((s: any) => (s.config ?? s).id)
+      : [];
       
       for (const sourceId of requiredSources) {
         if (!existingSources.includes(sourceId)) {
@@ -263,7 +265,7 @@ export class DrasiClient {
   private async ensureReaction(): Promise<string> {
     try {
       // Check if reaction exists
-      const checkResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}?view=full`);
       
       if (checkResponse.status === 404) {
         // Reaction doesn't exist, create it
@@ -298,12 +300,14 @@ export class DrasiClient {
       } else if (checkResponse.ok) {
         // Reaction exists, make sure it's running
         const reaction = await checkResponse.json();
-        if (reaction.status !== 'running') {
+        const payload = reaction.data ?? reaction;
+        const config = payload?.config ?? payload;
+        if ((payload?.status ?? config.status) !== 'running') {
           console.log(`Starting reaction: ${this.reactionId}`);
           await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
         }
         // Derive endpoint from existing reaction properties
-        const props = reaction.config?.properties || reaction.properties || {};
+        const props = config?.properties || config || {};
         const host = props.host || 'localhost';
         const port = props.port || 50051;
         const path = props.ssePath || '/events';
@@ -323,7 +327,7 @@ export class DrasiClient {
   private async ensureQuery(queryDef: QueryDefinition): Promise<void> {
     try {
       // Check if query exists
-      const checkResponse = await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}?view=full`);
       
       if (checkResponse.status === 404) {
         // Query doesn't exist, create it
@@ -357,7 +361,9 @@ export class DrasiClient {
       } else if (checkResponse.ok) {
         // Query exists, make sure it's running
         const query = await checkResponse.json();
-        if (query.status !== 'running') {
+        const payload = query.data ?? query;
+        const config = payload?.config ?? payload;
+        if ((payload?.status ?? config.status) !== 'running') {
           console.log(`Starting query: ${queryDef.id}`);
           await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}/start`, { method: 'POST' });
         }

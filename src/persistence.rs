@@ -128,6 +128,38 @@ impl ConfigPersistence {
             .insert(config.id.clone(), config);
     }
 
+    /// Get a stored source config, if available
+    pub async fn get_source_config(&self, instance_id: &str, source_id: &str) -> Option<SourceConfig> {
+        let source_configs = self.source_configs.read().await;
+        source_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(source_id).cloned())
+    }
+
+    /// Get a stored reaction config, if available
+    pub async fn get_reaction_config(
+        &self,
+        instance_id: &str,
+        reaction_id: &str,
+    ) -> Option<ReactionConfig> {
+        let reaction_configs = self.reaction_configs.read().await;
+        reaction_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(reaction_id).cloned())
+    }
+
+    /// Get a stored query config, if available
+    pub async fn get_query_config(
+        &self,
+        instance_id: &str,
+        query_id: &str,
+    ) -> Option<QueryConfigDto> {
+        let query_configs = self.query_configs.read().await;
+        query_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(query_id).cloned())
+    }
+
     /// Unregister a query config (called on deletion)
     pub async fn unregister_query(&self, instance_id: &str, query_id: &str) {
         if !self.persist_config {

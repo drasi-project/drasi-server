@@ -37,6 +37,21 @@ pub struct ComponentListItem {
     /// Error message if the component is in error state
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    /// Hypermedia links for this component
+    pub links: ComponentLinks,
+    /// Optional component configuration (only present when view=full)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
+}
+
+/// Hypermedia links for a component
+#[derive(Serialize, ToSchema)]
+pub struct ComponentLinks {
+    /// Link to the status view of the component
+    #[serde(rename = "self")]
+    pub self_link: String,
+    /// Link to the full configuration view of the component
+    pub full: String,
 }
 
 /// Response listing a DrasiLib instance

@@ -15,6 +15,7 @@
 //! Query configuration DTOs with camelCase serialization.
 
 use crate::api::models::ConfigValue;
+use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
 
 /// Query configuration DTO with camelCase serialization
@@ -76,4 +77,39 @@ fn default_enable_bootstrap() -> bool {
 
 fn default_bootstrap_buffer_size() -> usize {
     10000
+}
+
+impl From<QueryConfig> for QueryConfigDto {
+    fn from(config: QueryConfig) -> Self {
+        Self {
+            id: config.id,
+            auto_start: config.auto_start,
+            query: ConfigValue::Static(config.query),
+            query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+            middleware: config
+                .middleware
+                .into_iter()
+                .map(|m| m.name.to_string())
+                .collect(),
+            sources: config
+                .sources
+                .into_iter()
+                .map(|s| SourceSubscriptionConfigDto {
+                    source_id: ConfigValue::Static(s.source_id),
+                    nodes: s.nodes,
+                    relations: s.relations,
+                    pipeline: s.pipeline,
+                })
+                .collect(),
+            enable_bootstrap: config.enable_bootstrap,
+            bootstrap_buffer_size: config.bootstrap_buffer_size,
+            joins: config.joins.map(|j| serde_json::to_value(j).unwrap()),
+            priority_queue_capacity: config.priority_queue_capacity,
+            dispatch_buffer_capacity: config.dispatch_buffer_capacity,
+            dispatch_mode: config.dispatch_mode.map(|d| format!("{d:?}")),
+            storage_backend: config
+                .storage_backend
+                .map(|s| serde_json::to_value(s).unwrap()),
+        }
+    }
 }

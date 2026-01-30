@@ -5,7 +5,7 @@ async function main() {
   try {
     const extensionDevelopmentPath = path.resolve(__dirname, '../../');
     const extensionTestsPath = path.resolve(__dirname, './suite/index');
-    const testWorkspace = path.resolve(__dirname, '../../test-fixtures/fixture1');
+    const testWorkspace = path.resolve(extensionDevelopmentPath, 'test-fixtures/fixture1');
     const userDataDir = path.resolve(extensionDevelopmentPath, '.vscode-test/user-data');
     const extensionsDir = path.resolve(extensionDevelopmentPath, '.vscode-test/extensions');
 

@@ -227,6 +227,10 @@ async fn test_source_lifecycle_via_api() {
     assert!(json["data"].is_array());
     // Should have pre-registered sources
     assert!(!json["data"].as_array().unwrap().is_empty());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
 
     // Get specific source
     let response = router
@@ -246,6 +250,8 @@ async fn test_source_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["id"], "test-source");
+    assert!(json["data"]["links"]["self"].is_string());
+    assert!(json["data"]["links"]["full"].is_string());
 
     // Source is already running (auto-started on first startup)
     // Stop the source first to test lifecycle operations
@@ -389,6 +395,8 @@ async fn test_reaction_lifecycle_via_api() {
     assert!(json["data"].is_array());
     // Should have pre-registered reactions
     assert!(!json["data"].as_array().unwrap().is_empty());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
 
     // Get specific reaction
     let response = router
@@ -407,6 +415,8 @@ async fn test_reaction_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["id"], "test-reaction");
+    assert!(json["data"]["links"]["self"].is_string());
+    assert!(json["data"]["links"]["full"].is_string());
 }
 
 #[tokio::test]

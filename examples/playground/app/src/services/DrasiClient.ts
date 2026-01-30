@@ -83,20 +83,30 @@ export class DrasiClient {
     const response = await this.apiClient.get('/api/v1/sources');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
+    let sources = [];
     if (Array.isArray(data)) {
-      return data;
+      sources = data;
     } else if (data && Array.isArray(data.data)) {
-      return data.data;
+      sources = data.data;
     }
-    return [];
+    return sources.map((source: any) => ({
+      ...(source.config ?? source),
+      status: source.status ?? source.config?.status,
+      error_message: source.error_message ?? source.config?.error_message,
+    }));
   }
 
   /**
    * Get a specific source
    */
   async getSource(id: string): Promise<Source> {
-    const response = await this.apiClient.get(`/api/v1/sources/${id}`);
-    return response.data;
+    const response = await this.apiClient.get(`/api/v1/sources/${id}?view=full`);
+    const data = response.data?.data ?? response.data;
+    return {
+      ...(data?.config ?? data),
+      status: data?.status ?? data?.config?.status,
+      error_message: data?.error_message ?? data?.config?.error_message,
+    };
   }
 
   /**
@@ -145,22 +155,30 @@ export class DrasiClient {
     }
 
     // Map API response to Query interface
-    return queries.map(q => ({
-      ...q,
-      sources: q.source_subscriptions?.map((sub: any) =>
-        typeof sub === 'string' ? sub : sub.source_id
-      ) || []
-    }));
+    return queries.map((item: any) => {
+      const q = item.config ?? item;
+      return {
+        ...q,
+        status: item.status ?? q.status,
+        error_message: item.error_message ?? q.error_message,
+        sources: q.source_subscriptions?.map((sub: any) =>
+          typeof sub === 'string' ? sub : sub.source_id
+        ) || []
+      };
+    });
   }
 
   /**
    * Get a specific query
    */
   async getQuery(id: string): Promise<Query> {
-    const response = await this.apiClient.get(`/api/v1/queries/${id}`);
-    const q = response.data.data || response.data;
+    const response = await this.apiClient.get(`/api/v1/queries/${id}?view=full`);
+    const payload = response.data.data || response.data;
+    const q = payload?.config ?? payload;
     return {
       ...q,
+      status: payload?.status ?? q.status,
+      error_message: payload?.error_message ?? q.error_message,
       sources: q.source_subscriptions?.map((sub: any) =>
         typeof sub === 'string' ? sub : sub.source_id
       ) || []
@@ -253,20 +271,30 @@ export class DrasiClient {
     const response = await this.apiClient.get('/api/v1/reactions');
     const data = response.data;
     // Handle both direct array and wrapped {data: [...]} responses
+    let reactions = [];
     if (Array.isArray(data)) {
-      return data;
+      reactions = data;
     } else if (data && Array.isArray(data.data)) {
-      return data.data;
+      reactions = data.data;
     }
-    return [];
+    return reactions.map((reaction: any) => ({
+      ...(reaction.config ?? reaction),
+      status: reaction.status ?? reaction.config?.status,
+      error_message: reaction.error_message ?? reaction.config?.error_message,
+    }));
   }
 
   /**
    * Get a specific reaction
    */
   async getReaction(id: string): Promise<Reaction> {
-    const response = await this.apiClient.get(`/api/v1/reactions/${id}`);
-    return response.data;
+    const response = await this.apiClient.get(`/api/v1/reactions/${id}?view=full`);
+    const data = response.data?.data ?? response.data;
+    return {
+      ...(data?.config ?? data),
+      status: data?.status ?? data?.config?.status,
+      error_message: data?.error_message ?? data?.config?.error_message,
+    };
   }
 
   /**
@@ -305,8 +333,9 @@ export class DrasiClient {
    */
   async injectData(sourceId: string, event: DataEvent): Promise<void> {
     // Fetch the source to get its port
-    const sourceResponse = await this.apiClient.get(`/api/v1/sources/${sourceId}`);
-    const sourceData = sourceResponse.data.data || sourceResponse.data;
+    const sourceResponse = await this.apiClient.get(`/api/v1/sources/${sourceId}?view=full`);
+    const sourcePayload = sourceResponse.data.data || sourceResponse.data;
+    const sourceData = sourcePayload?.config ?? sourcePayload;
     const port = sourceData.port || 9000;
 
     console.log(`Injecting data to source ${sourceId} on port ${port}`);
@@ -369,11 +398,12 @@ export class DrasiClient {
       const checkResponse = await this.apiClient.get(`/api/v1/reactions/${reactionId}`);
 
       if (checkResponse.status === 200) {
-        const reaction = checkResponse.data.data || checkResponse.data;
+        const payload = checkResponse.data.data || checkResponse.data;
+        const reaction = payload?.config ?? payload;
         this.queryReactions.set(queryId, reactionId);
 
         // Ensure it's running
-        if (reaction.status !== 'Running') {
+        if ((payload?.status ?? reaction.status) !== 'Running') {
           await this.startReaction(reactionId);
         }
 

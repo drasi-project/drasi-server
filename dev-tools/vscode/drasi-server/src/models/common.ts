@@ -8,6 +8,11 @@ export interface ComponentListItem {
   id: string;
   status: ComponentStatus;
   error_message?: string;
+  links?: {
+    self: string;
+    full: string;
+  };
+  config?: Record<string, unknown>;
 }
 
 export interface InstanceListItem {

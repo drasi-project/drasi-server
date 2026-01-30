@@ -19,20 +19,20 @@
 //! is implemented in the shared handlers module.
 
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::StatusCode,
     response::Json,
 };
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
+use crate::api::models::QueryConfigDto;
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
+use crate::api::shared::handlers::ComponentViewQuery;
 use crate::persistence::ConfigPersistence;
-use drasi_lib::QueryConfig;
 
 // Re-export shared handler implementations
 use crate::api::shared::handlers as shared;
@@ -92,8 +92,9 @@ pub async fn list_instances(
 )]
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_sources(Extension(core)).await
+    shared::list_sources(Extension(core), Extension(instance_id)).await
 }
 
 /// Create a new source
@@ -142,16 +143,16 @@ pub async fn create_source_handler(
     .await
 }
 
-/// Get source status by ID
+/// Get source details by ID
 ///
-/// Note: Source configs are not stored - sources are instances.
-/// This endpoint returns the source status instead.
+/// Optional `?view=full` returns the persisted config when available.
 #[utoipa::path(
     get,
     path = "/api/v1/instances/{instanceId}/sources/{id}",
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID"),
-        ("id" = String, Path, description = "Source ID")
+        ("id" = String, Path, description = "Source ID"),
+        ("view" = Option<String>, Query, description = "Use view=full to include config")
     ),
     responses(
         (status = 200, description = "Source found", body = ApiResponse),
@@ -161,9 +162,19 @@ pub async fn create_source_handler(
 )]
 pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    shared::get_source(Extension(core), Path(id)).await
+    shared::get_source(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
 }
 
 /// Delete a source
@@ -254,8 +265,9 @@ pub async fn stop_source(
 )]
 pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_queries(Extension(core)).await
+    shared::list_queries(Extension(core), Extension(instance_id)).await
 }
 
 /// Create a new query
@@ -295,7 +307,8 @@ pub async fn create_query(
     path = "/api/v1/instances/{instanceId}/queries/{id}",
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID"),
-        ("id" = String, Path, description = "Query ID")
+        ("id" = String, Path, description = "Query ID"),
+        ("view" = Option<String>, Query, description = "Use view=full to include config")
     ),
     responses(
         (status = 200, description = "Query found", body = ApiResponse),
@@ -305,9 +318,19 @@ pub async fn create_query(
 )]
 pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<QueryConfig>>, StatusCode> {
-    shared::get_query(Extension(core), Path(id)).await
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    shared::get_query(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
 }
 
 /// Delete a query
@@ -442,8 +465,9 @@ pub async fn attach_query_stream(
 )]
 pub async fn list_reactions(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(instance_id): Extension<String>,
 ) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_reactions(Extension(core)).await
+    shared::list_reactions(Extension(core), Extension(instance_id)).await
 }
 
 /// Create a new reaction
@@ -492,16 +516,16 @@ pub async fn create_reaction_handler(
     .await
 }
 
-/// Get reaction status by ID
+/// Get reaction details by ID
 ///
-/// Note: Reaction configs are not stored - reactions are instances.
-/// This endpoint returns the reaction status instead.
+/// Optional `?view=full` returns the persisted config when available.
 #[utoipa::path(
     get,
     path = "/api/v1/instances/{instanceId}/reactions/{id}",
     params(
         ("instanceId" = String, Path, description = "DrasiLib instance ID"),
-        ("id" = String, Path, description = "Reaction ID")
+        ("id" = String, Path, description = "Reaction ID"),
+        ("view" = Option<String>, Query, description = "Use view=full to include config")
     ),
     responses(
         (status = 200, description = "Reaction found", body = ApiResponse),
@@ -511,9 +535,19 @@ pub async fn create_reaction_handler(
 )]
 pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    shared::get_reaction(Extension(core), Path(id)).await
+    shared::get_reaction(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
 }
 
 /// Delete a reaction
