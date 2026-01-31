@@ -71,6 +71,20 @@ sources:
     # Bootstrap provider loads existing data on startup
     bootstrapProvider:
       kind: postgres
+      host: "${POSTGRES_HOST:-localhost}"
+      port: ${POSTGRES_PORT:-5432}
+      database: "${POSTGRES_DATABASE:-getting_started}"
+      user: "${POSTGRES_USER:-drasi_user}"
+      password: "${POSTGRES_PASSWORD}"
+      tables:
+        - message
+      slotName: drasi_getting_started_slot
+      publicationName: drasi_getting_started_pub
+      sslMode: prefer
+      tableKeys:
+        - table: message
+          keyColumns:
+            - messageid
 
 # =============================================================================
 # Queries

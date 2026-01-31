@@ -72,6 +72,32 @@ sources:
           - product_id
     bootstrapProvider:
       kind: postgres
+      host: "${DB_HOST:-localhost}"
+      port: 5432
+      database: "${DB_NAME:-ecommerce}"
+      user: "${DB_USER:-drasi_user}"
+      password: "${DB_PASSWORD:-drasi_password}"
+      tables:
+        - orders
+        - order_items
+        - payments
+        - inventory
+      slotName: drasi_orders_slot
+      publicationName: drasi_orders_pub
+      sslMode: prefer
+      tableKeys:
+        - table: orders
+          keyColumns:
+            - order_id
+        - table: order_items
+          keyColumns:
+            - item_id
+        - table: payments
+          keyColumns:
+            - payment_id
+        - table: inventory
+          keyColumns:
+            - product_id
 
 queries:
   # Exception 1: High-value orders requiring approval

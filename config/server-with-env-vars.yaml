@@ -53,6 +53,13 @@ sources:
       database: "${DB_NAME}"
       user: "${DB_USER}"
       password: "${DB_PASSWORD}"
+      tables: [orders, customers]
+      slotName: drasi_slot
+      publicationName: drasi_pub
+      sslMode: prefer
+      tableKeys:
+        - table: orders
+          keyColumns: [id]
 
   # HTTP source for receiving events
   - kind: http

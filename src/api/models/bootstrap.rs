@@ -23,6 +23,8 @@ use serde::{de, de::MapAccess, de::Visitor, Deserialize, Deserializer, Serialize
 use std::fmt;
 use utoipa::ToSchema;
 
+use crate::api::models::{ConfigValue, SslModeDto, TableKeyConfigDto};
+
 // Known bootstrap provider types for error messages
 const BOOTSTRAP_PROVIDER_TYPES: &[&str] =
     &["postgres", "application", "scriptfile", "platform", "noop"];
@@ -30,13 +32,28 @@ const BOOTSTRAP_PROVIDER_TYPES: &[&str] =
 /// PostgreSQL bootstrap provider configuration DTO.
 ///
 /// This provider bootstraps initial data from a PostgreSQL database.
-/// No additional configuration is needed - it uses the parent source's connection details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, ToSchema)]
 #[schema(as = PostgresBootstrapConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PostgresBootstrapConfigDto {
-    // Empty - uses parent source config for connection details
-    // Struct exists for consistency and future extensibility
+    #[serde(default = "default_postgres_host")]
+    pub host: ConfigValue<String>,
+    #[serde(default = "default_postgres_port")]
+    pub port: ConfigValue<u16>,
+    pub database: ConfigValue<String>,
+    pub user: ConfigValue<String>,
+    #[serde(default = "default_password")]
+    pub password: ConfigValue<String>,
+    #[serde(default)]
+    pub tables: Vec<String>,
+    #[serde(default = "default_slot_name")]
+    pub slot_name: String,
+    #[serde(default = "default_publication_name")]
+    pub publication_name: String,
+    #[serde(default = "default_ssl_mode")]
+    pub ssl_mode: ConfigValue<SslModeDto>,
+    #[serde(default)]
+    pub table_keys: Vec<TableKeyConfigDto>,
 }
 
 /// Application bootstrap provider configuration DTO.
@@ -91,6 +108,30 @@ impl Default for PlatformBootstrapConfigDto {
     }
 }
 
+fn default_postgres_host() -> ConfigValue<String> {
+    ConfigValue::Static("localhost".to_string())
+}
+
+fn default_postgres_port() -> ConfigValue<u16> {
+    ConfigValue::Static(5432)
+}
+
+fn default_password() -> ConfigValue<String> {
+    ConfigValue::Static(String::new())
+}
+
+fn default_slot_name() -> String {
+    "drasi_slot".to_string()
+}
+
+fn default_publication_name() -> String {
+    "drasi_publication".to_string()
+}
+
+fn default_ssl_mode() -> ConfigValue<SslModeDto> {
+    ConfigValue::Static(SslModeDto::default())
+}
+
 /// Configuration for bootstrap providers.
 ///
 /// Bootstrap providers handle initial data delivery for newly subscribed queries.
@@ -99,7 +140,7 @@ impl Default for PlatformBootstrapConfigDto {
 #[derive(Debug, Clone, Serialize, PartialEq, ToSchema)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum BootstrapProviderConfig {
-    /// PostgreSQL bootstrap provider - uses parent source's connection config
+    /// PostgreSQL bootstrap provider - uses its own connection config
     Postgres(PostgresBootstrapConfigDto),
     /// Application-based bootstrap provider - uses shared in-memory state
     Application(ApplicationBootstrapConfigDto),
@@ -230,12 +271,6 @@ impl From<&PlatformBootstrapConfigDto> for drasi_lib::bootstrap::PlatformBootstr
     }
 }
 
-impl From<&PostgresBootstrapConfigDto> for drasi_lib::bootstrap::PostgresBootstrapConfig {
-    fn from(_dto: &PostgresBootstrapConfigDto) -> Self {
-        drasi_lib::bootstrap::PostgresBootstrapConfig {}
-    }
-}
-
 impl From<&ApplicationBootstrapConfigDto> for drasi_lib::bootstrap::ApplicationBootstrapConfig {
     fn from(_dto: &ApplicationBootstrapConfigDto) -> Self {
         drasi_lib::bootstrap::ApplicationBootstrapConfig {}
@@ -248,14 +283,14 @@ mod tests {
 
     #[test]
     fn test_postgres_bootstrap_config_valid() {
-        let json = r#"{"kind": "postgres"}"#;
+        let json = r#"{"kind": "postgres", "database": "testdb", "user": "testuser"}"#;
         let config: BootstrapProviderConfig = serde_json::from_str(json).unwrap();
         assert!(matches!(config, BootstrapProviderConfig::Postgres(_)));
     }
 
     #[test]
     fn test_postgres_bootstrap_config_unknown_field() {
-        let json = r#"{"kind": "postgres", "unknownField": "value"}"#;
+        let json = r#"{"kind": "postgres", "database": "testdb", "user": "testuser", "unknownField": "value"}"#;
         let result: Result<BootstrapProviderConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();

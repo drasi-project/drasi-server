@@ -47,5 +47,23 @@ sources:
     - id
   bootstrapProvider:
     kind: postgres
+    host: localhost
+    port: 5432
+    database: trading_demo
+    user: drasi_user
+    password: drasi_password
+    tables:
+    - stocks
+    - portfolio
+    slotName: drasi_trading_slot
+    publicationName: drasi_trading_pub
+    sslMode: prefer
+    tableKeys:
+    - table: stocks
+      keyColumns:
+      - id
+    - table: portfolio
+      keyColumns:
+      - id
 queries: []
 reactions: []

@@ -82,6 +82,28 @@ sources:
     # Bootstrap provider loads existing data on startup
     bootstrapProvider:
       kind: postgres
+      host: "${POSTGRES_HOST:-localhost}"
+      port: 5432
+      database: "${POSTGRES_DB:-myapp}"
+      user: "${POSTGRES_USER:-drasi_user}"
+      password: "${POSTGRES_PASSWORD:-drasi_password}"
+      tables:
+        - users
+        - orders
+        - products
+      slotName: drasi_cdc_slot
+      publicationName: drasi_cdc_publication
+      sslMode: prefer
+      tableKeys:
+        - table: users
+          keyColumns:
+            - id
+        - table: orders
+          keyColumns:
+            - order_id
+        - table: products
+          keyColumns:
+            - sku
 
 queries:
   # Track all user changes

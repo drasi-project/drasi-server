@@ -291,6 +291,18 @@ sources:
         keyColumns: [id]
     bootstrapProvider:
       kind: postgres
+      host: localhost
+      port: 5432
+      database: mydb
+      user: postgres
+      password: ${DB_PASSWORD}
+      tables: [orders, customers]
+      slotName: drasi_slot
+      publicationName: drasi_pub
+      sslMode: prefer
+      tableKeys:
+        - table: orders
+          keyColumns: [id]
 ```
 
 | Field | Type | Default | Description |
@@ -403,7 +415,18 @@ Loads initial data from PostgreSQL using the COPY protocol.
 ```yaml
 bootstrapProvider:
   kind: postgres
-  # Uses source connection details
+  host: localhost
+  port: 5432
+  database: mydb
+  user: postgres
+  password: ${DB_PASSWORD}
+  tables: [orders, customers]
+  slotName: drasi_slot
+  publicationName: drasi_pub
+  sslMode: prefer
+  tableKeys:
+    - table: orders
+      keyColumns: [id]
 ```
 
 #### Script File Bootstrap (`scriptfile`)

@@ -28,6 +28,20 @@ sources:
           - messageid
     bootstrapProvider:
       kind: postgres
+      host: localhost
+      port: 5432
+      database: getting_started
+      user: drasi_user
+      password: drasi_password
+      tables:
+        - message
+      slotName: drasi_integration_test_slot
+      publicationName: drasi_getting_started_pub
+      sslMode: prefer
+      tableKeys:
+        - table: message
+          keyColumns:
+            - messageid
 
 queries:
   - id: hello-world-from
