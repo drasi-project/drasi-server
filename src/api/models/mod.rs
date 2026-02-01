@@ -646,6 +646,48 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                             config,
                         })
                     }
+                    "storedprocPostgres" => {
+                        let config: PostgresStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocPostgres): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocPostgres {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "storedprocMysql" => {
+                        let config: MysqlStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocMysql): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocMysql {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "storedprocMssql" => {
+                        let config: MssqlStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocMssql): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocMssql {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
                     unknown => Err(de::Error::unknown_variant(unknown, REACTION_KINDS)),
                 }
             }

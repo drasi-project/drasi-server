@@ -77,6 +77,9 @@ impl DrasiServer {
             info!("Persistence ENABLED. API modifications will be saved to config file.");
         }
 
+        // Create identity providers from configuration
+        let identity_providers = crate::factories::create_identity_providers(&config.identity_providers).await?;
+
         let mut instances = Vec::new();
 
         for instance in resolved_instances {
@@ -135,7 +138,7 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
-                let reaction = create_reaction(reaction_config).await?;
+                let reaction = create_reaction(reaction_config, Some(&identity_providers)).await?;
                 builder = builder.with_reaction(reaction);
             }
 
