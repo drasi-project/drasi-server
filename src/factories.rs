@@ -150,7 +150,7 @@ pub async fn create_identity_providers(
                             &hostname,
                             port,
                             &role_arn_str,
-                            session_name.as_deref()
+                            session_name
                         ).await?
                     }
                 };
