@@ -30,3 +30,4 @@ logs/
 !examples/**/.env
 config/server.yaml
 .vscode-test
+.cargo/config.toml

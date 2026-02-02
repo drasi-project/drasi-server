@@ -21,25 +21,29 @@
 use axum::{
     extract::{Extension, Path, Query},
     http::{header, HeaderValue, StatusCode},
-    response::{IntoResponse, Json},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse, Json,
+    },
 };
 use bytes::Bytes;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::{convert::Infallible};
 
 use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
     InstanceListItem, StatusResponse,
 };
 use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
-use crate::api::models::QueryConfigDto;
+use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
-use futures_util::StreamExt;
-use tokio::sync::oneshot;
+use futures_util::{stream, StreamExt};
+use tokio::sync::{broadcast, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 use drasi_reaction_application::ApplicationReaction;
@@ -66,6 +70,39 @@ impl ComponentViewQuery {
     fn include_config(&self) -> bool {
         matches!(self.view.as_deref(), Some("full"))
     }
+}
+
+const DEFAULT_OBSERVABILITY_LIMIT: usize = 100;
+
+#[derive(Debug, Deserialize)]
+pub struct ObservabilityQuery {
+    pub limit: Option<usize>,
+}
+
+fn apply_limit<T>(mut items: Vec<T>, limit: Option<usize>) -> Vec<T> {
+    let limit = limit.unwrap_or(DEFAULT_OBSERVABILITY_LIMIT);
+    if limit == 0 {
+        return Vec::new();
+    }
+    if items.len() > limit {
+        let start = items.len() - limit;
+        items = items.split_off(start);
+    }
+    items
+}
+
+fn sse_event<T: Serialize>(payload: T) -> Option<Result<Event, Infallible>> {
+    match Event::default().json_data(payload) {
+        Ok(event) => Some(Ok(event)),
+        Err(e) => {
+            log::warn!("Failed to serialize SSE payload: {e}");
+            None
+        }
+    }
+}
+
+async fn sse_event_async<T: Serialize>(payload: T) -> Option<Result<Event, Infallible>> {
+    sse_event(payload)
 }
 
 /// Helper function to persist configuration after a successful operation.
@@ -244,6 +281,90 @@ pub async fn get_source(
         }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
+}
+
+/// Get source lifecycle events (snapshot).
+pub async fn get_source_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    core.get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_source_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let data = apply_limit(collected, query.limit);
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream source lifecycle events as SSE.
+pub async fn stream_source_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_source_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let stream = events
+        .map(ComponentEventDto::from)
+        .filter_map(sse_event_async);
+    Ok(Sse::new(stream))
+}
+
+/// Get source logs (snapshot).
+pub async fn get_source_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    core.get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, _) = core
+        .subscribe_source_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let data = apply_limit(
+        history.into_iter().map(LogMessageDto::from).collect(),
+        query.limit,
+    );
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream source logs as SSE.
+pub async fn stream_source_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, mut receiver) = core
+        .subscribe_source_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
+        .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(message) => return Some((LogMessageDto::from(message), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
+    Ok(Sse::new(stream))
 }
 
 /// Delete a source
@@ -485,6 +606,90 @@ pub async fn get_query(
         }
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
+}
+
+/// Get query lifecycle events (snapshot).
+pub async fn get_query_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    core.get_query_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_query_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let data = apply_limit(collected, query.limit);
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream query lifecycle events as SSE.
+pub async fn stream_query_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_query_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_query_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let stream = events
+        .map(ComponentEventDto::from)
+        .filter_map(sse_event_async);
+    Ok(Sse::new(stream))
+}
+
+/// Get query logs (snapshot).
+pub async fn get_query_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    core.get_query_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, _) = core
+        .subscribe_query_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let data = apply_limit(
+        history.into_iter().map(LogMessageDto::from).collect(),
+        query.limit,
+    );
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream query logs as SSE.
+pub async fn stream_query_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_query_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, mut receiver) = core
+        .subscribe_query_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
+        .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(message) => return Some((LogMessageDto::from(message), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
+    Ok(Sse::new(stream))
 }
 
 /// Delete a query
@@ -834,6 +1039,90 @@ pub async fn get_reaction(
         }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
+}
+
+/// Get reaction lifecycle events (snapshot).
+pub async fn get_reaction_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    core.get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_reaction_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let data = apply_limit(collected, query.limit);
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream reaction lifecycle events as SSE.
+pub async fn stream_reaction_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let events = core
+        .get_reaction_events(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let stream = events
+        .map(ComponentEventDto::from)
+        .filter_map(sse_event_async);
+    Ok(Sse::new(stream))
+}
+
+/// Get reaction logs (snapshot).
+pub async fn get_reaction_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    core.get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, _) = core
+        .subscribe_reaction_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let data = apply_limit(
+        history.into_iter().map(LogMessageDto::from).collect(),
+        query.limit,
+    );
+    Ok(Json(ApiResponse::success(data)))
+}
+
+/// Stream reaction logs as SSE.
+pub async fn stream_reaction_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    core.get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let (history, mut receiver) = core
+        .subscribe_reaction_logs(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
+        .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(message) => return Some((LogMessageDto::from(message), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
+    Ok(Sse::new(stream))
 }
 
 /// Delete a reaction

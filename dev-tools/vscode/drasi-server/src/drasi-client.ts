@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { ApiResponse, ComponentListItem, InstanceListItem } from './models/common';
+import { ApiResponse, ComponentEvent, ComponentListItem, InstanceListItem, LogMessage } from './models/common';
 import { ConnectionRegistry } from './sdk/config';
 
 export class DrasiClient {
@@ -161,6 +161,120 @@ export class DrasiClient {
       throw new Error(res.data?.error ?? res.statusText);
     }
     return res.data.data ?? [];
+  }
+
+  async getSourceEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentEvent[]>>(
+      `/api/v1/instances/${instanceId}/sources/${id}/events?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  async getQueryEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentEvent[]>>(
+      `/api/v1/instances/${instanceId}/queries/${id}/events?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  async getReactionEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentEvent[]>>(
+      `/api/v1/instances/${instanceId}/reactions/${id}/events?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  async getSourceLogs(id: string, limit = 100): Promise<LogMessage[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<LogMessage[]>>(
+      `/api/v1/instances/${instanceId}/sources/${id}/logs?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  async getQueryLogs(id: string, limit = 100): Promise<LogMessage[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<LogMessage[]>>(
+      `/api/v1/instances/${instanceId}/queries/${id}/logs?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  async getReactionLogs(id: string, limit = 100): Promise<LogMessage[]> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<LogMessage[]>>(
+      `/api/v1/instances/${instanceId}/reactions/${id}/logs?limit=${limit}`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data ?? [];
+  }
+
+  getSourceEventsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for event stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/sources/${id}/events/stream`;
+  }
+
+  getQueryEventsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for event stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/events/stream`;
+  }
+
+  getReactionEventsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for event stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/reactions/${id}/events/stream`;
+  }
+
+  getSourceLogsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for log stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/sources/${id}/logs/stream`;
+  }
+
+  getQueryLogsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for log stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/logs/stream`;
+  }
+
+  getReactionLogsStreamUrl(id: string): string {
+    const instanceId = this.registry.getCurrentConnection().instanceId;
+    if (!instanceId) {
+      throw new Error('No instance selected for log stream');
+    }
+    return `${this.baseUrl}/api/v1/instances/${instanceId}/reactions/${id}/logs/stream`;
   }
 
   getQueryAttachUrl(id: string): string {

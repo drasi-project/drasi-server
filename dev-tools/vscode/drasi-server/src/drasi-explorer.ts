@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { DrasiClient } from './drasi-client';
-import { ComponentListItem, ComponentStatus, InstanceListItem } from './models/common';
+import { ComponentEvent, ComponentListItem, ComponentStatus, InstanceListItem, LogMessage } from './models/common';
 import { ConnectionRegistry, ServerConnectionConfig } from './sdk/config';
 import { QueryWatcher } from './query-watcher';
+import { ObservabilityViewer } from './observability-viewer';
+import { ObservabilityStream } from './observability-stream';
 
 export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<ExplorerNode | undefined | void> = new vscode.EventEmitter<ExplorerNode | undefined | void>();
@@ -24,6 +26,10 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     vscode.commands.registerCommand('drasi.query.stop', this.stopQuery.bind(this));
     vscode.commands.registerCommand('drasi.reaction.start', this.startReaction.bind(this));
     vscode.commands.registerCommand('drasi.reaction.stop', this.stopReaction.bind(this));
+    vscode.commands.registerCommand('drasi.events.view', this.viewEvents.bind(this));
+    vscode.commands.registerCommand('drasi.events.stream', this.streamEvents.bind(this));
+    vscode.commands.registerCommand('drasi.logs.view', this.viewLogs.bind(this));
+    vscode.commands.registerCommand('drasi.logs.stream', this.streamLogs.bind(this));
     vscode.commands.registerCommand('drasi.instance.use', this.useInstance.bind(this));
     vscode.commands.registerCommand('drasi.connection.configure', this.configureConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.add', this.addConnection.bind(this));
@@ -157,6 +163,76 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     await this.startStopResource(resourceNode, 'stop', () => this.drasiClient.stopReaction(resourceNode.component.id));
   }
 
+  async viewEvents(resourceNode: ResourceNode) {
+    if (!resourceNode) {
+      return;
+    }
+    await vscode.window.withProgress({
+      title: `Fetching events for ${resourceNode.component.id}`,
+      location: vscode.ProgressLocation.Notification,
+    }, async () => {
+      try {
+        const events = await this.fetchEvents(resourceNode);
+        const viewer = new ObservabilityViewer(`Events: ${resourceNode.component.id}`);
+        viewer.show();
+        viewer.appendHeader('Snapshot');
+        viewer.appendItems(events);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to fetch events: ${error}`);
+      }
+    });
+  }
+
+  async streamEvents(resourceNode: ResourceNode) {
+    if (!resourceNode) {
+      return;
+    }
+    const viewer = new ObservabilityViewer(`Events Stream: ${resourceNode.component.id}`);
+    viewer.show();
+    const stream = new ObservabilityStream();
+    try {
+      const url = this.getEventsStreamUrl(resourceNode);
+      await stream.stream(url, viewer);
+    } catch (error) {
+      viewer.appendError(String(error));
+    }
+  }
+
+  async viewLogs(resourceNode: ResourceNode) {
+    if (!resourceNode) {
+      return;
+    }
+    await vscode.window.withProgress({
+      title: `Fetching logs for ${resourceNode.component.id}`,
+      location: vscode.ProgressLocation.Notification,
+    }, async () => {
+      try {
+        const logs = await this.fetchLogs(resourceNode);
+        const viewer = new ObservabilityViewer(`Logs: ${resourceNode.component.id}`);
+        viewer.show();
+        viewer.appendHeader('Snapshot');
+        viewer.appendItems(logs);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to fetch logs: ${error}`);
+      }
+    });
+  }
+
+  async streamLogs(resourceNode: ResourceNode) {
+    if (!resourceNode) {
+      return;
+    }
+    const viewer = new ObservabilityViewer(`Logs Stream: ${resourceNode.component.id}`);
+    viewer.show();
+    const stream = new ObservabilityStream();
+    try {
+      const url = this.getLogsStreamUrl(resourceNode);
+      await stream.stream(url, viewer);
+    } catch (error) {
+      viewer.appendError(String(error));
+    }
+  }
+
   async useInstance(instanceNode: InstanceNode) {
     if (!instanceNode) {
       return;
@@ -248,6 +324,58 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     });
 
     this.refresh();
+  }
+
+  private async fetchEvents(resourceNode: ResourceNode): Promise<ComponentEvent[]> {
+    switch (resourceNode.kind) {
+      case 'source':
+        return this.drasiClient.getSourceEvents(resourceNode.component.id);
+      case 'query':
+        return this.drasiClient.getQueryEvents(resourceNode.component.id);
+      case 'reaction':
+        return this.drasiClient.getReactionEvents(resourceNode.component.id);
+      default:
+        return [];
+    }
+  }
+
+  private async fetchLogs(resourceNode: ResourceNode): Promise<LogMessage[]> {
+    switch (resourceNode.kind) {
+      case 'source':
+        return this.drasiClient.getSourceLogs(resourceNode.component.id);
+      case 'query':
+        return this.drasiClient.getQueryLogs(resourceNode.component.id);
+      case 'reaction':
+        return this.drasiClient.getReactionLogs(resourceNode.component.id);
+      default:
+        return [];
+    }
+  }
+
+  private getEventsStreamUrl(resourceNode: ResourceNode): string {
+    switch (resourceNode.kind) {
+      case 'source':
+        return this.drasiClient.getSourceEventsStreamUrl(resourceNode.component.id);
+      case 'query':
+        return this.drasiClient.getQueryEventsStreamUrl(resourceNode.component.id);
+      case 'reaction':
+        return this.drasiClient.getReactionEventsStreamUrl(resourceNode.component.id);
+      default:
+        throw new Error(`Unsupported resource kind: ${resourceNode.kind}`);
+    }
+  }
+
+  private getLogsStreamUrl(resourceNode: ResourceNode): string {
+    switch (resourceNode.kind) {
+      case 'source':
+        return this.drasiClient.getSourceLogsStreamUrl(resourceNode.component.id);
+      case 'query':
+        return this.drasiClient.getQueryLogsStreamUrl(resourceNode.component.id);
+      case 'reaction':
+        return this.drasiClient.getReactionLogsStreamUrl(resourceNode.component.id);
+      default:
+        throw new Error(`Unsupported resource kind: ${resourceNode.kind}`);
+    }
   }
 }
 

@@ -101,6 +101,22 @@
         "title": "Stop Reaction"
       },
       {
+        "command": "drasi.events.view",
+        "title": "View Events"
+      },
+      {
+        "command": "drasi.events.stream",
+        "title": "Stream Events"
+      },
+      {
+        "command": "drasi.logs.view",
+        "title": "View Logs"
+      },
+      {
+        "command": "drasi.logs.stream",
+        "title": "Stream Logs"
+      },
+      {
         "command": "drasi.instance.use",
         "title": "Set as current instance"
       },
@@ -215,6 +231,26 @@
           "command": "drasi.resource.delete",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
           "group": "inline"
+        },
+        {
+          "command": "drasi.events.view",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.events.stream",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.logs.view",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.logs.stream",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "navigation"
         },
         {
           "command": "drasi.connection.use",

@@ -15,6 +15,23 @@ sources:
   autoStart: true
   bootstrapProvider:
     kind: postgres
+    host:
+      kind: EnvironmentVariable
+      name: POSTGRES_HOST
+      default: localhost
+    port: 5432
+    database:
+      kind: EnvironmentVariable
+      name: POSTGRES_DB
+      default: myapp
+    user:
+      kind: EnvironmentVariable
+      name: POSTGRES_USER
+      default: drasi_user
+    password:
+      kind: EnvironmentVariable
+      name: POSTGRES_PASSWORD
+      default: drasi_password
   host:
     kind: EnvironmentVariable
     name: POSTGRES_HOST
@@ -54,6 +71,11 @@ sources:
   autoStart: true
   bootstrapProvider:
     kind: postgres
+    host: localhost
+    port: 5432
+    database: test
+    user: postgres
+    password: test
   host: localhost
   port: 5432
   database: test
@@ -73,6 +95,23 @@ sources:
   autoStart: true
   bootstrapProvider:
     kind: postgres
+    host:
+      kind: EnvironmentVariable
+      name: POSTGRES_HOST
+      default: localhost
+    port:
+      kind: EnvironmentVariable
+      name: POSTGRES_PORT
+      default: '5432'
+    database:
+      kind: EnvironmentVariable
+      name: POSTGRES_DATABASE
+      default: getting_started
+    user:
+      kind: EnvironmentVariable
+      name: POSTGRES_USER
+      default: drasi_user
+    password: drasi_password
   host:
     kind: EnvironmentVariable
     name: POSTGRES_HOST
@@ -114,18 +153,3 @@ queries:
     pipeline: []
   enableBootstrap: true
   bootstrapBufferSize: 10000
-reactions:
-- kind: log
-  id: log-all-queries
-  queries:
-  - freezer-warm
-  autoStart: true
-  routes: {}
-  defaultTemplate:
-    added:
-      template: '[{{query_name}}] + {{after}}'
-    updated:
-      template: '[{{query_name}}] ~ {{before}} -> {{after}}'
-    deleted:
-      template: '[{{query_name}}] - {{before}}'
-instances: []

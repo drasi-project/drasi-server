@@ -21,17 +21,18 @@
 use axum::{
     extract::{Extension, Path, Query},
     http::StatusCode,
-    response::Json,
+    response::{sse::Sse, Json},
 };
+use std::convert::Infallible;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-use crate::api::models::QueryConfigDto;
+use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
-use crate::api::shared::handlers::ComponentViewQuery;
+use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::persistence::ConfigPersistence;
 
 // Re-export shared handler implementations
@@ -175,6 +176,94 @@ pub async fn get_source(
         Path(id),
     )
     .await
+}
+
+/// Get source lifecycle events (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/sources/{id}/events",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of events (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Source events", body = ApiResponse<Vec<ComponentEventDto>>),
+        (status = 404, description = "Source not found"),
+    ),
+    tag = "Sources"
+)]
+pub async fn get_source_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    shared::get_source_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream source lifecycle events as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/sources/{id}/events/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of source events"),
+        (status = 404, description = "Source not found"),
+    ),
+    tag = "Sources"
+)]
+pub async fn stream_source_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_source_events(Extension(core), Path(id)).await
+}
+
+/// Get source logs (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/sources/{id}/logs",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of logs (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Source logs", body = ApiResponse<Vec<LogMessageDto>>),
+        (status = 404, description = "Source not found"),
+    ),
+    tag = "Sources"
+)]
+pub async fn get_source_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    shared::get_source_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream source logs as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/sources/{id}/logs/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of source logs"),
+        (status = 404, description = "Source not found"),
+    ),
+    tag = "Sources"
+)]
+pub async fn stream_source_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_source_logs(Extension(core), Path(id)).await
 }
 
 /// Delete a source
@@ -331,6 +420,94 @@ pub async fn get_query(
         Path(id),
     )
     .await
+}
+
+/// Get query lifecycle events (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/queries/{id}/events",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of events (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Query events", body = ApiResponse<Vec<ComponentEventDto>>),
+        (status = 404, description = "Query not found"),
+    ),
+    tag = "Queries"
+)]
+pub async fn get_query_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    shared::get_query_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream query lifecycle events as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/queries/{id}/events/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of query events"),
+        (status = 404, description = "Query not found"),
+    ),
+    tag = "Queries"
+)]
+pub async fn stream_query_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_query_events(Extension(core), Path(id)).await
+}
+
+/// Get query logs (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/queries/{id}/logs",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of logs (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Query logs", body = ApiResponse<Vec<LogMessageDto>>),
+        (status = 404, description = "Query not found"),
+    ),
+    tag = "Queries"
+)]
+pub async fn get_query_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    shared::get_query_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream query logs as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/queries/{id}/logs/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Query ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of query logs"),
+        (status = 404, description = "Query not found"),
+    ),
+    tag = "Queries"
+)]
+pub async fn stream_query_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_query_logs(Extension(core), Path(id)).await
 }
 
 /// Delete a query
@@ -548,6 +725,94 @@ pub async fn get_reaction(
         Path(id),
     )
     .await
+}
+
+/// Get reaction lifecycle events (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/reactions/{id}/events",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Reaction ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of events (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Reaction events", body = ApiResponse<Vec<ComponentEventDto>>),
+        (status = 404, description = "Reaction not found"),
+    ),
+    tag = "Reactions"
+)]
+pub async fn get_reaction_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    shared::get_reaction_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream reaction lifecycle events as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/reactions/{id}/events/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Reaction ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of reaction events"),
+        (status = 404, description = "Reaction not found"),
+    ),
+    tag = "Reactions"
+)]
+pub async fn stream_reaction_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_reaction_events(Extension(core), Path(id)).await
+}
+
+/// Get reaction logs (snapshot)
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/reactions/{id}/logs",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Reaction ID"),
+        ("limit" = Option<usize>, Query, description = "Limit number of logs (default 100)")
+    ),
+    responses(
+        (status = 200, description = "Reaction logs", body = ApiResponse<Vec<LogMessageDto>>),
+        (status = 404, description = "Reaction not found"),
+    ),
+    tag = "Reactions"
+)]
+pub async fn get_reaction_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    shared::get_reaction_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream reaction logs as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/reactions/{id}/logs/stream",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Reaction ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of reaction logs"),
+        (status = 404, description = "Reaction not found"),
+    ),
+    tag = "Reactions"
+)]
+pub async fn stream_reaction_logs(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    shared::stream_reaction_logs(Extension(core), Path(id)).await
 }
 
 /// Delete a reaction

@@ -53,6 +53,7 @@ pub mod bootstrap;
 pub mod queries;
 pub mod reactions;
 pub mod sources;
+pub mod observability;
 
 // Re-export all DTO types for convenient access
 pub use bootstrap::{
@@ -60,6 +61,7 @@ pub use bootstrap::{
     PostgresBootstrapConfigDto, ScriptFileBootstrapConfigDto,
 };
 pub use config_value::*;
+pub use observability::*;
 pub use queries::*;
 pub use reactions::*;
 pub use sources::*;
