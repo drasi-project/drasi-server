@@ -24,6 +24,7 @@ export class ObservabilityStream {
           break;
         }
         buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, '\n');
         let boundary = buffer.indexOf('\n\n');
         while (boundary >= 0) {
           const chunk = buffer.slice(0, boundary).trim();
@@ -60,7 +61,7 @@ export class ObservabilityStream {
       }
       try {
         viewer.appendItems([JSON.parse(payload)]);
-      } catch (error) {
+      } catch {
         viewer.appendRaw(payload);
       }
     }

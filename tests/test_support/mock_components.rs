@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
 use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
+use drasi_lib::managers::ComponentLogger;
 use drasi_lib::Reaction as ReactionTrait;
 use drasi_lib::Source as SourceTrait;
 use std::collections::HashMap;
@@ -25,16 +26,31 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// A mock source for testing
+#[derive(Clone)]
 pub struct MockSource {
+    inner: Arc<MockSourceInner>,
+}
+
+struct MockSourceInner {
     id: String,
-    status: Arc<RwLock<ComponentStatus>>,
+    status: RwLock<ComponentStatus>,
+    logger: RwLock<Option<ComponentLogger>>,
 }
 
 impl MockSource {
     pub fn new(id: &str) -> Self {
         Self {
-            id: id.to_string(),
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+            inner: Arc::new(MockSourceInner {
+                id: id.to_string(),
+                status: RwLock::new(ComponentStatus::Stopped),
+                logger: RwLock::new(None),
+            }),
+        }
+    }
+
+    pub async fn emit_log(&self, message: &str) {
+        if let Some(logger) = self.inner.logger.read().await.clone() {
+            logger.info(message).await;
         }
     }
 }
@@ -42,7 +58,7 @@ impl MockSource {
 #[async_trait]
 impl SourceTrait for MockSource {
     fn id(&self) -> &str {
-        &self.id
+        &self.inner.id
     }
 
     fn type_name(&self) -> &str {
@@ -54,17 +70,17 @@ impl SourceTrait for MockSource {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Running;
+        *self.inner.status.write().await = ComponentStatus::Running;
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Stopped;
+        *self.inner.status.write().await = ComponentStatus::Stopped;
         Ok(())
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
+        self.inner.status.read().await.clone()
     }
 
     async fn subscribe(
@@ -77,7 +93,7 @@ impl SourceTrait for MockSource {
         let receiver = dispatcher.create_receiver().await?;
         Ok(SubscriptionResponse {
             query_id: settings.query_id,
-            source_id: self.id.clone(),
+            source_id: self.inner.id.clone(),
             receiver,
             bootstrap_receiver: None,
         })
@@ -87,24 +103,39 @@ impl SourceTrait for MockSource {
         self
     }
 
-    async fn initialize(&self, _context: SourceRuntimeContext) {
-        // No-op for testing
+    async fn initialize(&self, context: SourceRuntimeContext) {
+        *self.inner.logger.write().await = context.logger().cloned();
     }
 }
 
 /// A mock reaction for testing
+#[derive(Clone)]
 pub struct MockReaction {
+    inner: Arc<MockReactionInner>,
+}
+
+struct MockReactionInner {
     id: String,
     queries: Vec<String>,
-    status: Arc<RwLock<ComponentStatus>>,
+    status: RwLock<ComponentStatus>,
+    logger: RwLock<Option<ComponentLogger>>,
 }
 
 impl MockReaction {
     pub fn new(id: &str, queries: Vec<String>) -> Self {
         Self {
-            id: id.to_string(),
-            queries,
-            status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
+            inner: Arc::new(MockReactionInner {
+                id: id.to_string(),
+                queries,
+                status: RwLock::new(ComponentStatus::Stopped),
+                logger: RwLock::new(None),
+            }),
+        }
+    }
+
+    pub async fn emit_log(&self, message: &str) {
+        if let Some(logger) = self.inner.logger.read().await.clone() {
+            logger.info(message).await;
         }
     }
 }
@@ -112,7 +143,7 @@ impl MockReaction {
 #[async_trait]
 impl ReactionTrait for MockReaction {
     fn id(&self) -> &str {
-        &self.id
+        &self.inner.id
     }
 
     fn type_name(&self) -> &str {
@@ -124,25 +155,25 @@ impl ReactionTrait for MockReaction {
     }
 
     fn query_ids(&self) -> Vec<String> {
-        self.queries.clone()
+        self.inner.queries.clone()
     }
 
-    async fn initialize(&self, _context: ReactionRuntimeContext) {
-        // No-op for testing
+    async fn initialize(&self, context: ReactionRuntimeContext) {
+        *self.inner.logger.write().await = context.logger().cloned();
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Running;
+        *self.inner.status.write().await = ComponentStatus::Running;
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        *self.status.write().await = ComponentStatus::Stopped;
+        *self.inner.status.write().await = ComponentStatus::Stopped;
         Ok(())
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
+        self.inner.status.read().await.clone()
     }
 }
 

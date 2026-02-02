@@ -177,6 +177,9 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
         viewer.show();
         viewer.appendHeader('Snapshot');
         viewer.appendItems(events);
+        if (events.length === 0) {
+          viewer.appendRaw('No events available.');
+        }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to fetch events: ${error}`);
       }
@@ -189,6 +192,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
     const viewer = new ObservabilityViewer(`Events Stream: ${resourceNode.component.id}`);
     viewer.show();
+    viewer.appendHeader('Streaming');
     const stream = new ObservabilityStream();
     try {
       const url = this.getEventsStreamUrl(resourceNode);
@@ -212,6 +216,9 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
         viewer.show();
         viewer.appendHeader('Snapshot');
         viewer.appendItems(logs);
+        if (logs.length === 0) {
+          viewer.appendRaw('No logs available.');
+        }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to fetch logs: ${error}`);
       }
@@ -224,6 +231,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
     const viewer = new ObservabilityViewer(`Logs Stream: ${resourceNode.component.id}`);
     viewer.show();
+    viewer.appendHeader('Streaming');
     const stream = new ObservabilityStream();
     try {
       const url = this.getLogsStreamUrl(resourceNode);
