@@ -30,9 +30,17 @@ path = "src/lib.rs"
 name = "drasi-server"
 path = "src/main.rs"
 
+[[example]]
+name = "test_password_auth"
+path = "examples/test_password_auth.rs"
+
+[[example]]
+name = "test_azure_default_credentials"
+path = "examples/test_azure_default_credentials.rs"
+
 [dependencies]
-# Drasi core library
-drasi-lib = "0.3.2"
+# Drasi core library with identity provider support
+drasi-lib = { version = "0.3.2", features = ["all-identity"] }
 
 # Source plugins
 drasi-source-mock = "0.1.2"
@@ -111,6 +119,12 @@ rstest = "0.18"
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["redis"] }
 redis = { version = "0.24", features = ["tokio-comp", "streams"] }
+
+[features]
+default = ["all-identity"]
+azure-identity = ["drasi-lib/azure-identity"]
+aws-identity = ["drasi-lib/aws-identity"]
+all-identity = ["azure-identity", "aws-identity"]
 
 [lints.rust]
 warnings = "deny"
