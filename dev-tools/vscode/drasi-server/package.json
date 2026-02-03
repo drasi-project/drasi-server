@@ -135,6 +135,10 @@
         "command": "drasi.connection.use",
         "title": "Use server"
       },
+      {
+        "command": "drasi.resource.viewConfig",
+        "title": "View Config (YAML)"
+      },
         {
           "command": "drasi.schema.refresh",
           "category": "Drasi Server",
@@ -247,6 +251,11 @@
         },
         {
           "command": "drasi.logs.view",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
+          "group": "2_observability"
+        },
+        {
+          "command": "drasi.resource.viewConfig",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
           "group": "2_observability"
         },

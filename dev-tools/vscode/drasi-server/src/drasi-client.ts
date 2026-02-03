@@ -285,6 +285,39 @@ export class DrasiClient {
     return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/attach`;
   }
 
+  async getSourceConfig(id: string): Promise<Record<string, unknown>> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentListItem>>(
+      `/api/v1/instances/${instanceId}/sources/${id}?view=full`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data?.config ?? {};
+  }
+
+  async getQueryConfig(id: string): Promise<Record<string, unknown>> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentListItem>>(
+      `/api/v1/instances/${instanceId}/queries/${id}?view=full`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data?.config ?? {};
+  }
+
+  async getReactionConfig(id: string): Promise<Record<string, unknown>> {
+    const instanceId = await this.getCurrentInstanceId();
+    const res = await this.get<ApiResponse<ComponentListItem>>(
+      `/api/v1/instances/${instanceId}/reactions/${id}?view=full`
+    );
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+    return res.data.data?.config ?? {};
+  }
+
   async applySource(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.post<ApiResponse<any>>(

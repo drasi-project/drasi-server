@@ -34,6 +34,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     vscode.commands.registerCommand('drasi.connection.configure', this.configureConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.add', this.addConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.use', this.useConnection.bind(this));
+    vscode.commands.registerCommand('drasi.resource.viewConfig', this.viewConfig.bind(this));
   }
 
   refresh(): void {
@@ -247,6 +248,85 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     } catch (error) {
       viewer.appendError(String(error));
     }
+  }
+
+  async viewConfig(resourceNode: ResourceNode) {
+    if (!resourceNode) {
+      return;
+    }
+    await vscode.window.withProgress({
+      title: `Fetching config for ${resourceNode.component.id}`,
+      location: vscode.ProgressLocation.Notification,
+    }, async () => {
+      try {
+        const config = await this.fetchConfig(resourceNode);
+        const yaml = this.toYaml(config);
+        const doc = await vscode.workspace.openTextDocument({
+          content: yaml,
+          language: 'yaml',
+        });
+        await vscode.window.showTextDocument(doc, { preview: true });
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to fetch config: ${error}`);
+      }
+    });
+  }
+
+  private async fetchConfig(resourceNode: ResourceNode): Promise<Record<string, unknown>> {
+    switch (resourceNode.kind) {
+      case 'source':
+        return this.drasiClient.getSourceConfig(resourceNode.component.id);
+      case 'query':
+        return this.drasiClient.getQueryConfig(resourceNode.component.id);
+      case 'reaction':
+        return this.drasiClient.getReactionConfig(resourceNode.component.id);
+      default:
+        throw new Error(`Unknown resource kind: ${resourceNode.kind}`);
+    }
+  }
+
+  private toYaml(obj: Record<string, unknown>, indent = 0): string {
+    const spaces = '  '.repeat(indent);
+    let result = '';
+    for (const [key, value] of Object.entries(obj)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          result += `${spaces}${key}: []\n`;
+        } else {
+          result += `${spaces}${key}:\n`;
+          for (const item of value) {
+            if (typeof item === 'object' && item !== null) {
+              result += `${spaces}  -\n`;
+              result += this.toYaml(item as Record<string, unknown>, indent + 2);
+            } else {
+              result += `${spaces}  - ${this.formatValue(item)}\n`;
+            }
+          }
+        }
+      } else if (typeof value === 'object') {
+        result += `${spaces}${key}:\n`;
+        result += this.toYaml(value as Record<string, unknown>, indent + 1);
+      } else {
+        result += `${spaces}${key}: ${this.formatValue(value)}\n`;
+      }
+    }
+    return result;
+  }
+
+  private formatValue(value: unknown): string {
+    if (typeof value === 'string') {
+      // Quote strings that contain special characters or look like other types
+      if (value.includes(':') || value.includes('#') || value.includes('\n') || 
+          value === '' || value === 'true' || value === 'false' ||
+          /^\d+$/.test(value) || /^\d+\.\d+$/.test(value)) {
+        return `"${value.replace(/"/g, '\\"')}"`;
+      }
+      return value;
+    }
+    return String(value);
   }
 
   async useInstance(instanceNode: InstanceNode) {
