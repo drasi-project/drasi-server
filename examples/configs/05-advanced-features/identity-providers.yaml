@@ -1,0 +1,199 @@
+# Comprehensive Identity Providers Example with Stored Procedure Reactions
+#
+# This example demonstrates all supported identity provider authentication methods
+# for PostgreSQL stored procedure reactions:
+#
+# 1. Password Authentication (basic username/password)
+# 2. Azure AD Authentication (Default Credentials, Managed Identity, Workload Identity)
+# 3. AWS IAM Authentication (Default Credentials, AssumeRole)
+#
+# Choose the authentication method that fits your deployment scenario and
+# uncomment the appropriate identityProviders section and reaction configuration.
+
+# Server settings
+host: "0.0.0.0"
+port: 8080
+logLevel: "info"
+persistConfig: true
+persistIndex: false
+
+# =============================================================================
+# IDENTITY PROVIDERS CONFIGURATION
+# =============================================================================
+# Uncomment ONE of the sections below based on your authentication needs
+
+identityProviders:
+  # ---------------------------------------------------------------------------
+  # 1. PASSWORD AUTHENTICATION (Basic)
+  # ---------------------------------------------------------------------------
+  # Use when: Simple username/password authentication
+  # Prerequisites: PostgreSQL user with password
+  # - kind: password
+  #   id: "postgres-password"
+  #   username: "myuser"
+  #   password: "mypassword"
+
+  # ---------------------------------------------------------------------------
+  # 2. AZURE AD AUTHENTICATION - Default Credentials (az login)
+  # ---------------------------------------------------------------------------
+  # Use when: Local development with Azure CLI logged in
+  # Prerequisites:
+  # - Azure CLI installed and logged in (az login)
+  # - Azure Database for PostgreSQL with Azure AD authentication enabled
+  # - AAD user created in PostgreSQL database
+  - kind: azure
+    id: "azure-default"
+    username: "user@domain.com"  # Your Azure AD user email
+    authenticationMode: defaultCredentials
+    scope: "https://ossrdbms-aad.database.windows.net/.default"
+
+  # ---------------------------------------------------------------------------
+  # 3. AZURE AD AUTHENTICATION - Managed Identity
+  # ---------------------------------------------------------------------------
+  # Use when: Running on Azure VM or App Service with Managed Identity
+  # Prerequisites:
+  # - Azure VM/App Service with Managed Identity enabled
+  # - AAD user created in PostgreSQL for the managed identity
+  # - kind: azure
+  #   id: "azure-managed"
+  #   username: "managed-identity-name"
+  #   authenticationMode: managedIdentity
+  #   clientId: "12345678-1234-1234-1234-123456789012"  # Optional: User-assigned MI
+  #   scope: "https://ossrdbms-aad.database.windows.net/.default"
+
+  # ---------------------------------------------------------------------------
+  # 4. AZURE AD AUTHENTICATION - Workload Identity (AKS)
+  # ---------------------------------------------------------------------------
+  # Use when: Running in Azure Kubernetes Service (AKS)
+  # Prerequisites:
+  # - AKS with OIDC issuer enabled
+  # - Managed Identity with database access
+  # - Federated credential linking MI to K8s service account
+  # - Pod with azure.workload.identity/use: "true" label
+  # - ServiceAccount with azure.workload.identity/client-id annotation
+  # - kind: azure
+  #   id: "aks-workload-identity"
+  #   username: "managed-identity-name"
+  #   authenticationMode: workloadIdentity
+  #   scope: "https://ossrdbms-aad.database.windows.net/.default"
+
+  # ---------------------------------------------------------------------------
+  # 5. AWS IAM AUTHENTICATION - Default Credentials
+  # ---------------------------------------------------------------------------
+  # Use when: Using AWS credential chain (env vars, ~/.aws/credentials, EC2 instance profile)
+  # Prerequisites:
+  # - AWS credentials configured with rds-db:connect permission
+  # - RDS PostgreSQL with IAM authentication enabled
+  # - IAM database user created in PostgreSQL
+  # - kind: aws
+  #   id: "aws-default"
+  #   username: "iamuser"
+  #   hostname: "mydb.us-east-1.rds.amazonaws.com"
+  #   port: 5432
+  #   region: "us-east-1"
+  #   authenticationMode: defaultCredentials
+
+  # ---------------------------------------------------------------------------
+  # 6. AWS IAM AUTHENTICATION - AssumeRole
+  # ---------------------------------------------------------------------------
+  # Use when: Need to assume an IAM role for database access
+  # Prerequisites:
+  # - AWS credentials with sts:AssumeRole permission
+  # - IAM role with rds-db:connect permission
+  # - RDS PostgreSQL with IAM authentication enabled
+  # - IAM database user created in PostgreSQL
+  # - kind: aws
+  #   id: "aws-assume-role"
+  #   username: "iamuser"
+  #   hostname: "mydb.us-east-1.rds.amazonaws.com"
+  #   port: 5432
+  #   region: "us-east-1"
+  #   authenticationMode: assumeRole
+  #   roleArn: "arn:aws:iam::123456789012:role/RDSAccessRole"
+  #   sessionName: "drasi-session"  # Optional
+
+# =============================================================================
+# DATA SOURCE
+# =============================================================================
+sources:
+  - kind: mock
+    id: "sensors"
+    autoStart: true
+    dataType: "sensor"
+    intervalMs: 1000
+
+# =============================================================================
+# CONTINUOUS QUERIES
+# =============================================================================
+queries:
+  # High temperature sensors (25°C - 28°C)
+  - id: "high-temp"
+    query: "MATCH (s:SensorReading) WHERE s.temperature > 25 AND s.temperature < 28 RETURN s.sensor_id AS id, s.temperature AS temperature, s.timestamp AS timestamp"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: "sensors"
+    autoStart: true
+
+  # Low temperature sensors (< 15°C)
+  - id: "low-temp"
+    query: "MATCH (s:SensorReading) WHERE s.temperature < 15 RETURN s.sensor_id AS id, s.temperature AS temperature, s.timestamp AS timestamp"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: "sensors"
+    autoStart: true
+
+  # Critical temperature sensors (> 27°C)
+  - id: "critical-temp"
+    query: "MATCH (s:SensorReading) WHERE s.temperature > 27 RETURN s.sensor_id AS id, s.temperature AS temperature, s.timestamp AS timestamp"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: "sensors"
+    autoStart: true
+
+# =============================================================================
+# STORED PROCEDURE REACTION
+# =============================================================================
+reactions:
+  - kind: storedprocPostgres
+    id: "sensor-sync"
+    queries:
+      - "high-temp"
+      - "low-temp"
+      - "critical-temp"
+    autoStart: true
+
+    # Database connection settings
+    # Update these with your actual database details
+    hostname: "your-database.postgres.database.azure.com"  # Or RDS endpoint
+    port: 5432
+    database: "your_database"
+
+    # SSL Configuration
+    # For Azure/AWS managed databases, install the SSL certificate in system trust store:
+    # macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/ca-bundle.pem
+    # Linux: sudo cp ~/ca-bundle.pem /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+    ssl: false  # Set to true after installing certificates
+
+    # Identity Provider Authentication
+    # Reference the identity provider ID from the identityProviders section above
+    identityProviderId: "azure-default"  # Change based on which provider you're using
+
+    # Stored Procedure Templates
+    # Default template applies to all queries unless overridden by routes
+    defaultTemplate:
+      added:
+        command: "CALL log_sensor_added(@after.id, @after.temperature, @after.timestamp)"
+      updated:
+        command: "CALL log_sensor_updated(@after.id, @after.temperature)"
+      deleted:
+        command: "CALL log_sensor_deleted(@before.id)"
+
+    # Query-specific routes override default template
+    routes:
+      critical-temp:
+        added:
+          command: "CALL log_critical_alert(@after.id, @after.temperature, @after.timestamp)"
+
+    # Connection settings
+    commandTimeoutMs: 5000
+    retryAttempts: 3
