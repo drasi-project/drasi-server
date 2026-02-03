@@ -28,6 +28,13 @@ export class DrasiClient {
     });
   }
 
+  private async put<T>(path: string, data?: any): Promise<AxiosResponse<T>> {
+    return axios.put<T>(`${this.baseUrl}${path}`, data, {
+      validateStatus: () => true,
+      timeout: this.timeout,
+    });
+  }
+
   private async delete<T>(path: string): Promise<AxiosResponse<T>> {
     return axios.delete<T>(`${this.baseUrl}${path}`, {
       validateStatus: () => true,
@@ -320,7 +327,7 @@ export class DrasiClient {
 
   async applySource(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(
+    const res = await this.put<ApiResponse<any>>(
       `/api/v1/instances/${instanceId}/sources`,
       normalizeResource(resource, { dropKind: false })
     );
@@ -342,7 +349,7 @@ export class DrasiClient {
 
   async applyReaction(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(
+    const res = await this.put<ApiResponse<any>>(
       `/api/v1/instances/${instanceId}/reactions`,
       normalizeResource(resource, { dropKind: false })
     );

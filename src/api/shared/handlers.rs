@@ -238,13 +238,95 @@ pub async fn create_source_handler(
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
-                log::info!("Source '{source_id}' already exists");
-                return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Source '{source_id}' already exists"),
-                })));
+                log::info!("Source '{source_id}' already exists - use PUT for upsert");
+                return Err(StatusCode::CONFLICT);
             }
             log::error!("Failed to add source: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
+        }
+    }
+}
+
+/// Upsert a source (create or update)
+pub async fn upsert_source_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    if *read_only {
+        return Ok(Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot create or update sources.".to_string(),
+        )));
+    }
+
+    let config: SourceConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse source config: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid source configuration: {e}"
+            ))));
+        }
+    };
+
+    let source_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Check if source already exists
+    let exists = core.get_source_status(&source_id).await.is_ok();
+
+    if exists {
+        // Stop and remove existing source before replacing
+        let _ = core.stop_source(&source_id).await;
+        if let Err(e) = core.remove_source(&source_id).await {
+            log::error!("Failed to remove existing source '{source_id}' for upsert: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to remove existing source for update: {e}"
+            ))));
+        }
+
+        // Unregister from persistence (will be re-registered below)
+        if let Some(persistence) = &config_persistence {
+            persistence.unregister_source(&instance_id, &source_id).await;
+        }
+    }
+
+    let source = match create_source(config.clone()).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create source instance: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create source: {e}"
+            ))));
+        }
+    };
+
+    match core.add_source(source).await {
+        Ok(_) => {
+            let action = if exists { "updated" } else { "created" };
+            log::info!("Source '{source_id}' {action} successfully");
+
+            if let Some(persistence) = &config_persistence {
+                persistence.register_source(&instance_id, config).await;
+            }
+
+            if auto_start {
+                if let Err(e) = core.start_source(&source_id).await {
+                    log::warn!("Failed to auto-start source '{source_id}': {e}");
+                }
+            }
+
+            persist_after_operation(&config_persistence, "upserting source").await;
+
+            Ok(Json(ApiResponse::success(StatusResponse {
+                message: format!("Source '{source_id}' {action} successfully"),
+            })))
+        }
+        Err(e) => {
+            log::error!("Failed to add source: {e}");
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -562,10 +644,8 @@ pub async fn create_query(
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!("Query '{query_id}' already exists, skipping creation");
-                return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Query '{query_id}' already exists"),
-                })));
+                log::info!("Query '{query_id}' already exists - use PUT for upsert");
+                return Err(StatusCode::CONFLICT);
             }
 
             log::error!("Failed to create query: {e}");
@@ -981,13 +1061,95 @@ pub async fn create_reaction_handler(
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
-                log::info!("Reaction '{reaction_id}' already exists");
-                return Ok(Json(ApiResponse::success(StatusResponse {
-                    message: format!("Reaction '{reaction_id}' already exists"),
-                })));
+                log::info!("Reaction '{reaction_id}' already exists - use PUT for upsert");
+                return Err(StatusCode::CONFLICT);
             }
             log::error!("Failed to add reaction: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
+        }
+    }
+}
+
+/// Upsert a reaction (create or update)
+pub async fn upsert_reaction_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    if *read_only {
+        return Ok(Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot create or update reactions.".to_string(),
+        )));
+    }
+
+    let config: ReactionConfig = match serde_json::from_value(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to parse reaction config: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Invalid reaction configuration: {e}"
+            ))));
+        }
+    };
+
+    let reaction_id = config.id().to_string();
+    let auto_start = config.auto_start();
+
+    // Check if reaction already exists
+    let exists = core.get_reaction_info(&reaction_id).await.is_ok();
+
+    if exists {
+        // Stop and remove existing reaction before replacing
+        let _ = core.stop_reaction(&reaction_id).await;
+        if let Err(e) = core.remove_reaction(&reaction_id).await {
+            log::error!("Failed to remove existing reaction '{reaction_id}' for upsert: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to remove existing reaction for update: {e}"
+            ))));
+        }
+
+        // Unregister from persistence (will be re-registered below)
+        if let Some(persistence) = &config_persistence {
+            persistence.unregister_reaction(&instance_id, &reaction_id).await;
+        }
+    }
+
+    let reaction = match create_reaction(config.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("Failed to create reaction instance: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create reaction: {e}"
+            ))));
+        }
+    };
+
+    match core.add_reaction(reaction).await {
+        Ok(_) => {
+            let action = if exists { "updated" } else { "created" };
+            log::info!("Reaction '{reaction_id}' {action} successfully");
+
+            if let Some(persistence) = &config_persistence {
+                persistence.register_reaction(&instance_id, config).await;
+            }
+
+            if auto_start {
+                if let Err(e) = core.start_reaction(&reaction_id).await {
+                    log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
+                }
+            }
+
+            persist_after_operation(&config_persistence, "upserting reaction").await;
+
+            Ok(Json(ApiResponse::success(StatusResponse {
+                message: format!("Reaction '{reaction_id}' {action} successfully"),
+            })))
+        }
+        Err(e) => {
+            log::error!("Failed to add reaction: {e}");
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }

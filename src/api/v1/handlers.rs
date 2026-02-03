@@ -144,6 +144,52 @@ pub async fn create_source_handler(
     .await
 }
 
+/// Upsert a source (create or update)
+///
+/// Creates a source if it doesn't exist, or updates it if it does.
+/// When updating, the existing source is stopped and replaced.
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "http",
+///   "id": "my-http-source",
+///   "auto_start": true,
+///   "host": "0.0.0.0",
+///   "port": 9000
+/// }
+/// ```
+#[utoipa::path(
+    put,
+    path = "/api/v1/instances/{instanceId}/sources",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
+    request_body = ref("#/components/schemas/SourceConfig"),
+    responses(
+        (status = 200, description = "Source created or updated successfully", body = ApiResponse),
+        (status = 400, description = "Invalid source configuration"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "Sources"
+)]
+pub async fn upsert_source_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    shared::upsert_source_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
 /// Get source details by ID
 ///
 /// Optional `?view=full` returns the persisted config when available.
@@ -684,6 +730,51 @@ pub async fn create_reaction_handler(
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     shared::create_reaction_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
+/// Upsert a reaction (create or update)
+///
+/// Creates a reaction if it doesn't exist, or updates it if it does.
+/// When updating, the existing reaction is stopped and replaced.
+///
+/// Example request body:
+/// ```json
+/// {
+///   "kind": "log",
+///   "id": "my-log-reaction",
+///   "queries": ["my-query"],
+///   "auto_start": true
+/// }
+/// ```
+#[utoipa::path(
+    put,
+    path = "/api/v1/instances/{instanceId}/reactions",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
+    request_body = ref("#/components/schemas/ReactionConfig"),
+    responses(
+        (status = 200, description = "Reaction created or updated successfully", body = ApiResponse),
+        (status = 400, description = "Invalid reaction configuration"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "Reactions"
+)]
+pub async fn upsert_reaction_handler(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(instance_id): Extension<String>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    shared::upsert_reaction_handler(
         Extension(core),
         Extension(read_only),
         Extension(config_persistence),

@@ -19,7 +19,7 @@
 
 use axum::{
     extract::Extension,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use indexmap::IndexMap;
@@ -90,6 +90,7 @@ fn build_instance_router(
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))
+        .route("/sources", put(handlers::upsert_source_handler))
         .route("/sources/:id", get(handlers::get_source))
         .route("/sources/:id/events", get(handlers::get_source_events))
         .route("/sources/:id/events/stream", get(handlers::stream_source_events))
@@ -114,6 +115,7 @@ fn build_instance_router(
         // Reaction routes
         .route("/reactions", get(handlers::list_reactions))
         .route("/reactions", post(handlers::create_reaction_handler))
+        .route("/reactions", put(handlers::upsert_reaction_handler))
         .route("/reactions/:id", get(handlers::get_reaction))
         .route("/reactions/:id/events", get(handlers::get_reaction_events))
         .route("/reactions/:id/events/stream", get(handlers::stream_reaction_events))

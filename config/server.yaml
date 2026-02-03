@@ -5,11 +5,59 @@ logLevel: debug
 persistConfig: true
 persistIndex: false
 sources:
-- kind: mock
-  id: sensor-data
+- kind: postgres
+  id: postgres-messages
   autoStart: true
-  dataType: sensor
-  intervalMs: 2000
+  bootstrapProvider:
+    kind: postgres
+    host:
+      kind: EnvironmentVariable
+      name: POSTGRES_HOST
+      default: localhost
+    port:
+      kind: EnvironmentVariable
+      name: POSTGRES_PORT
+      default: '5432'
+    database:
+      kind: EnvironmentVariable
+      name: POSTGRES_DATABASE
+      default: getting_started
+    user:
+      kind: EnvironmentVariable
+      name: POSTGRES_USER
+      default: drasi_user
+    password: drasi_password
+    tables: []
+    slotName: drasi_slot
+    publicationName: drasi_publication
+    sslMode: prefer
+    tableKeys: []
+  host:
+    kind: EnvironmentVariable
+    name: POSTGRES_HOST
+    default: localhost
+  port:
+    kind: EnvironmentVariable
+    name: POSTGRES_PORT
+    default: '5432'
+  database:
+    kind: EnvironmentVariable
+    name: POSTGRES_DATABASE
+    default: getting_started
+  user:
+    kind: EnvironmentVariable
+    name: POSTGRES_USER
+    default: drasi_user
+  password: drasi_password
+  tables:
+  - message
+  slotName: drasi_getting_started_slot_2
+  publicationName: drasi_getting_started_pub
+  sslMode: prefer
+  tableKeys:
+  - table: message
+    keyColumns:
+    - messageid
 - kind: postgres
   id: app-database
   autoStart: true
@@ -100,59 +148,11 @@ sources:
   - table: Freezer
     keyColumns:
     - id
-- kind: postgres
-  id: postgres-messages
+- kind: mock
+  id: sensor-data
   autoStart: true
-  bootstrapProvider:
-    kind: postgres
-    host:
-      kind: EnvironmentVariable
-      name: POSTGRES_HOST
-      default: localhost
-    port:
-      kind: EnvironmentVariable
-      name: POSTGRES_PORT
-      default: '5432'
-    database:
-      kind: EnvironmentVariable
-      name: POSTGRES_DATABASE
-      default: getting_started
-    user:
-      kind: EnvironmentVariable
-      name: POSTGRES_USER
-      default: drasi_user
-    password: drasi_password
-    tables: []
-    slotName: drasi_slot
-    publicationName: drasi_publication
-    sslMode: prefer
-    tableKeys: []
-  host:
-    kind: EnvironmentVariable
-    name: POSTGRES_HOST
-    default: localhost
-  port:
-    kind: EnvironmentVariable
-    name: POSTGRES_PORT
-    default: '5432'
-  database:
-    kind: EnvironmentVariable
-    name: POSTGRES_DATABASE
-    default: getting_started
-  user:
-    kind: EnvironmentVariable
-    name: POSTGRES_USER
-    default: drasi_user
-  password: drasi_password
-  tables:
-  - message
-  slotName: drasi_getting_started_slot_2
-  publicationName: drasi_getting_started_pub
-  sslMode: prefer
-  tableKeys:
-  - table: message
-    keyColumns:
-    - messageid
+  dataType: sensor
+  intervalMs: 2200
 queries:
 - id: hello-world-from
   autoStart: true
