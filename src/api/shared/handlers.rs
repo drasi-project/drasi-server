@@ -309,13 +309,23 @@ pub async fn stream_source_events(
     core.get_source_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let events = core
-        .get_source_events(&id)
+    let (history, receiver) = core
+        .subscribe_source_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let stream = events
-        .map(ComponentEventDto::from)
+    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
         .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => return Some((ComponentEventDto::from(event), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
     Ok(Sse::new(stream))
 }
 
@@ -634,13 +644,23 @@ pub async fn stream_query_events(
     core.get_query_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let events = core
-        .get_query_events(&id)
+    let (history, receiver) = core
+        .subscribe_query_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let stream = events
-        .map(ComponentEventDto::from)
+    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
         .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => return Some((ComponentEventDto::from(event), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
     Ok(Sse::new(stream))
 }
 
@@ -1067,13 +1087,23 @@ pub async fn stream_reaction_events(
     core.get_reaction_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let events = core
-        .get_reaction_events(&id)
+    let (history, receiver) = core
+        .subscribe_reaction_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let stream = events
-        .map(ComponentEventDto::from)
+    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
         .filter_map(sse_event_async);
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => return Some((ComponentEventDto::from(event), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+    let stream = history_stream.chain(live_stream);
     Ok(Sse::new(stream))
 }
 

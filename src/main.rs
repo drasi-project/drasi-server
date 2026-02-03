@@ -22,6 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use drasi_lib::init_logging_with_logger;
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
@@ -137,7 +138,10 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
                 std::env::set_var("RUST_LOG", "info");
             }
         }
-        env_logger::init();
+        let env_logger = env_logger::Builder::from_default_env()
+            .format_timestamp_millis()
+            .build();
+        init_logging_with_logger(env_logger, log::LevelFilter::Info);
 
         warn!(
             "Config file '{}' not found. Creating default configuration.",
@@ -185,7 +189,14 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
                 std::env::set_var("RUST_LOG", &resolved_settings.log_level);
             }
         }
-        env_logger::init();
+        let log_level = resolved_settings
+            .log_level
+            .parse()
+            .unwrap_or(log::LevelFilter::Info);
+        let env_logger = env_logger::Builder::from_default_env()
+            .format_timestamp_millis()
+            .build();
+        init_logging_with_logger(env_logger, log_level);
     }
 
     info!("Starting Drasi Server");
