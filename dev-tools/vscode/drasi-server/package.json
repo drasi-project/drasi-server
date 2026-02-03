@@ -70,7 +70,8 @@
       },
       {
         "command": "drasi.query.watch",
-        "title": "Attach"
+        "title": "Attach",
+        "icon": "$(debug-start)"
       },
       {
         "command": "drasi.resource.delete",
@@ -106,7 +107,8 @@
       },
       {
         "command": "drasi.events.stream",
-        "title": "Stream Events"
+        "title": "Stream Events",
+        "icon": "$(pulse)"
       },
       {
         "command": "drasi.logs.view",
@@ -114,7 +116,8 @@
       },
       {
         "command": "drasi.logs.stream",
-        "title": "Stream Logs"
+        "title": "Stream Logs",
+        "icon": "$(output)"
       },
       {
         "command": "drasi.instance.use",
@@ -198,59 +201,59 @@
           "group": "inline"
         },
         {
-          "command": "drasi.query.start",
-          "when": "view == drasi && viewItem == drasi.queryNode",
+          "command": "drasi.events.stream",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
           "group": "inline"
         },
         {
-          "command": "drasi.query.stop",
-          "when": "view == drasi && viewItem == drasi.queryNode",
+          "command": "drasi.logs.stream",
+          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
           "group": "inline"
         },
         {
           "command": "drasi.source.start",
           "when": "view == drasi && viewItem == drasi.sourceNode",
-          "group": "inline"
+          "group": "1_lifecycle"
         },
         {
           "command": "drasi.source.stop",
           "when": "view == drasi && viewItem == drasi.sourceNode",
-          "group": "inline"
+          "group": "1_lifecycle"
+        },
+        {
+          "command": "drasi.query.start",
+          "when": "view == drasi && viewItem == drasi.queryNode",
+          "group": "1_lifecycle"
+        },
+        {
+          "command": "drasi.query.stop",
+          "when": "view == drasi && viewItem == drasi.queryNode",
+          "group": "1_lifecycle"
         },
         {
           "command": "drasi.reaction.start",
           "when": "view == drasi && viewItem == drasi.reactionNode",
-          "group": "inline"
+          "group": "1_lifecycle"
         },
         {
           "command": "drasi.reaction.stop",
           "when": "view == drasi && viewItem == drasi.reactionNode",
-          "group": "inline"
-        },
-        {
-          "command": "drasi.resource.delete",
-          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
-          "group": "inline"
+          "group": "1_lifecycle"
         },
         {
           "command": "drasi.events.view",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
-          "group": "navigation"
-        },
-        {
-          "command": "drasi.events.stream",
-          "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
-          "group": "navigation"
+          "group": "2_observability"
         },
         {
           "command": "drasi.logs.view",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
-          "group": "navigation"
+          "group": "2_observability"
         },
         {
-          "command": "drasi.logs.stream",
+          "command": "drasi.resource.delete",
           "when": "view == drasi && (viewItem == drasi.queryNode || viewItem == drasi.sourceNode || viewItem == drasi.reactionNode)",
-          "group": "navigation"
+          "group": "3_danger"
         },
         {
           "command": "drasi.connection.use",
