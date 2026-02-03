@@ -319,3 +319,214 @@ reactions: []
     assert_eq!(config.log_level, ConfigValue::Static("info".to_string())); // Default
     assert!(config.persist_config); // Default true
 }
+
+#[test]
+fn test_multiple_queries_persist_correctly() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let config_path = temp_dir.path().join("test-config.yaml");
+
+    // Create two queries
+    let query1 = QueryConfigDto {
+        id: "query-1".to_string(),
+        auto_start: true,
+        query: ConfigValue::Static("MATCH (n:Node) RETURN n".to_string()),
+        query_language: ConfigValue::Static("Cypher".to_string()),
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: ConfigValue::Static("source-1".to_string()),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        joins: None,
+        priority_queue_capacity: None,
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
+
+    let query2 = QueryConfigDto {
+        id: "query-2".to_string(),
+        auto_start: false,
+        query: ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string()),
+        query_language: ConfigValue::Static("Cypher".to_string()),
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: ConfigValue::Static("source-1".to_string()),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: false,
+        bootstrap_buffer_size: 5000,
+        joins: None,
+        priority_queue_capacity: None,
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
+
+    // Create config with both queries
+    let config = DrasiServerConfig {
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(8080),
+        log_level: ConfigValue::Static("info".to_string()),
+        persist_config: true,
+        queries: vec![query1, query2],
+        ..DrasiServerConfig::default()
+    };
+
+    // Save config
+    config.save_to_file(&config_path).expect("Failed to save config");
+
+    // Load and verify both queries are present
+    let loaded_config = load_config_file(&config_path).expect("Failed to load config");
+    assert_eq!(loaded_config.queries.len(), 2, "Both queries should be persisted");
+
+    // Verify first query
+    let q1 = loaded_config.queries.iter().find(|q| q.id == "query-1").expect("query-1 not found");
+    assert!(q1.auto_start);
+    assert_eq!(q1.query, ConfigValue::Static("MATCH (n:Node) RETURN n".to_string()));
+
+    // Verify second query
+    let q2 = loaded_config.queries.iter().find(|q| q.id == "query-2").expect("query-2 not found");
+    assert!(!q2.auto_start);
+    assert_eq!(q2.query, ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string()));
+}
+
+#[test]
+fn test_adding_query_preserves_existing_queries() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let config_path = temp_dir.path().join("test-config.yaml");
+
+    // Create initial config with one query
+    let query1 = QueryConfigDto {
+        id: "existing-query".to_string(),
+        auto_start: true,
+        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+        query_language: ConfigValue::Static("Cypher".to_string()),
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: ConfigValue::Static("source-1".to_string()),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        joins: None,
+        priority_queue_capacity: None,
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
+
+    let initial_config = DrasiServerConfig {
+        host: ConfigValue::Static("127.0.0.1".to_string()),
+        port: ConfigValue::Static(8080),
+        log_level: ConfigValue::Static("info".to_string()),
+        persist_config: true,
+        queries: vec![query1.clone()],
+        ..DrasiServerConfig::default()
+    };
+
+    // Save initial config
+    initial_config.save_to_file(&config_path).expect("Failed to save initial config");
+
+    // Load, add a new query, and save again
+    let mut loaded_config = load_config_file(&config_path).expect("Failed to load config");
+    
+    let query2 = QueryConfigDto {
+        id: "new-query".to_string(),
+        auto_start: false,
+        query: ConfigValue::Static("MATCH (s:Sensor) RETURN s".to_string()),
+        query_language: ConfigValue::Static("Cypher".to_string()),
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: ConfigValue::Static("source-1".to_string()),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 10000,
+        joins: None,
+        priority_queue_capacity: None,
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
+    
+    loaded_config.queries.push(query2);
+    loaded_config.save_to_file(&config_path).expect("Failed to save updated config");
+
+    // Reload and verify both queries exist
+    let final_config = load_config_file(&config_path).expect("Failed to load final config");
+    assert_eq!(final_config.queries.len(), 2, "Both queries should be present after update");
+
+    // Verify the original query is still there
+    assert!(
+        final_config.queries.iter().any(|q| q.id == "existing-query"),
+        "Original query should still exist"
+    );
+    
+    // Verify the new query was added
+    assert!(
+        final_config.queries.iter().any(|q| q.id == "new-query"),
+        "New query should be added"
+    );
+}
+
+#[test]
+fn test_queries_loaded_from_yaml_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let config_path = temp_dir.path().join("test-config.yaml");
+
+    // Write YAML with multiple queries directly
+    let yaml_content = r#"
+host: 127.0.0.1
+port: 8080
+logLevel: info
+persistConfig: true
+sources:
+  - kind: mock
+    id: test-source
+    autoStart: true
+queries:
+  - id: first-query
+    autoStart: true
+    query: "MATCH (n:Node) RETURN n"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: test-source
+  - id: second-query
+    autoStart: false
+    query: "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: test-source
+reactions: []
+"#;
+    fs::write(&config_path, yaml_content).expect("Failed to write YAML");
+
+    // Load and verify both queries are present
+    let config = load_config_file(&config_path).expect("Failed to load config");
+    assert_eq!(config.queries.len(), 2, "Both queries should be loaded from YAML");
+
+    // Verify first query
+    let q1 = config.queries.iter().find(|q| q.id == "first-query").expect("first-query not found");
+    assert!(q1.auto_start);
+    assert_eq!(q1.query, ConfigValue::Static("MATCH (n:Node) RETURN n".to_string()));
+
+    // Verify second query
+    let q2 = config.queries.iter().find(|q| q.id == "second-query").expect("second-query not found");
+    assert!(!q2.auto_start);
+    assert_eq!(q2.query, ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 50 RETURN s".to_string()));
+
+    // Save and reload to ensure round-trip works
+    config.save_to_file(&config_path).expect("Failed to save config");
+    let reloaded_config = load_config_file(&config_path).expect("Failed to reload config");
+    assert_eq!(reloaded_config.queries.len(), 2, "Both queries should survive round-trip");
+}

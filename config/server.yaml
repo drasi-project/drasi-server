@@ -168,6 +168,20 @@ queries:
     pipeline: []
   enableBootstrap: true
   bootstrapBufferSize: 10000
+- id: message-count
+  autoStart: true
+  query: |
+    MATCH (m:message)
+    RETURN m.message AS Message, count(m) AS Frequency
+  queryLanguage: Cypher
+  middleware: []
+  sources:
+  - sourceId: postgres-messages
+    nodes: []
+    relations: []
+    pipeline: []
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
 reactions:
 - kind: log
   id: log-all-queries

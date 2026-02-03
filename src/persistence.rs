@@ -1282,4 +1282,251 @@ logLevel: warn
         assert_eq!(loaded_config.sources[0].id(), "added-source");
         assert_eq!(loaded_config.reactions[0].id(), "added-reaction");
     }
+
+    // ==================== Query Persistence Tests ====================
+
+    #[tokio::test]
+    async fn test_query_registration_persists_correctly() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create a test file
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Register a query
+        let query1 = QueryConfigDto {
+            id: "test-query-1".to_string(),
+            auto_start: true,
+            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![],
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        };
+        persistence.register_query("test-server", query1).await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Verify query was persisted
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(loaded_config.queries.len(), 1, "Query should be persisted");
+        assert_eq!(loaded_config.queries[0].id, "test-query-1");
+        assert_eq!(
+            loaded_config.queries[0].query,
+            ConfigValue::Static("MATCH (n) RETURN n".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_multiple_queries_persist_without_overwriting() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create a test file
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Register first query
+        let query1 = QueryConfigDto {
+            id: "query-1".to_string(),
+            auto_start: true,
+            query: ConfigValue::Static("MATCH (n:Node) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![],
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        };
+        persistence.register_query("test-server", query1).await;
+
+        // Save first time
+        persistence.save().await.expect("Save failed");
+
+        // Register second query
+        let query2 = QueryConfigDto {
+            id: "query-2".to_string(),
+            auto_start: false,
+            query: ConfigValue::Static("MATCH (s:Sensor) RETURN s".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![],
+            enable_bootstrap: false,
+            bootstrap_buffer_size: 5000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        };
+        persistence.register_query("test-server", query2).await;
+
+        // Save second time
+        persistence.save().await.expect("Save failed");
+
+        // Verify both queries are persisted (second didn't overwrite first)
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(loaded_config.queries.len(), 2, "Both queries should be persisted");
+
+        // Verify first query still exists
+        let q1 = loaded_config.queries.iter().find(|q| q.id == "query-1");
+        assert!(q1.is_some(), "First query should still exist");
+        assert_eq!(
+            q1.unwrap().query,
+            ConfigValue::Static("MATCH (n:Node) RETURN n".to_string())
+        );
+
+        // Verify second query was added
+        let q2 = loaded_config.queries.iter().find(|q| q.id == "query-2");
+        assert!(q2.is_some(), "Second query should be added");
+        assert_eq!(
+            q2.unwrap().query,
+            ConfigValue::Static("MATCH (s:Sensor) RETURN s".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initial_queries_preserved_on_save() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+
+        // Create a test file
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Create initial query configs (simulating loading from config file)
+        let initial_query = QueryConfigDto {
+            id: "initial-query".to_string(),
+            auto_start: true,
+            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![],
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        };
+
+        let mut initial_query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>> =
+            IndexMap::new();
+        let mut server_queries = IndexMap::new();
+        server_queries.insert("initial-query".to_string(), initial_query);
+        initial_query_configs.insert("test-server".to_string(), server_queries);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            Arc::new(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+            initial_query_configs,
+        );
+
+        // Register a new query
+        let new_query = QueryConfigDto {
+            id: "new-query".to_string(),
+            auto_start: false,
+            query: ConfigValue::Static("MATCH (s:Sensor) RETURN s".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![],
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        };
+        persistence.register_query("test-server", new_query).await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Verify both initial and new queries are persisted
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(loaded_config.queries.len(), 2, "Both queries should be persisted");
+
+        // Verify initial query is preserved
+        assert!(
+            loaded_config.queries.iter().any(|q| q.id == "initial-query"),
+            "Initial query should be preserved"
+        );
+
+        // Verify new query was added
+        assert!(
+            loaded_config.queries.iter().any(|q| q.id == "new-query"),
+            "New query should be added"
+        );
+    }
 }
