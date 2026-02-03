@@ -1,7 +1,7 @@
 id: 557a4f2d-d472-4081-869e-85ffa08713fc
 host: 0.0.0.0
 port: 8080
-logLevel: info
+logLevel: debug
 persistConfig: true
 persistIndex: false
 sources:
@@ -32,6 +32,11 @@ sources:
       kind: EnvironmentVariable
       name: POSTGRES_PASSWORD
       default: drasi_password
+    tables: []
+    slotName: drasi_slot
+    publicationName: drasi_publication
+    sslMode: prefer
+    tableKeys: []
   host:
     kind: EnvironmentVariable
     name: POSTGRES_HOST
@@ -76,6 +81,11 @@ sources:
     database: test
     user: postgres
     password: test
+    tables: []
+    slotName: drasi_slot
+    publicationName: drasi_publication
+    sslMode: prefer
+    tableKeys: []
   host: localhost
   port: 5432
   database: test
@@ -112,6 +122,11 @@ sources:
       name: POSTGRES_USER
       default: drasi_user
     password: drasi_password
+    tables: []
+    slotName: drasi_slot
+    publicationName: drasi_publication
+    sslMode: prefer
+    tableKeys: []
   host:
     kind: EnvironmentVariable
     name: POSTGRES_HOST
@@ -139,11 +154,11 @@ sources:
     keyColumns:
     - messageid
 queries:
-- id: message-count
+- id: hello-world-from
   autoStart: true
   query: |
-    MATCH (m:message)
-    RETURN m.message AS Message, count(m) AS Frequency
+    MATCH (m:message {message: 'Hello World'})
+    RETURN m.messageid AS MessageId, m.from AS MessageFrom
   queryLanguage: Cypher
   middleware: []
   sources:
@@ -153,3 +168,19 @@ queries:
     pipeline: []
   enableBootstrap: true
   bootstrapBufferSize: 10000
+reactions:
+- kind: log
+  id: log-all-queries
+  queries:
+  - hello-world-from
+  - message-count
+  autoStart: true
+  routes: {}
+  defaultTemplate:
+    added:
+      template: '[{{query_name}}] + {{after}}'
+    updated:
+      template: '[{{query_name}}] ~ {{before}} -> {{after}}'
+    deleted:
+      template: '[{{query_name}}] - {{before}}'
+instances: []

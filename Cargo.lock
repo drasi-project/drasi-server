@@ -1612,6 +1612,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "async-stream",
  "async-trait",
  "axum 0.7.9",
  "bytes",

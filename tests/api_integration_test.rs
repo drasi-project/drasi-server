@@ -128,6 +128,10 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
             "/queries/:id/results",
             axum::routing::get(handlers::get_query_results),
         )
+        .route(
+            "/queries/:id/attach",
+            axum::routing::get(handlers::attach_query_stream),
+        )
         // Reaction endpoints
         .route("/reactions", axum::routing::get(handlers::list_reactions))
         .route(
@@ -691,4 +695,101 @@ async fn test_query_results_endpoint() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_query_attach_sse_stream() {
+    let (router, core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Add a query to attach to
+    let query_config = Query::cypher("attach-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("query-source")
+        .auto_start(false)
+        .build();
+    core.add_query(query_config.clone()).await.unwrap();
+
+    // Start an attach stream request
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/attach-query/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should succeed
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Content-Type should be text/event-stream
+    let content_type = response.headers().get("content-type").unwrap();
+    assert!(content_type.to_str().unwrap().contains("text/event-stream"));
+}
+
+#[tokio::test]
+async fn test_query_attach_not_found() {
+    let (router, _core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Try to attach to non-existent query
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/non-existent/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_query_attach_creates_temporary_reaction() {
+    let (router, core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Add a query to attach to
+    let query_config = Query::cypher("attach-reaction-test")
+        .query("MATCH (n) RETURN n")
+        .from_source("query-source")
+        .auto_start(false)
+        .build();
+    core.add_query(query_config.clone()).await.unwrap();
+
+    // Count reactions before attach
+    let reactions_before = core.list_reactions().await.unwrap_or_default().len();
+
+    // Start an attach stream request
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/attach-reaction-test/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // A temporary reaction should have been created
+    let reactions_after = core.list_reactions().await.unwrap_or_default();
+    assert!(reactions_after.len() > reactions_before);
+
+    // Verify the temporary reaction exists with __attach_ prefix
+    let attach_reaction = reactions_after
+        .iter()
+        .find(|(id, _)| id.starts_with("__attach_attach-reaction-test_"));
+    assert!(attach_reaction.is_some(), "Expected temporary attach reaction to be created");
 }

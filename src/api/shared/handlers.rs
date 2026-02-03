@@ -26,7 +26,6 @@ use axum::{
         IntoResponse, Json,
     },
 };
-use bytes::Bytes;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -43,8 +42,7 @@ use crate::factories::{create_reaction, create_source};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
 use futures_util::{stream, StreamExt};
-use tokio::sync::{broadcast, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 use drasi_reaction_application::ApplicationReaction;
 use drasi_reaction_application::subscription::SubscriptionOptions;
@@ -808,7 +806,7 @@ pub async fn get_query_results(
 pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> impl IntoResponse {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ApiResponse<StatusResponse>>)> {
     if let Err(e) = core.get_query_config(&id).await {
         let error_msg = e.to_string();
         let status = if error_msg.contains("not found") {
@@ -816,22 +814,14 @@ pub async fn attach_query_stream(
         } else {
             StatusCode::BAD_REQUEST
         };
-        return (
-            status,
-            Json(ApiResponse::<StatusResponse>::error(error_msg)),
-        )
-            .into_response();
+        return Err((status, Json(ApiResponse::error(error_msg))));
     }
 
     let reaction_id = format!("__attach_{}_{}", id, Uuid::new_v4());
     let (reaction, handle) = ApplicationReaction::new(reaction_id.clone(), vec![id.clone()]);
     if let Err(e) = core.add_reaction(reaction).await {
         let error_msg = format!("Failed to add attach reaction: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse::<StatusResponse>::error(error_msg)),
-        )
-            .into_response();
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
     }
 
     if let Err(e) = core.start_reaction(&reaction_id).await {
@@ -839,90 +829,63 @@ pub async fn attach_query_stream(
         if !error_msg.contains("already running") {
             let _ = core.remove_reaction(&reaction_id).await;
             let error_msg = format!("Failed to start attach reaction: {error_msg}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<StatusResponse>::error(error_msg)),
-            )
-                .into_response();
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
         }
     }
 
-    let (drop_tx, mut drop_rx) = oneshot::channel::<()>();
     let options = SubscriptionOptions::default().with_query_filter(vec![id.clone()]);
     let subscription = match handle.subscribe_with_options(options).await {
         Ok(subscription) => subscription,
         Err(e) => {
             let _ = core.remove_reaction(&reaction_id).await;
             let error_msg = format!("Failed to subscribe to attach reaction: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<StatusResponse>::error(error_msg)),
-            )
-                .into_response();
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
         }
     };
 
-    let mut stream = subscription.into_stream();
-    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::convert::Infallible>>(100);
+    let stream = subscription.into_stream();
     let cleanup_core = core.clone();
     let cleanup_id = reaction_id.clone();
 
-    tokio::spawn(async move {
-        let _guard = DropCleanup::new(drop_tx);
-        loop {
-            tokio::select! {
-                _ = &mut drop_rx => {
-                    break;
-                }
-                result = stream.next() => {
-                    match result {
-                        Some(result) => {
-                            if let Ok(json) = serde_json::to_vec(&result) {
-                                let mut payload = json;
-                                payload.push(b'\n');
-                                if tx.send(Ok(Bytes::from(payload))).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
+    // Create an async stream that yields query results and cleans up on drop
+    let sse_stream = async_stream::stream! {
+        let mut stream = stream;
+        let _cleanup = AttachCleanupGuard::new(cleanup_core, cleanup_id);
+
+        while let Some(result) = stream.next().await {
+            if let Ok(json) = serde_json::to_string(&result) {
+                yield Ok(Event::default().data(json));
             }
         }
+    };
 
-        let _ = cleanup_core.remove_reaction(&cleanup_id).await;
-    });
-
-    let body = axum::body::Body::from_stream(ReceiverStream::new(rx));
-    (
-        StatusCode::OK,
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/x-ndjson"),
-        )],
-        body,
-    )
-        .into_response()
+    Ok(Sse::new(sse_stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("heartbeat"),
+    ))
 }
 
-struct DropCleanup {
-    tx: Option<oneshot::Sender<()>>,
+/// Guard that cleans up the attach reaction when dropped.
+struct AttachCleanupGuard {
+    core: Arc<drasi_lib::DrasiLib>,
+    reaction_id: String,
 }
 
-impl DropCleanup {
-    fn new(tx: oneshot::Sender<()>) -> Self {
-        Self { tx: Some(tx) }
+impl AttachCleanupGuard {
+    fn new(core: Arc<drasi_lib::DrasiLib>, reaction_id: String) -> Self {
+        Self { core, reaction_id }
     }
 }
 
-impl Drop for DropCleanup {
+impl Drop for AttachCleanupGuard {
     fn drop(&mut self) {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(());
-        }
+        let core = self.core.clone();
+        let id = self.reaction_id.clone();
+        tokio::spawn(async move {
+            let _ = core.remove_reaction(&id).await;
+            log::debug!("Cleaned up attach reaction: {}", id);
+        });
     }
 }
 

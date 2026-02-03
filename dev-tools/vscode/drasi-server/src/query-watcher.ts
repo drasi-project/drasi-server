@@ -89,7 +89,7 @@ export class QueryWatcher {
     try {
       const response = await fetch(url, {
         method: 'GET',
-        headers: { Accept: 'application/x-ndjson' },
+        headers: { Accept: 'text/event-stream' },
         signal: this.abortController.signal,
       });
       if (!response.ok || !response.body) {
@@ -108,20 +108,15 @@ export class QueryWatcher {
           break;
         }
         buffer += decoder.decode(value, { stream: true });
-        let newlineIndex = buffer.indexOf('\n');
-        while (newlineIndex >= 0) {
-          const line = buffer.slice(0, newlineIndex).trim();
-          buffer = buffer.slice(newlineIndex + 1);
-          if (line) {
-            try {
-              const payload = JSON.parse(line);
-              this.resultsPanel?.webview.postMessage({ kind: 'stream', payload, raw: line });
-            } catch (error) {
-              this.resultsPanel?.webview.postMessage({ kind: 'raw', raw: line });
-              this.log.appendLine(`Failed to parse stream payload: ${error}`);
-            }
+        buffer = buffer.replace(/\r\n/g, '\n');
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const chunk = buffer.slice(0, boundary).trim();
+          buffer = buffer.slice(boundary + 2);
+          if (chunk) {
+            this.handleSseChunk(chunk);
           }
-          newlineIndex = buffer.indexOf('\n');
+          boundary = buffer.indexOf('\n\n');
         }
       }
     } catch (error) {
@@ -134,5 +129,29 @@ export class QueryWatcher {
       this.abortController = undefined;
     }
     return true;
+  }
+
+  private handleSseChunk(chunk: string) {
+    const lines = chunk.split('\n');
+    for (const line of lines) {
+      // Skip comments (heartbeats)
+      if (line.startsWith(':')) {
+        continue;
+      }
+      if (!line.startsWith('data:')) {
+        continue;
+      }
+      const payload = line.replace(/^data:\s?/, '');
+      if (!payload) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(payload);
+        this.resultsPanel?.webview.postMessage({ kind: 'stream', payload: parsed, raw: payload });
+      } catch (error) {
+        this.resultsPanel?.webview.postMessage({ kind: 'raw', raw: payload });
+        this.log.appendLine(`Failed to parse stream payload: ${error}`);
+      }
+    }
   }
 }

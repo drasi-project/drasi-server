@@ -92,6 +92,7 @@ thiserror = "1.0"
 dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
+async-stream = "0.3.6"
 
 [dev-dependencies]
 # Testing utilities
