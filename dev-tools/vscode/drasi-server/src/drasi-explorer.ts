@@ -191,9 +191,13 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
       return;
     }
     const viewer = new LogTerminalViewer(`Events Stream: ${resourceNode.component.id}`);
+    const stream = new ObservabilityStream();
+    
+    // Clean up stream when terminal is closed
+    viewer.onDispose(() => stream.stop());
+    
     viewer.show();
     viewer.appendHeader('Streaming');
-    const stream = new ObservabilityStream();
     try {
       const url = this.getEventsStreamUrl(resourceNode);
       await stream.streamEvents(url, viewer);
@@ -230,9 +234,13 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
       return;
     }
     const viewer = new LogTerminalViewer(`Logs Stream: ${resourceNode.component.id}`);
+    const stream = new ObservabilityStream();
+    
+    // Clean up stream when terminal is closed
+    viewer.onDispose(() => stream.stop());
+    
     viewer.show();
     viewer.appendHeader('Streaming');
-    const stream = new ObservabilityStream();
     try {
       const url = this.getLogsStreamUrl(resourceNode);
       await stream.streamLogs(url, viewer);

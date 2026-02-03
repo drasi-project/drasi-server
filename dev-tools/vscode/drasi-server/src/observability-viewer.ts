@@ -96,10 +96,34 @@ class LogTerminalPty implements vscode.Pseudoterminal {
 export class LogTerminalViewer {
   private terminal: vscode.Terminal;
   private pty: LogTerminalPty;
+  private disposeCallback: (() => void) | undefined;
+  private closeListener: vscode.Disposable;
 
   constructor(title: string) {
     this.pty = new LogTerminalPty();
     this.terminal = vscode.window.createTerminal({ name: title, pty: this.pty });
+    
+    // Listen for terminal close to trigger cleanup
+    this.closeListener = vscode.window.onDidCloseTerminal((closedTerminal) => {
+      if (closedTerminal === this.terminal) {
+        this.onClosed();
+      }
+    });
+  }
+
+  /**
+   * Register a callback to be called when the terminal is closed.
+   * Use this to clean up resources like active streams.
+   */
+  onDispose(callback: () => void) {
+    this.disposeCallback = callback;
+  }
+
+  private onClosed() {
+    this.closeListener.dispose();
+    if (this.disposeCallback) {
+      this.disposeCallback();
+    }
   }
 
   show() {
