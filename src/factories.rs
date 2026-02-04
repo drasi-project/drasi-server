@@ -185,11 +185,36 @@ fn create_bootstrap_provider(
         BootstrapProviderConfig::Postgres(_) => {
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::PostgresBootstrapProvider;
+                use drasi_bootstrap_postgres::{PostgresBootstrapProvider, PostgresBootstrapConfig, SslMode};
                 let mapper = DtoMapper::new();
-                let postgres_mapper = PostgresConfigMapper;
-                let domain_config = postgres_mapper.map(config, &mapper)?;
-                Ok(Box::new(PostgresBootstrapProvider::new(domain_config)))
+
+                // Convert SSL mode from DTO to bootstrap config
+                let ssl_mode_dto = mapper.resolve_typed::<crate::api::models::SslModeDto>(&config.ssl_mode)?;
+                let ssl_mode = match ssl_mode_dto {
+                    crate::api::models::SslModeDto::Disable => SslMode::Disable,
+                    crate::api::models::SslModeDto::Prefer => SslMode::Prefer,
+                    crate::api::models::SslModeDto::Require => SslMode::Require,
+                };
+
+                // Convert the source config DTO to bootstrap config
+                let bootstrap_config = PostgresBootstrapConfig {
+                    host: mapper.resolve_string(&config.host)?,
+                    port: mapper.resolve_typed(&config.port)?,
+                    database: mapper.resolve_string(&config.database)?,
+                    user: mapper.resolve_string(&config.user)?,
+                    password: mapper.resolve_string(&config.password)?,
+                    tables: config.tables.clone(),
+                    slot_name: config.slot_name.clone(),
+                    publication_name: config.publication_name.clone(),
+                    ssl_mode,
+                    table_keys: config.table_keys.iter().map(|tk| {
+                        drasi_bootstrap_postgres::TableKeyConfig {
+                            table: tk.table.clone(),
+                            key_columns: tk.key_columns.clone(),
+                        }
+                    }).collect(),
+                };
+                Ok(Box::new(PostgresBootstrapProvider::new(bootstrap_config)))
             } else {
                 Err(anyhow::anyhow!(
                     "Postgres bootstrap provider can only be used with Postgres sources"
