@@ -11,6 +11,8 @@ const REACTION_SCHEMA_SUFFIX = 'ReactionConfig';
 const QUERY_SCHEMA_NAME = 'QueryConfig';
 const BOOTSTRAP_SCHEMA_NAME = 'BootstrapProviderConfig';
 const BOOTSTRAP_SCHEMA_NAME_LEGACY = 'BootstrapProviderConfigDto';
+const BOOTSTRAP_CONFIG_SUFFIX = 'BootstrapConfig';
+const BOOTSTRAP_CONFIG_SUFFIX_LEGACY = 'BootstrapConfigDto';
 
 export class SchemaProvider {
   private registry: ConnectionRegistry;
@@ -206,6 +208,7 @@ function buildUnionSchema(openapi: any) {
     'Source',
     getSourceCommonProperties(convertedDefinitions),
     ['id'],
+    (schema, kind) => applySourceBootstrapSchema(schema, kind, convertedDefinitions),
   );
   const reactionUnion = buildKindUnion(
     convertedDefinitions,
@@ -318,6 +321,7 @@ function buildKindUnion(
   trimWord: string,
   commonProperties: Record<string, any>,
   commonRequired: string[],
+  transformVariant?: (schema: any, kind: string) => any,
 ) {
   if (names.length === 0) {
     return undefined;
@@ -327,11 +331,14 @@ function buildKindUnion(
   const variants = names.map((name) => {
     const baseSchema = definitions[name] ?? {};
     const kind = schemaNameToKind(name, suffix, trimWord);
-    const merged = mergeSchema(baseSchema, {
+    let merged = mergeSchema(baseSchema, {
       kind,
       commonProperties,
       commonRequired,
     });
+    if (transformVariant) {
+      merged = transformVariant(merged, kind);
+    }
     return merged;
   });
 
@@ -387,14 +394,10 @@ function schemaNameToKind(name: string, suffix: string, trimWord: string) {
 }
 
 function getSourceCommonProperties(definitions: Record<string, any>) {
-  const bootstrapSchema = definitions[BOOTSTRAP_SCHEMA_NAME] || definitions[BOOTSTRAP_SCHEMA_NAME_LEGACY]
-    ? { $ref: `#/definitions/${definitions[BOOTSTRAP_SCHEMA_NAME] ? BOOTSTRAP_SCHEMA_NAME : BOOTSTRAP_SCHEMA_NAME_LEGACY}` }
-    : { type: 'object' };
-
   return {
     id: { type: 'string' },
     autoStart: { type: 'boolean' },
-    bootstrapProvider: bootstrapSchema,
+    bootstrapProvider: getBootstrapProviderSchemaRef(definitions),
   };
 }
 
@@ -430,6 +433,121 @@ function isQuerySchema(schema: any) {
   return isObjectSchema(schema)
     && !!schema.properties?.query
     && !!schema.properties?.id;
+}
+
+function applySourceBootstrapSchema(
+  schema: any,
+  kind: string,
+  definitions: Record<string, any>,
+) {
+  if (!isObjectSchema(schema)) {
+    return schema;
+  }
+
+  const properties = schema.properties ?? {};
+  if (!properties.bootstrapProvider) {
+    return schema;
+  }
+
+  const bootstrapProvider = buildBootstrapProviderSchemaForSourceKind(definitions, kind);
+  if (!bootstrapProvider) {
+    return schema;
+  }
+
+  return {
+    ...schema,
+    type: 'object',
+    properties: {
+      ...properties,
+      bootstrapProvider,
+    },
+  };
+}
+
+function buildBootstrapProviderSchemaForSourceKind(
+  definitions: Record<string, any>,
+  kind: string,
+) {
+  const bootstrapSchema = getBootstrapProviderSchemaRef(definitions);
+  const configName = findBootstrapConfigSchemaName(definitions, kind);
+  if (!configName) {
+    return bootstrapSchema;
+  }
+
+  const relaxed = buildRelaxedBootstrapConfigSchema(definitions, configName, kind);
+  return {
+    oneOf: [bootstrapSchema, relaxed],
+  };
+}
+
+function buildRelaxedBootstrapConfigSchema(
+  definitions: Record<string, any>,
+  schemaName: string,
+  kind: string,
+) {
+  const baseSchema = resolveDefinitionSchema(definitions, definitions[schemaName]);
+  const properties = isObjectSchema(baseSchema) ? (baseSchema.properties ?? {}) : {};
+
+  return {
+    ...baseSchema,
+    type: 'object',
+    properties: {
+      ...properties,
+      kind: { enum: [kind] },
+    },
+    required: ['kind'],
+  };
+}
+
+function resolveDefinitionSchema(definitions: Record<string, any>, schema: any) {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  let current = schema;
+  const seen = new Set<any>();
+  while (current?.$ref && typeof current.$ref === 'string') {
+    if (seen.has(current)) {
+      break;
+    }
+    seen.add(current);
+    const refName = current.$ref.replace('#/definitions/', '');
+    const resolved = definitions[refName];
+    if (!resolved) {
+      break;
+    }
+    current = resolved;
+  }
+  return current;
+}
+
+function getBootstrapProviderSchemaRef(definitions: Record<string, any>) {
+  if (definitions[BOOTSTRAP_SCHEMA_NAME]) {
+    return { $ref: `#/definitions/${BOOTSTRAP_SCHEMA_NAME}` };
+  }
+  if (definitions[BOOTSTRAP_SCHEMA_NAME_LEGACY]) {
+    return { $ref: `#/definitions/${BOOTSTRAP_SCHEMA_NAME_LEGACY}` };
+  }
+  return { type: 'object' };
+}
+
+function findBootstrapConfigSchemaName(definitions: Record<string, any>, kind: string) {
+  const names = [
+    ...findSchemaNamesBySuffix(definitions, BOOTSTRAP_CONFIG_SUFFIX),
+    ...findSchemaNamesBySuffix(definitions, BOOTSTRAP_CONFIG_SUFFIX_LEGACY),
+  ];
+
+  for (const name of names) {
+    const suffix = name.endsWith(BOOTSTRAP_CONFIG_SUFFIX)
+      ? BOOTSTRAP_CONFIG_SUFFIX
+      : BOOTSTRAP_CONFIG_SUFFIX_LEGACY;
+    const schemaKind = schemaNameToKind(name, suffix, '');
+    if (schemaKind === kind) {
+      return name;
+    }
+  }
+
+  return undefined;
 }
 
 function minimalSourceSchema() {

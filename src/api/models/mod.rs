@@ -220,15 +220,18 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
                 let auto_start = auto_start.unwrap_or(true);
 
-                // Deserialize bootstrap_provider if present
+                let remaining_value = serde_json::Value::Object(remaining);
+
+                // Deserialize bootstrap_provider if present, inheriting from source when applicable.
                 let bootstrap_provider: Option<BootstrapProviderConfig> = bootstrap_provider
+                    .map(|value| {
+                        merge_bootstrap_provider_with_source(&kind, value, &remaining_value)
+                    })
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(|e| {
                         de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
                     })?;
-
-                let remaining_value = serde_json::Value::Object(remaining);
 
                 match kind.as_str() {
                     "mock" => {
@@ -342,6 +345,65 @@ impl SourceConfig {
                 bootstrap_provider, ..
             } => bootstrap_provider.as_ref(),
         }
+    }
+}
+
+fn merge_bootstrap_provider_with_source(
+    source_kind: &str,
+    bootstrap_value: serde_json::Value,
+    source_config: &serde_json::Value,
+) -> serde_json::Value {
+    let mut bootstrap_map = match bootstrap_value {
+        serde_json::Value::Object(map) => map,
+        other => return other,
+    };
+
+    let bootstrap_kind = match bootstrap_map.get("kind") {
+        Some(serde_json::Value::String(kind)) => kind.as_str(),
+        _ => return serde_json::Value::Object(bootstrap_map),
+    };
+
+    if bootstrap_kind != source_kind {
+        return serde_json::Value::Object(bootstrap_map);
+    }
+
+    let Some(allowed_fields) = allowed_bootstrap_provider_fields(bootstrap_kind) else {
+        return serde_json::Value::Object(bootstrap_map);
+    };
+
+    let serde_json::Value::Object(source_map) = source_config else {
+        return serde_json::Value::Object(bootstrap_map);
+    };
+
+    for field in allowed_fields {
+        if !bootstrap_map.contains_key(*field) {
+            if let Some(value) = source_map.get(*field) {
+                bootstrap_map.insert((*field).to_string(), value.clone());
+            }
+        }
+    }
+
+    serde_json::Value::Object(bootstrap_map)
+}
+
+fn allowed_bootstrap_provider_fields(kind: &str) -> Option<&'static [&'static str]> {
+    match kind {
+        "postgres" => Some(&[
+            "host",
+            "port",
+            "database",
+            "user",
+            "password",
+            "tables",
+            "slotName",
+            "publicationName",
+            "sslMode",
+            "tableKeys",
+        ]),
+        "platform" => Some(&["queryApiUrl", "timeoutSeconds"]),
+        "scriptfile" => Some(&["filePaths"]),
+        "application" | "noop" => Some(&[]),
+        _ => None,
     }
 }
 
@@ -1056,6 +1118,64 @@ mod tests {
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "test-source");
         assert!(source.bootstrap_provider().is_some());
+    }
+
+    #[test]
+    fn test_bootstrap_provider_inherits_postgres_fields() {
+        let yaml = r#"
+kind: postgres
+id: source-with-bootstrap
+host: localhost
+port: 5432
+database: drasi
+user: drasi_user
+password: drasi_pass
+slotName: drasi_slot
+publicationName: drasi_pub
+bootstrapProvider:
+  kind: postgres
+"#;
+
+        let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
+        let Some(BootstrapProviderConfig::Postgres(bootstrap)) = source.bootstrap_provider() else {
+            panic!("Expected postgres bootstrap provider");
+        };
+
+        assert_eq!(bootstrap.host, ConfigValue::Static("localhost".to_string()));
+        assert_eq!(bootstrap.port, ConfigValue::Static(5432));
+        assert_eq!(bootstrap.database, ConfigValue::Static("drasi".to_string()));
+        assert_eq!(bootstrap.user, ConfigValue::Static("drasi_user".to_string()));
+        assert_eq!(bootstrap.password, ConfigValue::Static("drasi_pass".to_string()));
+        assert_eq!(bootstrap.slot_name, "drasi_slot".to_string());
+        assert_eq!(bootstrap.publication_name, "drasi_pub".to_string());
+    }
+
+    #[test]
+    fn test_bootstrap_provider_postgres_override() {
+        let yaml = r#"
+kind: postgres
+id: source-with-bootstrap
+host: localhost
+port: 5432
+database: drasi
+user: drasi_user
+password: drasi_pass
+slotName: drasi_slot
+publicationName: drasi_pub
+bootstrapProvider:
+  kind: postgres
+  database: bootstrap_db
+  user: bootstrap_user
+"#;
+
+        let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
+        let Some(BootstrapProviderConfig::Postgres(bootstrap)) = source.bootstrap_provider() else {
+            panic!("Expected postgres bootstrap provider");
+        };
+
+        assert_eq!(bootstrap.database, ConfigValue::Static("bootstrap_db".to_string()));
+        assert_eq!(bootstrap.user, ConfigValue::Static("bootstrap_user".to_string()));
+        assert_eq!(bootstrap.password, ConfigValue::Static("drasi_pass".to_string()));
     }
 
     #[test]

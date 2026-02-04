@@ -131,4 +131,47 @@ suite('Drasi schema mapping', () => {
       'Expected no kind diagnostics for valid source kind'
     );
   });
+
+  test('bootstrap provider inherits source fields without required errors', async () => {
+    const workspaceRoot = process.env.TEST_WORKSPACE ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      assert.fail('No workspace root');
+    }
+
+    const schemaFile = getMarkedSchemaFile(workspaceRoot);
+    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
+
+    const config = vscode.workspace.getConfiguration('drasiServer');
+    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
+
+    fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
+    fs.writeFileSync(
+      schemaFile,
+      [
+        'sources:',
+        '  - kind: postgres',
+        '    id: demo',
+        '    host: localhost',
+        '    port: 5432',
+        '    database: demo_db',
+        '    user: demo_user',
+        '    password: demo_pass',
+        '    bootstrapProvider:',
+        '      kind: postgres',
+        '',
+      ].join('\n'),
+    );
+
+    const doc = await vscode.workspace.openTextDocument(schemaFile);
+    await vscode.window.showTextDocument(doc);
+
+    await vscode.extensions.getExtension('DrasiProject.drasi-server')?.activate();
+    await delay(1000);
+
+    const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+    assert.ok(
+      diagnostics.every((diag) => !diag.message.toLowerCase().includes('missing required property')),
+      `Expected no missing required property diagnostics, got: ${diagnostics.map((diag) => diag.message).join(', ')}`
+    );
+  });
 });
