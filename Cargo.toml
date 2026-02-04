@@ -32,7 +32,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library
-drasi-lib = "0.3.2"
+drasi-lib = { version = "0.3.2", features = ["bundled-jq"] }
 
 # Source plugins
 drasi-source-mock = "0.1.2"
