@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { ApiResponse, ComponentEvent, ComponentListItem, InstanceListItem, LogMessage } from './models/common';
+import { ApiResponse, ComponentEvent, ComponentListItem, CreateInstanceRequest, InstanceListItem, LogMessage } from './models/common';
 import { ConnectionRegistry } from './sdk/config';
 
 export class DrasiClient {
@@ -48,6 +48,29 @@ export class DrasiClient {
       throw new Error(res.data?.error ?? res.statusText);
     }
     return res.data.data ?? [];
+  }
+
+  async createInstance(request: CreateInstanceRequest): Promise<void> {
+    const res = await this.post<ApiResponse<any>>('/api/v1/instances', request);
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+  }
+
+  async checkHealth(): Promise<boolean> {
+    return DrasiClient.checkHealthForUrl(this.baseUrl);
+  }
+
+  static async checkHealthForUrl(baseUrl: string): Promise<boolean> {
+    try {
+      const res = await axios.get(`${baseUrl}/health`, {
+        validateStatus: () => true,
+        timeout: 3000,
+      });
+      return res.status === 200;
+    } catch {
+      return false;
+    }
   }
 
   async getCurrentInstanceId(): Promise<string> {

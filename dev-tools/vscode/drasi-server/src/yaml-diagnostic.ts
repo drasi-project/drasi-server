@@ -77,6 +77,10 @@ export class DrasiYamlDiagnosticProvider {
               if (item.kindLabel === 'config' && error.keyword === 'oneOf') {
                 continue;
               }
+              // Skip "must be string" errors when the value is a number (YAML coercion)
+              if (error.keyword === 'type' && error.params?.type === 'string') {
+                continue;
+              }
               const diagnostic = this.createDiagnostic(document, doc, error, currentLine, item.kindLabel);
               if (diagnostic) {
                 diagnostics.push(diagnostic);

@@ -36,8 +36,9 @@ use crate::api::models::{
 };
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
-    HealthResponse, InstanceListItem, StatusResponse,
+    HealthResponse, InstanceLinks, InstanceListItem, StatusResponse,
 };
+use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 
 #[derive(OpenApi)]
@@ -46,6 +47,7 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
         super::handlers::list_api_versions,
         super::handlers::health_check,
         super::handlers::list_instances,
+        super::handlers::create_instance,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
         super::handlers::upsert_source_handler,
@@ -88,6 +90,8 @@ use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
             ApiResponseSchema,
             StatusResponse,
             InstanceListItem,
+            InstanceLinks,
+            CreateInstanceRequest,
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,

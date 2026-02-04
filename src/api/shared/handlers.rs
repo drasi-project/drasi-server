@@ -26,7 +26,6 @@ use axum::{
         IntoResponse, Json,
     },
 };
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{convert::Infallible};
@@ -37,15 +36,58 @@ use super::responses::{
 };
 use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
-use crate::config::{ReactionConfig, SourceConfig};
+use crate::api::models::ConfigValue;
+use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
+use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
-use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
+use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, DrasiLib};
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use drasi_reaction_application::ApplicationReaction;
 use drasi_reaction_application::subscription::SubscriptionOptions;
+
+/// Path parameters for instance-specific routes
+#[derive(Debug, Deserialize)]
+pub struct InstancePath {
+    #[serde(rename = "instanceId")]
+    pub instance_id: String,
+}
+
+/// Path parameters for resource-specific routes
+#[derive(Debug, Deserialize)]
+pub struct ResourcePath {
+    #[serde(rename = "instanceId")]
+    pub instance_id: String,
+    pub id: String,
+}
+
+/// Helper to get an instance from the registry, returning an error response if not found
+pub async fn get_instance_or_error(
+    registry: &InstanceRegistry,
+    instance_id: &str,
+) -> Result<Arc<DrasiLib>, Json<ApiResponse<()>>> {
+    match registry.get(instance_id).await {
+        Some(core) => Ok(core),
+        None => Err(Json(ApiResponse::error(format!(
+            "Instance '{}' not found",
+            instance_id
+        )))),
+    }
+}
+
+/// Helper to get the default instance from the registry
+pub async fn get_default_instance_or_error(
+    registry: &InstanceRegistry,
+) -> Result<(String, Arc<DrasiLib>), Json<ApiResponse<()>>> {
+    match registry.get_default().await {
+        Some((id, core)) => Ok((id, core)),
+        None => Err(Json(ApiResponse::error(
+            "No instances configured".to_string(),
+        ))),
+    }
+}
 
 fn component_links(instance_id: &str, kind: &str, id: &str) -> ComponentLinks {
     let self_link = format!("/api/v1/instances/{instance_id}/{kind}/{id}");
@@ -135,15 +177,139 @@ pub async fn health_check() -> Json<HealthResponse> {
 
 /// List configured DrasiLib instances
 pub async fn list_instances(
-    Extension(instances): Extension<Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>>,
+    Extension(registry): Extension<InstanceRegistry>,
 ) -> Json<ApiResponse<Vec<InstanceListItem>>> {
-    let data = instances
-        .keys()
-        .cloned()
-        .map(|id| InstanceListItem { id })
-        .collect();
+    let instances = registry.list().await;
+    let mut data = Vec::with_capacity(instances.len());
+    
+    for (id, instance) in instances {
+        let source_count = instance.list_sources().await.map(|v| v.len()).unwrap_or(0);
+        let query_count = instance.list_queries().await.map(|v| v.len()).unwrap_or(0);
+        let reaction_count = instance.list_reactions().await.map(|v| v.len()).unwrap_or(0);
+        
+        let base_path = format!("/api/v1/instances/{}", id);
+        data.push(InstanceListItem {
+            id: id.clone(),
+            source_count,
+            query_count,
+            reaction_count,
+            links: crate::api::shared::InstanceLinks {
+                self_link: base_path.clone(),
+                sources: format!("{}/sources", base_path),
+                queries: format!("{}/queries", base_path),
+                reactions: format!("{}/reactions", base_path),
+            },
+        });
+    }
 
     Json(ApiResponse::success(data))
+}
+
+/// Request body for creating a new instance
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = CreateInstanceRequest)]
+pub struct CreateInstanceRequest {
+    /// Unique identifier for the new instance
+    pub id: String,
+    
+    /// Whether to use persistent indexing (RocksDB). Default: false (in-memory)
+    #[serde(default)]
+    pub persist_index: Option<bool>,
+    
+    /// Default capacity for priority queues (cascades to queries/reactions)
+    #[serde(default)]
+    pub default_priority_queue_capacity: Option<usize>,
+    
+    /// Default capacity for dispatch buffers (cascades to queries/reactions)
+    #[serde(default)]
+    pub default_dispatch_buffer_capacity: Option<usize>,
+}
+
+/// Create a new DrasiLib instance
+pub async fn create_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(request): Json<CreateInstanceRequest>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    if *read_only {
+        return Ok(Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot create instances.".to_string(),
+        )));
+    }
+
+    let instance_id = request.id.clone();
+    let persist_index = request.persist_index.unwrap_or(false);
+
+    // Check if instance already exists
+    if registry.contains(&instance_id).await {
+        log::info!("Instance '{}' already exists", instance_id);
+        return Err(StatusCode::CONFLICT);
+    }
+
+    // Create a new DrasiLib instance with optional configuration
+    let mut builder = DrasiLib::builder().with_id(&instance_id);
+    
+    if let Some(capacity) = request.default_priority_queue_capacity {
+        builder = builder.with_priority_queue_capacity(capacity);
+    }
+    
+    if let Some(capacity) = request.default_dispatch_buffer_capacity {
+        builder = builder.with_dispatch_buffer_capacity(capacity);
+    }
+    
+    // Note: persist_index requires RocksDB setup which needs a data path
+    // For now, we skip persistent index for dynamically created instances
+    // TODO: Add support for persistent index with configurable data path
+    
+    let core = builder.build().await;
+
+    let core = match core {
+        Ok(c) => Arc::new(c),
+        Err(e) => {
+            log::error!("Failed to create instance: {e}");
+            return Ok(Json(ApiResponse::error(format!(
+                "Failed to create instance: {e}"
+            ))));
+        }
+    };
+
+    // Start the instance
+    if let Err(e) = core.start().await {
+        log::error!("Failed to start instance '{}': {e}", instance_id);
+        return Ok(Json(ApiResponse::error(format!(
+            "Failed to start instance: {e}"
+        ))));
+    }
+
+    // Add to registry
+    if let Err(e) = registry.add(instance_id.clone(), core).await {
+        log::error!("Failed to register instance: {e}");
+        return Ok(Json(ApiResponse::error(e)));
+    }
+
+    log::info!("Instance '{}' created successfully", instance_id);
+
+    // Persist configuration if enabled
+    if let Some(persistence) = &config_persistence {
+        let instance_config = DrasiLibInstanceConfig {
+            id: ConfigValue::Static(instance_id.clone()),
+            persist_index,
+            state_store: None,
+            default_priority_queue_capacity: request.default_priority_queue_capacity.map(ConfigValue::Static),
+            default_dispatch_buffer_capacity: request.default_dispatch_buffer_capacity.map(ConfigValue::Static),
+            sources: Vec::new(),
+            reactions: Vec::new(),
+            queries: Vec::new(),
+        };
+        persistence.register_instance(instance_config).await;
+        persist_after_operation(&Some(persistence.clone()), "creating instance").await;
+    }
+
+    Ok(Json(ApiResponse::success(StatusResponse {
+        message: format!("Instance '{}' created successfully", instance_id),
+    })))
 }
 
 /// List all sources for an instance

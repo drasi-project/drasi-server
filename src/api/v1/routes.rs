@@ -22,70 +22,43 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use indexmap::IndexMap;
 use std::sync::Arc;
 
 use super::handlers;
+use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 
-/// Build the complete v1 API router.
+/// Build the complete v1 API router with dynamic instance routing.
 ///
-/// This function constructs all v1 routes and returns a router that should
-/// be nested under `/api/v1/` in the main application.
-///
-/// # Arguments
-///
-/// * `instances` - Map of instance IDs to their DrasiLib cores
-/// * `read_only` - Whether the server is in read-only mode
-/// * `config_persistence` - Optional configuration persistence handler
-///
-/// # Returns
-///
-/// A Router containing all v1 API routes.
+/// Uses `:instanceId` path parameter for dynamic instance lookup at request time.
 pub fn build_v1_router(
-    instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
+    registry: InstanceRegistry,
     read_only: Arc<bool>,
     config_persistence: Option<Arc<ConfigPersistence>>,
 ) -> Router {
-    let mut router = Router::new()
-        // Instance listing
-        .route("/instances", get(handlers::list_instances));
+    // Instance management routes
+    let instance_routes = Router::new()
+        .route("/instances", get(handlers::list_instances))
+        .route("/instances", post(handlers::create_instance));
 
-    // Build instance-specific routes for each instance
-    for (instance_id, core) in instances.iter() {
-        let instance_router = build_instance_router(
-            core.clone(),
-            read_only.clone(),
-            config_persistence.clone(),
-            instance_id.clone(),
-        );
-        router = router.nest(&format!("/instances/{instance_id}"), instance_router);
-    }
+    // Dynamic instance-specific routes using :instanceId path parameter
+    let instance_resource_routes = build_dynamic_instance_router();
 
-    // Add convenience routes for the first (default) instance
-    if let Some((instance_id, core)) = instances.iter().next() {
-        let default_router = build_instance_router(
-            core.clone(),
-            read_only.clone(),
-            config_persistence.clone(),
-            instance_id.clone(),
-        );
-        router = router.merge(default_router);
-    }
+    // Convenience routes for the default (first) instance
+    let default_routes = build_default_instance_router();
 
-    // Add the instances extension for the list_instances handler
-    router.layer(Extension(instances))
+    Router::new()
+        .merge(instance_routes)
+        .nest("/instances/:instanceId", instance_resource_routes)
+        .merge(default_routes)
+        .layer(Extension(registry))
+        .layer(Extension(read_only))
+        .layer(Extension(config_persistence))
 }
 
-/// Build routes for a specific DrasiLib instance.
-///
-/// These routes handle sources, queries, and reactions for a single instance.
-fn build_instance_router(
-    core: Arc<drasi_lib::DrasiLib>,
-    read_only: Arc<bool>,
-    config_persistence: Option<Arc<ConfigPersistence>>,
-    instance_id: String,
-) -> Router {
+/// Build routes for dynamic instance resources.
+/// These routes use :instanceId path parameter - handlers look up instance from registry.
+fn build_dynamic_instance_router() -> Router {
     Router::new()
         // Source routes
         .route("/sources", get(handlers::list_sources))
@@ -124,9 +97,46 @@ fn build_instance_router(
         .route("/reactions/:id", delete(handlers::delete_reaction))
         .route("/reactions/:id/start", post(handlers::start_reaction))
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
-        // Add extensions
-        .layer(Extension(core))
-        .layer(Extension(read_only))
-        .layer(Extension(config_persistence))
-        .layer(Extension(instance_id))
+}
+
+/// Build convenience routes that operate on the default (first) instance.
+fn build_default_instance_router() -> Router {
+    Router::new()
+        // Source routes (default instance)
+        .route("/sources", get(handlers::list_sources_default))
+        .route("/sources", post(handlers::create_source_default))
+        .route("/sources", put(handlers::upsert_source_default))
+        .route("/sources/:id", get(handlers::get_source_default))
+        .route("/sources/:id/events", get(handlers::get_source_events_default))
+        .route("/sources/:id/events/stream", get(handlers::stream_source_events_default))
+        .route("/sources/:id/logs", get(handlers::get_source_logs_default))
+        .route("/sources/:id/logs/stream", get(handlers::stream_source_logs_default))
+        .route("/sources/:id", delete(handlers::delete_source_default))
+        .route("/sources/:id/start", post(handlers::start_source_default))
+        .route("/sources/:id/stop", post(handlers::stop_source_default))
+        // Query routes (default instance)
+        .route("/queries", get(handlers::list_queries_default))
+        .route("/queries", post(handlers::create_query_default))
+        .route("/queries/:id", get(handlers::get_query_default))
+        .route("/queries/:id/events", get(handlers::get_query_events_default))
+        .route("/queries/:id/events/stream", get(handlers::stream_query_events_default))
+        .route("/queries/:id/logs", get(handlers::get_query_logs_default))
+        .route("/queries/:id/logs/stream", get(handlers::stream_query_logs_default))
+        .route("/queries/:id", delete(handlers::delete_query_default))
+        .route("/queries/:id/start", post(handlers::start_query_default))
+        .route("/queries/:id/stop", post(handlers::stop_query_default))
+        .route("/queries/:id/results", get(handlers::get_query_results_default))
+        .route("/queries/:id/attach", get(handlers::attach_query_stream_default))
+        // Reaction routes (default instance)
+        .route("/reactions", get(handlers::list_reactions_default))
+        .route("/reactions", post(handlers::create_reaction_default))
+        .route("/reactions", put(handlers::upsert_reaction_default))
+        .route("/reactions/:id", get(handlers::get_reaction_default))
+        .route("/reactions/:id/events", get(handlers::get_reaction_events_default))
+        .route("/reactions/:id/events/stream", get(handlers::stream_reaction_events_default))
+        .route("/reactions/:id/logs", get(handlers::get_reaction_logs_default))
+        .route("/reactions/:id/logs/stream", get(handlers::stream_reaction_logs_default))
+        .route("/reactions/:id", delete(handlers::delete_reaction_default))
+        .route("/reactions/:id/start", post(handlers::start_reaction_default))
+        .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
 }

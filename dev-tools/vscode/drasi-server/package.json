@@ -124,6 +124,10 @@
         "title": "Set as current instance"
       },
       {
+        "command": "drasi.instance.add",
+        "title": "Add instance"
+      },
+      {
         "command": "drasi.connection.configure",
         "title": "Edit server URL"
       },
@@ -277,6 +281,11 @@
         {
           "command": "drasi.connection.configure",
           "when": "view == drasi && viewItem == drasi.connectionNode",
+          "group": "navigation"
+        },
+        {
+          "command": "drasi.instance.add",
+          "when": "view == drasi && (viewItem == drasi.connectionNode || viewItem == drasi.connectionCurrentNode)",
           "group": "navigation"
         },
         {

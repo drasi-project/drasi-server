@@ -177,7 +177,7 @@ function getPosition(yamlString: string, index: number): vscode.Position {
     return new vscode.Position(0, 0);
   }
   const lines = yamlString.slice(0, index).split('\n');
-  const lineNumber = lines.length;
-  const columnNumber = lines[lines.length - 1].length + 1;
+  const lineNumber = lines.length - 1;
+  const columnNumber = lines[lines.length - 1].length;
   return new vscode.Position(lineNumber, columnNumber);
 }

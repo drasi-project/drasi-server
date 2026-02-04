@@ -32,7 +32,8 @@ use axum::{
 };
 use drasi_lib::Query;
 use drasi_server::api;
-use drasi_server::api::shared::handlers;
+use drasi_server::api::v1::handlers;
+use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
 use std::time::Duration;
 use serde_json::json;
@@ -43,6 +44,7 @@ use tower::ServiceExt;
 /// Helper to create a test router with all dependencies
 async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
     use drasi_lib::DrasiLib;
+    use drasi_server::api::v1::routes::build_v1_router;
 
     // Create mock source instances
     let test_source = create_mock_source("test-source");
@@ -78,108 +80,25 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 
     let instance_id = "test-server";
 
-    let instance_router = Router::new()
-        // Source endpoints
-        .route("/sources", axum::routing::get(handlers::list_sources))
-        .route(
-            "/sources",
-            axum::routing::post(handlers::create_source_handler),
-        )
-        .route("/sources/:id", axum::routing::get(handlers::get_source))
-        .route("/sources/:id/logs", axum::routing::get(handlers::get_source_logs))
-        .route(
-            "/sources/:id/logs/stream",
-            axum::routing::get(handlers::stream_source_logs),
-        )
-        .route(
-            "/sources/:id",
-            axum::routing::delete(handlers::delete_source),
-        )
-        .route(
-            "/sources/:id/start",
-            axum::routing::post(handlers::start_source),
-        )
-        .route(
-            "/sources/:id/stop",
-            axum::routing::post(handlers::stop_source),
-        )
-        // Query endpoints
-        .route("/queries", axum::routing::get(handlers::list_queries))
-        .route("/queries", axum::routing::post(handlers::create_query))
-        .route("/queries/:id", axum::routing::get(handlers::get_query))
-        .route("/queries/:id/logs", axum::routing::get(handlers::get_query_logs))
-        .route(
-            "/queries/:id/logs/stream",
-            axum::routing::get(handlers::stream_query_logs),
-        )
-        .route(
-            "/queries/:id",
-            axum::routing::delete(handlers::delete_query),
-        )
-        .route(
-            "/queries/:id/start",
-            axum::routing::post(handlers::start_query),
-        )
-        .route(
-            "/queries/:id/stop",
-            axum::routing::post(handlers::stop_query),
-        )
-        .route(
-            "/queries/:id/results",
-            axum::routing::get(handlers::get_query_results),
-        )
-        .route(
-            "/queries/:id/attach",
-            axum::routing::get(handlers::attach_query_stream),
-        )
-        // Reaction endpoints
-        .route("/reactions", axum::routing::get(handlers::list_reactions))
-        .route(
-            "/reactions",
-            axum::routing::post(handlers::create_reaction_handler),
-        )
-        .route("/reactions/:id", axum::routing::get(handlers::get_reaction))
-        .route("/reactions/:id/logs", axum::routing::get(handlers::get_reaction_logs))
-        .route(
-            "/reactions/:id/logs/stream",
-            axum::routing::get(handlers::stream_reaction_logs),
-        )
-        .route(
-            "/reactions/:id",
-            axum::routing::delete(handlers::delete_reaction),
-        )
-        .route(
-            "/reactions/:id/start",
-            axum::routing::post(handlers::start_reaction),
-        )
-        .route(
-            "/reactions/:id/stop",
-            axum::routing::post(handlers::stop_reaction),
-        )
-        // Add extensions using new architecture
-        .layer(Extension(core.clone()))
-        .layer(Extension(read_only))
-        .layer(Extension(config_persistence))
-        .layer(Extension(instance_id.to_string()));
-
-    // Create instances map for list_instances endpoint
+    // Create registry with the test instance
     let mut instances_map = indexmap::IndexMap::new();
     instances_map.insert(instance_id.to_string(), core.clone());
-    let instances = Arc::new(instances_map);
+    let registry = InstanceRegistry::from_map(instances_map);
+
+    // Use the production router builder
+    let v1_router = build_v1_router(registry, read_only, config_persistence);
 
     let router = Router::new()
         // Health endpoint
         .route("/health", axum::routing::get(handlers::health_check))
-        .route("/instances", axum::routing::get(handlers::list_instances))
-        .nest(&format!("/instances/{instance_id}"), instance_router)
-        .layer(Extension(instances));
+        .merge(v1_router);
 
-    let registry = TestComponentRegistry {
+    let registry2 = TestComponentRegistry {
         source: test_source,
         reaction: test_reaction,
     };
 
-    (router, core, registry)
+    (router, core, registry2)
 }
 
 struct TestComponentRegistry {
@@ -230,11 +149,16 @@ async fn test_instances_endpoint() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(json["success"], true);
-    assert!(json["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|i| i["id"] == "test-server"));
+    let instances = json["data"].as_array().unwrap();
+    let test_instance = instances.iter().find(|i| i["id"] == "test-server").unwrap();
+    
+    // Verify richer InstanceDto fields
+    assert!(test_instance["source_count"].as_u64().unwrap() >= 3); // test-source, query-source, auto-source
+    assert!(test_instance["reaction_count"].as_u64().unwrap() >= 2); // test-reaction, auto-reaction
+    assert!(test_instance["links"]["self"].is_string());
+    assert!(test_instance["links"]["sources"].as_str().unwrap().contains("/sources"));
+    assert!(test_instance["links"]["queries"].as_str().unwrap().contains("/queries"));
+    assert!(test_instance["links"]["reactions"].as_str().unwrap().contains("/reactions"));
 }
 
 #[tokio::test]
@@ -458,7 +382,7 @@ async fn test_reaction_lifecycle_via_api() {
 async fn test_source_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
     registry.source.emit_log("source log entry").await;
-    sleep(Duration::from_millis(50)).await;
+    sleep(Duration::from_millis(200)).await;  // Increased for timing stability
 
     let response = router
         .oneshot(

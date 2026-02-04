@@ -1,5 +1,24 @@
 {
     "yaml.schemas": {
-        "file:///home/danielgerlag/.vscode-server/data/User/globalStorage/drasiproject.drasi-server/drasi-resources.schema.1770085455511.json": []
-    }
+        "file:///home/danielgerlag/.vscode-server/data/User/globalStorage/drasiproject.drasi-server/drasi-resources.schema.1770161981754.json": [
+            "configs/01-fundamentals/mock-with-logging.yaml"
+        ]
+    },
+    "drasiServer.schemaFiles": [
+        "configs/01-fundamentals/mock-with-logging.yaml"
+    ],
+    "drasiServer.connections": [
+        {
+            "id": "020b34ce-5623-4377-b6d0-8f41c949558c",
+            "name": "Local Drasi Server",
+            "url": "http://localhost:8080",
+            "instanceId": "instance-2"
+        },
+        {
+            "id": "7172867f-a19d-492d-8c47-b4b15a5daab4",
+            "name": "foo",
+            "url": "http://localhost:8082"
+        }
+    ],
+    "drasiServer.currentConnectionId": "020b34ce-5623-4377-b6d0-8f41c949558c"
 }

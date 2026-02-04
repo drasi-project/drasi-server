@@ -31,6 +31,7 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     vscode.commands.registerCommand('drasi.logs.view', this.viewLogs.bind(this));
     vscode.commands.registerCommand('drasi.logs.stream', this.streamLogs.bind(this));
     vscode.commands.registerCommand('drasi.instance.use', this.useInstance.bind(this));
+    vscode.commands.registerCommand('drasi.instance.add', this.addInstance.bind(this));
     vscode.commands.registerCommand('drasi.connection.configure', this.configureConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.add', this.addConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.use', this.useConnection.bind(this));
@@ -48,14 +49,24 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
   async getChildren(element?: ExplorerNode | undefined): Promise<ExplorerNode[]> {
     if (!element) {
       await this.registry.ensureDefaultConnection();
-      return this.registry.getConnections().map((connection) => {
-        const currentId = this.registry.getCurrentConnectionId();
-        return new ConnectionNode(connection, connection.id === currentId);
+      const connections = this.registry.getConnections();
+      const currentId = this.registry.getCurrentConnectionId();
+      
+      // Check health for all connections in parallel
+      const healthChecks = await Promise.all(
+        connections.map(async (connection) => {
+          const isConnected = await DrasiClient.checkHealthForUrl(connection.url);
+          return { connection, isConnected };
+        })
+      );
+      
+      return healthChecks.map(({ connection, isConnected }) => {
+        return new ConnectionNode(connection, connection.id === currentId, isConnected);
       });
     }
 
     if (element instanceof ConnectionNode) {
-      if (!element.isCurrent) {
+      if (!element.isCurrent || !element.isConnected) {
         return [];
       }
       const instances = await this.drasiClient.listInstances();
@@ -337,6 +348,80 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     this.refresh();
   }
 
+  async addInstance() {
+    const id = await vscode.window.showInputBox({
+      prompt: 'Enter a unique ID for the new instance',
+      placeHolder: 'my-instance',
+    });
+
+    if (!id) {
+      return;
+    }
+
+    // Ask about persistent indexing
+    const persistIndexChoice = await vscode.window.showQuickPick(
+      ['No (in-memory, faster)', 'Yes (RocksDB, persistent)'],
+      { placeHolder: 'Use persistent indexing?' }
+    );
+    
+    if (persistIndexChoice === undefined) {
+      return;
+    }
+    const persistIndex = persistIndexChoice.startsWith('Yes');
+
+    // Ask about priority queue capacity (optional)
+    const priorityQueueCapacityStr = await vscode.window.showInputBox({
+      prompt: 'Default priority queue capacity (leave empty for default)',
+      placeHolder: '10000',
+      validateInput: (value) => {
+        if (value && isNaN(parseInt(value, 10))) {
+          return 'Must be a number';
+        }
+        return null;
+      }
+    });
+
+    if (priorityQueueCapacityStr === undefined) {
+      return;
+    }
+
+    // Ask about dispatch buffer capacity (optional)
+    const dispatchBufferCapacityStr = await vscode.window.showInputBox({
+      prompt: 'Default dispatch buffer capacity (leave empty for default)',
+      placeHolder: '1000',
+      validateInput: (value) => {
+        if (value && isNaN(parseInt(value, 10))) {
+          return 'Must be a number';
+        }
+        return null;
+      }
+    });
+
+    if (dispatchBufferCapacityStr === undefined) {
+      return;
+    }
+
+    const request = {
+      id,
+      persistIndex: persistIndex || undefined,
+      defaultPriorityQueueCapacity: priorityQueueCapacityStr ? parseInt(priorityQueueCapacityStr, 10) : undefined,
+      defaultDispatchBufferCapacity: dispatchBufferCapacityStr ? parseInt(dispatchBufferCapacityStr, 10) : undefined,
+    };
+
+    await vscode.window.withProgress({
+      title: `Creating instance ${id}`,
+      location: vscode.ProgressLocation.Notification,
+    }, async () => {
+      try {
+        await this.drasiClient.createInstance(request);
+        vscode.window.showInformationMessage(`Instance '${id}' created successfully`);
+        this.refresh();
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to create instance: ${err}`);
+      }
+    });
+  }
+
   async configureConnection() {
     const current = this.registry.getCurrentConnection();
     const url = await vscode.window.showInputBox({
@@ -481,19 +566,34 @@ class ConnectionNode extends ExplorerNode {
   contextValue = 'drasi.connectionNode';
   connection: ServerConnectionConfig;
   private current: boolean;
+  private connected: boolean;
 
-  constructor(connection: ServerConnectionConfig, current: boolean) {
+  constructor(connection: ServerConnectionConfig, current: boolean, connected: boolean) {
     super(connection.name, vscode.TreeItemCollapsibleState.Expanded);
     this.connection = connection;
     this.current = current;
+    this.connected = connected;
     this.description = connection.url;
     if (current) {
       this.contextValue = 'drasi.connectionCurrentNode';
     }
+    this.iconPath = this.getStatusIcon();
+    this.tooltip = connected ? 'Connected' : 'Disconnected';
+  }
+
+  private getStatusIcon(): vscode.ThemeIcon {
+    if (this.connected) {
+      return new vscode.ThemeIcon('cloud', new vscode.ThemeColor('testing.iconPassed'));
+    }
+    return new vscode.ThemeIcon('cloud', new vscode.ThemeColor('testing.iconFailed'));
   }
 
   public get isCurrent() {
     return this.current;
+  }
+
+  public get isConnected() {
+    return this.connected;
   }
 }
 

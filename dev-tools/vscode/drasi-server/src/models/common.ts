@@ -17,6 +17,22 @@ export interface ComponentListItem {
 
 export interface InstanceListItem {
   id: string;
+  sourceCount?: number;
+  queryCount?: number;
+  reactionCount?: number;
+  links?: {
+    self: string;
+    sources: string;
+    queries: string;
+    reactions: string;
+  };
+}
+
+export interface CreateInstanceRequest {
+  id: string;
+  persistIndex?: boolean;
+  defaultPriorityQueueCapacity?: number;
+  defaultDispatchBufferCapacity?: number;
 }
 
 export type ComponentType = 'Source' | 'Query' | 'Reaction';

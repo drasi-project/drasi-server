@@ -59,6 +59,28 @@ pub struct ComponentLinks {
 pub struct InstanceListItem {
     /// ID of the DrasiLib instance
     pub id: String,
+    /// Number of sources in this instance
+    pub source_count: usize,
+    /// Number of queries in this instance
+    pub query_count: usize,
+    /// Number of reactions in this instance
+    pub reaction_count: usize,
+    /// HATEOAS links
+    pub links: InstanceLinks,
+}
+
+/// HATEOAS links for an instance
+#[derive(Serialize, ToSchema)]
+pub struct InstanceLinks {
+    /// Link to this instance's resources
+    #[serde(rename = "self")]
+    pub self_link: String,
+    /// Link to sources
+    pub sources: String,
+    /// Link to queries
+    pub queries: String,
+    /// Link to reactions
+    pub reactions: String,
 }
 
 /// Generic API response wrapper

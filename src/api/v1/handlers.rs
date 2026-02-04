@@ -23,8 +23,8 @@ use axum::{
     http::StatusCode,
     response::{sse::Sse, Json},
 };
+use serde::Deserialize;
 use std::convert::Infallible;
-use indexmap::IndexMap;
 use std::sync::Arc;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
@@ -33,10 +33,45 @@ use crate::api::shared::{
     StatusResponse,
 };
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
+use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 
 // Re-export shared handler implementations
 use crate::api::shared::handlers as shared;
+
+/// Path parameter for instance-specific routes
+#[derive(Debug, Deserialize)]
+pub struct InstancePath {
+    #[serde(rename = "instanceId")]
+    pub instance_id: String,
+}
+
+/// Path parameters for resource-specific routes
+#[derive(Debug, Deserialize)]
+pub struct ResourcePath {
+    #[serde(rename = "instanceId")]
+    pub instance_id: String,
+    pub id: String,
+}
+
+/// Helper to get instance from registry or return error response
+async fn get_instance(
+    registry: &InstanceRegistry,
+    instance_id: &str,
+) -> Result<Arc<drasi_lib::DrasiLib>, (StatusCode, String)> {
+    registry.get(instance_id).await.ok_or_else(|| {
+        (StatusCode::NOT_FOUND, format!("Instance '{}' not found", instance_id))
+    })
+}
+
+/// Helper to get default instance from registry
+async fn get_default(
+    registry: &InstanceRegistry,
+) -> Result<(String, Arc<drasi_lib::DrasiLib>), (StatusCode, String)> {
+    registry.get_default().await.ok_or_else(|| {
+        (StatusCode::NOT_FOUND, "No instances configured".to_string())
+    })
+}
 
 /// List available API versions
 #[utoipa::path(
@@ -74,9 +109,36 @@ pub async fn health_check() -> Json<HealthResponse> {
     tag = "Instances"
 )]
 pub async fn list_instances(
-    Extension(instances): Extension<Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>>,
+    Extension(registry): Extension<InstanceRegistry>,
 ) -> Json<ApiResponse<Vec<InstanceListItem>>> {
-    shared::list_instances(Extension(instances)).await
+    shared::list_instances(Extension(registry)).await
+}
+
+/// Create a new DrasiLib instance
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances",
+    request_body(content = inline(shared::CreateInstanceRequest)),
+    responses(
+        (status = 200, description = "Instance created successfully", body = ApiResponse),
+        (status = 409, description = "Instance already exists"),
+        (status = 500, description = "Internal server error"),
+    ),
+    tag = "Instances"
+)]
+pub async fn create_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(request): Json<shared::CreateInstanceRequest>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    shared::create_instance(
+        Extension(registry),
+        Extension(read_only),
+        Extension(config_persistence),
+        Json(request),
+    )
+    .await
 }
 
 /// List all sources
@@ -92,10 +154,11 @@ pub async fn list_instances(
     tag = "Sources"
 )]
 pub async fn list_sources(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_sources(Extension(core), Extension(instance_id)).await
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let core = get_instance(&registry, &instance_id).await?;
+    Ok(shared::list_sources(Extension(core), Extension(instance_id)).await)
 }
 
 /// Create a new source
@@ -128,12 +191,13 @@ pub async fn list_sources(
     tag = "Sources"
 )]
 pub async fn create_source_handler(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::create_source_handler(
         Extension(core),
         Extension(read_only),
@@ -174,12 +238,13 @@ pub async fn create_source_handler(
     tag = "Sources"
 )]
 pub async fn upsert_source_handler(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_source_handler(
         Extension(core),
         Extension(read_only),
@@ -208,12 +273,12 @@ pub async fn upsert_source_handler(
     tag = "Sources"
 )]
 pub async fn get_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
-    Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source(
         Extension(core),
         Extension(config_persistence),
@@ -240,10 +305,11 @@ pub async fn get_source(
     tag = "Sources"
 )]
 pub async fn get_source_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -262,9 +328,10 @@ pub async fn get_source_events(
     tag = "Sources"
 )]
 pub async fn stream_source_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_events(Extension(core), Path(id)).await
 }
 
@@ -284,10 +351,11 @@ pub async fn stream_source_events(
     tag = "Sources"
 )]
 pub async fn get_source_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -306,9 +374,10 @@ pub async fn get_source_logs(
     tag = "Sources"
 )]
 pub async fn stream_source_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_logs(Extension(core), Path(id)).await
 }
 
@@ -326,12 +395,12 @@ pub async fn stream_source_logs(
     tag = "Sources"
 )]
 pub async fn delete_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
-    Path(id): Path<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_source(
         Extension(core),
         Extension(read_only),
@@ -358,9 +427,10 @@ pub async fn delete_source(
     tag = "Sources"
 )]
 pub async fn start_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::start_source(Extension(core), Path(id)).await
 }
 
@@ -380,9 +450,10 @@ pub async fn start_source(
     tag = "Sources"
 )]
 pub async fn stop_source(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_source(Extension(core), Path(id)).await
 }
 
@@ -399,10 +470,11 @@ pub async fn stop_source(
     tag = "Queries"
 )]
 pub async fn list_queries(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_queries(Extension(core), Extension(instance_id)).await
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let core = get_instance(&registry, &instance_id).await?;
+    Ok(shared::list_queries(Extension(core), Extension(instance_id)).await)
 }
 
 /// Create a new query
@@ -420,12 +492,13 @@ pub async fn list_queries(
     tag = "Queries"
 )]
 pub async fn create_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::create_query(
         Extension(core),
         Extension(read_only),
@@ -452,12 +525,12 @@ pub async fn create_query(
     tag = "Queries"
 )]
 pub async fn get_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
-    Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query(
         Extension(core),
         Extension(config_persistence),
@@ -484,10 +557,11 @@ pub async fn get_query(
     tag = "Queries"
 )]
 pub async fn get_query_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -506,9 +580,10 @@ pub async fn get_query_events(
     tag = "Queries"
 )]
 pub async fn stream_query_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_events(Extension(core), Path(id)).await
 }
 
@@ -528,10 +603,11 @@ pub async fn stream_query_events(
     tag = "Queries"
 )]
 pub async fn get_query_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -550,9 +626,10 @@ pub async fn get_query_logs(
     tag = "Queries"
 )]
 pub async fn stream_query_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_logs(Extension(core), Path(id)).await
 }
 
@@ -570,12 +647,12 @@ pub async fn stream_query_logs(
     tag = "Queries"
 )]
 pub async fn delete_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
-    Path(id): Path<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_query(
         Extension(core),
         Extension(read_only),
@@ -602,9 +679,10 @@ pub async fn delete_query(
     tag = "Queries"
 )]
 pub async fn start_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::start_query(Extension(core), Path(id)).await
 }
 
@@ -624,9 +702,10 @@ pub async fn start_query(
     tag = "Queries"
 )]
 pub async fn stop_query(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_query(Extension(core), Path(id)).await
 }
 
@@ -646,9 +725,10 @@ pub async fn stop_query(
     tag = "Queries"
 )]
 pub async fn get_query_results(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_results(Extension(core), Path(id)).await
 }
 
@@ -668,9 +748,13 @@ pub async fn get_query_results(
     tag = "Queries"
 )]
 pub async fn attach_query_stream(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> impl axum::response::IntoResponse {
+    let core = match registry.get(&instance_id).await {
+        Some(c) => c,
+        None => return Err((StatusCode::NOT_FOUND, Json(ApiResponse::<StatusResponse>::error("Instance not found".to_string())))),
+    };
     shared::attach_query_stream(Extension(core), Path(id)).await
 }
 
@@ -687,10 +771,11 @@ pub async fn attach_query_stream(
     tag = "Reactions"
 )]
 pub async fn list_reactions(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    shared::list_reactions(Extension(core), Extension(instance_id)).await
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let core = get_instance(&registry, &instance_id).await?;
+    Ok(shared::list_reactions(Extension(core), Extension(instance_id)).await)
 }
 
 /// Create a new reaction
@@ -723,12 +808,13 @@ pub async fn list_reactions(
     tag = "Reactions"
 )]
 pub async fn create_reaction_handler(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::create_reaction_handler(
         Extension(core),
         Extension(read_only),
@@ -768,12 +854,13 @@ pub async fn create_reaction_handler(
     tag = "Reactions"
 )]
 pub async fn upsert_reaction_handler(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_reaction_handler(
         Extension(core),
         Extension(read_only),
@@ -802,12 +889,12 @@ pub async fn upsert_reaction_handler(
     tag = "Reactions"
 )]
 pub async fn get_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
-    Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction(
         Extension(core),
         Extension(config_persistence),
@@ -834,10 +921,11 @@ pub async fn get_reaction(
     tag = "Reactions"
 )]
 pub async fn get_reaction_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -856,9 +944,10 @@ pub async fn get_reaction_events(
     tag = "Reactions"
 )]
 pub async fn stream_reaction_events(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_events(Extension(core), Path(id)).await
 }
 
@@ -878,10 +967,11 @@ pub async fn stream_reaction_events(
     tag = "Reactions"
 )]
 pub async fn get_reaction_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -900,9 +990,10 @@ pub async fn get_reaction_logs(
     tag = "Reactions"
 )]
 pub async fn stream_reaction_logs(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_logs(Extension(core), Path(id)).await
 }
 
@@ -920,12 +1011,12 @@ pub async fn stream_reaction_logs(
     tag = "Reactions"
 )]
 pub async fn delete_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
-    Path(id): Path<String>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_reaction(
         Extension(core),
         Extension(read_only),
@@ -952,9 +1043,10 @@ pub async fn delete_reaction(
     tag = "Reactions"
 )]
 pub async fn start_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Path(id): Path<String>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
     shared::start_reaction(Extension(core), Path(id)).await
 }
 
@@ -974,8 +1066,425 @@ pub async fn start_reaction(
     tag = "Reactions"
 )]
 pub async fn stop_reaction(
-    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stop_reaction(Extension(core), Path(id)).await
+}
+
+// ============================================================================
+// Default instance handlers (convenience routes)
+// These use the first configured instance
+// ============================================================================
+
+/// List all sources (default instance)
+pub async fn list_sources_default(
+    Extension(registry): Extension<InstanceRegistry>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let (instance_id, core) = get_default(&registry).await?;
+    Ok(shared::list_sources(Extension(core), Extension(instance_id)).await)
+}
+
+/// Create a new source (default instance)
+pub async fn create_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::create_source_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
+/// Upsert a source (default instance)
+pub async fn upsert_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::upsert_source_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
+/// Get source details (default instance)
+pub async fn get_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+    Query(view): Query<ComponentViewQuery>,
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_source(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
+}
+
+/// Get source events (default instance)
+pub async fn get_source_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_source_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream source events (default instance)
+pub async fn stream_source_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_source_events(Extension(core), Path(id)).await
+}
+
+/// Get source logs (default instance)
+pub async fn get_source_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_source_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream source logs (default instance)
+pub async fn stream_source_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_source_logs(Extension(core), Path(id)).await
+}
+
+/// Delete a source (default instance)
+pub async fn delete_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::delete_source(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Path(id),
+    )
+    .await
+}
+
+/// Start a source (default instance)
+pub async fn start_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::start_source(Extension(core), Path(id)).await
+}
+
+/// Stop a source (default instance)
+pub async fn stop_source_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stop_source(Extension(core), Path(id)).await
+}
+
+/// List all queries (default instance)
+pub async fn list_queries_default(
+    Extension(registry): Extension<InstanceRegistry>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let (instance_id, core) = get_default(&registry).await?;
+    Ok(shared::list_queries(Extension(core), Extension(instance_id)).await)
+}
+
+/// Create a new query (default instance)
+pub async fn create_query_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config): Json<QueryConfigDto>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::create_query(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config),
+    )
+    .await
+}
+
+/// Get query details (default instance)
+pub async fn get_query_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+    Query(view): Query<ComponentViewQuery>,
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_query(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
+}
+
+/// Get query events (default instance)
+pub async fn get_query_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_query_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream query events (default instance)
+pub async fn stream_query_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_query_events(Extension(core), Path(id)).await
+}
+
+/// Get query logs (default instance)
+pub async fn get_query_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_query_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream query logs (default instance)
+pub async fn stream_query_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_query_logs(Extension(core), Path(id)).await
+}
+
+/// Delete a query (default instance)
+pub async fn delete_query_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::delete_query(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Path(id),
+    )
+    .await
+}
+
+/// Start a query (default instance)
+pub async fn start_query_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::start_query(Extension(core), Path(id)).await
+}
+
+/// Stop a query (default instance)
+pub async fn stop_query_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stop_query(Extension(core), Path(id)).await
+}
+
+/// Get query results (default instance)
+pub async fn get_query_results_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_query_results(Extension(core), Path(id)).await
+}
+
+/// Attach to query stream (default instance)
+pub async fn attach_query_stream_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    let core = match registry.get_default().await {
+        Some((_, c)) => c,
+        None => return Err((StatusCode::NOT_FOUND, Json(ApiResponse::<StatusResponse>::error("No instances configured".to_string())))),
+    };
+    shared::attach_query_stream(Extension(core), Path(id)).await
+}
+
+/// List all reactions (default instance)
+pub async fn list_reactions_default(
+    Extension(registry): Extension<InstanceRegistry>,
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
+    let (instance_id, core) = get_default(&registry).await?;
+    Ok(shared::list_reactions(Extension(core), Extension(instance_id)).await)
+}
+
+/// Create a new reaction (default instance)
+pub async fn create_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::create_reaction_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
+/// Upsert a reaction (default instance)
+pub async fn upsert_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Json(config_json): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::upsert_reaction_handler(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Json(config_json),
+    )
+    .await
+}
+
+/// Get reaction details (default instance)
+pub async fn get_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+    Query(view): Query<ComponentViewQuery>,
+) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_reaction(
+        Extension(core),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Query(view),
+        Path(id),
+    )
+    .await
+}
+
+/// Get reaction events (default instance)
+pub async fn get_reaction_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_reaction_events(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream reaction events (default instance)
+pub async fn stream_reaction_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_reaction_events(Extension(core), Path(id)).await
+}
+
+/// Get reaction logs (default instance)
+pub async fn get_reaction_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<ObservabilityQuery>,
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::get_reaction_logs(Extension(core), Path(id), Query(query)).await
+}
+
+/// Stream reaction logs (default instance)
+pub async fn stream_reaction_logs_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::stream_reaction_logs(Extension(core), Path(id)).await
+}
+
+/// Delete a reaction (default instance)
+pub async fn delete_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::delete_reaction(
+        Extension(core),
+        Extension(read_only),
+        Extension(config_persistence),
+        Extension(instance_id),
+        Path(id),
+    )
+    .await
+}
+
+/// Start a reaction (default instance)
+pub async fn start_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::start_reaction(Extension(core), Path(id)).await
+}
+
+/// Stop a reaction (default instance)
+pub async fn stop_reaction_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_reaction(Extension(core), Path(id)).await
 }
