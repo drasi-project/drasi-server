@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Determine version
         id: version
@@ -61,76 +63,198 @@ jobs:
   # Build binaries for multiple platforms using cross-compilation
   build-binaries:
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: determine-version
     strategy:
       matrix:
         include:
+          # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             os_name: macos
             arch: aarch64
-          - target: aarch64-pc-windows-msvc
-            os_name: windows
-            arch: aarch64
-          - target: aarch64-unknown-linux-gnu
-            os_name: linux
-            arch: aarch64
-          - target: x86_64-pc-windows-msvc
-            os_name: windows
-            arch: x86_64
-          - target: x86_64-unknown-linux-gnu
-            os_name: linux
-            arch: x86_64
+            runner: macos-latest
+            use_cross: false
+          # macOS x86_64 (Intel)
           - target: x86_64-apple-darwin
             os_name: macos
             arch: x86_64
-          - target: aarch64-unknown-linux-musl
-            os_name: linux-musl
-            arch: aarch64
-          - target: x86_64-unknown-linux-musl
-            os_name: linux-musl
+            runner: macos-13
+            use_cross: false
+          # Windows x86_64
+          - target: x86_64-pc-windows-gnu
+            os_name: windows
             arch: x86_64
+            runner: windows-latest
+            use_cross: false
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os_name: linux
+            arch: aarch64
+            runner: ubuntu-24.04-arm64
+            use_cross: false
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os_name: linux
+            arch: x86_64
+            runner: ubuntu-latest
+            use_cross: false
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Rust toolchain
-        run: rustup show
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler build-essential autoconf automake libtool flex bison
+
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install autoconf automake libtool protobuf
+
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-autotools
+            mingw-w64-x86_64-libtool
+            mingw-w64-x86_64-protobuf
+            autoconf
+            automake
+            libtool
+            make
+
+      - name: Add Rust target (Windows)
+        if: runner.os == 'Windows'
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Set up Docker
+        if: runner.os == 'Linux'
+        uses: docker/setup-docker-action@v4
 
       - name: Install cross-compilation tool
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        if: ${{ matrix.use_cross }}
+        run: cargo install cross --version 0.2.4 --locked
 
-      - name: Build binary
-        id: build
+      - name: Prepare bundled jq source
+        if: runner.os != 'Windows'
         run: |
-          # Get version from tag (strip 'v' prefix if present)
+          # Fix "cc1: fatal error: src/lexer.c: No such file or directory" error
+          # Touch the pre-generated lexer/parser files so they don't get regenerated
+          cargo fetch
+          find ~/.cargo/registry/src -name "lexer.c" -exec touch {} + || true
+          find ~/.cargo/registry/src -name "parser.c" -exec touch {} + || true
+
+      - name: Build binary (Windows)
+        if: runner.os == 'Windows'
+        id: build-windows
+        run: |
+          $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
+
+          # Add MSYS2 to PATH so jq build can find autotools and MinGW toolchain
+          $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
+
+          # Set linker for MinGW
+          $env:CC = "x86_64-w64-mingw32-gcc"
+          $env:CXX = "x86_64-w64-mingw32-g++"
+
+          # Build drasi-server binary
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+
+          $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
+          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.target }}.exe"
+
+          if (Test-Path $SRC_BINARY) {
+            Copy-Item $SRC_BINARY $ARTIFACT_NAME
+            echo "name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Error "Built binary not found at $SRC_BINARY"
+            Get-ChildItem "target\${{ matrix.target }}\release\" -ErrorAction SilentlyContinue
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Build binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        id: build-unix
+        run: |
+          # Get version from previous job (strip 'v' prefix if present)
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
-          # Build the release binary for target
-          cross build --release --target ${{ matrix.target }} --bin drasi-server
-
-          # Determine binary extension
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            BINARY_EXT=".exe"
-          else
-            BINARY_EXT=""
+          # musl targets usually want static CRT
+          if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
+            export RUSTFLAGS="-C target-feature=+crt-static ${RUSTFLAGS:-}"
           fi
 
-          # Rename binary following Rust best practices: drasid-<version>-<target>
-          BINARY_NAME="drasid-${VERSION}-${{ matrix.target }}${BINARY_EXT}"
-          cp target/${{ matrix.target }}/release/drasi-server${BINARY_EXT} "${BINARY_NAME}"
-          chmod +x "${BINARY_NAME}" || true
+          # Help jq build find tools and avoid git errors
+          export ACLOCAL_PATH="/usr/share/aclocal"
+          export AUTOCONF="autoconf"
+          export AUTOMAKE="automake"
+          export LIBTOOLIZE="libtoolize"
+          export GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
-          echo "name=${BINARY_NAME}" >> $GITHUB_OUTPUT
+          # Force regeneration of lexer/parser files - CRITICAL for jq-sys build
+          # These MUST be set for jq's autotools build system to find flex/bison
+          export LEX="$(which flex)"
+          export YACC="$(which bison) -y"
+
+          # Ensure make uses the right PATH
+          export PATH="/usr/bin:$PATH"
+
+          # Set additional variables for jq build
+          export MAKEFLAGS="-j$(nproc)"
+          export V=1  # Verbose output for debugging
+
+          # Choose build command
+          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
+            BUILD_CMD="cross build --release --target ${{ matrix.target }} --bin drasi-server"
+          else
+            BUILD_CMD="cargo build --release --target ${{ matrix.target }} --bin drasi-server"
+          fi
+
+          echo "Running: $BUILD_CMD"
+          $BUILD_CMD
+
+          # Source binary path
+          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
+
+          # Final artifact name (using drasid prefix for release)
+          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.target }}"
+
+          # Copy + debug if missing
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+            chmod +x "$ARTIFACT_NAME"
+            echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            ls -la target/${{ matrix.target }}/release/ || true
+            find target/ -name "*drasi-server*" || true
+            exit 1
+          fi
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.target }}
-          path: ${{ steps.build.outputs.name }}
+          path: ${{ steps.build-windows.outputs.name || steps.build-unix.outputs.name }}
           if-no-files-found: error
-
   # Build Docker images for Linux platforms
   build-docker:
     name: Build Docker ${{ matrix.platform }}
@@ -148,6 +272,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -220,14 +346,11 @@ jobs:
           echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-pc-windows-gnu.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\` (Linux ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\` (Linux x86_64)" >> $GITHUB_STEP_SUMMARY
 
   # Create GitHub Release with binary artifacts
   create-release:
@@ -249,7 +372,7 @@ jobs:
         run: |
           # Create a directory for release assets
           mkdir -p release-assets
-          
+
           # Move all binaries to release-assets directory
           find artifacts -type f -name 'drasid-*' -exec cp {} release-assets/ \;
           
@@ -268,20 +391,15 @@ jobs:
           This release includes pre-built binaries for the following platforms:
 
           ### macOS
-          - ARM64 (Apple Silicon)
-          - x86_64 (Intel)
+          - ARM64 (Apple Silicon) - `drasid-*-aarch64-apple-darwin`
+          - x86_64 (Intel) - `drasid-*-x86_64-apple-darwin`
 
           ### Windows
-          - ARM64
-          - x86_64
+          - x86_64 (MinGW) - `drasid-*-x86_64-pc-windows-gnu.exe`
 
           ### Linux (glibc)
-          - ARM64
-          - x86_64
-
-          ### Linux (musl - static)
-          - ARM64
-          - x86_64
+          - ARM64 - `drasid-*-aarch64-unknown-linux-gnu`
+          - x86_64 - `drasid-*-x86_64-unknown-linux-gnu`
 
           ## Docker Images
 
@@ -319,4 +437,327 @@ jobs:
           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+
+
+# # Copyright 2025 The Drasi Authors.
+# #
+# # Licensed under the Apache License, Version 2.0 (the "License");
+# # you may not use this file except in compliance with the License.
+# # You may obtain a copy of the License at
+# #
+# #     http://www.apache.org/licenses/LICENSE-2.0
+# #
+# # Unless required by applicable law or agreed to in writing, software
+# # distributed under the License is distributed on an "AS IS" BASIS,
+# # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# # See the License for the specific language governing permissions and
+# # limitations under the License.
+
+# name: Build and Release
+
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       tag:
+#         description: 'Version Tag (optional, defaults to version from Cargo.toml)'
+#         required: false
+#       image_prefix:
+#         description: 'Image Prefix'
+#         required: false
+#         default: 'ghcr.io/drasi-project'
+
+# permissions:
+#   id-token: write
+#   contents: read
+#   packages: write
+
+# env:
+#   IMAGE_NAME: drasi-server
+
+# jobs:
+#   # Determine the version tag to use
+#   determine-version:
+#     name: Determine Version Tag
+#     runs-on: ubuntu-latest
+#     outputs:
+#       tag: ${{ steps.version.outputs.tag }}
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Determine version
+#         id: version
+#         run: |
+#           if [ -n "${{ inputs.tag }}" ]; then
+#             echo "Using provided tag: ${{ inputs.tag }}"
+#             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+#           else
+#             # Extract version from Cargo.toml
+#             VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+#             TAG="v${VERSION}"
+#             echo "Using version from Cargo.toml: ${TAG}"
+#             echo "tag=${TAG}" >> $GITHUB_OUTPUT
+#           fi
+
+#   # Build binaries for multiple platforms using cross-compilation
+#   build-binaries:
+#     name: Build ${{ matrix.target }}
+#     runs-on: ubuntu-latest
+#     needs: determine-version
+#     strategy:
+#       matrix:
+#         include:
+#           - target: aarch64-apple-darwin
+#             os_name: macos
+#             arch: aarch64
+#           - target: aarch64-pc-windows-msvc
+#             os_name: windows
+#             arch: aarch64
+#           - target: aarch64-unknown-linux-gnu
+#             os_name: linux
+#             arch: aarch64
+#           - target: x86_64-pc-windows-msvc
+#             os_name: windows
+#             arch: x86_64
+#           - target: x86_64-unknown-linux-gnu
+#             os_name: linux
+#             arch: x86_64
+#           - target: x86_64-apple-darwin
+#             os_name: macos
+#             arch: x86_64
+#           - target: aarch64-unknown-linux-musl
+#             os_name: linux-musl
+#             arch: aarch64
+#           - target: x86_64-unknown-linux-musl
+#             os_name: linux-musl
+#             arch: x86_64
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Install Rust toolchain
+#         run: rustup show
+
+#       - name: Install cross-compilation tool
+#         run: cargo install cross --git https://github.com/cross-rs/cross
+
+#       - name: Build binary
+#         id: build
+#         run: |
+#           # Get version from tag (strip 'v' prefix if present)
+#           VERSION="${{ needs.determine-version.outputs.tag }}"
+#           VERSION="${VERSION#v}"
+
+#           # Build the release binary for target
+#           cross build --release --target ${{ matrix.target }} --bin drasi-server
+
+#           # Determine binary extension
+#           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+#             BINARY_EXT=".exe"
+#           else
+#             BINARY_EXT=""
+#           fi
+
+#           # Rename binary following Rust best practices: drasid-<version>-<target>
+#           BINARY_NAME="drasid-${VERSION}-${{ matrix.target }}${BINARY_EXT}"
+#           cp target/${{ matrix.target }}/release/drasi-server${BINARY_EXT} "${BINARY_NAME}"
+#           chmod +x "${BINARY_NAME}" || true
+
+#           echo "name=${BINARY_NAME}" >> $GITHUB_OUTPUT
+
+#       - name: Upload binary artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.target }}
+#           path: ${{ steps.build.outputs.name }}
+#           if-no-files-found: error
+
+#   # Build Docker images for Linux platforms
+#   build-docker:
+#     name: Build Docker ${{ matrix.platform }}
+#     runs-on: ${{ matrix.runner }}
+#     needs: determine-version
+#     strategy:
+#       matrix:
+#         include:
+#           - platform: linux/amd64
+#             runner: ubuntu-latest
+#             suffix: amd64
+#           - platform: linux/arm64
+#             runner: ubuntu-24.04-arm
+#             suffix: arm64
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       - name: Log in to GitHub Container Registry
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ghcr.io
+#           username: ${{ github.repository_owner }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Build and push platform-specific image
+#         env:
+#           IMAGE_PREFIX: ${{ inputs.image_prefix }}
+#           DOCKER_TAG_VERSION: ${{ needs.determine-version.outputs.tag }}-${{ matrix.suffix }}
+#           DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
+#         run: |
+#           make docker-build
+
+#   # Create multi-arch manifest
+#   create-manifest:
+#     name: Create Multi-Arch Manifest
+#     needs: [determine-version, build-docker]
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Log in to GitHub Container Registry
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ghcr.io
+#           username: ${{ github.repository_owner }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Create and push manifest list
+#         run: |
+#           docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }} \
+#             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+#             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
+
+#       - name: Create and push 'latest' tag
+#         run: |
+#           docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest \
+#             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+#             ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
+
+#       - name: Generate summary
+#         run: |
+#           # Strip 'v' prefix from tag for binary names
+#           VERSION="${{ needs.determine-version.outputs.tag }}"
+#           VERSION="${VERSION#v}"
+
+#           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "### Tags Created" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
+#           echo '```bash' >> $GITHUB_STEP_SUMMARY
+#           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+#           echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+#           echo '```' >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-aarch64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-aarch64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-x86_64-pc-windows-msvc.exe\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-x86_64-apple-darwin\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-aarch64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- \`drasid-${VERSION}-x86_64-unknown-linux-musl\`" >> $GITHUB_STEP_SUMMARY
+
+#   # Create GitHub Release with binary artifacts
+#   create-release:
+#     name: Create GitHub Release
+#     needs: [determine-version, build-binaries, create-manifest]
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#     steps:
+#       - name: Download all artifacts
+#         uses: actions/download-artifact@v4
+#         with:
+#           path: artifacts
+#           pattern: drasid-${{ needs.determine-version.outputs.tag }}-*
+#           merge-multiple: false
+
+#       - name: Prepare release assets
+#         id: prepare
+#         run: |
+#           # Create a directory for release assets
+#           mkdir -p release-assets
+          
+#           # Move all binaries to release-assets directory
+#           find artifacts -type f -name 'drasid-*' -exec cp {} release-assets/ \;
+          
+#           # List what we have
+#           ls -lh release-assets/
+          
+#           # Count assets
+#           ASSET_COUNT=$(ls -1 release-assets/ | wc -l)
+#           echo "asset_count=${ASSET_COUNT}" >> $GITHUB_OUTPUT
+
+#       - name: Create release notes
+#         run: |
+#           cat > release-notes.md << 'NOTES_EOF'
+#           ## Binary Artifacts
+
+#           This release includes pre-built binaries for the following platforms:
+
+#           ### macOS
+#           - ARM64 (Apple Silicon)
+#           - x86_64 (Intel)
+
+#           ### Windows
+#           - ARM64
+#           - x86_64
+
+#           ### Linux (glibc)
+#           - ARM64
+#           - x86_64
+
+#           ### Linux (musl - static)
+#           - ARM64
+#           - x86_64
+
+#           ## Docker Images
+
+#           Multi-arch Docker images are available at:
+#           - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}`
+#           - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest`
+
+#           Supported architectures: `linux/amd64`, `linux/arm64`
+#           NOTES_EOF
+
+#       - name: Create or update GitHub Release
+#         env:
+#           GH_TOKEN: ${{ github.token }}
+#         run: |
+#           TAG="${{ needs.determine-version.outputs.tag }}"
+          
+#           # Check if release already exists
+#           if gh release view "${TAG}" --repo ${{ github.repository }} 2>/dev/null; then
+#             echo "Release ${TAG} already exists. Updating with new artifacts..."
+#             gh release upload "${TAG}" release-assets/* --repo ${{ github.repository }} --clobber
+#           else
+#             echo "Creating new release ${TAG}..."
+#             gh release create "${TAG}" \
+#               release-assets/* \
+#               --repo ${{ github.repository }} \
+#               --title "Release ${TAG}" \
+#               --notes-file release-notes.md
+#           fi
+
+#       - name: Update summary
+#         run: |
+#           TAG="${{ needs.determine-version.outputs.tag }}"
+          
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
 
