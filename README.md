@@ -349,21 +349,48 @@ sources:
 
 #### Mock Source (`mock`)
 
-Generates test data for development.
+Generates synthetic test data for development and demonstrations. Supports three data types with configurable generation intervals.
 
+**Simple string format:**
 ```yaml
 sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: sensor
-    intervalMs: 5000
+    dataType: sensor_reading    # or "counter", "generic"
+    intervalMs: 2000
+```
+
+**Object format with sensor count:**
+```yaml
+sources:
+  - kind: mock
+    id: sensor-source
+    autoStart: true
+    dataType:
+      type: sensor_reading
+      sensor_count: 10          # Simulate 10 unique sensors
+    intervalMs: 2000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataType` | string | `generic` | Type of mock data: `sensor` (SensorReading nodes), `counter` (Counter nodes), `generic` (Generic nodes) |
+| `dataType` | string or object | `generic` | Type of mock data (see below) |
 | `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
+
+**Data Types:**
+
+| Type | String Value | Generated Nodes | Properties |
+|------|--------------|-----------------|------------|
+| Counter | `counter` | `Counter` | `value` (sequential int), `timestamp` |
+| Sensor Reading | `sensor_reading` or `sensor` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
+| Generic | `generic` | `Generic` | `value` (random int), `message`, `timestamp` |
+
+**Sensor Reading Behavior:**
+- First reading for each sensor generates an **INSERT** event
+- Subsequent readings for the same sensor generate **UPDATE** events
+- `sensor_count` controls how many unique sensors are simulated (default: 5)
+- Sensor IDs: `sensor_0` through `sensor_{sensor_count-1}`
 
 #### Platform Source (`platform`)
 

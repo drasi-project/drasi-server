@@ -13,12 +13,14 @@ sources:
     autoStart: true
     kind: mock
     intervalMs: 5000
-    dataType: vehicle_location
+    dataType:
+      type: sensor_reading
+      sensor_count: 10
 
   - id: order-status-source
     autoStart: true
     kind: mock
-    dataType: order_status
+    dataType: generic
     intervalMs: 3000
 
 queries:

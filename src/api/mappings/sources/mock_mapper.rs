@@ -15,8 +15,9 @@
 //! Mock source configuration mapper.
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
+use crate::api::models::sources::mock::DataTypeDto;
 use crate::api::models::MockSourceConfigDto;
-use drasi_source_mock::MockSourceConfig;
+use drasi_source_mock::{DataType, MockSourceConfig};
 
 pub struct MockSourceConfigMapper;
 
@@ -26,8 +27,17 @@ impl ConfigMapper<MockSourceConfigDto, MockSourceConfig> for MockSourceConfigMap
         dto: &MockSourceConfigDto,
         resolver: &DtoMapper,
     ) -> Result<MockSourceConfig, MappingError> {
+        // Map DataTypeDto to DataType
+        let data_type = match &dto.data_type {
+            DataTypeDto::Counter => DataType::Counter,
+            DataTypeDto::SensorReading { sensor_count } => DataType::SensorReading {
+                sensor_count: *sensor_count,
+            },
+            DataTypeDto::Generic => DataType::Generic,
+        };
+
         Ok(MockSourceConfig {
-            data_type: resolver.resolve_string(&dto.data_type)?,
+            data_type,
             interval_ms: resolver.resolve_typed(&dto.interval_ms)?,
         })
     }

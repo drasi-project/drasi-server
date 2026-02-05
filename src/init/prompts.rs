@@ -17,6 +17,7 @@
 use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::{
     ApplicationBootstrapConfigDto, BootstrapProviderConfig, ConfigValue, GrpcReactionConfigDto,
     GrpcSourceConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto,
@@ -409,6 +410,24 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .with_default("mock-source")
         .prompt()?;
 
+    let data_type_options = vec!["generic", "sensor_reading", "counter"];
+    let data_type_selection = Select::new("Data type to generate:", data_type_options)
+        .with_help_message("Type of synthetic data to generate")
+        .prompt()?;
+
+    let data_type = match data_type_selection {
+        "counter" => DataTypeDto::Counter,
+        "sensor_reading" => {
+            let sensor_count_str = Text::new("Number of sensors to simulate:")
+                .with_default("5")
+                .with_help_message("How many unique sensors to simulate (1-100)")
+                .prompt()?;
+            let sensor_count: u32 = sensor_count_str.parse().unwrap_or(5).clamp(1, 100);
+            DataTypeDto::SensorReading { sensor_count }
+        }
+        _ => DataTypeDto::Generic,
+    };
+
     let interval_str = Text::new("Data generation interval (milliseconds):")
         .with_default("5000")
         .with_help_message("How often to generate test data (in milliseconds)")
@@ -421,7 +440,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         bootstrap_provider: None,
         config: MockSourceConfigDto {
             interval_ms: ConfigValue::Static(interval_ms),
-            data_type: ConfigValue::Static("generic".to_string()),
+            data_type,
         },
     })
 }

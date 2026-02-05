@@ -88,7 +88,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             let domain_config = mock_mapper.map(c, &mapper)?;
             Box::new(
                 MockSourceBuilder::new(id)
-                    .with_data_type(&domain_config.data_type)
+                    .with_data_type(domain_config.data_type)
                     .with_interval_ms(domain_config.interval_ms)
                     .with_auto_start(*auto_start)
                     .build()?,
@@ -442,6 +442,7 @@ pub fn create_state_store_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::sources::mock::DataTypeDto;
     use crate::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
     use tempfile::TempDir;
 
@@ -456,7 +457,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -475,7 +476,7 @@ mod tests {
             auto_start: false,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(500),
             },
         };
@@ -493,7 +494,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Noop),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -517,7 +518,7 @@ mod tests {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -629,7 +630,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -650,7 +651,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -673,7 +674,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -698,7 +699,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -723,7 +724,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(60000), // 60 seconds
             },
         };

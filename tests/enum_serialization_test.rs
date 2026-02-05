@@ -1,6 +1,7 @@
 // Test to verify that SourceConfig and ReactionConfig enums serialize as camelCase
 // This tests the full enum wrappers with flattened DTO config structs
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::*;
 
 #[test]
@@ -10,7 +11,7 @@ fn test_source_config_mock_serializes_camelcase() {
         auto_start: true,
         bootstrap_provider: None,
         config: MockSourceConfigDto {
-            data_type: ConfigValue::Static("sensor".to_string()),
+            data_type: DataTypeDto::SensorReading { sensor_count: 5 },
             interval_ms: ConfigValue::Static(1000),
         },
     };
@@ -42,7 +43,10 @@ fn test_source_config_mock_serializes_camelcase() {
     // Verify values are correct
     assert_eq!(json["id"], "test-mock");
     assert_eq!(json["autoStart"], true);
-    assert_eq!(json["dataType"], "sensor");
+    // DataType is now an object for SensorReading variant
+    let data_type = &json["dataType"];
+    assert_eq!(data_type["type"], "sensor_reading");
+    assert_eq!(data_type["sensor_count"], 5);
     assert_eq!(json["intervalMs"], 1000);
 
     println!("✅ SourceConfig::Mock serializes correctly");
