@@ -22,7 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use drasi_lib::init_logging_with_logger;
+use drasi_lib::get_or_init_global_registry;
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
@@ -130,18 +130,15 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
     };
 
     // Check if config file exists, create default if it doesn't
-    let (config, logger_initialized) = if !config_path.exists() {
-        // Initialize basic logging first since we don't have a config yet
+    let (config, tracing_initialized) = if !config_path.exists() {
+        // Initialize tracing first since we don't have a config yet
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
                 std::env::set_var("RUST_LOG", "info");
             }
         }
-        let env_logger = env_logger::Builder::from_default_env()
-            .format_timestamp_millis()
-            .build();
-        init_logging_with_logger(env_logger, log::LevelFilter::Info);
+        get_or_init_global_registry();
 
         warn!(
             "Config file '{}' not found. Creating default configuration.",
@@ -180,8 +177,8 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
     let mapper = DtoMapper::new();
     let resolved_settings = map_server_settings(&config, &mapper)?;
 
-    // Initialize logger if not already done
-    if !logger_initialized {
+    // Initialize tracing if not already done
+    if !tracing_initialized {
         // Set log level from config if RUST_LOG wasn't explicitly set by user
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
@@ -189,14 +186,7 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
                 std::env::set_var("RUST_LOG", &resolved_settings.log_level);
             }
         }
-        let log_level = resolved_settings
-            .log_level
-            .parse()
-            .unwrap_or(log::LevelFilter::Info);
-        let env_logger = env_logger::Builder::from_default_env()
-            .format_timestamp_millis()
-            .build();
-        init_logging_with_logger(env_logger, log_level);
+        get_or_init_global_registry();
     }
 
     info!("Starting Drasi Server");
