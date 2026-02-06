@@ -113,48 +113,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler build-essential pkg-config autoconf automake libtool
-
-      - name: Build static libjq (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          PREFIX="$HOME/jq-static"
-          mkdir -p "$PREFIX"
-
-          # Build oniguruma (jq dependency) as static lib
-          cd /tmp
-          ONIG_VERSION="6.9.9"
-          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VERSION}/onig-${ONIG_VERSION}.tar.gz" | tar xz
-          cd "onig-${ONIG_VERSION}"
-          ./configure --prefix="$PREFIX" --enable-static --disable-shared
-          make -j"$(nproc)"
-          make install
-
-          # Build jq as static lib
-          cd /tmp
-          JQ_VERSION="1.7.1"
-          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz" | tar xz
-          cd "jq-${JQ_VERSION}"
-          ./configure --prefix="$PREFIX" --enable-static --disable-shared --disable-maintainer-mode \
-            --with-oniguruma="$PREFIX" \
-            CFLAGS="-fPIC" LDFLAGS="-L$PREFIX/lib" CPPFLAGS="-I$PREFIX/include"
-          make -j"$(nproc)"
-          make install
-
-          echo "JQ_LIB_DIR=$PREFIX/lib" >> $GITHUB_ENV
-          echo "JQ_STATIC=1" >> $GITHUB_ENV
-          echo "ONIG_LIB_DIR=$PREFIX/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-
-          echo "=== Built static libs ==="
-          ls -la "$PREFIX/lib/"*.a
-
+          sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install protobuf jq pkg-config
+          brew install protobuf pkg-config jq oniguruma
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows'
@@ -165,9 +129,9 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-protobuf
+            mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-jq
             mingw-w64-x86_64-oniguruma
-            mingw-w64-x86_64-pkg-config
 
       - name: Add Rust target (Windows)
         if: runner.os == 'Windows'
@@ -187,10 +151,10 @@ jobs:
         run: |
           $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
 
-          # Add MSYS2 to PATH for pkg-config and jq libraries
+          # Add MSYS2 to PATH for pkg-config and MinGW toolchain
           $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
 
-          # Force static linking of libjq and libonig so the binary is self-contained
+          # Force static linking of libjq and libonig
           $env:LIBJQ_STATIC = "1"
           $env:LIBONIG_STATIC = "1"
 
@@ -218,11 +182,9 @@ jobs:
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
-          # Force static linking of libjq and libonig
+          # Force static linking of libjq and libonig so the binary is self-contained
           export LIBJQ_STATIC=1
           export LIBONIG_STATIC=1
-          # LIBJQ_NO_PKG_CONFIG forces jq-sys to use JQ_LIB_DIR directly
-          export LIBJQ_NO_PKG_CONFIG=1
 
           # musl targets usually want static CRT
           if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then

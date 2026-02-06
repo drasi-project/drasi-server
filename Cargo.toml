@@ -31,7 +31,7 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library
+# Drasi core library (all middleware including jq)
 drasi-lib = { version = "0.3.3", features = ["middleware-all"] }
 
 # Source plugins
@@ -124,6 +124,12 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
+# Temporary patch: use drasi-middleware fork that separates bundled-jq from jq feature
+# This allows linking against system/pre-built libjq instead of the broken jq-src autotools build
+# Remove this once drasi-middleware publishes a version with the fix
+[patch.crates-io]
+drasi-middleware = { git = "https://github.com/ruokun-niu/drasi-core.git", branch = "clippy-fix-for-jq" }
 
 # Uncomment this section for local development to use path-based dependencies
 # [patch.crates-io]
