@@ -186,6 +186,16 @@ jobs:
           export LIBJQ_STATIC=1
           export LIBONIG_STATIC=1
 
+          # Tell jq-sys where to find libjq (libjq-dev may not ship a .pc file for pkg-config)
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            LIB_ARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+            export JQ_LIB_DIR="/usr/lib/${LIB_ARCH}"
+            echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+            echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
+          fi
+
           # musl targets usually want static CRT
           if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
             export RUSTFLAGS="-C target-feature=+crt-static ${RUSTFLAGS:-}"
