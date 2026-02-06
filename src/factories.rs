@@ -185,7 +185,7 @@ fn create_bootstrap_provider(
         BootstrapProviderConfig::Postgres(_) => {
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::{PostgresBootstrapProvider, PostgresBootstrapConfig, SslMode};
+                use drasi_bootstrap_postgres::postgres::{PostgresBootstrapProvider, PostgresSourceConfig, SslMode, TableKeyConfig};
                 let mapper = DtoMapper::new();
 
                 // Convert SSL mode from DTO to bootstrap config
@@ -197,7 +197,7 @@ fn create_bootstrap_provider(
                 };
 
                 // Convert the source config DTO to bootstrap config
-                let bootstrap_config = PostgresBootstrapConfig {
+                let bootstrap_config = PostgresSourceConfig {
                     host: mapper.resolve_string(&config.host)?,
                     port: mapper.resolve_typed(&config.port)?,
                     database: mapper.resolve_string(&config.database)?,
@@ -208,7 +208,7 @@ fn create_bootstrap_provider(
                     publication_name: config.publication_name.clone(),
                     ssl_mode,
                     table_keys: config.table_keys.iter().map(|tk| {
-                        drasi_bootstrap_postgres::TableKeyConfig {
+                        TableKeyConfig {
                             table: tk.table.clone(),
                             key_columns: tk.key_columns.clone(),
                         }
