@@ -206,19 +206,33 @@ jobs:
           export ACLOCAL_PATH="/usr/share/aclocal"
           export AUTOCONF="autoconf"
           export AUTOMAKE="automake"
-          export LIBTOOLIZE="libtoolize"
           export GIT_DISCOVERY_ACROSS_FILESYSTEM=1
+
+          # macOS-specific: use glibtoolize instead of libtoolize
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            export LIBTOOLIZE="glibtoolize"
+          else
+            export LIBTOOLIZE="libtoolize"
+          fi
 
           # Force regeneration of lexer/parser files - CRITICAL for jq-sys build
           # These MUST be set for jq's autotools build system to find flex/bison
-          export LEX="$(which flex)"
-          export YACC="$(which bison) -y"
+          if command -v flex &> /dev/null; then
+            export LEX="$(which flex)"
+          fi
+          if command -v bison &> /dev/null; then
+            export YACC="$(which bison) -y"
+          fi
 
           # Ensure make uses the right PATH
           export PATH="/usr/bin:$PATH"
 
           # Set additional variables for jq build
-          export MAKEFLAGS="-j$(nproc)"
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
+          else
+            export MAKEFLAGS="-j$(nproc)"
+          fi
           export V=1  # Verbose output for debugging
 
           # Choose build command
