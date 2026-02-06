@@ -43,8 +43,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Determine version
         id: version
@@ -102,8 +100,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -115,13 +111,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler build-essential autoconf automake libtool flex bison
+          sudo apt-get install -y protobuf-compiler build-essential libjq-dev libonig-dev pkg-config
 
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install autoconf automake libtool protobuf
+          brew install protobuf jq pkg-config
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows'
@@ -131,13 +127,10 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-autotools
-            mingw-w64-x86_64-libtool
             mingw-w64-x86_64-protobuf
-            autoconf
-            automake
-            libtool
-            make
+            mingw-w64-x86_64-jq
+            mingw-w64-x86_64-oniguruma
+            mingw-w64-x86_64-pkg-config
 
       - name: Add Rust target (Windows)
         if: runner.os == 'Windows'
@@ -151,27 +144,14 @@ jobs:
         if: ${{ matrix.use_cross }}
         run: cargo install cross --version 0.2.4 --locked
 
-      - name: Prepare bundled jq source
-        if: runner.os != 'Windows'
-        run: |
-          # Fix "cc1: fatal error: src/lexer.c: No such file or directory" error
-          # Touch the pre-generated lexer/parser files so they don't get regenerated
-          cargo fetch
-          find ~/.cargo/registry/src -name "lexer.c" -exec touch {} + || true
-          find ~/.cargo/registry/src -name "parser.c" -exec touch {} + || true
-
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         id: build-windows
         run: |
           $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
 
-          # Add MSYS2 to PATH so jq build can find autotools and MinGW toolchain
+          # Add MSYS2 to PATH for pkg-config and jq libraries
           $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
-
-          # Set linker for MinGW
-          $env:CC = "x86_64-w64-mingw32-gcc"
-          $env:CXX = "x86_64-w64-mingw32-g++"
 
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
@@ -201,39 +181,6 @@ jobs:
           if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
             export RUSTFLAGS="-C target-feature=+crt-static ${RUSTFLAGS:-}"
           fi
-
-          # Help jq build find tools and avoid git errors
-          export ACLOCAL_PATH="/usr/share/aclocal"
-          export AUTOCONF="autoconf"
-          export AUTOMAKE="automake"
-          export GIT_DISCOVERY_ACROSS_FILESYSTEM=1
-
-          # macOS-specific: use glibtoolize instead of libtoolize
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            export LIBTOOLIZE="glibtoolize"
-          else
-            export LIBTOOLIZE="libtoolize"
-          fi
-
-          # Force regeneration of lexer/parser files - CRITICAL for jq-sys build
-          # These MUST be set for jq's autotools build system to find flex/bison
-          if command -v flex &> /dev/null; then
-            export LEX="$(which flex)"
-          fi
-          if command -v bison &> /dev/null; then
-            export YACC="$(which bison) -y"
-          fi
-
-          # Ensure make uses the right PATH
-          export PATH="/usr/bin:$PATH"
-
-          # Set additional variables for jq build
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
-          else
-            export MAKEFLAGS="-j$(nproc)"
-          fi
-          export V=1  # Verbose output for debugging
 
           # Choose build command
           if [[ "${{ matrix.use_cross }}" == "true" ]]; then
@@ -286,8 +233,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
