@@ -16,6 +16,11 @@
 # Advanced Features - Multi-Instance Configuration
 # =============================================================================
 #
+# NOTE: This is a CONCEPTUAL example demonstrating multi-instance architecture.
+# The queries reference labels (Event, Health, etc.) that don't match the mock
+# source output (SensorReading, Counter, Generic). Replace mock sources with
+# real data sources for production use.
+#
 # DrasiServer can run multiple DrasiLib instances in a single process.
 # Each instance has its own:
 # - Sources
@@ -55,7 +60,8 @@ instances:
       - kind: mock
         id: analytics-events
         autoStart: true
-        dataType: "generic"
+        dataType:
+          type: generic
         intervalMs: 1000
 
     queries:
@@ -100,7 +106,8 @@ instances:
       - kind: mock
         id: health-checks
         autoStart: true
-        dataType: "sensor"
+        dataType:
+          type: sensor_reading
         intervalMs: 500
 
     queries:
@@ -155,7 +162,8 @@ instances:
       - kind: mock
         id: audit-events
         autoStart: true
-        dataType: "generic"
+        dataType:
+          type: generic
         intervalMs: 2000
 
     queries:

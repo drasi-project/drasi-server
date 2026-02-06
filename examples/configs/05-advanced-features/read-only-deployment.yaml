@@ -55,7 +55,8 @@ sources:
   - kind: mock
     id: readonly-source
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
 queries:

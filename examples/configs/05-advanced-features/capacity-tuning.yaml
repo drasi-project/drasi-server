@@ -59,7 +59,8 @@ sources:
   - kind: mock
     id: high-throughput
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 50
 
 queries:

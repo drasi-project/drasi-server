@@ -680,7 +680,8 @@ sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: sensor
+    dataType:
+      type: sensor_reading
     intervalMs: 1000
 queries:
   - id: test-query

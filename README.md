@@ -351,17 +351,18 @@ sources:
 
 Generates synthetic test data for development and demonstrations. Supports three data types with configurable generation intervals.
 
-**Simple string format:**
+**Configuration format:**
 ```yaml
 sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: sensor_reading    # or "counter", "generic"
+    dataType:
+      type: generic    # or "counter", "sensor_reading"
     intervalMs: 2000
 ```
 
-**Object format with sensor count:**
+**Sensor reading with custom sensor count:**
 ```yaml
 sources:
   - kind: mock
@@ -375,16 +376,16 @@ sources:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataType` | string or object | `generic` | Type of mock data (see below) |
+| `dataType` | object | `{ type: generic }` | Type of mock data (see below) |
 | `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
 
 **Data Types:**
 
-| Type | String Value | Generated Nodes | Properties |
-|------|--------------|-----------------|------------|
-| Counter | `counter` | `Counter` | `value` (sequential int), `timestamp` |
-| Sensor Reading | `sensor_reading` or `sensor` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
-| Generic | `generic` | `Generic` | `value` (random int), `message`, `timestamp` |
+| Type | Value | Generated Nodes | Properties |
+|------|-------|-----------------|------------|
+| Counter | `{ type: counter }` | `Counter` | `value` (sequential int), `timestamp` |
+| Sensor Reading | `{ type: sensor_reading, sensor_count: N }` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
+| Generic | `{ type: generic }` | `Generic` | `value` (random int), `message`, `timestamp` |
 
 **Sensor Reading Behavior:**
 - First reading for each sensor generates an **INSERT** event

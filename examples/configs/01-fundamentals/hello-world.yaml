@@ -37,16 +37,21 @@ logLevel: info
 persistConfig: false
 
 # A simple mock source that generates test data
-# dataType options: "sensor" (Sensor), "counter" (Counter), "generic" (Generic)
+# dataType is an enum with the following options:
+#   - { type: sensor_reading, sensor_count: N } - SensorReading nodes with sensor_id, temperature, humidity
+#     (first reading per sensor = INSERT, subsequent = UPDATE, default sensor_count: 5)
+#   - { type: counter } - Counter nodes with sequential value
+#   - { type: generic } - Generic nodes with random value and message
 sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensor_reading
     intervalMs: 3000
 
 # A query that matches all data from the source
-# Note: The mock source with dataType "sensor" generates SensorReading nodes
+# Note: The mock source with type: sensor_reading generates SensorReading nodes
 queries:
   - id: all-sensors
     autoStart: true

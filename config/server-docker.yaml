@@ -20,7 +20,8 @@ sources:
   - id: order-status-source
     autoStart: true
     kind: mock
-    dataType: generic
+    dataType:
+      type: generic
     intervalMs: 3000
 
 queries:
