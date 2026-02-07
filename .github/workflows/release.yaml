@@ -167,6 +167,9 @@ jobs:
           # Tell jq-sys where to find libjq
           $env:JQ_LIB_DIR = "C:\msys64\mingw64\lib"
 
+          # Fix missing <cstdint> in RocksDB headers with newer MinGW GCC
+          $env:CXXFLAGS = "-include cstdint"
+
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
