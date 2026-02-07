@@ -14,8 +14,8 @@ sources:
     kind: mock
     intervalMs: 5000
     dataType:
-      type: sensor_reading
-      sensor_count: 10
+      type: sensorReading
+      sensorCount: 10
 
   - id: order-status-source
     autoStart: true

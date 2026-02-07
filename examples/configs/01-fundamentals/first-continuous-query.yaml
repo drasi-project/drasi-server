@@ -35,7 +35,7 @@ persistConfig: false
 
 sources:
   # Mock source generates data with labels based on dataType enum:
-  #   - { type: sensor_reading, sensor_count: N } → SensorReading nodes with temperature, humidity, sensor_id
+  #   - { type: sensorReading, sensorCount: N } → SensorReading nodes with temperature, humidity, sensor_id
   #     First reading per sensor = INSERT, subsequent readings = UPDATE
   #   - { type: counter } → Counter nodes with sequential count value (always INSERT)
   #   - { type: generic } → Generic nodes with random value and message (always INSERT)
@@ -43,7 +43,7 @@ sources:
     id: sensor-data
     autoStart: true
     dataType:
-      type: sensor_reading
+      type: sensorReading
     intervalMs: 2000
 
 queries:

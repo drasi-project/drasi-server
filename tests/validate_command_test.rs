@@ -103,7 +103,7 @@ sources:
     id: test-source
     autoStart: true
     dataType:
-      type: sensor_reading
+      type: sensorReading
     intervalMs: 5000
 queries: []
 reactions: []

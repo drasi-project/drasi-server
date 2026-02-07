@@ -358,7 +358,7 @@ sources:
     id: test-source
     autoStart: true
     dataType:
-      type: generic    # or "counter", "sensor_reading"
+      type: generic    # or "counter", "sensorReading"
     intervalMs: 2000
 ```
 
@@ -369,8 +369,8 @@ sources:
     id: sensor-source
     autoStart: true
     dataType:
-      type: sensor_reading
-      sensor_count: 10          # Simulate 10 unique sensors
+      type: sensorReading
+      sensorCount: 10          # Simulate 10 unique sensors
     intervalMs: 2000
 ```
 
@@ -384,14 +384,14 @@ sources:
 | Type | Value | Generated Nodes | Properties |
 |------|-------|-----------------|------------|
 | Counter | `{ type: counter }` | `Counter` | `value` (sequential int), `timestamp` |
-| Sensor Reading | `{ type: sensor_reading, sensor_count: N }` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
+| Sensor Reading | `{ type: sensorReading, sensorCount: N }` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
 | Generic | `{ type: generic }` | `Generic` | `value` (random int), `message`, `timestamp` |
 
 **Sensor Reading Behavior:**
 - First reading for each sensor generates an **INSERT** event
 - Subsequent readings for the same sensor generate **UPDATE** events
-- `sensor_count` controls how many unique sensors are simulated (default: 5)
-- Sensor IDs: `sensor_0` through `sensor_{sensor_count-1}`
+- `sensorCount` controls how many unique sensors are simulated (default: 5)
+- Sensor IDs: `sensor_0` through `sensor_{sensorCount-1}`
 
 #### Platform Source (`platform`)
 

@@ -45,8 +45,8 @@ fn test_source_config_mock_serializes_camelcase() {
     assert_eq!(json["autoStart"], true);
     // DataType is now an object for SensorReading variant
     let data_type = &json["dataType"];
-    assert_eq!(data_type["type"], "sensor_reading");
-    assert_eq!(data_type["sensor_count"], 5);
+    assert_eq!(data_type["type"], "sensorReading");
+    assert_eq!(data_type["sensorCount"], 5);
     assert_eq!(json["intervalMs"], 1000);
 
     println!("✅ SourceConfig::Mock serializes correctly");

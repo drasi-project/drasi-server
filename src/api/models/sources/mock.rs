@@ -25,7 +25,7 @@ fn default_sensor_count() -> u32 {
 ///
 /// This mirrors the `DataType` enum from drasi-source-mock.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum DataTypeDto {
     /// Sequential counter values (Counter nodes)
     Counter,
@@ -33,7 +33,7 @@ pub enum DataTypeDto {
     /// First reading for each sensor generates INSERT, subsequent readings generate UPDATE
     SensorReading {
         /// Number of sensors to simulate (default: 5)
-        #[serde(default = "default_sensor_count")]
+        #[serde(default = "default_sensor_count", rename = "sensorCount")]
         sensor_count: u32,
     },
     /// Generic random data (Generic nodes) - default mode
@@ -47,7 +47,7 @@ pub enum DataTypeDto {
 pub struct MockSourceConfigDto {
     /// Type of data to generate as an enum object:
     /// - { type: "counter" }
-    /// - { type: "sensor_reading", sensor_count: 10 }
+    /// - { type: "sensorReading", sensorCount: 10 }
     /// - { type: "generic" }
     #[serde(default)]
     pub data_type: DataTypeDto,
@@ -72,8 +72,8 @@ kind: mock
 id: test-source
 autoStart: true
 dataType:
-  type: sensor_reading
-  sensor_count: 10
+  type: sensorReading
+  sensorCount: 10
 intervalMs: 3000
 "#;
 
@@ -103,7 +103,7 @@ intervalMs: 3000
 kind: mock
 id: test-source
 dataType:
-  type: sensor_reading
+  type: sensorReading
 "#;
 
         let config: SourceConfig = serde_yaml::from_str(yaml).expect("Failed to parse YAML");

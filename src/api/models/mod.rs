@@ -86,7 +86,7 @@ fn default_true() -> bool {
 ///     id: test-source
 ///     autoStart: true
 ///     dataType:
-///       type: sensor_reading
+///       type: sensorReading
 ///     intervalMs: 1000
 ///
 ///   - kind: http
@@ -809,7 +809,7 @@ mod tests {
             "kind": "mock",
             "id": "test-source",
             "autoStart": true,
-            "dataType": { "type": "sensor_reading" },
+            "dataType": { "type": "sensorReading" },
             "intervalMs": 1000
         }"#;
 
@@ -1063,7 +1063,7 @@ kind: mock
 id: yaml-source
 autoStart: true
 dataType:
-  type: sensor_reading
+  type: sensorReading
 intervalMs: 1000
 "#;
 
@@ -1457,7 +1457,7 @@ autoStart: true
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
-            "dataType": { "type": "sensor_reading", "sensor_count": 10 },
+            "dataType": { "type": "sensorReading", "sensorCount": 10 },
             "intervalMs": 1000
         }"#;
 
@@ -1467,7 +1467,7 @@ autoStart: true
             assert_eq!(
                 config.data_type,
                 mock::DataTypeDto::SensorReading { sensor_count: 10 },
-                "Expected SensorReading data type with sensor_count 10"
+                "Expected SensorReading data type with sensorCount 10"
             );
         }
     }

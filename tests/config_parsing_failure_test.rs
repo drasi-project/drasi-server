@@ -681,7 +681,7 @@ sources:
     id: test-source
     autoStart: true
     dataType:
-      type: sensor_reading
+      type: sensorReading
     intervalMs: 1000
 queries:
   - id: test-query

@@ -410,14 +410,14 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .with_default("mock-source")
         .prompt()?;
 
-    let data_type_options = vec!["generic", "sensor_reading", "counter"];
+    let data_type_options = vec!["generic", "sensorReading", "counter"];
     let data_type_selection = Select::new("Data type to generate:", data_type_options)
         .with_help_message("Type of synthetic data to generate")
         .prompt()?;
 
     let data_type = match data_type_selection {
         "counter" => DataTypeDto::Counter,
-        "sensor_reading" => {
+        "sensorReading" => {
             let sensor_count_str = Text::new("Number of sensors to simulate:")
                 .with_default("5")
                 .with_help_message("How many unique sensors to simulate (1-100)")

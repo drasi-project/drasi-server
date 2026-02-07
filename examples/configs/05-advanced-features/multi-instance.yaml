@@ -107,7 +107,7 @@ instances:
         id: health-checks
         autoStart: true
         dataType:
-          type: sensor_reading
+          type: sensorReading
         intervalMs: 500
 
     queries:

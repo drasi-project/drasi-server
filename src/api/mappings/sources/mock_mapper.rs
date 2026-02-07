@@ -27,7 +27,7 @@ impl ConfigMapper<MockSourceConfigDto, MockSourceConfig> for MockSourceConfigMap
         dto: &MockSourceConfigDto,
         resolver: &DtoMapper,
     ) -> Result<MockSourceConfig, MappingError> {
-        // Map DataTypeDto to DataType
+        // Map DataTypeDto to DataType enum
         let data_type = match &dto.data_type {
             DataTypeDto::Counter => DataType::Counter,
             DataTypeDto::SensorReading { sensor_count } => DataType::SensorReading {
