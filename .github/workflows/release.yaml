@@ -79,18 +79,19 @@ jobs:
           #   arch: x86_64
           #   runner: macos-13
           #   use_cross: false
-          # # Windows x86_64
-          # - target: x86_64-pc-windows-gnu
-          #   os_name: windows
-          #   arch: x86_64
-          #   runner: windows-latest
-          #   use_cross: false
+
+          # Windows x86_64
+          - target: x86_64-pc-windows-gnu
+            os_name: windows
+            arch: x86_64
+            runner: windows-latest
+            use_cross: false
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             os_name: linux
             arch: aarch64
-            runner: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
             use_cross: false
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
@@ -157,6 +158,9 @@ jobs:
           # Force static linking of libjq and libonig
           $env:LIBJQ_STATIC = "1"
           $env:LIBONIG_STATIC = "1"
+
+          # Tell jq-sys where to find libjq
+          $env:JQ_LIB_DIR = "C:\msys64\mingw64\lib"
 
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
