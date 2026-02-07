@@ -129,10 +129,15 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-protobuf
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-jq
             mingw-w64-x86_64-oniguruma
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add Rust target (Windows)
         if: runner.os == 'Windows'
@@ -161,9 +166,6 @@ jobs:
 
           # Tell jq-sys where to find libjq
           $env:JQ_LIB_DIR = "C:\msys64\mingw64\lib"
-
-          # Tell prost-build where to find protoc
-          $env:PROTOC = "C:\msys64\mingw64\bin\protoc.exe"
 
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
