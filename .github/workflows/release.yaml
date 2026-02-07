@@ -162,6 +162,9 @@ jobs:
           # Tell jq-sys where to find libjq
           $env:JQ_LIB_DIR = "C:\msys64\mingw64\lib"
 
+          # Tell prost-build where to find protoc
+          $env:PROTOC = "C:\msys64\mingw64\bin\protoc.exe"
+
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
