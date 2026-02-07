@@ -42,7 +42,8 @@ sources:
   - kind: mock
     id: data-source
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
 queries:

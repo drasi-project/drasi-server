@@ -47,10 +47,12 @@ persistConfig: false
 
 sources:
   # Mock source generates SensorReading nodes with temperature, humidity, sensor_id
+  # First reading per sensor = INSERT, subsequent = UPDATE
   - kind: mock
     id: live-data
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 1000
 
 queries:

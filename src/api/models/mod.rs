@@ -85,7 +85,8 @@ fn default_true() -> bool {
 ///   - kind: mock
 ///     id: test-source
 ///     autoStart: true
-///     dataType: sensor
+///     dataType:
+///       type: sensorReading
 ///     intervalMs: 1000
 ///
 ///   - kind: http
@@ -808,7 +809,7 @@ mod tests {
             "kind": "mock",
             "id": "test-source",
             "autoStart": true,
-            "dataType": "sensor",
+            "dataType": { "type": "sensorReading" },
             "intervalMs": 1000
         }"#;
 
@@ -1061,7 +1062,8 @@ mod tests {
 kind: mock
 id: yaml-source
 autoStart: true
-dataType: sensor
+dataType:
+  type: sensorReading
 intervalMs: 1000
 "#;
 
@@ -1399,7 +1401,7 @@ autoStart: true
             auto_start: false,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("sensor".to_string()),
+                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1451,26 +1453,21 @@ autoStart: true
     }
 
     #[test]
-    fn test_source_deserialize_with_env_var_syntax() {
+    fn test_source_deserialize_with_enum_data_type() {
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
-            "dataType": "${DATA_TYPE:-sensor}",
+            "dataType": { "type": "sensorReading", "sensorCount": 10 },
             "intervalMs": 1000
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "test-source");
-        // ConfigValue parses env var syntax into EnvironmentVariable variant
         if let SourceConfig::Mock { config, .. } = source {
-            assert!(
-                matches!(
-                    &config.data_type,
-                    ConfigValue::EnvironmentVariable { name, default }
-                    if name == "DATA_TYPE" && *default == Some("sensor".to_string())
-                ),
-                "Expected EnvironmentVariable variant, got {:?}",
-                config.data_type
+            assert_eq!(
+                config.data_type,
+                mock::DataTypeDto::SensorReading { sensor_count: 10 },
+                "Expected SensorReading data type with sensorCount 10"
             );
         }
     }

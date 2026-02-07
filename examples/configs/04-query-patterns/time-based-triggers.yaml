@@ -43,7 +43,8 @@ sources:
   - kind: mock
     id: activity-stream
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 5000
 
 queries:

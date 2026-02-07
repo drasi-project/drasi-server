@@ -106,6 +106,7 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drasi_server::api::models::sources::mock::DataTypeDto;
     use drasi_server::api::models::{
         HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
     };
@@ -129,7 +130,7 @@ mod tests {
             bootstrap_provider: None,
             config: MockSourceConfigDto {
                 interval_ms: ConfigValue::Static(5000),
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
             },
         }
     }
