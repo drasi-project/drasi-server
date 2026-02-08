@@ -449,7 +449,7 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
-    needs: [determine-version, create-manifest]
+    needs: [determine-version, create-manifest, test-binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
