@@ -1,0 +1,36 @@
+id: hello-world-server
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+persistConfig: false
+
+sources:
+  - kind: mock
+    id: test-source
+    autoStart: true
+    dataType: "sensor"
+    intervalMs: 3000
+
+queries:
+  - id: all-sensors
+    autoStart: true
+    query: |
+      MATCH (s:SensorReading)
+      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+    queryLanguage: Cypher
+    sources:
+      - sourceId: test-source
+
+reactions:
+  - kind: log
+    id: console-logger
+    queries:
+      - all-sensors
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[+] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
+      updated:
+        template: "[~] Sensor {{after.SensorId}}: temp={{after.Temperature}}°C humidity={{after.Humidity}}%"
+      deleted:
+        template: "[-] Sensor {{before.SensorId}} removed"
