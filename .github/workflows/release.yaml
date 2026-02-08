@@ -167,21 +167,23 @@ jobs:
           # Fix missing <cstdint> in RocksDB headers with newer MinGW GCC
           $env:CXXFLAGS = "-include cstdint"
 
-          # Statically link MinGW runtime so the .exe is fully self-contained:
-          #   -static-libgcc     → embeds libgcc_s_seh-1.dll
-          #   -static-libstdc++  → embeds libstdc++-6.dll
-          #   -Wl,-Bstatic,-lwinpthread,-Bdynamic → embeds libwinpthread-1.dll
-          $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=-static-libgcc -C link-arg=-static-libstdc++ -C link-arg=-Wl,-Bstatic,-lwinpthread,-Bdynamic"
-
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
           $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
+          $ARTIFACT_DIR = "windows-artifact"
           $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.artifact_suffix }}.exe"
 
           if (Test-Path $SRC_BINARY) {
-            Copy-Item $SRC_BINARY $ARTIFACT_NAME
-            echo "name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
+            # Stage the binary and required MinGW runtime DLLs together
+            New-Item -ItemType Directory -Force -Path $ARTIFACT_DIR | Out-Null
+            Copy-Item $SRC_BINARY "$ARTIFACT_DIR\$ARTIFACT_NAME"
+            Copy-Item "C:\msys64\mingw64\bin\libstdc++-6.dll" $ARTIFACT_DIR
+            Copy-Item "C:\msys64\mingw64\bin\libgcc_s_seh-1.dll" $ARTIFACT_DIR
+            Copy-Item "C:\msys64\mingw64\bin\libwinpthread-1.dll" $ARTIFACT_DIR
+            echo "dir=$ARTIFACT_DIR" >> $env:GITHUB_OUTPUT
+            Write-Host "Artifact directory contents:"
+            Get-ChildItem $ARTIFACT_DIR
           } else {
             Write-Error "Built binary not found at $SRC_BINARY"
             Get-ChildItem "target\${{ matrix.target }}\release\" -ErrorAction SilentlyContinue
@@ -244,11 +246,20 @@ jobs:
             exit 1
           fi
 
-      - name: Upload binary artifact
+      - name: Upload binary artifact (Unix)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: ${{ steps.build-windows.outputs.name || steps.build-unix.outputs.name }}
+          path: ${{ steps.build-unix.outputs.name }}
+          if-no-files-found: error
+
+      - name: Upload binary artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: ${{ steps.build-windows.outputs.dir }}/*
           if-no-files-found: error
   # Build Docker images for Linux platforms
   build-docker:
@@ -400,15 +411,11 @@ jobs:
           BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
           BINARY_PATH="$(pwd)/bin/${BINARY_NAME}"
 
-          echo "=== Debug: Binary info ==="
-          ls -la "$BINARY_PATH"
-          file "$BINARY_PATH" 2>/dev/null || true
+          echo "=== Debug: Artifact contents ==="
+          ls -la bin/
 
-          echo "=== Debug: DLL dependencies ==="
-          ldd "$BINARY_PATH" 2>&1 || true
-
-          echo "=== Debug: Try --version ==="
-          "$BINARY_PATH" --version 2>&1 || echo "Exit code: $?"
+          echo "=== Debug: DLL check ==="
+          ldd "$BINARY_PATH" 2>&1 | grep -i "not found" || echo "All DLLs resolved"
 
           echo "=== Running smoke test ==="
           SERVER_BINARY="$BINARY_PATH" \
