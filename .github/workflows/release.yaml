@@ -26,7 +26,6 @@ on:
         default: 'ghcr.io/drasi-project'
 
 permissions:
-  id-token: write
   contents: read
   packages: write
 
@@ -58,7 +57,7 @@ jobs:
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-  # Build binaries for multiple platforms using cross-compilation
+  # Build binaries for multiple platforms (native compilation on each runner)
   build-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -69,33 +68,21 @@ jobs:
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             artifact_suffix: aarch64-apple-darwin
-            os_name: macos
-            arch: aarch64
             runner: macos-latest
-            use_cross: false
 
           # Windows x86_64
           - target: x86_64-pc-windows-gnu
             artifact_suffix: x86_64-windows
-            os_name: windows
-            arch: x86_64
             runner: windows-latest
-            use_cross: false
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             artifact_suffix: aarch64-linux-gnu
-            os_name: linux
-            arch: aarch64
             runner: ubuntu-24.04-arm
-            use_cross: false
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
             artifact_suffix: x86_64-linux-gnu
-            os_name: linux
-            arch: x86_64
             runner: ubuntu-latest
-            use_cross: false
 
     steps:
       - name: Checkout code
@@ -135,18 +122,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Add Rust target (Windows)
-        if: runner.os == 'Windows'
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Set up Docker
-        if: runner.os == 'Linux'
-        uses: docker/setup-docker-action@v4
-
-      - name: Install cross-compilation tool
-        if: ${{ matrix.use_cross }}
-        run: cargo install cross --version 0.2.4 --locked
 
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
@@ -241,20 +216,9 @@ jobs:
             echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
           fi
 
-          # musl targets usually want static CRT
-          if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
-            export RUSTFLAGS="-C target-feature=+crt-static ${RUSTFLAGS:-}"
-          fi
-
-          # Choose build command
-          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
-            BUILD_CMD="cross build --release --target ${{ matrix.target }} --bin drasi-server"
-          else
-            BUILD_CMD="cargo build --release --target ${{ matrix.target }} --bin drasi-server"
-          fi
-
-          echo "Running: $BUILD_CMD"
-          $BUILD_CMD
+          # Build
+          echo "Running: cargo build --release --target ${{ matrix.target }} --bin drasi-server"
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
           # Source binary path
           SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
