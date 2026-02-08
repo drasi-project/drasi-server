@@ -68,6 +68,7 @@ jobs:
         include:
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
+            artifact_suffix: aarch64-apple-darwin
             os_name: macos
             arch: aarch64
             runner: macos-latest
@@ -75,6 +76,7 @@ jobs:
 
           # Windows x86_64
           - target: x86_64-pc-windows-gnu
+            artifact_suffix: x86_64-windows
             os_name: windows
             arch: x86_64
             runner: windows-latest
@@ -82,12 +84,14 @@ jobs:
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
+            artifact_suffix: aarch64-linux-gnu
             os_name: linux
             arch: aarch64
             runner: ubuntu-24.04-arm
             use_cross: false
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
+            artifact_suffix: x86_64-linux-gnu
             os_name: linux
             arch: x86_64
             runner: ubuntu-latest
@@ -163,11 +167,14 @@ jobs:
           # Fix missing <cstdint> in RocksDB headers with newer MinGW GCC
           $env:CXXFLAGS = "-include cstdint"
 
+          # Statically link MinGW CRT so the binary doesn't need libgcc_s_seh-1.dll / libwinpthread-1.dll
+          $env:RUSTFLAGS = "-C target-feature=+crt-static"
+
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
           $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
-          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.target }}.exe"
+          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.artifact_suffix }}.exe"
 
           if (Test-Path $SRC_BINARY) {
             Copy-Item $SRC_BINARY $ARTIFACT_NAME
@@ -220,7 +227,7 @@ jobs:
           SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
 
           # Final artifact name (using drasid prefix for release)
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.target }}"
+          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
 
           # Copy + debug if missing
           if [[ -f "$SRC_BINARY" ]]; then
@@ -237,7 +244,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.target }}
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
           path: ${{ steps.build-windows.outputs.name || steps.build-unix.outputs.name }}
           if-no-files-found: error
   # Build Docker images for Linux platforms
@@ -330,9 +337,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-pc-windows-gnu.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-unknown-linux-gnu\` (Linux ARM64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-unknown-linux-gnu\` (Linux x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64)" >> $GITHUB_STEP_SUMMARY
 
   # Create GitHub Release with binary artifacts
   create-release:
@@ -376,11 +383,11 @@ jobs:
           - ARM64 (Apple Silicon) - `drasid-*-aarch64-apple-darwin`
 
           ### Windows
-          - x86_64 (MinGW) - `drasid-*-x86_64-pc-windows-gnu.exe`
+          - x86_64 - `drasid-*-x86_64-windows.exe`
 
           ### Linux (glibc)
-          - ARM64 - `drasid-*-aarch64-unknown-linux-gnu`
-          - x86_64 - `drasid-*-x86_64-unknown-linux-gnu`
+          - ARM64 - `drasid-*-aarch64-linux-gnu`
+          - x86_64 - `drasid-*-x86_64-linux-gnu`
 
           ## Docker Images
 
