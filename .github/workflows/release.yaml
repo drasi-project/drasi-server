@@ -167,8 +167,8 @@ jobs:
           # Fix missing <cstdint> in RocksDB headers with newer MinGW GCC
           $env:CXXFLAGS = "-include cstdint"
 
-          # Statically link MinGW CRT so the binary doesn't need libgcc_s_seh-1.dll / libwinpthread-1.dll
-          $env:RUSTFLAGS = "-C target-feature=+crt-static"
+          # Statically link MinGW runtime (libgcc, libpthread, libstdc++) so the .exe is fully self-contained
+          $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-args=-static"
 
           # Build drasi-server binary
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
