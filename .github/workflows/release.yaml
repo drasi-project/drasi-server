@@ -26,6 +26,7 @@ on:
         default: 'ghcr.io/drasi-project'
 
 permissions:
+  id-token: write
   contents: read
   packages: write
 
@@ -57,7 +58,7 @@ jobs:
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-  # Build binaries for multiple platforms (native compilation on each runner)
+  # Build binaries for multiple platforms using cross-compilation
   build-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -68,20 +69,28 @@ jobs:
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
             artifact_suffix: aarch64-apple-darwin
+            os_name: macos
+            arch: aarch64
             runner: macos-latest
 
           # Windows x86_64
           - target: x86_64-pc-windows-gnu
             artifact_suffix: x86_64-windows
+            os_name: windows
+            arch: x86_64
             runner: windows-latest
 
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             artifact_suffix: aarch64-linux-gnu
+            os_name: linux
+            arch: aarch64
             runner: ubuntu-24.04-arm
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
             artifact_suffix: x86_64-linux-gnu
+            os_name: linux
+            arch: x86_64
             runner: ubuntu-latest
 
     steps:
@@ -122,6 +131,14 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add Rust target (Windows)
+        if: runner.os == 'Windows'
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Set up Docker
+        if: runner.os == 'Linux'
+        uses: docker/setup-docker-action@v4
 
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
@@ -214,6 +231,11 @@ jobs:
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             export JQ_LIB_DIR="$(brew --prefix jq)/lib"
             echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
+          fi
+
+          # musl targets usually want static CRT
+          if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
+            export RUSTFLAGS="-C target-feature=+crt-static ${RUSTFLAGS:-}"
           fi
 
           # Build
