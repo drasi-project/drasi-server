@@ -178,9 +178,37 @@ jobs:
             # Stage the binary and required MinGW runtime DLLs together
             New-Item -ItemType Directory -Force -Path $ARTIFACT_DIR | Out-Null
             Copy-Item $SRC_BINARY "$ARTIFACT_DIR\$ARTIFACT_NAME"
-            Copy-Item "C:\msys64\mingw64\bin\libstdc++-6.dll" $ARTIFACT_DIR
-            Copy-Item "C:\msys64\mingw64\bin\libgcc_s_seh-1.dll" $ARTIFACT_DIR
-            Copy-Item "C:\msys64\mingw64\bin\libwinpthread-1.dll" $ARTIFACT_DIR
+
+            # Find MinGW DLLs - the build used them so they must be on PATH
+            $MINGW_BIN = (Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue).Source | Split-Path
+            if (-not $MINGW_BIN) {
+              $MINGW_BIN = (Get-Command gcc -ErrorAction SilentlyContinue).Source | Split-Path
+            }
+            if (-not $MINGW_BIN) {
+              # Fallback: search common locations
+              $MINGW_BIN = @("C:\msys64\mingw64\bin", "D:\msys64\mingw64\bin") | Where-Object { Test-Path $_ } | Select-Object -First 1
+            }
+            Write-Host "MinGW bin directory: $MINGW_BIN"
+
+            foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll")) {
+              $src = Join-Path $MINGW_BIN $dll
+              if (Test-Path $src) {
+                Copy-Item $src $ARTIFACT_DIR
+                Write-Host "  Copied $dll"
+              } else {
+                Write-Warning "  DLL not found: $src"
+                # Search the entire MSYS2 tree as a fallback
+                $found = Get-ChildItem -Path "C:\msys64" -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) {
+                  Copy-Item $found.FullName $ARTIFACT_DIR
+                  Write-Host "  Found at: $($found.FullName)"
+                } else {
+                  Write-Error "  Cannot find $dll anywhere!"
+                  exit 1
+                }
+              }
+            }
+
             echo "dir=$ARTIFACT_DIR" >> $env:GITHUB_OUTPUT
             Write-Host "Artifact directory contents:"
             Get-ChildItem $ARTIFACT_DIR
