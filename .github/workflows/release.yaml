@@ -341,10 +341,78 @@ jobs:
           echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64)" >> $GITHUB_STEP_SUMMARY
 
+  # Smoke-test each binary with the hello-world (mock source) config
+  test-binaries:
+    name: Test ${{ matrix.artifact_suffix }}
+    needs: [determine-version, build-binaries]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - artifact_suffix: aarch64-apple-darwin
+            runner: macos-latest
+            binary_name_template: "drasid-VERSION-aarch64-apple-darwin"
+          # Linux x86_64
+          - artifact_suffix: x86_64-linux-gnu
+            runner: ubuntu-latest
+            binary_name_template: "drasid-VERSION-x86_64-linux-gnu"
+          # Linux ARM64
+          - artifact_suffix: aarch64-linux-gnu
+            runner: ubuntu-24.04-arm
+            binary_name_template: "drasid-VERSION-aarch64-linux-gnu"
+          # Windows x86_64
+          - artifact_suffix: x86_64-windows
+            runner: windows-latest
+            binary_name_template: "drasid-VERSION-x86_64-windows.exe"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: bin
+
+      - name: Run hello-world smoke test (Unix)
+        if: runner.os != 'Windows'
+        env:
+          VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          VERSION="${VERSION_TAG#v}"
+          BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
+          chmod +x "bin/${BINARY_NAME}"
+          SERVER_BINARY="$(pwd)/bin/${BINARY_NAME}" \
+            tests/integration/hello-world/run-integration-test.sh
+
+      - name: Run hello-world smoke test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
+        shell: bash
+        run: |
+          VERSION="${VERSION_TAG#v}"
+          BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
+          SERVER_BINARY="$(pwd)/bin/${BINARY_NAME}" \
+            tests/integration/hello-world/run-integration-test.sh
+
+      - name: Show server logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== Server logs ==="
+          if [ -f tests/integration/hello-world/server.log ]; then
+            cat tests/integration/hello-world/server.log
+          else
+            echo "No server log file found"
+          fi
+
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
-    needs: [determine-version, build-binaries, create-manifest]
+    needs: [determine-version, test-binaries, create-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
