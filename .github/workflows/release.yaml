@@ -459,8 +459,8 @@ jobs:
           # Create a directory for release assets
           mkdir -p release-assets
 
-          # Move all binaries to release-assets directory
-          find artifacts -type f -name 'drasid-*' -exec cp {} release-assets/ \;
+          # Copy all artifact files (binaries and any required runtime files such as DLLs)
+          find artifacts -type f -exec cp {} release-assets/ \;
           
           # List what we have
           ls -lh release-assets/
