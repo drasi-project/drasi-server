@@ -32,41 +32,41 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library
-drasi-lib = "0.3.3"
+drasi-lib = "0.3.4"
 
 # Source plugins
-drasi-source-mock = "0.1.3"
-drasi-source-http = "0.1.3"
-drasi-source-grpc = "0.1.3"
-drasi-source-postgres = "0.1.3"
-drasi-source-platform = "0.1.3"
+drasi-source-mock = "0.1.4"
+drasi-source-http = "0.1.4"
+drasi-source-grpc = "0.1.4"
+drasi-source-postgres = "0.1.4"
+drasi-source-platform = "0.1.4"
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.3"
-drasi-bootstrap-scriptfile = "0.1.3"
-drasi-bootstrap-platform = "0.1.3"
+drasi-bootstrap-postgres = "0.1.4"
+drasi-bootstrap-scriptfile = "0.1.4"
+drasi-bootstrap-platform = "0.1.4"
 drasi-bootstrap-noop = "0.1.3"
-drasi-bootstrap-application = "0.1.3"
+drasi-bootstrap-application = "0.1.4"
 
 # Reaction plugins
-drasi-reaction-log = "0.1.3"
-drasi-reaction-http = "0.1.4"
+drasi-reaction-log = "0.1.4"
+drasi-reaction-http = "0.1.5"
 drasi-reaction-http-adaptive = "0.2.2"
 drasi-reaction-grpc = "0.2.2"
 drasi-reaction-grpc-adaptive = "0.1.3"
-drasi-reaction-sse = "0.2.2"
-drasi-reaction-platform = "0.2.2"
+drasi-reaction-sse = "0.2.3"
+drasi-reaction-platform = "0.2.3"
 drasi-reaction-profiler = "0.2.2"
 drasi-reaction-storedproc-postgres = "0.2.2"
 drasi-reaction-storedproc-mysql = "0.2.2"
 drasi-reaction-storedproc-mssql = "0.2.2"
 
 # Index plugins
-drasi-index-rocksdb = "0.2.1"
-drasi-index-garnet = "0.1.2"
+drasi-index-rocksdb = "0.2.2"
+drasi-index-garnet = "0.1.4"
 
 # State store plugins
-drasi-state-store-redb = "0.1.1"
+drasi-state-store-redb = "0.1.2"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
