@@ -132,10 +132,6 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Add Rust target (Windows)
-        if: runner.os == 'Windows'
-        run: rustup target add ${{ matrix.target }}
-
       - name: Set up Docker
         if: runner.os == 'Linux'
         uses: docker/setup-docker-action@v4
