@@ -112,12 +112,11 @@ export class DrasiClient {
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE sp.price > sp.previous_close
-        WITH s, sp, ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
         RETURN s.symbol AS symbol,
                s.name AS name,
                sp.price AS price,
                sp.previous_close AS previous_close,
-               change_percent
+               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
       sources: [
         { sourceId: 'postgres-stocks', pipeline: [] },
@@ -131,12 +130,11 @@ export class DrasiClient {
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE sp.price < sp.previous_close
-        WITH s, sp, ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
         RETURN s.symbol AS symbol,
                s.name AS name,
                sp.price AS price,
                sp.previous_close AS previous_close,
-               change_percent
+               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
       sources: [
         { sourceId: 'postgres-stocks', pipeline: [] },
@@ -332,6 +330,7 @@ export class DrasiClient {
         const queryConfig = {
           id: queryDef.id,
           query: queryDef.query,
+          queryLanguage: 'Cypher',
           sources: queryDef.sources,
           joins: queryDef.joins,
           autoStart: true
