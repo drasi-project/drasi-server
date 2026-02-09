@@ -93,6 +93,27 @@ jobs:
             arch: x86_64
             runner: ubuntu-latest
 
+          # Linux x86_64 (musl - fully static)
+          - target: x86_64-unknown-linux-musl
+            artifact_suffix: x86_64-linux-musl
+            os_name: linux
+            arch: x86_64
+            runner: ubuntu-latest
+
+          # Linux ARM64 (musl - fully static)
+          - target: aarch64-unknown-linux-musl
+            artifact_suffix: aarch64-linux-musl
+            os_name: linux
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+
+          # Windows ARM64 (cross-compiled via llvm-mingw)
+          - target: aarch64-pc-windows-gnullvm
+            artifact_suffix: aarch64-windows
+            os_name: windows
+            arch: aarch64
+            runner: windows-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -103,19 +124,47 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      - name: Install build dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install build dependencies (Linux glibc)
+        if: runner.os == 'Linux' && !contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
+
+      - name: Install musl toolchain and build dependencies from source
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler build-essential pkg-config musl-tools musl-dev autoconf automake libtool
+
+          MUSL_PREFIX="${HOME}/musl-deps"
+          mkdir -p "${MUSL_PREFIX}"
+
+          # Build oniguruma for musl
+          ONIG_VERSION="6.9.9"
+          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VERSION}/onig-${ONIG_VERSION}.tar.gz" | tar xz
+          cd "onig-${ONIG_VERSION}"
+          CC=musl-gcc ./configure --prefix="${MUSL_PREFIX}" --enable-static --disable-shared
+          make -j"$(nproc)" && make install
+          cd ..
+
+          # Build jq for musl (requires oniguruma)
+          JQ_VERSION="1.7.1"
+          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz" | tar xz
+          cd "jq-${JQ_VERSION}"
+          CC=musl-gcc ./configure --prefix="${MUSL_PREFIX}" --enable-static --disable-shared \
+            --with-oniguruma="${MUSL_PREFIX}" --disable-maintainer-mode
+          make -j"$(nproc)" && make install
+          cd ..
+
+          echo "MUSL_PREFIX=${MUSL_PREFIX}" >> $GITHUB_ENV
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install protobuf pkg-config jq oniguruma
 
-      - name: Install build dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install build dependencies (Windows x86_64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -132,8 +181,88 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build binary (Windows)
-        if: runner.os == 'Windows'
+      - name: Setup MSYS2 for ARM64 cross-compilation
+        if: matrix.target == 'aarch64-pc-windows-gnullvm'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            autoconf
+            automake
+            libtool
+            make
+
+      - name: Build ARM64 Windows dependencies from source
+        if: matrix.target == 'aarch64-pc-windows-gnullvm'
+        shell: msys2 {0}
+        run: |
+          # Download llvm-mingw (x86_64-hosted cross-compiler targeting ARM64 Windows)
+          LLVM_MINGW_VER="20250114"
+          LLVM_MINGW_DIR="llvm-mingw-${LLVM_MINGW_VER}-ucrt-x86_64"
+          curl -sL -o /tmp/llvm-mingw.zip \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VER}/${LLVM_MINGW_DIR}.zip"
+          cd /c && unzip -q /tmp/llvm-mingw.zip
+          export PATH="/c/${LLVM_MINGW_DIR}/bin:$PATH"
+          aarch64-w64-mingw32-clang --version
+
+          CROSS_PREFIX="/c/arm64-deps"
+          mkdir -p "${CROSS_PREFIX}"
+
+          # Build oniguruma for ARM64 Windows
+          cd /tmp
+          ONIG_VERSION="6.9.9"
+          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VERSION}/onig-${ONIG_VERSION}.tar.gz" | tar xz
+          cd "onig-${ONIG_VERSION}"
+          CC=aarch64-w64-mingw32-clang ./configure --host=aarch64-w64-mingw32 \
+            --prefix="${CROSS_PREFIX}" --enable-static --disable-shared
+          make -j$(nproc) && make install
+
+          # Build jq for ARM64 Windows
+          cd /tmp
+          JQ_VERSION="1.7.1"
+          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz" | tar xz
+          cd "jq-${JQ_VERSION}"
+          CC=aarch64-w64-mingw32-clang ./configure --host=aarch64-w64-mingw32 \
+            --prefix="${CROSS_PREFIX}" --enable-static --disable-shared \
+            --with-oniguruma="${CROSS_PREFIX}" --disable-maintainer-mode
+          make -j$(nproc) && make install
+
+      - name: Build binary (Windows ARM64)
+        if: matrix.target == 'aarch64-pc-windows-gnullvm'
+        id: build-windows-arm64
+        shell: pwsh
+        run: |
+          $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
+
+          $LLVM_MINGW_DIR = "llvm-mingw-20250114-ucrt-x86_64"
+          $env:PATH = "C:\${LLVM_MINGW_DIR}\bin;$env:PATH"
+
+          $env:LIBJQ_STATIC = "1"
+          $env:LIBONIG_STATIC = "1"
+          $env:JQ_LIB_DIR = "C:\arm64-deps\lib"
+          $env:CC_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-clang"
+          $env:CXX_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-clang++"
+          $env:AR_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-ar"
+          $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = "aarch64-w64-mingw32-clang"
+          $env:CXXFLAGS = "-include cstdint"
+
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+
+          $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
+          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.artifact_suffix }}.exe"
+
+          if (Test-Path $SRC_BINARY) {
+            Copy-Item $SRC_BINARY $ARTIFACT_NAME
+            echo "name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Error "Built binary not found at $SRC_BINARY"
+            Get-ChildItem "target\${{ matrix.target }}\release\" -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+      - name: Build binary (Windows x86_64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
         id: build-windows
         run: |
           $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
@@ -215,15 +344,21 @@ jobs:
           export LIBJQ_STATIC=1
           export LIBONIG_STATIC=1
 
-          # Tell jq-sys where to find libjq (libjq-dev may not ship a .pc file for pkg-config)
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
+          # Tell jq-sys where to find libjq
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            # Use the musl-compiled libraries built earlier
+            export JQ_LIB_DIR="${MUSL_PREFIX}/lib"
+            # Set musl-gcc as the C compiler and linker for musl targets
+            export CC=musl-gcc
+            TARGET_UPPER=$(echo "${{ matrix.target }}" | tr 'a-z-' 'A-Z_')
+            export "CARGO_TARGET_${TARGET_UPPER}_LINKER=musl-gcc"
+          elif [[ "${{ runner.os }}" == "Linux" ]]; then
             LIB_ARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
             export JQ_LIB_DIR="/usr/lib/${LIB_ARCH}"
-            echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             export JQ_LIB_DIR="$(brew --prefix jq)/lib"
-            echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
           fi
+          echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
 
           # musl targets usually want static CRT
           if [[ "${{ matrix.target }}" == *"linux-musl"* ]]; then
@@ -260,12 +395,20 @@ jobs:
           path: ${{ steps.build-unix.outputs.name }}
           if-no-files-found: error
 
-      - name: Upload binary artifact (Windows)
-        if: runner.os == 'Windows'
+      - name: Upload binary artifact (Windows x86_64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
           path: ${{ steps.build-windows.outputs.dir }}/*
+          if-no-files-found: error
+
+      - name: Upload binary artifact (Windows ARM64)
+        if: matrix.target == 'aarch64-pc-windows-gnullvm'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: ${{ steps.build-windows-arm64.outputs.name }}
           if-no-files-found: error
   # Build Docker images for Linux platforms
   build-docker:
@@ -358,8 +501,11 @@ jobs:
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-windows.exe\` (Windows ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
 
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
@@ -386,6 +532,15 @@ jobs:
           - artifact_suffix: x86_64-windows
             runner: windows-latest
             binary_name_template: "drasid-VERSION-x86_64-windows.exe"
+          # Linux x86_64 (musl - fully static binaries run on any Linux)
+          - artifact_suffix: x86_64-linux-musl
+            runner: ubuntu-latest
+            binary_name_template: "drasid-VERSION-x86_64-linux-musl"
+          # Linux ARM64 (musl)
+          - artifact_suffix: aarch64-linux-musl
+            runner: ubuntu-24.04-arm
+            binary_name_template: "drasid-VERSION-aarch64-linux-musl"
+          # Note: Windows ARM64 test is skipped (no ARM64 Windows runners available)
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -481,10 +636,15 @@ jobs:
 
           ### Windows
           - x86_64 - `drasid-*-x86_64-windows.exe`
+          - ARM64 - `drasid-*-aarch64-windows.exe`
 
           ### Linux (glibc)
           - ARM64 - `drasid-*-aarch64-linux-gnu`
           - x86_64 - `drasid-*-x86_64-linux-gnu`
+
+          ### Linux (musl - fully static)
+          - ARM64 - `drasid-*-aarch64-linux-musl`
+          - x86_64 - `drasid-*-x86_64-linux-musl`
 
           ## Docker Images
 
