@@ -185,11 +185,14 @@ fn create_bootstrap_provider(
         BootstrapProviderConfig::Postgres(_) => {
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::postgres::{PostgresBootstrapProvider, PostgresSourceConfig, SslMode, TableKeyConfig};
+                use drasi_bootstrap_postgres::postgres::{
+                    PostgresBootstrapProvider, PostgresSourceConfig, SslMode, TableKeyConfig,
+                };
                 let mapper = DtoMapper::new();
 
                 // Convert SSL mode from DTO to bootstrap config
-                let ssl_mode_dto = mapper.resolve_typed::<crate::api::models::SslModeDto>(&config.ssl_mode)?;
+                let ssl_mode_dto =
+                    mapper.resolve_typed::<crate::api::models::SslModeDto>(&config.ssl_mode)?;
                 let ssl_mode = match ssl_mode_dto {
                     crate::api::models::SslModeDto::Disable => SslMode::Disable,
                     crate::api::models::SslModeDto::Prefer => SslMode::Prefer,
@@ -207,12 +210,14 @@ fn create_bootstrap_provider(
                     slot_name: config.slot_name.clone(),
                     publication_name: config.publication_name.clone(),
                     ssl_mode,
-                    table_keys: config.table_keys.iter().map(|tk| {
-                        TableKeyConfig {
+                    table_keys: config
+                        .table_keys
+                        .iter()
+                        .map(|tk| TableKeyConfig {
                             table: tk.table.clone(),
                             key_columns: tk.key_columns.clone(),
-                        }
-                    }).collect(),
+                        })
+                        .collect(),
                 };
                 Ok(Box::new(PostgresBootstrapProvider::new(bootstrap_config)))
             } else {
