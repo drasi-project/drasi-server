@@ -132,10 +132,6 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker
-        if: runner.os == 'Linux'
-        uses: docker/setup-docker-action@v4
-
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         id: build-windows
