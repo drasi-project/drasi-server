@@ -139,6 +139,15 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev linux-headers-generic protobuf-compiler \
             build-essential pkg-config autoconf automake libtool make
 
+          # Symlink kernel and asm headers into the musl sysroot so musl-gcc
+          # can find them without adding glibc include paths (which would cause
+          # type conflicts such as __time64_t / __gnuc_va_list).
+          MUSL_INC="/usr/include/$(uname -m)-linux-musl"
+          MULTIARCH=$(gcc -dumpmachine)
+          sudo ln -sf /usr/include/linux       "$MUSL_INC/linux"
+          sudo ln -sf /usr/include/asm-generic  "$MUSL_INC/asm-generic"
+          sudo ln -sf "/usr/include/${MULTIARCH}/asm" "$MUSL_INC/asm"
+
       - name: Build C dependencies for musl
         if: contains(matrix.target, 'musl')
         run: |
@@ -155,16 +164,13 @@ jobs:
           esac
 
           # Build OpenSSL for musl
-          # musl-gcc's sysroot doesn't include kernel or arch-specific headers.
-          # Add both /usr/include (for linux/) and the multiarch path (for asm/).
-          MULTIARCH=$(gcc -dumpmachine)
-          MUSL_CFLAGS="-I/usr/include -I/usr/include/${MULTIARCH}"
-
+          # Kernel and asm headers were symlinked into the musl sysroot in
+          # the previous step, so musl-gcc can find them without extra CFLAGS.
           cd "$WORK_DIR"
           OPENSSL_VER="3.2.1"
           curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VER}/openssl-${OPENSSL_VER}.tar.gz" | tar xz
           cd "openssl-${OPENSSL_VER}"
-          CC=musl-gcc CFLAGS="$MUSL_CFLAGS" ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async
+          CC=musl-gcc ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async
           make -j$(nproc)
           make install_sw
 
