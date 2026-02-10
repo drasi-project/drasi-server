@@ -266,6 +266,11 @@ jobs:
           LINKER_VAR="CARGO_TARGET_$(echo "$TARGET_UNDERSCORED" | tr '[:lower:]' '[:upper:]')_LINKER"
           export "${LINKER_VAR}=$ZIG_CC_WRAPPER"
 
+          # Tell rustc NOT to add its own self-contained musl CRT objects
+          # (crt1.o, crti.o, crtn.o …).  Zig already provides them, so
+          # including both causes duplicate-symbol errors (_start, _init …).
+          export RUSTFLAGS="-C link-self-contained=no"
+
           echo "Building for target: ${{ matrix.target }}"
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
