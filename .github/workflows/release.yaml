@@ -153,6 +153,7 @@ jobs:
               # Install build tools and musl-native libraries (all musl-linked on Alpine)
               apk add --no-cache \
                 curl gcc g++ musl-dev pkgconf protobuf-dev make perl linux-headers \
+                clang-dev \
                 jq-dev oniguruma-dev \
                 openssl-dev openssl-libs-static
 
