@@ -55,11 +55,11 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 
 -- Create publication for logical replication
 -- This publication includes only the message table
-CREATE PUBLICATION drasi_getting_started_pub FOR TABLE message;
+CREATE PUBLICATION drasi_pub FOR TABLE message;
 
 -- Create replication slot for CDC
 -- The slot uses pgoutput for logical decoding
-SELECT pg_create_logical_replication_slot('drasi_getting_started_slot', 'pgoutput');
+SELECT pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
 
 -- Insert initial sample data (matching Platform tutorial)
 INSERT INTO message ("from", message) VALUES
@@ -73,7 +73,7 @@ DO $$
 BEGIN
     RAISE NOTICE 'Getting Started database initialized successfully!';
     RAISE NOTICE 'Tables: message';
-    RAISE NOTICE 'Publication: drasi_getting_started_pub';
-    RAISE NOTICE 'Replication slot: drasi_getting_started_slot';
+    RAISE NOTICE 'Publication: drasi_pub';
+    RAISE NOTICE 'Replication slot: drasi_slot';
 END
 $$;
