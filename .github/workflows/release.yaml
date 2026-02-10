@@ -146,14 +146,18 @@ jobs:
             -e LIBJQ_STATIC=1 \
             -e LIBONIG_STATIC=1 \
             -e OPENSSL_STATIC=1 \
+            -e JQ_LIB_DIR=/usr/lib \
             alpine:3.21 sh -c '
               set -e
 
               # Install build tools and musl-native libraries (all musl-linked on Alpine)
               apk add --no-cache \
                 curl gcc g++ musl-dev pkgconf protobuf-dev make perl linux-headers \
-                jq-dev oniguruma-dev \
+                jq-dev oniguruma-dev oniguruma-static \
                 openssl-dev openssl-libs-static
+
+              # Verify static libraries exist
+              ls -la /usr/lib/libjq.a /usr/lib/libonig.a /usr/lib/libssl.a /usr/lib/libcrypto.a
 
               # Install Rust via rustup
               curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
