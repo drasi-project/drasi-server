@@ -132,21 +132,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
 
-      - name: Install musl cross-compilation tools
+      - name: Install musl build tools
         if: contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools musl-dev linux-headers-generic protobuf-compiler \
-            build-essential pkg-config autoconf automake libtool make
+            build-essential pkg-config autoconf automake libtool make curl xz-utils
 
-          # Symlink kernel and asm headers into the musl sysroot so musl-gcc
-          # can find them without adding glibc include paths (which would cause
-          # type conflicts such as __time64_t / __gnuc_va_list).
-          MUSL_INC="/usr/include/$(uname -m)-linux-musl"
-          MULTIARCH=$(gcc -dumpmachine)
-          sudo ln -sf /usr/include/linux       "$MUSL_INC/linux"
-          sudo ln -sf /usr/include/asm-generic  "$MUSL_INC/asm-generic"
-          sudo ln -sf "/usr/include/${MULTIARCH}/asm" "$MUSL_INC/asm"
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              # musl-gcc works fine on x86_64 runners; just symlink kernel/asm
+              # headers into the musl sysroot so musl-gcc can find them without
+              # adding glibc include paths (which cause type conflicts).
+              MUSL_INC="/usr/include/x86_64-linux-musl"
+              MULTIARCH=$(gcc -dumpmachine)
+              sudo ln -sf /usr/include/linux       "$MUSL_INC/linux"
+              sudo ln -sf /usr/include/asm-generic  "$MUSL_INC/asm-generic"
+              sudo ln -sf "/usr/include/${MULTIARCH}/asm" "$MUSL_INC/asm"
+              ;;
+            aarch64-unknown-linux-musl)
+              # On ARM runners musl-gcc drags in glibc symbols (__getauxval).
+              # Use Zig as a musl-capable C compiler instead.
+              ZIG_VER="0.12.0"
+              curl -sL "https://ziglang.org/download/${ZIG_VER}/zig-linux-aarch64-${ZIG_VER}.tar.xz" | tar -xJ
+              echo "$PWD/zig-linux-aarch64-${ZIG_VER}" >> $GITHUB_PATH
+              zig version
+              ;;
+          esac
 
       - name: Build C dependencies for musl
         if: contains(matrix.target, 'musl')
@@ -156,21 +168,25 @@ jobs:
           mkdir -p "$MUSL_PREFIX"
           WORK_DIR=$(mktemp -d)
 
-          # Determine OpenSSL target
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64)  OPENSSL_TARGET="linux-x86_64" ;;
-            aarch64) OPENSSL_TARGET="linux-aarch64" ;;
+          # Choose CC and OpenSSL target based on matrix.target (not uname -m)
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              export CC=musl-gcc
+              OPENSSL_TARGET="linux-x86_64"
+              ;;
+            aarch64-unknown-linux-musl)
+              # Zig provides a clean musl-targeting compiler without glibc symbol leaks
+              export CC="zig cc -target aarch64-linux-musl"
+              OPENSSL_TARGET="linux-aarch64"
+              ;;
           esac
 
           # Build OpenSSL for musl
-          # Kernel and asm headers were symlinked into the musl sysroot in
-          # the previous step, so musl-gcc can find them without extra CFLAGS.
           cd "$WORK_DIR"
           OPENSSL_VER="3.2.1"
           curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VER}/openssl-${OPENSSL_VER}.tar.gz" | tar xz
           cd "openssl-${OPENSSL_VER}"
-          CC=musl-gcc ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async no-module
+          ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async no-module
           make -j$(nproc) build_libs
           make install_sw
 
@@ -179,7 +195,7 @@ jobs:
           ONIG_VER="6.9.9"
           curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VER}/onig-${ONIG_VER}.tar.gz" | tar xz
           cd "onig-${ONIG_VER}"
-          CC=musl-gcc ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared
+          ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared
           make -j$(nproc) && make install
 
           # Build jq for musl (depends on oniguruma)
@@ -187,7 +203,7 @@ jobs:
           JQ_VER="1.7.1"
           curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VER}/jq-${JQ_VER}.tar.gz" | tar xz
           cd "jq-${JQ_VER}"
-          CC=musl-gcc ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared \
+          ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared \
             --with-oniguruma="$MUSL_PREFIX" --disable-maintainer-mode
           make -j$(nproc) && make install
 
@@ -213,16 +229,22 @@ jobs:
           export JQ_LIB_DIR="$MUSL_PREFIX/lib"
           export PKG_CONFIG_PATH="$MUSL_PREFIX/lib/pkgconfig"
 
-          # Set musl-gcc as C compiler and linker for the musl target.
-          # Build scripts (bindgen, etc.) run on the glibc host so dlopen works fine.
+          # Set the musl-targeting C compiler and linker per target.
+          # x86_64: musl-gcc works fine.
+          # aarch64: use zig cc to avoid glibc symbol leaks (__getauxval).
           case "${{ matrix.target }}" in
             x86_64-unknown-linux-musl)
               export CC_x86_64_unknown_linux_musl=musl-gcc
               export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
               ;;
             aarch64-unknown-linux-musl)
-              export CC_aarch64_unknown_linux_musl=musl-gcc
-              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+              # Create a wrapper script because Cargo linker env vars don't
+              # support arguments ("zig cc -target ..." won't work directly).
+              ZIG_WRAPPER="$HOME/zig-cc-aarch64-linux-musl"
+              printf '#!/bin/sh\nexec zig cc -target aarch64-linux-musl "$@"\n' > "$ZIG_WRAPPER"
+              chmod +x "$ZIG_WRAPPER"
+              export CC_aarch64_unknown_linux_musl="$ZIG_WRAPPER"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$ZIG_WRAPPER"
               ;;
           esac
 
