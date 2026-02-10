@@ -155,8 +155,12 @@ jobs:
               # Use Zig as a musl-capable C compiler instead.
               ZIG_VER="0.12.0"
               curl -sL "https://ziglang.org/download/${ZIG_VER}/zig-linux-aarch64-${ZIG_VER}.tar.xz" | tar -xJ
-              echo "$PWD/zig-linux-aarch64-${ZIG_VER}" >> $GITHUB_PATH
-              zig version
+
+              # Verify immediately (GITHUB_PATH only takes effect in later steps)
+              "$PWD/zig-linux-aarch64-${ZIG_VER}/zig" version
+
+              # Make zig available to subsequent steps
+              echo "$PWD/zig-linux-aarch64-${ZIG_VER}" >> "$GITHUB_PATH"
               ;;
           esac
 
