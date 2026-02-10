@@ -357,15 +357,52 @@ jobs:
           $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
 
           $LLVM_MINGW_DIR = "llvm-mingw-20250114-ucrt-x86_64"
-          $env:PATH = "C:\${LLVM_MINGW_DIR}\bin;$env:PATH"
+          $LLVM_BIN = "C:\${LLVM_MINGW_DIR}\bin"
+          $env:PATH = "${LLVM_BIN};$env:PATH"
+
+          # cc-rs injects --target=aarch64-pc-windows-gnu for clang, which
+          # overrides llvm-mingw's built-in target and breaks the C++ stdlib
+          # header search (looks for libstdc++ instead of libc++).
+          # Create .cmd wrapper scripts that strip --target= flags.
+          $CC_WRAPPER = "C:\cc-arm64-wrap.cmd"
+          @"
+          @echo off
+          setlocal enabledelayedexpansion
+          set "ARGS="
+          :cc_loop
+          if "%~1"=="" goto cc_run
+          set "T=%~1"
+          if "!T:~0,9!" neq "--target=" set "ARGS=!ARGS! %1"
+          shift
+          goto cc_loop
+          :cc_run
+          "${LLVM_BIN}\aarch64-w64-mingw32-clang.exe" !ARGS!
+          exit /b !errorlevel!
+          "@ | Set-Content -Path $CC_WRAPPER -Encoding ASCII
+
+          $CXX_WRAPPER = "C:\cxx-arm64-wrap.cmd"
+          @"
+          @echo off
+          setlocal enabledelayedexpansion
+          set "ARGS="
+          :cxx_loop
+          if "%~1"=="" goto cxx_run
+          set "T=%~1"
+          if "!T:~0,9!" neq "--target=" set "ARGS=!ARGS! %1"
+          shift
+          goto cxx_loop
+          :cxx_run
+          "${LLVM_BIN}\aarch64-w64-mingw32-clang++.exe" !ARGS!
+          exit /b !errorlevel!
+          "@ | Set-Content -Path $CXX_WRAPPER -Encoding ASCII
 
           $env:LIBJQ_STATIC = "1"
           $env:LIBONIG_STATIC = "1"
           $env:JQ_LIB_DIR = "C:\arm64-deps\lib"
-          $env:CC_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-clang"
-          $env:CXX_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-clang++"
+          $env:CC_aarch64_pc_windows_gnullvm = $CC_WRAPPER
+          $env:CXX_aarch64_pc_windows_gnullvm = $CXX_WRAPPER
           $env:AR_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-ar"
-          $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = "aarch64-w64-mingw32-clang"
+          $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = $CC_WRAPPER
           $env:CXXFLAGS = "-include cstdint"
 
           # bindgen's libclang doesn't understand "gnullvm" in the target triple;
