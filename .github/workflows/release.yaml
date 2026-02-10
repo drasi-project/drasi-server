@@ -138,10 +138,18 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler build-essential pkg-config musl-tools musl-dev autoconf automake libtool
+          sudo apt-get install -y protobuf-compiler build-essential pkg-config musl-tools musl-dev autoconf automake libtool perl
 
           MUSL_PREFIX="${HOME}/musl-deps"
           mkdir -p "${MUSL_PREFIX}"
+
+          # Build OpenSSL for musl
+          OPENSSL_VERSION="3.3.2"
+          curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz" | tar xz
+          cd "openssl-${OPENSSL_VERSION}"
+          CC=musl-gcc ./Configure --prefix="${MUSL_PREFIX}" no-shared no-async linux-generic64
+          make -j"$(nproc)" && make install_sw
+          cd ..
 
           # Build oniguruma for musl
           ONIG_VERSION="6.9.9"
@@ -353,6 +361,8 @@ jobs:
           if [[ "${{ matrix.target }}" == *"musl"* ]]; then
             # Use the musl-compiled libraries built earlier
             export JQ_LIB_DIR="${MUSL_PREFIX}/lib"
+            export OPENSSL_DIR="${MUSL_PREFIX}"
+            export OPENSSL_STATIC=1
             # Set musl-gcc as the C compiler and linker for musl targets
             export CC=musl-gcc
             TARGET_UPPER=$(echo "${{ matrix.target }}" | tr 'a-z-' 'A-Z_')
