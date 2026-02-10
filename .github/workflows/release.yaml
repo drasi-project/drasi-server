@@ -171,7 +171,7 @@ jobs:
           curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VER}/openssl-${OPENSSL_VER}.tar.gz" | tar xz
           cd "openssl-${OPENSSL_VER}"
           CC=musl-gcc ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async
-          make -j$(nproc)
+          make -j$(nproc) build_libs
           make install_sw
 
           # Build oniguruma for musl
