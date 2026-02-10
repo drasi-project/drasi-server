@@ -805,4 +805,3 @@ jobs:
           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
-z
