@@ -246,12 +246,29 @@ jobs:
             aarch64-unknown-linux-musl)
               # Create wrapper scripts because Cargo env vars don't support
               # arguments ("zig cc -target ..." won't work directly).
+              # The wrappers also strip --target= flags that cc-rs appends,
+              # since zig doesn't understand Rust triples like
+              # "aarch64-unknown-linux-musl" (it expects "aarch64-linux-musl").
               ZIG_CC_WRAPPER="$HOME/zig-cc-aarch64-linux-musl"
-              printf '#!/bin/sh\nexec zig cc -target aarch64-linux-musl "$@"\n' > "$ZIG_CC_WRAPPER"
+              cat > "$ZIG_CC_WRAPPER" << 'ZIGCC'
+          #!/bin/sh
+          args=""
+          for arg in "$@"; do
+            case "$arg" in --target=*) ;; *) args="$args $arg" ;; esac
+          done
+          exec zig cc -target aarch64-linux-musl $args
+          ZIGCC
               chmod +x "$ZIG_CC_WRAPPER"
 
               ZIG_CXX_WRAPPER="$HOME/zig-cxx-aarch64-linux-musl"
-              printf '#!/bin/sh\nexec zig c++ -target aarch64-linux-musl "$@"\n' > "$ZIG_CXX_WRAPPER"
+              cat > "$ZIG_CXX_WRAPPER" << 'ZIGCXX'
+          #!/bin/sh
+          args=""
+          for arg in "$@"; do
+            case "$arg" in --target=*) ;; *) args="$args $arg" ;; esac
+          done
+          exec zig c++ -target aarch64-linux-musl $args
+          ZIGCXX
               chmod +x "$ZIG_CXX_WRAPPER"
 
               export CC_aarch64_unknown_linux_musl="$ZIG_CC_WRAPPER"
@@ -788,3 +805,4 @@ jobs:
           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+z
