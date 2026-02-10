@@ -165,6 +165,11 @@ jobs:
               source "$HOME/.cargo/env"
               rustup target add ${{ matrix.target }}
 
+              # Build scripts need to dlopen libclang (for bindgen), but musl defaults
+              # to static linking where dlopen is a no-op stub. Use [host] config to
+              # dynamically link build scripts while keeping the final binary static.
+              printf "[host]\nrustflags = [\"-C\", \"target-feature=-crt-static\"]\n" > "$HOME/.cargo/config.toml"
+
               # Build
               echo "Building for target: ${{ matrix.target }}"
               cargo build --release --target ${{ matrix.target }} --bin drasi-server
