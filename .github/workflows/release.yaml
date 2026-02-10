@@ -122,17 +122,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: ${{ matrix.target }}
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install build dependencies (Linux glibc)
         if: runner.os == 'Linux' && !contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
-
-      - name: Add Rust target (musl)
-        if: contains(matrix.target, 'musl')
-        run: rustup target add ${{ matrix.target }}
 
       - name: Install musl toolchain and build dependencies from source
         if: contains(matrix.target, 'musl')
