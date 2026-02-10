@@ -5,13 +5,9 @@ set -e
 
 echo "🔧 Initializing Drasi Server development environment..."
 
-# Initialize git submodules
-echo "📦 Initializing git submodules..."
-git submodule update --init --recursive
-
 # Install PostgreSQL client for database interactions
-echo "🐘 Installing PostgreSQL client..."
-sudo apt-get update && sudo apt-get install -y postgresql-client
+echo "🐘 Installing PostgreSQL client and OpenSSL development libraries..."
+sudo apt-get update && sudo apt-get install -y postgresql-client libssl-dev pkg-config
 
 # Build Drasi Server in release mode
 echo "🔨 Building Drasi Server (this may take a few minutes)..."
