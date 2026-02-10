@@ -19,12 +19,9 @@ sudo apt-get update && sudo apt-get install -y \
     clang \
     libclang-dev
 
-# Build Drasi Server in release mode
+# Build and install Drasi Server
 echo "🔨 Building Drasi Server (this may take a few minutes)..."
-cargo build --release
-
-# Create symlink for consistent binary access
-ln -sf ./target/release/drasi-server ./drasi-server
+cargo install --path . --root . --locked
 
 # Make scripts executable
 if [ -d "examples/getting-started/scripts" ]; then
