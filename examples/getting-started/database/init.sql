@@ -15,6 +15,9 @@
 -- Getting Started Tutorial Database Schema
 -- This schema mirrors the Drasi Platform getting-started tutorial
 
+-- Suppress noisy notices during setup
+SET client_min_messages = WARNING;
+
 -- Create user with replication privileges for CDC
 DO $$
 BEGIN
@@ -53,22 +56,36 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 
--- Create publication for logical replication
--- This publication includes only the message table
-CREATE PUBLICATION drasi_pub FOR TABLE message;
+-- Create publication for logical replication (if not exists)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'drasi_pub') THEN
+        CREATE PUBLICATION drasi_pub FOR TABLE message;
+    END IF;
+END
+$$;
 
--- Create replication slot for CDC
--- The slot uses pgoutput for logical decoding
-SELECT pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
+-- Create replication slot for CDC (if not exists)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'drasi_slot') THEN
+        PERFORM pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
+    END IF;
+END
+$$;
 
--- Insert initial sample data (matching Platform tutorial)
-INSERT INTO message ("from", message) VALUES
+-- Insert initial sample data (only if table is empty)
+INSERT INTO message ("from", message)
+SELECT * FROM (VALUES
     ('Buzz Lightyear', 'To infinity and beyond!'),
     ('Brian Kernighan', 'Hello World'),
     ('Antoninus', 'I am Spartacus'),
-    ('David', 'I am Spartacus');
+    ('David', 'I am Spartacus')
+) AS data("from", message)
+WHERE NOT EXISTS (SELECT 1 FROM message);
 
 -- Verify the setup
+SET client_min_messages = NOTICE;
 DO $$
 BEGIN
     RAISE NOTICE 'Getting Started database initialized successfully!';
