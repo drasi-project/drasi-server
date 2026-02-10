@@ -2,7 +2,7 @@
     "name": "Drasi Server Development",
     "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
     "features": {
-        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers/features/git:1": {},
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
