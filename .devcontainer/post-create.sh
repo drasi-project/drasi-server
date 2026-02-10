@@ -5,6 +5,10 @@ set -e
 
 echo "🔧 Initializing Drasi Server development environment..."
 
+# Ensure the shared Docker network exists (for connecting to PostgreSQL container)
+echo "🌐 Creating shared Docker network..."
+docker network create drasi-network 2>/dev/null || true
+
 # Install PostgreSQL client for database interactions
 echo "🐘 Installing system dependencies (PostgreSQL client, OpenSSL, Protobuf, Clang)..."
 sudo apt-get update && sudo apt-get install -y \
@@ -29,4 +33,4 @@ if [ -d "examples/getting-started/scripts" ]; then
 fi
 
 echo ""
-echo "✅ Drasi Server development environment is ready!"
+echo "✅ Drasi Server Getting Started tutorial environment is ready!"

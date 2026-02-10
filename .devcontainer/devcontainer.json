@@ -9,7 +9,9 @@
             "configureZshAsDefaultShell": true
         }
     },
+    "initializeCommand": "docker network create drasi-network 2>/dev/null || true",
     "postCreateCommand": "bash .devcontainer/post-create.sh",
+    "runArgs": ["--network=drasi-network"],
     "forwardPorts": [8080, 8081, 5432],
     "portsAttributes": {
         "8080": {
