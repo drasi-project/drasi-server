@@ -374,6 +374,10 @@ jobs:
           $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = "aarch64-w64-mingw32-clang"
           $env:CXXFLAGS = "-include cstdint"
 
+          # bindgen's libclang doesn't understand "gnullvm" in the target triple;
+          # tell it to use a compatible triple instead.
+          $env:BINDGEN_EXTRA_CLANG_ARGS = "--target=aarch64-pc-windows-gnu"
+
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
           $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
