@@ -24,6 +24,7 @@ use drasi_server::api::models::{
     MockSourceConfigDto, PlatformBootstrapConfigDto, PlatformReactionConfigDto,
     PlatformSourceConfigDto, PostgresBootstrapConfigDto, PostgresSourceConfigDto, ReactionConfig,
     ScriptFileBootstrapConfigDto, SourceConfig, SseReactionConfigDto, SslModeDto,
+    TableKeyConfigDto,
 };
 
 use drasi_server::api::models::StateStoreConfig;
@@ -279,6 +280,9 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    // Ask about table keys (primary keys for tables without them)
+    let table_keys = prompt_table_keys(&tables)?;
+
     // Ask about bootstrap provider
     let bootstrap_provider = prompt_bootstrap_provider_for_postgres()?;
 
@@ -296,7 +300,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
             slot_name: "drasi_slot".to_string(),
             publication_name: "drasi_pub".to_string(),
             ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-            table_keys: vec![],
+            table_keys,
         },
     })
 }
@@ -327,6 +331,64 @@ fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderCo
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
         BootstrapType::Platform => prompt_platform_bootstrap(),
     }
+}
+
+/// Prompt for table keys configuration.
+/// Table keys are needed for tables that don't have a primary key defined.
+fn prompt_table_keys(tables: &[String]) -> Result<Vec<TableKeyConfigDto>> {
+    let configure_keys = Confirm::new("Configure table keys for tables without primary keys?")
+        .with_default(false)
+        .with_help_message("Required for tables lacking a primary key constraint")
+        .prompt()?;
+
+    if !configure_keys {
+        return Ok(vec![]);
+    }
+
+    let mut table_keys = Vec::new();
+
+    // Let user select which tables need key configuration
+    let tables_needing_keys = if tables.len() == 1 {
+        // If only one table, just ask if it needs keys
+        let needs_keys = Confirm::new(&format!(
+            "Does table '{}' need key columns specified?",
+            tables[0]
+        ))
+        .with_default(true)
+        .prompt()?;
+
+        if needs_keys {
+            vec![tables[0].clone()]
+        } else {
+            vec![]
+        }
+    } else {
+        // Multiple tables - let user select which ones
+        MultiSelect::new(
+            "Select tables that need key columns:",
+            tables.to_vec(),
+        )
+        .with_help_message("Space to select, Enter to confirm")
+        .prompt()?
+    };
+
+    for table in tables_needing_keys {
+        let key_columns_str = Text::new(&format!("Key columns for '{table}' (comma-separated):"))
+            .with_help_message("e.g., id or user_id,timestamp")
+            .prompt()?;
+
+        let key_columns: Vec<String> = key_columns_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if !key_columns.is_empty() {
+            table_keys.push(TableKeyConfigDto { table, key_columns });
+        }
+    }
+
+    Ok(table_keys)
 }
 
 /// Prompt for HTTP source configuration.
