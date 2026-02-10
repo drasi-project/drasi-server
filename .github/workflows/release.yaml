@@ -159,7 +159,7 @@ jobs:
           CC=musl-gcc ./Configure \
             --prefix="${MUSL_PREFIX}" \
             --openssldir="${MUSL_PREFIX}/ssl" \
-            no-shared no-async no-engine no-dso \
+            no-shared no-async no-engine no-dso no-secure-memory \
             ${OPENSSL_TARGET}
           make -j"$(nproc)"
           make install_sw
