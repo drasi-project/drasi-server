@@ -363,12 +363,15 @@ jobs:
           # cc-rs injects --target=aarch64-pc-windows-gnu for clang, which
           # overrides llvm-mingw's built-in target and breaks the C++ stdlib
           # header search (looks for libstdc++ instead of libc++).
-          # Create .cmd wrapper scripts that strip --target= flags.
+          # Create .cmd wrapper scripts that:
+          #   1. Strip --target= flags
+          #   2. Inject -D_WIN32_WINNT=0x0A00 so Windows headers expose
+          #      Win10+ APIs (FILE_ID_INFO, FileIdInfo, etc.)
           $CC_WRAPPER = "C:\cc-arm64-wrap.cmd"
           @"
           @echo off
           setlocal enabledelayedexpansion
-          set "ARGS="
+          set "ARGS=-D_WIN32_WINNT=0x0A00"
           :cc_loop
           if "%~1"=="" goto cc_run
           set "T=%~1"
@@ -384,7 +387,7 @@ jobs:
           @"
           @echo off
           setlocal enabledelayedexpansion
-          set "ARGS="
+          set "ARGS=-D_WIN32_WINNT=0x0A00"
           :cxx_loop
           if "%~1"=="" goto cxx_run
           set "T=%~1"
@@ -403,7 +406,15 @@ jobs:
           $env:CXX_aarch64_pc_windows_gnullvm = $CXX_WRAPPER
           $env:AR_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-ar"
           $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = $CC_WRAPPER
-          $env:CXXFLAGS = "-include cstdint"
+
+          # Belt-and-suspenders: set target-specific flags that cc-rs picks up,
+          # in addition to the defines already baked into the wrappers.
+          # -D_WIN32_WINNT=0x0A00 : expose Win10+ APIs (FILE_ID_INFO, etc.)
+          # -include cstdint      : RocksDB headers need it with newer compilers
+          $env:CFLAGS_aarch64_pc_windows_gnullvm   = "-D_WIN32_WINNT=0x0A00"
+          $env:CXXFLAGS_aarch64_pc_windows_gnullvm = "-include cstdint -D_WIN32_WINNT=0x0A00"
+          $env:CFLAGS   = "-D_WIN32_WINNT=0x0A00"
+          $env:CXXFLAGS = "-include cstdint -D_WIN32_WINNT=0x0A00"
 
           # bindgen's libclang doesn't understand "gnullvm" in the target triple;
           # tell it to use a compatible triple instead.
