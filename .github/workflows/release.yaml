@@ -132,7 +132,59 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
 
-      - name: Build binary (Linux musl via Alpine Docker)
+      - name: Install musl cross-compilation tools
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev protobuf-compiler build-essential \
+            pkg-config autoconf automake libtool make
+
+      - name: Build C dependencies for musl
+        if: contains(matrix.target, 'musl')
+        run: |
+          set -euxo pipefail
+          MUSL_PREFIX="$HOME/musl-deps"
+          mkdir -p "$MUSL_PREFIX"
+          WORK_DIR=$(mktemp -d)
+
+          # Determine OpenSSL target
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64)  OPENSSL_TARGET="linux-x86_64" ;;
+            aarch64) OPENSSL_TARGET="linux-aarch64" ;;
+          esac
+
+          # Build OpenSSL for musl
+          cd "$WORK_DIR"
+          OPENSSL_VER="3.2.1"
+          curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VER}/openssl-${OPENSSL_VER}.tar.gz" | tar xz
+          cd "openssl-${OPENSSL_VER}"
+          CC=musl-gcc ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async
+          make -j$(nproc)
+          make install_sw
+
+          # Build oniguruma for musl
+          cd "$WORK_DIR"
+          ONIG_VER="6.9.9"
+          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VER}/onig-${ONIG_VER}.tar.gz" | tar xz
+          cd "onig-${ONIG_VER}"
+          CC=musl-gcc ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared
+          make -j$(nproc) && make install
+
+          # Build jq for musl (depends on oniguruma)
+          cd "$WORK_DIR"
+          JQ_VER="1.7.1"
+          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VER}/jq-${JQ_VER}.tar.gz" | tar xz
+          cd "jq-${JQ_VER}"
+          CC=musl-gcc ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared \
+            --with-oniguruma="$MUSL_PREFIX" --disable-maintainer-mode
+          make -j$(nproc) && make install
+
+          # Verify static libraries
+          echo "=== Built musl static libraries ==="
+          ls -la "$MUSL_PREFIX/lib/"*.a
+
+      - name: Build binary (Linux musl)
         if: contains(matrix.target, 'musl')
         id: build-musl
         run: |
@@ -140,52 +192,34 @@ jobs:
           VERSION="${VERSION#v}"
           ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
 
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            -e LIBJQ_STATIC=1 \
-            -e LIBONIG_STATIC=1 \
-            -e OPENSSL_STATIC=1 \
-            -e JQ_LIB_DIR=/usr/lib \
-            -e CARGO_HOST_RUSTFLAGS="-C target-feature=-crt-static" \
-            alpine:3.21 sh -c '
-              set -e
+          MUSL_PREFIX="$HOME/musl-deps"
 
-              # Install build tools and musl-native libraries (all musl-linked on Alpine)
-              apk add --no-cache \
-                curl gcc g++ musl-dev pkgconf protobuf-dev make perl linux-headers \
-                clang-dev \
-                jq-dev oniguruma-dev \
-                openssl-dev openssl-libs-static
+          # Point build system to musl-built static libraries
+          export OPENSSL_DIR="$MUSL_PREFIX"
+          export OPENSSL_STATIC=1
+          export LIBJQ_STATIC=1
+          export LIBONIG_STATIC=1
+          export JQ_LIB_DIR="$MUSL_PREFIX/lib"
+          export PKG_CONFIG_PATH="$MUSL_PREFIX/lib/pkgconfig"
 
-              # Verify static libraries exist
-              ls -la /usr/lib/libjq.a /usr/lib/libonig.a /usr/lib/libssl.a /usr/lib/libcrypto.a
+          # Set musl-gcc as C compiler and linker for the musl target.
+          # Build scripts (bindgen, etc.) run on the glibc host so dlopen works fine.
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              export CC_x86_64_unknown_linux_musl=musl-gcc
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+              ;;
+            aarch64-unknown-linux-musl)
+              export CC_aarch64_unknown_linux_musl=musl-gcc
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+              ;;
+          esac
 
-              # Install Rust via rustup
-              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-              source "$HOME/.cargo/env"
-              rustup target add ${{ matrix.target }}
+          echo "Building for target: ${{ matrix.target }}"
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
-              # Configure host build scripts to link dynamically so bindgen can dlopen libclang.
-              # On musl, build scripts default to static linking where dlopen is a no-op stub.
-              # Using both env var and config file for maximum compatibility.
-              mkdir -p "$HOME/.cargo"
-              echo "[host]" > "$HOME/.cargo/config.toml"
-              echo "rustflags = [\"-C\", \"target-feature=-crt-static\"]" >> "$HOME/.cargo/config.toml"
-              echo "--- Cargo host config ---"
-              cat "$HOME/.cargo/config.toml"
-              echo "CARGO_HOST_RUSTFLAGS=$CARGO_HOST_RUSTFLAGS"
-              echo "--- end config ---"
-
-              # Build
-              echo "Building for target: ${{ matrix.target }}"
-              cargo build --release --target ${{ matrix.target }} --bin drasi-server
-
-              # Copy binary to workspace root
-              cp "target/${{ matrix.target }}/release/drasi-server" "/workspace/'"${ARTIFACT_NAME}"'"
-            '
-
-          chmod +x "${ARTIFACT_NAME}"
+          cp "target/${{ matrix.target }}/release/drasi-server" "$ARTIFACT_NAME"
+          chmod +x "$ARTIFACT_NAME"
           echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
 
       - name: Install build dependencies (macOS)
