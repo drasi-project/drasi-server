@@ -196,6 +196,7 @@ jobs:
             automake
             libtool
             make
+            unzip
 
       - name: Build ARM64 Windows dependencies from source
         if: matrix.target == 'aarch64-pc-windows-gnullvm'
