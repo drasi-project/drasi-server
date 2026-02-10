@@ -136,7 +136,7 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools musl-dev linux-headers-generic protobuf-compiler \
+          sudo apt-get install -y protobuf-compiler \
             build-essential pkg-config autoconf automake libtool make curl xz-utils
 
           case "${{ matrix.target }}" in
@@ -413,8 +413,6 @@ jobs:
           # -include cstdint      : RocksDB headers need it with newer compilers
           $env:CFLAGS_aarch64_pc_windows_gnullvm   = "-D_WIN32_WINNT=0x0A00"
           $env:CXXFLAGS_aarch64_pc_windows_gnullvm = "-include cstdint -D_WIN32_WINNT=0x0A00"
-          $env:CFLAGS   = "-D_WIN32_WINNT=0x0A00"
-          $env:CXXFLAGS = "-include cstdint -D_WIN32_WINNT=0x0A00"
 
           # bindgen's libclang doesn't understand "gnullvm" in the target triple;
           # tell it to use a compatible triple instead.
@@ -741,13 +739,6 @@ jobs:
           BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
           BINARY_PATH="$(pwd)/bin/${BINARY_NAME}"
 
-          echo "=== Debug: Artifact contents ==="
-          ls -la bin/
-
-          echo "=== Debug: DLL check ==="
-          ldd "$BINARY_PATH" 2>&1 | grep -i "not found" || echo "All DLLs resolved"
-
-          echo "=== Running smoke test ==="
           SERVER_BINARY="$BINARY_PATH" \
             tests/integration/hello-world/run-integration-test.sh
 
