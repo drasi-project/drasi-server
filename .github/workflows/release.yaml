@@ -145,8 +145,27 @@ jobs:
           OPENSSL_VERSION="3.3.2"
           curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz" | tar xz
           cd "openssl-${OPENSSL_VERSION}"
-          CC=musl-gcc ./Configure --prefix="${MUSL_PREFIX}" no-shared no-async linux-generic64
-          make -j"$(nproc)" && make install_sw
+
+          # Pick the right OpenSSL target for the architecture
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "x86_64" ]]; then
+            OPENSSL_TARGET="linux-x86_64"
+          elif [[ "$ARCH" == "aarch64" ]]; then
+            OPENSSL_TARGET="linux-aarch64"
+          else
+            OPENSSL_TARGET="linux-generic64"
+          fi
+
+          CC=musl-gcc ./Configure \
+            --prefix="${MUSL_PREFIX}" \
+            --openssldir="${MUSL_PREFIX}/ssl" \
+            no-shared no-async no-engine no-dso \
+            ${OPENSSL_TARGET}
+          make -j"$(nproc)"
+          make install_sw
+
+          # Verify headers were installed
+          ls -la "${MUSL_PREFIX}/include/openssl/opensslv.h"
           cd ..
 
           # Build oniguruma for musl
