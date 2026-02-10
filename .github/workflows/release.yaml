@@ -147,6 +147,7 @@ jobs:
             -e LIBONIG_STATIC=1 \
             -e OPENSSL_STATIC=1 \
             -e JQ_LIB_DIR=/usr/lib \
+            -e CARGO_HOST_RUSTFLAGS="-C target-feature=-crt-static" \
             alpine:3.21 sh -c '
               set -e
 
@@ -165,10 +166,16 @@ jobs:
               source "$HOME/.cargo/env"
               rustup target add ${{ matrix.target }}
 
-              # Build scripts need to dlopen libclang (for bindgen), but musl defaults
-              # to static linking where dlopen is a no-op stub. Use [host] config to
-              # dynamically link build scripts while keeping the final binary static.
-              printf "[host]\nrustflags = [\"-C\", \"target-feature=-crt-static\"]\n" > "$HOME/.cargo/config.toml"
+              # Configure host build scripts to link dynamically so bindgen can dlopen libclang.
+              # On musl, build scripts default to static linking where dlopen is a no-op stub.
+              # Using both env var and config file for maximum compatibility.
+              mkdir -p "$HOME/.cargo"
+              echo "[host]" > "$HOME/.cargo/config.toml"
+              echo "rustflags = [\"-C\", \"target-feature=-crt-static\"]" >> "$HOME/.cargo/config.toml"
+              echo "--- Cargo host config ---"
+              cat "$HOME/.cargo/config.toml"
+              echo "CARGO_HOST_RUSTFLAGS=$CARGO_HOST_RUSTFLAGS"
+              echo "--- end config ---"
 
               # Build
               echo "Building for target: ${{ matrix.target }}"
