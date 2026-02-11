@@ -14,18 +14,17 @@
 
 //! Unit tests for HTTP source configuration mapper including webhook support.
 
-use drasi_server::api::mappings::{ConfigMapper, DtoMapper};
 use drasi_server::api::mappings::sources::HttpSourceConfigMapper;
+use drasi_server::api::mappings::{ConfigMapper, DtoMapper};
 use drasi_server::models::{
     AuthConfigDto, BearerConfigDto, ConfigValue, CorsConfigDto, EffectiveFromConfigDto,
     ElementTemplateDto, ElementTypeDto, ErrorBehaviorDto, HttpMethodDto, HttpSourceConfigDto,
     MappingConditionDto, OperationTypeDto, SignatureAlgorithmDto, SignatureConfigDto,
-    SignatureEncodingDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto,
-    WebhookRouteDto,
+    SignatureEncodingDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
 };
 use drasi_source_http::config::{
-    ElementType, ErrorBehavior, HttpMethod, OperationType, SignatureAlgorithm,
-    SignatureEncoding, TimestampFormat,
+    ElementType, ErrorBehavior, HttpMethod, OperationType, SignatureAlgorithm, SignatureEncoding,
+    TimestampFormat,
 };
 use std::collections::HashMap;
 
@@ -51,7 +50,9 @@ fn test_map_http_source_without_webhooks() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     assert_eq!(config.host, "localhost");
     assert_eq!(config.port, 8080);
@@ -88,7 +89,9 @@ fn test_map_http_source_with_simple_webhook() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.expect("Should have webhooks");
     assert_eq!(webhooks.error_behavior, ErrorBehavior::Reject);
@@ -137,7 +140,9 @@ fn test_map_http_methods() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.expect("Should have webhooks");
     let methods = &webhooks.routes[0].methods;
@@ -184,9 +189,15 @@ fn test_map_cors_config() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
-    let cors = config.webhooks.unwrap().cors.expect("Should have CORS config");
+    let cors = config
+        .webhooks
+        .unwrap()
+        .cors
+        .expect("Should have CORS config");
     assert!(cors.enabled);
     assert_eq!(cors.allow_origins, vec!["https://example.com"]);
     assert_eq!(cors.allow_methods, vec!["GET", "POST"]);
@@ -215,12 +226,14 @@ fn test_map_signature_auth_hmac_sha256() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.unwrap();
     let auth = webhooks.routes[0].auth.as_ref().expect("Should have auth");
     let sig = auth.signature.as_ref().expect("Should have signature");
-    
+
     assert_eq!(sig.algorithm, SignatureAlgorithm::HmacSha256);
     assert_eq!(sig.secret_env, "WEBHOOK_SECRET");
     assert_eq!(sig.header, "X-Signature");
@@ -243,13 +256,19 @@ fn test_map_signature_auth_hmac_sha1() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.unwrap();
     let sig = webhooks.routes[0]
-        .auth.as_ref().unwrap()
-        .signature.as_ref().expect("Should have signature");
-    
+        .auth
+        .as_ref()
+        .unwrap()
+        .signature
+        .as_ref()
+        .expect("Should have signature");
+
     assert_eq!(sig.algorithm, SignatureAlgorithm::HmacSha1);
     assert_eq!(sig.encoding, SignatureEncoding::Base64);
     assert!(sig.prefix.is_none());
@@ -266,13 +285,19 @@ fn test_map_bearer_auth() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.unwrap();
     let bearer = webhooks.routes[0]
-        .auth.as_ref().unwrap()
-        .bearer.as_ref().expect("Should have bearer");
-    
+        .auth
+        .as_ref()
+        .unwrap()
+        .bearer
+        .as_ref()
+        .expect("Should have bearer");
+
     assert_eq!(bearer.token_env, "API_TOKEN");
 }
 
@@ -294,7 +319,9 @@ fn test_map_webhook_mapping_with_static_operation() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let mapping = &config.webhooks.unwrap().routes[0].mappings[0];
     assert_eq!(mapping.operation, Some(OperationType::Insert));
@@ -316,7 +343,10 @@ fn test_map_all_operation_types() {
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
     let config = mapper.map(&dto, &resolver).unwrap();
-    assert_eq!(config.webhooks.unwrap().routes[0].mappings[0].operation, Some(OperationType::Insert));
+    assert_eq!(
+        config.webhooks.unwrap().routes[0].mappings[0].operation,
+        Some(OperationType::Insert)
+    );
 
     // Update
     let dto = create_dto_with_mapping(WebhookMappingDto {
@@ -329,7 +359,10 @@ fn test_map_all_operation_types() {
         template: simple_template(),
     });
     let config = mapper.map(&dto, &resolver).unwrap();
-    assert_eq!(config.webhooks.unwrap().routes[0].mappings[0].operation, Some(OperationType::Update));
+    assert_eq!(
+        config.webhooks.unwrap().routes[0].mappings[0].operation,
+        Some(OperationType::Update)
+    );
 
     // Delete
     let dto = create_dto_with_mapping(WebhookMappingDto {
@@ -342,7 +375,10 @@ fn test_map_all_operation_types() {
         template: simple_template(),
     });
     let config = mapper.map(&dto, &resolver).unwrap();
-    assert_eq!(config.webhooks.unwrap().routes[0].mappings[0].operation, Some(OperationType::Delete));
+    assert_eq!(
+        config.webhooks.unwrap().routes[0].mappings[0].operation,
+        Some(OperationType::Delete)
+    );
 }
 
 #[test]
@@ -360,7 +396,10 @@ fn test_map_element_types() {
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
     let config = mapper.map(&dto, &resolver).unwrap();
-    assert_eq!(config.webhooks.unwrap().routes[0].mappings[0].element_type, ElementType::Node);
+    assert_eq!(
+        config.webhooks.unwrap().routes[0].mappings[0].element_type,
+        ElementType::Node
+    );
 
     // Relation
     let dto = create_dto_with_mapping(WebhookMappingDto {
@@ -404,12 +443,17 @@ fn test_map_operation_map() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let mapping = &config.webhooks.unwrap().routes[0].mappings[0];
     assert_eq!(mapping.operation_from, Some("$.action".to_string()));
-    
-    let mapped_ops = mapping.operation_map.as_ref().expect("Should have operation map");
+
+    let mapped_ops = mapping
+        .operation_map
+        .as_ref()
+        .expect("Should have operation map");
     assert_eq!(mapped_ops.get("created"), Some(&OperationType::Insert));
     assert_eq!(mapped_ops.get("updated"), Some(&OperationType::Update));
     assert_eq!(mapped_ops.get("deleted"), Some(&OperationType::Delete));
@@ -439,12 +483,16 @@ fn test_map_mapping_condition() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.unwrap();
     let condition = webhooks.routes[0].mappings[0]
-        .when.as_ref().expect("Should have condition");
-    
+        .when
+        .as_ref()
+        .expect("Should have condition");
+
     assert_eq!(condition.header, Some("X-Event-Type".to_string()));
     assert_eq!(condition.field, Some("$.type".to_string()));
     assert_eq!(condition.equals, Some("push".to_string()));
@@ -464,18 +512,24 @@ fn test_map_effective_from_simple() {
         operation_from: None,
         operation_map: None,
         element_type: ElementTypeDto::Node,
-        effective_from: Some(EffectiveFromConfigDto::Simple("{{payload.timestamp}}".to_string())),
+        effective_from: Some(EffectiveFromConfigDto::Simple(
+            "{{payload.timestamp}}".to_string(),
+        )),
         template: simple_template(),
     });
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let webhooks = config.webhooks.unwrap();
     let effective_from = webhooks.routes[0].mappings[0]
-        .effective_from.as_ref().expect("Should have effective_from");
-    
+        .effective_from
+        .as_ref()
+        .expect("Should have effective_from");
+
     match effective_from {
         drasi_source_http::config::EffectiveFromConfig::Simple(s) => {
             assert_eq!(s, "{{payload.timestamp}}");
@@ -488,7 +542,10 @@ fn test_map_effective_from_simple() {
 fn test_map_effective_from_explicit_all_formats() {
     let formats = [
         (TimestampFormatDto::Iso8601, TimestampFormat::Iso8601),
-        (TimestampFormatDto::UnixSeconds, TimestampFormat::UnixSeconds),
+        (
+            TimestampFormatDto::UnixSeconds,
+            TimestampFormat::UnixSeconds,
+        ),
         (TimestampFormatDto::UnixMillis, TimestampFormat::UnixMillis),
         (TimestampFormatDto::UnixNanos, TimestampFormat::UnixNanos),
     ];
@@ -510,10 +567,14 @@ fn test_map_effective_from_explicit_all_formats() {
             template: simple_template(),
         });
 
-        let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+        let config = mapper
+            .map(&dto, &resolver)
+            .expect("Should map successfully");
         let webhooks = config.webhooks.unwrap();
         let effective_from = webhooks.routes[0].mappings[0]
-            .effective_from.as_ref().expect("Should have effective_from");
+            .effective_from
+            .as_ref()
+            .expect("Should have effective_from");
 
         match effective_from {
             drasi_source_http::config::EffectiveFromConfig::Explicit { value, format } => {
@@ -552,7 +613,9 @@ fn test_map_element_template() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     let template = &config.webhooks.unwrap().routes[0].mappings[0].template;
     assert_eq!(template.id, "node-{{payload.id}}");
@@ -653,7 +716,9 @@ fn test_map_full_github_webhook_config() {
 
     let mapper = HttpSourceConfigMapper;
     let resolver = DtoMapper::new();
-    let config = mapper.map(&dto, &resolver).expect("Should map successfully");
+    let config = mapper
+        .map(&dto, &resolver)
+        .expect("Should map successfully");
 
     // Verify top-level config
     assert_eq!(config.host, "0.0.0.0");
@@ -720,7 +785,9 @@ fn simple_route() -> WebhookRouteDto {
     }
 }
 
-fn create_config_with_error_behavior(behavior: ErrorBehaviorDto) -> drasi_source_http::HttpSourceConfig {
+fn create_config_with_error_behavior(
+    behavior: ErrorBehaviorDto,
+) -> drasi_source_http::HttpSourceConfig {
     let dto = HttpSourceConfigDto {
         host: ConfigValue::Static("localhost".to_string()),
         port: ConfigValue::Static(8080),

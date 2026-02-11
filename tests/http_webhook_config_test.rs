@@ -18,8 +18,7 @@ use drasi_server::models::{
     AuthConfigDto, BearerConfigDto, ConfigValue, CorsConfigDto, EffectiveFromConfigDto,
     ElementTemplateDto, ElementTypeDto, ErrorBehaviorDto, HttpMethodDto, HttpSourceConfigDto,
     MappingConditionDto, OperationTypeDto, SignatureAlgorithmDto, SignatureConfigDto,
-    SignatureEncodingDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto,
-    WebhookRouteDto,
+    SignatureEncodingDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
 };
 use std::collections::HashMap;
 
@@ -90,7 +89,10 @@ routes:
     let config: WebhookConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
     let cors = config.cors.expect("Should have CORS config");
     assert!(cors.enabled);
-    assert_eq!(cors.allow_origins, vec!["https://example.com", "https://other.com"]);
+    assert_eq!(
+        cors.allow_origins,
+        vec!["https://example.com", "https://other.com"]
+    );
     assert_eq!(cors.allow_methods, vec!["GET", "POST"]);
     assert!(cors.allow_credentials);
     assert_eq!(cors.max_age, 7200);
@@ -144,20 +146,50 @@ fn test_error_behavior_default() {
 
 #[test]
 fn test_http_method_serialization() {
-    assert_eq!(serde_json::to_string(&HttpMethodDto::Get).unwrap(), "\"GET\"");
-    assert_eq!(serde_json::to_string(&HttpMethodDto::Post).unwrap(), "\"POST\"");
-    assert_eq!(serde_json::to_string(&HttpMethodDto::Put).unwrap(), "\"PUT\"");
-    assert_eq!(serde_json::to_string(&HttpMethodDto::Patch).unwrap(), "\"PATCH\"");
-    assert_eq!(serde_json::to_string(&HttpMethodDto::Delete).unwrap(), "\"DELETE\"");
+    assert_eq!(
+        serde_json::to_string(&HttpMethodDto::Get).unwrap(),
+        "\"GET\""
+    );
+    assert_eq!(
+        serde_json::to_string(&HttpMethodDto::Post).unwrap(),
+        "\"POST\""
+    );
+    assert_eq!(
+        serde_json::to_string(&HttpMethodDto::Put).unwrap(),
+        "\"PUT\""
+    );
+    assert_eq!(
+        serde_json::to_string(&HttpMethodDto::Patch).unwrap(),
+        "\"PATCH\""
+    );
+    assert_eq!(
+        serde_json::to_string(&HttpMethodDto::Delete).unwrap(),
+        "\"DELETE\""
+    );
 }
 
 #[test]
 fn test_http_method_deserialization() {
-    assert_eq!(serde_json::from_str::<HttpMethodDto>("\"GET\"").unwrap(), HttpMethodDto::Get);
-    assert_eq!(serde_json::from_str::<HttpMethodDto>("\"POST\"").unwrap(), HttpMethodDto::Post);
-    assert_eq!(serde_json::from_str::<HttpMethodDto>("\"PUT\"").unwrap(), HttpMethodDto::Put);
-    assert_eq!(serde_json::from_str::<HttpMethodDto>("\"PATCH\"").unwrap(), HttpMethodDto::Patch);
-    assert_eq!(serde_json::from_str::<HttpMethodDto>("\"DELETE\"").unwrap(), HttpMethodDto::Delete);
+    assert_eq!(
+        serde_json::from_str::<HttpMethodDto>("\"GET\"").unwrap(),
+        HttpMethodDto::Get
+    );
+    assert_eq!(
+        serde_json::from_str::<HttpMethodDto>("\"POST\"").unwrap(),
+        HttpMethodDto::Post
+    );
+    assert_eq!(
+        serde_json::from_str::<HttpMethodDto>("\"PUT\"").unwrap(),
+        HttpMethodDto::Put
+    );
+    assert_eq!(
+        serde_json::from_str::<HttpMethodDto>("\"PATCH\"").unwrap(),
+        HttpMethodDto::Patch
+    );
+    assert_eq!(
+        serde_json::from_str::<HttpMethodDto>("\"DELETE\"").unwrap(),
+        HttpMethodDto::Delete
+    );
 }
 
 // ============================================================================
@@ -339,7 +371,7 @@ template:
 
     let mapping: WebhookMappingDto = serde_yaml::from_str(yaml).expect("Should deserialize");
     assert_eq!(mapping.operation_from, Some("$.action".to_string()));
-    
+
     let op_map = mapping.operation_map.expect("Should have operation map");
     assert_eq!(op_map.get("created"), Some(&OperationTypeDto::Insert));
     assert_eq!(op_map.get("updated"), Some(&OperationTypeDto::Update));
@@ -360,8 +392,14 @@ template:
 
     let mapping: WebhookMappingDto = serde_yaml::from_str(yaml).expect("Should deserialize");
     assert_eq!(mapping.element_type, ElementTypeDto::Relation);
-    assert_eq!(mapping.template.from, Some("{{payload.source_id}}".to_string()));
-    assert_eq!(mapping.template.to, Some("{{payload.target_id}}".to_string()));
+    assert_eq!(
+        mapping.template.from,
+        Some("{{payload.source_id}}".to_string())
+    );
+    assert_eq!(
+        mapping.template.to,
+        Some("{{payload.target_id}}".to_string())
+    );
 }
 
 // ============================================================================
@@ -430,7 +468,7 @@ template:
 fn test_effective_from_simple_string() {
     let yaml = "\"{{payload.timestamp}}\"";
     let config: EffectiveFromConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
+
     match config {
         EffectiveFromConfigDto::Simple(s) => assert_eq!(s, "{{payload.timestamp}}"),
         _ => panic!("Expected Simple variant"),
@@ -445,7 +483,7 @@ format: iso8601
 "#;
 
     let config: EffectiveFromConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
+
     match config {
         EffectiveFromConfigDto::Explicit { value, format } => {
             assert_eq!(value, "{{payload.created_at}}");
@@ -481,9 +519,18 @@ fn test_timestamp_format_variants() {
 
 #[test]
 fn test_operation_type_serialization() {
-    assert_eq!(serde_json::to_string(&OperationTypeDto::Insert).unwrap(), "\"insert\"");
-    assert_eq!(serde_json::to_string(&OperationTypeDto::Update).unwrap(), "\"update\"");
-    assert_eq!(serde_json::to_string(&OperationTypeDto::Delete).unwrap(), "\"delete\"");
+    assert_eq!(
+        serde_json::to_string(&OperationTypeDto::Insert).unwrap(),
+        "\"insert\""
+    );
+    assert_eq!(
+        serde_json::to_string(&OperationTypeDto::Update).unwrap(),
+        "\"update\""
+    );
+    assert_eq!(
+        serde_json::to_string(&OperationTypeDto::Delete).unwrap(),
+        "\"delete\""
+    );
 }
 
 // ============================================================================
@@ -492,8 +539,14 @@ fn test_operation_type_serialization() {
 
 #[test]
 fn test_element_type_serialization() {
-    assert_eq!(serde_json::to_string(&ElementTypeDto::Node).unwrap(), "\"node\"");
-    assert_eq!(serde_json::to_string(&ElementTypeDto::Relation).unwrap(), "\"relation\"");
+    assert_eq!(
+        serde_json::to_string(&ElementTypeDto::Node).unwrap(),
+        "\"node\""
+    );
+    assert_eq!(
+        serde_json::to_string(&ElementTypeDto::Relation).unwrap(),
+        "\"relation\""
+    );
 }
 
 // ============================================================================
@@ -528,7 +581,10 @@ maxAge: 86400
     assert!(config.enabled);
     assert_eq!(config.allow_origins, vec!["https://app.example.com"]);
     assert_eq!(config.allow_methods, vec!["GET", "POST", "PUT"]);
-    assert_eq!(config.allow_headers, vec!["Content-Type", "X-Custom-Header"]);
+    assert_eq!(
+        config.allow_headers,
+        vec!["Content-Type", "X-Custom-Header"]
+    );
     assert_eq!(config.expose_headers, vec!["X-Response-Id"]);
     assert!(config.allow_credentials);
     assert_eq!(config.max_age, 86400);
@@ -635,22 +691,22 @@ webhooks:
 "#;
 
     let config: HttpSourceConfigDto = serde_yaml::from_str(yaml).expect("Should deserialize");
-    
+
     assert_eq!(config.host, ConfigValue::Static("0.0.0.0".to_string()));
     assert_eq!(config.port, ConfigValue::Static(8080));
-    
+
     let webhooks = config.webhooks.expect("Should have webhooks");
     assert_eq!(webhooks.error_behavior, ErrorBehaviorDto::Reject);
     assert_eq!(webhooks.routes.len(), 1);
-    
+
     let route = &webhooks.routes[0];
     assert_eq!(route.path, "/github/events");
     assert_eq!(route.mappings.len(), 2);
-    
+
     // First mapping - push events
     let push_mapping = &route.mappings[0];
     assert_eq!(push_mapping.operation, Some(OperationTypeDto::Insert));
-    
+
     // Second mapping - PR events with operation map
     let pr_mapping = &route.mappings[1];
     assert!(pr_mapping.operation_map.is_some());
@@ -716,7 +772,7 @@ fn test_webhook_config_yaml_roundtrip() {
 
     let yaml = serde_yaml::to_string(&original).expect("Should serialize");
     let parsed: WebhookConfigDto = serde_yaml::from_str(&yaml).expect("Should deserialize");
-    
+
     assert_eq!(original, parsed);
 }
 
@@ -736,7 +792,7 @@ fn test_webhook_config_json_roundtrip() {
 
     let json = serde_json::to_string(&original).expect("Should serialize");
     let parsed: WebhookConfigDto = serde_json::from_str(&json).expect("Should deserialize");
-    
+
     assert_eq!(original, parsed);
 }
 

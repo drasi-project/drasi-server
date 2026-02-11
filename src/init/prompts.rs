@@ -364,12 +364,9 @@ fn prompt_table_keys(tables: &[String]) -> Result<Vec<TableKeyConfigDto>> {
         }
     } else {
         // Multiple tables - let user select which ones
-        MultiSelect::new(
-            "Select tables that need key columns:",
-            tables.to_vec(),
-        )
-        .with_help_message("Space to select, Enter to confirm")
-        .prompt()?
+        MultiSelect::new("Select tables that need key columns:", tables.to_vec())
+            .with_help_message("Space to select, Enter to confirm")
+            .prompt()?
     };
 
     for table in tables_needing_keys {
