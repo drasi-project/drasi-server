@@ -1,11 +1,26 @@
 FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5
 
-# Install project-specific build dependencies on top of the stock cross image
-# The cross image already has the aarch64 cross-compiler and sysroot
+# Install build dependencies on top of the stock cross image
+# Note: cross base image is Ubuntu 16.04 (Xenial) which lacks libjq-dev,
+# so we build jq from source with bundled oniguruma.
 ENV DEBIAN_FRONTEND=noninteractive
-RUN dpkg --add-architecture arm64 \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    perl make protobuf-compiler libprotobuf-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates \
+    perl make autoconf automake libtool \
+    protobuf-compiler libprotobuf-dev \
     libclang-dev \
-    libjq-dev:arm64 libonig-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
+
+# Build libjq from source for aarch64 (with bundled oniguruma)
+ENV JQ_VERSION=1.7.1
+RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
+    && cd jq-${JQ_VERSION} \
+    && autoreconf -fi \
+    && CC=aarch64-linux-gnu-gcc ./configure --host=aarch64-linux-gnu --disable-shared --enable-static --with-oniguruma=builtin --prefix=/usr/local/jq \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. && rm -rf jq-${JQ_VERSION}
+
+ENV JQ_LIB_DIR=/usr/local/jq/lib
+ENV ONIG_LIB_DIR=/usr/local/jq/lib
+ENV JQ_INCLUDE_DIR=/usr/local/jq/include
