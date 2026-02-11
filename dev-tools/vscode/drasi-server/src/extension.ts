@@ -7,6 +7,7 @@ import { CodeLensProvider } from './codelens-provider';
 import { SchemaProvider } from './schema-provider';
 import { DrasiYamlDiagnosticProvider } from './yaml-diagnostic';
 import { ComponentYamlGenerator } from './component-yaml-generator';
+import { ServerLauncher } from './server-launcher';
 
 let drasiClient: DrasiClient | undefined;
 
@@ -60,6 +61,11 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('drasi.yaml.createSource', () => yamlGenerator.createSourceYaml()),
     vscode.commands.registerCommand('drasi.yaml.createQuery', () => yamlGenerator.createQueryYaml()),
     vscode.commands.registerCommand('drasi.yaml.createReaction', () => yamlGenerator.createReactionYaml())
+  );
+
+  const serverLauncher = new ServerLauncher();
+  context.subscriptions.push(
+    vscode.commands.registerCommand('drasi.server.configureBinary', () => serverLauncher.configureBinary())
   );
 }
 

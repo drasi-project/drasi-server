@@ -167,6 +167,17 @@
           "command": "drasi.yaml.createReaction",
           "category": "Drasi Server",
           "title": "Create Reaction YAML"
+        },
+        {
+          "command": "drasi.server.launch",
+          "category": "Drasi Server",
+          "title": "Launch Server",
+          "icon": "$(play)"
+        },
+        {
+          "command": "drasi.server.configureBinary",
+          "category": "Drasi Server",
+          "title": "Configure Server Binary"
         }
       ],
     "menus": {
@@ -346,6 +357,10 @@
         {
           "command": "drasi.yaml.createReaction",
           "when": "resourceLangId == yaml"
+        },
+        {
+          "command": "drasi.server.configureBinary",
+          "when": "true"
         }
       ]
     },
@@ -380,6 +395,11 @@
           "type": "string",
           "default": "",
           "description": "Active Drasi Server connection ID."
+        },
+        "drasiServer.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the drasi-server binary. Used by the Launch Server command."
         }
       }
     }

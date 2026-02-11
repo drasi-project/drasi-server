@@ -2,18 +2,30 @@ import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import { DrasiClient } from './drasi-client';
 import { isDrasiYaml } from './drasi-yaml';
+import { ServerLauncher, extractPort } from './server-launcher';
+
+const CONFIG_KEYS = new Set([
+  'sources', 'queries', 'reactions', 'instances',
+  'host', 'port', 'logLevel', 'persistConfig', 'persistIndex',
+  'defaultPriorityQueueCapacity', 'defaultDispatchBufferCapacity', 'stateStore',
+]);
 
 export class CodeLensProvider implements vscode.CodeLensProvider {
   private extensionUri: vscode.Uri;
   private drasiClient: DrasiClient;
+  private serverLauncher: ServerLauncher;
 
   constructor(extensionUri: vscode.Uri, drasiClient: DrasiClient) {
     this.extensionUri = extensionUri;
     this.drasiClient = drasiClient;
+    this.serverLauncher = new ServerLauncher();
 
     vscode.commands.getCommands(true).then((commands) => {
       if (!commands.includes('editor.resource.apply')) {
         vscode.commands.registerCommand('editor.resource.apply', this.applyResource.bind(this));
+      }
+      if (!commands.includes('drasi.server.launch')) {
+        vscode.commands.registerCommand('drasi.server.launch', this.launchServer.bind(this));
       }
     });
   }
@@ -27,13 +39,23 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     }
 
     const docs = yaml.parseAllDocuments(docStr);
+    let addedLaunchLens = false;
 
     docs.forEach((doc) => {
-      const items = extractItems(doc);
-      if (items.length === 0) {
-        return;
+      const obj = doc.toJS();
+      if (!addedLaunchLens && obj && typeof obj === 'object' && isConfigDocument(obj)) {
+        const contents = doc.contents;
+        const start = contents ? getPosition(docStr, (contents.range ?? [0])[0]) : new vscode.Position(0, 0);
+        const range = new vscode.Range(start, start);
+        codeLenses.push(new vscode.CodeLens(range, {
+          command: 'drasi.server.launch',
+          title: '$(play) Launch Server',
+          arguments: [document.uri.fsPath, extractPort(docStr)],
+        }));
+        addedLaunchLens = true;
       }
 
+      const items = extractItems(doc);
       items.forEach((item) => {
         const range = new vscode.Range(getPosition(docStr, item.range.start), getPosition(docStr, item.range.end));
         if (item.kind === 'Query' || item.kind === 'Source' || item.kind === 'Reaction') {
@@ -47,6 +69,10 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
     });
 
     return codeLenses;
+  }
+
+  async launchServer(configPath: string, defaultPort?: number) {
+    await this.serverLauncher.launch(configPath, defaultPort);
   }
 
   async applyResource(resource: any) {
@@ -186,4 +212,8 @@ function getPosition(yamlString: string, index: number): vscode.Position {
   const lineNumber = lines.length - 1;
   const columnNumber = lines[lines.length - 1].length;
   return new vscode.Position(lineNumber, columnNumber);
+}
+
+function isConfigDocument(obj: Record<string, unknown>): boolean {
+  return Object.keys(obj).some((key) => CONFIG_KEYS.has(key));
 }

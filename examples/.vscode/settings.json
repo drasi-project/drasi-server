@@ -26,7 +26,7 @@
             "id": "020b34ce-5623-4377-b6d0-8f41c949558c",
             "name": "Local Drasi Server",
             "url": "http://localhost:8080",
-            "instanceId": "getting-started-server"
+            "instanceId": "hello-world-server"
         },
         {
             "id": "7172867f-a19d-492d-8c47-b4b15a5daab4",
@@ -35,5 +35,6 @@
             "instanceId": "557a4f2d-d472-4081-869e-85ffa08713fc"
         }
     ],
-    "drasiServer.currentConnectionId": "7172867f-a19d-492d-8c47-b4b15a5daab4"
+    "drasiServer.currentConnectionId": "020b34ce-5623-4377-b6d0-8f41c949558c",
+    "drasiServer.binaryPath": "/home/danielgerlag/dev/drasi/drasi-server/target/debug/drasi-server"
 }
