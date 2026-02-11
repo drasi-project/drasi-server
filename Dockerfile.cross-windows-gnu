@@ -2,13 +2,22 @@ FROM ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5
 
 # Install build dependencies on top of the stock cross image
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Install LLVM 14 (Ubuntu 16.04's clang 3.8 is too old for bindgen) and build deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gnupg software-properties-common \
+    && curl -sSL https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
+    && echo 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-14 main' > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    libclang-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+    libclang-14-dev llvm-14 \
+    gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 
 # Build libjq from source for Windows (MinGW)
 ENV JQ_VERSION=1.7.1
