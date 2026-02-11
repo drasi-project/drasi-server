@@ -20,23 +20,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
-# Create a linker wrapper that produces a fully self-contained .exe.
-#
-# Rust's linker invocation passes -nodefaultlibs to GCC, which prevents GCC
-# from adding libstdc++, libgcc, libwinpthread, and the MinGW C runtime.
-#
-# Solution: Use -Wl,-Bstatic / -Wl,-Bdynamic bracketing to tell the GNU
-# linker (ld) to resolve specific -l flags from static archives (.a) only,
-# then switch back to dynamic for Windows system import libs.
-# -nodefaultlibs is preserved so GCC doesn't add duplicate copies.
-# The key difference from previous attempts:
-# - We use -l flags (not raw .a paths), so the linker resolves them via its
-#   normal search path and handles internal cross-dependencies automatically.
-# - -Bstatic/-Bdynamic is a linker directive, not a GCC driver flag, so it
-#   works correctly even with -nodefaultlibs.
-RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs)\n      args="$args -Wl,-Bstatic -lstdc++ -lgcc -lgcc_eh -lpthread -lwinpthread -lmingwex -lmingw32 -Wl,-Bdynamic -lmoldname -lmsvcrt -lkernel32 -ladvapi32 -lshell32 -luser32 -lws2_32 -nodefaultlibs"\n      ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+# Create a linker wrapper that injects winpthread before -nodefaultlibs.
+# RocksDB, libstdc++ and libgcc_eh all reference pthread symbols.
+# The resulting .exe depends on libstdc++-6.dll, libgcc_s_seh-1.dll, and
+# libwinpthread-1.dll at runtime — these are bundled alongside the binary
+# in the release workflow.
+RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -lkernel32 -lmsvcrt -nodefaultlibs" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
     > /usr/local/bin/mingw-gcc-wrapper \
     && chmod +x /usr/local/bin/mingw-gcc-wrapper
+
+# Stage MinGW runtime DLLs in a known location for easy extraction.
+# The release workflow copies these alongside the .exe.
+RUN mkdir -p /mingw-dlls && \
+    cp /usr/lib/gcc/x86_64-w64-mingw32/10-posix/libstdc++-6.dll /mingw-dlls/ && \
+    cp /usr/lib/gcc/x86_64-w64-mingw32/10-posix/libgcc_s_seh-1.dll /mingw-dlls/ && \
+    cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll /mingw-dlls/
 
 # Build libjq from source for Windows (MinGW) with bundled oniguruma
 ENV JQ_VERSION=1.7.1

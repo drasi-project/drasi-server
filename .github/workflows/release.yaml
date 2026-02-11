@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Build and Release
+name: Build and Release (cross)
 
 on:
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-  # Build binaries for multiple platforms using cross-compilation
+  # Build binaries for multiple platforms using cross
   build-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -66,53 +66,53 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS ARM64 (Apple Silicon)
+          # macOS ARM64 (Apple Silicon) — native build (can't cross-compile to macOS)
           - target: aarch64-apple-darwin
             artifact_suffix: aarch64-apple-darwin
             os_name: macos
             arch: aarch64
             runner: macos-latest
+            use_cross: false
 
-          # Windows x86_64
-          - target: x86_64-pc-windows-gnu
-            artifact_suffix: x86_64-windows
-            os_name: windows
-            arch: x86_64
-            runner: windows-latest
-
-          # Linux ARM64
-          - target: aarch64-unknown-linux-gnu
-            artifact_suffix: aarch64-linux-gnu
-            os_name: linux
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-          # Linux x86_64
+          # Linux x86_64 (glibc) — cross build
           - target: x86_64-unknown-linux-gnu
             artifact_suffix: x86_64-linux-gnu
             os_name: linux
             arch: x86_64
             runner: ubuntu-latest
+            use_cross: true
 
-          # Linux x86_64 (musl - fully static)
+          # Linux ARM64 (glibc) — cross build
+          - target: aarch64-unknown-linux-gnu
+            artifact_suffix: aarch64-linux-gnu
+            os_name: linux
+            arch: aarch64
+            runner: ubuntu-latest
+            use_cross: true
+
+          # Linux x86_64 (musl) — cross build
           - target: x86_64-unknown-linux-musl
             artifact_suffix: x86_64-linux-musl
             os_name: linux
             arch: x86_64
             runner: ubuntu-latest
+            use_cross: true
 
-          # Linux ARM64 (musl - fully static)
+          # Linux ARM64 (musl) — cross build
           - target: aarch64-unknown-linux-musl
             artifact_suffix: aarch64-linux-musl
             os_name: linux
             arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-latest
+            use_cross: true
 
-          # Windows ARM64 (cross-compiled via llvm-mingw)
-          - target: aarch64-pc-windows-gnullvm
-            artifact_suffix: aarch64-windows
+          # Windows x86_64 — cross build
+          - target: x86_64-pc-windows-gnu
+            artifact_suffix: x86_64-windows
             os_name: windows
-            arch: aarch64
-            runner: windows-latest
+            arch: x86_64
+            runner: ubuntu-latest
+            use_cross: true
 
     steps:
       - name: Checkout code
@@ -126,457 +126,92 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install build dependencies (Linux glibc)
-        if: runner.os == 'Linux' && !contains(matrix.target, 'musl')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler build-essential pkg-config libjq-dev libonig-dev
-
-      - name: Install musl build tools
-        if: contains(matrix.target, 'musl')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler \
-            build-essential pkg-config autoconf automake libtool make curl xz-utils
-
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-musl)
-              # Use Zig as a clean musl-capable C/C++ compiler.
-              ZIG_VER="0.12.0"
-              curl -sL "https://ziglang.org/download/${ZIG_VER}/zig-linux-x86_64-${ZIG_VER}.tar.xz" | tar -xJ
-              "$PWD/zig-linux-x86_64-${ZIG_VER}/zig" version
-              echo "$PWD/zig-linux-x86_64-${ZIG_VER}" >> "$GITHUB_PATH"
-              ;;
-            aarch64-unknown-linux-musl)
-              # Use Zig as a clean musl-capable C/C++ compiler.
-              ZIG_VER="0.12.0"
-              curl -sL "https://ziglang.org/download/${ZIG_VER}/zig-linux-aarch64-${ZIG_VER}.tar.xz" | tar -xJ
-              "$PWD/zig-linux-aarch64-${ZIG_VER}/zig" version
-              echo "$PWD/zig-linux-aarch64-${ZIG_VER}" >> "$GITHUB_PATH"
-              ;;
-          esac
-
-      - name: Build C dependencies for musl
-        if: contains(matrix.target, 'musl')
-        run: |
-          set -euxo pipefail
-          MUSL_PREFIX="$HOME/musl-deps"
-          mkdir -p "$MUSL_PREFIX"
-          WORK_DIR=$(mktemp -d)
-
-          # Choose CC and OpenSSL target based on matrix.target (not uname -m)
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-musl)
-              export CC="zig cc -target x86_64-linux-musl"
-              OPENSSL_TARGET="linux-x86_64"
-              ;;
-            aarch64-unknown-linux-musl)
-              export CC="zig cc -target aarch64-linux-musl"
-              OPENSSL_TARGET="linux-aarch64"
-              ;;
-          esac
-
-          # Build OpenSSL for musl
-          cd "$WORK_DIR"
-          OPENSSL_VER="3.2.1"
-          curl -sL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VER}/openssl-${OPENSSL_VER}.tar.gz" | tar xz
-          cd "openssl-${OPENSSL_VER}"
-          ./Configure "$OPENSSL_TARGET" --prefix="$MUSL_PREFIX" --libdir=lib no-shared no-async no-module
-          make -j$(nproc) build_libs
-          make install_sw
-
-          # Build oniguruma for musl
-          cd "$WORK_DIR"
-          ONIG_VER="6.9.9"
-          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VER}/onig-${ONIG_VER}.tar.gz" | tar xz
-          cd "onig-${ONIG_VER}"
-          CC="$CC" ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared
-          make -j$(nproc) && make install
-
-          # Build jq for musl (depends on oniguruma)
-          cd "$WORK_DIR"
-          JQ_VER="1.7.1"
-          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VER}/jq-${JQ_VER}.tar.gz" | tar xz
-          cd "jq-${JQ_VER}"
-          CC="$CC" ./configure --prefix="$MUSL_PREFIX" --enable-static --disable-shared \
-            --with-oniguruma="$MUSL_PREFIX" --disable-maintainer-mode
-          make -j$(nproc) && make install
-
-          # Verify static libraries
-          echo "=== Built musl static libraries ==="
-          ls -la "$MUSL_PREFIX/lib/"*.a
-
-      - name: Build binary (Linux musl)
-        if: contains(matrix.target, 'musl')
-        id: build-musl
-        run: |
-          VERSION="${{ needs.determine-version.outputs.tag }}"
-          VERSION="${VERSION#v}"
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
-
-          MUSL_PREFIX="$HOME/musl-deps"
-
-          # Point build system to musl-built static libraries
-          export OPENSSL_DIR="$MUSL_PREFIX"
-          export OPENSSL_STATIC=1
-          export LIBJQ_STATIC=1
-          export LIBONIG_STATIC=1
-          export JQ_LIB_DIR="$MUSL_PREFIX/lib"
-          export PKG_CONFIG_PATH="$MUSL_PREFIX/lib/pkgconfig"
-          export PKG_CONFIG_ALLOW_CROSS=1
-
-          # Both musl targets use zig cc/c++ wrappers.
-          # Wrappers strip --target= flags that cc-rs appends (zig doesn't
-          # understand Rust triples like "x86_64-unknown-linux-musl").
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-musl)
-              ZIG_TARGET="x86_64-linux-musl"
-              ;;
-            aarch64-unknown-linux-musl)
-              ZIG_TARGET="aarch64-linux-musl"
-              ;;
-          esac
-
-          ZIG_CC_WRAPPER="$HOME/zig-cc-${ZIG_TARGET}"
-          cat > "$ZIG_CC_WRAPPER" << ZIGCC
-          #!/bin/sh
-          args=""
-          for arg in "\$@"; do
-            case "\$arg" in --target=*) ;; *) args="\$args \$arg" ;; esac
-          done
-          exec zig cc -target ${ZIG_TARGET} \$args
-          ZIGCC
-          chmod +x "$ZIG_CC_WRAPPER"
-
-          ZIG_CXX_WRAPPER="$HOME/zig-cxx-${ZIG_TARGET}"
-          cat > "$ZIG_CXX_WRAPPER" << ZIGCXX
-          #!/bin/sh
-          args=""
-          for arg in "\$@"; do
-            case "\$arg" in --target=*) ;; *) args="\$args \$arg" ;; esac
-          done
-          exec zig c++ -target ${ZIG_TARGET} \$args
-          ZIGCXX
-          chmod +x "$ZIG_CXX_WRAPPER"
-
-          # Set target-specific CC, CXX, and linker for Cargo / cc-rs
-          TARGET_UNDERSCORED=$(echo "${{ matrix.target }}" | tr '-' '_')
-          export "CC_${TARGET_UNDERSCORED}=$ZIG_CC_WRAPPER"
-          export "CXX_${TARGET_UNDERSCORED}=$ZIG_CXX_WRAPPER"
-          LINKER_VAR="CARGO_TARGET_$(echo "$TARGET_UNDERSCORED" | tr '[:lower:]' '[:upper:]')_LINKER"
-          export "${LINKER_VAR}=$ZIG_CC_WRAPPER"
-
-          # Tell rustc NOT to add its own self-contained musl CRT objects
-          # (crt1.o, crti.o, crtn.o …).  Zig already provides them, so
-          # including both causes duplicate-symbol errors (_start, _init …).
-          export RUSTFLAGS="-C link-self-contained=no"
-
-          echo "Building for target: ${{ matrix.target }}"
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
-
-          cp "target/${{ matrix.target }}/release/drasi-server" "$ARTIFACT_NAME"
-          chmod +x "$ARTIFACT_NAME"
-          echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --version 0.2.5
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install protobuf pkg-config jq oniguruma
 
-      - name: Install build dependencies (Windows x86_64)
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-jq
-            mingw-w64-x86_64-oniguruma
-
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup MSYS2 for ARM64 cross-compilation
-        if: matrix.target == 'aarch64-pc-windows-gnullvm'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-          update: true
-          install: >-
-            autoconf
-            automake
-            libtool
-            make
-            unzip
-
-      - name: Build ARM64 Windows dependencies from source
-        if: matrix.target == 'aarch64-pc-windows-gnullvm'
-        shell: msys2 {0}
+      - name: Build binary (cross)
+        if: matrix.use_cross
+        id: build-cross
         run: |
-          # Download llvm-mingw (x86_64-hosted cross-compiler targeting ARM64 Windows)
-          LLVM_MINGW_VER="20250114"
-          LLVM_MINGW_DIR="llvm-mingw-${LLVM_MINGW_VER}-ucrt-x86_64"
-          curl -sL -o /tmp/llvm-mingw.zip \
-            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VER}/${LLVM_MINGW_DIR}.zip"
-          cd /c && unzip -q /tmp/llvm-mingw.zip
-          export PATH="/c/${LLVM_MINGW_DIR}/bin:$PATH"
-          aarch64-w64-mingw32-clang --version
-
-          CROSS_PREFIX="/c/arm64-deps"
-          mkdir -p "${CROSS_PREFIX}"
-
-          # Build oniguruma for ARM64 Windows
-          cd /tmp
-          ONIG_VERSION="6.9.9"
-          curl -sL "https://github.com/kkos/oniguruma/releases/download/v${ONIG_VERSION}/onig-${ONIG_VERSION}.tar.gz" | tar xz
-          cd "onig-${ONIG_VERSION}"
-          CC=aarch64-w64-mingw32-clang ./configure --host=aarch64-w64-mingw32 \
-            --prefix="${CROSS_PREFIX}" --enable-static --disable-shared
-          make -j$(nproc) && make install
-
-          # Build jq for ARM64 Windows
-          cd /tmp
-          JQ_VERSION="1.7.1"
-          curl -sL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz" | tar xz
-          cd "jq-${JQ_VERSION}"
-          CC=aarch64-w64-mingw32-clang ./configure --host=aarch64-w64-mingw32 \
-            --prefix="${CROSS_PREFIX}" --enable-static --disable-shared \
-            --with-oniguruma="${CROSS_PREFIX}" --disable-maintainer-mode
-          make -j$(nproc) && make install
-
-      - name: Build binary (Windows ARM64)
-        if: matrix.target == 'aarch64-pc-windows-gnullvm'
-        id: build-windows-arm64
-        shell: pwsh
-        run: |
-          $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
-
-          $LLVM_MINGW_DIR = "llvm-mingw-20250114-ucrt-x86_64"
-          $LLVM_BIN = "C:\${LLVM_MINGW_DIR}\bin"
-          $env:PATH = "${LLVM_BIN};$env:PATH"
-
-          # cc-rs injects --target=aarch64-pc-windows-gnu for clang, which
-          # overrides llvm-mingw's built-in target and breaks the C++ stdlib
-          # header search (looks for libstdc++ instead of libc++).
-          # Create .cmd wrapper scripts that:
-          #   1. Strip --target= flags
-          #   2. Inject -D_WIN32_WINNT=0x0A00 so Windows headers expose
-          #      Win10+ APIs (FILE_ID_INFO, FileIdInfo, etc.)
-          $CC_WRAPPER = "C:\cc-arm64-wrap.cmd"
-          @"
-          @echo off
-          setlocal enabledelayedexpansion
-          set "ARGS=-D_WIN32_WINNT=0x0A00"
-          :cc_loop
-          if "%~1"=="" goto cc_run
-          set "T=%~1"
-          if "!T:~0,9!" neq "--target=" set "ARGS=!ARGS! %1"
-          shift
-          goto cc_loop
-          :cc_run
-          "${LLVM_BIN}\aarch64-w64-mingw32-clang.exe" !ARGS!
-          exit /b !errorlevel!
-          "@ | Set-Content -Path $CC_WRAPPER -Encoding ASCII
-
-          $CXX_WRAPPER = "C:\cxx-arm64-wrap.cmd"
-          @"
-          @echo off
-          setlocal enabledelayedexpansion
-          set "ARGS=-D_WIN32_WINNT=0x0A00"
-          :cxx_loop
-          if "%~1"=="" goto cxx_run
-          set "T=%~1"
-          if "!T:~0,9!" neq "--target=" set "ARGS=!ARGS! %1"
-          shift
-          goto cxx_loop
-          :cxx_run
-          "${LLVM_BIN}\aarch64-w64-mingw32-clang++.exe" !ARGS!
-          exit /b !errorlevel!
-          "@ | Set-Content -Path $CXX_WRAPPER -Encoding ASCII
-
-          $env:LIBJQ_STATIC = "1"
-          $env:LIBONIG_STATIC = "1"
-          $env:JQ_LIB_DIR = "C:\arm64-deps\lib"
-          $env:CC_aarch64_pc_windows_gnullvm = $CC_WRAPPER
-          $env:CXX_aarch64_pc_windows_gnullvm = $CXX_WRAPPER
-          $env:AR_aarch64_pc_windows_gnullvm = "aarch64-w64-mingw32-ar"
-          $env:CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER = $CC_WRAPPER
-
-          # Belt-and-suspenders: set target-specific flags that cc-rs picks up,
-          # in addition to the defines already baked into the wrappers.
-          # -D_WIN32_WINNT=0x0A00 : expose Win10+ APIs (FILE_ID_INFO, etc.)
-          # -include cstdint      : RocksDB headers need it with newer compilers
-          $env:CFLAGS_aarch64_pc_windows_gnullvm   = "-D_WIN32_WINNT=0x0A00"
-          $env:CXXFLAGS_aarch64_pc_windows_gnullvm = "-include cstdint -D_WIN32_WINNT=0x0A00"
-
-          # bindgen's libclang doesn't understand "gnullvm" in the target triple;
-          # tell it to use a compatible triple instead.
-          $env:BINDGEN_EXTRA_CLANG_ARGS = "--target=aarch64-pc-windows-gnu"
-
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
-
-          $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
-          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.artifact_suffix }}.exe"
-
-          if (Test-Path $SRC_BINARY) {
-            Copy-Item $SRC_BINARY $ARTIFACT_NAME
-            echo "name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
-          } else {
-            Write-Error "Built binary not found at $SRC_BINARY"
-            Get-ChildItem "target\${{ matrix.target }}\release\" -ErrorAction SilentlyContinue
-            exit 1
-          }
-
-      - name: Build binary (Windows x86_64)
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        id: build-windows
-        run: |
-          $VERSION = "${{ needs.determine-version.outputs.tag }}" -replace '^v', ''
-
-          # Add MSYS2 to PATH for pkg-config and MinGW toolchain
-          $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
-
-          # Force static linking of libjq and libonig
-          $env:LIBJQ_STATIC = "1"
-          $env:LIBONIG_STATIC = "1"
-
-          # Tell jq-sys where to find libjq
-          $env:JQ_LIB_DIR = "C:\msys64\mingw64\lib"
-
-          # Fix missing <cstdint> in RocksDB headers with newer MinGW GCC
-          $env:CXXFLAGS = "-include cstdint"
-
-          # Build drasi-server binary
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
-
-          $SRC_BINARY = "target\${{ matrix.target }}\release\drasi-server.exe"
-          $ARTIFACT_DIR = "windows-artifact"
-          $ARTIFACT_NAME = "drasid-$VERSION-${{ matrix.artifact_suffix }}.exe"
-
-          if (Test-Path $SRC_BINARY) {
-            # Stage the binary and required MinGW runtime DLLs together
-            New-Item -ItemType Directory -Force -Path $ARTIFACT_DIR | Out-Null
-            Copy-Item $SRC_BINARY "$ARTIFACT_DIR\$ARTIFACT_NAME"
-
-            # Find MinGW DLLs - the build used them so they must be on PATH
-            $MINGW_BIN = (Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue).Source | Split-Path
-            if (-not $MINGW_BIN) {
-              $MINGW_BIN = (Get-Command gcc -ErrorAction SilentlyContinue).Source | Split-Path
-            }
-            if (-not $MINGW_BIN) {
-              # Fallback: search common locations
-              $MINGW_BIN = @("C:\msys64\mingw64\bin", "D:\msys64\mingw64\bin") | Where-Object { Test-Path $_ } | Select-Object -First 1
-            }
-            Write-Host "MinGW bin directory: $MINGW_BIN"
-
-            foreach ($dll in @("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll")) {
-              $src = Join-Path $MINGW_BIN $dll
-              if (Test-Path $src) {
-                Copy-Item $src $ARTIFACT_DIR
-                Write-Host "  Copied $dll"
-              } else {
-                Write-Warning "  DLL not found: $src"
-                # Search the entire MSYS2 tree as a fallback
-                $found = Get-ChildItem -Path "C:\msys64" -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($found) {
-                  Copy-Item $found.FullName $ARTIFACT_DIR
-                  Write-Host "  Found at: $($found.FullName)"
-                } else {
-                  Write-Error "  Cannot find $dll anywhere!"
-                  exit 1
-                }
-              }
-            }
-
-            echo "dir=$ARTIFACT_DIR" >> $env:GITHUB_OUTPUT
-            Write-Host "Artifact directory contents:"
-            Get-ChildItem $ARTIFACT_DIR
-          } else {
-            Write-Error "Built binary not found at $SRC_BINARY"
-            Get-ChildItem "target\${{ matrix.target }}\release\" -ErrorAction SilentlyContinue
-            exit 1
-          }
-        shell: pwsh
-
-      - name: Build binary (Linux glibc / macOS)
-        if: runner.os != 'Windows' && !contains(matrix.target, 'musl')
-        id: build-unix
-        run: |
-          # Get version from previous job (strip 'v' prefix if present)
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
-          # Force static linking of libjq and libonig so the binary is self-contained
-          export LIBJQ_STATIC=1
-          export LIBONIG_STATIC=1
+          cross build --release --target ${{ matrix.target }} --bin drasi-server
 
-          # Tell jq-sys where to find libjq
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            LIB_ARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-            export JQ_LIB_DIR="/usr/lib/${LIB_ARCH}"
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            export JQ_LIB_DIR="$(brew --prefix jq)/lib"
-          fi
-          echo "JQ_LIB_DIR=${JQ_LIB_DIR}"
+          # Determine binary extension
+          case "${{ matrix.target }}" in
+            *windows*) EXT=".exe" ;;
+            *) EXT="" ;;
+          esac
 
-          # Build
-          echo "Running: cargo build --release --target ${{ matrix.target }} --bin drasi-server"
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server${EXT}"
+          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}${EXT}"
 
-          # Source binary path
-          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
-
-          # Final artifact name (using drasid prefix for release)
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
-
-          # Copy + debug if missing
           if [[ -f "$SRC_BINARY" ]]; then
             cp "$SRC_BINARY" "$ARTIFACT_NAME"
-            chmod +x "$ARTIFACT_NAME"
-            echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+            chmod +x "$ARTIFACT_NAME" 2>/dev/null || true
+
+            # For Windows targets, extract MinGW runtime DLLs from the cross
+            # Docker image (already cached from the cross build) and place
+            # them next to the .exe so they're included in the artifact.
+            if [[ "${{ matrix.target }}" == *windows* ]]; then
+              CROSS_IMAGE="ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5-cross-custom"
+              docker build -q -t "$CROSS_IMAGE" -f Dockerfile.cross-windows-gnu .
+              docker run --rm -v "$(pwd):/out" "$CROSS_IMAGE" \
+                sh -c 'cp /mingw-dlls/*.dll /out/'
+              echo "Bundled DLLs:"
+              ls -la *.dll
+            fi
+
+            echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
           else
             echo "Error: Built binary not found at $SRC_BINARY"
-            ls -la target/${{ matrix.target }}/release/ || true
-            find target/ -name "*drasi-server*" || true
+            ls -la "target/${{ matrix.target }}/release/" || true
             exit 1
           fi
 
-      - name: Upload binary artifact (Linux glibc / macOS)
-        if: runner.os != 'Windows' && !contains(matrix.target, 'musl')
+      - name: Build binary (macOS native)
+        if: "!matrix.use_cross"
+        id: build-native
+        run: |
+          VERSION="${{ needs.determine-version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          # Force static linking of libjq and libonig
+          export LIBJQ_STATIC=1
+          export LIBONIG_STATIC=1
+          export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+
+          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
+          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
+
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+            chmod +x "$ARTIFACT_NAME"
+            echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            ls -la "target/${{ matrix.target }}/release/" || true
+            exit 1
+          fi
+
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: ${{ steps.build-unix.outputs.name }}
+          path: |
+            drasid-*
+            *.dll
           if-no-files-found: error
 
-      - name: Upload binary artifact (Linux musl)
-        if: contains(matrix.target, 'musl')
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: ${{ steps.build-musl.outputs.name }}
-          if-no-files-found: error
-
-      - name: Upload binary artifact (Windows x86_64)
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: ${{ steps.build-windows.outputs.dir }}/*
-          if-no-files-found: error
-
-      - name: Upload binary artifact (Windows ARM64)
-        if: matrix.target == 'aarch64-pc-windows-gnullvm'
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: ${{ steps.build-windows-arm64.outputs.name }}
-          if-no-files-found: error
   # Build Docker images for Linux platforms
   build-docker:
     name: Build Docker ${{ matrix.platform }}
@@ -640,7 +275,6 @@ jobs:
 
       - name: Generate summary
         run: |
-          # Strip 'v' prefix from tag for binary names
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
@@ -668,7 +302,6 @@ jobs:
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-windows.exe\` (Windows ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
@@ -699,15 +332,16 @@ jobs:
           - artifact_suffix: x86_64-windows
             runner: windows-latest
             binary_name_template: "drasid-VERSION-x86_64-windows.exe"
-          # Linux x86_64 (musl - fully static binaries run on any Linux)
+          # Linux x86_64 (musl) — tested inside Alpine container
           - artifact_suffix: x86_64-linux-musl
             runner: ubuntu-latest
             binary_name_template: "drasid-VERSION-x86_64-linux-musl"
-          # Linux ARM64 (musl)
+            use_alpine: true
+          # Linux ARM64 (musl) — tested inside Alpine container
           - artifact_suffix: aarch64-linux-musl
             runner: ubuntu-24.04-arm
             binary_name_template: "drasid-VERSION-aarch64-linux-musl"
-          # Note: Windows ARM64 test is skipped (no ARM64 Windows runners available)
+            use_alpine: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -719,7 +353,7 @@ jobs:
           path: bin
 
       - name: Run hello-world smoke test (Unix)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !matrix.use_alpine
         env:
           VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
@@ -728,6 +362,24 @@ jobs:
           chmod +x "bin/${BINARY_NAME}"
           SERVER_BINARY="$(pwd)/bin/${BINARY_NAME}" \
             tests/integration/hello-world/run-integration-test.sh
+
+      - name: Run hello-world smoke test (Alpine/musl)
+        if: matrix.use_alpine
+        env:
+          VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          VERSION="${VERSION_TAG#v}"
+          BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
+          chmod +x "bin/${BINARY_NAME}"
+          docker run --rm \
+            -v "$(pwd)/bin:/bin-artifacts" \
+            -v "$(pwd)/tests:/tests" \
+            alpine:latest \
+            sh -c "
+              apk add --no-cache bash curl libstdc++ libgcc &&
+              SERVER_BINARY=/bin-artifacts/${BINARY_NAME} \
+                bash /tests/integration/hello-world/run-integration-test.sh
+            "
 
       - name: Run hello-world smoke test (Windows)
         if: runner.os == 'Windows'
@@ -771,16 +423,9 @@ jobs:
       - name: Prepare release assets
         id: prepare
         run: |
-          # Create a directory for release assets
           mkdir -p release-assets
-
-          # Copy all artifact files (binaries and any required runtime files such as DLLs)
           find artifacts -type f -exec cp {} release-assets/ \;
-          
-          # List what we have
           ls -lh release-assets/
-          
-          # Count assets
           ASSET_COUNT=$(ls -1 release-assets/ | wc -l)
           echo "asset_count=${ASSET_COUNT}" >> $GITHUB_OUTPUT
 
@@ -796,13 +441,12 @@ jobs:
 
           ### Windows
           - x86_64 - `drasid-*-x86_64-windows.exe`
-          - ARM64 - `drasid-*-aarch64-windows.exe`
 
           ### Linux (glibc)
           - ARM64 - `drasid-*-aarch64-linux-gnu`
           - x86_64 - `drasid-*-x86_64-linux-gnu`
 
-          ### Linux (musl - fully static)
+          ### Linux (musl)
           - ARM64 - `drasid-*-aarch64-linux-musl`
           - x86_64 - `drasid-*-x86_64-linux-musl`
 
@@ -821,7 +465,6 @@ jobs:
         run: |
           TAG="${{ needs.determine-version.outputs.tag }}"
           
-          # Check if release already exists
           if gh release view "${TAG}" --repo ${{ github.repository }} 2>/dev/null; then
             echo "Release ${TAG} already exists. Updating with new artifacts..."
             gh release upload "${TAG}" release-assets/* --repo ${{ github.repository }} --clobber
@@ -837,7 +480,6 @@ jobs:
       - name: Update summary
         run: |
           TAG="${{ needs.determine-version.outputs.tag }}"
-          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
