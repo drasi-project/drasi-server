@@ -59,7 +59,8 @@ sources:
   - kind: mock
     id: high-throughput
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 50
 
 queries:
@@ -69,6 +70,7 @@ queries:
     query: |
       MATCH (n)
       RETURN n
+    queryLanguage: Cypher
     sources:
       - sourceId: high-throughput
     bootstrapBufferSize: 10000
@@ -80,6 +82,7 @@ queries:
       MATCH (n)
       WHERE n.priority = 'high'
       RETURN n.id AS Id, n.data AS Data
+    queryLanguage: Cypher
     sources:
       - sourceId: high-throughput
     priorityQueueCapacity: 50000
@@ -92,6 +95,7 @@ queries:
     query: |
       MATCH (n)
       RETURN count(n) AS Count
+    queryLanguage: Cypher
     sources:
       - sourceId: high-throughput
     priorityQueueCapacity: 1000

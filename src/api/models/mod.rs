@@ -87,7 +87,8 @@ fn default_true() -> bool {
 ///   - kind: mock
 ///     id: test-source
 ///     autoStart: true
-///     dataType: { "type": "sensorReading" },
+///     dataType:
+///       type: sensorReading
 ///     intervalMs: 1000
 ///
 ///   - kind: http
@@ -1184,7 +1185,8 @@ bootstrapProvider:
 kind: mock
 id: yaml-source
 autoStart: true
-dataType: { "type": "sensorReading" },
+dataType:
+  type: sensorReading
 intervalMs: 1000
 "#;
 
@@ -1574,19 +1576,18 @@ autoStart: true
     }
 
     #[test]
-    fn test_source_deserialize_with_env_var_syntax() {
+    fn test_source_deserialize_with_enum_data_type() {
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
-            "dataType": { "type": "sensorReading" },
+            "dataType": { "type": "sensorReading", "sensorCount": 10 },
             "intervalMs": 1000
         }"#;
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "test-source");
-        // ConfigValue parses env var syntax into EnvironmentVariable variant
         if let SourceConfig::Mock { config, .. } = source {
-           assert_eq!(
+            assert_eq!(
                 config.data_type,
                 mock::DataTypeDto::SensorReading { sensor_count: 10 },
                 "Expected SensorReading data type with sensorCount 10"

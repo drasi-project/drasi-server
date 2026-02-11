@@ -28,6 +28,9 @@ logs/
 
 # Exception: Allow .env files in examples (for tutorials)
 !examples/**/.env
-config/server.yaml
 .vscode-test
 .cargo/config.toml
+
+# Cargo install metadata
+.crates.toml
+.crates2.json

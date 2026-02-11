@@ -462,7 +462,8 @@ pub fn create_state_store_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ConfigValue, DataTypeDto, LogReactionConfigDto, MockSourceConfigDto};
+    use crate::models::sources::mock::DataTypeDto;
+    use crate::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
     use tempfile::TempDir;
 
     // ==========================================================================

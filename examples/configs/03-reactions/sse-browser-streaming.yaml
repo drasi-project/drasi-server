@@ -26,10 +26,10 @@
 # Configuration options:
 # - host: Address to bind (default: 0.0.0.0)
 # - port: Port to listen on (default: 8080)
-# - sse_path: Event stream endpoint path (default: /events)
-# - heartbeat_interval_ms: Keep-alive interval (default: 30000)
+# - ssePath: Event stream endpoint path (default: /events)
+# - heartbeatIntervalMs: Keep-alive interval (default: 30000)
 # - routes: Per-query template configuration
-# - default_template: Default template for all queries
+# - defaultTemplate: Default template for all queries
 #
 # Templates can include a 'path' field for multi-endpoint routing.
 #
@@ -47,10 +47,12 @@ persistConfig: false
 
 sources:
   # Mock source generates SensorReading nodes with temperature, humidity, sensor_id
+  # First reading per sensor = INSERT, subsequent = UPDATE
   - kind: mock
     id: live-data
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 1000
 
 queries:
@@ -59,6 +61,7 @@ queries:
     query: |
       MATCH (s:SensorReading)
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 
@@ -68,6 +71,7 @@ queries:
       MATCH (s:SensorReading)
       WHERE s.temperature > 27
       RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, 'HIGH' AS Status
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 
@@ -76,6 +80,7 @@ queries:
     query: |
       MATCH (s:SensorReading)
       RETURN count(s) AS TotalSensors, avg(s.temperature) AS AverageTemperature
+    queryLanguage: Cypher
     sources:
       - sourceId: live-data
 

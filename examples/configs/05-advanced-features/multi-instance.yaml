@@ -16,6 +16,11 @@
 # Advanced Features - Multi-Instance Configuration
 # =============================================================================
 #
+# NOTE: This is a CONCEPTUAL example demonstrating multi-instance architecture.
+# The queries reference labels (Event, Health, etc.) that don't match the mock
+# source output (SensorReading, Counter, Generic). Replace mock sources with
+# real data sources for production use.
+#
 # DrasiServer can run multiple DrasiLib instances in a single process.
 # Each instance has its own:
 # - Sources
@@ -55,7 +60,8 @@ instances:
       - kind: mock
         id: analytics-events
         autoStart: true
-        dataType: "generic"
+        dataType:
+          type: generic
         intervalMs: 1000
 
     queries:
@@ -64,6 +70,7 @@ instances:
         query: |
           MATCH (e:Event)
           RETURN count(e) AS TotalEvents
+        queryLanguage: Cypher
         sources:
           - sourceId: analytics-events
 
@@ -72,6 +79,7 @@ instances:
         query: |
           MATCH (e:Event)
           RETURN e.type AS EventType, count(e) AS Count
+        queryLanguage: Cypher
         sources:
           - sourceId: analytics-events
 
@@ -98,7 +106,8 @@ instances:
       - kind: mock
         id: health-checks
         autoStart: true
-        dataType: "sensor"
+        dataType:
+          type: sensorReading
         intervalMs: 500
 
     queries:
@@ -107,6 +116,7 @@ instances:
         query: |
           MATCH (h:Health)
           RETURN h.service AS Service, h.status AS Status
+        queryLanguage: Cypher
         sources:
           - sourceId: health-checks
 
@@ -116,6 +126,7 @@ instances:
           MATCH (h:Health)
           WHERE h.status <> 'healthy'
           RETURN h.service AS Service, h.status AS Status, h.message AS Message
+        queryLanguage: Cypher
         sources:
           - sourceId: health-checks
 
@@ -151,7 +162,8 @@ instances:
       - kind: mock
         id: audit-events
         autoStart: true
-        dataType: "generic"
+        dataType:
+          type: generic
         intervalMs: 2000
 
     queries:
@@ -160,6 +172,7 @@ instances:
         query: |
           MATCH (a:Audit)
           RETURN a.id AS AuditId, a.user AS User, a.action AS Action, a.timestamp AS Timestamp
+        queryLanguage: Cypher
         sources:
           - sourceId: audit-events
 

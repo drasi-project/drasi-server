@@ -54,7 +54,8 @@ sources:
   - kind: mock
     id: persistent-source
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
 queries:
@@ -64,6 +65,7 @@ queries:
     query: |
       MATCH (n)
       RETURN n.id AS Id, n.value AS Value
+    queryLanguage: Cypher
     sources:
       - sourceId: persistent-source
     enableBootstrap: true
@@ -75,6 +77,7 @@ queries:
     query: |
       MATCH (n)
       RETURN count(n) AS TotalRecords, sum(n.value) AS TotalValue
+    queryLanguage: Cypher
     sources:
       - sourceId: persistent-source
 

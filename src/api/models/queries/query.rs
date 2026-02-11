@@ -68,7 +68,7 @@ fn default_auto_start() -> bool {
 }
 
 fn default_query_language() -> ConfigValue<String> {
-    ConfigValue::Static("Cypher".to_string())
+    ConfigValue::Static("GQL".to_string())
 }
 
 fn default_enable_bootstrap() -> bool {

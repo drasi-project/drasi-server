@@ -14,7 +14,7 @@
 
 id: trading-server
 host: 0.0.0.0
-port: 8080
+port: 8280
 logLevel: info
 persistConfig: false
 sources:
@@ -22,13 +22,13 @@ sources:
   id: price-feed
   autoStart: true
   host: 0.0.0.0
-  port: 9000
+  port: 9100
   timeoutMs: 10000
 - kind: postgres
   id: postgres-stocks
   autoStart: true
   host: localhost
-  port: 5432
+  port: 5632
   database: trading_demo
   user: drasi_user
   password: drasi_password

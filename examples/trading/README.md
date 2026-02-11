@@ -50,13 +50,13 @@ Drasi continuously evaluates this query against your data sources and notifies y
 ```mermaid
 flowchart TB
     subgraph Sources["Data Sources"]
-        PG[(PostgreSQL DB<br/>Port 5432<br/>stocks & portfolio)]
+        PG[(PostgreSQL DB<br/>Port 5632<br/>stocks & portfolio)]
         GEN[Python Price<br/>Generator]
     end
 
-    subgraph Drasi["Drasi Server · Port 8080"]
+    subgraph Drasi["Drasi Server · Port 8280"]
         SRC1[postgres-stocks<br/>CDC Source]
-        SRC2[price-feed<br/>HTTP Source<br/>Port 9000]
+        SRC2[price-feed<br/>HTTP Source<br/>Port 9100]
 
         subgraph QE["Continuous Query Engine"]
             Q1[watchlist-query]
@@ -67,10 +67,10 @@ flowchart TB
             Q6[price-ticker-query]
         end
 
-        SSE[SSE Reaction<br/>Port 50051]
+        SSE[SSE Reaction<br/>Port 8281]
     end
 
-    subgraph App["React App · Port 5173"]
+    subgraph App["React App · Port 5273"]
         UI[Trading Dashboard]
         W[Watchlist]
         P[Portfolio]
@@ -99,14 +99,26 @@ flowchart TB
 
 ## Quick Start
 
-### Prerequisites
+There are three ways to run the Trading Demo:
+
+### Option 1: Dev Container (Recommended)
+
+Open this repository in VS Code and select **"Reopen in Container"** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`). When prompted, choose **"Drasi Server - Trading Demo"**. The demo will build and start automatically — once the container is ready, open **http://localhost:5273** to see the live trading dashboard.
+
+### Option 2: GitHub Codespaces
+
+Click **Code → Codespaces → New codespace** on the repository's GitHub page. Select the **"Drasi Server - Trading Demo"** dev container configuration. The demo will start automatically once the codespace is ready. Open the forwarded port **5273** from the Ports tab.
+
+### Option 3: Run Locally
+
+#### Prerequisites
 
 - **Docker** and Docker Compose (for PostgreSQL)
 - **Node.js 16+** and npm (for the React app)
 - **Python 3.7+** (for the price generator)
 - **Rust toolchain** (if building Drasi Server from source)
 
-### One-Command Start
+#### One-Command Start
 
 ```bash
 # From the examples/trading directory
@@ -119,7 +131,7 @@ This script:
 3. Installs dependencies and starts the React app
 4. Starts the Python price generator
 
-**Open http://localhost:5173** to see the live trading dashboard.
+**Open http://localhost:5273** to see the live trading dashboard.
 
 To stop everything:
 ```bash
@@ -264,7 +276,7 @@ const queryConfig = {
   autoStart: true
 };
 
-await fetch('http://localhost:8080/api/v1/queries', {
+await fetch('http://localhost:8280/api/v1/queries', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(queryConfig)
@@ -278,14 +290,14 @@ const reactionConfig = {
   kind: 'sse',
   id: 'my-stream',
   queries: ['my-query'],
-  auto_start: true,
+  autoStart: true,
   host: '0.0.0.0',
-  port: 50051,
+  port: 8281,
   ssePath: '/events',
   heartbeatIntervalMs: 15000
 };
 
-await fetch('http://localhost:8080/api/v1/reactions', {
+await fetch('http://localhost:8280/api/v1/reactions', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(reactionConfig)
@@ -295,7 +307,7 @@ await fetch('http://localhost:8080/api/v1/reactions', {
 ### Listening to SSE Events
 
 ```typescript
-const eventSource = new EventSource('http://localhost:50051/events');
+const eventSource = new EventSource('http://localhost:8281/events');
 
 eventSource.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -335,7 +347,7 @@ event = {
     "timestamp": 1234567890000000000  # nanoseconds
 }
 
-requests.post('http://localhost:9000/sources/price-feed/events', json=event)
+requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 ```
 
 ## UI Components
@@ -371,8 +383,8 @@ cd database
 
 ### Queries not updating
 
-1. Check sources are running: `curl http://localhost:8080/api/v1/sources`
-2. Check queries exist: `curl http://localhost:8080/api/v1/queries`
+1. Check sources are running: `curl http://localhost:8280/api/v1/sources`
+2. Check queries exist: `curl http://localhost:8280/api/v1/queries`
 3. Check SSE connection in browser DevTools (Network tab, filter by EventSource)
 
 ### Database reset
@@ -387,11 +399,11 @@ docker-compose up -d
 
 ```bash
 # Check what's using ports
-lsof -i :8080  # Drasi Server
-lsof -i :9000  # HTTP Source
-lsof -i :50051 # SSE Reaction
-lsof -i :5173  # React app
-lsof -i :5432  # PostgreSQL
+lsof -i :8280  # Drasi Server
+lsof -i :9100  # HTTP Source
+lsof -i :8281 # SSE Reaction
+lsof -i :5273  # React app
+lsof -i :5632  # PostgreSQL
 ```
 
 ## Key Concepts Demonstrated

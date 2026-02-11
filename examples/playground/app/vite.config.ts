@@ -6,7 +6,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: 5373,
     proxy: {
       // Proxy data injection requests to HTTP sources
       // Support multiple source ports (9000-9009)

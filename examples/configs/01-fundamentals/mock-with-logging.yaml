@@ -40,7 +40,8 @@ sources:
   - kind: mock
     id: data-generator
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 3000
 
 queries:
@@ -49,6 +50,7 @@ queries:
     query: |
       MATCH (n:Generic)
       RETURN n.value AS Value, n.message AS Message, n.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: data-generator
 

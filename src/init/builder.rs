@@ -41,7 +41,7 @@ pub fn build_config(
         vec![QueryConfigDto {
             id: "my-query".to_string(),
             query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("Cypher".to_string()),
+            query_language: ConfigValue::Static("GQL".to_string()),
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
@@ -97,7 +97,7 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
     // Add helpful comments at the end
     yaml.push_str("\n# Tips:\n");
     yaml.push_str("# - Use environment variables: ${VAR_NAME:-default}\n");
-    yaml.push_str("# - Update 'my-query' with your actual Cypher query\n");
+    yaml.push_str("# - Update 'my-query' with your actual GQL query\n");
     yaml.push_str("# - Connect reactions to your queries by updating the 'queries' field\n");
 
     Ok(yaml)
@@ -106,7 +106,8 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server::{api::models::{
+    use drasi_server::api::models::sources::mock::DataTypeDto;
+    use drasi_server::api::models::{
         HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
     }, models::DataTypeDto};
 
@@ -336,7 +337,7 @@ mod tests {
 
         assert!(yaml.contains("# Tips:"));
         assert!(yaml.contains("# - Use environment variables: ${VAR_NAME:-default}"));
-        assert!(yaml.contains("# - Update 'my-query' with your actual Cypher query"));
+        assert!(yaml.contains("# - Update 'my-query' with your actual GQL query"));
     }
 
     #[test]

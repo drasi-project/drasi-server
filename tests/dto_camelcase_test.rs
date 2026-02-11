@@ -1,5 +1,6 @@
 // Test to verify that DTO fields serialize as camelCase
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::*;
 
 #[test]
@@ -49,7 +50,7 @@ fn test_postgres_dto_serializes_camelcase() {
 #[test]
 fn test_mock_dto_serializes_camelcase() {
     let dto = MockSourceConfigDto {
-        data_type: ConfigValue::Static("sensor".to_string()),
+        data_type: DataTypeDto::SensorReading { sensor_count: 5 },
         interval_ms: ConfigValue::Static(1000),
     };
 

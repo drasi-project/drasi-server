@@ -27,7 +27,7 @@
 # - host: Address to bind (default: 0.0.0.0)
 # - port: Port to listen on (default: 50051)
 # - endpoint: Custom endpoint (optional)
-# - timeout_ms: Request timeout in milliseconds (default: 5000)
+# - timeoutMs: Request timeout in milliseconds (default: 5000)
 #
 # Run with: cargo run -- --config examples/configs/02-sources/grpc-streaming-source.yaml
 #
@@ -55,6 +55,7 @@ queries:
     query: |
       MATCH (m:Message)
       RETURN m.id AS MessageId, m.payload AS Payload, m.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: grpc-stream
 
@@ -64,6 +65,7 @@ queries:
     query: |
       MATCH (m:Message)
       RETURN count(m) AS MessageCount
+    queryLanguage: Cypher
     sources:
       - sourceId: grpc-stream
 

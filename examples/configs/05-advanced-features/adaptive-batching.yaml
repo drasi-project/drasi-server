@@ -28,10 +28,10 @@
 # - grpc-adaptive: gRPC reaction with adaptive batching
 #
 # Adaptive batching parameters:
-# - adaptive_min_batch_size: Minimum batch size (default: 1)
-# - adaptive_max_batch_size: Maximum batch size (default: 1000)
-# - adaptive_window_size: Observation window for rate calculation (default: 100)
-# - adaptive_batch_timeout_ms: Max wait before flushing (default: 1000)
+# - adaptiveMinBatchSize: Minimum batch size (default: 1)
+# - adaptiveMaxBatchSize: Maximum batch size (default: 1000)
+# - adaptiveWindowSize: Observation window for rate calculation (default: 100)
+# - adaptiveBatchTimeoutMs: Max wait before flushing (default: 1000)
 #
 # Run with: cargo run -- --config examples/configs/05-advanced-features/adaptive-batching.yaml
 
@@ -46,7 +46,8 @@ sources:
   - kind: mock
     id: high-volume-stream
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 100
 
 queries:
@@ -55,6 +56,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN e.id AS EventId, e.type AS Type, e.data AS Data
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume-stream
 
@@ -63,6 +65,7 @@ queries:
     query: |
       MATCH (e:Event)
       RETURN count(e) AS TotalEvents
+    queryLanguage: Cypher
     sources:
       - sourceId: high-volume-stream
 

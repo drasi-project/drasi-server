@@ -40,7 +40,7 @@ Learn about different reaction types.
 
 ### 04-query-patterns/
 
-Learn Cypher query patterns for continuous queries.
+Learn query patterns for continuous queries. These examples use Cypher syntax (explicit `queryLanguage: Cypher`), but the same patterns apply to GQL (the default query language).
 
 | File | Description |
 |------|-------------|
@@ -144,7 +144,7 @@ sources:
       - table: users
         keyColumns: [id]
     bootstrapProvider:           # Load existing data on startup
-      type: postgres
+      kind: postgres
 ```
 
 ### Reaction Types

@@ -43,7 +43,8 @@ sources:
   - kind: mock
     id: activity-stream
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 5000
 
 queries:
@@ -56,6 +57,7 @@ queries:
              a.user_id AS UserId,
              a.timestamp AS Timestamp,
              a.type AS ActivityType
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 
@@ -69,6 +71,7 @@ queries:
       RETURN a.user_id AS UserId,
              a.timestamp AS LastActivity,
              'ACTIVE' AS Status
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 
@@ -83,6 +86,7 @@ queries:
              s.user_id AS UserId,
              s.last_activity AS LastActivity,
              'STALE' AS Status
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 
@@ -97,6 +101,7 @@ queries:
              o.created_at AS CreatedAt,
              o.status AS Status,
              'TIMEOUT' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 
@@ -111,6 +116,7 @@ queries:
              s.name AS ServiceName,
              s.last_heartbeat AS LastHeartbeat,
              'HEARTBEAT_MISSING' AS Alert
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 
@@ -126,6 +132,7 @@ queries:
              t.created_at AS Created,
              t.sla_deadline AS Deadline,
              'SLA_BREACH' AS Alert
+    queryLanguage: Cypher
     sources:
       - sourceId: activity-stream
 

@@ -88,6 +88,7 @@ queries:
     query: |
       MATCH (m:message {message: 'Hello World'})
       RETURN m.messageid AS MessageId, m.from AS MessageFrom
+    queryLanguage: Cypher
     sources:
       - sourceId: postgres-messages
 
@@ -99,25 +100,27 @@ queries:
     query: |
       MATCH (m:message)
       RETURN m.message AS Message, count(m) AS Frequency
+    queryLanguage: Cypher
     sources:
       - sourceId: postgres-messages
 
   # Query 3: inactive-people
   # Identifies users who haven't sent a message in 20+ seconds
   # Uses drasi.trueLater for time-based triggering
-  # - id: inactive-people
-  #   autoStart: true
-  #   query: |
-  #     MATCH (m:message)
-  #     WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
-  #     WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
-  #       OR drasi.trueLater(
-  #            LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
-  #            LastMessageTimestamp + duration({ seconds: 20 })
-  #          )
-  #     RETURN MessageFrom, LastMessageTimestamp
-  #   sources:
-  #     - sourceId: postgres-messages
+  - id: inactive-people
+    autoStart: true
+    query: |
+      MATCH (m:message)
+      WITH m.from AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp
+      WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 })
+        OR drasi.trueLater(
+             LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }),
+             LastMessageTimestamp + duration({ seconds: 20 })
+           )
+      RETURN MessageFrom, LastMessageTimestamp
+    queryLanguage: Cypher
+    sources:
+      - sourceId: postgres-messages
 
 # =============================================================================
 # Reactions
@@ -134,7 +137,7 @@ reactions:
     queries:
       - hello-world-from
       - message-count
-      # - inactive-people
+      - inactive-people
     # Default template configuration for all queries
     # Templates use handlebars syntax for formatting
     defaultTemplate:
@@ -154,7 +157,7 @@ reactions:
     queries:
       - hello-world-from
       - message-count
-      # - inactive-people
+      - inactive-people
     host: "${SSE_HOST:-0.0.0.0}"
     port: ${SSE_PORT:-8081}
     ssePath: /events

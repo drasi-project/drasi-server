@@ -16,6 +16,11 @@
 # Real-World Scenario: Real-Time Dashboard Backend
 # =============================================================================
 #
+# NOTE: This is a CONCEPTUAL example demonstrating dashboard architecture.
+# The queries reference labels (Sale, User, Metric) that don't match the mock
+# source output (SensorReading, Counter, Generic). Replace mock sources with
+# real data sources for production use.
+#
 # This example demonstrates building a complete real-time dashboard backend:
 # - Multiple data sources feeding into aggregation queries
 # - SSE streaming for live updates to web clients
@@ -47,21 +52,24 @@ sources:
   - kind: mock
     id: sales-data
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 1000
 
   # User activity source
   - kind: mock
     id: user-activity
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 500
 
   # System metrics source
   - kind: mock
     id: system-metrics
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 2000
 
 queries:
@@ -73,6 +81,7 @@ queries:
       RETURN count(s) AS TotalTransactions,
              sum(s.amount) AS TotalRevenue,
              avg(s.amount) AS AverageOrderValue
+    queryLanguage: Cypher
     sources:
       - sourceId: sales-data
 
@@ -83,6 +92,7 @@ queries:
       MATCH (u:User)
       WHERE u.status = 'active'
       RETURN count(u) AS ActiveUsers
+    queryLanguage: Cypher
     sources:
       - sourceId: user-activity
 
@@ -94,6 +104,7 @@ queries:
       RETURN avg(m.cpu) AS AvgCPU,
              avg(m.memory) AS AvgMemory,
              max(m.latency) AS MaxLatency
+    queryLanguage: Cypher
     sources:
       - sourceId: system-metrics
 
@@ -107,6 +118,7 @@ queries:
              s.amount AS Amount,
              s.product AS Product,
              s.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: sales-data
 
@@ -118,6 +130,7 @@ queries:
       RETURN e.user_id AS UserId,
              e.action AS Action,
              e.timestamp AS Timestamp
+    queryLanguage: Cypher
     sources:
       - sourceId: user-activity
 
@@ -131,6 +144,7 @@ queries:
              s.amount AS Amount,
              s.customer AS Customer,
              'HIGH_VALUE' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: sales-data
 
@@ -144,6 +158,7 @@ queries:
              m.cpu AS CPU,
              m.memory AS Memory,
              'RESOURCE_WARNING' AS AlertType
+    queryLanguage: Cypher
     sources:
       - sourceId: system-metrics
 
@@ -155,6 +170,7 @@ queries:
       RETURN s.category AS Category,
              count(s) AS Count,
              sum(s.amount) AS Total
+    queryLanguage: Cypher
     sources:
       - sourceId: sales-data
 

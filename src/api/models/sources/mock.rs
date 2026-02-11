@@ -24,8 +24,7 @@ fn default_sensor_count() -> u32 {
 /// Type of data to generate from the mock source.
 ///
 /// This mirrors the `DataType` enum from drasi-source-mock.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
-#[schema(as = DataType)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum DataTypeDto {
     /// Sequential counter values (Counter nodes)
@@ -43,8 +42,7 @@ pub enum DataTypeDto {
 }
 
 /// Local copy of mock source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
-#[schema(as = MockSourceConfig)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MockSourceConfigDto {
     /// Type of data to generate as an enum object:
