@@ -20,12 +20,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
-# Create a linker wrapper that:
-# 1. Injects winpthread before -nodefaultlibs (RocksDB, libstdc++, libgcc_eh
-#    all reference pthread symbols)
-# 2. Adds -static-libgcc -static-libstdc++ so the final .exe doesn't depend on
-#    libgcc_s_seh-1.dll, libstdc++-6.dll, or libwinpthread-1.dll at runtime.
-RUN printf '#!/bin/sh\nargs="-static-libgcc -static-libstdc++"\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -lkernel32 -lmsvcrt -nodefaultlibs" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+# Create a linker wrapper that fully statically links the MinGW runtime.
+# Problem: rustc passes -nodefaultlibs to GCC, which causes GCC to skip
+# adding libgcc, libstdc++, and libwinpthread entirely. Flags like
+# -static-libgcc/-static-libstdc++ are ignored because they only control
+# *how* GCC adds those libs, but -nodefaultlibs says "don't add them at all."
+#
+# Solution: Inject the static archives (.a) for libstdc++, libgcc, libgcc_eh,
+# and libwinpthread right before -nodefaultlibs. This produces a fully
+# self-contained .exe with no MinGW DLL dependencies.
+RUN GCC_LIB="/usr/lib/gcc/x86_64-w64-mingw32/10-posix" \
+    && MINGW_LIB="/usr/x86_64-w64-mingw32/lib" \
+    && printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs)\n      args="$args %s/libstdc++.a %s/libgcc.a %s/libgcc_eh.a %s/libpthread.a %s/libwinpthread.a -lkernel32 -lmsvcrt -nodefaultlibs"\n      ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+      "$GCC_LIB" "$GCC_LIB" "$GCC_LIB" "$MINGW_LIB" "$MINGW_LIB" \
     > /usr/local/bin/mingw-gcc-wrapper \
     && chmod +x /usr/local/bin/mingw-gcc-wrapper
 
