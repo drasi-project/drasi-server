@@ -14,7 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \
     && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
-       | tar xJ --strip-components=1 -C /usr/local
+       | tar xJ --strip-components=1 -C /usr/local \
+    && ln -sf /usr/local/bin/clang++ /usr/bin/c++ \
+    && ln -sf /usr/local/bin/clang /usr/bin/cc
 
 ENV LIBCLANG_PATH=/usr/local/lib
 
