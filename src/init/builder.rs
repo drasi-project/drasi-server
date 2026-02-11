@@ -109,7 +109,7 @@ mod tests {
     use drasi_server::api::models::sources::mock::DataTypeDto;
     use drasi_server::api::models::{
         HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
-    }, models::DataTypeDto};
+    };
 
     /// Helper to create test server settings
     fn test_server_settings() -> ServerSettings {

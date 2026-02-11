@@ -15,7 +15,6 @@
 //! Interactive prompt functions for configuration initialization.
 
 use anyhow::Result;
-use drasi_server::models::DataTypeDto;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::sources::mock::DataTypeDto;
