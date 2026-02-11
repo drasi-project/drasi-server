@@ -1,0 +1,40 @@
+FROM ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5 AS toolchain
+
+FROM ubuntu:22.04
+
+# Remove symlink that conflicts with COPY from toolchain
+RUN rm -rf /usr/local/man
+
+# Copy mingw cross-toolchain and wine from the cross image
+COPY --from=toolchain /usr/local/ /usr/local/
+COPY --from=toolchain /usr/x86_64-w64-mingw32/ /usr/x86_64-w64-mingw32/
+COPY --from=toolchain /usr/lib/gcc/x86_64-w64-mingw32/ /usr/lib/gcc/x86_64-w64-mingw32/
+COPY --from=toolchain /usr/bin/x86_64-w64-mingw32-* /usr/bin/
+
+# Install build dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gcc g++ libc6-dev pkg-config \
+    perl make protobuf-compiler libprotobuf-dev \
+    libclang-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
+    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+# Create a linker wrapper that injects winpthread before -nodefaultlibs.
+# RocksDB, libstdc++ and libgcc_eh all reference pthread symbols.
+# Inserts the full path to mingw libpthread.a right before -nodefaultlibs.
+# Also adds kernel32 and msvcrt which winpthread itself depends on.
+RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -lkernel32 -lmsvcrt -nodefaultlibs" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+    > /usr/local/bin/mingw-gcc-wrapper \
+    && chmod +x /usr/local/bin/mingw-gcc-wrapper
+
+# Set cargo environment for cross-compilation
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=mingw-gcc-wrapper
+ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+ENV BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_gnu="--sysroot=/usr/x86_64-w64-mingw32 -I/usr/lib/gcc/x86_64-w64-mingw32/10-win32/include"
+
+# Disable QUIC in vendored OpenSSL (mingw headers lack SIO_UDP_NETRESET)
+ENV OPENSSL_CONFIGURE_ARGS="no-quic"

@@ -1,0 +1,15 @@
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5
+
+# Install build dependencies for vendored OpenSSL and protobuf
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    perl make protobuf-compiler libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a linker wrapper that appends necessary libraries at the end
+# to resolve symbol ordering issues with musl cross-compilation
+RUN printf '#!/bin/sh\nexec x86_64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \
+    > /usr/local/bin/musl-gcc-wrapper \
+    && chmod +x /usr/local/bin/musl-gcc-wrapper
+
+# Override the linker to use our wrapper
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc-wrapper
