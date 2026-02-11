@@ -1,34 +1,34 @@
-FROM ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5
+FROM ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5 AS toolchain
 
-# Install build dependencies on top of the stock cross image
+FROM ubuntu:22.04
+
+# Remove symlink that conflicts with COPY from toolchain
+RUN rm -rf /usr/local/man
+
+# Copy mingw cross-toolchain and wine from the cross image
+COPY --from=toolchain /usr/local/ /usr/local/
+COPY --from=toolchain /usr/x86_64-w64-mingw32/ /usr/x86_64-w64-mingw32/
+
+# Install build dependencies
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
-# the stock clang 3.8 is too old for bindgen which needs >= 6.0)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates xz-utils libtinfo5 \
+    curl ca-certificates gcc g++ libc6-dev pkg-config \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+    gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 libclang-dev \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
-    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \
-    && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
-       | tar xJ --strip-components=1 -C /usr/local \
-    && ln -sf /usr/local/bin/clang++ /usr/bin/c++ \
-    && ln -sf /usr/local/bin/clang /usr/bin/cc
+    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
-ENV LIBCLANG_PATH=/usr/local/lib
+# Create a linker wrapper that injects winpthread before -nodefaultlibs.
+# RocksDB, libstdc++ and libgcc_eh all reference pthread symbols.
+# Inserts the full path to mingw libpthread.a right before -nodefaultlibs.
+# Also adds kernel32 and msvcrt which winpthread itself depends on.
+RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -lkernel32 -lmsvcrt -nodefaultlibs" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+    > /usr/local/bin/mingw-gcc-wrapper \
+    && chmod +x /usr/local/bin/mingw-gcc-wrapper
 
-# Create a clang++ cross-compilation wrapper for mingw
-# (x86_64-w64-mingw32-g++ is g++ 5.3 from Xenial which lacks C++17 needed by RocksDB)
-RUN printf '#!/bin/sh\nexec /usr/local/bin/clang++ --target=x86_64-w64-mingw32 -I/usr/x86_64-w64-mingw32/include -I/usr/lib/gcc/x86_64-w64-mingw32/5.3-posix/include/c++ -I/usr/lib/gcc/x86_64-w64-mingw32/5.3-posix/include/c++/x86_64-w64-mingw32 "$@"\n' \
-    > /usr/local/bin/x86_64-w64-mingw32-clang++ \
-    && chmod +x /usr/local/bin/x86_64-w64-mingw32-clang++
-
-ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-clang++
-
-# Build libjq from source for Windows (MinGW)
+# Build libjq from source for Windows (MinGW) with bundled oniguruma
 ENV JQ_VERSION=1.7.1
 RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
     && cd jq-${JQ_VERSION} \
@@ -42,3 +42,15 @@ ENV JQ_LIB_DIR=/usr/local/mingw-jq/lib
 ENV ONIG_LIB_DIR=/usr/local/mingw-jq/lib
 ENV JQ_INCLUDE_DIR=/usr/local/mingw-jq/include
 ENV CFLAGS_x86_64_pc_windows_gnu="-I/usr/local/mingw-jq/include"
+ENV LIBJQ_STATIC=1
+ENV LIBONIG_STATIC=1
+
+# Set cargo environment for cross-compilation
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=mingw-gcc-wrapper
+ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+ENV BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_gnu="--sysroot=/usr/x86_64-w64-mingw32 -I/usr/lib/gcc/x86_64-w64-mingw32/10-win32/include"
+
+# Disable QUIC in vendored OpenSSL (mingw headers lack SIO_UDP_NETRESET)
+ENV OPENSSL_CONFIGURE_ARGS="no-quic"

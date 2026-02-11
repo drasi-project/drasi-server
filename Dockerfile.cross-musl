@@ -1,22 +1,12 @@
 FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
-# the stock clang 3.8 is too old for bindgen which needs >= 6.0)
+# Install build dependencies for vendored OpenSSL, protobuf, and jq
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates xz-utils libtinfo5 \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
-       | tar xJ --strip-components=1 -C /usr/local \
-    && ln -sf /usr/local/bin/clang++ /usr/bin/c++ \
-    && ln -sf /usr/local/bin/clang /usr/bin/cc
+    && rm -rf /var/lib/apt/lists/*
 
-ENV LIBCLANG_PATH=/usr/local/lib
-
-# Build libjq from source for musl
+# Build libjq from source for musl (with bundled oniguruma)
 ENV JQ_VERSION=1.7.1
 RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
     && cd jq-${JQ_VERSION} \
@@ -30,6 +20,8 @@ ENV JQ_LIB_DIR=/usr/local/musl-jq/lib
 ENV ONIG_LIB_DIR=/usr/local/musl-jq/lib
 ENV JQ_INCLUDE_DIR=/usr/local/musl-jq/include
 ENV CFLAGS_x86_64_unknown_linux_musl="-I/usr/local/musl-jq/include"
+ENV LIBJQ_STATIC=1
+ENV LIBONIG_STATIC=1
 
 # Create a linker wrapper that appends necessary libraries at the end
 # to resolve symbol ordering issues with musl cross-compilation

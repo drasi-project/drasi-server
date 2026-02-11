@@ -1,25 +1,20 @@
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5 AS toolchain
 
-# Install build dependencies on top of the stock cross image
-# Note: cross base image is Ubuntu 16.04 (Xenial) which lacks libjq-dev,
-# so we build jq from source with bundled oniguruma.
+FROM ubuntu:20.04
+
+# Copy runner scripts from the cross image
+COPY --from=toolchain /linux-runner /linux-runner
+
+# Install build dependencies
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
-# the stock clang 3.8 is too old for bindgen which needs >= 6.0)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates xz-utils libtinfo5 \
+    curl ca-certificates gcc g++ libc6-dev pkg-config \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
-       | tar xJ --strip-components=1 -C /usr/local \
-    && ln -sf /usr/local/bin/clang++ /usr/bin/c++ \
-    && ln -sf /usr/local/bin/clang /usr/bin/cc
+    libclang-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV LIBCLANG_PATH=/usr/local/lib
-
-# Build libjq from source (with bundled oniguruma)
+# Build libjq from source (with bundled oniguruma) for static linking
 ENV JQ_VERSION=1.7.1
 RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
     && cd jq-${JQ_VERSION} \
@@ -32,3 +27,5 @@ RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq
 ENV JQ_LIB_DIR=/usr/local/jq/lib
 ENV ONIG_LIB_DIR=/usr/local/jq/lib
 ENV JQ_INCLUDE_DIR=/usr/local/jq/include
+ENV LIBJQ_STATIC=1
+ENV LIBONIG_STATIC=1
