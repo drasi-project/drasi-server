@@ -154,8 +154,29 @@ jobs:
           ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}${EXT}"
 
           if [[ -f "$SRC_BINARY" ]]; then
-            cp "$SRC_BINARY" "$ARTIFACT_NAME"
-            chmod +x "$ARTIFACT_NAME" 2>/dev/null || true
+            # For Windows targets, stage the binary and required MinGW runtime
+            # DLLs together in a directory (same approach as release.yaml)
+            if [[ "${{ matrix.target }}" == *windows* ]]; then
+              ARTIFACT_DIR="windows-artifact"
+              mkdir -p "$ARTIFACT_DIR"
+              cp "$SRC_BINARY" "$ARTIFACT_DIR/$ARTIFACT_NAME"
+
+              # Extract MinGW runtime DLLs from the cross Docker image.
+              # The image was already built by cross, so docker build is a
+              # cache-hit (instant). We copy the 3 required DLLs out.
+              docker build -t drasi-cross-mingw -f Dockerfile.cross-windows-gnu . >/dev/null 2>&1
+              docker run --rm -v "$(pwd)/$ARTIFACT_DIR:/out" drasi-cross-mingw sh -c "
+                cp /usr/lib/gcc/x86_64-w64-mingw32/10-posix/libstdc++-6.dll /out/ && \
+                cp /usr/lib/gcc/x86_64-w64-mingw32/10-posix/libgcc_s_seh-1.dll /out/ && \
+                cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll /out/
+              "
+              echo "DLLs bundled:"
+              ls -la "$ARTIFACT_DIR/"*.dll
+              echo "dir=${ARTIFACT_DIR}" >> $GITHUB_OUTPUT
+            else
+              cp "$SRC_BINARY" "$ARTIFACT_NAME"
+              chmod +x "$ARTIFACT_NAME"
+            fi
             echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
           else
             echo "Error: Built binary not found at $SRC_BINARY"
@@ -191,10 +212,19 @@ jobs:
           fi
 
       - name: Upload binary artifact
+        if: "!contains(matrix.target, 'windows')"
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
           path: drasid-*
+          if-no-files-found: error
+
+      - name: Upload binary artifact (Windows + DLLs)
+        if: contains(matrix.target, 'windows')
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: ${{ steps.build-cross.outputs.dir }}/*
           if-no-files-found: error
 
   # Build Docker images for Linux platforms
