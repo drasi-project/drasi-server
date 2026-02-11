@@ -17,7 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/local/bin/clang++ /usr/bin/c++ \
     && ln -sf /usr/local/bin/clang /usr/bin/cc
 
+# Create a clang++ cross-compilation wrapper for aarch64
+# (aarch64-linux-gnu-g++ is g++ 5.4 which lacks C++17 needed by RocksDB)
+RUN printf '#!/bin/sh\nexec /usr/local/bin/clang++ --target=aarch64-linux-gnu --sysroot=/usr/aarch64-linux-gnu -I/usr/aarch64-linux-gnu/include/c++/5 -I/usr/aarch64-linux-gnu/include/c++/5/aarch64-linux-gnu "$@"\n' \
+    > /usr/local/bin/aarch64-linux-gnu-clang++ \
+    && chmod +x /usr/local/bin/aarch64-linux-gnu-clang++
+
 ENV LIBCLANG_PATH=/usr/local/lib
+ENV CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-clang++
 
 # Build libjq from source for aarch64 (with bundled oniguruma)
 ENV JQ_VERSION=1.7.1

@@ -20,6 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV LIBCLANG_PATH=/usr/local/lib
 
+# Create a clang++ cross-compilation wrapper for mingw
+# (x86_64-w64-mingw32-g++ is g++ 5.3 from Xenial which lacks C++17 needed by RocksDB)
+RUN printf '#!/bin/sh\nexec /usr/local/bin/clang++ --target=x86_64-w64-mingw32 -I/usr/x86_64-w64-mingw32/include -I/usr/lib/gcc/x86_64-w64-mingw32/5.3-posix/include/c++ -I/usr/lib/gcc/x86_64-w64-mingw32/5.3-posix/include/c++/x86_64-w64-mingw32 "$@"\n' \
+    > /usr/local/bin/x86_64-w64-mingw32-clang++ \
+    && chmod +x /usr/local/bin/x86_64-w64-mingw32-clang++
+
+ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-clang++
+
 # Build libjq from source for Windows (MinGW)
 ENV JQ_VERSION=1.7.1
 RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
