@@ -426,6 +426,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
             adaptive_min_wait_ms: None,
             adaptive_window_secs: None,
             adaptive_enabled: None,
+            webhooks: None, // Configure webhooks in YAML for custom webhook routes
         },
     })
 }

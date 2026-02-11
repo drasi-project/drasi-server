@@ -152,6 +152,7 @@ mod tests {
                 adaptive_min_wait_ms: None,
                 adaptive_window_secs: None,
                 adaptive_enabled: None,
+                webhooks: None,
             },
         }
     }

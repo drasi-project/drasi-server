@@ -86,6 +86,7 @@ fn test_http_source_dto_serializes_camelcase() {
         adaptive_min_wait_ms: Some(ConfigValue::Static(10)),
         adaptive_window_secs: Some(ConfigValue::Static(60)),
         adaptive_enabled: Some(ConfigValue::Static(true)),
+        webhooks: None,
     };
 
     let json = serde_json::to_value(&dto).unwrap();
