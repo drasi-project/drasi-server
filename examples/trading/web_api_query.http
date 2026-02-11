@@ -17,7 +17,7 @@
 # https://marketplace.visualstudio.com/items?itemName=humao.rest-client
 
 @hostname = localhost
-@port = 8080
+@port = 8280
 # @query_id = all-stocks
 # @query_id = watchlist-query
 # @query_id = portfolio-query

@@ -14,7 +14,7 @@
 
 id: playground-server
 host: 0.0.0.0
-port: 8080
+port: 8380
 logLevel: info
 persistConfig: false
 sources: []

@@ -74,7 +74,7 @@ def send_price_to_http_source(http_url, source_id, price_data):
 
 def main():
     # Configuration
-    http_source_url = "http://localhost:9000"
+    http_source_url = "http://localhost:9100"
     source_id = "price-feed"
     
     # Stock symbols with base prices

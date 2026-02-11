@@ -296,6 +296,7 @@ impl ConfigPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::sources::mock::DataTypeDto;
     use async_trait::async_trait;
     use drasi_lib::channels::dispatcher::ChangeDispatcher;
     use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
@@ -880,7 +881,7 @@ instances:
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -955,7 +956,7 @@ instances:
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1022,7 +1023,7 @@ instances:
                 auto_start: true,
                 bootstrap_provider: None,
                 config: crate::api::models::MockSourceConfigDto {
-                    data_type: ConfigValue::Static("generic".to_string()),
+                    data_type: DataTypeDto::Generic,
                     interval_ms: ConfigValue::Static(1000),
                 },
             },
@@ -1098,7 +1099,7 @@ instances:
             auto_start: false,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1203,7 +1204,7 @@ logLevel: warn
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };

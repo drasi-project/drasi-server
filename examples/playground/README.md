@@ -12,14 +12,31 @@ An interactive web UI for experimenting with Drasi functionality. This example a
 
 ## Quick Start
 
-```bash
-# Start the playground
-./start-demo.sh
+There are three ways to run the Drasi Playground:
 
-# Visit http://localhost:5173 in your browser
+### Option 1: Dev Container (Recommended)
+
+Open this repository in VS Code and select **"Reopen in Container"** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`). When prompted, choose **"Drasi Server - Playground"**. The playground will build and start automatically — once the container is ready, open **http://localhost:5373** in your browser.
+
+### Option 2: GitHub Codespaces
+
+Click **Code → Codespaces → New codespace** on the repository's GitHub page. Select the **"Drasi Server - Playground"** dev container configuration. The playground will start automatically once the codespace is ready. Open the forwarded port **5373** from the Ports tab.
+
+### Option 3: Run Locally
+
+Requires Rust toolchain and Node.js installed on your machine.
+
+```bash
+# Build Drasi Server (from repo root)
+cargo build --release
+
+# Start the playground
+./start.sh
+
+# Visit http://localhost:5373 in your browser
 
 # Stop the playground
-./stop-demo.sh
+./stop.sh
 ```
 
 ## Getting Started Tutorial
@@ -113,12 +130,12 @@ RETURN p.category AS category, count(*) AS product_count
 
 The playground uses the same proven architecture as the trading example:
 
-- **Frontend**: React 18 + TypeScript + Vite (port 5173)
+- **Frontend**: React 18 + TypeScript + Vite (port 5373)
 - **UI Framework**: TailwindCSS with custom theme
 - **Code Editor**: Monaco Editor for Cypher queries
 - **Data Tables**: TanStack React Table
-- **Backend**: Drasi Server REST API (port 8080)
-- **Real-time Updates**: SSE reaction (port 50051)
+- **Backend**: Drasi Server REST API (port 8380)
+- **Real-time Updates**: SSE reaction (port 8381)
 - **Dynamic Resources**: All queries and reactions created via API
 
 ### Data Flow
@@ -132,7 +149,7 @@ Drasi Server Core
     ↓
 Continuous Queries (Cypher)
     ↓
-SSE Reaction (port 50051)
+SSE Reaction (port 8381)
     ↓
 Web UI Updates (Real-time)
 ```
@@ -161,9 +178,9 @@ The playground interacts with Drasi Server through these endpoints:
 If you see "port already in use" errors:
 
 ```bash
-# Kill processes on ports 8080 or 5173
-lsof -ti:8080 | xargs kill
-lsof -ti:5173 | xargs kill
+# Kill processes on ports 8380 or 5373
+lsof -ti:8380 | xargs kill
+lsof -ti:5373 | xargs kill
 ```
 
 ### Drasi Server Won't Start

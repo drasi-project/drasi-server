@@ -1,0 +1,6 @@
+[
+  {"op": "insert", "label": "UserLocation", "id": "brian", "properties": {"name": "Brian Kernighan", "location": "Building A, Floor 3", "status": "online"}},
+  {"op": "insert", "label": "UserLocation", "id": "buzz", "properties": {"name": "Buzz Lightyear", "location": "Space Station", "status": "away"}},
+  {"op": "insert", "label": "UserLocation", "id": "antoninus", "properties": {"name": "Antoninus", "location": "Rome", "status": "offline"}},
+  {"op": "insert", "label": "UserLocation", "id": "david", "properties": {"name": "David", "location": "Rome", "status": "online"}}
+]

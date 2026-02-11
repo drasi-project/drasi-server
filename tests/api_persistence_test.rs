@@ -17,6 +17,7 @@
 
 mod test_support;
 
+use drasi_server::models::sources::mock::DataTypeDto;
 use drasi_server::models::{
     ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto,
     SourceSubscriptionConfigDto,
@@ -27,7 +28,7 @@ use tempfile::TempDir;
 
 fn default_mock_config() -> MockSourceConfigDto {
     MockSourceConfigDto {
-        data_type: ConfigValue::Static("generic".to_string()),
+        data_type: DataTypeDto::Generic,
         interval_ms: ConfigValue::Static(5000),
     }
 }

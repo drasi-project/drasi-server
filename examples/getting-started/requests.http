@@ -56,6 +56,9 @@ POST {{baseUrl}}/api/v1/sources/postgres-messages/start
 ### List all queries
 GET {{baseUrl}}/api/v1/queries
 
+### Get all-messages query results
+GET {{baseUrl}}/api/v1/queries/all-messages/results
+
 ### Get hello-world-from query results
 GET {{baseUrl}}/api/v1/queries/hello-world-from/results
 

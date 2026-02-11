@@ -100,7 +100,7 @@ function App() {
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Connection Error</h2>
           <p className="text-sm text-gray-600 mb-4">{clientError}</p>
           <p className="text-xs text-gray-500">
-            Please ensure the Drasi server is running on port 8080
+            Please ensure the Drasi server is running on port 8380
           </p>
         </div>
       </div>

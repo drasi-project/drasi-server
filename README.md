@@ -308,7 +308,11 @@ sources:
 
 #### HTTP Source (`http`)
 
-Receives events via HTTP endpoints.
+Receives events via HTTP endpoints. Supports two modes:
+- **Standard Mode**: Uses the built-in `HttpSourceChange` format
+- **Webhook Mode**: Custom routes with configurable payload mappings for third-party webhooks
+
+**Basic Configuration (Standard Mode):**
 
 ```yaml
 sources:
@@ -326,6 +330,177 @@ sources:
 | `port` | integer | (required) | Listen port |
 | `endpoint` | string | (auto) | Custom endpoint path |
 | `timeoutMs` | integer | `10000` | Request timeout in milliseconds |
+| `webhooks` | object | (none) | Webhook configuration (enables webhook mode) |
+
+##### Webhook Mode
+
+Webhook mode enables receiving events from third-party services (GitHub, Stripe, etc.) by mapping their payloads to Drasi source change events.
+
+**GitHub Webhook Example:**
+
+```yaml
+sources:
+  - kind: http
+    id: github-webhook
+    autoStart: true
+    host: 0.0.0.0
+    port: 9000
+    webhooks:
+      errorBehavior: reject
+      cors:
+        allowOrigins: ["*"]
+      routes:
+        - path: /github/events
+          methods: [POST]
+          auth:
+            signature:
+              type: hmac-sha256
+              secretEnv: GITHUB_WEBHOOK_SECRET
+              header: X-Hub-Signature-256
+              prefix: "sha256="
+          mappings:
+            - when:
+                header: X-GitHub-Event
+                equals: push
+              elementType: node
+              operation: insert
+              template:
+                id: "commit-{{payload.head_commit.id}}"
+                labels: ["Commit"]
+                properties:
+                  message: "{{payload.head_commit.message}}"
+                  author: "{{payload.head_commit.author.name}}"
+            - when:
+                header: X-GitHub-Event
+                equals: pull_request
+              elementType: node
+              operationFrom: "$.action"
+              operationMap:
+                opened: insert
+                closed: delete
+                synchronize: update
+              template:
+                id: "pr-{{payload.pull_request.id}}"
+                labels: ["PullRequest"]
+                properties:
+                  title: "{{payload.pull_request.title}}"
+```
+
+##### Webhook Configuration Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `errorBehavior` | string | `accept_and_log` | Error handling: `accept_and_log`, `accept_and_skip`, `reject` |
+| `cors` | object | (none) | CORS configuration |
+| `routes` | array | (required) | List of webhook route configurations |
+
+##### CORS Configuration
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable CORS |
+| `allowOrigins` | array | `["*"]` | Allowed origins |
+| `allowMethods` | array | `["GET", "POST", ...]` | Allowed HTTP methods |
+| `allowHeaders` | array | `["Content-Type", ...]` | Allowed headers |
+| `exposeHeaders` | array | `[]` | Headers to expose |
+| `allowCredentials` | boolean | `false` | Allow credentials |
+| `maxAge` | integer | `3600` | Preflight cache time (seconds) |
+
+##### Webhook Route Configuration
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | string | (required) | Route path (supports `:param` for path parameters) |
+| `methods` | array | `[POST]` | Allowed HTTP methods |
+| `auth` | object | (none) | Authentication configuration |
+| `errorBehavior` | string | (global) | Override error behavior for this route |
+| `mappings` | array | (required) | Payload to event mappings |
+
+##### Authentication Configuration
+
+**HMAC Signature Verification:**
+
+```yaml
+auth:
+  signature:
+    type: hmac-sha256    # or hmac-sha1
+    secretEnv: WEBHOOK_SECRET
+    header: X-Signature
+    prefix: "sha256="    # Optional prefix to strip
+    encoding: hex        # or base64
+```
+
+**Bearer Token Verification:**
+
+```yaml
+auth:
+  bearer:
+    tokenEnv: API_TOKEN
+```
+
+##### Webhook Mapping Configuration
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `when` | object | (none) | Condition for when this mapping applies |
+| `operation` | string | (none) | Static operation: `insert`, `update`, `delete` |
+| `operationFrom` | string | (none) | JSONPath to extract operation from payload |
+| `operationMap` | object | (none) | Map payload values to operations |
+| `elementType` | string | (required) | Element type: `node` or `relation` |
+| `effectiveFrom` | string/object | (none) | Timestamp configuration |
+| `template` | object | (required) | Element creation template |
+
+##### Mapping Conditions
+
+```yaml
+when:
+  header: X-Event-Type    # Check a header value
+  field: "$.event.type"   # Or check a payload field (JSONPath)
+  equals: "push"          # Must equal this value
+  contains: "event"       # Or must contain this substring
+  regex: "^(push|pull)"   # Or must match this regex
+```
+
+##### Element Templates
+
+Templates use Handlebars syntax with access to `{{payload.*}}`, `{{headers.*}}`, and `{{path.*}}` variables.
+
+**Node Template:**
+
+```yaml
+template:
+  id: "{{payload.id}}"
+  labels: ["Event", "{{payload.type}}"]
+  properties:
+    name: "{{payload.name}}"
+    timestamp: "{{payload.created_at}}"
+```
+
+**Relation Template:**
+
+```yaml
+template:
+  id: "{{payload.relation_id}}"
+  labels: ["CONNECTS_TO"]
+  from: "{{payload.source_id}}"
+  to: "{{payload.target_id}}"
+```
+
+##### Effective From Configuration
+
+Control the timestamp used for the `effective_from` field:
+
+```yaml
+# Simple: auto-detect format
+effectiveFrom: "{{payload.timestamp}}"
+```
+
+```yaml
+# Explicit format
+effectiveFrom:
+  value: "{{payload.created_at}}"
+  format: iso8601  # or unix_seconds, unix_millis, unix_nanos
+```
 
 #### gRPC Source (`grpc`)
 
@@ -349,21 +524,49 @@ sources:
 
 #### Mock Source (`mock`)
 
-Generates test data for development.
+Generates synthetic test data for development and demonstrations. Supports three data types with configurable generation intervals.
 
+**Configuration format:**
 ```yaml
 sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: sensor
-    intervalMs: 5000
+    dataType:
+      type: generic    # or "counter", "sensorReading"
+    intervalMs: 2000
+```
+
+**Sensor reading with custom sensor count:**
+```yaml
+sources:
+  - kind: mock
+    id: sensor-source
+    autoStart: true
+    dataType:
+      type: sensorReading
+      sensorCount: 10          # Simulate 10 unique sensors
+    intervalMs: 2000
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataType` | string | `generic` | Type of mock data: `sensor` (SensorReading nodes), `counter` (Counter nodes), `generic` (Generic nodes) |
+| `dataType` | object | `{ type: generic }` | Type of mock data (see below) |
 | `intervalMs` | integer | `5000` | Data generation interval in milliseconds |
+
+**Data Types:**
+
+| Type | Value | Generated Nodes | Properties |
+|------|-------|-----------------|------------|
+| Counter | `{ type: counter }` | `Counter` | `value` (sequential int), `timestamp` |
+| Sensor Reading | `{ type: sensorReading, sensorCount: N }` | `SensorReading` | `sensor_id`, `temperature` (20-30°C), `humidity` (40-60%), `timestamp` |
+| Generic | `{ type: generic }` | `Generic` | `value` (random int), `message`, `timestamp` |
+
+**Sensor Reading Behavior:**
+- First reading for each sensor generates an **INSERT** event
+- Subsequent readings for the same sensor generate **UPDATE** events
+- `sensorCount` controls how many unique sensors are simulated (default: 5)
+- Sensor IDs: `sensor_0` through `sensor_{sensorCount-1}`
 
 #### Platform Source (`platform`)
 

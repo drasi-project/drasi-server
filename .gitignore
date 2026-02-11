@@ -28,3 +28,7 @@ logs/
 
 # Exception: Allow .env files in examples (for tutorials)
 !examples/**/.env
+
+# Cargo install metadata
+.crates.toml
+.crates2.json

@@ -16,6 +16,11 @@
 # Real-World Scenario: Real-Time Dashboard Backend
 # =============================================================================
 #
+# NOTE: This is a CONCEPTUAL example demonstrating dashboard architecture.
+# The queries reference labels (Sale, User, Metric) that don't match the mock
+# source output (SensorReading, Counter, Generic). Replace mock sources with
+# real data sources for production use.
+#
 # This example demonstrates building a complete real-time dashboard backend:
 # - Multiple data sources feeding into aggregation queries
 # - SSE streaming for live updates to web clients
@@ -47,21 +52,24 @@ sources:
   - kind: mock
     id: sales-data
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 1000
 
   # User activity source
   - kind: mock
     id: user-activity
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 500
 
   # System metrics source
   - kind: mock
     id: system-metrics
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 2000
 
 queries:
