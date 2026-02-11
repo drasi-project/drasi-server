@@ -1,5 +1,5 @@
 {
-    "name": "Drasi Server Development",
+    "name": "Drasi Server - Getting Started Tutorial",
     "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
     "features": {
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
@@ -9,16 +9,22 @@
             "configureZshAsDefaultShell": true
         }
     },
-    "postCreateCommand": "bash .devcontainer/post-create.sh",
-    "forwardPorts": [8080, 8081],
+    "initializeCommand": "docker network create drasi-network 2>/dev/null || true",
+    "postCreateCommand": "bash .devcontainer/getting-started/post-create.sh",
+    "runArgs": ["--network=drasi-network"],
+    "forwardPorts": [8180, 8181, 5532],
     "portsAttributes": {
-        "8080": {
+        "8180": {
             "label": "Drasi Server API",
             "onAutoForward": "notify"
         },
-        "8081": {
+        "8181": {
             "label": "SSE Stream",
             "onAutoForward": "notify"
+        },
+        "5532": {
+            "label": "PostgreSQL",
+            "onAutoForward": "silent"
         }
     },
     "customizations": {
@@ -39,6 +45,11 @@
     },
     "remoteUser": "vscode",
     "containerEnv": {
-        "RUST_BACKTRACE": "1"
+        "RUST_BACKTRACE": "1",
+        "DB_HOST": "getting-started-postgres",
+        "SERVER_PORT": "8180",
+        "SSE_PORT": "8181",
+        "POSTGRES_PORT": "5532",
+        "POSTGRES_HOST_PORT": "5532"
     }
 }
