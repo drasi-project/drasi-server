@@ -11,10 +11,12 @@ COPY --from=toolchain /linux-runner /linux-runner
 COPY --from=toolchain /usr/aarch64-linux-gnu/ /usr/aarch64-linux-gnu/
 COPY --from=toolchain /usr/bin/aarch64-linux-gnu-* /usr/bin/
 
-# Install build dependencies
+# Install build dependencies (including aarch64 cross-compiler from Ubuntu repos,
+# since the one copied from the stock cross image may lack shared lib deps)
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gcc g++ libc6-dev pkg-config \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
     libclang-dev \
