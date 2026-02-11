@@ -15,8 +15,9 @@
 -- Getting Started Tutorial Database Schema
 -- This schema mirrors the Drasi Platform getting-started tutorial
 
--- Suppress noisy notices during setup
-SET client_min_messages = WARNING;
+-- Suppress all noisy output during setup
+\set QUIET on
+SET client_min_messages = ERROR;
 
 -- Create user with replication privileges for CDC
 DO $$
@@ -32,23 +33,23 @@ GRANT CREATE ON DATABASE getting_started TO drasi_user;
 GRANT ALL PRIVILEGES ON DATABASE getting_started TO drasi_user;
 
 -- Drop existing table if exists
-DROP TABLE IF EXISTS message CASCADE;
+DROP TABLE IF EXISTS "Message" CASCADE;
 
 -- Message table matching Platform tutorial schema
 -- Stores messages with sender and content
-CREATE TABLE message (
-    messageid SERIAL PRIMARY KEY,
-    "from" VARCHAR(50) NOT NULL,
-    message VARCHAR(200) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE "Message" (
+    "MessageId" SERIAL PRIMARY KEY,
+    "From" VARCHAR(50) NOT NULL,
+    "Message" VARCHAR(200) NOT NULL,
+    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Set REPLICA IDENTITY to FULL for complete CDC support
 -- This ensures all columns are included in change events
-ALTER TABLE message REPLICA IDENTITY FULL;
+ALTER TABLE "Message" REPLICA IDENTITY FULL;
 
 -- Ensure drasi_user owns the table
-ALTER TABLE message OWNER TO drasi_user;
+ALTER TABLE "Message" OWNER TO drasi_user;
 
 -- Grant permissions to drasi_user
 GRANT USAGE ON SCHEMA public TO drasi_user;
@@ -60,7 +61,7 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'drasi_pub') THEN
-        CREATE PUBLICATION drasi_pub FOR TABLE message;
+        CREATE PUBLICATION drasi_pub FOR TABLE "Message";
     END IF;
 END
 $$;
@@ -75,21 +76,21 @@ END
 $$;
 
 -- Insert initial sample data (only if table is empty)
-INSERT INTO message ("from", message)
+INSERT INTO "Message" ("From", "Message")
 SELECT * FROM (VALUES
     ('Buzz Lightyear', 'To infinity and beyond!'),
     ('Brian Kernighan', 'Hello World'),
     ('Antoninus', 'I am Spartacus'),
     ('David', 'I am Spartacus')
-) AS data("from", message)
-WHERE NOT EXISTS (SELECT 1 FROM message);
+) AS data("From", "Message")
+WHERE NOT EXISTS (SELECT 1 FROM "Message");
 
--- Verify the setup
+-- Show the summary
 SET client_min_messages = NOTICE;
 DO $$
 BEGIN
     RAISE NOTICE 'Getting Started database initialized successfully!';
-    RAISE NOTICE 'Tables: message';
+    RAISE NOTICE 'Tables: Message';
     RAISE NOTICE 'Publication: drasi_pub';
     RAISE NOTICE 'Replication slot: drasi_slot';
 END
