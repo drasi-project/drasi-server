@@ -121,6 +121,7 @@ fn test_source_config_http_serializes_camelcase() {
             adaptive_min_wait_ms: Some(ConfigValue::Static(10)),
             adaptive_window_secs: Some(ConfigValue::Static(60)),
             adaptive_enabled: Some(ConfigValue::Static(true)),
+            webhooks: None,
         },
     };
 

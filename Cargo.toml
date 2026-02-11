@@ -96,6 +96,7 @@ async-stream = "0.3.6"
 [dev-dependencies]
 # Testing utilities
 async-trait = "0.1"
+tracing = "0.1"
 tempfile = "3.8"
 mockall = "0.12"
 tokio-test = "0.4"

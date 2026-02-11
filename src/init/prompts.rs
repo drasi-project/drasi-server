@@ -15,6 +15,7 @@
 //! Interactive prompt functions for configuration initialization.
 
 use anyhow::Result;
+use drasi_server::models::DataTypeDto;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::{
@@ -385,6 +386,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
             adaptive_min_wait_ms: None,
             adaptive_window_secs: None,
             adaptive_enabled: None,
+            webhooks: None,
         },
     })
 }
@@ -443,7 +445,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         bootstrap_provider: None,
         config: MockSourceConfigDto {
             interval_ms: ConfigValue::Static(interval_ms),
-            data_type: ConfigValue::Static("generic".to_string()),
+            data_type: DataTypeDto::Generic,
         },
     })
 }

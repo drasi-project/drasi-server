@@ -444,19 +444,35 @@ pub async fn upsert_source_handler(
     let exists = core.get_source_status(&source_id).await.is_ok();
 
     if exists {
-        // Stop and remove existing source before replacing
-        let _ = core.stop_source(&source_id).await;
-        if let Err(e) = core.remove_source(&source_id).await {
-            log::error!("Failed to remove existing source '{source_id}' for upsert: {e}");
+        // Create a new source instance and use update_source to replace in place
+        let new_source = match create_source(config.clone()).await {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to create source instance for update: {e}");
+                return Ok(Json(ApiResponse::error(format!(
+                    "Failed to create source for update: {e}"
+                ))));
+            }
+        };
+        if let Err(e) = core.update_source(&source_id, new_source).await {
+            log::error!("Failed to update source '{source_id}': {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Failed to remove existing source for update: {e}"
+                "Failed to update source: {e}"
             ))));
         }
 
-        // Unregister from persistence (will be re-registered below)
+        log::info!("Source '{source_id}' updated successfully");
+
         if let Some(persistence) = &config_persistence {
             persistence.unregister_source(&instance_id, &source_id).await;
+            persistence.register_source(&instance_id, config).await;
         }
+
+        persist_after_operation(&config_persistence, "upserting source").await;
+
+        return Ok(Json(ApiResponse::success(StatusResponse {
+            message: format!("Source '{source_id}' updated successfully"),
+        })));
     }
 
     let source = match create_source(config.clone()).await {
@@ -471,8 +487,7 @@ pub async fn upsert_source_handler(
 
     match core.add_source(source).await {
         Ok(_) => {
-            let action = if exists { "updated" } else { "created" };
-            log::info!("Source '{source_id}' {action} successfully");
+            log::info!("Source '{source_id}' created successfully");
 
             if let Some(persistence) = &config_persistence {
                 persistence.register_source(&instance_id, config).await;
@@ -487,7 +502,7 @@ pub async fn upsert_source_handler(
             persist_after_operation(&config_persistence, "upserting source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Source '{source_id}' {action} successfully"),
+                message: format!("Source '{source_id}' created successfully"),
             })))
         }
         Err(e) => {
@@ -637,7 +652,7 @@ pub async fn delete_source(
         )));
     }
 
-    match core.remove_source(&id).await {
+    match core.remove_source(&id, true).await {
         Ok(_) => {
             if let Some(persistence) = &config_persistence {
                 persistence.unregister_source(&instance_id, &id).await;
@@ -1073,7 +1088,7 @@ pub async fn attach_query_stream(
     if let Err(e) = core.start_reaction(&reaction_id).await {
         let error_msg = e.to_string();
         if !error_msg.contains("already running") {
-            let _ = core.remove_reaction(&reaction_id).await;
+            let _ = core.remove_reaction(&reaction_id, true).await;
             let error_msg = format!("Failed to start attach reaction: {error_msg}");
             return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
         }
@@ -1083,7 +1098,7 @@ pub async fn attach_query_stream(
     let subscription = match handle.subscribe_with_options(options).await {
         Ok(subscription) => subscription,
         Err(e) => {
-            let _ = core.remove_reaction(&reaction_id).await;
+            let _ = core.remove_reaction(&reaction_id, true).await;
             let error_msg = format!("Failed to subscribe to attach reaction: {e}");
             return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
         }
@@ -1129,7 +1144,7 @@ impl Drop for AttachCleanupGuard {
         let core = self.core.clone();
         let id = self.reaction_id.clone();
         tokio::spawn(async move {
-            let _ = core.remove_reaction(&id).await;
+            let _ = core.remove_reaction(&id, true).await;
             log::debug!("Cleaned up attach reaction: {}", id);
         });
     }
@@ -1267,19 +1282,35 @@ pub async fn upsert_reaction_handler(
     let exists = core.get_reaction_info(&reaction_id).await.is_ok();
 
     if exists {
-        // Stop and remove existing reaction before replacing
-        let _ = core.stop_reaction(&reaction_id).await;
-        if let Err(e) = core.remove_reaction(&reaction_id).await {
-            log::error!("Failed to remove existing reaction '{reaction_id}' for upsert: {e}");
+        // Create a new reaction instance and use update_reaction to replace in place
+        let new_reaction = match create_reaction(config.clone()) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Failed to create reaction instance for update: {e}");
+                return Ok(Json(ApiResponse::error(format!(
+                    "Failed to create reaction for update: {e}"
+                ))));
+            }
+        };
+        if let Err(e) = core.update_reaction(&reaction_id, new_reaction).await {
+            log::error!("Failed to update reaction '{reaction_id}': {e}");
             return Ok(Json(ApiResponse::error(format!(
-                "Failed to remove existing reaction for update: {e}"
+                "Failed to update reaction: {e}"
             ))));
         }
 
-        // Unregister from persistence (will be re-registered below)
+        log::info!("Reaction '{reaction_id}' updated successfully");
+
         if let Some(persistence) = &config_persistence {
             persistence.unregister_reaction(&instance_id, &reaction_id).await;
+            persistence.register_reaction(&instance_id, config).await;
         }
+
+        persist_after_operation(&config_persistence, "upserting reaction").await;
+
+        return Ok(Json(ApiResponse::success(StatusResponse {
+            message: format!("Reaction '{reaction_id}' updated successfully"),
+        })));
     }
 
     let reaction = match create_reaction(config.clone()) {
@@ -1294,8 +1325,7 @@ pub async fn upsert_reaction_handler(
 
     match core.add_reaction(reaction).await {
         Ok(_) => {
-            let action = if exists { "updated" } else { "created" };
-            log::info!("Reaction '{reaction_id}' {action} successfully");
+            log::info!("Reaction '{reaction_id}' created successfully");
 
             if let Some(persistence) = &config_persistence {
                 persistence.register_reaction(&instance_id, config).await;
@@ -1310,7 +1340,7 @@ pub async fn upsert_reaction_handler(
             persist_after_operation(&config_persistence, "upserting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
-                message: format!("Reaction '{reaction_id}' {action} successfully"),
+                message: format!("Reaction '{reaction_id}' created successfully"),
             })))
         }
         Err(e) => {
@@ -1460,7 +1490,7 @@ pub async fn delete_reaction(
         )));
     }
 
-    match core.remove_reaction(&id).await {
+    match core.remove_reaction(&id, true).await {
         Ok(_) => {
             if let Some(persistence) = &config_persistence {
                 persistence.unregister_reaction(&instance_id, &id).await;
@@ -1518,3 +1548,4 @@ pub async fn stop_reaction(
         }
     }
 }
+

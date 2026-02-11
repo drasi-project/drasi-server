@@ -106,9 +106,9 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server::api::models::{
+    use drasi_server::{api::models::{
         HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
-    };
+    }, models::DataTypeDto};
 
     /// Helper to create test server settings
     fn test_server_settings() -> ServerSettings {
@@ -129,7 +129,7 @@ mod tests {
             bootstrap_provider: None,
             config: MockSourceConfigDto {
                 interval_ms: ConfigValue::Static(5000),
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
             },
         }
     }
@@ -151,6 +151,7 @@ mod tests {
                 adaptive_min_wait_ms: None,
                 adaptive_window_secs: None,
                 adaptive_enabled: None,
+                webhooks: None,
             },
         }
     }

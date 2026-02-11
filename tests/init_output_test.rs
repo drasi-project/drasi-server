@@ -250,6 +250,7 @@ fn test_http_source_generates_valid_yaml() {
                 adaptive_min_wait_ms: None,
                 adaptive_window_secs: None,
                 adaptive_enabled: None,
+                webhooks: None,
             },
         }],
         queries: vec![],

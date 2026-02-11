@@ -1090,7 +1090,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-application"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-platform"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-postgres"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1180,7 +1180,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-scriptfile"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1201,7 +1201,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1240,21 +1240,21 @@ dependencies = [
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-index-garnet"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "async-recursion",
  "async-stream",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1299,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.3.2"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1307,7 +1307,6 @@ dependencies = [
  "drasi-core",
  "drasi-functions-cypher",
  "drasi-functions-gql",
- "drasi-middleware",
  "drasi-query-ast",
  "drasi-query-cypher",
  "drasi-query-gql",
@@ -1324,24 +1323,6 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "drasi-middleware"
-version = "0.3.2"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "drasi-core",
- "hex",
- "jq-rs",
- "jsonpath-rust",
- "log",
- "ordered-float",
- "serde",
- "serde_json",
- "tokio",
- "urlencoding",
 ]
 
 [[package]]
@@ -1375,7 +1356,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1393,7 +1374,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1415,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-grpc-adaptive"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1437,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1459,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-http-adaptive"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1480,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-log"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1501,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-platform"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1521,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-profiler"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1539,7 +1520,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-sse"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1562,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-storedproc-mssql"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1578,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-storedproc-mysql"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1593,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-storedproc-postgres"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1673,6 +1654,7 @@ dependencies = [
  "tokio-test",
  "tower 0.4.13",
  "tower-http",
+ "tracing",
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
@@ -1681,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-grpc"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1704,21 +1686,31 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-http"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum 0.7.9",
+ "base64 0.22.1",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "handlebars 6.4.0",
+ "hex",
+ "hmac",
  "hyper 1.8.1",
  "log",
  "ordered-float",
  "prost-types",
+ "quick-xml",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sha1",
+ "sha2",
+ "subtle",
  "tokio",
  "tokio-stream",
  "tower 0.4.13",
@@ -1730,7 +1722,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-mock"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1751,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-platform"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1773,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-source-postgres"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1805,7 +1797,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-state-store-redb"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "drasi-lib",
@@ -2491,7 +2483,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2856,24 +2848,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jq-rs"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9cfaeae42ef96b227ab787558cc7bbd5f1dfe96b4df7c63f92853017751b0e4"
-dependencies = [
- "jq-sys",
-]
-
-[[package]]
-name = "jq-sys"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81b65b7e54bd2fffc8cb20cbcf19f40d3158dab5cf5b5adb1f65f9b35eba4c48"
-dependencies = [
- "pkg-config",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2881,21 +2855,6 @@ checksum = "8c942ebf8e95485ca0d52d97da7c5a2c387d0e7f0ba4c35e93bfcaee045955b3"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "jsonpath-rust"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19d8fe85bd70ff715f31ce8c739194b423d79811a19602115d611a3ec85d6200"
-dependencies = [
- "lazy_static",
- "once_cell",
- "pest",
- "pest_derive",
- "regex",
- "serde_json",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3280,7 +3239,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4023,6 +3982,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.37.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -5891,7 +5860,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
@@ -6770,5 +6739,9 @@ dependencies = [
 ]
 
 [[patch.unused]]
+name = "drasi-middleware"
+version = "0.3.4"
+
+[[patch.unused]]
 name = "drasi-source-application"
-version = "0.1.2"
+version = "0.1.4"

@@ -18,7 +18,6 @@ use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
 use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
-use drasi_lib::managers::ComponentLogger;
 use drasi_lib::Reaction as ReactionTrait;
 use drasi_lib::Source as SourceTrait;
 use std::collections::HashMap;
@@ -34,7 +33,7 @@ pub struct MockSource {
 struct MockSourceInner {
     id: String,
     status: RwLock<ComponentStatus>,
-    logger: RwLock<Option<ComponentLogger>>,
+    instance_id: RwLock<String>,
 }
 
 impl MockSource {
@@ -43,15 +42,21 @@ impl MockSource {
             inner: Arc::new(MockSourceInner {
                 id: id.to_string(),
                 status: RwLock::new(ComponentStatus::Stopped),
-                logger: RwLock::new(None),
+                instance_id: RwLock::new(String::new()),
             }),
         }
     }
 
     pub async fn emit_log(&self, message: &str) {
-        if let Some(logger) = self.inner.logger.read().await.clone() {
-            logger.info(message).await;
-        }
+        let instance_id = self.inner.instance_id.read().await.clone();
+        let span = tracing::info_span!(
+            "mock_source_log",
+            instance_id = %instance_id,
+            component_id = %self.inner.id,
+            component_type = "source"
+        );
+        let _guard = span.enter();
+        tracing::info!("{}", message);
     }
 }
 
@@ -104,7 +109,7 @@ impl SourceTrait for MockSource {
     }
 
     async fn initialize(&self, context: SourceRuntimeContext) {
-        *self.inner.logger.write().await = context.logger().cloned();
+        *self.inner.instance_id.write().await = context.instance_id.clone();
     }
 }
 
@@ -118,7 +123,7 @@ struct MockReactionInner {
     id: String,
     queries: Vec<String>,
     status: RwLock<ComponentStatus>,
-    logger: RwLock<Option<ComponentLogger>>,
+    instance_id: RwLock<String>,
 }
 
 impl MockReaction {
@@ -128,15 +133,21 @@ impl MockReaction {
                 id: id.to_string(),
                 queries,
                 status: RwLock::new(ComponentStatus::Stopped),
-                logger: RwLock::new(None),
+                instance_id: RwLock::new(String::new()),
             }),
         }
     }
 
     pub async fn emit_log(&self, message: &str) {
-        if let Some(logger) = self.inner.logger.read().await.clone() {
-            logger.info(message).await;
-        }
+        let instance_id = self.inner.instance_id.read().await.clone();
+        let span = tracing::info_span!(
+            "mock_reaction_log",
+            instance_id = %instance_id,
+            component_id = %self.inner.id,
+            component_type = "reaction"
+        );
+        let _guard = span.enter();
+        tracing::info!("{}", message);
     }
 }
 
@@ -159,7 +170,7 @@ impl ReactionTrait for MockReaction {
     }
 
     async fn initialize(&self, context: ReactionRuntimeContext) {
-        *self.inner.logger.write().await = context.logger().cloned();
+        *self.inner.instance_id.write().await = context.instance_id.clone();
     }
 
     async fn start(&self) -> anyhow::Result<()> {
