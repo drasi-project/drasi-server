@@ -26,13 +26,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # -static-libgcc/-static-libstdc++ are ignored because they only control
 # *how* GCC adds those libs, but -nodefaultlibs says "don't add them at all."
 #
-# Solution: Inject the static archives (.a) for libstdc++, libgcc, libgcc_eh,
-# and libwinpthread right before -nodefaultlibs. This produces a fully
-# self-contained .exe with no MinGW DLL dependencies.
+# Solution: Inject the full static archive chain before -nodefaultlibs.
+# libstdc++ depends on libgcc, libpthread, and the MinGW C runtime
+# (libmingwex for wctob/btowc/strtold, libmingw32 for _init, libmoldname
+# for POSIX-name compat). All must be present since -nodefaultlibs
+# suppresses GCC's automatic inclusion of these.
 RUN GCC_LIB="/usr/lib/gcc/x86_64-w64-mingw32/10-posix" \
     && MINGW_LIB="/usr/x86_64-w64-mingw32/lib" \
-    && printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs)\n      args="$args %s/libstdc++.a %s/libgcc.a %s/libgcc_eh.a %s/libpthread.a %s/libwinpthread.a -lkernel32 -lmsvcrt -nodefaultlibs"\n      ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
-      "$GCC_LIB" "$GCC_LIB" "$GCC_LIB" "$MINGW_LIB" "$MINGW_LIB" \
+    && printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs)\n      args="$args %s/libstdc++.a %s/libgcc.a %s/libgcc_eh.a %s/libpthread.a %s/libwinpthread.a %s/libmingwex.a %s/libmingw32.a %s/libmoldname.a -lmsvcrt -lkernel32 -ladvapi32 -lshell32 -luser32 -lws2_32 -nodefaultlibs"\n      ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+      "$GCC_LIB" "$GCC_LIB" "$GCC_LIB" "$MINGW_LIB" "$MINGW_LIB" "$MINGW_LIB" "$MINGW_LIB" "$MINGW_LIB" \
     > /usr/local/bin/mingw-gcc-wrapper \
     && chmod +x /usr/local/bin/mingw-gcc-wrapper
 
