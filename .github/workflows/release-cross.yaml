@@ -317,14 +317,16 @@ jobs:
           - artifact_suffix: x86_64-windows
             runner: windows-latest
             binary_name_template: "drasid-VERSION-x86_64-windows.exe"
-          # Linux x86_64 (musl)
+          # Linux x86_64 (musl) — tested inside Alpine container
           - artifact_suffix: x86_64-linux-musl
             runner: ubuntu-latest
             binary_name_template: "drasid-VERSION-x86_64-linux-musl"
-          # Linux ARM64 (musl)
+            use_alpine: true
+          # Linux ARM64 (musl) — tested inside Alpine container
           - artifact_suffix: aarch64-linux-musl
             runner: ubuntu-24.04-arm
             binary_name_template: "drasid-VERSION-aarch64-linux-musl"
+            use_alpine: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -336,7 +338,7 @@ jobs:
           path: bin
 
       - name: Run hello-world smoke test (Unix)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !matrix.use_alpine
         env:
           VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
@@ -345,6 +347,24 @@ jobs:
           chmod +x "bin/${BINARY_NAME}"
           SERVER_BINARY="$(pwd)/bin/${BINARY_NAME}" \
             tests/integration/hello-world/run-integration-test.sh
+
+      - name: Run hello-world smoke test (Alpine/musl)
+        if: matrix.use_alpine
+        env:
+          VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
+        run: |
+          VERSION="${VERSION_TAG#v}"
+          BINARY_NAME=$(echo "${{ matrix.binary_name_template }}" | sed "s/VERSION/${VERSION}/")
+          chmod +x "bin/${BINARY_NAME}"
+          docker run --rm \
+            -v "$(pwd)/bin:/bin-artifacts" \
+            -v "$(pwd)/tests:/tests" \
+            alpine:latest \
+            sh -c "
+              apk add --no-cache bash curl &&
+              SERVER_BINARY=/bin-artifacts/${BINARY_NAME} \
+                bash /tests/integration/hello-world/run-integration-test.sh
+            "
 
       - name: Run hello-world smoke test (Windows)
         if: runner.os == 'Windows'
