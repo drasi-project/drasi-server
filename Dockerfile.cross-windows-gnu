@@ -24,18 +24,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #
 # Rust's linker invocation passes -nodefaultlibs to GCC, which prevents GCC
 # from adding libstdc++, libgcc, libwinpthread, and the MinGW C runtime.
-# Previous attempts to manually inject those static archives failed because
-# the dependency chain (libstdc++ -> libmingwex -> msvcrt etc.) is fragile.
 #
-# Solution: Drop -nodefaultlibs entirely and replace it with -static.
-# - Without -nodefaultlibs, GCC adds its runtime libs normally and resolves
-#   all internal dependencies (libmingwex, libmoldname, etc.) itself.
-# - -static tells GCC to prefer .a over .dll.a, so libstdc++, libgcc, and
-#   libwinpthread are linked statically instead of as DLL imports.
-# - On MinGW, Windows system libs (kernel32, msvcrt) are import libs (.a)
-#   regardless, so -static doesn't break them.
-# - We also inject libpthread.a for RocksDB/libstdc++ pthread symbols.
-RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -static" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
+# Solution: Use -Wl,-Bstatic / -Wl,-Bdynamic bracketing to tell the GNU
+# linker (ld) to resolve specific -l flags from static archives (.a) only,
+# then switch back to dynamic for Windows system import libs.
+# -nodefaultlibs is preserved so GCC doesn't add duplicate copies.
+# The key difference from previous attempts:
+# - We use -l flags (not raw .a paths), so the linker resolves them via its
+#   normal search path and handles internal cross-dependencies automatically.
+# - -Bstatic/-Bdynamic is a linker directive, not a GCC driver flag, so it
+#   works correctly even with -nodefaultlibs.
+RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs)\n      args="$args -Wl,-Bstatic -lstdc++ -lgcc -lgcc_eh -lpthread -lwinpthread -lmingwex -lmingw32 -Wl,-Bdynamic -lmoldname -lmsvcrt -lkernel32 -ladvapi32 -lshell32 -luser32 -lws2_32 -nodefaultlibs"\n      ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
     > /usr/local/bin/mingw-gcc-wrapper \
     && chmod +x /usr/local/bin/mingw-gcc-wrapper
 
