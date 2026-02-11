@@ -57,11 +57,16 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 
--- Create publication for logical replication (if not exists)
+-- Create publication for logical replication and ensure Message table is included
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'drasi_pub') THEN
         CREATE PUBLICATION drasi_pub FOR TABLE "Message";
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'drasi_pub' AND tablename = 'Message'
+    ) THEN
+        ALTER PUBLICATION drasi_pub ADD TABLE "Message";
     END IF;
 END
 $$;
