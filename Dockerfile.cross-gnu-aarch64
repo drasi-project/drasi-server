@@ -1,30 +1,11 @@
-FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5 AS toolchain
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5
 
-FROM ubuntu:20.04
-
-# Remove symlink that conflicts with COPY from toolchain
-RUN rm -rf /usr/local/man
-
-# Copy cross-compiler toolchain (includes qemu) and runner scripts from the cross image
-COPY --from=toolchain /usr/local/ /usr/local/
-COPY --from=toolchain /linux-runner /linux-runner
-COPY --from=toolchain /usr/aarch64-linux-gnu/ /usr/aarch64-linux-gnu/
-COPY --from=toolchain /usr/bin/aarch64-linux-gnu-* /usr/bin/
-
-# Install build dependencies
+# Install project-specific build dependencies on top of the stock cross image
+# The cross image already has the aarch64 cross-compiler and sysroot
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates gcc g++ libc6-dev pkg-config \
+RUN dpkg --add-architecture arm64 \
+    && apt-get update && apt-get install -y --no-install-recommends \
     perl make protobuf-compiler libprotobuf-dev \
     libclang-dev \
+    libjq-dev:arm64 libonig-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
-
-# Set cargo environment for cross-compilation
-ENV CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-ENV CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-ENV AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
-ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="/linux-runner aarch64"
-ENV BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--sysroot=/usr/aarch64-linux-gnu"
-ENV PKG_CONFIG_PATH_aarch64_unknown_linux_gnu=/usr/lib/aarch64-linux-gnu/pkgconfig
-ENV PKG_CONFIG_ALLOW_CROSS_aarch64_unknown_linux_gnu=1
