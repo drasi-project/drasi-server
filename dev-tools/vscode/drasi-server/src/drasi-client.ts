@@ -5,9 +5,22 @@ import { ConnectionRegistry } from './sdk/config';
 export class DrasiClient {
   private registry: ConnectionRegistry;
   private readonly timeout = 10000;
+  private _apiVersion: string = 'v1';
 
   constructor(registry: ConnectionRegistry) {
     this.registry = registry;
+  }
+
+  get apiVersion(): string {
+    return this._apiVersion;
+  }
+
+  set apiVersion(version: string) {
+    this._apiVersion = version;
+  }
+
+  private get apiBase(): string {
+    return `/api/${this._apiVersion}`;
   }
 
   private get baseUrl(): string {
@@ -43,7 +56,7 @@ export class DrasiClient {
   }
 
   async listInstances(): Promise<InstanceListItem[]> {
-    const res = await this.get<ApiResponse<InstanceListItem[]>>('/api/v1/instances');
+    const res = await this.get<ApiResponse<InstanceListItem[]>>(`${this.apiBase}/instances`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -51,7 +64,7 @@ export class DrasiClient {
   }
 
   async createInstance(request: CreateInstanceRequest): Promise<void> {
-    const res = await this.post<ApiResponse<any>>('/api/v1/instances', request);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances`, request);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -87,7 +100,7 @@ export class DrasiClient {
 
   async listSources(): Promise<ComponentListItem[]> {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.get<ApiResponse<ComponentListItem[]>>(`/api/v1/instances/${instanceId}/sources`);
+    const res = await this.get<ApiResponse<ComponentListItem[]>>(`${this.apiBase}/instances/${instanceId}/sources`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -96,7 +109,7 @@ export class DrasiClient {
 
   async listQueries(): Promise<ComponentListItem[]> {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.get<ApiResponse<ComponentListItem[]>>(`/api/v1/instances/${instanceId}/queries`);
+    const res = await this.get<ApiResponse<ComponentListItem[]>>(`${this.apiBase}/instances/${instanceId}/queries`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -105,7 +118,7 @@ export class DrasiClient {
 
   async listReactions(): Promise<ComponentListItem[]> {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.get<ApiResponse<ComponentListItem[]>>(`/api/v1/instances/${instanceId}/reactions`);
+    const res = await this.get<ApiResponse<ComponentListItem[]>>(`${this.apiBase}/instances/${instanceId}/reactions`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -114,7 +127,7 @@ export class DrasiClient {
 
   async deleteSource(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.delete<ApiResponse<any>>(`/api/v1/instances/${instanceId}/sources/${id}`);
+    const res = await this.delete<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/sources/${id}`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -122,7 +135,7 @@ export class DrasiClient {
 
   async deleteQuery(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.delete<ApiResponse<any>>(`/api/v1/instances/${instanceId}/queries/${id}`);
+    const res = await this.delete<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/queries/${id}`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -130,7 +143,7 @@ export class DrasiClient {
 
   async deleteReaction(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.delete<ApiResponse<any>>(`/api/v1/instances/${instanceId}/reactions/${id}`);
+    const res = await this.delete<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/reactions/${id}`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -138,7 +151,7 @@ export class DrasiClient {
 
   async startSource(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/sources/${id}/start`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/sources/${id}/start`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -146,7 +159,7 @@ export class DrasiClient {
 
   async stopSource(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/sources/${id}/stop`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/sources/${id}/stop`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -154,7 +167,7 @@ export class DrasiClient {
 
   async startQuery(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/queries/${id}/start`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/queries/${id}/start`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -162,7 +175,7 @@ export class DrasiClient {
 
   async stopQuery(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/queries/${id}/stop`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/queries/${id}/stop`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -170,7 +183,7 @@ export class DrasiClient {
 
   async startReaction(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/reactions/${id}/start`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/reactions/${id}/start`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -178,7 +191,7 @@ export class DrasiClient {
 
   async stopReaction(id: string) {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.post<ApiResponse<any>>(`/api/v1/instances/${instanceId}/reactions/${id}/stop`);
+    const res = await this.post<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}/reactions/${id}/stop`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -186,7 +199,7 @@ export class DrasiClient {
 
   async getQueryResults(id: string): Promise<any[]> {
     const instanceId = await this.getCurrentInstanceId();
-    const res = await this.get<ApiResponse<any[]>>(`/api/v1/instances/${instanceId}/queries/${id}/results`);
+    const res = await this.get<ApiResponse<any[]>>(`${this.apiBase}/instances/${instanceId}/queries/${id}/results`);
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
     }
@@ -196,7 +209,7 @@ export class DrasiClient {
   async getSourceEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentEvent[]>>(
-      `/api/v1/instances/${instanceId}/sources/${id}/events?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/sources/${id}/events?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -207,7 +220,7 @@ export class DrasiClient {
   async getQueryEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentEvent[]>>(
-      `/api/v1/instances/${instanceId}/queries/${id}/events?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/queries/${id}/events?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -218,7 +231,7 @@ export class DrasiClient {
   async getReactionEvents(id: string, limit = 100): Promise<ComponentEvent[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentEvent[]>>(
-      `/api/v1/instances/${instanceId}/reactions/${id}/events?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/reactions/${id}/events?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -229,7 +242,7 @@ export class DrasiClient {
   async getSourceLogs(id: string, limit = 100): Promise<LogMessage[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<LogMessage[]>>(
-      `/api/v1/instances/${instanceId}/sources/${id}/logs?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/sources/${id}/logs?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -240,7 +253,7 @@ export class DrasiClient {
   async getQueryLogs(id: string, limit = 100): Promise<LogMessage[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<LogMessage[]>>(
-      `/api/v1/instances/${instanceId}/queries/${id}/logs?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/queries/${id}/logs?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -251,7 +264,7 @@ export class DrasiClient {
   async getReactionLogs(id: string, limit = 100): Promise<LogMessage[]> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<LogMessage[]>>(
-      `/api/v1/instances/${instanceId}/reactions/${id}/logs?limit=${limit}`
+      `${this.apiBase}/instances/${instanceId}/reactions/${id}/logs?limit=${limit}`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -264,7 +277,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for event stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/sources/${id}/events/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/sources/${id}/events/stream`;
   }
 
   getQueryEventsStreamUrl(id: string): string {
@@ -272,7 +285,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for event stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/events/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/queries/${id}/events/stream`;
   }
 
   getReactionEventsStreamUrl(id: string): string {
@@ -280,7 +293,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for event stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/reactions/${id}/events/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/reactions/${id}/events/stream`;
   }
 
   getSourceLogsStreamUrl(id: string): string {
@@ -288,7 +301,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for log stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/sources/${id}/logs/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/sources/${id}/logs/stream`;
   }
 
   getQueryLogsStreamUrl(id: string): string {
@@ -296,7 +309,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for log stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/logs/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/queries/${id}/logs/stream`;
   }
 
   getReactionLogsStreamUrl(id: string): string {
@@ -304,7 +317,7 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for log stream');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/reactions/${id}/logs/stream`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/reactions/${id}/logs/stream`;
   }
 
   getQueryAttachUrl(id: string): string {
@@ -312,13 +325,13 @@ export class DrasiClient {
     if (!instanceId) {
       throw new Error('No instance selected for query attach');
     }
-    return `${this.baseUrl}/api/v1/instances/${instanceId}/queries/${id}/attach`;
+    return `${this.baseUrl}${this.apiBase}/instances/${instanceId}/queries/${id}/attach`;
   }
 
   async getSourceConfig(id: string): Promise<Record<string, unknown>> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentListItem>>(
-      `/api/v1/instances/${instanceId}/sources/${id}?view=full`
+      `${this.apiBase}/instances/${instanceId}/sources/${id}?view=full`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -329,7 +342,7 @@ export class DrasiClient {
   async getQueryConfig(id: string): Promise<Record<string, unknown>> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentListItem>>(
-      `/api/v1/instances/${instanceId}/queries/${id}?view=full`
+      `${this.apiBase}/instances/${instanceId}/queries/${id}?view=full`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -340,7 +353,7 @@ export class DrasiClient {
   async getReactionConfig(id: string): Promise<Record<string, unknown>> {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.get<ApiResponse<ComponentListItem>>(
-      `/api/v1/instances/${instanceId}/reactions/${id}?view=full`
+      `${this.apiBase}/instances/${instanceId}/reactions/${id}?view=full`
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -351,7 +364,7 @@ export class DrasiClient {
   async applySource(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.put<ApiResponse<any>>(
-      `/api/v1/instances/${instanceId}/sources`,
+      `${this.apiBase}/instances/${instanceId}/sources`,
       normalizeResource(resource, { dropKind: false })
     );
     if (!res.data?.success) {
@@ -362,7 +375,7 @@ export class DrasiClient {
   async applyQuery(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.post<ApiResponse<any>>(
-      `/api/v1/instances/${instanceId}/queries`,
+      `${this.apiBase}/instances/${instanceId}/queries`,
       normalizeResource(resource, { dropKind: true })
     );
     if (!res.data?.success) {
@@ -373,7 +386,7 @@ export class DrasiClient {
   async applyReaction(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
     const res = await this.put<ApiResponse<any>>(
-      `/api/v1/instances/${instanceId}/reactions`,
+      `${this.apiBase}/instances/${instanceId}/reactions`,
       normalizeResource(resource, { dropKind: false })
     );
     if (!res.data?.success) {

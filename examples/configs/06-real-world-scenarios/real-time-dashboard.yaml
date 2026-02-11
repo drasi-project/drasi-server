@@ -41,6 +41,7 @@
 #
 # Run with: cargo run -- --config examples/configs/06-real-world-scenarios/real-time-dashboard.yaml
 
+apiVersion: drasi.io/v1
 id: dashboard-backend
 host: "0.0.0.0"
 port: 8080

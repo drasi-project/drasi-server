@@ -33,6 +33,7 @@
 #
 # Requires PostgreSQL with logical replication enabled.
 
+apiVersion: drasi.io/v1
 id: order-exception-system
 host: "0.0.0.0"
 port: 8080

@@ -91,6 +91,7 @@ cargo run -- --config examples/configs/01-fundamentals/hello-world.yaml
 ### Server Settings
 
 ```yaml
+apiVersion: drasi.io/v1
 id: "server-id"                    # Unique server ID (auto-generated UUID if not specified)
 host: "0.0.0.0"                    # Server bind address
 port: 8080                         # Server port

@@ -83,6 +83,8 @@ cargo run -- --config config/server.yaml
 
 **Example configuration file:**
 ```yaml
+apiVersion: drasi.io/v1
+
 # Server identification
 id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 
@@ -132,6 +134,7 @@ reactions:
 For multiple DrasiLib instances, use the `instances` array (legacy single-instance fields continue to work and map to the first instance):
 
 ```yaml
+apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
 logLevel: "info"

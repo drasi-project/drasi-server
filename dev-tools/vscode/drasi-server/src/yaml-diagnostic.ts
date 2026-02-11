@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import Ajv from 'ajv';
+import { parseDrasiApiVersion } from './drasi-yaml';
 
 export class DrasiYamlDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
@@ -99,17 +100,10 @@ export class DrasiYamlDiagnosticProvider {
   }
 
   private isDrasiFile(document: vscode.TextDocument): boolean {
-    const fileName = document.fileName.toLowerCase();
-    const markedFiles = vscode.workspace.getConfiguration('drasiServer').get<string[]>('schemaFiles') ?? [];
-    const relativePath = vscode.workspace.asRelativePath(document.uri, false).replace(/\\/g, '/');
-    if (markedFiles.includes(relativePath)) {
-      return true;
+    if (document.languageId !== 'yaml') {
+      return false;
     }
-    return fileName.includes('query') ||
-      fileName.includes('source') ||
-      fileName.includes('reaction') ||
-      fileName.includes('drasi') ||
-      fileName.includes('resources');
+    return parseDrasiApiVersion(document.getText()) !== undefined;
   }
 
   private createDiagnostic(

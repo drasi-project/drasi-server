@@ -490,6 +490,7 @@ function isConfigDocument(document: any) {
     return false;
   }
   const keys = [
+    'apiVersion',
     'sources',
     'queries',
     'reactions',

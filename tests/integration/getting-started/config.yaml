@@ -1,6 +1,7 @@
 # Integration test configuration for Drasi Server
 # This configuration is used for automated integration tests in CI and can be used locally
 
+apiVersion: drasi.io/v1
 host: 0.0.0.0
 port: 8080
 logLevel: info

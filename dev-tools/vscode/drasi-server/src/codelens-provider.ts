@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import { DrasiClient } from './drasi-client';
+import { isDrasiYaml } from './drasi-yaml';
 
 export class CodeLensProvider implements vscode.CodeLensProvider {
   private extensionUri: vscode.Uri;
@@ -20,6 +21,11 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const codeLenses: vscode.CodeLens[] = [];
     const docStr = document.getText();
+
+    if (!isDrasiYaml(docStr)) {
+      return codeLenses;
+    }
+
     const docs = yaml.parseAllDocuments(docStr);
 
     docs.forEach((doc) => {

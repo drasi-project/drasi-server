@@ -1,7 +1,7 @@
 id: 557a4f2d-d472-4081-869e-85ffa08713fc
 host: 0.0.0.0
 port: 8082
-logLevel: debug
+logLevel: info
 persistConfig: true
 persistIndex: false
 sources: []
@@ -114,12 +114,34 @@ instances:
     host: 0.0.0.0
     port: 9000
     timeoutMs: 30000
+  - kind: mock
+    id: test-source
+    autoStart: true
+    dataType:
+      type: sensorReading
+      sensorCount: 5
+    intervalMs: 3000
   queries:
   - id: all-events
     autoStart: true
     query: |
       MATCH (e:Event)
       RETURN e.id AS EventId, e.type AS EventType, e.data AS Data
+    queryLanguage: Cypher
+    middleware: []
+    sources:
+    - sourceId: webhook-receiver
+      nodes: []
+      relations: []
+      pipeline: []
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
+  - id: high-value-events
+    autoStart: true
+    query: |
+      MATCH (e:Event)
+      WHERE e.amount > 1000
+      RETURN e.id AS EventId, e.amount AS Amount
     queryLanguage: Cypher
     middleware: []
     sources:

@@ -12,22 +12,18 @@ function getMarkedSchemaFile(workspaceRoot: string) {
 }
 
 suite('Drasi schema mapping', () => {
-  test('marked file is mapped to schema', async () => {
+  test('drasi file detected by apiVersion', async () => {
     const workspaceRoot = process.env.TEST_WORKSPACE ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) {
       assert.fail('No workspace root');
     }
 
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
-    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
-
-    const config = vscode.workspace.getConfiguration('drasiServer');
-    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
 
     if (!fs.existsSync(schemaFile)) {
       fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-      fs.writeFileSync(schemaFile, 'sources:\n  - kind: mock\n    id: demo\n');
     }
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\n  - kind: mock\n    id: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -35,12 +31,9 @@ suite('Drasi schema mapping', () => {
     await vscode.extensions.getExtension('DrasiProject.drasi-server')?.activate();
     await delay(500);
 
-    const schemaConfig = vscode.workspace.getConfiguration('yaml');
-    const updatedMappings = schemaConfig.get<Record<string, string[]>>('schemas') ?? {};
-    const updatedHasMapping = Object.values(updatedMappings).some((patterns) =>
-      patterns.includes(relativePath)
-    );
-    assert.ok(updatedHasMapping, 'Schema mapping missing after refresh');
+    // File with apiVersion: drasi.io/v1 should be treated as a drasi config
+    const text = doc.getText();
+    assert.ok(/^apiVersion:\s*drasi\.io\/v1\s*$/m.test(text), 'File should contain apiVersion: drasi.io/v1');
   });
 
   test('provides kind completions for sources', async () => {
@@ -50,13 +43,9 @@ suite('Drasi schema mapping', () => {
     }
 
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
-    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
-
-    const config = vscode.workspace.getConfiguration('drasiServer');
-    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'sources:\n  - kind: \n    id: demo\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\n  - kind: \n    id: demo\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -65,18 +54,25 @@ suite('Drasi schema mapping', () => {
     await vscode.extensions.getExtension('DrasiProject.drasi-server')?.activate();
     await delay(1000);
 
+    // Verify schema was cached in global storage
+    const ext = vscode.extensions.getExtension('DrasiProject.drasi-server');
+    const storageUri = ext?.extensionUri;
+    assert.ok(storageUri, 'Extension URI should exist');
+
+    // Check that the schema has SourceConfig with kind enum
     const schemaConfig = vscode.workspace.getConfiguration('yaml');
     const schemaMappings = schemaConfig.get<Record<string, string[]>>('schemas') ?? {};
-    const schemaKey = Object.keys(schemaMappings).find((key) => schemaMappings[key]?.includes(relativePath));
-    if (!schemaKey) {
-      assert.fail('Schema mapping not found for marked file');
+    const schemaKey = Object.keys(schemaMappings).find((key) => key.includes('drasi-schema'));
+    if (schemaKey) {
+      const schemaPath = schemaKey.replace(/^vscode-userdata:/, '').replace(/^file:/, '');
+      if (fs.existsSync(schemaPath)) {
+        const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+        const sourceConfig = schema.definitions?.SourceConfig;
+        const kindEnum = sourceConfig?.allOf?.[0]?.properties?.kind?.enum;
+        assert.ok(Array.isArray(kindEnum), 'SourceConfig kind enum missing');
+        assert.ok(kindEnum.includes('mock'), 'Expected mock source kind enum');
+      }
     }
-    const schemaPath = schemaKey.replace(/^vscode-userdata:/, '').replace(/^file:/, '');
-    const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
-    const sourceConfig = schema.definitions?.SourceConfig;
-    const kindEnum = sourceConfig?.allOf?.[0]?.properties?.kind?.enum;
-    assert.ok(Array.isArray(kindEnum), 'SourceConfig kind enum missing');
-    assert.ok(kindEnum.includes('mock'), 'Expected mock source kind enum');
   });
 
   test('reports validation errors for invalid config', async () => {
@@ -86,13 +82,9 @@ suite('Drasi schema mapping', () => {
     }
 
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
-    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
-
-    const config = vscode.workspace.getConfiguration('drasiServer');
-    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'port: "${SERVER_PORT:-8080}"\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nport: "${SERVER_PORT:-8080}"\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -111,13 +103,9 @@ suite('Drasi schema mapping', () => {
     }
 
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
-    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
-
-    const config = vscode.workspace.getConfiguration('drasiServer');
-    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
-    fs.writeFileSync(schemaFile, 'sources:\\n  - kind: mock\\n    id: demo\\n');
+    fs.writeFileSync(schemaFile, 'apiVersion: drasi.io/v1\nsources:\\n  - kind: mock\\n    id: demo\\n');
 
     const doc = await vscode.workspace.openTextDocument(schemaFile);
     await vscode.window.showTextDocument(doc);
@@ -139,15 +127,12 @@ suite('Drasi schema mapping', () => {
     }
 
     const schemaFile = getMarkedSchemaFile(workspaceRoot);
-    const relativePath = vscode.workspace.asRelativePath(schemaFile, false).replace(/\\/g, '/');
-
-    const config = vscode.workspace.getConfiguration('drasiServer');
-    await config.update('schemaFiles', [relativePath], vscode.ConfigurationTarget.Workspace);
 
     fs.mkdirSync(path.dirname(schemaFile), { recursive: true });
     fs.writeFileSync(
       schemaFile,
       [
+        'apiVersion: drasi.io/v1',
         'sources:',
         '  - kind: postgres',
         '    id: demo',

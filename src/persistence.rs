@@ -277,6 +277,7 @@ impl ConfigPersistence {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
             DrasiServerConfig {
+                api_version: None,
                 id: instance.id,
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
@@ -302,6 +303,7 @@ impl ConfigPersistence {
                 .unwrap_or_default();
 
             DrasiServerConfig {
+                api_version: None,
                 id: ConfigValue::Static(first_id),
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),

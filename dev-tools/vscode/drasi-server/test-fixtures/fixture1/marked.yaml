@@ -1,1 +1,2 @@
+apiVersion: drasi.io/v1
 sources:\n  - kind: mock\n    id: demo\n

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import { ConnectionRegistry } from './sdk/config';
 import { DrasiYamlDiagnosticProvider } from './yaml-diagnostic';
+import { isDrasiYaml } from './drasi-yaml';
 
 const SCHEMA_FILE_PREFIX = 'drasi-resources.schema';
 const SCHEMA_FILE_NAME = `${SCHEMA_FILE_PREFIX}.json`;
@@ -38,13 +39,14 @@ export class SchemaProvider {
     await this.refreshSchemas(context.globalStorageUri);
   }
 
-  async refreshSchemas(storageUri: vscode.Uri) {
+  async refreshSchemas(storageUri: vscode.Uri, apiVersion?: string) {
     const baseUrl = this.registry.getCurrentConnection().url;
+    const version = apiVersion ?? 'v1';
     const previousSchemaFileName = this.getCachedSchemaFileName();
     const schemaFileName = this.buildSchemaFileName();
     const schemaUri = vscode.Uri.joinPath(storageUri, schemaFileName);
     try {
-      const openapi = await this.fetchOpenApi(baseUrl);
+      const openapi = await this.fetchOpenApi(baseUrl, version);
       const schema = buildUnionSchema(openapi);
       this.lastSchema = schema;
       await vscode.workspace.fs.writeFile(schemaUri, new TextEncoder().encode(JSON.stringify(schema, null, 2)));
@@ -66,8 +68,8 @@ export class SchemaProvider {
     return this.lastSchema;
   }
 
-  private async fetchOpenApi(baseUrl: string) {
-    const res = await axios.get(`${baseUrl}/api/v1/openapi.json`, {
+  private async fetchOpenApi(baseUrl: string, version: string) {
+    const res = await axios.get(`${baseUrl}/api/${version}/openapi.json`, {
       validateStatus: () => true,
       timeout: 10000,
     });
@@ -93,17 +95,9 @@ export class SchemaProvider {
   }
 
   private async configureYamlSchemas(schemaUri: vscode.Uri) {
-    const config = vscode.workspace.getConfiguration('yaml');
-    const existingSchemas = config.get<Record<string, string[]>>('schemas') ?? {};
-    const drasiConfig = vscode.workspace.getConfiguration('drasiServer');
-    const markedFiles = drasiConfig.get<string[]>('schemaFiles') ?? [];
-    const schemaKey = schemaUri.toString();
-    const schemas = {
-      ...removeDrasiSchemas(existingSchemas),
-      [schemaKey]: [...markedFiles],
-    };
-    await config.update('schemas', schemas, vscode.ConfigurationTarget.Workspace);
-    await config.update('schemas', schemas, vscode.ConfigurationTarget.Global);
+    // Schema association is now handled entirely by the contributor callback
+    // which detects drasi files by content (apiVersion: drasi.io/v1)
+    this.registerSchemaContributor(schemaUri);
   }
 
   private async ensureStorage(storageUri: vscode.Uri) {
@@ -140,9 +134,16 @@ export class SchemaProvider {
         if (!resource) {
           return undefined;
         }
-        const relativePath = vscode.workspace.asRelativePath(vscode.Uri.parse(resource), false).replace(/\\/g, '/');
-        const markedFiles = vscode.workspace.getConfiguration('drasiServer').get<string[]>('schemaFiles') ?? [];
-        return markedFiles.includes(relativePath) ? contentUri : undefined;
+        try {
+          const uri = vscode.Uri.parse(resource);
+          const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+          if (doc && isDrasiYaml(doc.getText())) {
+            return contentUri;
+          }
+        } catch {
+          // ignore
+        }
+        return undefined;
       },
       (uri: string) => {
         if (uri === contentUri && this.lastSchema) {
@@ -824,14 +825,4 @@ function isSelfRefSchema(schema: any, name: string) {
     return false;
   }
   return schema.$ref === `#/definitions/${name}` || schema.$ref === `#/components/schemas/${name}`;
-}
-
-function removeDrasiSchemas(schemas: Record<string, string[]>) {
-  const result: Record<string, string[]> = {};
-  for (const [key, value] of Object.entries(schemas)) {
-    if (!key.includes(SCHEMA_FILE_PREFIX) && !key.startsWith('drasi-schema://')) {
-      result[key] = value;
-    }
-  }
-  return result;
 }

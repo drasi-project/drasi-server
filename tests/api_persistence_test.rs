@@ -40,6 +40,7 @@ async fn test_persistence_creates_config_file_on_save() {
 
     // Create initial config
     let config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
@@ -72,6 +73,7 @@ async fn test_persistence_disabled_by_flag() {
 
     // Create config with persistence disabled
     let config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
@@ -140,6 +142,7 @@ async fn test_persistence_saves_complete_configuration() {
 
     // Create config with all components
     let config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
@@ -204,6 +207,7 @@ async fn test_persistence_atomic_write() {
 
     // Create initial config
     let initial_config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
@@ -225,6 +229,7 @@ async fn test_persistence_atomic_write() {
     };
 
     let updated_config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(9090),
         log_level: ConfigValue::Static("debug".to_string()),
@@ -260,6 +265,7 @@ async fn test_persistence_atomic_write() {
 async fn test_persistence_validation_before_save() {
     // Create invalid config (port = 0)
     let invalid_config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(0), // Invalid port
         log_level: ConfigValue::Static("info".to_string()),
@@ -371,6 +377,7 @@ fn test_multiple_queries_persist_correctly() {
 
     // Create config with both queries
     let config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),
@@ -425,6 +432,7 @@ fn test_adding_query_preserves_existing_queries() {
     };
 
     let initial_config = DrasiServerConfig {
+        api_version: None,
         host: ConfigValue::Static("127.0.0.1".to_string()),
         port: ConfigValue::Static(8080),
         log_level: ConfigValue::Static("info".to_string()),

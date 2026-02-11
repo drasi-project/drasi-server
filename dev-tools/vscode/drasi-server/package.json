@@ -154,11 +154,6 @@
           "title": "Use Server for Schemas"
         },
         {
-          "command": "drasi.schema.toggleFile",
-          "category": "Drasi Server",
-          "title": "Drasi Config"
-        },
-        {
           "command": "drasi.yaml.createSource",
           "category": "Drasi Server",
           "title": "Create Source YAML"
@@ -295,11 +290,6 @@
       ],
       "editor/context": [
         {
-          "command": "drasi.schema.toggleFile",
-          "when": "resourceLangId == yaml",
-          "group": "navigation@1"
-        },
-        {
           "command": "drasi.yaml.createSource",
           "when": "resourceLangId == yaml",
           "group": "navigation@2"
@@ -316,11 +306,6 @@
         }
       ],
       "editor/context.palette": [
-        {
-          "command": "drasi.schema.toggleFile",
-          "when": "resourceLangId == yaml",
-          "group": "navigation"
-        },
         {
           "command": "drasi.yaml.createSource",
           "when": "resourceLangId == yaml",
@@ -349,10 +334,6 @@
         {
           "command": "drasi.connection.use",
           "when": "true"
-        },
-        {
-          "command": "drasi.schema.toggleFile",
-          "when": "resourceLangId == yaml"
         },
         {
           "command": "drasi.yaml.createSource",
@@ -399,14 +380,6 @@
           "type": "string",
           "default": "",
           "description": "Active Drasi Server connection ID."
-        },
-        "drasiServer.schemaFiles": {
-          "type": "array",
-          "default": [],
-          "description": "Workspace-relative YAML files to treat as Drasi configs.",
-          "items": {
-            "type": "string"
-          }
         }
       }
     }
