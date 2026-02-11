@@ -39,6 +39,7 @@ ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
 
 # Set cross-compilation environment
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 ENV CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
 ENV CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
 ENV AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
