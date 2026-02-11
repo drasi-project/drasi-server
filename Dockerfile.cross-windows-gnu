@@ -3,21 +3,20 @@ FROM ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5
 # Install build dependencies on top of the stock cross image
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install LLVM 14 (Ubuntu 16.04's clang 3.8 is too old for bindgen) and build deps
+# Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
+# the stock clang 3.8 is too old for bindgen which needs >= 6.0)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates gnupg software-properties-common \
-    && curl -sSL https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-    && echo 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-14 main' > /etc/apt/sources.list.d/llvm.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates xz-utils \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    libclang-14-dev llvm-14 \
     gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
-    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \
+    && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
+       | tar xJ --strip-components=1 -C /usr/local
 
-ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
+ENV LIBCLANG_PATH=/usr/local/lib
 
 # Build libjq from source for Windows (MinGW)
 ENV JQ_VERSION=1.7.1

@@ -5,18 +5,17 @@ FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5
 # so we build jq from source with bundled oniguruma.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install LLVM 14 (Ubuntu 16.04's clang 3.8 is too old for bindgen)
+# Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
+# the stock clang 3.8 is too old for bindgen which needs >= 6.0)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates gnupg software-properties-common \
-    && curl -sSL https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-    && echo 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-14 main' > /etc/apt/sources.list.d/llvm.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates xz-utils \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
-    libclang-14-dev llvm-14 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -sSL https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz \
+       | tar xJ --strip-components=1 -C /usr/local
 
-ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
+ENV LIBCLANG_PATH=/usr/local/lib
 
 # Build libjq from source for aarch64 (with bundled oniguruma)
 ENV JQ_VERSION=1.7.1
