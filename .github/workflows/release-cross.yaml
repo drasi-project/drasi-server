@@ -15,6 +15,9 @@
 name: Build and Release (cross)
 
 on:
+  push:
+    branches:
+      - release-binary
   workflow_dispatch:
     inputs:
       tag:
