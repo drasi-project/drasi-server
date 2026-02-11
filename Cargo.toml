@@ -88,6 +88,7 @@ thiserror = "1.0"
 dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
+openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 # Testing utilities
