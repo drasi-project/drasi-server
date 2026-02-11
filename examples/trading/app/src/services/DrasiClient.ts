@@ -43,7 +43,7 @@ export class DrasiClient {
 
   constructor(baseUrl?: string) {
     // Use direct URL - Drasi Server should have CORS enabled
-    this.baseUrl = baseUrl || 'http://localhost:8080';
+    this.baseUrl = baseUrl || 'http://localhost:8280';
   this.sseClient = new DrasiSSEClient();
     this.initializeQueries();
   }
@@ -274,7 +274,7 @@ export class DrasiClient {
           autoStart: true,
           // SSE reaction config fields (camelCase for nested SseReactionConfigDto)
           host: '0.0.0.0',
-          port: 50051,
+          port: 8281,
           ssePath: '/events',
           heartbeatIntervalMs: 15000
         };
@@ -292,7 +292,7 @@ export class DrasiClient {
 
         // Start the reaction
         await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
-        return 'http://localhost:50051/events';
+        return 'http://localhost:8281/events';
       } else if (checkResponse.ok) {
         // Reaction exists, make sure it's running
         const reaction = await checkResponse.json();
@@ -312,7 +312,7 @@ export class DrasiClient {
       throw error;
     }
     // Fallback default
-    return 'http://localhost:50051/events';
+    return 'http://localhost:8281/events';
   }
 
   /**

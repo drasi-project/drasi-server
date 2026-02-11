@@ -83,40 +83,40 @@ fi
 echo ""
 echo "Checking for processes on demo ports..."
 
-# Port 8080: Drasi Server API
-result=$(kill_port 8080 "Drasi Server API")
+# Port 8280: Drasi Server API
+result=$(kill_port 8280 "Drasi Server API")
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "$result"
 elif [ $ret -eq 2 ]; then
-    echo -e "Port 8080: ${YELLOW}No process found${NC}"
+    echo -e "Port 8280: ${YELLOW}No process found${NC}"
 fi
 
-# Port 9000: HTTP Source
-result=$(kill_port 9000 "HTTP Source")
+# Port 9100: HTTP Source
+result=$(kill_port 9100 "HTTP Source")
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "$result"
 elif [ $ret -eq 2 ]; then
-    echo -e "Port 9000: ${YELLOW}No process found${NC}"
+    echo -e "Port 9100: ${YELLOW}No process found${NC}"
 fi
 
-# Port 5173: React app (Vite)
-result=$(kill_port 5173 "React app")
+# Port 5273: React app (Vite)
+result=$(kill_port 5273 "React app")
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "$result"
 elif [ $ret -eq 2 ]; then
-    echo -e "Port 5173: ${YELLOW}No process found${NC}"
+    echo -e "Port 5273: ${YELLOW}No process found${NC}"
 fi
 
-# Port 50051: SSE Stream
-result=$(kill_port 50051 "SSE Stream")
+# Port 8281: SSE Stream
+result=$(kill_port 8281 "SSE Stream")
 ret=$?
 if [ $ret -eq 0 ]; then
     echo "$result"
 elif [ $ret -eq 2 ]; then
-    echo -e "Port 50051: ${YELLOW}No process found${NC}"
+    echo -e "Port 8281: ${YELLOW}No process found${NC}"
 fi
 
 # Stop PostgreSQL

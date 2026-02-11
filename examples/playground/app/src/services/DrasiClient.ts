@@ -20,11 +20,11 @@ export class DrasiClient {
   private apiClient: AxiosInstance;
   private sseClient: DrasiSSEClient;
   private initialized = false;
-  private sseReactionBasePort = 50051;
+  private sseReactionBasePort = 8381;
   private queryReactions: Map<string, string> = new Map(); // queryId -> reactionId
 
   constructor(baseUrl?: string) {
-    const url = baseUrl || 'http://localhost:8080';
+    const url = baseUrl || 'http://localhost:8380';
     this.apiClient = axios.create({
       baseURL: url,
       headers: { 'Content-Type': 'application/json' },
@@ -420,7 +420,7 @@ export class DrasiClient {
    */
   private buildSSEEndpoint(reaction: any): string {
     const host = reaction.host || 'localhost';
-    const port = reaction.port || 50051;
+    const port = reaction.port || 8381;
     const path = reaction.sse_path || '/events';
     return `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${path}`;
   }

@@ -31,7 +31,7 @@ services:
       - "-c"
       - "max_wal_senders=10"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - getting_started_postgres_data:/var/lib/postgresql/data
     healthcheck:
