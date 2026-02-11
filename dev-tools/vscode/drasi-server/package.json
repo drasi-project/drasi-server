@@ -404,7 +404,8 @@
       }
     }
   },
-  "extensionDependencies": [
+  "extensionDependencies": [],
+  "extensionPack": [
     "redhat.vscode-yaml"
   ],
   "scripts": {
