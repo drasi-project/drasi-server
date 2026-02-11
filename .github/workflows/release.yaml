@@ -58,62 +58,11 @@ jobs:
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-  # Build binaries for multiple platforms using cross
-  build-binaries:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+  # Build all Linux binaries on a single runner using cross (the whole point of cross)
+  build-linux:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
     needs: determine-version
-    strategy:
-      matrix:
-        include:
-          # macOS ARM64 (Apple Silicon) — native build (can't cross-compile to macOS)
-          - target: aarch64-apple-darwin
-            artifact_suffix: aarch64-apple-darwin
-            os_name: macos
-            arch: aarch64
-            runner: macos-latest
-            use_cross: false
-
-          # Linux x86_64 (glibc) — cross build
-          - target: x86_64-unknown-linux-gnu
-            artifact_suffix: x86_64-linux-gnu
-            os_name: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            use_cross: true
-
-          # Linux ARM64 (glibc) — cross build
-          - target: aarch64-unknown-linux-gnu
-            artifact_suffix: aarch64-linux-gnu
-            os_name: linux
-            arch: aarch64
-            runner: ubuntu-latest
-            use_cross: true
-
-          # Linux x86_64 (musl) — cross build
-          - target: x86_64-unknown-linux-musl
-            artifact_suffix: x86_64-linux-musl
-            os_name: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            use_cross: true
-
-          # Linux ARM64 (musl) — cross build
-          - target: aarch64-unknown-linux-musl
-            artifact_suffix: aarch64-linux-musl
-            os_name: linux
-            arch: aarch64
-            runner: ubuntu-latest
-            use_cross: true
-
-          # Windows x86_64 — cross build
-          - target: x86_64-pc-windows-gnu
-            artifact_suffix: x86_64-windows
-            os_name: windows
-            arch: x86_64
-            runner: ubuntu-latest
-            use_cross: true
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -123,92 +72,174 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
       - name: Install cross
-        if: matrix.use_cross
         run: cargo install cross --version 0.2.5
 
-      - name: Install build dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install protobuf pkg-config jq oniguruma
-
-      - name: Build binary (cross)
-        if: matrix.use_cross
-        id: build-cross
+      - name: Build all Linux targets
         run: |
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
-          cross build --release --target ${{ matrix.target }} --bin drasi-server
+          TARGETS=(
+            "x86_64-unknown-linux-gnu:x86_64-linux-gnu"
+            "aarch64-unknown-linux-gnu:aarch64-linux-gnu"
+            "x86_64-unknown-linux-musl:x86_64-linux-musl"
+            "aarch64-unknown-linux-musl:aarch64-linux-musl"
+          )
 
-          # Determine binary extension
-          case "${{ matrix.target }}" in
-            *windows*) EXT=".exe" ;;
-            *) EXT="" ;;
-          esac
+          for entry in "${TARGETS[@]}"; do
+            TARGET="${entry%%:*}"
+            SUFFIX="${entry##*:}"
+            ARTIFACT_NAME="drasid-${VERSION}-${SUFFIX}"
 
-          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server${EXT}"
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}${EXT}"
+            echo "========================================="
+            echo "Building ${TARGET} -> ${ARTIFACT_NAME}"
+            echo "========================================="
 
-          if [[ -f "$SRC_BINARY" ]]; then
-            cp "$SRC_BINARY" "$ARTIFACT_NAME"
-            chmod +x "$ARTIFACT_NAME" 2>/dev/null || true
+            rustup target add "${TARGET}"
+            cross build --release --target "${TARGET}" --bin drasi-server
 
-            # For Windows targets, extract MinGW runtime DLLs from the cross
-            # Docker image (already cached from the cross build) and place
-            # them next to the .exe so they're included in the artifact.
-            if [[ "${{ matrix.target }}" == *windows* ]]; then
-              CROSS_IMAGE="ghcr.io/cross-rs/x86_64-pc-windows-gnu:0.2.5-cross-custom"
-              docker build -q -t "$CROSS_IMAGE" -f Dockerfile.cross-windows-gnu .
-              docker run --rm -v "$(pwd):/out" "$CROSS_IMAGE" \
-                sh -c 'cp /mingw-dlls/*.dll /out/'
-              echo "Bundled DLLs:"
-              ls -la *.dll
+            SRC="target/${TARGET}/release/drasi-server"
+            if [[ -f "$SRC" ]]; then
+              cp "$SRC" "$ARTIFACT_NAME"
+              chmod +x "$ARTIFACT_NAME"
+              echo "✓ ${ARTIFACT_NAME}"
+            else
+              echo "Error: Built binary not found at $SRC"
+              ls -la "target/${TARGET}/release/" || true
+              exit 1
             fi
+          done
 
-            echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
-          else
-            echo "Error: Built binary not found at $SRC_BINARY"
-            ls -la "target/${{ matrix.target }}/release/" || true
-            exit 1
-          fi
+          echo "All Linux binaries built:"
+          ls -lh drasid-*
 
-      - name: Build binary (macOS native)
-        if: "!matrix.use_cross"
-        id: build-native
+      - name: Upload x86_64-linux-gnu
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
+          path: drasid-*-x86_64-linux-gnu
+          if-no-files-found: error
+
+      - name: Upload aarch64-linux-gnu
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
+          path: drasid-*-aarch64-linux-gnu
+          if-no-files-found: error
+
+      - name: Upload x86_64-linux-musl
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
+          path: drasid-*-x86_64-linux-musl
+          if-no-files-found: error
+
+      - name: Upload aarch64-linux-musl
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
+          path: drasid-*-aarch64-linux-musl
+          if-no-files-found: error
+
+  # macOS requires a native build (can't cross-compile to macOS)
+  build-macos:
+    name: Build macOS (Apple Silicon)
+    runs-on: macos-latest
+    needs: determine-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install build dependencies
+        run: brew install protobuf pkg-config jq oniguruma
+
+      - name: Build binary
         run: |
           VERSION="${{ needs.determine-version.outputs.tag }}"
           VERSION="${VERSION#v}"
 
-          # Force static linking of libjq and libonig
           export LIBJQ_STATIC=1
           export LIBONIG_STATIC=1
           export JQ_LIB_DIR="$(brew --prefix jq)/lib"
 
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+          cargo build --release --target aarch64-apple-darwin --bin drasi-server
 
-          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
+          SRC_BINARY="target/aarch64-apple-darwin/release/drasi-server"
+          ARTIFACT_NAME="drasid-${VERSION}-aarch64-apple-darwin"
 
           if [[ -f "$SRC_BINARY" ]]; then
             cp "$SRC_BINARY" "$ARTIFACT_NAME"
             chmod +x "$ARTIFACT_NAME"
-            echo "name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
           else
             echo "Error: Built binary not found at $SRC_BINARY"
-            ls -la "target/${{ matrix.target }}/release/" || true
             exit 1
           fi
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-apple-darwin
+          path: drasid-*-aarch64-apple-darwin
+          if-no-files-found: error
+
+  # Windows cross-compiled from Linux (bundles MinGW runtime DLLs)
+  build-windows:
+    name: Build Windows (x86_64)
+    runs-on: ubuntu-latest
+    needs: determine-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cross
+        run: cargo install cross --version 0.2.5
+
+      - name: Build binary
+        run: |
+          VERSION="${{ needs.determine-version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          rustup target add x86_64-pc-windows-gnu
+          cross build --release --target x86_64-pc-windows-gnu --bin drasi-server
+
+          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-server.exe"
+          ARTIFACT_NAME="drasid-${VERSION}-x86_64-windows.exe"
+
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            ls -la "target/x86_64-pc-windows-gnu/release/" || true
+            exit 1
+          fi
+
+      - name: Extract MinGW runtime DLLs
+        run: |
+          # Build the cross image (instant — all layers cached from cross build)
+          # and copy the 3 required MinGW runtime DLLs
+          docker build -q -t drasi-cross-mingw -f Dockerfile.cross-windows-gnu .
+          docker run --rm -v "$(pwd):/out" drasi-cross-mingw \
+            sh -c 'cp /mingw-dlls/*.dll /out/'
+          echo "Bundled DLLs:"
+          ls -la *.dll
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-windows
           path: |
-            drasid-*
+            drasid-*-x86_64-windows.exe
             *.dll
           if-no-files-found: error
 
@@ -310,7 +341,7 @@ jobs:
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
     name: Test ${{ matrix.artifact_suffix }}
-    needs: [determine-version, build-binaries]
+    needs: [determine-version, build-linux, build-macos, build-windows]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
