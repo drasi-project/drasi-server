@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install build deps + pre-built LLVM 13 (last version with Ubuntu 16.04 builds;
 # the stock clang 3.8 is too old for bindgen which needs >= 6.0)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates xz-utils \
+    curl ca-certificates xz-utils libtinfo5 \
     perl make autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/* \
