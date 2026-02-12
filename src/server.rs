@@ -25,7 +25,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
-use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
+use crate::config::{DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -276,7 +276,7 @@ impl DrasiServer {
                     // Extract source, reaction, and query configs from the loaded config
                     let resolved_instances = config.resolved_instances(&mapper)?;
                     let (initial_source_configs, initial_reaction_configs, initial_query_configs) =
-                        Self::extract_component_configs(&resolved_instances);
+                        Self::extract_component_configs(&resolved_instances, &config);
 
                     // Persistence is enabled - create ConfigPersistence instance
                     let persistence = Arc::new(ConfigPersistence::new(
@@ -372,9 +372,12 @@ impl DrasiServer {
         Ok(())
     }
 
-    /// Extract source and reaction configs from resolved instances for persistence initialization
+    /// Extract source, reaction, and query configs from resolved instances for persistence initialization.
+    /// The `config` parameter provides the original `QueryConfigDto` entries (before resolution)
+    /// since the persistence layer stores queries as DTOs, not resolved `QueryConfig` domain objects.
     fn extract_component_configs(
         resolved_instances: &[ResolvedInstanceConfig],
+        config: &DrasiServerConfig,
     ) -> (
         IndexMap<String, IndexMap<String, SourceConfig>>,
         IndexMap<String, IndexMap<String, ReactionConfig>>,
@@ -386,6 +389,24 @@ impl DrasiServer {
         let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
             IndexMap::new();
         let mut query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>> = IndexMap::new();
+
+        // Build a mapping of instance_id → Vec<QueryConfigDto> from the raw config.
+        // Single-instance mode uses top-level fields; multi-instance uses the instances array.
+        let query_dto_by_instance: IndexMap<String, &Vec<QueryConfigDto>> =
+            if config.instances.is_empty() {
+                let mut m = IndexMap::new();
+                if let Some(first) = resolved_instances.first() {
+                    m.insert(first.id.clone(), &config.queries);
+                }
+                m
+            } else {
+                config
+                    .instances
+                    .iter()
+                    .zip(resolved_instances.iter())
+                    .map(|(raw, resolved)| (resolved.id.clone(), &raw.queries))
+                    .collect()
+            };
 
         for instance in resolved_instances {
             let mut sources = IndexMap::new();
@@ -400,9 +421,13 @@ impl DrasiServer {
             }
             reaction_configs.insert(instance.id.clone(), reactions);
 
-            // Note: queries are not extracted because they're stored as QueryConfigDto
-            // during config load and managed separately in persistence layer
-            query_configs.insert(instance.id.clone(), IndexMap::new());
+            let mut queries = IndexMap::new();
+            if let Some(dtos) = query_dto_by_instance.get(&instance.id) {
+                for dto in dtos.iter() {
+                    queries.insert(dto.id.clone(), dto.clone());
+                }
+            }
+            query_configs.insert(instance.id.clone(), queries);
         }
 
         (source_configs, reaction_configs, query_configs)
