@@ -49,7 +49,7 @@ sources:
   bootstrapProvider:
     kind: postgres
     host: localhost
-    port: 5432
+    port: 5632
     database: trading_demo
     user: drasi_user
     password: drasi_password
