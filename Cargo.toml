@@ -135,7 +135,6 @@ type_complexity = "allow"
 large_enum_variant = "allow"
 
 
-
 # Uncomment this section for local development to use path-based dependencies
 # [patch.crates-io]
 # drasi-core = { path = "../drasi-core/core" }
