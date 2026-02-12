@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Build and Release (cross)
+name: Build and Release
 
 on:
   workflow_dispatch:
@@ -157,7 +157,7 @@ jobs:
           - target: x86_64-apple-darwin
             artifact_suffix: x86_64-apple-darwin
             arch: x86_64
-            runner: macos-13
+            runner: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -166,6 +166,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install build dependencies
         run: brew install protobuf pkg-config jq oniguruma
@@ -363,9 +366,9 @@ jobs:
           - artifact_suffix: aarch64-apple-darwin
             runner: macos-latest
             binary_name_template: "drasid-VERSION-aarch64-apple-darwin"
-          # macOS x86_64 (Intel)
+          # macOS x86_64 (Intel) - cross-compiled, tested via Rosetta 2
           - artifact_suffix: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
             binary_name_template: "drasid-VERSION-x86_64-apple-darwin"
           # Linux x86_64
           - artifact_suffix: x86_64-linux-gnu
