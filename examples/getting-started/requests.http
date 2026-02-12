@@ -59,6 +59,18 @@ GET {{baseUrl}}/api/v1/queries
 ### Get the all-messages query results
 GET {{baseUrl}}/api/v1/queries/all-messages/results
 
+### Create the hello-world-senders query
+POST {{baseUrl}}/api/v1/queries
+Content-Type: application/json
+
+{
+    "id": "hello-world-senders",
+    "autoStart": true,
+    "sources": [{"sourceId": "my-postgres"}],
+    "query": "MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender",
+    "queryLanguage": "Cypher"
+}
+
 ### Get the hello-world-senders query results
 GET {{baseUrl}}/api/v1/queries/hello-world-senders/results
 
@@ -78,8 +90,22 @@ GET {{baseUrl}}/api/v1/queries/messages-with-location
 ### List all reactions
 GET {{baseUrl}}/api/v1/reactions
 
-### Get log-reaction reaction status
+### Get the log-reaction reaction status
 GET {{baseUrl}}/api/v1/reactions/log-reaction
 
-### Get browser-stream reaction status
+### Delete the log-reaction reaction
+DELETE {{baseUrl}}/api/v1/reactions/log-reaction
+
+### Create the log-reaction reaction with multiple queries
+POST {{baseUrl}}/api/v1/reactions
+Content-Type: application/json  
+
+{
+    "kind": "log",
+    "id": "log-reaction",
+    "queries": ["all-messages", "hello-world-senders"],
+    "autoStart": true
+}
+
+### Get the browser-stream reaction status
 GET {{baseUrl}}/api/v1/reactions/browser-stream
