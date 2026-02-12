@@ -278,23 +278,11 @@ jobs:
             exit 1
           fi
 
-      - name: Extract MinGW runtime DLLs
-        run: |
-          # Build the cross image (instant — all layers cached from cross build)
-          # and copy the 3 required MinGW runtime DLLs
-          docker build -q -t drasi-cross-mingw -f Dockerfile.cross-windows-gnu .
-          docker run --rm -v "$(pwd):/out" drasi-cross-mingw \
-            sh -c 'cp /mingw-dlls/*.dll /out/'
-          echo "Bundled DLLs:"
-          ls -la *.dll
-
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-windows
-          path: |
-            drasid-*-x86_64-windows.exe
-            *.dll
+          path: drasid-*-x86_64-windows.exe
           if-no-files-found: error
 
   # Build Docker images for Linux platforms
