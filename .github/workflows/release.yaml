@@ -219,6 +219,7 @@ jobs:
             export CFLAGS="-arch x86_64"
           else
             export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+            export ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
           fi
 
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
