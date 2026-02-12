@@ -62,7 +62,7 @@ async fn get_instance(
     registry.get(instance_id).await.ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            format!("Instance '{}' not found", instance_id),
+            format!("Instance '{instance_id}' not found"),
         )
     })
 }

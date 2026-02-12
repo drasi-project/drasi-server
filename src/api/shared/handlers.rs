@@ -71,8 +71,7 @@ pub async fn get_instance_or_error(
     match registry.get(instance_id).await {
         Some(core) => Ok(core),
         None => Err(Json(ApiResponse::error(format!(
-            "Instance '{}' not found",
-            instance_id
+            "Instance '{instance_id}' not found"
         )))),
     }
 }
@@ -190,7 +189,7 @@ pub async fn list_instances(
             .map(|v| v.len())
             .unwrap_or(0);
 
-        let base_path = format!("/api/v1/instances/{}", id);
+        let base_path = format!("/api/v1/instances/{id}");
         data.push(InstanceListItem {
             id: id.clone(),
             source_count,
@@ -198,9 +197,9 @@ pub async fn list_instances(
             reaction_count,
             links: crate::api::shared::InstanceLinks {
                 self_link: base_path.clone(),
-                sources: format!("{}/sources", base_path),
-                queries: format!("{}/queries", base_path),
-                reactions: format!("{}/reactions", base_path),
+                sources: format!("{base_path}/sources"),
+                queries: format!("{base_path}/queries"),
+                reactions: format!("{base_path}/reactions"),
             },
         });
     }
@@ -247,7 +246,7 @@ pub async fn create_instance(
 
     // Check if instance already exists
     if registry.contains(&instance_id).await {
-        log::info!("Instance '{}' already exists", instance_id);
+        log::info!("Instance '{instance_id}' already exists");
         return Err(StatusCode::CONFLICT);
     }
 
@@ -280,7 +279,7 @@ pub async fn create_instance(
 
     // Start the instance
     if let Err(e) = core.start().await {
-        log::error!("Failed to start instance '{}': {e}", instance_id);
+        log::error!("Failed to start instance '{instance_id}': {e}");
         return Ok(Json(ApiResponse::error(format!(
             "Failed to start instance: {e}"
         ))));
@@ -292,7 +291,7 @@ pub async fn create_instance(
         return Ok(Json(ApiResponse::error(e)));
     }
 
-    log::info!("Instance '{}' created successfully", instance_id);
+    log::info!("Instance '{instance_id}' created successfully");
 
     // Persist configuration if enabled
     if let Some(persistence) = &config_persistence {
@@ -315,7 +314,7 @@ pub async fn create_instance(
     }
 
     Ok(Json(ApiResponse::success(StatusResponse {
-        message: format!("Instance '{}' created successfully", instance_id),
+        message: format!("Instance '{instance_id}' created successfully"),
     })))
 }
 
@@ -1172,7 +1171,7 @@ impl Drop for AttachCleanupGuard {
         let id = self.reaction_id.clone();
         tokio::spawn(async move {
             let _ = core.remove_reaction(&id, true).await;
-            log::debug!("Cleaned up attach reaction: {}", id);
+            log::debug!("Cleaned up attach reaction: {id}");
         });
     }
 }

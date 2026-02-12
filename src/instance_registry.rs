@@ -85,7 +85,7 @@ impl InstanceRegistry {
     pub async fn add(&self, id: String, instance: Arc<DrasiLib>) -> Result<(), String> {
         let mut instances = self.instances.write().await;
         if instances.contains_key(&id) {
-            return Err(format!("Instance '{}' already exists", id));
+            return Err(format!("Instance '{id}' already exists"));
         }
         instances.insert(id, instance);
         Ok(())

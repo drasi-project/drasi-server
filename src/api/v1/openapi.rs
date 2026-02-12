@@ -189,23 +189,19 @@ impl utoipa::Modify for SourceReactionConfigSchemas {
         let components = openapi.components.get_or_insert_with(Default::default);
         let schemas = &mut components.schemas;
 
-        let source_variants = vec![
-            "MockSourceConfig",
+        let source_variants = ["MockSourceConfig",
             "HttpSourceConfig",
             "GrpcSourceConfig",
             "PostgresSourceConfig",
-            "PlatformSourceConfig",
-        ];
-        let reaction_variants = vec![
-            "LogReactionConfig",
+            "PlatformSourceConfig"];
+        let reaction_variants = ["LogReactionConfig",
             "HttpReactionConfig",
             "HttpAdaptiveReactionConfig",
             "GrpcReactionConfig",
             "GrpcAdaptiveReactionConfig",
             "SseReactionConfig",
             "PlatformReactionConfig",
-            "ProfilerReactionConfig",
-        ];
+            "ProfilerReactionConfig"];
 
         if !schemas.contains_key("SourceConfig") {
             schemas.insert(

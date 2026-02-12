@@ -45,11 +45,10 @@ fn test_openapi_has_create_instance_endpoint() {
 
     // Schema can be inline or a $ref - either is acceptable
     if let Some(schema_ref) = content["$ref"].as_str() {
-        println!("Schema ref: {}", schema_ref);
+        println!("Schema ref: {schema_ref}");
         assert!(
             schema_ref.contains("CreateInstanceRequest"),
-            "Schema should reference CreateInstanceRequest, got: {}",
-            schema_ref
+            "Schema should reference CreateInstanceRequest, got: {schema_ref}"
         );
     } else {
         // Inline schema - verify it has the required properties
@@ -98,7 +97,7 @@ fn test_openapi_create_instance_request_has_all_fields() {
     let (schema_name, schema) = create_instance_schema
         .expect("CreateInstanceRequest schema should exist in components/schemas");
 
-    println!("Found schema: {}", schema_name);
+    println!("Found schema: {schema_name}");
     println!("Schema: {}", serde_json::to_string_pretty(&schema).unwrap());
 
     let properties = &schema["properties"];
@@ -151,7 +150,7 @@ async fn test_create_instance_accepts_full_request() {
         .unwrap();
 
     let status = response.status();
-    println!("Response status: {}", status);
+    println!("Response status: {status}");
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     println!(
