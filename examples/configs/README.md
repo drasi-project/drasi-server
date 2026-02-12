@@ -119,7 +119,9 @@ sources:
   - kind: mock
     id: my-source
     autoStart: true              # Start source automatically (default: true)
-    dataType: "sensor"           # Mock data type: sensor, counter, generic
+    dataType:                    # Mock data type (tagged enum)
+      type: sensorReading        # Options: counter, sensorReading, generic
+      sensorCount: 5             # Optional for sensorReading (default: 5)
     intervalMs: 1000             # Generation interval in milliseconds
 
   - kind: http
