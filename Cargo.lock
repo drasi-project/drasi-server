@@ -1097,7 +1097,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1145,7 +1145,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "futures",
  "log",
@@ -1170,7 +1170,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1195,7 +1195,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1223,48 +1223,8 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dateparser",
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "drasi-query-cypher 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures",
- "hashers",
- "iso8601-duration",
- "itoa",
- "lazy_static",
- "log",
- "once_cell",
- "opentelemetry",
- "ordered-float",
- "priority-queue",
- "rand 0.8.5",
- "regex",
- "round",
- "serde",
- "serde_json",
- "statistical",
- "thiserror 1.0.69",
- "time",
- "time-macros",
- "tokio",
- "tokio-stream",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "drasi-core"
-version = "0.3.2"
-source = "git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq#d0706023d808127db685658c1608792945b7bdd4"
-dependencies = [
- "approx",
- "async-recursion",
- "async-stream",
- "async-trait",
- "caches",
- "chrono",
- "chrono-tz",
- "dateparser",
- "drasi-query-ast 0.3.2 (git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq)",
- "drasi-query-cypher 0.3.2 (git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq)",
+ "drasi-query-ast",
+ "drasi-query-cypher",
  "futures",
  "hashers",
  "iso8601-duration",
@@ -1296,7 +1256,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7eb3e6a99ff6baacd4abdb3c51e76b4754e7b7eaa62eafd07883f106255ae2e"
 dependencies = [
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
 ]
 
 [[package]]
@@ -1305,7 +1265,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86d920978fd2e39e14a89741931583bb46180f9cf01e250634ba714406ea5b61"
 dependencies = [
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
 ]
 
 [[package]]
@@ -1318,8 +1278,8 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bit-set",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
+ "drasi-query-ast",
  "fnv",
  "hashers",
  "log",
@@ -1342,8 +1302,8 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bit-set",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
+ "drasi-query-ast",
  "fastmurmur3",
  "fnv",
  "hashers",
@@ -1359,19 +1319,19 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.3.3"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33cea46e814cf1015b19ea9ccce9b507da0d1af7882516cbb0ffd5cebd249c88"
+checksum = "f2c433f5e954847ff534023c55f53cf59ce23524f40c3e7fa59a23c7a6b48f00"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-functions-cypher",
  "drasi-functions-gql",
  "drasi-middleware",
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "drasi-query-cypher 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-query-ast",
+ "drasi-query-cypher",
  "drasi-query-gql",
  "futures",
  "log",
@@ -1390,12 +1350,13 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.3.3"
-source = "git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq#d0706023d808127db685658c1608792945b7bdd4"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa937215dd98c9a886c5485f70fb444388b50c8bccc4dec89550006543d7a924"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
- "drasi-core 0.3.2 (git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq)",
+ "drasi-core",
  "hex",
  "jq-rs",
  "jsonpath-rust",
@@ -1418,33 +1379,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "drasi-query-ast"
-version = "0.3.2"
-source = "git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq#d0706023d808127db685658c1608792945b7bdd4"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "drasi-query-cypher"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "079774bd75a27f127efc75f43754b8ddffdddbbf8b75523969a0a355ccffb7fa"
 dependencies = [
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "peg",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "drasi-query-cypher"
-version = "0.3.2"
-source = "git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq#d0706023d808127db685658c1608792945b7bdd4"
-dependencies = [
- "drasi-query-ast 0.3.2 (git+https://github.com/ruokun-niu/drasi-core.git?branch=clippy-fix-for-jq)",
+ "drasi-query-ast",
  "peg",
  "serde",
  "serde_json",
@@ -1456,7 +1396,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fbaee580b43bfe89f1c9ffb16a759208ded7b9a13fa26e5a5710d4804003acb"
 dependencies = [
- "drasi-query-ast 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-query-ast",
  "peg",
  "serde",
  "serde_json",
@@ -1519,7 +1459,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "futures",
  "handlebars 5.1.2",
@@ -1566,7 +1506,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "futures",
  "handlebars 5.1.2",
@@ -1589,7 +1529,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1778,7 +1718,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1805,7 +1745,7 @@ dependencies = [
  "axum 0.7.9",
  "base64 0.22.1",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "handlebars 6.4.0",
  "hex",
@@ -1841,7 +1781,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "log",
  "ordered-float",
@@ -1864,7 +1804,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "futures",
  "log",
@@ -1891,7 +1831,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "drasi-core 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "drasi-core",
  "drasi-lib",
  "futures",
  "hmac",
@@ -2998,6 +2938,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "jq-rs"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cfaeae42ef96b227ab787558cc7bbd5f1dfe96b4df7c63f92853017751b0e4"
+dependencies = [
+ "jq-sys",
+]
+
+[[package]]
+name = "jq-sys"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81b65b7e54bd2fffc8cb20cbcf19f40d3158dab5cf5b5adb1f65f9b35eba4c48"
+dependencies = [
+ "pkg-config",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3005,6 +2963,21 @@ checksum = "8c942ebf8e95485ca0d52d97da7c5a2c387d0e7f0ba4c35e93bfcaee045955b3"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "jsonpath-rust"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d8fe85bd70ff715f31ce8c739194b423d79811a19602115d611a3ec85d6200"
+dependencies = [
+ "lazy_static",
+ "once_cell",
+ "pest",
+ "pest_derive",
+ "regex",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
