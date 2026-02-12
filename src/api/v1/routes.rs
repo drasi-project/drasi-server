@@ -66,9 +66,15 @@ fn build_dynamic_instance_router() -> Router {
         .route("/sources", put(handlers::upsert_source_handler))
         .route("/sources/:id", get(handlers::get_source))
         .route("/sources/:id/events", get(handlers::get_source_events))
-        .route("/sources/:id/events/stream", get(handlers::stream_source_events))
+        .route(
+            "/sources/:id/events/stream",
+            get(handlers::stream_source_events),
+        )
         .route("/sources/:id/logs", get(handlers::get_source_logs))
-        .route("/sources/:id/logs/stream", get(handlers::stream_source_logs))
+        .route(
+            "/sources/:id/logs/stream",
+            get(handlers::stream_source_logs),
+        )
         .route("/sources/:id", delete(handlers::delete_source))
         .route("/sources/:id/start", post(handlers::start_source))
         .route("/sources/:id/stop", post(handlers::stop_source))
@@ -77,7 +83,10 @@ fn build_dynamic_instance_router() -> Router {
         .route("/queries", post(handlers::create_query))
         .route("/queries/:id", get(handlers::get_query))
         .route("/queries/:id/events", get(handlers::get_query_events))
-        .route("/queries/:id/events/stream", get(handlers::stream_query_events))
+        .route(
+            "/queries/:id/events/stream",
+            get(handlers::stream_query_events),
+        )
         .route("/queries/:id/logs", get(handlers::get_query_logs))
         .route("/queries/:id/logs/stream", get(handlers::stream_query_logs))
         .route("/queries/:id", delete(handlers::delete_query))
@@ -91,9 +100,15 @@ fn build_dynamic_instance_router() -> Router {
         .route("/reactions", put(handlers::upsert_reaction_handler))
         .route("/reactions/:id", get(handlers::get_reaction))
         .route("/reactions/:id/events", get(handlers::get_reaction_events))
-        .route("/reactions/:id/events/stream", get(handlers::stream_reaction_events))
+        .route(
+            "/reactions/:id/events/stream",
+            get(handlers::stream_reaction_events),
+        )
         .route("/reactions/:id/logs", get(handlers::get_reaction_logs))
-        .route("/reactions/:id/logs/stream", get(handlers::stream_reaction_logs))
+        .route(
+            "/reactions/:id/logs/stream",
+            get(handlers::stream_reaction_logs),
+        )
         .route("/reactions/:id", delete(handlers::delete_reaction))
         .route("/reactions/:id/start", post(handlers::start_reaction))
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
@@ -107,10 +122,19 @@ fn build_default_instance_router() -> Router {
         .route("/sources", post(handlers::create_source_default))
         .route("/sources", put(handlers::upsert_source_default))
         .route("/sources/:id", get(handlers::get_source_default))
-        .route("/sources/:id/events", get(handlers::get_source_events_default))
-        .route("/sources/:id/events/stream", get(handlers::stream_source_events_default))
+        .route(
+            "/sources/:id/events",
+            get(handlers::get_source_events_default),
+        )
+        .route(
+            "/sources/:id/events/stream",
+            get(handlers::stream_source_events_default),
+        )
         .route("/sources/:id/logs", get(handlers::get_source_logs_default))
-        .route("/sources/:id/logs/stream", get(handlers::stream_source_logs_default))
+        .route(
+            "/sources/:id/logs/stream",
+            get(handlers::stream_source_logs_default),
+        )
         .route("/sources/:id", delete(handlers::delete_source_default))
         .route("/sources/:id/start", post(handlers::start_source_default))
         .route("/sources/:id/stop", post(handlers::stop_source_default))
@@ -118,25 +142,55 @@ fn build_default_instance_router() -> Router {
         .route("/queries", get(handlers::list_queries_default))
         .route("/queries", post(handlers::create_query_default))
         .route("/queries/:id", get(handlers::get_query_default))
-        .route("/queries/:id/events", get(handlers::get_query_events_default))
-        .route("/queries/:id/events/stream", get(handlers::stream_query_events_default))
+        .route(
+            "/queries/:id/events",
+            get(handlers::get_query_events_default),
+        )
+        .route(
+            "/queries/:id/events/stream",
+            get(handlers::stream_query_events_default),
+        )
         .route("/queries/:id/logs", get(handlers::get_query_logs_default))
-        .route("/queries/:id/logs/stream", get(handlers::stream_query_logs_default))
+        .route(
+            "/queries/:id/logs/stream",
+            get(handlers::stream_query_logs_default),
+        )
         .route("/queries/:id", delete(handlers::delete_query_default))
         .route("/queries/:id/start", post(handlers::start_query_default))
         .route("/queries/:id/stop", post(handlers::stop_query_default))
-        .route("/queries/:id/results", get(handlers::get_query_results_default))
-        .route("/queries/:id/attach", get(handlers::attach_query_stream_default))
+        .route(
+            "/queries/:id/results",
+            get(handlers::get_query_results_default),
+        )
+        .route(
+            "/queries/:id/attach",
+            get(handlers::attach_query_stream_default),
+        )
         // Reaction routes (default instance)
         .route("/reactions", get(handlers::list_reactions_default))
         .route("/reactions", post(handlers::create_reaction_default))
         .route("/reactions", put(handlers::upsert_reaction_default))
         .route("/reactions/:id", get(handlers::get_reaction_default))
-        .route("/reactions/:id/events", get(handlers::get_reaction_events_default))
-        .route("/reactions/:id/events/stream", get(handlers::stream_reaction_events_default))
-        .route("/reactions/:id/logs", get(handlers::get_reaction_logs_default))
-        .route("/reactions/:id/logs/stream", get(handlers::stream_reaction_logs_default))
+        .route(
+            "/reactions/:id/events",
+            get(handlers::get_reaction_events_default),
+        )
+        .route(
+            "/reactions/:id/events/stream",
+            get(handlers::stream_reaction_events_default),
+        )
+        .route(
+            "/reactions/:id/logs",
+            get(handlers::get_reaction_logs_default),
+        )
+        .route(
+            "/reactions/:id/logs/stream",
+            get(handlers::stream_reaction_logs_default),
+        )
         .route("/reactions/:id", delete(handlers::delete_reaction_default))
-        .route("/reactions/:id/start", post(handlers::start_reaction_default))
+        .route(
+            "/reactions/:id/start",
+            post(handlers::start_reaction_default),
+        )
         .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
 }

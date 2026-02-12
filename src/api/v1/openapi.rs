@@ -20,30 +20,29 @@
 
 use utoipa::OpenApi;
 
-use utoipa::openapi::schema::{OneOf, Ref, Schema};
-use utoipa::openapi::RefOr;
 use crate::api::models::{
-    ApplicationBootstrapConfigDto, BootstrapProviderConfig, CallSpecDto, ConfigValueBoolSchema,
+    ApplicationBootstrapConfigDto, AuthConfigDto, BearerConfigDto, BootstrapProviderConfig,
+    CallSpecDto, ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
     ConfigValueSslModeSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
-    ConfigValueU64Schema, ConfigValueUsizeSchema, GrpcAdaptiveReactionConfigDto,
-    GrpcReactionConfigDto, GrpcSourceConfigDto, HttpAdaptiveReactionConfigDto, HttpQueryConfigDto,
-    HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto,
+    ConfigValueU64Schema, ConfigValueUsizeSchema, CorsConfigDto, EffectiveFromConfigDto,
+    ElementTemplateDto, ElementTypeDto, ErrorBehaviorDto, GrpcAdaptiveReactionConfigDto,
+    GrpcReactionConfigDto, GrpcSourceConfigDto, HttpAdaptiveReactionConfigDto, HttpMethodDto,
+    HttpQueryConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogLevelDto, LogMessageDto,
+    LogReactionConfigDto, MappingConditionDto, MockSourceConfigDto, OperationTypeDto,
     PlatformBootstrapConfigDto, PlatformReactionConfigDto, PlatformSourceConfigDto,
     PostgresBootstrapConfigDto, PostgresSourceConfigDto, ProfilerReactionConfigDto, QueryConfigDto,
-    RedbStateStoreConfigDto, ScriptFileBootstrapConfigDto, SourceSubscriptionConfigDto,
-    StateStoreConfig, TableKeyConfigDto, ComponentEventDto, LogMessageDto, ComponentStatusDto,
-    ComponentTypeDto, LogLevelDto,
-    WebhookConfigDto, CorsConfigDto, ErrorBehaviorDto, WebhookRouteDto, HttpMethodDto,
-    AuthConfigDto, SignatureConfigDto, SignatureAlgorithmDto, SignatureEncodingDto, BearerConfigDto,
-    WebhookMappingDto, MappingConditionDto, OperationTypeDto, ElementTypeDto,
-    EffectiveFromConfigDto, TimestampFormatDto, ElementTemplateDto,
+    RedbStateStoreConfigDto, ScriptFileBootstrapConfigDto, SignatureAlgorithmDto,
+    SignatureConfigDto, SignatureEncodingDto, SourceSubscriptionConfigDto, StateStoreConfig,
+    TableKeyConfigDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
 };
+use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
     HealthResponse, InstanceLinks, InstanceListItem, StatusResponse,
 };
-use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
+use utoipa::openapi::schema::{OneOf, Ref, Schema};
+use utoipa::openapi::RefOr;
 
 #[derive(OpenApi)]
 #[openapi(

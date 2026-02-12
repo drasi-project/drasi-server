@@ -284,14 +284,8 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
     let table_keys = prompt_table_keys(&tables)?;
 
     // Ask about bootstrap provider
-    let bootstrap_provider = prompt_bootstrap_provider_for_postgres(
-        &host,
-        port,
-        &database,
-        &user,
-        &password,
-        &tables,
-    )?;
+    let bootstrap_provider =
+        prompt_bootstrap_provider_for_postgres(&host, port, &database, &user, &password, &tables)?;
 
     Ok(SourceConfig::Postgres {
         id,

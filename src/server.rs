@@ -25,7 +25,9 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
-use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig};
+use crate::config::{
+    DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
+};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
@@ -264,7 +266,7 @@ impl DrasiServer {
 
         // Wrap the instance map in Arc for sharing
         let instances = Arc::new(instance_map);
-        
+
         // Create the instance registry from the map
         let registry = InstanceRegistry::from_map((*instances).clone());
 
@@ -313,8 +315,12 @@ impl DrasiServer {
 
         // Start web API if enabled
         if self.enable_api {
-            self.start_api(instances.clone(), registry.clone(), config_persistence.clone())
-                .await?;
+            self.start_api(
+                instances.clone(),
+                registry.clone(),
+                config_persistence.clone(),
+            )
+            .await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.port
@@ -344,11 +350,8 @@ impl DrasiServer {
         let openapi_v1 = api::ApiDocV1::openapi();
 
         // Build the v1 API router
-        let v1_router = api::build_v1_router(
-            registry,
-            self.read_only.clone(),
-            config_persistence.clone(),
-        );
+        let v1_router =
+            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
 
         // Build the main application router
         let app = Router::new()

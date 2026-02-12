@@ -372,7 +372,10 @@ fn test_postgres_source_generates_valid_yaml() {
         yaml.contains("kind: postgres"),
         "Should contain kind: postgres"
     );
-    assert!(yaml.contains("bootstrapProvider:"), "Should contain bootstrapProvider");
+    assert!(
+        yaml.contains("bootstrapProvider:"),
+        "Should contain bootstrapProvider"
+    );
     assert!(yaml.contains("database:"), "Should contain database");
     assert!(yaml.contains("user:"), "Should contain user");
     assert!(yaml.contains("slotName:"), "Should contain slotName");

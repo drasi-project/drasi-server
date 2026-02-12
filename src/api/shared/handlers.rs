@@ -27,26 +27,26 @@ use axum::{
     },
 };
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 use std::sync::Arc;
-use std::{convert::Infallible};
 
 use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
     InstanceListItem, StatusResponse,
 };
 use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
-use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::models::ConfigValue;
+use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, DrasiLib};
+use drasi_reaction_application::subscription::SubscriptionOptions;
+use drasi_reaction_application::ApplicationReaction;
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
 use uuid::Uuid;
-use drasi_reaction_application::ApplicationReaction;
-use drasi_reaction_application::subscription::SubscriptionOptions;
 
 /// Path parameters for instance-specific routes
 #[derive(Debug, Deserialize)]
@@ -158,7 +158,6 @@ pub async fn persist_after_operation(
     }
 }
 
-
 /// List available API versions
 pub async fn list_api_versions() -> Json<ApiVersionsResponse> {
     Json(ApiVersionsResponse {
@@ -181,12 +180,16 @@ pub async fn list_instances(
 ) -> Json<ApiResponse<Vec<InstanceListItem>>> {
     let instances = registry.list().await;
     let mut data = Vec::with_capacity(instances.len());
-    
+
     for (id, instance) in instances {
         let source_count = instance.list_sources().await.map(|v| v.len()).unwrap_or(0);
         let query_count = instance.list_queries().await.map(|v| v.len()).unwrap_or(0);
-        let reaction_count = instance.list_reactions().await.map(|v| v.len()).unwrap_or(0);
-        
+        let reaction_count = instance
+            .list_reactions()
+            .await
+            .map(|v| v.len())
+            .unwrap_or(0);
+
         let base_path = format!("/api/v1/instances/{}", id);
         data.push(InstanceListItem {
             id: id.clone(),
@@ -212,15 +215,15 @@ pub async fn list_instances(
 pub struct CreateInstanceRequest {
     /// Unique identifier for the new instance
     pub id: String,
-    
+
     /// Whether to use persistent indexing (RocksDB). Default: false (in-memory)
     #[serde(default)]
     pub persist_index: Option<bool>,
-    
+
     /// Default capacity for priority queues (cascades to queries/reactions)
     #[serde(default)]
     pub default_priority_queue_capacity: Option<usize>,
-    
+
     /// Default capacity for dispatch buffers (cascades to queries/reactions)
     #[serde(default)]
     pub default_dispatch_buffer_capacity: Option<usize>,
@@ -250,19 +253,19 @@ pub async fn create_instance(
 
     // Create a new DrasiLib instance with optional configuration
     let mut builder = DrasiLib::builder().with_id(&instance_id);
-    
+
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
     }
-    
+
     if let Some(capacity) = request.default_dispatch_buffer_capacity {
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
-    
+
     // Note: persist_index requires RocksDB setup which needs a data path
     // For now, we skip persistent index for dynamically created instances
     // TODO: Add support for persistent index with configurable data path
-    
+
     let core = builder.build().await;
 
     let core = match core {
@@ -297,8 +300,12 @@ pub async fn create_instance(
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
             state_store: None,
-            default_priority_queue_capacity: request.default_priority_queue_capacity.map(ConfigValue::Static),
-            default_dispatch_buffer_capacity: request.default_dispatch_buffer_capacity.map(ConfigValue::Static),
+            default_priority_queue_capacity: request
+                .default_priority_queue_capacity
+                .map(ConfigValue::Static),
+            default_dispatch_buffer_capacity: request
+                .default_dispatch_buffer_capacity
+                .map(ConfigValue::Static),
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
@@ -464,7 +471,9 @@ pub async fn upsert_source_handler(
         log::info!("Source '{source_id}' updated successfully");
 
         if let Some(persistence) = &config_persistence {
-            persistence.unregister_source(&instance_id, &source_id).await;
+            persistence
+                .unregister_source(&instance_id, &source_id)
+                .await;
             persistence.register_source(&instance_id, config).await;
         }
 
@@ -557,7 +566,10 @@ pub async fn get_source_events(
         .get_source_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let collected = events
+        .map(ComponentEventDto::from)
+        .collect::<Vec<_>>()
+        .await;
     let data = apply_limit(collected, query.limit);
     Ok(Json(ApiResponse::success(data)))
 }
@@ -574,8 +586,8 @@ pub async fn stream_source_events(
         .subscribe_source_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -622,8 +634,8 @@ pub async fn stream_source_logs(
         .subscribe_source_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -890,7 +902,10 @@ pub async fn get_query_events(
         .get_query_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let collected = events
+        .map(ComponentEventDto::from)
+        .collect::<Vec<_>>()
+        .await;
     let data = apply_limit(collected, query.limit);
     Ok(Json(ApiResponse::success(data)))
 }
@@ -907,8 +922,8 @@ pub async fn stream_query_events(
         .subscribe_query_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -955,8 +970,8 @@ pub async fn stream_query_logs(
         .subscribe_query_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -1067,7 +1082,10 @@ pub async fn get_query_results(
 pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ApiResponse<StatusResponse>>)> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>,
+    (StatusCode, Json<ApiResponse<StatusResponse>>),
+> {
     if let Err(e) = core.get_query_config(&id).await {
         let error_msg = e.to_string();
         let status = if error_msg.contains("not found") {
@@ -1082,7 +1100,10 @@ pub async fn attach_query_stream(
     let (reaction, handle) = ApplicationReaction::new(reaction_id.clone(), vec![id.clone()]);
     if let Err(e) = core.add_reaction(reaction).await {
         let error_msg = format!("Failed to add attach reaction: {e}");
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::error(error_msg)),
+        ));
     }
 
     if let Err(e) = core.start_reaction(&reaction_id).await {
@@ -1090,7 +1111,10 @@ pub async fn attach_query_stream(
         if !error_msg.contains("already running") {
             let _ = core.remove_reaction(&reaction_id, true).await;
             let error_msg = format!("Failed to start attach reaction: {error_msg}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::error(error_msg)),
+            ));
         }
     }
 
@@ -1100,7 +1124,10 @@ pub async fn attach_query_stream(
         Err(e) => {
             let _ = core.remove_reaction(&reaction_id, true).await;
             let error_msg = format!("Failed to subscribe to attach reaction: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(error_msg))));
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::error(error_msg)),
+            ));
         }
     };
 
@@ -1302,7 +1329,9 @@ pub async fn upsert_reaction_handler(
         log::info!("Reaction '{reaction_id}' updated successfully");
 
         if let Some(persistence) = &config_persistence {
-            persistence.unregister_reaction(&instance_id, &reaction_id).await;
+            persistence
+                .unregister_reaction(&instance_id, &reaction_id)
+                .await;
             persistence.register_reaction(&instance_id, config).await;
         }
 
@@ -1395,7 +1424,10 @@ pub async fn get_reaction_events(
         .get_reaction_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let collected = events.map(ComponentEventDto::from).collect::<Vec<_>>().await;
+    let collected = events
+        .map(ComponentEventDto::from)
+        .collect::<Vec<_>>()
+        .await;
     let data = apply_limit(collected, query.limit);
     Ok(Json(ApiResponse::success(data)))
 }
@@ -1412,8 +1444,8 @@ pub async fn stream_reaction_events(
         .subscribe_reaction_events(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(ComponentEventDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -1460,8 +1492,8 @@ pub async fn stream_reaction_logs(
         .subscribe_reaction_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let history_stream = stream::iter(history.into_iter().map(LogMessageDto::from))
-        .filter_map(sse_event_async);
+    let history_stream =
+        stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
         loop {
             match receiver.recv().await {
@@ -1548,4 +1580,3 @@ pub async fn stop_reaction(
         }
     }
 }
-

@@ -35,9 +35,9 @@ use drasi_server::api;
 use drasi_server::api::v1::handlers;
 use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
-use std::time::Duration;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tower::ServiceExt;
 
@@ -52,10 +52,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     let auto_source = create_mock_source("auto-source");
 
     // Create mock reaction instances
-    let test_reaction = create_mock_reaction(
-        "test-reaction",
-        vec!["reaction-query".to_string()],
-    );
+    let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
     let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
 
     // Create a minimal DrasiLib using the builder with mock instances
@@ -151,14 +148,23 @@ async fn test_instances_endpoint() {
     assert_eq!(json["success"], true);
     let instances = json["data"].as_array().unwrap();
     let test_instance = instances.iter().find(|i| i["id"] == "test-server").unwrap();
-    
+
     // Verify richer InstanceDto fields
     assert!(test_instance["source_count"].as_u64().unwrap() >= 3); // test-source, query-source, auto-source
     assert!(test_instance["reaction_count"].as_u64().unwrap() >= 2); // test-reaction, auto-reaction
     assert!(test_instance["links"]["self"].is_string());
-    assert!(test_instance["links"]["sources"].as_str().unwrap().contains("/sources"));
-    assert!(test_instance["links"]["queries"].as_str().unwrap().contains("/queries"));
-    assert!(test_instance["links"]["reactions"].as_str().unwrap().contains("/reactions"));
+    assert!(test_instance["links"]["sources"]
+        .as_str()
+        .unwrap()
+        .contains("/sources"));
+    assert!(test_instance["links"]["queries"]
+        .as_str()
+        .unwrap()
+        .contains("/queries"));
+    assert!(test_instance["links"]["reactions"]
+        .as_str()
+        .unwrap()
+        .contains("/reactions"));
 }
 
 #[tokio::test]
@@ -382,7 +388,7 @@ async fn test_reaction_lifecycle_via_api() {
 async fn test_source_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
     registry.source.emit_log("source log entry").await;
-    sleep(Duration::from_millis(200)).await;  // Increased for timing stability
+    sleep(Duration::from_millis(200)).await; // Increased for timing stability
 
     let response = router
         .oneshot(
@@ -715,5 +721,8 @@ async fn test_query_attach_creates_temporary_reaction() {
     let attach_reaction = reactions_after
         .iter()
         .find(|(id, _)| id.starts_with("__attach_attach-reaction-test_"));
-    assert!(attach_reaction.is_some(), "Expected temporary attach reaction to be created");
+    assert!(
+        attach_reaction.is_some(),
+        "Expected temporary attach reaction to be created"
+    );
 }

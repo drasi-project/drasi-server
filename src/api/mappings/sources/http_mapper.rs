@@ -59,7 +59,11 @@ fn map_webhook_config(
 ) -> Result<WebhookConfig, MappingError> {
     Ok(WebhookConfig {
         error_behavior: map_error_behavior(&dto.error_behavior),
-        cors: dto.cors.as_ref().map(|c| map_cors_config(c, resolver)).transpose()?,
+        cors: dto
+            .cors
+            .as_ref()
+            .map(|c| map_cors_config(c, resolver))
+            .transpose()?,
         routes: dto
             .routes
             .iter()
@@ -68,10 +72,7 @@ fn map_webhook_config(
     })
 }
 
-fn map_cors_config(
-    dto: &CorsConfigDto,
-    resolver: &DtoMapper,
-) -> Result<CorsConfig, MappingError> {
+fn map_cors_config(dto: &CorsConfigDto, resolver: &DtoMapper) -> Result<CorsConfig, MappingError> {
     Ok(CorsConfig {
         enabled: dto.enabled,
         allow_origins: resolver.resolve_string_vec(&dto.allow_origins)?,
@@ -98,7 +99,11 @@ fn map_webhook_route(
     Ok(WebhookRoute {
         path: resolver.resolve_string(&dto.path)?,
         methods: dto.methods.iter().map(map_http_method).collect(),
-        auth: dto.auth.as_ref().map(|a| map_auth_config(a, resolver)).transpose()?,
+        auth: dto
+            .auth
+            .as_ref()
+            .map(|a| map_auth_config(a, resolver))
+            .transpose()?,
         error_behavior: dto.error_behavior.as_ref().map(map_error_behavior),
         mappings: dto
             .mappings
@@ -118,10 +123,7 @@ fn map_http_method(dto: &HttpMethodDto) -> HttpMethod {
     }
 }
 
-fn map_auth_config(
-    dto: &AuthConfigDto,
-    resolver: &DtoMapper,
-) -> Result<AuthConfig, MappingError> {
+fn map_auth_config(dto: &AuthConfigDto, resolver: &DtoMapper) -> Result<AuthConfig, MappingError> {
     Ok(AuthConfig {
         signature: dto
             .signature
@@ -235,12 +237,10 @@ fn map_effective_from(
         EffectiveFromConfigDto::Simple(v) => {
             Ok(EffectiveFromConfig::Simple(resolver.resolve_string(v)?))
         }
-        EffectiveFromConfigDto::Explicit { value, format } => {
-            Ok(EffectiveFromConfig::Explicit {
-                value: resolver.resolve_string(value)?,
-                format: map_timestamp_format(format),
-            })
-        }
+        EffectiveFromConfigDto::Explicit { value, format } => Ok(EffectiveFromConfig::Explicit {
+            value: resolver.resolve_string(value)?,
+            format: map_timestamp_format(format),
+        }),
     }
 }
 

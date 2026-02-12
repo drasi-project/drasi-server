@@ -28,11 +28,11 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
+use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
     StatusResponse,
 };
-use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 
@@ -60,7 +60,10 @@ async fn get_instance(
     instance_id: &str,
 ) -> Result<Arc<drasi_lib::DrasiLib>, (StatusCode, String)> {
     registry.get(instance_id).await.ok_or_else(|| {
-        (StatusCode::NOT_FOUND, format!("Instance '{}' not found", instance_id))
+        (
+            StatusCode::NOT_FOUND,
+            format!("Instance '{}' not found", instance_id),
+        )
     })
 }
 
@@ -68,9 +71,10 @@ async fn get_instance(
 async fn get_default(
     registry: &InstanceRegistry,
 ) -> Result<(String, Arc<drasi_lib::DrasiLib>), (StatusCode, String)> {
-    registry.get_default().await.ok_or_else(|| {
-        (StatusCode::NOT_FOUND, "No instances configured".to_string())
-    })
+    registry
+        .get_default()
+        .await
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "No instances configured".to_string()))
 }
 
 /// List available API versions
@@ -197,7 +201,10 @@ pub async fn create_source_handler(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::create_source_handler(
         Extension(core),
         Extension(read_only),
@@ -244,7 +251,10 @@ pub async fn upsert_source_handler(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_source_handler(
         Extension(core),
         Extension(read_only),
@@ -278,7 +288,10 @@ pub async fn get_source(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source(
         Extension(core),
         Extension(config_persistence),
@@ -309,7 +322,10 @@ pub async fn get_source_events(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -330,8 +346,14 @@ pub async fn get_source_events(
 pub async fn stream_source_events(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_events(Extension(core), Path(id)).await
 }
 
@@ -355,7 +377,10 @@ pub async fn get_source_logs(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_source_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -376,8 +401,14 @@ pub async fn get_source_logs(
 pub async fn stream_source_logs(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_logs(Extension(core), Path(id)).await
 }
 
@@ -400,7 +431,10 @@ pub async fn delete_source(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_source(
         Extension(core),
         Extension(read_only),
@@ -430,7 +464,10 @@ pub async fn start_source(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::start_source(Extension(core), Path(id)).await
 }
 
@@ -453,7 +490,10 @@ pub async fn stop_source(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_source(Extension(core), Path(id)).await
 }
 
@@ -498,7 +538,10 @@ pub async fn create_query(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::create_query(
         Extension(core),
         Extension(read_only),
@@ -530,7 +573,10 @@ pub async fn get_query(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query(
         Extension(core),
         Extension(config_persistence),
@@ -561,7 +607,10 @@ pub async fn get_query_events(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -582,8 +631,14 @@ pub async fn get_query_events(
 pub async fn stream_query_events(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_events(Extension(core), Path(id)).await
 }
 
@@ -607,7 +662,10 @@ pub async fn get_query_logs(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -628,8 +686,14 @@ pub async fn get_query_logs(
 pub async fn stream_query_logs(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_logs(Extension(core), Path(id)).await
 }
 
@@ -652,7 +716,10 @@ pub async fn delete_query(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_query(
         Extension(core),
         Extension(read_only),
@@ -682,7 +749,10 @@ pub async fn start_query(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::start_query(Extension(core), Path(id)).await
 }
 
@@ -705,7 +775,10 @@ pub async fn stop_query(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_query(Extension(core), Path(id)).await
 }
 
@@ -728,7 +801,10 @@ pub async fn get_query_results(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_query_results(Extension(core), Path(id)).await
 }
 
@@ -753,7 +829,14 @@ pub async fn attach_query_stream(
 ) -> impl axum::response::IntoResponse {
     let core = match registry.get(&instance_id).await {
         Some(c) => c,
-        None => return Err((StatusCode::NOT_FOUND, Json(ApiResponse::<StatusResponse>::error("Instance not found".to_string())))),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<StatusResponse>::error(
+                    "Instance not found".to_string(),
+                )),
+            ))
+        }
     };
     shared::attach_query_stream(Extension(core), Path(id)).await
 }
@@ -814,7 +897,10 @@ pub async fn create_reaction_handler(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::create_reaction_handler(
         Extension(core),
         Extension(read_only),
@@ -860,7 +946,10 @@ pub async fn upsert_reaction_handler(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_reaction_handler(
         Extension(core),
         Extension(read_only),
@@ -894,7 +983,10 @@ pub async fn get_reaction(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction(
         Extension(core),
         Extension(config_persistence),
@@ -925,7 +1017,10 @@ pub async fn get_reaction_events(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction_events(Extension(core), Path(id), Query(query)).await
 }
 
@@ -946,8 +1041,14 @@ pub async fn get_reaction_events(
 pub async fn stream_reaction_events(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_events(Extension(core), Path(id)).await
 }
 
@@ -971,7 +1072,10 @@ pub async fn get_reaction_logs(
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::get_reaction_logs(Extension(core), Path(id), Query(query)).await
 }
 
@@ -992,8 +1096,14 @@ pub async fn get_reaction_logs(
 pub async fn stream_reaction_logs(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_logs(Extension(core), Path(id)).await
 }
 
@@ -1016,7 +1126,10 @@ pub async fn delete_reaction(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::delete_reaction(
         Extension(core),
         Extension(read_only),
@@ -1046,7 +1159,10 @@ pub async fn start_reaction(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::start_reaction(Extension(core), Path(id)).await
 }
 
@@ -1069,7 +1185,10 @@ pub async fn stop_reaction(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
-    let core = registry.get(&instance_id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_reaction(Extension(core), Path(id)).await
 }
 
@@ -1154,7 +1273,10 @@ pub async fn get_source_events_default(
 pub async fn stream_source_events_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_events(Extension(core), Path(id)).await
 }
@@ -1173,7 +1295,10 @@ pub async fn get_source_logs_default(
 pub async fn stream_source_logs_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_source_logs(Extension(core), Path(id)).await
 }
@@ -1272,7 +1397,10 @@ pub async fn get_query_events_default(
 pub async fn stream_query_events_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_events(Extension(core), Path(id)).await
 }
@@ -1291,7 +1419,10 @@ pub async fn get_query_logs_default(
 pub async fn stream_query_logs_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_query_logs(Extension(core), Path(id)).await
 }
@@ -1348,7 +1479,14 @@ pub async fn attach_query_stream_default(
 ) -> impl axum::response::IntoResponse {
     let core = match registry.get_default().await {
         Some((_, c)) => c,
-        None => return Err((StatusCode::NOT_FOUND, Json(ApiResponse::<StatusResponse>::error("No instances configured".to_string())))),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<StatusResponse>::error(
+                    "No instances configured".to_string(),
+                )),
+            ))
+        }
     };
     shared::attach_query_stream(Extension(core), Path(id)).await
 }
@@ -1429,7 +1567,10 @@ pub async fn get_reaction_events_default(
 pub async fn stream_reaction_events_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_events(Extension(core), Path(id)).await
 }
@@ -1448,7 +1589,10 @@ pub async fn get_reaction_logs_default(
 pub async fn stream_reaction_logs_default(
     Extension(registry): Extension<InstanceRegistry>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>, StatusCode> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stream_reaction_logs(Extension(core), Path(id)).await
 }

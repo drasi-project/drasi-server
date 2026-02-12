@@ -50,10 +50,10 @@ pub mod config_value;
 pub mod bootstrap;
 
 // Organized submodules
+pub mod observability;
 pub mod queries;
 pub mod reactions;
 pub mod sources;
-pub mod observability;
 
 // Re-export all DTO types for convenient access
 pub use bootstrap::{
@@ -1145,8 +1145,14 @@ bootstrapProvider:
         assert_eq!(bootstrap.host, ConfigValue::Static("localhost".to_string()));
         assert_eq!(bootstrap.port, ConfigValue::Static(5432));
         assert_eq!(bootstrap.database, ConfigValue::Static("drasi".to_string()));
-        assert_eq!(bootstrap.user, ConfigValue::Static("drasi_user".to_string()));
-        assert_eq!(bootstrap.password, ConfigValue::Static("drasi_pass".to_string()));
+        assert_eq!(
+            bootstrap.user,
+            ConfigValue::Static("drasi_user".to_string())
+        );
+        assert_eq!(
+            bootstrap.password,
+            ConfigValue::Static("drasi_pass".to_string())
+        );
         assert_eq!(bootstrap.slot_name, "drasi_slot".to_string());
         assert_eq!(bootstrap.publication_name, "drasi_pub".to_string());
     }
@@ -1174,9 +1180,18 @@ bootstrapProvider:
             panic!("Expected postgres bootstrap provider");
         };
 
-        assert_eq!(bootstrap.database, ConfigValue::Static("bootstrap_db".to_string()));
-        assert_eq!(bootstrap.user, ConfigValue::Static("bootstrap_user".to_string()));
-        assert_eq!(bootstrap.password, ConfigValue::Static("drasi_pass".to_string()));
+        assert_eq!(
+            bootstrap.database,
+            ConfigValue::Static("bootstrap_db".to_string())
+        );
+        assert_eq!(
+            bootstrap.user,
+            ConfigValue::Static("bootstrap_user".to_string())
+        );
+        assert_eq!(
+            bootstrap.password,
+            ConfigValue::Static("drasi_pass".to_string())
+        );
     }
 
     #[test]

@@ -150,7 +150,11 @@ impl ConfigPersistence {
     }
 
     /// Get a stored source config, if available
-    pub async fn get_source_config(&self, instance_id: &str, source_id: &str) -> Option<SourceConfig> {
+    pub async fn get_source_config(
+        &self,
+        instance_id: &str,
+        source_id: &str,
+    ) -> Option<SourceConfig> {
         let source_configs = self.source_configs.read().await;
         source_configs
             .get(instance_id)
@@ -1465,7 +1469,11 @@ logLevel: warn
         let loaded_config: DrasiServerConfig =
             crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
 
-        assert_eq!(loaded_config.queries.len(), 2, "Both queries should be persisted");
+        assert_eq!(
+            loaded_config.queries.len(),
+            2,
+            "Both queries should be persisted"
+        );
 
         // Verify first query still exists
         let q1 = loaded_config.queries.iter().find(|q| q.id == "query-1");
@@ -1560,11 +1568,18 @@ logLevel: warn
         let loaded_config: DrasiServerConfig =
             crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
 
-        assert_eq!(loaded_config.queries.len(), 2, "Both queries should be persisted");
+        assert_eq!(
+            loaded_config.queries.len(),
+            2,
+            "Both queries should be persisted"
+        );
 
         // Verify initial query is preserved
         assert!(
-            loaded_config.queries.iter().any(|q| q.id == "initial-query"),
+            loaded_config
+                .queries
+                .iter()
+                .any(|q| q.id == "initial-query"),
             "Initial query should be preserved"
         );
 

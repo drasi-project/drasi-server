@@ -713,7 +713,10 @@ mod tests {
         };
 
         let result = create_bootstrap_provider(&bootstrap_config, &source_config);
-        assert!(result.is_ok(), "Failed to create postgres bootstrap provider");
+        assert!(
+            result.is_ok(),
+            "Failed to create postgres bootstrap provider"
+        );
     }
 
     #[test]

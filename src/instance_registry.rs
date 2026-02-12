@@ -67,7 +67,10 @@ impl InstanceRegistry {
     /// List all instances as (id, instance) pairs.
     pub async fn list(&self) -> Vec<(String, Arc<DrasiLib>)> {
         let instances = self.instances.read().await;
-        instances.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        instances
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Check if an instance exists.
