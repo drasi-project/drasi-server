@@ -32,17 +32,17 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library
-drasi-lib = "0.3.5"
+drasi-lib = "0.3.6"
 
 # Source plugins
 drasi-source-mock = "0.1.5"
 drasi-source-http = "0.1.5"
 drasi-source-grpc = "0.1.5"
-drasi-source-postgres = "0.1.5"
+drasi-source-postgres = "0.1.6"
 drasi-source-platform = "0.1.5"
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.5"
+drasi-bootstrap-postgres = "0.1.6"
 drasi-bootstrap-scriptfile = "0.1.5"
 drasi-bootstrap-platform = "0.1.5"
 drasi-bootstrap-noop = "0.1.4"

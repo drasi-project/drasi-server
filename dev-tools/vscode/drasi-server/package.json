@@ -121,7 +121,8 @@
       },
       {
         "command": "drasi.instance.use",
-        "title": "Set as current instance"
+        "title": "Set as current instance",
+        "icon": "$(plug)"
       },
       {
         "command": "drasi.instance.add",
@@ -137,7 +138,8 @@
       },
       {
         "command": "drasi.connection.use",
-        "title": "Use server"
+        "title": "Use server",
+        "icon": "$(plug)"
       },
       {
         "command": "drasi.resource.viewConfig",
@@ -296,7 +298,8 @@
         },
         {
           "command": "drasi.instance.use",
-          "when": "view == drasi && viewItem == drasi.instanceNode"
+          "when": "view == drasi && viewItem == drasi.instanceNode",
+          "group": "inline"
         }
       ],
       "editor/context": [
