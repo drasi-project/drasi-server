@@ -37,7 +37,6 @@ use crate::api::mappings::{
     MockSourceConfigMapper,
     PlatformReactionConfigMapper,
     PlatformSourceConfigMapper,
-    // Source mappers
     PostgresConfigMapper,
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
@@ -182,46 +181,11 @@ fn create_bootstrap_provider(
     source_config: &SourceConfig,
 ) -> Result<Box<dyn drasi_lib::bootstrap::BootstrapProvider + 'static>> {
     match bootstrap_config {
-        BootstrapProviderConfig::Postgres(_) => {
-            // Postgres bootstrap provider needs the source's postgres config
-            if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::{
-                    PostgresBootstrapConfig, PostgresBootstrapProvider, SslMode, TableKeyConfig,
-                };
-                let mapper = DtoMapper::new();
-                let postgres_mapper = PostgresConfigMapper;
-                let source_cfg = postgres_mapper.map(config, &mapper)?;
-
-                // Convert PostgresSourceConfig to PostgresBootstrapConfig
-                let bootstrap_config = PostgresBootstrapConfig {
-                    host: source_cfg.host,
-                    port: source_cfg.port,
-                    database: source_cfg.database,
-                    user: source_cfg.user,
-                    password: source_cfg.password,
-                    tables: source_cfg.tables,
-                    slot_name: source_cfg.slot_name,
-                    publication_name: source_cfg.publication_name,
-                    ssl_mode: match source_cfg.ssl_mode {
-                        drasi_source_postgres::SslMode::Disable => SslMode::Disable,
-                        drasi_source_postgres::SslMode::Prefer => SslMode::Prefer,
-                        drasi_source_postgres::SslMode::Require => SslMode::Require,
-                    },
-                    table_keys: source_cfg
-                        .table_keys
-                        .into_iter()
-                        .map(|tk| TableKeyConfig {
-                            table: tk.table,
-                            key_columns: tk.key_columns,
-                        })
-                        .collect(),
-                };
-                Ok(Box::new(PostgresBootstrapProvider::new(bootstrap_config)))
-            } else {
-                Err(anyhow::anyhow!(
-                    "Postgres bootstrap provider can only be used with Postgres sources"
-                ))
-            }
+        BootstrapProviderConfig::Postgres(config) => {
+            use drasi_bootstrap_postgres::PostgresBootstrapProvider;
+            let mapper = DtoMapper::new();
+            let domain_config = map_postgres_bootstrap_config(config, &mapper)?;
+            Ok(Box::new(PostgresBootstrapProvider::new(domain_config)))
         }
         BootstrapProviderConfig::ScriptFile(script_config) => {
             use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
@@ -246,6 +210,35 @@ fn create_bootstrap_provider(
             Ok(Box::new(NoOpBootstrapProvider::new()))
         }
     }
+}
+
+fn map_postgres_bootstrap_config(
+    dto: &crate::api::models::bootstrap::PostgresBootstrapConfigDto,
+    mapper: &DtoMapper,
+) -> Result<drasi_bootstrap_postgres::PostgresBootstrapConfig> {
+    Ok(drasi_bootstrap_postgres::PostgresBootstrapConfig {
+        host: mapper.resolve_string(&dto.host)?,
+        port: mapper.resolve_typed(&dto.port)?,
+        database: mapper.resolve_string(&dto.database)?,
+        user: mapper.resolve_string(&dto.user)?,
+        password: mapper.resolve_string(&dto.password)?,
+        tables: dto.tables.clone(),
+        slot_name: dto.slot_name.clone(),
+        publication_name: dto.publication_name.clone(),
+        ssl_mode: match mapper.resolve_typed::<crate::api::models::SslModeDto>(&dto.ssl_mode)? {
+            crate::api::models::SslModeDto::Disable => drasi_bootstrap_postgres::SslMode::Disable,
+            crate::api::models::SslModeDto::Prefer => drasi_bootstrap_postgres::SslMode::Prefer,
+            crate::api::models::SslModeDto::Require => drasi_bootstrap_postgres::SslMode::Require,
+        },
+        table_keys: dto
+            .table_keys
+            .iter()
+            .map(|tk| drasi_bootstrap_postgres::TableKeyConfig {
+                table: tk.table.clone(),
+                key_columns: tk.key_columns.clone(),
+            })
+            .collect(),
+    })
 }
 
 /// Create a reaction instance from a ReactionConfig.
@@ -691,11 +684,24 @@ mod tests {
     }
 
     #[test]
-    fn test_postgres_bootstrap_requires_postgres_source() {
+    fn test_postgres_bootstrap_provider_from_config() {
         use crate::api::models::bootstrap::PostgresBootstrapConfigDto;
 
-        let bootstrap_config =
-            BootstrapProviderConfig::Postgres(PostgresBootstrapConfigDto::default());
+        let bootstrap_config = BootstrapProviderConfig::Postgres(PostgresBootstrapConfigDto {
+            host: ConfigValue::Static("localhost".to_string()),
+            port: ConfigValue::Static(5432),
+            database: ConfigValue::Static("testdb".to_string()),
+            user: ConfigValue::Static("testuser".to_string()),
+            password: ConfigValue::Static("testpass".to_string()),
+            tables: vec!["users".to_string()],
+            slot_name: "drasi_slot".to_string(),
+            publication_name: "drasi_pub".to_string(),
+            ssl_mode: ConfigValue::Static(crate::api::models::SslModeDto::Prefer),
+            table_keys: vec![crate::api::models::TableKeyConfigDto {
+                table: "users".to_string(),
+                key_columns: vec!["id".to_string()],
+            }],
+        });
         let source_config = SourceConfig::Mock {
             id: "test".to_string(),
             auto_start: true,
@@ -707,11 +713,9 @@ mod tests {
         };
 
         let result = create_bootstrap_provider(&bootstrap_config, &source_config);
-        assert!(result.is_err());
-        let err_msg = result.err().unwrap().to_string();
         assert!(
-            err_msg.contains("Postgres bootstrap provider can only be used with Postgres sources"),
-            "Unexpected error: {err_msg}"
+            result.is_ok(),
+            "Failed to create postgres bootstrap provider"
         );
     }
 

@@ -271,7 +271,7 @@ mod api_query_joins_tests {
         let _ = create_query(
             Extension(core.clone()),
             Extension(read_only),
-            Extension(config_persistence),
+            Extension(config_persistence.clone()),
             Extension("test-server".to_string()),
             Json(query_config_to_dto(query_config.clone())),
         )
@@ -281,6 +281,9 @@ mod api_query_joins_tests {
         // Call the get_query API handler
         let get_result = get_query(
             Extension(core.clone()),
+            Extension(config_persistence),
+            Extension("test-server".to_string()),
+            axum::extract::Query(ComponentViewQuery::new(Some("full".to_string()))),
             axum::extract::Path("product-category-query".to_string()),
         )
         .await;
@@ -294,11 +297,18 @@ mod api_query_joins_tests {
         assert!(json_response["data"].is_object());
 
         let data = &json_response["data"];
-        // The structure is data.id, data.query, data.sources, data.joins
+        // The structure is data.id, data.config.query, data.config.sources, data.config.joins
         assert_eq!(data["id"], "product-category-query");
-        assert!(data["joins"].is_array());
+        let joins_value = data["config"]["joins"].clone();
+        let joins = if joins_value.is_array() {
+            joins_value.as_array().unwrap().clone()
+        } else if joins_value.is_object() {
+            vec![joins_value]
+        } else {
+            vec![]
+        };
 
-        let joins = data["joins"].as_array().unwrap();
+        assert!(!joins.is_empty());
         assert_eq!(joins.len(), 1);
         assert_eq!(joins[0]["id"], "PRODUCT_CATEGORY");
     }

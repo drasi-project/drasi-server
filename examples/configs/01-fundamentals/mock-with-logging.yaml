@@ -29,6 +29,7 @@
 # - {{after}} - The new state of the record (for adds/updates)
 # - Access fields with dot notation: {{after.FieldName}}
 
+apiVersion: drasi.io/v1
 id: mock-logging-demo
 host: "0.0.0.0"
 port: 8080

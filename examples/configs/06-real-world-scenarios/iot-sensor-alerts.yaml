@@ -36,6 +36,7 @@
 #     -H "Content-Type: application/json" \
 #     -d '{"id": "sensor-1", "type": "temperature", "value": 85, "unit": "F"}'
 
+apiVersion: drasi.io/v1
 id: iot-sensor-system
 host: "0.0.0.0"
 port: 8080

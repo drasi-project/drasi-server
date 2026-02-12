@@ -30,6 +30,7 @@
 # - Query matches all sensors and returns their data
 # - Log reaction prints results to console
 
+apiVersion: drasi.io/v1
 id: hello-world-server
 host: "0.0.0.0"
 port: 8080

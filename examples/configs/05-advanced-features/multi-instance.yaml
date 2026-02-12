@@ -45,6 +45,7 @@
 # Run with: cargo run -- --config examples/configs/05-advanced-features/multi-instance.yaml
 
 # Server-level settings (shared across all instances)
+apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
 logLevel: info

@@ -195,12 +195,28 @@ sources:
     host: localhost
     port: 5432
     database: getting_started
+    user: drasi_user
+    password: drasi_password
     tables:
       - message
     slotName: drasi_getting_started_slot
     publicationName: drasi_getting_started_pub
     bootstrapProvider:
       kind: postgres
+      host: localhost
+      port: 5432
+      database: getting_started
+      user: drasi_user
+      password: drasi_password
+      tables:
+        - message
+      slotName: drasi_getting_started_slot
+      publicationName: drasi_getting_started_pub
+      sslMode: prefer
+      tableKeys:
+        - table: message
+          keyColumns:
+            - messageid
 ```
 
 Key features:

@@ -18,7 +18,8 @@ use crate::api::models::ConfigValue;
 use serde::{Deserialize, Serialize};
 
 /// Local copy of profiler reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = ProfilerReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProfilerReactionConfigDto {
     #[serde(default = "default_profiler_window_size")]

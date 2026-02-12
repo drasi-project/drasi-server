@@ -133,6 +133,8 @@ else
     docker-compose exec -T postgres psql -U postgres -d trading_demo -c "CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, stock_prices;"
 fi
 
+sleep 2
+
 # Step 2: Start Drasi Server
 echo ""
 echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamically)..."

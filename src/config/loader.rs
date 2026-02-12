@@ -187,6 +187,7 @@ mod tests {
 
         // Create a config
         let config = DrasiServerConfig {
+            api_version: None,
             host: crate::api::models::ConfigValue::Static("localhost".to_string()),
             port: crate::api::models::ConfigValue::Static(9090),
             ..DrasiServerConfig::default()

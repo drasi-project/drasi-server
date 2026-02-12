@@ -35,6 +35,7 @@
 #
 # Run with: cargo run -- --config examples/configs/05-advanced-features/adaptive-batching.yaml
 
+apiVersion: drasi.io/v1
 id: adaptive-batching-demo
 host: "0.0.0.0"
 port: 8080

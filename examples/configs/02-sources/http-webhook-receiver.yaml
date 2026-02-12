@@ -35,6 +35,7 @@
 #     -H "Content-Type: application/json" \
 #     -d '{"id": "event-1", "type": "order", "amount": 100}'
 
+apiVersion: drasi.io/v1
 id: http-source-demo
 host: "0.0.0.0"
 port: 8080

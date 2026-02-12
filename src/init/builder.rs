@@ -63,6 +63,7 @@ pub fn build_config(
     };
 
     DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static(server_id),
         host: ConfigValue::Static(server_settings.host),
         port: ConfigValue::Static(server_settings.port),

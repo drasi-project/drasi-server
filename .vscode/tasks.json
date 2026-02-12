@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: compile",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "compile"],
+      "options": {
+        "cwd": "${workspaceFolder}/dev-tools/vscode/drasi-server"
+      },
+      "problemMatcher": "$esbuild",
+      "group": "build"
+    }
+  ]
+}
