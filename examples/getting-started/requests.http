@@ -40,48 +40,36 @@ GET {{baseUrl}}/api/v1/openapi.json
 ### List all sources
 GET {{baseUrl}}/api/v1/sources
 
-### Get source status
-GET {{baseUrl}}/api/v1/sources/postgres-messages
+### Get my-postgres source status
+GET {{baseUrl}}/api/v1/sources/my-postgres
 
-### Stop source
-POST {{baseUrl}}/api/v1/sources/postgres-messages/stop
+### Stop the my-postgres source
+POST {{baseUrl}}/api/v1/sources/my-postgres/stop
 
-### Start source
-POST {{baseUrl}}/api/v1/sources/postgres-messages/start
+### Start the my-postgres source
+POST {{baseUrl}}/api/v1/sources/my-postgres/start
 
 ### ==========================================================================
-### Queries
+### Continuous Queries
 ### ==========================================================================
 
 ### List all queries
 GET {{baseUrl}}/api/v1/queries
 
-### Get all-messages query results
+### Get the all-messages query results
 GET {{baseUrl}}/api/v1/queries/all-messages/results
 
-### Get hello-world-from query results
-GET {{baseUrl}}/api/v1/queries/hello-world-from/results
+### Get the hello-world-senders query results
+GET {{baseUrl}}/api/v1/queries/hello-world-senders/results
 
-### Get message-count query results
-GET {{baseUrl}}/api/v1/queries/message-count/results
+### Get the message-counts query results
+GET {{baseUrl}}/api/v1/queries/message-counts/results
 
-### Get inactive-people query results
-GET {{baseUrl}}/api/v1/queries/inactive-people/results
+### Get the inactive-senders query results
+GET {{baseUrl}}/api/v1/queries/inactive-senders/results
 
-### Get hello-world-from query status
-GET {{baseUrl}}/api/v1/queries/hello-world-from
-
-### Get message-count query status
-GET {{baseUrl}}/api/v1/queries/message-count
-
-### Get inactive-people query status
-GET {{baseUrl}}/api/v1/queries/inactive-people
-
-### Stop hello-world-from query
-POST {{baseUrl}}/api/v1/queries/hello-world-from/stop
-
-### Start hello-world-from query
-POST {{baseUrl}}/api/v1/queries/hello-world-from/start
+### Get the messages-with-location query status
+GET {{baseUrl}}/api/v1/queries/messages-with-location
 
 ### ==========================================================================
 ### Reactions
@@ -90,29 +78,8 @@ POST {{baseUrl}}/api/v1/queries/hello-world-from/start
 ### List all reactions
 GET {{baseUrl}}/api/v1/reactions
 
-### Get log reaction status
-GET {{baseUrl}}/api/v1/reactions/log-all-queries
+### Get log-reaction reaction status
+GET {{baseUrl}}/api/v1/reactions/log-reaction
 
-### Get SSE reaction status
-GET {{baseUrl}}/api/v1/reactions/sse-stream
-
-### Stop log reaction
-POST {{baseUrl}}/api/v1/reactions/log-all-queries/stop
-
-### Start log reaction
-POST {{baseUrl}}/api/v1/reactions/log-all-queries/start
-
-### Stop SSE reaction
-POST {{baseUrl}}/api/v1/reactions/sse-stream/stop
-
-### Start SSE reaction
-POST {{baseUrl}}/api/v1/reactions/sse-stream/start
-
-### ==========================================================================
-### SSE Stream (connect in browser or use curl)
-### ==========================================================================
-
-# To connect to SSE stream via curl:
-# curl -N http://localhost:8081/events
-
-# Or open viewer/index.html in a browser
+### Get browser-stream reaction status
+GET {{baseUrl}}/api/v1/reactions/browser-stream
