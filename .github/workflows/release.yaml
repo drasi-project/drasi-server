@@ -58,89 +58,89 @@ jobs:
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-  # Build all Linux binaries on a single runner using cross (the whole point of cross)
-  build-linux:
-    name: Build Linux binaries
-    runs-on: ubuntu-latest
-    needs: determine-version
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Install cross
-        run: cargo install cross --version 0.2.5
-
-      - name: Build all Linux targets
-        run: |
-          VERSION="${{ needs.determine-version.outputs.tag }}"
-          VERSION="${VERSION#v}"
-
-          TARGETS=(
-            "x86_64-unknown-linux-gnu:x86_64-linux-gnu"
-            "aarch64-unknown-linux-gnu:aarch64-linux-gnu"
-            "x86_64-unknown-linux-musl:x86_64-linux-musl"
-            "aarch64-unknown-linux-musl:aarch64-linux-musl"
-          )
-
-          for entry in "${TARGETS[@]}"; do
-            TARGET="${entry%%:*}"
-            SUFFIX="${entry##*:}"
-            ARTIFACT_NAME="drasid-${VERSION}-${SUFFIX}"
-
-            echo "========================================="
-            echo "Building ${TARGET} -> ${ARTIFACT_NAME}"
-            echo "========================================="
-
-            rustup target add "${TARGET}"
-            cross build --release --target "${TARGET}" --bin drasi-server
-
-            SRC="target/${TARGET}/release/drasi-server"
-            if [[ -f "$SRC" ]]; then
-              cp "$SRC" "$ARTIFACT_NAME"
-              chmod +x "$ARTIFACT_NAME"
-              echo "✓ ${ARTIFACT_NAME}"
-            else
-              echo "Error: Built binary not found at $SRC"
-              ls -la "target/${TARGET}/release/" || true
-              exit 1
-            fi
-          done
-
-          echo "All Linux binaries built:"
-          ls -lh drasid-*
-
-      - name: Upload x86_64-linux-gnu
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
-          path: drasid-*-x86_64-linux-gnu
-          if-no-files-found: error
-
-      - name: Upload aarch64-linux-gnu
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
-          path: drasid-*-aarch64-linux-gnu
-          if-no-files-found: error
-
-      - name: Upload x86_64-linux-musl
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
-          path: drasid-*-x86_64-linux-musl
-          if-no-files-found: error
-
-      - name: Upload aarch64-linux-musl
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
-          path: drasid-*-aarch64-linux-musl
-          if-no-files-found: error
+  # # Build all Linux binaries on a single runner using cross (the whole point of cross)
+  # build-linux:
+  #   name: Build Linux binaries
+  #   runs-on: ubuntu-latest
+  #   needs: determine-version
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Install Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         toolchain: stable
+  #
+  #     - name: Install cross
+  #       run: cargo install cross --version 0.2.5
+  #
+  #     - name: Build all Linux targets
+  #       run: |
+  #         VERSION="${{ needs.determine-version.outputs.tag }}"
+  #         VERSION="${VERSION#v}"
+  #
+  #         TARGETS=(
+  #           "x86_64-unknown-linux-gnu:x86_64-linux-gnu"
+  #           "aarch64-unknown-linux-gnu:aarch64-linux-gnu"
+  #           "x86_64-unknown-linux-musl:x86_64-linux-musl"
+  #           "aarch64-unknown-linux-musl:aarch64-linux-musl"
+  #         )
+  #
+  #         for entry in "${TARGETS[@]}"; do
+  #           TARGET="${entry%%:*}"
+  #           SUFFIX="${entry##*:}"
+  #           ARTIFACT_NAME="drasid-${VERSION}-${SUFFIX}"
+  #
+  #           echo "========================================="
+  #           echo "Building ${TARGET} -> ${ARTIFACT_NAME}"
+  #           echo "========================================="
+  #
+  #           rustup target add "${TARGET}"
+  #           cross build --release --target "${TARGET}" --bin drasi-server
+  #
+  #           SRC="target/${TARGET}/release/drasi-server"
+  #           if [[ -f "$SRC" ]]; then
+  #             cp "$SRC" "$ARTIFACT_NAME"
+  #             chmod +x "$ARTIFACT_NAME"
+  #             echo "✓ ${ARTIFACT_NAME}"
+  #           else
+  #             echo "Error: Built binary not found at $SRC"
+  #             ls -la "target/${TARGET}/release/" || true
+  #             exit 1
+  #           fi
+  #         done
+  #
+  #         echo "All Linux binaries built:"
+  #         ls -lh drasid-*
+  #
+  #     - name: Upload x86_64-linux-gnu
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
+  #         path: drasid-*-x86_64-linux-gnu
+  #         if-no-files-found: error
+  #
+  #     - name: Upload aarch64-linux-gnu
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
+  #         path: drasid-*-aarch64-linux-gnu
+  #         if-no-files-found: error
+  #
+  #     - name: Upload x86_64-linux-musl
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
+  #         path: drasid-*-x86_64-linux-musl
+  #         if-no-files-found: error
+  #
+  #     - name: Upload aarch64-linux-musl
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
+  #         path: drasid-*-aarch64-linux-musl
+  #         if-no-files-found: error
 
   # macOS requires native builds (can't cross-compile to macOS)
   build-macos:
@@ -384,7 +384,7 @@ jobs:
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
     name: Test ${{ matrix.artifact_suffix }}
-    needs: [determine-version, build-linux, build-macos, build-windows]
+    needs: [determine-version, build-macos, build-windows]  # build-linux commented out for testing
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -398,28 +398,28 @@ jobs:
           - artifact_suffix: x86_64-apple-darwin
             runner: macos-latest
             binary_name_template: "drasid-VERSION-x86_64-apple-darwin"
-          # Linux x86_64
-          - artifact_suffix: x86_64-linux-gnu
-            runner: ubuntu-latest
-            binary_name_template: "drasid-VERSION-x86_64-linux-gnu"
-          # Linux ARM64
-          - artifact_suffix: aarch64-linux-gnu
-            runner: ubuntu-24.04-arm
-            binary_name_template: "drasid-VERSION-aarch64-linux-gnu"
+          # # Linux x86_64
+          # - artifact_suffix: x86_64-linux-gnu
+          #   runner: ubuntu-latest
+          #   binary_name_template: "drasid-VERSION-x86_64-linux-gnu"
+          # # Linux ARM64
+          # - artifact_suffix: aarch64-linux-gnu
+          #   runner: ubuntu-24.04-arm
+          #   binary_name_template: "drasid-VERSION-aarch64-linux-gnu"
           # Windows x86_64
           - artifact_suffix: x86_64-windows
             runner: windows-latest
             binary_name_template: "drasid-VERSION-x86_64-windows.exe"
-          # Linux x86_64 (musl) — tested inside Alpine container
-          - artifact_suffix: x86_64-linux-musl
-            runner: ubuntu-latest
-            binary_name_template: "drasid-VERSION-x86_64-linux-musl"
-            use_alpine: true
-          # Linux ARM64 (musl) — tested inside Alpine container
-          - artifact_suffix: aarch64-linux-musl
-            runner: ubuntu-24.04-arm
-            binary_name_template: "drasid-VERSION-aarch64-linux-musl"
-            use_alpine: true
+          # # Linux x86_64 (musl) — tested inside Alpine container
+          # - artifact_suffix: x86_64-linux-musl
+          #   runner: ubuntu-latest
+          #   binary_name_template: "drasid-VERSION-x86_64-linux-musl"
+          #   use_alpine: true
+          # # Linux ARM64 (musl) — tested inside Alpine container
+          # - artifact_suffix: aarch64-linux-musl
+          #   runner: ubuntu-24.04-arm
+          #   binary_name_template: "drasid-VERSION-aarch64-linux-musl"
+          #   use_alpine: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

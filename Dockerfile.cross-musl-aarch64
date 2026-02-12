@@ -23,7 +23,7 @@ ENV JQ_VERSION=1.7.1
 RUN curl -sSL https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-${JQ_VERSION}.tar.gz | tar xz \
     && cd jq-${JQ_VERSION} \
     && autoreconf -fi \
-    && CC=aarch64-linux-musl-gcc ./configure --host=aarch64-linux-musl --disable-shared --enable-static --with-oniguruma=builtin --prefix=/usr/local/musl-jq \
+    && CC=aarch64-linux-musl-gcc CFLAGS="-fPIC" ./configure --host=aarch64-linux-musl --disable-shared --enable-static --with-oniguruma=builtin --prefix=/usr/local/musl-jq \
     && make -j$(nproc) \
     && make install \
     && cd .. && rm -rf jq-${JQ_VERSION}
