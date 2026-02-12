@@ -142,11 +142,22 @@ jobs:
           path: drasid-*-aarch64-linux-musl
           if-no-files-found: error
 
-  # macOS requires a native build (can't cross-compile to macOS)
+  # macOS requires native builds (can't cross-compile to macOS)
   build-macos:
-    name: Build macOS (Apple Silicon)
-    runs-on: macos-latest
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     needs: determine-version
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            artifact_suffix: aarch64-apple-darwin
+            arch: ARM64
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            artifact_suffix: x86_64-apple-darwin
+            arch: x86_64
+            runner: macos-13
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -168,10 +179,10 @@ jobs:
           export LIBONIG_STATIC=1
           export JQ_LIB_DIR="$(brew --prefix jq)/lib"
 
-          cargo build --release --target aarch64-apple-darwin --bin drasi-server
+          cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
-          SRC_BINARY="target/aarch64-apple-darwin/release/drasi-server"
-          ARTIFACT_NAME="drasid-${VERSION}-aarch64-apple-darwin"
+          SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
+          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
 
           if [[ -f "$SRC_BINARY" ]]; then
             cp "$SRC_BINARY" "$ARTIFACT_NAME"
@@ -184,8 +195,8 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-apple-darwin
-          path: drasid-*-aarch64-apple-darwin
+          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: drasid-*-${{ matrix.artifact_suffix }}
           if-no-files-found: error
 
   # Windows cross-compiled from Linux (bundles MinGW runtime DLLs)
@@ -332,6 +343,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasid-${VERSION}-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
@@ -351,6 +363,10 @@ jobs:
           - artifact_suffix: aarch64-apple-darwin
             runner: macos-latest
             binary_name_template: "drasid-VERSION-aarch64-apple-darwin"
+          # macOS x86_64 (Intel)
+          - artifact_suffix: x86_64-apple-darwin
+            runner: macos-13
+            binary_name_template: "drasid-VERSION-x86_64-apple-darwin"
           # Linux x86_64
           - artifact_suffix: x86_64-linux-gnu
             runner: ubuntu-latest
@@ -469,6 +485,7 @@ jobs:
 
           ### macOS
           - ARM64 (Apple Silicon) - `drasid-*-aarch64-apple-darwin`
+          - x86_64 (Intel) - `drasid-*-x86_64-apple-darwin`
 
           ### Windows
           - x86_64 - `drasid-*-x86_64-windows.exe`
