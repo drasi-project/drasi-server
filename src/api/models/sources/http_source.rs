@@ -42,6 +42,7 @@ pub struct HttpSourceConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adaptive_enabled: Option<ConfigValue<bool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<WebhookConfig>)]
     pub webhooks: Option<WebhookConfigDto>,
 }
 
@@ -55,9 +56,12 @@ fn default_http_timeout_ms() -> ConfigValue<u64> {
 #[serde(rename_all = "camelCase")]
 pub struct WebhookConfigDto {
     #[serde(default)]
+    #[schema(value_type = ErrorBehavior)]
     pub error_behavior: ErrorBehaviorDto,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<CorsConfig>)]
     pub cors: Option<CorsConfigDto>,
+    #[schema(value_type = Vec<WebhookRoute>)]
     pub routes: Vec<WebhookRouteDto>,
 }
 
@@ -131,11 +135,15 @@ pub enum ErrorBehaviorDto {
 pub struct WebhookRouteDto {
     pub path: ConfigValue<String>,
     #[serde(default = "default_methods")]
+    #[schema(value_type = Vec<HttpMethod>)]
     pub methods: Vec<HttpMethodDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<AuthConfig>)]
     pub auth: Option<AuthConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<ErrorBehavior>)]
     pub error_behavior: Option<ErrorBehaviorDto>,
+    #[schema(value_type = Vec<WebhookMapping>)]
     pub mappings: Vec<WebhookMappingDto>,
 }
 
@@ -161,8 +169,10 @@ pub enum HttpMethodDto {
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SignatureConfig>)]
     pub signature: Option<SignatureConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<BearerConfig>)]
     pub bearer: Option<BearerConfigDto>,
 }
 
@@ -172,12 +182,14 @@ pub struct AuthConfigDto {
 #[serde(rename_all = "camelCase")]
 pub struct SignatureConfigDto {
     #[serde(rename = "type")]
+    #[schema(value_type = SignatureAlgorithm)]
     pub algorithm: SignatureAlgorithmDto,
     pub secret_env: ConfigValue<String>,
     pub header: ConfigValue<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<ConfigValue<String>>,
     #[serde(default)]
+    #[schema(value_type = SignatureEncoding)]
     pub encoding: SignatureEncodingDto,
 }
 
@@ -214,16 +226,22 @@ pub struct BearerConfigDto {
 #[serde(rename_all = "camelCase")]
 pub struct WebhookMappingDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<MappingCondition>)]
     pub when: Option<MappingConditionDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<OperationType>)]
     pub operation: Option<OperationTypeDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_from: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<HashMap<String, OperationType>>)]
     pub operation_map: Option<HashMap<String, OperationTypeDto>>,
+    #[schema(value_type = ElementType)]
     pub element_type: ElementTypeDto,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<EffectiveFromConfig>)]
     pub effective_from: Option<EffectiveFromConfigDto>,
+    #[schema(value_type = ElementTemplate)]
     pub template: ElementTemplateDto,
 }
 

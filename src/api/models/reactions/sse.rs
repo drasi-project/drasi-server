@@ -38,12 +38,15 @@ pub struct SseTemplateSpecDto {
 pub struct SseQueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub added: Option<SseTemplateSpecDto>,
     /// Template for UPDATE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub updated: Option<SseTemplateSpecDto>,
     /// Template for DELETE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub deleted: Option<SseTemplateSpecDto>,
 }
 
@@ -62,9 +65,11 @@ pub struct SseReactionConfigDto {
     pub heartbeat_interval_ms: ConfigValue<u64>,
     /// Query-specific template configurations
     #[serde(default)]
+    #[schema(value_type = HashMap<String, SseQueryConfig>)]
     pub routes: HashMap<String, SseQueryConfigDto>,
     /// Default template configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseQueryConfig>)]
     pub default_template: Option<SseQueryConfigDto>,
 }
 

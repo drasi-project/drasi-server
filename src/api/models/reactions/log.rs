@@ -34,12 +34,15 @@ pub struct TemplateSpecDto {
 pub struct QueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub added: Option<TemplateSpecDto>,
     /// Template for UPDATE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub updated: Option<TemplateSpecDto>,
     /// Template for DELETE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub deleted: Option<TemplateSpecDto>,
 }
 
@@ -50,8 +53,10 @@ pub struct QueryConfigDto {
 pub struct LogReactionConfigDto {
     /// Query-specific template configurations
     #[serde(default)]
+    #[schema(value_type = HashMap<String, LogQueryConfig>)]
     pub routes: HashMap<String, QueryConfigDto>,
     /// Default template configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogQueryConfig>)]
     pub default_template: Option<QueryConfigDto>,
 }

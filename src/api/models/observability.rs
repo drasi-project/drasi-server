@@ -91,7 +91,9 @@ impl From<LogLevel> for LogLevelDto {
 #[serde(rename_all = "camelCase")]
 pub struct ComponentEventDto {
     pub component_id: String,
+    #[schema(value_type = ComponentType)]
     pub component_type: ComponentTypeDto,
+    #[schema(value_type = ComponentStatus)]
     pub status: ComponentStatusDto,
     pub timestamp: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,9 +118,11 @@ impl From<ComponentEvent> for ComponentEventDto {
 #[serde(rename_all = "camelCase")]
 pub struct LogMessageDto {
     pub timestamp: DateTime<Utc>,
+    #[schema(value_type = LogLevel)]
     pub level: LogLevelDto,
     pub message: String,
     pub component_id: String,
+    #[schema(value_type = ComponentType)]
     pub component_type: ComponentTypeDto,
 }
 

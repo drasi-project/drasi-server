@@ -154,14 +154,7 @@ instances:
   reactions: []
 - id: instance-2
   persistIndex: false
-  sources:
-  - kind: mock
-    id: sensor-data
-    autoStart: true
-    dataType:
-      type: sensorReading
-      sensorCount: 5
-    intervalMs: 2000
+  sources: []
   queries: []
   reactions: []
 - id: inst3

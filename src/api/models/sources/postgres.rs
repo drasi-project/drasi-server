@@ -39,8 +39,10 @@ pub struct PostgresSourceConfigDto {
     #[serde(default = "default_publication_name")]
     pub publication_name: String,
     #[serde(default = "default_ssl_mode")]
+    #[schema(value_type = ConfigValue<SslMode>)]
     pub ssl_mode: ConfigValue<SslModeDto>,
     #[serde(default)]
+    #[schema(value_type = Vec<TableKeyConfig>)]
     pub table_keys: Vec<TableKeyConfigDto>,
 }
 

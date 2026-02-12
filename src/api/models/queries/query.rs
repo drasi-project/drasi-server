@@ -32,6 +32,7 @@ pub struct QueryConfigDto {
     #[serde(default)]
     pub middleware: Vec<String>,
     #[serde(default)]
+    #[schema(value_type = Vec<SourceSubscriptionConfig>)]
     pub sources: Vec<SourceSubscriptionConfigDto>,
     #[serde(default = "default_enable_bootstrap")]
     pub enable_bootstrap: bool,

@@ -52,6 +52,7 @@ pub struct MockSourceConfigDto {
     /// - { type: "sensorReading", sensorCount: 10 }
     /// - { type: "generic" }
     #[serde(default)]
+    #[schema(value_type = DataType)]
     pub data_type: DataTypeDto,
     /// Interval between data generation events in milliseconds
     #[serde(default = "default_interval_ms")]
