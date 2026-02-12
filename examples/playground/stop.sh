@@ -68,8 +68,8 @@ else
     echo -e "${YELLOW}No PID file found. Attempting to find processes...${NC}"
 
     # Try to find and kill by port
-    DRASI_PID=$(lsof -ti:8080 || true)
-    REACT_PID=$(lsof -ti:5173 || true)
+    DRASI_PID=$(lsof -ti:8380 || true)
+    REACT_PID=$(lsof -ti:5373 || true)
 
     if [ -n "$DRASI_PID" ]; then
         kill_process $DRASI_PID "Drasi Server"

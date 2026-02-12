@@ -88,7 +88,7 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
             let domain_config = mock_mapper.map(c, &mapper)?;
             Box::new(
                 MockSourceBuilder::new(id)
-                    .with_data_type(&domain_config.data_type)
+                    .with_data_type(domain_config.data_type)
                     .with_interval_ms(domain_config.interval_ms)
                     .with_auto_start(*auto_start)
                     .build()?,
@@ -185,37 +185,34 @@ fn create_bootstrap_provider(
         BootstrapProviderConfig::Postgres(_) => {
             // Postgres bootstrap provider needs the source's postgres config
             if let SourceConfig::Postgres { config, .. } = source_config {
-                use drasi_bootstrap_postgres::postgres::{
-                    PostgresBootstrapProvider, PostgresSourceConfig, SslMode, TableKeyConfig,
+                use drasi_bootstrap_postgres::{
+                    PostgresBootstrapConfig, PostgresBootstrapProvider, SslMode, TableKeyConfig,
                 };
                 let mapper = DtoMapper::new();
+                let postgres_mapper = PostgresConfigMapper;
+                let source_cfg = postgres_mapper.map(config, &mapper)?;
 
-                // Convert SSL mode from DTO to bootstrap config
-                let ssl_mode_dto =
-                    mapper.resolve_typed::<crate::api::models::SslModeDto>(&config.ssl_mode)?;
-                let ssl_mode = match ssl_mode_dto {
-                    crate::api::models::SslModeDto::Disable => SslMode::Disable,
-                    crate::api::models::SslModeDto::Prefer => SslMode::Prefer,
-                    crate::api::models::SslModeDto::Require => SslMode::Require,
-                };
-
-                // Convert the source config DTO to bootstrap config
-                let bootstrap_config = PostgresSourceConfig {
-                    host: mapper.resolve_string(&config.host)?,
-                    port: mapper.resolve_typed(&config.port)?,
-                    database: mapper.resolve_string(&config.database)?,
-                    user: mapper.resolve_string(&config.user)?,
-                    password: mapper.resolve_string(&config.password)?,
-                    tables: config.tables.clone(),
-                    slot_name: config.slot_name.clone(),
-                    publication_name: config.publication_name.clone(),
-                    ssl_mode,
-                    table_keys: config
+                // Convert PostgresSourceConfig to PostgresBootstrapConfig
+                let bootstrap_config = PostgresBootstrapConfig {
+                    host: source_cfg.host,
+                    port: source_cfg.port,
+                    database: source_cfg.database,
+                    user: source_cfg.user,
+                    password: source_cfg.password,
+                    tables: source_cfg.tables,
+                    slot_name: source_cfg.slot_name,
+                    publication_name: source_cfg.publication_name,
+                    ssl_mode: match source_cfg.ssl_mode {
+                        drasi_source_postgres::SslMode::Disable => SslMode::Disable,
+                        drasi_source_postgres::SslMode::Prefer => SslMode::Prefer,
+                        drasi_source_postgres::SslMode::Require => SslMode::Require,
+                    },
+                    table_keys: source_cfg
                         .table_keys
-                        .iter()
+                        .into_iter()
                         .map(|tk| TableKeyConfig {
-                            table: tk.table.clone(),
-                            key_columns: tk.key_columns.clone(),
+                            table: tk.table,
+                            key_columns: tk.key_columns,
                         })
                         .collect(),
                 };
@@ -472,6 +469,7 @@ pub fn create_state_store_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::sources::mock::DataTypeDto;
     use crate::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
     use tempfile::TempDir;
 
@@ -486,7 +484,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -505,7 +503,7 @@ mod tests {
             auto_start: false,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(500),
             },
         };
@@ -523,7 +521,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Noop),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -547,7 +545,7 @@ mod tests {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -659,7 +657,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -680,7 +678,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -703,7 +701,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -728,7 +726,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -753,7 +751,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(60000), // 60 seconds
             },
         };

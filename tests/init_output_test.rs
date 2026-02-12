@@ -22,6 +22,7 @@
 //! - All bootstrap provider types produce valid configurations
 //! - Generated configs use camelCase field names
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::*;
 use drasi_server::DrasiServerConfig;
 use std::collections::HashMap;
@@ -203,7 +204,7 @@ fn test_mock_source_generates_valid_yaml() {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("sensor".to_string()),
+                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -250,6 +251,7 @@ fn test_http_source_generates_valid_yaml() {
                 adaptive_min_wait_ms: None,
                 adaptive_window_secs: None,
                 adaptive_enabled: None,
+                webhooks: None,
             },
         }],
         queries: vec![],
@@ -436,7 +438,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
                 PostgresBootstrapConfigDto {},
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -487,7 +489,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -535,7 +537,7 @@ fn test_platform_bootstrap_provider_generates_valid_yaml() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -578,7 +580,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Noop),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -913,7 +915,7 @@ fn test_full_config_roundtrip() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("sensor".to_string()),
+                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
                 interval_ms: ConfigValue::Static(5000),
             },
         }],

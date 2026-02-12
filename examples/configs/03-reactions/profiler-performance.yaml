@@ -49,7 +49,8 @@ sources:
   - kind: mock
     id: high-volume
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 100
 
 queries:

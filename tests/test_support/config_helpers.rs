@@ -18,6 +18,7 @@
 //! for use in tests.
 
 use drasi_lib::Query;
+use drasi_server::models::sources::mock::DataTypeDto;
 use drasi_server::models::{LogReactionConfigDto, MockSourceConfigDto};
 use drasi_server::{QueryConfig, ReactionConfig, SourceConfig, StateStoreConfig};
 use tempfile::TempDir;
@@ -34,7 +35,7 @@ pub fn mock_source(id: impl Into<String>) -> SourceConfig {
 
 fn default_mock_config() -> MockSourceConfigDto {
     MockSourceConfigDto {
-        data_type: drasi_server::models::ConfigValue::Static("generic".to_string()),
+        data_type: DataTypeDto::Generic,
         interval_ms: drasi_server::models::ConfigValue::Static(5000),
     }
 }

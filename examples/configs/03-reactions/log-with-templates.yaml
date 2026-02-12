@@ -44,7 +44,8 @@ sources:
   - kind: mock
     id: events
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
 queries:

@@ -17,7 +17,7 @@
 # https://marketplace.visualstudio.com/items?itemName=humao.rest-client
 
 @hostname = localhost
-@port = 8080
+@port = 8380
 @reaction_id = all
 
 ### GET LIST of all reactions

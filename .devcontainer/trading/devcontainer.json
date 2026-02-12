@@ -1,0 +1,60 @@
+{
+    "name": "Drasi Server - Trading Demo",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "22"
+        },
+        "ghcr.io/devcontainers/features/python:2": {
+            "version": "3.12"
+        }
+    },
+    "initializeCommand": "docker network create drasi-network 2>/dev/null || true",
+    "postCreateCommand": "bash .devcontainer/trading/post-create.sh",
+    "runArgs": ["--network=drasi-network"],
+    "forwardPorts": [8280, 9100, 5632, 5273],
+    "portsAttributes": {
+        "8280": {
+            "label": "Drasi Server API",
+            "onAutoForward": "notify"
+        },
+        "9100": {
+            "label": "HTTP Source",
+            "onAutoForward": "silent"
+        },
+        "5632": {
+            "label": "PostgreSQL",
+            "onAutoForward": "silent"
+        },
+        "5273": {
+            "label": "Trading App",
+            "onAutoForward": "notify"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe.even-better-toml",
+                "humao.rest-client",
+                "serayuzgur.crates",
+                "vadimcn.vscode-lldb"
+            ],
+            "settings": {
+                "rust-analyzer.cargo.features": "all",
+                "rust-analyzer.check.command": "clippy",
+                "editor.formatOnSave": true
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "containerEnv": {
+        "RUST_BACKTRACE": "1"
+    }
+}
