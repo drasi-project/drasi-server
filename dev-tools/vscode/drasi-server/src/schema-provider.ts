@@ -615,6 +615,15 @@ function normalizeOpenApiSchemasInner(value: any, cache: WeakMap<object, any>): 
     };
   }
 
+  // Unwrap single-element allOf that contains only a $ref (leftover from nullable stripping)
+  if (result.allOf && Array.isArray(result.allOf) && result.allOf.length === 1
+      && Object.keys(result).length === 1) {
+    const inner = result.allOf[0];
+    if (inner && typeof inner === 'object' && inner.$ref && Object.keys(inner).length === 1) {
+      return inner;
+    }
+  }
+
   return result;
 }
 

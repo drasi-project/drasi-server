@@ -154,8 +154,46 @@ instances:
   reactions: []
 - id: instance-2
   persistIndex: false
-  sources: []
-  queries: []
+  sources:
+  - kind: http
+    id: test-source
+    autoStart: true
+    host: 0.0.0.0
+    port: 9001
+    timeoutMs: 10000
+    webhooks:
+      errorBehavior: accept_and_log
+      routes:
+      - path: foo
+        methods:
+        - POST
+        mappings:
+        - operation: insert
+          elementType: node
+          template:
+            id: sensor-{{payload.id}}
+            labels:
+            - SensorReading
+            properties:
+              field1: 1 + 1
+              humidity: '{{payload.humidity}}'
+              sensor_id: foo-{{payload.id}}
+              temperature: '{{payload.temperature}}'
+  queries:
+  - id: query-1
+    autoStart: true
+    query: |
+      MATCH (s:SensorReading)
+      RETURN s.sensor_id AS SensorId, s.temperature AS Temperature, s.humidity AS Humidity
+    queryLanguage: Cypher
+    middleware: []
+    sources:
+    - sourceId: test-source
+      nodes: []
+      relations: []
+      pipeline: []
+    enableBootstrap: true
+    bootstrapBufferSize: 10000
   reactions: []
 - id: inst3
   persistIndex: true
