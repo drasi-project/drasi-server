@@ -533,7 +533,7 @@ pub async fn get_source(
             persistence
                 .get_source_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).unwrap())
+                .map(|value| serde_json::to_value(value).expect("source config serialization"))
         } else {
             None
         }
@@ -863,7 +863,7 @@ pub async fn get_query(
                     None
                 };
                 let dto = stored.unwrap_or_else(|| QueryConfigDto::from(query_config.clone()));
-                Some(serde_json::to_value(dto).unwrap())
+                Some(serde_json::to_value(dto).expect("query config serialization"))
             } else {
                 None
             };
@@ -1391,7 +1391,7 @@ pub async fn get_reaction(
             persistence
                 .get_reaction_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).unwrap())
+                .map(|value| serde_json::to_value(value).expect("reaction config serialization"))
         } else {
             None
         }
