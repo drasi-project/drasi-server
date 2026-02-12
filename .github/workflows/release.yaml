@@ -171,7 +171,37 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Install build dependencies
-        run: brew install protobuf pkg-config jq oniguruma
+        run: brew install protobuf pkg-config jq oniguruma autoconf automake libtool
+
+      - name: Build x86_64 static libs (for cross-compile)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          set -euo pipefail
+          X86_PREFIX="${{ github.workspace }}/x86_64-deps"
+          mkdir -p "$X86_PREFIX"
+
+          # Build oniguruma for x86_64
+          git clone --depth 1 https://github.com/kkos/oniguruma.git /tmp/oniguruma
+          cd /tmp/oniguruma
+          autoreconf -vfi
+          ./configure --host=x86_64-apple-darwin --prefix="$X86_PREFIX" \
+            CC="clang -arch x86_64" CFLAGS="-arch x86_64" \
+            --enable-static --disable-shared
+          make -j$(sysctl -n hw.ncpu) && make install
+
+          # Build jq for x86_64 (with oniguruma)
+          git clone --depth 1 https://github.com/jqlang/jq.git /tmp/jq
+          cd /tmp/jq
+          git submodule update --init
+          autoreconf -fi
+          ./configure --host=x86_64-apple-darwin --prefix="$X86_PREFIX" \
+            CC="clang -arch x86_64" CFLAGS="-arch x86_64" \
+            --with-oniguruma="$X86_PREFIX" \
+            --enable-static --disable-shared --disable-maintainer-mode
+          make -j$(sysctl -n hw.ncpu) && make install
+
+          echo "x86_64 static libs installed to $X86_PREFIX:"
+          ls -la "$X86_PREFIX/lib/"
 
       - name: Build binary
         run: |
@@ -180,7 +210,16 @@ jobs:
 
           export LIBJQ_STATIC=1
           export LIBONIG_STATIC=1
-          export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+
+          if [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
+            X86_PREFIX="${{ github.workspace }}/x86_64-deps"
+            export JQ_LIB_DIR="$X86_PREFIX/lib"
+            export ONIG_LIB_DIR="$X86_PREFIX/lib"
+            export PKG_CONFIG_PATH="$X86_PREFIX/lib/pkgconfig"
+            export CFLAGS="-arch x86_64"
+          else
+            export JQ_LIB_DIR="$(brew --prefix jq)/lib"
+          fi
 
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
