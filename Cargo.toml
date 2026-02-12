@@ -31,8 +31,16 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library (all middleware including jq)
-drasi-lib = { version = "0.3.6", features = ["middleware-all"] }
+# Drasi core library (all middleware, using system libjq instead of bundled-jq)
+drasi-lib = { version = "0.3.6", features = [
+  "middleware-jq",
+  "middleware-decoder",
+  "middleware-map",
+  "middleware-parse-json",
+  "middleware-promote",
+  "middleware-relabel",
+  "middleware-unwind",
+] }
 
 # Source plugins
 drasi-source-mock = "0.1.5"
@@ -130,6 +138,7 @@ large_enum_variant = "allow"
 # This allows linking against system/pre-built libjq instead of the broken jq-src autotools build
 # Remove this once drasi-middleware publishes a version with the fix
 [patch.crates-io]
+drasi-lib = { git = "https://github.com/ruokun-niu/drasi-core.git", branch = "clippy-fix-for-jq" }
 drasi-middleware = { git = "https://github.com/ruokun-niu/drasi-core.git", branch = "clippy-fix-for-jq" }
 
 # Uncomment this section for local development to use path-based dependencies
