@@ -20,14 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
-# Create a linker wrapper that injects static linking flags before -nodefaultlibs.
-# This statically links libstdc++, libgcc, and libwinpthread into the binary,
-# producing a single standalone .exe with no runtime DLL dependencies.
-RUN printf '#!/bin/sh\nargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -nodefaultlibs) args="$args /usr/x86_64-w64-mingw32/lib/libpthread.a -lkernel32 -lmsvcrt -static -static-libgcc -static-libstdc++ -nodefaultlibs" ;;\n    *) args="$args $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $args\n' \
-    > /usr/local/bin/mingw-gcc-wrapper \
-    && chmod +x /usr/local/bin/mingw-gcc-wrapper
-
-# Note: MinGW runtime DLLs are no longer needed at runtime since we link statically.
+# Collect MinGW runtime DLLs into a known directory for easy bundling.
+# These DLLs must be shipped alongside the .exe at runtime.
+RUN mkdir -p /usr/local/mingw-dlls && \
+    cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libgcc_s_seh-1.dll /usr/local/mingw-dlls/ && \
+    cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libstdc++-6.dll /usr/local/mingw-dlls/ && \
+    cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll /usr/local/mingw-dlls/ && \
+    ls -la /usr/local/mingw-dlls/
 
 # Build libjq from source for Windows (MinGW) with bundled oniguruma
 ENV JQ_VERSION=1.7.1
@@ -47,7 +46,6 @@ ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
 
 # Set cargo environment for cross-compilation
-ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=mingw-gcc-wrapper
 ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
 ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
 ENV AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
