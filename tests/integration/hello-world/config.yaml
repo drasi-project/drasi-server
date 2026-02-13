@@ -8,7 +8,8 @@ sources:
   - kind: mock
     id: test-source
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 3000
 
 queries:
