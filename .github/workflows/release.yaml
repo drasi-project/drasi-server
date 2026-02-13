@@ -291,51 +291,25 @@ jobs:
             exit 1
           fi
 
-      - name: Extract MinGW runtime DLLs from cross container
+      - name: Verify no DLL dependencies
         run: |
-          echo "=== Docker images available ==="
-          docker images
-          echo ""
-
-          # The custom Dockerfile collects DLLs into /usr/local/mingw-dlls/
-          IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -i 'windows\|mingw\|cross' | head -1)
-          echo "Matched image: '$IMAGE'"
-
-          if [ -z "$IMAGE" ]; then
-            echo "No matching image found, building explicitly..."
-            IMAGE="drasi-cross-windows:local"
-            docker build -f Dockerfile.cross-windows-gnu -t "$IMAGE" .
+          # Check that the built .exe doesn't depend on MinGW runtime DLLs
+          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-server.exe"
+          echo "=== Checking for MinGW DLL dependencies ==="
+          if x86_64-w64-mingw32-objdump -p "$SRC_BINARY" 2>/dev/null | grep -i 'DLL Name' | grep -iE 'libgcc|libstdc|libwinpthread'; then
+            echo "WARNING: Binary still has MinGW DLL dependencies!"
+            x86_64-w64-mingw32-objdump -p "$SRC_BINARY" | grep -i 'DLL Name'
+          else
+            echo "✓ No MinGW runtime DLL dependencies found"
+            echo "All DLL imports:"
+            x86_64-w64-mingw32-objdump -p "$SRC_BINARY" 2>/dev/null | grep -i 'DLL Name' || echo "(could not read DLL imports)"
           fi
-
-          echo "Using image: $IMAGE"
-          CONTAINER=$(docker create "$IMAGE" true)
-          echo "Created container: $CONTAINER"
-
-          echo "=== Files in /usr/local/mingw-dlls/ ==="
-          docker exec "$CONTAINER" ls -la /usr/local/mingw-dlls/ 2>/dev/null || \
-            docker run --rm "$IMAGE" ls -la /usr/local/mingw-dlls/ 2>/dev/null || \
-            echo "Warning: Could not list DLLs inside container"
-
-          docker cp "$CONTAINER:/usr/local/mingw-dlls/." ./mingw-dlls/ || {
-            echo "Error: Failed to copy DLLs from container"
-            echo "Trying alternate DLL locations..."
-            docker run --rm "$IMAGE" find / -name '*.dll' -type f 2>/dev/null | head -20
-            docker rm "$CONTAINER"
-            exit 1
-          }
-          docker rm "$CONTAINER"
-
-          echo "=== Extracted DLLs ==="
-          ls -la mingw-dlls/
-          echo "Total DLL size: $(du -sh mingw-dlls/ | cut -f1)"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-windows
-          path: |
-            drasid-*-x86_64-windows.exe
-            mingw-dlls/*.dll
+          path: drasid-*-x86_64-windows.exe
           if-no-files-found: error
 
   # Build Docker images for Linux platforms
@@ -526,17 +500,6 @@ jobs:
           find bin/ -type f | head -30
           echo ""
 
-          # Place MinGW runtime DLLs next to the .exe so Windows can find them
-          if ls bin/mingw-dlls/*.dll 2>/dev/null; then
-            cp bin/mingw-dlls/*.dll bin/
-            echo "Copied MinGW DLLs to bin/"
-          else
-            echo "Warning: No MinGW DLLs found in bin/mingw-dlls/"
-          fi
-
-          echo "=== bin/ directory ==="
-          ls -la bin/
-          echo ""
           echo "=== Binary info ==="
           file "$BINARY_PATH" || true
           echo "Size: $(du -h "$BINARY_PATH" | cut -f1)"
