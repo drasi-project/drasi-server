@@ -188,7 +188,7 @@ pub async fn delete_source(
         )));
     }
 
-    match core.remove_source(&id).await {
+    match core.remove_source(&id, true).await {
         Ok(_) => {
             if let Some(persistence) = &config_persistence {
                 persistence.unregister_source(&instance_id, &id).await;
@@ -566,7 +566,7 @@ pub async fn delete_reaction(
         )));
     }
 
-    match core.remove_reaction(&id).await {
+    match core.remove_reaction(&id, true).await {
         Ok(_) => {
             if let Some(persistence) = &config_persistence {
                 persistence.unregister_reaction(&instance_id, &id).await;

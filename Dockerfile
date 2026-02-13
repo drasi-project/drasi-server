@@ -47,8 +47,6 @@ WORKDIR /app
 # Copy Cargo files first for dependency caching
 COPY Cargo.toml Cargo.lock ./
 
-# Copy the drasi-core submodule (required dependency)
-COPY drasi-core ./drasi-core
 
 # Copy source code
 COPY src ./src
