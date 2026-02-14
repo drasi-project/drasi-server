@@ -57,25 +57,23 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO drasi_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 
--- Create publication for logical replication (if not exists)
+-- Create publication for logical replication and ensure Message table is included
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'drasi_pub') THEN
         CREATE PUBLICATION drasi_pub FOR TABLE "Message";
-    END IF;
-END
-$$;
-
--- Create replication slot for CDC (if not exists)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'drasi_slot') THEN
-        PERFORM pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'drasi_pub' AND tablename = 'Message'
+    ) THEN
+        ALTER PUBLICATION drasi_pub ADD TABLE "Message";
     END IF;
 END
 $$;
 
 -- Insert initial sample data (only if table is empty)
+-- This must happen BEFORE the replication slot is created so that
+-- existing data is loaded via bootstrap, not replayed as change events.
 INSERT INTO "Message" ("From", "Message")
 SELECT * FROM (VALUES
     ('Buzz Lightyear', 'To infinity and beyond!'),
@@ -84,6 +82,17 @@ SELECT * FROM (VALUES
     ('David', 'I am Spartacus')
 ) AS data("From", "Message")
 WHERE NOT EXISTS (SELECT 1 FROM "Message");
+
+-- Create replication slot for CDC (if not exists)
+-- The slot captures only changes made AFTER this point.
+-- Existing table data is retrieved via bootstrap when queries start.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'drasi_slot') THEN
+        PERFORM pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
+    END IF;
+END
+$$;
 
 -- Show the summary
 SET client_min_messages = NOTICE;
