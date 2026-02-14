@@ -110,7 +110,7 @@ async fn test_source_lifecycle_operations() {
 
     // Remove the source
     server
-        .remove_source("lifecycle_source", true)
+        .remove_source("lifecycle_source", false)
         .await
         .expect("Failed to remove source");
 

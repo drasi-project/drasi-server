@@ -152,7 +152,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     assert!(core.is_running().await);
 
     // Test removing a source at runtime using the new API
-    core.remove_source("sensors-source", true).await?;
+    core.remove_source("sensors-source", false).await?;
     sleep(Duration::from_millis(100)).await;
 
     // Core should still be running (other components continue)
