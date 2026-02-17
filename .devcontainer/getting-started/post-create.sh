@@ -10,14 +10,19 @@ echo "🌐 Creating shared Docker network..."
 docker network create drasi-network 2>/dev/null || true
 
 # Install system dependencies
-echo "🐘 Installing system dependencies (PostgreSQL client, OpenSSL, Protobuf, Clang)..."
+echo "🐘 Installing system dependencies (PostgreSQL client, OpenSSL, Protobuf, Clang, jq, oniguruma)..."
 sudo apt-get update && sudo apt-get install -y \
     postgresql-client \
     libssl-dev \
     pkg-config \
     protobuf-compiler \
     clang \
-    libclang-dev
+    libclang-dev \
+    libjq-dev \
+    libonig-dev
+
+# Set JQ_LIB_DIR for the jq-sys crate (architecture-aware)
+export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
 # Build and install Drasi Server
 echo "🔨 Building Drasi Server (this may take a few minutes)..."

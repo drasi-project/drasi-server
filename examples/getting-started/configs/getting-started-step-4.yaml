@@ -1,0 +1,65 @@
+id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
+host: 0.0.0.0
+port: 8080
+logLevel: info
+persistConfig: true
+persistIndex: false
+sources:
+- kind: postgres
+  id: my-postgres
+  autoStart: true
+  bootstrapProvider:
+    kind: postgres
+  host:
+    kind: EnvironmentVariable
+    name: DB_HOST
+    default: localhost
+  port: 5432
+  database: getting_started
+  user: drasi_user
+  password: drasi_password
+  tables:
+  - Message
+  slotName: drasi_slot
+  publicationName: drasi_pub
+  sslMode: prefer
+  tableKeys:
+  - table: Message
+    keyColumns:
+    - MessageId
+queries:
+- id: all-messages
+  autoStart: true
+  query: |
+    MATCH (m:Message)
+    RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
+  queryLanguage: GQL
+  middleware: []
+  sources:
+  - sourceId: my-postgres
+    nodes: []
+    relations: []
+    pipeline: []
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
+- id: hello-world-senders
+  autoStart: true
+  query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
+  queryLanguage: Cypher
+  middleware: []
+  sources:
+  - sourceId: my-postgres
+    nodes: []
+    relations: []
+    pipeline: []
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
+reactions:
+- kind: log
+  id: log-reaction
+  queries:
+  - all-messages
+  - hello-world-senders
+  autoStart: true
+  routes: {}
+instances: []
