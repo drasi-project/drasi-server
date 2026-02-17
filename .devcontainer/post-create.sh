@@ -12,7 +12,12 @@ sudo apt-get update && sudo apt-get install -y \
     pkg-config \
     protobuf-compiler \
     clang \
-    libclang-dev
+    libclang-dev \
+    libjq-dev \
+    libonig-dev
+
+# Set JQ_LIB_DIR for the jq-sys crate (architecture-aware)
+export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
 # Build Drasi Server
 echo "🔨 Building Drasi Server (this may take a few minutes)..."
