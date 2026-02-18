@@ -1669,6 +1669,4 @@ logLevel: warn
         assert!(reaction_ids.contains(&"config-reaction"));
         assert!(reaction_ids.contains(&"api-reaction"));
     }
-
-    
 }
