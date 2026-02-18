@@ -1404,9 +1404,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4497c97aff01060ed204ee3c320cde23de5fc8cbeca324db2cf587e608477c56"
+checksum = "b01f1edeb6703021dc1d673b95327a0bafb7e7132fb4d6f47a9121746a0cabef"
 dependencies = [
  "anyhow",
  "async-trait",

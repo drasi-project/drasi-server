@@ -68,6 +68,7 @@ drasi-reaction-profiler = "0.2.5"
 drasi-reaction-storedproc-postgres = "0.2.5"
 drasi-reaction-storedproc-mysql = "0.2.5"
 drasi-reaction-storedproc-mssql = "0.2.5"
+drasi-reaction-application = "0.2.5"
 
 # Index plugins
 drasi-index-rocksdb = "0.2.2"
