@@ -388,7 +388,23 @@ async fn test_reaction_lifecycle_via_api() {
 async fn test_source_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
     registry.source.emit_log("source log entry").await;
-    sleep(Duration::from_millis(200)).await; // Increased for timing stability
+
+    // Poll the log buffer until the entry arrives (async log pipeline)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let (history, _) = _core
+            .subscribe_source_logs("test-source")
+            .await
+            .expect("subscribe_source_logs failed");
+        if history.iter().any(|e| e.message == "source log entry") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Timed out waiting for source log entry to appear in log buffer"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
 
     let response = router
         .oneshot(
@@ -415,7 +431,23 @@ async fn test_source_logs_snapshot_via_api() {
 async fn test_reaction_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
     registry.reaction.emit_log("reaction log entry").await;
-    sleep(Duration::from_millis(50)).await;
+
+    // Poll the log buffer until the entry arrives (async log pipeline)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let (history, _) = _core
+            .subscribe_reaction_logs("test-reaction")
+            .await
+            .expect("subscribe_reaction_logs failed");
+        if history.iter().any(|e| e.message == "reaction log entry") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Timed out waiting for reaction log entry to appear in log buffer"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
 
     let response = router
         .oneshot(
