@@ -1,0 +1,19 @@
+# Cargo configuration for drasi-server
+#
+# To use local path-based dependencies for development:
+# 1. Uncomment the [patch.crates-io] section in Cargo.toml
+# 2. Run: cargo build
+#
+# To use published crates from crates.io:
+# 1. Keep the [patch.crates-io] section commented out in Cargo.toml
+# 2. Run: cargo build
+
+# Cross-compilation target flags (used by `cross` tool)
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]

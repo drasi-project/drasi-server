@@ -1,0 +1,60 @@
+# Drasi Server Configuration
+# Generated with: drasi-server init
+#
+# Edit this file to customize your configuration.
+# See documentation at: https://drasi.io/docs
+
+id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
+host: 0.0.0.0
+port: 8080
+logLevel: info
+persistConfig: true
+persistIndex: false
+sources:
+- kind: postgres
+  id: my-postgres
+  autoStart: true
+  bootstrapProvider:
+    kind: postgres
+  host: ${DB_HOST:-localhost}
+  port: 5432
+  database: getting_started
+  user: drasi_user
+  password: drasi_password
+  tables:
+  - Message
+  slotName: drasi_slot
+  publicationName: drasi_pub
+  sslMode: prefer
+  tableKeys:
+  - table: Message
+    keyColumns:
+    - MessageId
+queries:
+- id: all-messages
+  autoStart: true
+  query: |
+      MATCH (m:Message)
+      RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
+  queryLanguage: GQL
+  middleware: []
+  sources:
+  - sourceId: my-postgres
+    nodes: []
+    relations: []
+    pipeline: []
+  enableBootstrap: true
+  bootstrapBufferSize: 10000
+reactions:
+- kind: log
+  id: log-reaction
+  queries:
+  - all-messages
+  autoStart: true
+  routes: {}
+instances: []
+
+# Tips:
+# - Use environment variables: ${VAR_NAME:-default}
+# - Update 'my-query' with your actual GQL query
+# - Connect reactions to your queries by updating the 'queries' field

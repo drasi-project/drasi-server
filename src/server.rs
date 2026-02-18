@@ -381,7 +381,9 @@ impl DrasiServer {
         Ok(())
     }
 
-    /// Extract source and reaction configs from resolved instances for persistence initialization
+    /// Extract source, reaction, and query configs from resolved instances for persistence initialization.
+    /// The `config` parameter provides the original `QueryConfigDto` entries (before resolution)
+    /// since the persistence layer stores queries as DTOs, not resolved `QueryConfig` domain objects.
     fn extract_component_configs(
         config: &DrasiServerConfig,
         resolved_instances: &[ResolvedInstanceConfig],

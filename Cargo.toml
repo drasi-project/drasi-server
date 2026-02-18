@@ -31,43 +31,50 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library
-drasi-lib = "0.3.6"
+# Drasi core library (all middleware, using system libjq instead of bundled-jq)
+drasi-lib = { version = "0.3.8", features = [
+  "middleware-jq",
+  "middleware-decoder",
+  "middleware-map",
+  "middleware-parse-json",
+  "middleware-promote",
+  "middleware-relabel",
+  "middleware-unwind",
+] }
 
 # Source plugins
-drasi-source-mock = "0.1.5"
-drasi-source-http = "0.1.5"
-drasi-source-grpc = "0.1.5"
-drasi-source-postgres = "0.1.6"
-drasi-source-platform = "0.1.5"
+drasi-source-mock = "0.1.7"
+drasi-source-http = "0.1.7"
+drasi-source-grpc = "0.1.7"
+drasi-source-postgres = "0.1.8"
+drasi-source-platform = "0.1.7"
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.6"
-drasi-bootstrap-scriptfile = "0.1.5"
-drasi-bootstrap-platform = "0.1.5"
-drasi-bootstrap-noop = "0.1.4"
-drasi-bootstrap-application = "0.1.5"
+drasi-bootstrap-postgres = "0.1.8"
+drasi-bootstrap-scriptfile = "0.1.7"
+drasi-bootstrap-platform = "0.1.7"
+drasi-bootstrap-noop = "0.1.6"
+drasi-bootstrap-application = "0.1.7"
 
 # Reaction plugins
-drasi-reaction-log = "0.1.5"
-drasi-reaction-http = "0.1.6"
-drasi-reaction-http-adaptive = "0.2.3"
-drasi-reaction-grpc = "0.2.3"
-drasi-reaction-grpc-adaptive = "0.1.4"
-drasi-reaction-sse = "0.2.4"
-drasi-reaction-platform = "0.2.4"
-drasi-reaction-profiler = "0.2.3"
-drasi-reaction-storedproc-postgres = "0.2.3"
-drasi-reaction-storedproc-mysql = "0.2.3"
-drasi-reaction-storedproc-mssql = "0.2.3"
-drasi-reaction-application = "0.2.0"
+drasi-reaction-log = "0.1.7"
+drasi-reaction-http = "0.1.8"
+drasi-reaction-http-adaptive = "0.2.5"
+drasi-reaction-grpc = "0.2.5"
+drasi-reaction-grpc-adaptive = "0.1.6"
+drasi-reaction-sse = "0.2.6"
+drasi-reaction-platform = "0.2.6"
+drasi-reaction-profiler = "0.2.5"
+drasi-reaction-storedproc-postgres = "0.2.5"
+drasi-reaction-storedproc-mysql = "0.2.5"
+drasi-reaction-storedproc-mssql = "0.2.5"
 
 # Index plugins
 drasi-index-rocksdb = "0.2.2"
 drasi-index-garnet = "0.1.4"
 
 # State store plugins
-drasi-state-store-redb = "0.1.3"
+drasi-state-store-redb = "0.1.5"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -92,6 +99,7 @@ dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
+openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 # Testing utilities
@@ -111,6 +119,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
+drasi-core = "0.3.3"
 
 # Integration testing with testcontainers
 testcontainers = "0.23"
@@ -129,6 +138,7 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
 
 # Uncomment this section for local development to use path-based dependencies
 # [patch.crates-io]
