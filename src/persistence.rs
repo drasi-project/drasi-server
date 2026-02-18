@@ -1407,7 +1407,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1472,7 +1472,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1533,7 +1533,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1614,7 +1614,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
