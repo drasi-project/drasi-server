@@ -126,7 +126,6 @@ export class SchemaProvider {
     if (!this.yamlApi?.registerContributor) {
       return;
     }
-    const schemaKey = schemaUri.toString();
     const contentUri = `${this.schemaProviderUri}://schema?cache=${this.globalState?.get<string>(`${SCHEMA_FILE_STATE_KEY}.timestamp`) ?? Date.now()}`;
     this.yamlApi.registerContributor(
       this.schemaProviderUri,

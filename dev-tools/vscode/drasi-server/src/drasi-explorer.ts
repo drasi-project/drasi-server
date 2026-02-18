@@ -3,7 +3,7 @@ import { DrasiClient } from './drasi-client';
 import { ComponentEvent, ComponentListItem, ComponentStatus, InstanceListItem, LogMessage } from './models/common';
 import { ConnectionRegistry, ServerConnectionConfig } from './sdk/config';
 import { QueryWatcher } from './query-watcher';
-import { ObservabilityViewer, LogTerminalViewer } from './observability-viewer';
+import { LogTerminalViewer } from './observability-viewer';
 import { ObservabilityStream } from './observability-stream';
 
 export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
