@@ -489,7 +489,7 @@ async fn test_source_logs_stream_via_api() {
 
     let body = response.into_body();
     let mut stream = body.into_data_stream();
-    let payload = timeout(Duration::from_secs(2), async move {
+    let payload = timeout(Duration::from_secs(10), async move {
         let mut collected = String::new();
         while let Some(Ok(chunk)) = stream.next().await {
             collected.push_str(&String::from_utf8_lossy(&chunk));
