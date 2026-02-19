@@ -63,7 +63,7 @@ fn build_dynamic_instance_router() -> Router {
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))
-        .route("/sources", put(handlers::upsert_source_handler))
+        .route("/sources/:id", put(handlers::upsert_source_handler))
         .route("/sources/:id", get(handlers::get_source))
         .route("/sources/:id/events", get(handlers::get_source_events))
         .route(
@@ -97,7 +97,7 @@ fn build_dynamic_instance_router() -> Router {
         // Reaction routes
         .route("/reactions", get(handlers::list_reactions))
         .route("/reactions", post(handlers::create_reaction_handler))
-        .route("/reactions", put(handlers::upsert_reaction_handler))
+        .route("/reactions/:id", put(handlers::upsert_reaction_handler))
         .route("/reactions/:id", get(handlers::get_reaction))
         .route("/reactions/:id/events", get(handlers::get_reaction_events))
         .route(
@@ -120,7 +120,7 @@ fn build_default_instance_router() -> Router {
         // Source routes (default instance)
         .route("/sources", get(handlers::list_sources_default))
         .route("/sources", post(handlers::create_source_default))
-        .route("/sources", put(handlers::upsert_source_default))
+        .route("/sources/:id", put(handlers::upsert_source_default))
         .route("/sources/:id", get(handlers::get_source_default))
         .route(
             "/sources/:id/events",
@@ -169,7 +169,7 @@ fn build_default_instance_router() -> Router {
         // Reaction routes (default instance)
         .route("/reactions", get(handlers::list_reactions_default))
         .route("/reactions", post(handlers::create_reaction_default))
-        .route("/reactions", put(handlers::upsert_reaction_default))
+        .route("/reactions/:id", put(handlers::upsert_reaction_default))
         .route("/reactions/:id", get(handlers::get_reaction_default))
         .route(
             "/reactions/:id/events",

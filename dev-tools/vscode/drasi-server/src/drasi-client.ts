@@ -363,9 +363,11 @@ export class DrasiClient {
 
   async applySource(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
+    const body = normalizeResource(resource, { dropKind: false });
+    const id = body.id as string;
     const res = await this.put<ApiResponse<any>>(
-      `${this.apiBase}/instances/${instanceId}/sources`,
-      normalizeResource(resource, { dropKind: false })
+      `${this.apiBase}/instances/${instanceId}/sources/${id}`,
+      body
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);
@@ -385,9 +387,11 @@ export class DrasiClient {
 
   async applyReaction(resource: Record<string, unknown>) {
     const instanceId = await this.getCurrentInstanceId();
+    const body = normalizeResource(resource, { dropKind: false });
+    const id = body.id as string;
     const res = await this.put<ApiResponse<any>>(
-      `${this.apiBase}/instances/${instanceId}/reactions`,
-      normalizeResource(resource, { dropKind: false })
+      `${this.apiBase}/instances/${instanceId}/reactions/${id}`,
+      body
     );
     if (!res.data?.success) {
       throw new Error(res.data?.error ?? res.statusText);

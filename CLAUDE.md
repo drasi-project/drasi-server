@@ -278,7 +278,7 @@ The server exposes a versioned REST API on port 8080 by default. All API endpoin
 Sources:
 - `GET /api/v1/instances/{instanceId}/sources` - List sources
 - `POST /api/v1/instances/{instanceId}/sources` - Create source (returns 409 if exists)
-- `PUT /api/v1/instances/{instanceId}/sources` - Upsert source (create or update)
+- `PUT /api/v1/instances/{instanceId}/sources/{id}` - Upsert source (create or update)
 - `GET /api/v1/instances/{instanceId}/sources/{id}` - Get source status
 - `DELETE /api/v1/instances/{instanceId}/sources/{id}` - Delete source
 - `POST /api/v1/instances/{instanceId}/sources/{id}/start` - Start source
@@ -296,7 +296,7 @@ Queries:
 Reactions:
 - `GET /api/v1/instances/{instanceId}/reactions` - List reactions
 - `POST /api/v1/instances/{instanceId}/reactions` - Create reaction (returns 409 if exists)
-- `PUT /api/v1/instances/{instanceId}/reactions` - Upsert reaction (create or update)
+- `PUT /api/v1/instances/{instanceId}/reactions/{id}` - Upsert reaction (create or update)
 - `GET /api/v1/instances/{instanceId}/reactions/{id}` - Get reaction status
 - `DELETE /api/v1/instances/{instanceId}/reactions/{id}` - Delete reaction
 - `POST /api/v1/instances/{instanceId}/reactions/{id}/start` - Start reaction

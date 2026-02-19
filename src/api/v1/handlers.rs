@@ -232,9 +232,10 @@ pub async fn create_source_handler(
 /// ```
 #[utoipa::path(
     put,
-    path = "/api/v1/instances/{instanceId}/sources",
+    path = "/api/v1/instances/{instanceId}/sources/{id}",
     params(
-        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID")
     ),
     request_body = ref("#/components/schemas/SourceConfig"),
     responses(
@@ -248,18 +249,18 @@ pub async fn upsert_source_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let core = registry
-        .get(&instance_id)
+        .get(&path.instance_id)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_source_handler(
         Extension(core),
         Extension(read_only),
         Extension(config_persistence),
-        Extension(instance_id),
+        Extension(path.instance_id),
         Json(config_json),
     )
     .await
@@ -927,9 +928,10 @@ pub async fn create_reaction_handler(
 /// ```
 #[utoipa::path(
     put,
-    path = "/api/v1/instances/{instanceId}/reactions",
+    path = "/api/v1/instances/{instanceId}/reactions/{id}",
     params(
-        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Reaction ID")
     ),
     request_body = ref("#/components/schemas/ReactionConfig"),
     responses(
@@ -943,18 +945,18 @@ pub async fn upsert_reaction_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let core = registry
-        .get(&instance_id)
+        .get(&path.instance_id)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
     shared::upsert_reaction_handler(
         Extension(core),
         Extension(read_only),
         Extension(config_persistence),
-        Extension(instance_id),
+        Extension(path.instance_id),
         Json(config_json),
     )
     .await
@@ -1228,6 +1230,7 @@ pub async fn upsert_source_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
@@ -1522,6 +1525,7 @@ pub async fn upsert_reaction_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
