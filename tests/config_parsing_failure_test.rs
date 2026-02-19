@@ -135,6 +135,8 @@ sources:
     user: testuser
     bootstrap_provider:
       kind: postgres
+      database: testdb
+      user: testuser
 queries: []
 reactions: []
 "#;
@@ -734,6 +736,20 @@ sources:
         keyColumns: [order_id]
     bootstrapProvider:
       kind: postgres
+      host: localhost
+      port: 5432
+      database: testdb
+      user: testuser
+      password: secret
+      slotName: drasi_slot
+      publicationName: drasi_pub
+      sslMode: prefer
+      tables: [users, orders]
+      tableKeys:
+        - table: users
+          keyColumns: [id]
+        - table: orders
+          keyColumns: [order_id]
 queries: []
 reactions: []
 "#;
@@ -885,6 +901,8 @@ sources:
     id: test-mock
     bootstrapProvider:
       kind: postgres
+      database: testdb
+      user: testuser
       extraField: "should fail"
 queries: []
 reactions: []

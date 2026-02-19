@@ -35,6 +35,7 @@
 #
 # Run with: cargo run -- --config examples/configs/03-reactions/grpc-streaming-reaction.yaml
 
+apiVersion: drasi.io/v1
 id: grpc-reaction-demo
 host: "0.0.0.0"
 port: 8080

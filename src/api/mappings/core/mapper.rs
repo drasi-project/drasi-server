@@ -37,6 +37,9 @@ pub enum MappingError {
 
     #[error("Failed to create reaction: {0}")]
     ReactionCreationError(String),
+
+    #[error("Invalid value: {0}")]
+    InvalidValue(String),
 }
 
 /// Trait for converting a specific DTO config to its domain model
@@ -124,6 +127,22 @@ impl DtoMapper {
         T::Err: std::fmt::Display,
     {
         value.as_ref().map(|v| self.resolve_typed(v)).transpose()
+    }
+
+    /// Resolve an optional ConfigValue<String> to Option<String>
+    pub fn resolve_optional_string(
+        &self,
+        value: &Option<ConfigValue<String>>,
+    ) -> Result<Option<String>, ResolverError> {
+        value.as_ref().map(|v| self.resolve_string(v)).transpose()
+    }
+
+    /// Resolve a Vec<ConfigValue<String>> to Vec<String>
+    pub fn resolve_string_vec(
+        &self,
+        values: &[ConfigValue<String>],
+    ) -> Result<Vec<String>, ResolverError> {
+        values.iter().map(|v| self.resolve_string(v)).collect()
     }
 
     /// Helper to resolve secret name to string (used by resolve_typed)

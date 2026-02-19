@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Drasi Server Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/dev-tools/vscode/drasi-server"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dev-tools/vscode/drasi-server/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile",
+      "cwd": "${workspaceFolder}/dev-tools/vscode/drasi-server"
+    }
+  ]
+}

@@ -83,6 +83,8 @@ cargo run -- --config config/server.yaml
 
 **Example configuration file:**
 ```yaml
+apiVersion: drasi.io/v1
+
 # Server identification
 id: "my-server"  # Unique server ID (defaults to UUID if not specified)
 
@@ -132,6 +134,7 @@ reactions:
 For multiple DrasiLib instances, use the `instances` array (legacy single-instance fields continue to work and map to the first instance):
 
 ```yaml
+apiVersion: drasi.io/v1
 host: "0.0.0.0"
 port: 8080
 logLevel: "info"
@@ -274,7 +277,8 @@ The server exposes a versioned REST API on port 8080 by default. All API endpoin
 
 Sources:
 - `GET /api/v1/instances/{instanceId}/sources` - List sources
-- `POST /api/v1/instances/{instanceId}/sources` - Create source
+- `POST /api/v1/instances/{instanceId}/sources` - Create source (returns 409 if exists)
+- `PUT /api/v1/instances/{instanceId}/sources/{id}` - Upsert source (create or update)
 - `GET /api/v1/instances/{instanceId}/sources/{id}` - Get source status
 - `DELETE /api/v1/instances/{instanceId}/sources/{id}` - Delete source
 - `POST /api/v1/instances/{instanceId}/sources/{id}/start` - Start source
@@ -282,7 +286,7 @@ Sources:
 
 Queries:
 - `GET /api/v1/instances/{instanceId}/queries` - List queries
-- `POST /api/v1/instances/{instanceId}/queries` - Create query
+- `POST /api/v1/instances/{instanceId}/queries` - Create query (returns 409 if exists)
 - `GET /api/v1/instances/{instanceId}/queries/{id}` - Get query config
 - `DELETE /api/v1/instances/{instanceId}/queries/{id}` - Delete query
 - `POST /api/v1/instances/{instanceId}/queries/{id}/start` - Start query
@@ -291,7 +295,8 @@ Queries:
 
 Reactions:
 - `GET /api/v1/instances/{instanceId}/reactions` - List reactions
-- `POST /api/v1/instances/{instanceId}/reactions` - Create reaction
+- `POST /api/v1/instances/{instanceId}/reactions` - Create reaction (returns 409 if exists)
+- `PUT /api/v1/instances/{instanceId}/reactions/{id}` - Upsert reaction (create or update)
 - `GET /api/v1/instances/{instanceId}/reactions/{id}` - Get reaction status
 - `DELETE /api/v1/instances/{instanceId}/reactions/{id}` - Delete reaction
 - `POST /api/v1/instances/{instanceId}/reactions/{id}/start` - Start reaction
