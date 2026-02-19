@@ -836,7 +836,7 @@ pub async fn create_query(
         Err(e) => {
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                log::info!("Query '{query_id}' already exists - use PUT for upsert");
+                log::info!("Query '{query_id}' already exists");
                 return Err(StatusCode::CONFLICT);
             }
 
