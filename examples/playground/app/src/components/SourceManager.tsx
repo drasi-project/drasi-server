@@ -32,14 +32,13 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
       const createDemoSource = async () => {
         try {
           await createSource({
+            kind: 'http',
             id: 'demo-source',
-            source_type: 'http',
-            auto_start: true,
+            autoStart: true,
             host: '0.0.0.0',
-            port: 9000,  // First source gets port 9000
-            timeout_ms: 10000,
-            dispatch_buffer_capacity: 1000,
-          });
+            port: 9000,
+            timeoutMs: 10000,
+          } as any);
           console.log('Created demo-source automatically');
         } catch (err) {
           console.error('Failed to auto-create demo-source:', err);
@@ -63,14 +62,13 @@ export function SourceManager({ onSourceSelect, selectedSourceId }: SourceManage
 
     try {
       // Always create HTTP sources for the playground
-      const sourceConfig: Partial<Source> = {
+      const sourceConfig: any = {
+        kind: 'http',
         id: formData.id,
-        source_type: 'http',
-        auto_start: formData.auto_start,
+        autoStart: formData.auto_start,
         host: '0.0.0.0',
         port: 9000 + sources.length,
-        timeout_ms: 10000,
-        dispatch_buffer_capacity: 1000,
+        timeoutMs: 10000,
       };
 
       await createSource(sourceConfig);
