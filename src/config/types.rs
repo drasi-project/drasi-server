@@ -23,7 +23,8 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig,
+    ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto, ReactionConfig,
+    SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -33,9 +34,13 @@ use drasi_lib::config::QueryConfig;
 /// needed to run a DrasiServer. The `id`, `default_priority_queue_capacity`,
 /// `default_dispatch_buffer_capacity`, and `queries` fields are used to construct
 /// a DrasiLibConfig when creating a DrasiLib instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = DrasiServerConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiServerConfig {
+    /// API version marker for file identification (e.g., "drasi.io/v1")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<String>,
     /// Unique identifier for this server instance (defaults to UUID)
     #[serde(default = "default_id")]
     pub id: ConfigValue<String>,
@@ -71,12 +76,14 @@ pub struct DrasiServerConfig {
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
+    #[schema(value_type = Vec<MockSourceConfigDto>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
+    #[schema(value_type = Vec<LogReactionConfigDto>)]
     pub reactions: Vec<ReactionConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
@@ -86,6 +93,7 @@ pub struct DrasiServerConfig {
 impl Default for DrasiServerConfig {
     fn default() -> Self {
         Self {
+            api_version: None,
             id: default_id(),
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
@@ -128,7 +136,8 @@ fn default_persist_index() -> bool {
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = DrasiLibInstanceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiLibInstanceConfig {
     /// Unique identifier for this DrasiLib instance
@@ -154,12 +163,14 @@ pub struct DrasiLibInstanceConfig {
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
+    #[schema(value_type = Vec<MockSourceConfigDto>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
+    #[schema(value_type = Vec<LogReactionConfigDto>)]
     pub reactions: Vec<ReactionConfig>,
 }
 
@@ -397,6 +408,7 @@ mod tests {
     #[test]
     fn test_persist_index_serialization_roundtrip_true() {
         let config = DrasiServerConfig {
+            api_version: None,
             persist_index: true,
             ..Default::default()
         };
@@ -417,6 +429,7 @@ mod tests {
     #[test]
     fn test_persist_index_serialization_roundtrip_false() {
         let config = DrasiServerConfig {
+            api_version: None,
             persist_index: false,
             ..Default::default()
         };
@@ -497,6 +510,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = DrasiServerConfig {
+            api_version: None,
             persist_index: true,
             ..Default::default()
         };
@@ -557,6 +571,7 @@ mod tests {
     #[test]
     fn test_state_store_serialization_roundtrip() {
         let config = DrasiServerConfig {
+            api_version: None,
             state_store: Some(StateStoreConfig::redb("./data/test.redb")),
             ..Default::default()
         };
@@ -699,6 +714,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = DrasiServerConfig {
+            api_version: None,
             state_store: Some(StateStoreConfig::redb("./data/saved.redb")),
             ..Default::default()
         };
@@ -722,6 +738,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = DrasiServerConfig {
+            api_version: None,
             state_store: None,
             ..Default::default()
         };

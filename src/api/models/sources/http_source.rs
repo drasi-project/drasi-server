@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Local copy of HTTP source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = HttpSourceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpSourceConfigDto {
     pub host: ConfigValue<String>,
@@ -41,6 +42,7 @@ pub struct HttpSourceConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adaptive_enabled: Option<ConfigValue<bool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<WebhookConfig>)]
     pub webhooks: Option<WebhookConfigDto>,
 }
 
@@ -49,50 +51,37 @@ fn default_http_timeout_ms() -> ConfigValue<u64> {
 }
 
 /// Webhook configuration for custom route handling
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = WebhookConfig)]
+#[serde(rename_all = "camelCase")]
 pub struct WebhookConfigDto {
-    /// Global error behavior for unmatched/failed requests
     #[serde(default)]
+    #[schema(value_type = ErrorBehavior)]
     pub error_behavior: ErrorBehaviorDto,
-
-    /// CORS configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<CorsConfig>)]
     pub cors: Option<CorsConfigDto>,
-
-    /// List of webhook route configurations
+    #[schema(value_type = Vec<WebhookRoute>)]
     pub routes: Vec<WebhookRouteDto>,
 }
 
 /// CORS configuration for webhook endpoints
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = CorsConfig)]
+#[serde(rename_all = "camelCase")]
 pub struct CorsConfigDto {
-    /// Whether CORS is enabled
     #[serde(default = "default_cors_enabled")]
     pub enabled: bool,
-
-    /// Allowed origins
     #[serde(default = "default_cors_origins")]
-    pub allow_origins: Vec<String>,
-
-    /// Allowed HTTP methods
+    pub allow_origins: Vec<ConfigValue<String>>,
     #[serde(default = "default_cors_methods")]
-    pub allow_methods: Vec<String>,
-
-    /// Allowed headers
+    pub allow_methods: Vec<ConfigValue<String>>,
     #[serde(default = "default_cors_headers")]
-    pub allow_headers: Vec<String>,
-
-    /// Headers to expose
+    pub allow_headers: Vec<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub expose_headers: Vec<String>,
-
-    /// Whether to allow credentials
+    pub expose_headers: Vec<ConfigValue<String>>,
     #[serde(default)]
     pub allow_credentials: bool,
-
-    /// Max age in seconds for preflight caching
     #[serde(default = "default_cors_max_age")]
     pub max_age: u64,
 }
@@ -101,26 +90,26 @@ fn default_cors_enabled() -> bool {
     true
 }
 
-fn default_cors_origins() -> Vec<String> {
-    vec!["*".to_string()]
+fn default_cors_origins() -> Vec<ConfigValue<String>> {
+    vec![ConfigValue::Static("*".to_string())]
 }
 
-fn default_cors_methods() -> Vec<String> {
+fn default_cors_methods() -> Vec<ConfigValue<String>> {
     vec![
-        "GET".to_string(),
-        "POST".to_string(),
-        "PUT".to_string(),
-        "PATCH".to_string(),
-        "DELETE".to_string(),
-        "OPTIONS".to_string(),
+        ConfigValue::Static("GET".to_string()),
+        ConfigValue::Static("POST".to_string()),
+        ConfigValue::Static("PUT".to_string()),
+        ConfigValue::Static("PATCH".to_string()),
+        ConfigValue::Static("DELETE".to_string()),
+        ConfigValue::Static("OPTIONS".to_string()),
     ]
 }
 
-fn default_cors_headers() -> Vec<String> {
+fn default_cors_headers() -> Vec<ConfigValue<String>> {
     vec![
-        "Content-Type".to_string(),
-        "Authorization".to_string(),
-        "X-Requested-With".to_string(),
+        ConfigValue::Static("Content-Type".to_string()),
+        ConfigValue::Static("Authorization".to_string()),
+        ConfigValue::Static("X-Requested-With".to_string()),
     ]
 }
 
@@ -128,53 +117,33 @@ fn default_cors_max_age() -> u64 {
     3600
 }
 
-impl Default for CorsConfigDto {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            allow_origins: default_cors_origins(),
-            allow_methods: default_cors_methods(),
-            allow_headers: default_cors_headers(),
-            expose_headers: Vec::new(),
-            allow_credentials: false,
-            max_age: default_cors_max_age(),
-        }
-    }
-}
-
 /// Error handling behavior for webhook requests
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
+#[schema(as = ErrorBehavior)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorBehaviorDto {
-    /// Accept the request and log the issue
     #[default]
     AcceptAndLog,
-    /// Accept the request but silently discard
     AcceptAndSkip,
-    /// Reject the request with an HTTP error
     Reject,
 }
 
 /// Configuration for a single webhook route
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = WebhookRoute)]
+#[serde(rename_all = "camelCase")]
 pub struct WebhookRouteDto {
-    /// Route path pattern (supports `:param` for path parameters)
-    pub path: String,
-
-    /// Allowed HTTP methods
+    pub path: ConfigValue<String>,
     #[serde(default = "default_methods")]
+    #[schema(value_type = Vec<HttpMethod>)]
     pub methods: Vec<HttpMethodDto>,
-
-    /// Authentication configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<AuthConfig>)]
     pub auth: Option<AuthConfigDto>,
-
-    /// Error behavior override for this route
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<ErrorBehavior>)]
     pub error_behavior: Option<ErrorBehaviorDto>,
-
-    /// Mappings from payload to source change events
+    #[schema(value_type = Vec<WebhookMapping>)]
     pub mappings: Vec<WebhookMappingDto>,
 }
 
@@ -183,7 +152,8 @@ fn default_methods() -> Vec<HttpMethodDto> {
 }
 
 /// HTTP methods supported for webhook routes
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
+#[schema(as = HttpMethod)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethodDto {
     Get,
@@ -194,43 +164,38 @@ pub enum HttpMethodDto {
 }
 
 /// Authentication configuration for a webhook route
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = AuthConfig)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthConfigDto {
-    /// HMAC signature verification
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SignatureConfig>)]
     pub signature: Option<SignatureConfigDto>,
-
-    /// Bearer token verification
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<BearerConfig>)]
     pub bearer: Option<BearerConfigDto>,
 }
 
 /// HMAC signature verification configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SignatureConfig)]
+#[serde(rename_all = "camelCase")]
 pub struct SignatureConfigDto {
-    /// Signature algorithm type
     #[serde(rename = "type")]
+    #[schema(value_type = SignatureAlgorithm)]
     pub algorithm: SignatureAlgorithmDto,
-
-    /// Environment variable containing the secret
-    pub secret_env: String,
-
-    /// Header containing the signature
-    pub header: String,
-
-    /// Prefix to strip from signature
+    pub secret_env: ConfigValue<String>,
+    pub header: ConfigValue<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
-
-    /// Encoding of the signature
+    pub prefix: Option<ConfigValue<String>>,
     #[serde(default)]
+    #[schema(value_type = SignatureEncoding)]
     pub encoding: SignatureEncodingDto,
 }
 
 /// Supported HMAC signature algorithms
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SignatureAlgorithm)]
 #[serde(rename_all = "kebab-case")]
 pub enum SignatureAlgorithmDto {
     HmacSha1,
@@ -238,7 +203,8 @@ pub enum SignatureAlgorithmDto {
 }
 
 /// Signature encoding format
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
+#[schema(as = SignatureEncoding)]
 #[serde(rename_all = "lowercase")]
 pub enum SignatureEncodingDto {
     #[default]
@@ -247,71 +213,58 @@ pub enum SignatureEncodingDto {
 }
 
 /// Bearer token verification configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = BearerConfig)]
+#[serde(rename_all = "camelCase")]
 pub struct BearerConfigDto {
-    /// Environment variable containing the expected token
-    pub token_env: String,
+    pub token_env: ConfigValue<String>,
 }
 
 /// Mapping configuration from webhook payload to source change event
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = WebhookMapping)]
+#[serde(rename_all = "camelCase")]
 pub struct WebhookMappingDto {
-    /// Condition for when this mapping applies
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<MappingCondition>)]
     pub when: Option<MappingConditionDto>,
-
-    /// Static operation type
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<OperationType>)]
     pub operation: Option<OperationTypeDto>,
-
-    /// Path to extract operation from payload
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub operation_from: Option<String>,
-
-    /// Mapping from payload values to operation types
+    pub operation_from: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<HashMap<String, OperationType>>)]
     pub operation_map: Option<HashMap<String, OperationTypeDto>>,
-
-    /// Element type to create
+    #[schema(value_type = ElementType)]
     pub element_type: ElementTypeDto,
-
-    /// Timestamp configuration for effective_from
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<EffectiveFromConfig>)]
     pub effective_from: Option<EffectiveFromConfigDto>,
-
-    /// Template for element creation
+    #[schema(value_type = ElementTemplate)]
     pub template: ElementTemplateDto,
 }
 
 /// Condition for when a mapping applies
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = MappingCondition)]
+#[serde(rename_all = "camelCase")]
 pub struct MappingConditionDto {
-    /// Header to check
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub header: Option<String>,
-
-    /// Payload field path to check
+    pub header: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field: Option<String>,
-
-    /// Value must equal this
+    pub field: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub equals: Option<String>,
-
-    /// Value must contain this
+    pub equals: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contains: Option<String>,
-
-    /// Value must match this regex
+    pub contains: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub regex: Option<String>,
+    pub regex: Option<ConfigValue<String>>,
 }
 
 /// Operation type for source changes
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = OperationType)]
 #[serde(rename_all = "lowercase")]
 pub enum OperationTypeDto {
     Insert,
@@ -320,7 +273,8 @@ pub enum OperationTypeDto {
 }
 
 /// Element type for source changes
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = ElementType)]
 #[serde(rename_all = "lowercase")]
 pub enum ElementTypeDto {
     Node,
@@ -328,53 +282,39 @@ pub enum ElementTypeDto {
 }
 
 /// Configuration for effective_from timestamp
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = EffectiveFromConfig)]
 #[serde(untagged)]
 pub enum EffectiveFromConfigDto {
-    /// Simple template string
-    Simple(String),
-    /// Explicit configuration with format
+    Simple(ConfigValue<String>),
     Explicit {
-        /// Template for the timestamp value
-        value: String,
-        /// Format of the timestamp
+        value: ConfigValue<String>,
         format: TimestampFormatDto,
     },
 }
 
 /// Timestamp format for effective_from
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = TimestampFormat)]
 #[serde(rename_all = "snake_case")]
 pub enum TimestampFormatDto {
-    /// ISO 8601 datetime string
     Iso8601,
-    /// Unix timestamp in seconds
     UnixSeconds,
-    /// Unix timestamp in milliseconds
     UnixMillis,
-    /// Unix timestamp in nanoseconds
     UnixNanos,
 }
 
 /// Template for element creation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = ElementTemplate)]
+#[serde(rename_all = "camelCase")]
 pub struct ElementTemplateDto {
-    /// Template for element ID
-    pub id: String,
-
-    /// Templates for element labels
-    pub labels: Vec<String>,
-
-    /// Templates for element properties
+    pub id: ConfigValue<String>,
+    pub labels: Vec<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub properties: Option<serde_json::Value>,
-
-    /// Template for relation source node ID (relations only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
-
-    /// Template for relation target node ID (relations only)
+    pub from: Option<ConfigValue<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<String>,
+    pub to: Option<ConfigValue<String>>,
 }

@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Template specification for log output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = LogTemplateSpec)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateSpecDto {
     /// Output template as a Handlebars template
@@ -27,28 +28,35 @@ pub struct TemplateSpecDto {
 }
 
 /// Configuration for query-specific log output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = LogQueryConfig)]
 #[serde(deny_unknown_fields)]
 pub struct QueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub added: Option<TemplateSpecDto>,
     /// Template for UPDATE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub updated: Option<TemplateSpecDto>,
     /// Template for DELETE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogTemplateSpec>)]
     pub deleted: Option<TemplateSpecDto>,
 }
 
 /// Local copy of log reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
+#[schema(as = LogReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogReactionConfigDto {
     /// Query-specific template configurations
     #[serde(default)]
+    #[schema(value_type = HashMap<String, LogQueryConfig>)]
     pub routes: HashMap<String, QueryConfigDto>,
     /// Default template configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<LogQueryConfig>)]
     pub default_template: Option<QueryConfigDto>,
 }

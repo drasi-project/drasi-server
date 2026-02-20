@@ -32,14 +32,19 @@ use axum::{
 };
 use drasi_lib::Query;
 use drasi_server::api;
-use drasi_server::api::shared::handlers;
+use drasi_server::api::v1::handlers;
+use drasi_server::instance_registry::InstanceRegistry;
+use futures_util::StreamExt;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
 use tower::ServiceExt;
 
 /// Helper to create a test router with all dependencies
-async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
+async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
     use drasi_lib::DrasiLib;
+    use drasi_server::api::v1::routes::build_v1_router;
 
     // Create mock source instances
     let test_source = create_mock_source("test-source");
@@ -53,11 +58,11 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
     // Create a minimal DrasiLib using the builder with mock instances
     let core = DrasiLib::builder()
         .with_id("test-server")
-        .with_source(test_source)
-        .with_source(query_source)
-        .with_source(auto_source)
-        .with_reaction(test_reaction)
-        .with_reaction(auto_reaction)
+        .with_source(test_source.clone())
+        .with_source(query_source.clone())
+        .with_source(auto_source.clone())
+        .with_reaction(test_reaction.clone())
+        .with_reaction(auto_reaction.clone())
         .build()
         .await
         .expect("Failed to build test core");
@@ -72,89 +77,35 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>) {
 
     let instance_id = "test-server";
 
-    let instance_router = Router::new()
-        // Source endpoints
-        .route("/sources", axum::routing::get(handlers::list_sources))
-        .route(
-            "/sources",
-            axum::routing::post(handlers::create_source_handler),
-        )
-        .route("/sources/:id", axum::routing::get(handlers::get_source))
-        .route(
-            "/sources/:id",
-            axum::routing::delete(handlers::delete_source),
-        )
-        .route(
-            "/sources/:id/start",
-            axum::routing::post(handlers::start_source),
-        )
-        .route(
-            "/sources/:id/stop",
-            axum::routing::post(handlers::stop_source),
-        )
-        // Query endpoints
-        .route("/queries", axum::routing::get(handlers::list_queries))
-        .route("/queries", axum::routing::post(handlers::create_query))
-        .route("/queries/:id", axum::routing::get(handlers::get_query))
-        .route(
-            "/queries/:id",
-            axum::routing::delete(handlers::delete_query),
-        )
-        .route(
-            "/queries/:id/start",
-            axum::routing::post(handlers::start_query),
-        )
-        .route(
-            "/queries/:id/stop",
-            axum::routing::post(handlers::stop_query),
-        )
-        .route(
-            "/queries/:id/results",
-            axum::routing::get(handlers::get_query_results),
-        )
-        // Reaction endpoints
-        .route("/reactions", axum::routing::get(handlers::list_reactions))
-        .route(
-            "/reactions",
-            axum::routing::post(handlers::create_reaction_handler),
-        )
-        .route("/reactions/:id", axum::routing::get(handlers::get_reaction))
-        .route(
-            "/reactions/:id",
-            axum::routing::delete(handlers::delete_reaction),
-        )
-        .route(
-            "/reactions/:id/start",
-            axum::routing::post(handlers::start_reaction),
-        )
-        .route(
-            "/reactions/:id/stop",
-            axum::routing::post(handlers::stop_reaction),
-        )
-        // Add extensions using new architecture
-        .layer(Extension(core.clone()))
-        .layer(Extension(read_only))
-        .layer(Extension(config_persistence))
-        .layer(Extension(instance_id.to_string()));
-
-    // Create instances map for list_instances endpoint
+    // Create registry with the test instance
     let mut instances_map = indexmap::IndexMap::new();
     instances_map.insert(instance_id.to_string(), core.clone());
-    let instances = Arc::new(instances_map);
+    let registry = InstanceRegistry::from_map(instances_map);
+
+    // Use the production router builder
+    let v1_router = build_v1_router(registry, read_only, config_persistence);
 
     let router = Router::new()
         // Health endpoint
         .route("/health", axum::routing::get(handlers::health_check))
-        .route("/instances", axum::routing::get(handlers::list_instances))
-        .nest(&format!("/instances/{instance_id}"), instance_router)
-        .layer(Extension(instances));
+        .merge(v1_router);
 
-    (router, core)
+    let registry2 = TestComponentRegistry {
+        source: test_source,
+        reaction: test_reaction,
+    };
+
+    (router, core, registry2)
+}
+
+struct TestComponentRegistry {
+    source: test_support::mock_components::MockSource,
+    reaction: test_support::mock_components::MockReaction,
 }
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
 
     let response = router
         .oneshot(
@@ -177,7 +128,7 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_instances_endpoint() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
 
     let response = router
         .oneshot(
@@ -195,16 +146,30 @@ async fn test_instances_endpoint() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(json["success"], true);
-    assert!(json["data"]
-        .as_array()
+    let instances = json["data"].as_array().unwrap();
+    let test_instance = instances.iter().find(|i| i["id"] == "test-server").unwrap();
+
+    // Verify richer InstanceDto fields
+    assert!(test_instance["source_count"].as_u64().unwrap() >= 3); // test-source, query-source, auto-source
+    assert!(test_instance["reaction_count"].as_u64().unwrap() >= 2); // test-reaction, auto-reaction
+    assert!(test_instance["links"]["self"].is_string());
+    assert!(test_instance["links"]["sources"]
+        .as_str()
         .unwrap()
-        .iter()
-        .any(|i| i["id"] == "test-server"));
+        .contains("/sources"));
+    assert!(test_instance["links"]["queries"]
+        .as_str()
+        .unwrap()
+        .contains("/queries"));
+    assert!(test_instance["links"]["reactions"]
+        .as_str()
+        .unwrap()
+        .contains("/reactions"));
 }
 
 #[tokio::test]
 async fn test_source_lifecycle_via_api() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
     let base = format!("/instances/{}", "test-server");
 
     // List sources (pre-registered via builder)
@@ -227,6 +192,10 @@ async fn test_source_lifecycle_via_api() {
     assert!(json["data"].is_array());
     // Should have pre-registered sources
     assert!(!json["data"].as_array().unwrap().is_empty());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
 
     // Get specific source
     let response = router
@@ -246,6 +215,8 @@ async fn test_source_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["id"], "test-source");
+    assert!(json["data"]["links"]["self"].is_string());
+    assert!(json["data"]["links"]["full"].is_string());
 
     // Source is already running (auto-started on first startup)
     // Stop the source first to test lifecycle operations
@@ -320,7 +291,7 @@ async fn test_source_lifecycle_via_api() {
 
 #[tokio::test]
 async fn test_query_lifecycle_via_api() {
-    let (router, core) = create_test_router().await;
+    let (router, core, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Create a query using DrasiLib (not via API - queries can still be created dynamically)
@@ -367,7 +338,7 @@ async fn test_query_lifecycle_via_api() {
 
 #[tokio::test]
 async fn test_reaction_lifecycle_via_api() {
-    let (router, _core) = create_test_router().await;
+    let (router, _core, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Reactions are pre-registered via builder, test listing them
@@ -389,6 +360,8 @@ async fn test_reaction_lifecycle_via_api() {
     assert!(json["data"].is_array());
     // Should have pre-registered reactions
     assert!(!json["data"].as_array().unwrap().is_empty());
+    assert!(json["data"][0]["links"]["self"].is_string());
+    assert!(json["data"][0]["links"]["full"].is_string());
 
     // Get specific reaction
     let response = router
@@ -407,11 +380,134 @@ async fn test_reaction_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["id"], "test-reaction");
+    assert!(json["data"]["links"]["self"].is_string());
+    assert!(json["data"]["links"]["full"].is_string());
+}
+
+#[tokio::test]
+async fn test_source_logs_snapshot_via_api() {
+    let (router, _core, registry) = create_test_router().await;
+    registry.source.emit_log("source log entry").await;
+
+    // Poll the log buffer until the entry arrives (async log pipeline)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let (history, _) = _core
+            .subscribe_source_logs("test-source")
+            .await
+            .expect("subscribe_source_logs failed");
+        if history.iter().any(|e| e.message == "source log entry") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Timed out waiting for source log entry to appear in log buffer"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/instances/test-server/sources/test-source/logs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+    assert!(json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["message"] == "source log entry"));
+}
+
+#[tokio::test]
+async fn test_reaction_logs_snapshot_via_api() {
+    let (router, _core, registry) = create_test_router().await;
+    registry.reaction.emit_log("reaction log entry").await;
+
+    // Poll the log buffer until the entry arrives (async log pipeline)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let (history, _) = _core
+            .subscribe_reaction_logs("test-reaction")
+            .await
+            .expect("subscribe_reaction_logs failed");
+        if history.iter().any(|e| e.message == "reaction log entry") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Timed out waiting for reaction log entry to appear in log buffer"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/instances/test-server/reactions/test-reaction/logs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+    assert!(json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["message"] == "reaction log entry"));
+}
+
+#[tokio::test]
+async fn test_source_logs_stream_via_api() {
+    let (router, _core, registry) = create_test_router().await;
+    let mut response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/instances/test-server/sources/test-source/logs/stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    registry.source.emit_log("streamed source log").await;
+
+    let body = response.into_body();
+    let mut stream = body.into_data_stream();
+    let payload = timeout(Duration::from_secs(10), async move {
+        let mut collected = String::new();
+        while let Some(Ok(chunk)) = stream.next().await {
+            collected.push_str(&String::from_utf8_lossy(&chunk));
+            if collected.contains("streamed source log") {
+                break;
+            }
+        }
+        collected
+    })
+    .await
+    .expect("Timed out waiting for log stream");
+
+    assert!(payload.contains("streamed source log"));
 }
 
 #[tokio::test]
 async fn test_dynamic_source_creation_via_api() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Create a mock source via API using the tagged enum format
@@ -446,7 +542,7 @@ async fn test_dynamic_source_creation_via_api() {
 
 #[tokio::test]
 async fn test_dynamic_reaction_creation_via_api() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Create a log reaction via API using the tagged enum format
@@ -483,7 +579,7 @@ async fn test_dynamic_reaction_creation_via_api() {
 
 #[tokio::test]
 async fn test_error_handling() {
-    let (router, _) = create_test_router().await;
+    let (router, _, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Try to get non-existent source
@@ -518,7 +614,7 @@ async fn test_error_handling() {
 
 #[tokio::test]
 async fn test_query_results_endpoint() {
-    let (router, core) = create_test_router().await;
+    let (router, core, _registry) = create_test_router().await;
     let base = "/instances/test-server";
 
     // Add a query
@@ -561,4 +657,104 @@ async fn test_query_results_endpoint() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_query_attach_sse_stream() {
+    let (router, core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Add a query to attach to
+    let query_config = Query::cypher("attach-query")
+        .query("MATCH (n) RETURN n")
+        .from_source("query-source")
+        .auto_start(false)
+        .build();
+    core.add_query(query_config.clone()).await.unwrap();
+
+    // Start an attach stream request
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/attach-query/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should succeed
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Content-Type should be text/event-stream
+    let content_type = response.headers().get("content-type").unwrap();
+    assert!(content_type.to_str().unwrap().contains("text/event-stream"));
+}
+
+#[tokio::test]
+async fn test_query_attach_not_found() {
+    let (router, _core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Try to attach to non-existent query
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/non-existent/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_query_attach_creates_temporary_reaction() {
+    let (router, core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+
+    // Add a query to attach to
+    let query_config = Query::cypher("attach-reaction-test")
+        .query("MATCH (n) RETURN n")
+        .from_source("query-source")
+        .auto_start(false)
+        .build();
+    core.add_query(query_config.clone()).await.unwrap();
+
+    // Count reactions before attach
+    let reactions_before = core.list_reactions().await.unwrap_or_default().len();
+
+    // Start an attach stream request
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/queries/attach-reaction-test/attach"))
+                .header("Accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // A temporary reaction should have been created
+    let reactions_after = core.list_reactions().await.unwrap_or_default();
+    assert!(reactions_after.len() > reactions_before);
+
+    // Verify the temporary reaction exists with __attach_ prefix
+    let attach_reaction = reactions_after
+        .iter()
+        .find(|(id, _)| id.starts_with("__attach_attach-reaction-test_"));
+    assert!(
+        attach_reaction.is_some(),
+        "Expected temporary attach reaction to be created"
+    );
 }

@@ -12,6 +12,7 @@
 # and connection strings instead of hardcoding them in config files.
 
 # Server bind address - uses environment variable with default
+apiVersion: drasi.io/v1
 host: "${SERVER_HOST:-0.0.0.0}"
 
 # Server port - uses environment variable with default

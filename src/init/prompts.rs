@@ -284,7 +284,8 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
     let table_keys = prompt_table_keys(&tables)?;
 
     // Ask about bootstrap provider
-    let bootstrap_provider = prompt_bootstrap_provider_for_postgres()?;
+    let bootstrap_provider =
+        prompt_bootstrap_provider_for_postgres(&host, port, &database, &user, &password, &tables)?;
 
     Ok(SourceConfig::Postgres {
         id,
@@ -306,7 +307,14 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
 }
 
 /// Prompt for bootstrap provider for PostgreSQL source.
-fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderConfig>> {
+fn prompt_bootstrap_provider_for_postgres(
+    host: &str,
+    port: u16,
+    database: &str,
+    user: &str,
+    password: &str,
+    tables: &[String],
+) -> Result<Option<BootstrapProviderConfig>> {
     let bootstrap_types = vec![
         BootstrapType::Postgres,
         BootstrapType::ScriptFile,
@@ -322,12 +330,20 @@ fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderCo
 
     match selected {
         BootstrapType::None => Ok(None),
-        BootstrapType::Postgres => {
-            // PostgresBootstrapConfig is now an empty struct - connection details come from source
-            Ok(Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto::default(),
-            )))
-        }
+        BootstrapType::Postgres => Ok(Some(BootstrapProviderConfig::Postgres(
+            PostgresBootstrapConfigDto {
+                host: ConfigValue::Static(host.to_string()),
+                port: ConfigValue::Static(port),
+                database: ConfigValue::Static(database.to_string()),
+                user: ConfigValue::Static(user.to_string()),
+                password: ConfigValue::Static(password.to_string()),
+                tables: tables.to_vec(),
+                slot_name: "drasi_slot".to_string(),
+                publication_name: "drasi_pub".to_string(),
+                ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
+                table_keys: vec![],
+            },
+        ))),
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
         BootstrapType::Platform => prompt_platform_bootstrap(),
     }
@@ -423,7 +439,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
             adaptive_min_wait_ms: None,
             adaptive_window_secs: None,
             adaptive_enabled: None,
-            webhooks: None, // Configure webhooks in YAML for custom webhook routes
+            webhooks: None,
         },
     })
 }

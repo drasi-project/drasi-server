@@ -244,6 +244,13 @@ export class DrasiSSEClient {
   }
 
   /**
+   * Mark as connected without an SSE stream (e.g., when no queries exist yet)
+   */
+  setConnected(): void {
+    this.updateConnectionStatus({ connected: true });
+  }
+
+  /**
    * Disconnect from SSE stream
    */
   async disconnect(): Promise<void> {

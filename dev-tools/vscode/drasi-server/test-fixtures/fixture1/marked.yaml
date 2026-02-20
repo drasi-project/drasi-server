@@ -1,0 +1,11 @@
+apiVersion: drasi.io/v1
+sources:
+  - kind: postgres
+    id: demo
+    host: localhost
+    port: 5432
+    database: demo_db
+    user: demo_user
+    password: demo_pass
+    bootstrapProvider:
+      kind: postgres
