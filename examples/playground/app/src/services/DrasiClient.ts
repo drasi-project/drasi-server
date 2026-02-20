@@ -56,6 +56,11 @@ export class DrasiClient {
         await this.ensureQuerySSEReaction(query.id);
       }
 
+      // If no queries exist yet, mark as connected (server is healthy)
+      if (queries.length === 0) {
+        this.sseClient.setConnected();
+      }
+
       this.initialized = true;
       console.log('Drasi Client initialized successfully');
     } catch (error) {
@@ -161,8 +166,8 @@ export class DrasiClient {
         ...q,
         status: item.status ?? q.status,
         error_message: item.error_message ?? q.error_message,
-        sources: q.source_subscriptions?.map((sub: any) =>
-          typeof sub === 'string' ? sub : sub.source_id
+        sources: (q.sources ?? q.source_subscriptions)?.map((sub: any) =>
+          typeof sub === 'string' ? sub : (sub.sourceId ?? sub.source_id)
         ) || []
       };
     });
@@ -179,8 +184,8 @@ export class DrasiClient {
       ...q,
       status: payload?.status ?? q.status,
       error_message: payload?.error_message ?? q.error_message,
-      sources: q.source_subscriptions?.map((sub: any) =>
-        typeof sub === 'string' ? sub : sub.source_id
+      sources: (q.sources ?? q.source_subscriptions)?.map((sub: any) =>
+        typeof sub === 'string' ? sub : (sub.sourceId ?? sub.source_id)
       ) || []
     };
   }
@@ -189,15 +194,16 @@ export class DrasiClient {
    * Create a new query
    */
   async createQuery(query: Partial<Query>): Promise<Query> {
-    // Convert sources to source_subscriptions for API
+    // Convert to API format (camelCase, sources field with sourceId)
     const apiQuery: any = {
-      ...query,
-      source_subscriptions: query.sources?.map(s => ({ source_id: s, enabled: true })) || [],
+      id: query.id,
+      query: query.query,
+      autoStart: query.auto_start ?? true,
+      sources: query.sources?.map(s => ({ sourceId: s })) || [],
       queryLanguage: 'Cypher',
       enableBootstrap: true,
-      bootstrapBufferSize: 10000
+      bootstrapBufferSize: 10000,
     };
-    delete apiQuery.sources;
 
     await this.apiClient.post('/api/v1/queries', apiQuery);
 
@@ -395,7 +401,7 @@ export class DrasiClient {
 
     try {
       // Check if reaction already exists
-      const checkResponse = await this.apiClient.get(`/api/v1/reactions/${reactionId}`);
+      const checkResponse = await this.apiClient.get(`/api/v1/reactions/${reactionId}?view=full`);
 
       if (checkResponse.status === 200) {
         const payload = checkResponse.data.data || checkResponse.data;
@@ -425,18 +431,18 @@ export class DrasiClient {
     // Use incrementing port numbers for each reaction
     const port = this.sseReactionBasePort + this.queryReactions.size;
 
-    const reactionConfig: Partial<Reaction> = {
+    const reactionConfig = {
+      kind: 'sse',
       id: reactionId,
-      reaction_type: 'sse',
       queries: [queryId],
-      auto_start: true,
+      autoStart: true,
       host: '0.0.0.0',
       port,
-      sse_path: '/events',
-      heartbeat_interval_ms: 15000,
+      ssePath: '/events',
+      heartbeatIntervalMs: 15000,
     };
 
-    await this.createReaction(reactionConfig);
+    await this.createReaction(reactionConfig as any);
     this.queryReactions.set(queryId, reactionId);
 
     // Connect SSE client to the new reaction's endpoint
@@ -451,7 +457,7 @@ export class DrasiClient {
   private buildSSEEndpoint(reaction: any): string {
     const host = reaction.host || 'localhost';
     const port = reaction.port || 8381;
-    const path = reaction.sse_path || '/events';
+    const path = reaction.ssePath || reaction.sse_path || '/events';
     return `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${path}`;
   }
 
