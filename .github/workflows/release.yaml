@@ -312,6 +312,190 @@ jobs:
           path: drasi-server-*-x86_64-windows.exe
           if-no-files-found: error
 
+  # ─── SSE CLI builds (pure Rust, no C dependencies) ───
+
+  # Build all Linux SSE CLI binaries using cross
+  build-sse-cli-linux:
+    name: Build SSE CLI Linux binaries
+    runs-on: ubuntu-latest
+    needs: determine-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cross
+        run: cargo install cross --version 0.2.5
+
+      - name: Build all Linux targets
+        run: |
+          VERSION="${{ needs.determine-version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          TARGETS=(
+            "x86_64-unknown-linux-gnu:x86_64-linux-gnu"
+            "aarch64-unknown-linux-gnu:aarch64-linux-gnu"
+            "x86_64-unknown-linux-musl:x86_64-linux-musl"
+            "aarch64-unknown-linux-musl:aarch64-linux-musl"
+          )
+
+          for entry in "${TARGETS[@]}"; do
+            TARGET="${entry%%:*}"
+            SUFFIX="${entry##*:}"
+            ARTIFACT_NAME="drasi-sse-cli-${VERSION}-${SUFFIX}"
+
+            echo "========================================="
+            echo "Building SSE CLI ${TARGET} -> ${ARTIFACT_NAME}"
+            echo "========================================="
+
+            rustup target add "${TARGET}"
+            cross build --release --target "${TARGET}" --manifest-path examples/sse-cli/Cargo.toml
+
+            SRC="target/${TARGET}/release/drasi-sse-cli"
+            if [[ -f "$SRC" ]]; then
+              cp "$SRC" "$ARTIFACT_NAME"
+              chmod +x "$ARTIFACT_NAME"
+              echo "✓ ${ARTIFACT_NAME}"
+            else
+              echo "Error: Built binary not found at $SRC"
+              ls -la "target/${TARGET}/release/" || true
+              exit 1
+            fi
+          done
+
+          echo "All SSE CLI Linux binaries built:"
+          ls -lh drasi-sse-cli-*
+
+      - name: Upload x86_64-linux-gnu
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
+          path: drasi-sse-cli-*-x86_64-linux-gnu
+          if-no-files-found: error
+
+      - name: Upload aarch64-linux-gnu
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
+          path: drasi-sse-cli-*-aarch64-linux-gnu
+          if-no-files-found: error
+
+      - name: Upload x86_64-linux-musl
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
+          path: drasi-sse-cli-*-x86_64-linux-musl
+          if-no-files-found: error
+
+      - name: Upload aarch64-linux-musl
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
+          path: drasi-sse-cli-*-aarch64-linux-musl
+          if-no-files-found: error
+
+  # macOS SSE CLI builds (native)
+  build-sse-cli-macos:
+    name: Build SSE CLI macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: determine-version
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            artifact_suffix: aarch64-apple-darwin
+            arch: ARM64
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            artifact_suffix: x86_64-apple-darwin
+            arch: x86_64
+            runner: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build binary
+        run: |
+          VERSION="${{ needs.determine-version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          cargo build --release --target ${{ matrix.target }} --manifest-path examples/sse-cli/Cargo.toml
+
+          SRC_BINARY="target/${{ matrix.target }}/release/drasi-sse-cli"
+          ARTIFACT_NAME="drasi-sse-cli-${VERSION}-${{ matrix.artifact_suffix }}"
+
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+            chmod +x "$ARTIFACT_NAME"
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            ls -la "target/${{ matrix.target }}/release/" || true
+            exit 1
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: drasi-sse-cli-*-${{ matrix.artifact_suffix }}
+          if-no-files-found: error
+
+  # Windows SSE CLI build (cross-compiled from Linux)
+  build-sse-cli-windows:
+    name: Build SSE CLI Windows (x86_64)
+    runs-on: ubuntu-latest
+    needs: determine-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cross
+        run: cargo install cross --version 0.2.5
+
+      - name: Build binary
+        run: |
+          VERSION="${{ needs.determine-version.outputs.tag }}"
+          VERSION="${VERSION#v}"
+
+          rustup target add x86_64-pc-windows-gnu
+          cross build --release --target x86_64-pc-windows-gnu --manifest-path examples/sse-cli/Cargo.toml
+
+          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-sse-cli.exe"
+          ARTIFACT_NAME="drasi-sse-cli-${VERSION}-x86_64-windows.exe"
+
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+            echo "✓ Built $ARTIFACT_NAME ($(du -h "$ARTIFACT_NAME" | cut -f1))"
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            ls -la "target/x86_64-pc-windows-gnu/release/" || true
+            exit 1
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-x86_64-windows
+          path: drasi-sse-cli-*-x86_64-windows.exe
+          if-no-files-found: error
+
   # Build Docker images for Linux platforms
   build-docker:
     name: Build Docker ${{ matrix.platform }}
@@ -407,6 +591,15 @@ jobs:
           echo "- \`drasi-server-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-${VERSION}-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SSE CLI Binaries" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-aarch64-apple-darwin\` (macOS ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-x86_64-apple-darwin\` (macOS x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-${VERSION}-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
 
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
@@ -533,16 +726,23 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
-    needs: [determine-version, create-manifest, test-binaries]
+    needs: [determine-version, create-manifest, test-binaries, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - name: Download drasi-server artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           pattern: drasi-server-${{ needs.determine-version.outputs.tag }}-*
+          merge-multiple: false
+
+      - name: Download drasi-sse-cli artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: drasi-sse-cli-${{ needs.determine-version.outputs.tag }}-*
           merge-multiple: false
 
       - name: Prepare release assets
@@ -575,6 +775,25 @@ jobs:
           ### Linux (musl)
           - ARM64 - `drasi-server-*-aarch64-linux-musl`
           - x86_64 - `drasi-server-*-x86_64-linux-musl`
+
+          ## SSE CLI Binaries
+
+          Pre-built binaries for the `drasi-sse-cli` tool (streams query change events via SSE):
+
+          ### macOS
+          - ARM64 (Apple Silicon) - `drasi-sse-cli-*-aarch64-apple-darwin`
+          - x86_64 (Intel) - `drasi-sse-cli-*-x86_64-apple-darwin`
+
+          ### Windows
+          - x86_64 - `drasi-sse-cli-*-x86_64-windows.exe`
+
+          ### Linux (glibc)
+          - ARM64 - `drasi-sse-cli-*-aarch64-linux-gnu`
+          - x86_64 - `drasi-sse-cli-*-x86_64-linux-gnu`
+
+          ### Linux (musl)
+          - ARM64 - `drasi-sse-cli-*-aarch64-linux-musl`
+          - x86_64 - `drasi-sse-cli-*-x86_64-linux-musl`
 
           ## Docker Images
 
