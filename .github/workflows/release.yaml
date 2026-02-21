@@ -90,7 +90,7 @@ jobs:
           for entry in "${TARGETS[@]}"; do
             TARGET="${entry%%:*}"
             SUFFIX="${entry##*:}"
-            ARTIFACT_NAME="drasid-${VERSION}-${SUFFIX}"
+            ARTIFACT_NAME="drasi-server-${VERSION}-${SUFFIX}"
 
             echo "========================================="
             echo "Building ${TARGET} -> ${ARTIFACT_NAME}"
@@ -112,34 +112,34 @@ jobs:
           done
 
           echo "All Linux binaries built:"
-          ls -lh drasid-*
+          ls -lh drasi-server-*
 
       - name: Upload x86_64-linux-gnu
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
-          path: drasid-*-x86_64-linux-gnu
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-x86_64-linux-gnu
+          path: drasi-server-*-x86_64-linux-gnu
           if-no-files-found: error
 
       - name: Upload aarch64-linux-gnu
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
-          path: drasid-*-aarch64-linux-gnu
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-aarch64-linux-gnu
+          path: drasi-server-*-aarch64-linux-gnu
           if-no-files-found: error
 
       - name: Upload x86_64-linux-musl
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
-          path: drasid-*-x86_64-linux-musl
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-x86_64-linux-musl
+          path: drasi-server-*-x86_64-linux-musl
           if-no-files-found: error
 
       - name: Upload aarch64-linux-musl
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
-          path: drasid-*-aarch64-linux-musl
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-aarch64-linux-musl
+          path: drasi-server-*-aarch64-linux-musl
           if-no-files-found: error
 
   # macOS requires native builds (can't cross-compile to macOS)
@@ -225,7 +225,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }} --bin drasi-server
 
           SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
-          ARTIFACT_NAME="drasid-${VERSION}-${{ matrix.artifact_suffix }}"
+          ARTIFACT_NAME="drasi-server-${VERSION}-${{ matrix.artifact_suffix }}"
 
           if [[ -f "$SRC_BINARY" ]]; then
             cp "$SRC_BINARY" "$ARTIFACT_NAME"
@@ -238,8 +238,8 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
-          path: drasid-*-${{ matrix.artifact_suffix }}
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          path: drasi-server-*-${{ matrix.artifact_suffix }}
           if-no-files-found: error
 
   # Windows cross-compiled from Linux (bundles MinGW runtime DLLs)
@@ -275,7 +275,7 @@ jobs:
           cross build --release --target x86_64-pc-windows-gnu --bin drasi-server
 
           SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-server.exe"
-          ARTIFACT_NAME="drasid-${VERSION}-x86_64-windows.exe"
+          ARTIFACT_NAME="drasi-server-${VERSION}-x86_64-windows.exe"
 
           echo "=== Build output ==="
           ls -lh "$SRC_BINARY" || true
@@ -308,8 +308,8 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-x86_64-windows
-          path: drasid-*-x86_64-windows.exe
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-x86_64-windows
+          path: drasi-server-*-x86_64-windows.exe
           if-no-files-found: error
 
   # Build Docker images for Linux platforms
@@ -400,13 +400,13 @@ jobs:
           echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasid-${VERSION}-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-${VERSION}-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
 
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
@@ -420,32 +420,32 @@ jobs:
           # macOS ARM64 (Apple Silicon)
           - artifact_suffix: aarch64-apple-darwin
             runner: macos-latest
-            binary_name_template: "drasid-VERSION-aarch64-apple-darwin"
+            binary_name_template: "drasi-server-VERSION-aarch64-apple-darwin"
           # macOS x86_64 (Intel) - cross-compiled, tested via Rosetta 2
           - artifact_suffix: x86_64-apple-darwin
             runner: macos-latest
-            binary_name_template: "drasid-VERSION-x86_64-apple-darwin"
+            binary_name_template: "drasi-server-VERSION-x86_64-apple-darwin"
           # Linux x86_64
           - artifact_suffix: x86_64-linux-gnu
             runner: ubuntu-latest
-            binary_name_template: "drasid-VERSION-x86_64-linux-gnu"
+            binary_name_template: "drasi-server-VERSION-x86_64-linux-gnu"
           # Linux ARM64
           - artifact_suffix: aarch64-linux-gnu
             runner: ubuntu-24.04-arm
-            binary_name_template: "drasid-VERSION-aarch64-linux-gnu"
+            binary_name_template: "drasi-server-VERSION-aarch64-linux-gnu"
           # Windows x86_64
           - artifact_suffix: x86_64-windows
             runner: windows-latest
-            binary_name_template: "drasid-VERSION-x86_64-windows.exe"
+            binary_name_template: "drasi-server-VERSION-x86_64-windows.exe"
           # Linux x86_64 (musl) — tested inside Alpine container
           - artifact_suffix: x86_64-linux-musl
             runner: ubuntu-latest
-            binary_name_template: "drasid-VERSION-x86_64-linux-musl"
+            binary_name_template: "drasi-server-VERSION-x86_64-linux-musl"
             use_alpine: true
           # Linux ARM64 (musl) — tested inside Alpine container
           - artifact_suffix: aarch64-linux-musl
             runner: ubuntu-24.04-arm
-            binary_name_template: "drasid-VERSION-aarch64-linux-musl"
+            binary_name_template: "drasi-server-VERSION-aarch64-linux-musl"
             use_alpine: true
     steps:
       - name: Checkout code
@@ -454,7 +454,7 @@ jobs:
       - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
-          name: drasid-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
+          name: drasi-server-${{ needs.determine-version.outputs.tag }}-${{ matrix.artifact_suffix }}
           path: bin
 
       - name: Run hello-world smoke test (Unix)
@@ -542,7 +542,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: drasid-${{ needs.determine-version.outputs.tag }}-*
+          pattern: drasi-server-${{ needs.determine-version.outputs.tag }}-*
           merge-multiple: false
 
       - name: Prepare release assets
@@ -562,19 +562,19 @@ jobs:
           This release includes pre-built binaries for the following platforms:
 
           ### macOS
-          - ARM64 (Apple Silicon) - `drasid-*-aarch64-apple-darwin`
-          - x86_64 (Intel) - `drasid-*-x86_64-apple-darwin`
+          - ARM64 (Apple Silicon) - `drasi-server-*-aarch64-apple-darwin`
+          - x86_64 (Intel) - `drasi-server-*-x86_64-apple-darwin`
 
           ### Windows
-          - x86_64 - `drasid-*-x86_64-windows.exe`
+          - x86_64 - `drasi-server-*-x86_64-windows.exe`
 
           ### Linux (glibc)
-          - ARM64 - `drasid-*-aarch64-linux-gnu`
-          - x86_64 - `drasid-*-x86_64-linux-gnu`
+          - ARM64 - `drasi-server-*-aarch64-linux-gnu`
+          - x86_64 - `drasi-server-*-x86_64-linux-gnu`
 
           ### Linux (musl)
-          - ARM64 - `drasid-*-aarch64-linux-musl`
-          - x86_64 - `drasid-*-x86_64-linux-musl`
+          - ARM64 - `drasi-server-*-aarch64-linux-musl`
+          - x86_64 - `drasi-server-*-x86_64-linux-musl`
 
           ## Docker Images
 
