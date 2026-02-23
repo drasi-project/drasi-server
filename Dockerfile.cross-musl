@@ -26,8 +26,8 @@ ENV LIBONIG_STATIC=1
 # Create a linker wrapper that appends necessary libraries at the end
 # to resolve symbol ordering issues with musl cross-compilation
 # Create a linker wrapper that appends necessary libraries at the end
-# to resolve symbol ordering issues with musl cross-compilation
-RUN printf '#!/bin/sh\nexec x86_64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \
+# Statically link libstdc++ and libgcc so the binary runs on Alpine without extra packages
+RUN printf '#!/bin/sh\nexec x86_64-linux-musl-gcc "$@" -Wl,--no-as-needed -Wl,-Bstatic -lstdc++ -lgcc -Wl,-Bdynamic -lpthread -ldl -lm -lc\n' \
     > /usr/local/bin/musl-gcc-wrapper \
     && chmod +x /usr/local/bin/musl-gcc-wrapper
 
