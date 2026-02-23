@@ -36,7 +36,8 @@ ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
 
 # Create a linker wrapper that appends necessary libraries at the end
-RUN printf '#!/bin/sh\nexec aarch64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \
+# Statically link libstdc++ so the binary runs on Alpine without needing `apk add libstdc++`
+RUN printf '#!/bin/sh\nexec aarch64-linux-musl-gcc "$@" -Wl,--no-as-needed -static-libstdc++ -lstdc++ -lpthread -ldl -lm -lc\n' \
     > /usr/local/bin/musl-gcc-wrapper \
     && chmod +x /usr/local/bin/musl-gcc-wrapper
 
