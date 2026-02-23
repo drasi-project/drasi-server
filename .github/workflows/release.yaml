@@ -652,7 +652,7 @@ jobs:
 
       - name: Run hello-world smoke test (Unix)
         if: runner.os != 'Windows' && !matrix.use_alpine
-``        env:
+        env:
           VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
           VERSION="${VERSION_TAG#v}"
