@@ -355,7 +355,7 @@ jobs:
             rustup target add "${TARGET}"
             cross build --release --target "${TARGET}" --manifest-path examples/sse-cli/Cargo.toml
 
-            SRC="target/${TARGET}/release/drasi-sse-cli"
+            SRC="examples/sse-cli/target/${TARGET}/release/drasi-sse-cli"
             if [[ -f "$SRC" ]]; then
               cp "$SRC" "$ARTIFACT_NAME"
               chmod +x "$ARTIFACT_NAME"
@@ -433,7 +433,7 @@ jobs:
 
           cargo build --release --target ${{ matrix.target }} --manifest-path examples/sse-cli/Cargo.toml
 
-          SRC_BINARY="target/${{ matrix.target }}/release/drasi-sse-cli"
+          SRC_BINARY="examples/sse-cli/target/${{ matrix.target }}/release/drasi-sse-cli"
           ARTIFACT_NAME="drasi-sse-cli-${VERSION}-${{ matrix.artifact_suffix }}"
 
           if [[ -f "$SRC_BINARY" ]]; then
@@ -441,7 +441,7 @@ jobs:
             chmod +x "$ARTIFACT_NAME"
           else
             echo "Error: Built binary not found at $SRC_BINARY"
-            ls -la "target/${{ matrix.target }}/release/" || true
+            ls -la "examples/sse-cli/target/${{ matrix.target }}/release/" || true
             exit 1
           fi
 
@@ -477,7 +477,7 @@ jobs:
           rustup target add x86_64-pc-windows-gnu
           cross build --release --target x86_64-pc-windows-gnu --manifest-path examples/sse-cli/Cargo.toml
 
-          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-sse-cli.exe"
+          SRC_BINARY="examples/sse-cli/target/x86_64-pc-windows-gnu/release/drasi-sse-cli.exe"
           ARTIFACT_NAME="drasi-sse-cli-${VERSION}-x86_64-windows.exe"
 
           if [[ -f "$SRC_BINARY" ]]; then
@@ -485,7 +485,7 @@ jobs:
             echo "✓ Built $ARTIFACT_NAME ($(du -h "$ARTIFACT_NAME" | cut -f1))"
           else
             echo "Error: Built binary not found at $SRC_BINARY"
-            ls -la "target/x86_64-pc-windows-gnu/release/" || true
+            ls -la "examples/sse-cli/target/x86_64-pc-windows-gnu/release/" || true
             exit 1
           fi
 
@@ -652,7 +652,7 @@ jobs:
 
       - name: Run hello-world smoke test (Unix)
         if: runner.os != 'Windows' && !matrix.use_alpine
-        env:
+``        env:
           VERSION_TAG: ${{ needs.determine-version.outputs.tag }}
         run: |
           VERSION="${VERSION_TAG#v}"
