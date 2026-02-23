@@ -112,6 +112,8 @@ fn build_dynamic_instance_router() -> Router {
         .route("/reactions/:id", delete(handlers::delete_reaction))
         .route("/reactions/:id/start", post(handlers::start_reaction))
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
+        // Global component events SSE stream
+        .route("/events", get(handlers::stream_all_component_events))
 }
 
 /// Build convenience routes that operate on the default (first) instance.
@@ -193,4 +195,6 @@ fn build_default_instance_router() -> Router {
             post(handlers::start_reaction_default),
         )
         .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
+        // Global component events SSE stream (default instance)
+        .route("/events", get(handlers::stream_all_component_events_default))
 }

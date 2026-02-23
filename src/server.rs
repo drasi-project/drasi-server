@@ -20,6 +20,7 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -354,7 +355,7 @@ impl DrasiServer {
             api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
 
         // Build the main application router
-        let app = Router::new()
+        let mut app = Router::new()
             // Health check at root level (operational endpoint, not versioned)
             .route("/health", get(api::health_check))
             // API versions endpoint
@@ -362,13 +363,32 @@ impl DrasiServer {
             // Nest v1 API under /api/v1
             .nest("/api/v1", v1_router)
             // Swagger UI and OpenAPI spec for v1
-            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()))
-            .layer(CorsLayer::permissive());
+            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
+
+        // Serve the Drasi Control UI if the dist directory exists
+        let ui_dir = std::path::Path::new("ui/dist");
+        if ui_dir.exists() {
+            info!("Drasi Control UI found, serving at /ui/");
+            app = app
+                .nest_service(
+                    "/ui",
+                    ServeDir::new(ui_dir).append_index_html_on_directories(true),
+                )
+                .route(
+                    "/",
+                    get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                );
+        }
+
+        let app = app.layer(CorsLayer::permissive());
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
+        if ui_dir.exists() {
+            info!("Drasi Control UI at http://{addr}/ui/");
+        }
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 

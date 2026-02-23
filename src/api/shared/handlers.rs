@@ -1579,3 +1579,31 @@ pub async fn stop_reaction(
         }
     }
 }
+
+/// Stream ALL component events for an instance as SSE.
+///
+/// This endpoint subscribes to the global component event broadcast channel
+/// and streams every component lifecycle change (status transitions, additions,
+/// removals) as SSE events. Used by the UI to reactively update without polling.
+pub async fn stream_all_component_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let mut receiver = core.subscribe_all_component_events();
+
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => return Some((ComponentEventDto::from(event), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+
+    Sse::new(live_stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("heartbeat"),
+    )
+}

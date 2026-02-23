@@ -47,6 +47,8 @@ pub enum ComponentStatusDto {
     Stopped,
     Error,
     Reconfiguring,
+    Added,
+    Removed,
 }
 
 impl From<ComponentStatus> for ComponentStatusDto {
@@ -58,6 +60,8 @@ impl From<ComponentStatus> for ComponentStatusDto {
             ComponentStatus::Stopped => Self::Stopped,
             ComponentStatus::Error => Self::Error,
             ComponentStatus::Reconfiguring => Self::Reconfiguring,
+            ComponentStatus::Added => Self::Added,
+            ComponentStatus::Removed => Self::Removed,
         }
     }
 }

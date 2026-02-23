@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-drasi-border;
+  }
+
+  body {
+    @apply bg-drasi-bg text-drasi-text-primary antialiased;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-drasi-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-drasi-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-drasi-text-secondary;
+  }
+}
+
+@layer components {
+  .node-card {
+    @apply bg-drasi-card border border-drasi-border rounded-xl p-3
+           transition-all duration-200 cursor-pointer select-none;
+  }
+
+  .node-card:hover {
+    @apply border-drasi-text-secondary;
+  }
+
+  .node-card-source {
+    @apply node-card hover:shadow-glow-source;
+  }
+
+  .node-card-query {
+    @apply node-card hover:shadow-glow-query;
+  }
+
+  .node-card-reaction {
+    @apply node-card hover:shadow-glow-reaction;
+  }
+
+  .status-running {
+    @apply shadow-glow-running;
+  }
+
+  .status-warning {
+    @apply shadow-glow-warning;
+  }
+
+  .status-error {
+    @apply shadow-glow-error;
+  }
+
+  .throughput-bar {
+    @apply h-1.5 rounded-full bg-drasi-border overflow-hidden;
+  }
+
+  .throughput-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  .stat-row {
+    @apply flex justify-between items-center py-1 text-sm;
+  }
+
+  .stat-label {
+    @apply text-drasi-text-secondary;
+  }
+
+  .stat-value {
+    @apply text-drasi-text-primary font-mono;
+  }
+
+  .inspector-panel {
+    @apply fixed right-0 top-0 h-full w-[420px] bg-drasi-surface
+           border-l border-drasi-border z-50 overflow-y-auto
+           animate-slide-in-right;
+  }
+
+  .event-bar {
+    @apply fixed bottom-0 left-0 right-0 h-10 bg-drasi-surface
+           border-t border-drasi-border flex items-center px-4
+           text-xs font-mono text-drasi-text-secondary z-40
+           overflow-hidden;
+  }
+
+  .action-btn {
+    @apply px-4 py-2 rounded-lg font-medium text-sm
+           transition-all duration-150 active:scale-95;
+  }
+
+  .action-btn-primary {
+    @apply action-btn bg-drasi-source text-white
+           hover:bg-blue-600 hover:shadow-glow-source;
+  }
+
+  .action-btn-success {
+    @apply action-btn bg-drasi-running text-white
+           hover:bg-emerald-600 hover:shadow-glow-running;
+  }
+
+  .action-btn-danger {
+    @apply action-btn bg-drasi-error text-white
+           hover:bg-red-600 hover:shadow-glow-error;
+  }
+
+  .action-btn-ghost {
+    @apply action-btn bg-transparent text-drasi-text-secondary
+           border border-drasi-border hover:bg-drasi-card
+           hover:text-drasi-text-primary;
+  }
+
+  .type-card {
+    @apply flex flex-col items-center gap-2 p-4 rounded-xl
+           bg-drasi-surface border border-drasi-border
+           cursor-pointer transition-all duration-200
+           hover:border-drasi-text-secondary hover:scale-105;
+  }
+
+  .flash-add {
+    animation: flashAdd 1s ease-out;
+  }
+
+  .flash-update {
+    animation: flashUpdate 1s ease-out;
+  }
+
+  .flash-delete {
+    animation: flashDelete 1s ease-out;
+  }
+}
+
+@keyframes flashAdd {
+  0% { background-color: rgba(16, 185, 129, 0.3); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashUpdate {
+  0% { background-color: rgba(245, 158, 11, 0.3); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashDelete {
+  0% { background-color: rgba(239, 68, 68, 0.3); }
+  100% { background-color: transparent; }
+}

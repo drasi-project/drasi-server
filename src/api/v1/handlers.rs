@@ -1636,3 +1636,33 @@ pub async fn stop_reaction_default(
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_reaction(Extension(core), Path(id)).await
 }
+
+// ============================================================================
+// Global Component Events (SSE)
+// ============================================================================
+
+/// Stream all component events for an instance as SSE
+pub async fn stream_all_component_events(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(shared::stream_all_component_events(Extension(core)).await)
+}
+
+/// Stream all component events for the default instance as SSE
+pub async fn stream_all_component_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    Ok(shared::stream_all_component_events(Extension(core)).await)
+}
