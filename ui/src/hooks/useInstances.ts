@@ -36,9 +36,9 @@ export function useInstances() {
   const [requestedNotFound, setRequestedNotFound] = useState<string | undefined>(undefined);
 
   const [selectedId, setSelectedIdState] = useState<string | undefined>(() => {
-    // URL param takes priority, then localStorage
+    // If URL param is specified, defer selection until refresh validates it
     const fromUrl = getUrlInstanceParam();
-    if (fromUrl) return fromUrl;
+    if (fromUrl) return undefined;
     try { return localStorage.getItem(INSTANCE_KEY) ?? undefined; } catch { return undefined; }
   });
   const [loading, setLoading] = useState(true);
@@ -69,12 +69,9 @@ export function useInstances() {
             setSelectedIdState(requested);
             setRequestedNotFound(undefined);
           } else {
-            // Doesn't exist — show "not found" UX, fall back to first
+            // Doesn't exist — show picker, don't select any instance
             setRequestedNotFound(requested);
-            const first = data[0].id;
-            setSelectedIdState(first);
-            setUrlInstanceParam(first);
-            try { localStorage.setItem(INSTANCE_KEY, first); } catch { /* ignore */ }
+            setSelectedIdState(undefined);
           }
         } else {
           // No URL param — use localStorage or first instance

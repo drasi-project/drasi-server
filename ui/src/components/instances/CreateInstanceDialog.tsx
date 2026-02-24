@@ -7,7 +7,7 @@ interface CreateInstanceDialogProps {
     persistIndex?: boolean;
     defaultPriorityQueueCapacity?: number;
     defaultDispatchBufferCapacity?: number;
-  }) => void;
+  }) => Promise<void>;
   onCancel: () => void;
   /** Pre-fill the instance ID field (e.g. from a URL param that wasn't found) */
   initialId?: string;
@@ -21,13 +21,21 @@ export default function CreateInstanceDialog({
   const [id, setId] = useState(initialId ?? "");
   const [persistIndex, setPersistIndex] = useState(false);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!id.trim()) {
       setError("Required");
       return;
     }
-    onSave({ id: id.trim(), persistIndex });
+    setSaving(true);
+    try {
+      await onSave({ id: id.trim(), persistIndex });
+    } catch {
+      setError("Failed to create instance");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -59,11 +67,11 @@ export default function CreateInstanceDialog({
           />
         </div>
         <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onCancel} className="action-btn-ghost">
+          <button onClick={onCancel} className="action-btn-ghost" disabled={saving}>
             Cancel
           </button>
-          <button onClick={handleSave} className="action-btn-primary">
-            Create
+          <button onClick={handleSave} className="action-btn-primary" disabled={saving}>
+            {saving ? "Creating…" : "Create"}
           </button>
         </div>
       </div>

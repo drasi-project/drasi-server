@@ -11,6 +11,7 @@ import QueryForm from "@/components/create/QueryForm";
 import ReactionForm from "@/components/create/ReactionForms";
 import EventBar, { type EventEntry } from "@/components/events/EventBar";
 import InstanceSelector from "@/components/instances/InstanceSelector";
+import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
@@ -50,7 +51,6 @@ export default function App() {
     setSelectedId: setSelectedInstanceId,
     create: createInstanceApi,
     requestedNotFound,
-    dismissNotFound,
   } = useInstances();
   const [showCreateInstance, setShowCreateInstance] = useState(false);
   const [createInstancePrefilledId, setCreateInstancePrefilledId] = useState<string | undefined>(undefined);
@@ -415,6 +415,33 @@ export default function App() {
         : `New ${draft.kind} Reaction`
     : "";
 
+  // If a URL-requested instance wasn't found, show the picker instead of the main UI
+  if (requestedNotFound && !selectedInstanceId) {
+    return (
+      <>
+        <InstancePickerDialog
+          instances={instances}
+          missingId={requestedNotFound}
+          onSelect={setSelectedInstanceId}
+          onCreateNew={() => {
+            setCreateInstancePrefilledId(requestedNotFound);
+            setShowCreateInstance(true);
+          }}
+        />
+        {showCreateInstance && (
+          <CreateInstanceDialog
+            onSave={handleCreateInstance}
+            onCancel={() => {
+              setShowCreateInstance(false);
+              setCreateInstancePrefilledId(undefined);
+            }}
+            initialId={createInstancePrefilledId}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <AppLayout
       onAddComponent={() => setCreateStep("component")}
@@ -428,31 +455,6 @@ export default function App() {
         />
       }
     >
-      {/* Instance Not Found Banner */}
-      {requestedNotFound && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-900/80 border border-amber-600/60 text-amber-100 text-sm shadow-lg backdrop-blur-sm max-w-lg">
-          <span className="flex-1">
-            Instance <strong className="font-mono">{requestedNotFound}</strong> was not found.
-          </span>
-          <button
-            onClick={() => {
-              setCreateInstancePrefilledId(requestedNotFound);
-              dismissNotFound();
-              setShowCreateInstance(true);
-            }}
-            className="px-2.5 py-1 rounded-md bg-amber-700 hover:bg-amber-600 text-xs font-medium transition-colors whitespace-nowrap"
-          >
-            Create It
-          </button>
-          <button
-            onClick={dismissNotFound}
-            className="px-2.5 py-1 rounded-md bg-amber-800 hover:bg-amber-700 text-xs font-medium transition-colors whitespace-nowrap"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {/* Flow Canvas */}
       {isEmpty ? (
         <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">

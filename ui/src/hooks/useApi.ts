@@ -14,34 +14,82 @@ function isInternal(id: string): boolean {
   return id.startsWith(INTERNAL_PREFIX);
 }
 
+// ---------------------------------------------------------------------------
+// Shared EventSource singleton per instance
+//
+// Browsers limit the number of concurrent HTTP/1.1 connections per domain
+// (typically 6). Each EventSource holds one connection open permanently.
+// Previously, useSources, useQueries, and useReactions each opened their own
+// EventSource to the same /events endpoint — consuming 3 connections just for
+// SSE.  This left only 3 connections for API calls, and if any additional SSE
+// streams were open (inspector panels), new requests would queue indefinitely.
+//
+// This module shares a single EventSource per instance across all subscribers.
+// ---------------------------------------------------------------------------
+
+type Listener = (event: ComponentEvent) => void;
+
+interface SharedES {
+  es: EventSource;
+  listeners: Set<Listener>;
+}
+
+const sharedSources = new Map<string, SharedES>();
+
+function getSharedKey(instanceId?: string): string {
+  return instanceId ?? "__default__";
+}
+
 /**
  * Subscribe to the global component events SSE stream.
- * Returns a cleanup function to close the EventSource.
+ * Multiple subscribers share the same underlying EventSource connection.
+ * Returns a cleanup function to unsubscribe.
  */
 function subscribeComponentEvents(
-  onEvent: (event: ComponentEvent) => void,
+  onEvent: Listener,
   instanceId?: string,
 ): () => void {
-  const path = instanceId
-    ? `/api/v1/instances/${instanceId}/events`
-    : `/api/v1/events`;
+  const key = getSharedKey(instanceId);
 
-  const es = new EventSource(path);
+  let shared = sharedSources.get(key);
+  if (!shared) {
+    const path = instanceId
+      ? `/api/v1/instances/${instanceId}/events`
+      : `/api/v1/events`;
 
-  es.onmessage = (msg) => {
-    try {
-      const event: ComponentEvent = JSON.parse(msg.data);
-      onEvent(event);
-    } catch {
-      // Skip heartbeats and malformed events
+    const es = new EventSource(path);
+    shared = { es, listeners: new Set() };
+    const ref = shared;
+
+    es.onmessage = (msg) => {
+      try {
+        const event: ComponentEvent = JSON.parse(msg.data);
+        for (const listener of ref.listeners) {
+          listener(event);
+        }
+      } catch {
+        // Skip heartbeats and malformed events
+      }
+    };
+
+    es.onerror = () => {
+      // EventSource auto-reconnects; nothing to do here
+    };
+
+    sharedSources.set(key, shared);
+  }
+
+  shared.listeners.add(onEvent);
+
+  return () => {
+    const s = sharedSources.get(key);
+    if (!s) return;
+    s.listeners.delete(onEvent);
+    if (s.listeners.size === 0) {
+      s.es.close();
+      sharedSources.delete(key);
     }
   };
-
-  es.onerror = () => {
-    // EventSource auto-reconnects; nothing to do here
-  };
-
-  return () => es.close();
 }
 
 export function useSources(instanceId?: string) {
