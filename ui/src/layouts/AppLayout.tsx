@@ -6,6 +6,8 @@ interface AppLayoutProps {
   onAddComponent?: () => void;
   connected?: boolean;
   instanceSlot?: React.ReactNode;
+  onToggleActivity?: () => void;
+  eventCount?: number;
 }
 
 export default function AppLayout({
@@ -13,6 +15,8 @@ export default function AppLayout({
   onAddComponent,
   connected = false,
   instanceSlot,
+  onToggleActivity,
+  eventCount = 0,
 }: AppLayoutProps) {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-drasi-bg">
@@ -50,8 +54,19 @@ export default function AppLayout({
             </button>
           )}
 
-          {/* Activity indicator */}
-          <Activity size={16} className="text-drasi-text-secondary" />
+          {/* Activity toggle */}
+          <button
+            onClick={onToggleActivity}
+            className="relative p-1.5 rounded-lg text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-card transition-colors"
+            title="Toggle activity panel"
+          >
+            <Activity size={16} />
+            {eventCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-drasi-running text-[8px] font-bold text-drasi-bg flex items-center justify-center">
+                {eventCount > 9 ? "9+" : eventCount}
+              </span>
+            )}
+          </button>
         </div>
       </header>
 

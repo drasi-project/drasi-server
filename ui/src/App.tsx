@@ -9,7 +9,7 @@ import CreatePanel from "@/components/create/CreatePanel";
 import SourceForm from "@/components/create/SourceForms";
 import QueryForm from "@/components/create/QueryForm";
 import ReactionForm from "@/components/create/ReactionForms";
-import EventBar, { type EventEntry } from "@/components/events/EventBar";
+import EventPanel, { type EventEntry } from "@/components/events/EventPanel";
 import InstanceSelector from "@/components/instances/InstanceSelector";
 import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
@@ -88,6 +88,7 @@ export default function App() {
   const [selected, setSelected] = useState<SelectedComponent | null>(null);
   const [createStep, setCreateStep] = useState<CreateStep>(null);
   const [events, setEvents] = useState<EventEntry[]>([]);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [connected, setConnected] = useState(false);
 
   // Check server connectivity
@@ -446,6 +447,8 @@ export default function App() {
     <AppLayout
       onAddComponent={() => setCreateStep("component")}
       connected={connected}
+      onToggleActivity={() => setActivityOpen((p) => !p)}
+      eventCount={events.length}
       instanceSlot={
         <InstanceSelector
           instances={instances}
@@ -546,8 +549,13 @@ export default function App() {
         />
       )}
 
-      {/* Event Bar */}
-      <EventBar events={events} onDismiss={() => setEvents([])} />
+      {/* Activity Panel */}
+      <EventPanel
+        events={events}
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        onClear={() => setEvents([])}
+      />
     </AppLayout>
   );
 }
