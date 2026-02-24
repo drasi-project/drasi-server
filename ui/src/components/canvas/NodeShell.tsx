@@ -117,7 +117,7 @@ export default function NodeShell({
         {!canvasLocked && (
           <motion.button
             onClick={handleLockToggle}
-            className="nodrag p-1 rounded-md transition-colors hover:bg-white/10"
+            className="nodrag p-1 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
             whileHover={{ scale: 1.2 }}
             whileTap={{ scale: 0.9 }}
             title={locked ? "Unlock node" : "Lock node"}
@@ -135,7 +135,7 @@ export default function NodeShell({
         {canToggle && !isLocked && (
           <motion.button
             onClick={handleToggle}
-            className="nodrag p-1 rounded-md transition-colors hover:bg-white/10"
+            className="nodrag p-1 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
             whileHover={{ scale: 1.2 }}
             whileTap={{ scale: 0.9 }}
             title={toggleTitle ?? (expanded ? "Collapse" : "Expand")}

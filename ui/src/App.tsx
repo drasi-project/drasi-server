@@ -16,6 +16,7 @@ import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
 import { useDraft } from "@/hooks/useDraft";
+import { useTheme } from "@/hooks/useTheme";
 import type { PipelineData } from "@/utils/graph";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import type {
@@ -44,6 +45,8 @@ function reactionApiKind(selectorKind: string): ReactionKind {
 }
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
+
   // Instance management
   const {
     instances,
@@ -449,6 +452,8 @@ export default function App() {
       connected={connected}
       onToggleActivity={() => setActivityOpen((p) => !p)}
       eventCount={events.length}
+      theme={theme}
+      onToggleTheme={toggleTheme}
       instanceSlot={
         <InstanceSelector
           instances={instances}

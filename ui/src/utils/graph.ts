@@ -68,7 +68,7 @@ export function buildFlowGraph(data: PipelineData): {
         type: "animatedEdge",
         animated: q.status === "Running",
         style: {
-          stroke: q.status === "Running" ? "#10b981" : "#334155",
+          stroke: q.status === "Running" ? "#10b981" : "var(--drasi-border)",
           strokeWidth: 2,
         },
       });
@@ -94,7 +94,7 @@ export function buildFlowGraph(data: PipelineData): {
         type: "animatedEdge",
         animated: r.status === "Running",
         style: {
-          stroke: r.status === "Running" ? "#10b981" : "#334155",
+          stroke: r.status === "Running" ? "#10b981" : "var(--drasi-border)",
           strokeWidth: 2,
         },
       });

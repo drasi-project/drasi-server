@@ -1,4 +1,4 @@
-import { Plus, Activity } from "lucide-react";
+import { Plus, Activity, Sun, Moon } from "lucide-react";
 import DrasiLogo from "@/components/DrasiLogo";
 
 interface AppLayoutProps {
@@ -8,6 +8,8 @@ interface AppLayoutProps {
   instanceSlot?: React.ReactNode;
   onToggleActivity?: () => void;
   eventCount?: number;
+  theme?: "light" | "dark";
+  onToggleTheme?: () => void;
 }
 
 export default function AppLayout({
@@ -17,6 +19,8 @@ export default function AppLayout({
   instanceSlot,
   onToggleActivity,
   eventCount = 0,
+  theme = "dark",
+  onToggleTheme,
 }: AppLayoutProps) {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-drasi-bg">
@@ -66,6 +70,15 @@ export default function AppLayout({
                 {eventCount > 9 ? "9+" : eventCount}
               </span>
             )}
+          </button>
+
+          {/* Theme toggle */}
+          <button
+            onClick={onToggleTheme}
+            className="p-1.5 rounded-lg text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-card transition-colors"
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
       </header>

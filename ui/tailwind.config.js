@@ -1,16 +1,17 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
         drasi: {
-          bg: "#0a0e17",
-          surface: "#111827",
-          card: "#1e293b",
-          border: "#334155",
-          "text-primary": "#f1f5f9",
-          "text-secondary": "#94a3b8",
+          bg: "var(--drasi-bg)",
+          surface: "var(--drasi-surface)",
+          card: "var(--drasi-card)",
+          border: "var(--drasi-border)",
+          "text-primary": "var(--drasi-text-primary)",
+          "text-secondary": "var(--drasi-text-secondary)",
           source: "#3b82f6",
           query: "#8b5cf6",
           reaction: "#06b6d4",

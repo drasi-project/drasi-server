@@ -1,10 +1,28 @@
+/**
+ * Returns current theme colors by reading CSS variables for theme-aware
+ * values and using fixed values for semantic colors.
+ */
+export function getTheme() {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    bg: style.getPropertyValue("--drasi-bg").trim() || "#0a0e17",
+    surface: style.getPropertyValue("--drasi-surface").trim() || "#111827",
+    card: style.getPropertyValue("--drasi-card").trim() || "#1e293b",
+    border: style.getPropertyValue("--drasi-border").trim() || "#334155",
+    textPrimary: style.getPropertyValue("--drasi-text-primary").trim() || "#f1f5f9",
+    textSecondary: style.getPropertyValue("--drasi-text-secondary").trim() || "#94a3b8",
+    source: "#3b82f6",
+    query: "#8b5cf6",
+    reaction: "#06b6d4",
+    running: "#10b981",
+    warning: "#f59e0b",
+    error: "#ef4444",
+    stopped: "#64748b",
+  };
+}
+
+/** Static reference for semantic colors (not theme-dependent). */
 export const THEME = {
-  bg: "#0a0e17",
-  surface: "#111827",
-  card: "#1e293b",
-  border: "#334155",
-  textPrimary: "#f1f5f9",
-  textSecondary: "#94a3b8",
   source: "#3b82f6",
   query: "#8b5cf6",
   reaction: "#06b6d4",

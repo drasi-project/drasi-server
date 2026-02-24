@@ -263,7 +263,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
         proOptions={{ hideAttribution: true }}
       >
         <AutoLayout onCollisionRef={collisionRef} instanceId={instanceId} />
-        <Background color={THEME.border} gap={24} size={1} />
+        <Background color="var(--drasi-border)" gap={24} size={1} />
         <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface">
           <ControlButton
             onClick={toggleCanvasLock}
@@ -307,9 +307,9 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
             if (node.type === "sourceNode") return THEME.source;
             if (node.type === "queryNode") return THEME.query;
             if (node.type === "reactionNode") return THEME.reaction;
-            return THEME.border;
+            return THEME.stopped;
           }}
-          maskColor="rgba(10, 14, 23, 0.8)"
+          maskColor="var(--drasi-minimap-mask)"
           className="!bg-drasi-surface !border-drasi-border !rounded-lg"
         />
       </ReactFlow>
