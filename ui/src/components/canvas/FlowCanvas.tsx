@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   MiniMap,
   Panel,
   useNodesState,
@@ -180,6 +181,26 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
     setPendingDelete(selected);
   }, [nodes, canvasLocked]);
 
+  // Toggle lock on all selected nodes
+  const toggleSelectedNodesLock = useCallback(() => {
+    if (canvasLocked) return;
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    // If any selected node is unlocked, lock all; otherwise unlock all
+    const shouldLock = selected.some((n) => !n.data?.locked);
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.selected
+          ? {
+              ...n,
+              draggable: !shouldLock,
+              data: { ...n.data, locked: shouldLock },
+            }
+          : n,
+      ),
+    );
+  }, [nodes, canvasLocked, setNodes]);
+
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return;
     const deleteIds = new Set(pendingDelete.map((n) => n.id));
@@ -243,22 +264,34 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
       >
         <AutoLayout onCollisionRef={collisionRef} instanceId={instanceId} />
         <Background color={THEME.border} gap={24} size={1} />
-        <Controls className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface" />
-
-        {/* Canvas toolbar */}
-        <Panel position="top-right" className="flex gap-1.5">
-          <button
+        <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface">
+          <ControlButton
             onClick={toggleCanvasLock}
-            className={`p-2 rounded-lg border transition-colors ${
-              canvasLocked
-                ? "bg-drasi-warning/20 border-drasi-warning/40 text-drasi-warning"
-                : "bg-drasi-card border-drasi-border text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-surface"
-            }`}
             title={canvasLocked ? "Unlock canvas" : "Lock canvas"}
+            className={canvasLocked ? "!text-drasi-warning !bg-drasi-warning/20" : ""}
           >
-            {canvasLocked ? <Lock size={14} /> : <Unlock size={14} />}
-          </button>
-          {!canvasLocked && nodes.some((n) => n.selected) && (
+            {canvasLocked ? <Lock size={12} /> : <Unlock size={12} />}
+          </ControlButton>
+        </Controls>
+
+        {/* Canvas toolbar — visible when nodes are selected */}
+        {!canvasLocked && nodes.some((n) => n.selected) && (
+          <Panel position="top-right" className="flex gap-1.5">
+            <button
+              onClick={toggleSelectedNodesLock}
+              className="p-2 rounded-lg border bg-drasi-card border-drasi-border text-drasi-text-secondary hover:text-drasi-warning hover:bg-drasi-warning/10 transition-colors"
+              title={
+                nodes.filter((n) => n.selected).some((n) => !n.data?.locked)
+                  ? "Lock selected nodes"
+                  : "Unlock selected nodes"
+              }
+            >
+              {nodes.filter((n) => n.selected).some((n) => !n.data?.locked) ? (
+                <Unlock size={14} />
+              ) : (
+                <Lock size={14} />
+              )}
+            </button>
             <button
               onClick={deleteSelectedNodes}
               className="p-2 rounded-lg border bg-drasi-card border-drasi-border text-drasi-error/70 hover:text-drasi-error hover:bg-drasi-error/10 transition-colors"
@@ -266,8 +299,8 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
             >
               <Trash2 size={14} />
             </button>
-          )}
-        </Panel>
+          </Panel>
+        )}
 
         <MiniMap
           nodeColor={(node) => {
