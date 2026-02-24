@@ -15,7 +15,7 @@ function storageKey(instanceId: string): string {
   return `${STORAGE_PREFIX}${instanceId}`;
 }
 
-function load(instanceId: string): PersistedState | null {
+export function loadPersistedState(instanceId: string): PersistedState | null {
   try {
     const raw = localStorage.getItem(storageKey(instanceId));
     if (!raw) return null;
@@ -62,7 +62,7 @@ export function useCanvasPersistence(instanceId: string | undefined) {
     if (!instanceId || restoredRef.current === instanceId) return;
     restoredRef.current = instanceId;
 
-    const state = load(instanceId);
+    const state = loadPersistedState(instanceId);
     if (!state) return;
 
     // Restore positions, expanded, and locked states.

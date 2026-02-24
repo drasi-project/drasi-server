@@ -20,7 +20,7 @@ import AnimatedEdge from "./AnimatedEdge";
 import { buildFlowGraph, type PipelineData } from "@/utils/graph";
 import { THEME } from "@/utils/colors";
 import { useAutoLayout } from "@/hooks/useAutoLayout";
-import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
+import { useCanvasPersistence, loadPersistedState } from "@/hooks/useCanvasPersistence";
 
 const nodeTypes = {
   sourceNode: SourceNode,
@@ -59,10 +59,34 @@ function AutoLayout({
 }
 
 export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNodes }: FlowCanvasProps) {
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildFlowGraph(data),
-    [data],
-  );
+  // Build initial nodes and pre-apply any persisted state (positions, expanded,
+  // locked) so that nodes mount at their correct size and position. This avoids
+  // a visible shrink/grow animation when Framer Motion transitions from the
+  // default collapsed width to the persisted expanded width.
+  const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
+    const graph = buildFlowGraph(data);
+    if (!instanceId) return graph;
+    const persisted = loadPersistedState(instanceId);
+    if (!persisted) return graph;
+    return {
+      edges: graph.edges,
+      nodes: graph.nodes.map((n) => {
+        const pos = persisted.positions[n.id];
+        const exp = persisted.expanded[n.id];
+        const lock = persisted.locked?.[n.id];
+        return {
+          ...n,
+          position: pos ?? n.position,
+          draggable: lock ? false : undefined,
+          data: {
+            ...n.data,
+            expanded: exp ?? false,
+            locked: lock ?? false,
+          },
+        };
+      }),
+    };
+  }, [data, instanceId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);

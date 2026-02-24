@@ -103,10 +103,13 @@ export default function NodeShell({
     [nodeId, setNodes, canvasLocked],
   );
 
+  const targetWidth = expanded ? expandedWidth : collapsedWidth;
+
   return (
     <motion.div
       className={`${cardClass} ${glowClass}`}
-      animate={{ width: expanded ? expandedWidth : collapsedWidth }}
+      initial={{ width: targetWidth }}
+      animate={{ width: targetWidth }}
       transition={{ type: "tween", duration: 0.4, ease: "easeInOut" }}
     >
       <div className="flex items-center gap-2 mb-2">
