@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Render edges above nodes so connections are never hidden by expanded nodes */
+.react-flow__edges {
+  z-index: 1 !important;
+}
+
+/* Smooth position transitions for displaced nodes (not during drag) */
+.react-flow__node:not(.dragging) {
+  transition: transform 0.4s ease-in-out;
+}
+
 @layer base {
   * {
     @apply border-drasi-border;
@@ -33,7 +43,8 @@
 @layer components {
   .node-card {
     @apply bg-drasi-card border border-drasi-border rounded-xl p-3
-           transition-all duration-200 cursor-pointer select-none;
+           cursor-pointer select-none;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
 
   .node-card:hover {

@@ -49,8 +49,11 @@ export default function App() {
     selectedId: selectedInstanceId,
     setSelectedId: setSelectedInstanceId,
     create: createInstanceApi,
+    requestedNotFound,
+    dismissNotFound,
   } = useInstances();
   const [showCreateInstance, setShowCreateInstance] = useState(false);
+  const [createInstancePrefilledId, setCreateInstancePrefilledId] = useState<string | undefined>(undefined);
 
   // Component hooks - scoped to selected instance
   const {
@@ -109,17 +112,22 @@ export default function App() {
       kind: s.kind,
       status: s.status,
       autoStart: s.autoStart,
+      properties: s.properties,
+      instanceId: selectedInstanceId,
     })),
     queries: queries.map((q) => ({
       id: q.id,
       status: q.status ?? "Stopped",
       sourceIds: q.sources.map((s) => s.sourceId),
+      query: q.query,
+      queryLanguage: q.queryLanguage,
     })),
     reactions: reactions.map((r) => ({
       id: r.id,
       kind: r.kind,
       status: r.status,
       queryIds: r.queries,
+      properties: r.properties,
     })),
   };
 
@@ -249,6 +257,7 @@ export default function App() {
         await createInstanceApi(data);
         pushEvent(`Created instance: ${data.id}`, "success");
         setShowCreateInstance(false);
+        setCreateInstancePrefilledId(undefined);
       } catch (err) {
         pushEvent(
           `Failed to create instance: ${err instanceof Error ? err.message : "Unknown error"}`,
@@ -419,6 +428,31 @@ export default function App() {
         />
       }
     >
+      {/* Instance Not Found Banner */}
+      {requestedNotFound && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg bg-amber-900/80 border border-amber-600/60 text-amber-100 text-sm shadow-lg backdrop-blur-sm max-w-lg">
+          <span className="flex-1">
+            Instance <strong className="font-mono">{requestedNotFound}</strong> was not found.
+          </span>
+          <button
+            onClick={() => {
+              setCreateInstancePrefilledId(requestedNotFound);
+              dismissNotFound();
+              setShowCreateInstance(true);
+            }}
+            className="px-2.5 py-1 rounded-md bg-amber-700 hover:bg-amber-600 text-xs font-medium transition-colors whitespace-nowrap"
+          >
+            Create It
+          </button>
+          <button
+            onClick={dismissNotFound}
+            className="px-2.5 py-1 rounded-md bg-amber-800 hover:bg-amber-700 text-xs font-medium transition-colors whitespace-nowrap"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Flow Canvas */}
       {isEmpty ? (
         <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
@@ -440,7 +474,7 @@ export default function App() {
           </button>
         </div>
       ) : (
-        <FlowCanvas data={pipelineData} onNodeClick={handleNodeClick} />
+        <FlowCanvas data={pipelineData} instanceId={selectedInstanceId} onNodeClick={handleNodeClick} />
       )}
 
       {/* Inspector Panel */}
@@ -502,7 +536,11 @@ export default function App() {
       {showCreateInstance && (
         <CreateInstanceDialog
           onSave={handleCreateInstance}
-          onCancel={() => setShowCreateInstance(false)}
+          onCancel={() => {
+            setShowCreateInstance(false);
+            setCreateInstancePrefilledId(undefined);
+          }}
+          initialId={createInstancePrefilledId}
         />
       )}
 

@@ -114,6 +114,8 @@ fn build_dynamic_instance_router() -> Router {
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
         // Global component events SSE stream
         .route("/events", get(handlers::stream_all_component_events))
+        // Source data push proxy (avoids browser CORS issues)
+        .route("/sources/:id/push", post(handlers::push_source_data))
 }
 
 /// Build convenience routes that operate on the default (first) instance.
@@ -196,5 +198,13 @@ fn build_default_instance_router() -> Router {
         )
         .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
         // Global component events SSE stream (default instance)
-        .route("/events", get(handlers::stream_all_component_events_default))
+        .route(
+            "/events",
+            get(handlers::stream_all_component_events_default),
+        )
+        // Source data push proxy (default instance)
+        .route(
+            "/sources/:id/push",
+            post(handlers::push_source_data_default),
+        )
 }

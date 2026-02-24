@@ -1607,3 +1607,56 @@ pub async fn stream_all_component_events(
             .text("heartbeat"),
     )
 }
+
+/// Proxy data push to an HTTP/gRPC source's listening port.
+///
+/// The browser cannot directly POST to a source's port due to CORS restrictions.
+/// This handler reads the source's configured host/port and forwards the request.
+pub async fn push_source_data(
+    Extension(core): Extension<Arc<DrasiLib>>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let info = core
+        .get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let props = info.properties;
+    let host = props
+        .get("host")
+        .and_then(|v| v.as_str())
+        .unwrap_or("127.0.0.1");
+    let port = props.get("port").and_then(|v| v.as_u64()).unwrap_or(8081);
+    let endpoint = props.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+
+    let base = if endpoint.is_empty() {
+        String::new()
+    } else {
+        format!("/{}", endpoint.trim_start_matches('/'))
+    };
+    // Use 127.0.0.1 for 0.0.0.0 since we're on the same host
+    let effective_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
+    let url = format!("http://{effective_host}:{port}{base}/sources/{id}/events");
+
+    let client = reqwest::Client::new();
+    match client.post(&url).json(&body).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let resp_body: serde_json::Value = resp
+                .json()
+                .await
+                .unwrap_or(serde_json::Value::String("ok".to_string()));
+            Ok(Json(ApiResponse::success(resp_body)))
+        }
+        Ok(resp) => {
+            let status_code = resp.status().as_u16();
+            let msg = resp.text().await.unwrap_or_default();
+            log::warn!("Source proxy got {status_code} from {url}: {msg}");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+        Err(err) => {
+            log::warn!("Source proxy failed for {url}: {err}");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+    }
+}

@@ -9,13 +9,16 @@ interface CreateInstanceDialogProps {
     defaultDispatchBufferCapacity?: number;
   }) => void;
   onCancel: () => void;
+  /** Pre-fill the instance ID field (e.g. from a URL param that wasn't found) */
+  initialId?: string;
 }
 
 export default function CreateInstanceDialog({
   onSave,
   onCancel,
+  initialId,
 }: CreateInstanceDialogProps) {
-  const [id, setId] = useState("");
+  const [id, setId] = useState(initialId ?? "");
   const [persistIndex, setPersistIndex] = useState(false);
   const [error, setError] = useState("");
 

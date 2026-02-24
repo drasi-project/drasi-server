@@ -1666,3 +1666,26 @@ pub async fn stream_all_component_events_default(
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     Ok(shared::stream_all_component_events(Extension(core)).await)
 }
+
+/// Push data to a source's listening port (proxy to avoid CORS)
+pub async fn push_source_data(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    shared::push_source_data(Extension(core), Path(id), Json(body)).await
+}
+
+/// Push data to a source's listening port (default instance)
+pub async fn push_source_data_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::push_source_data(Extension(core), Path(id), Json(body)).await
+}

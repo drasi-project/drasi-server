@@ -62,6 +62,7 @@ export interface SourceStatusResponse {
   kind: SourceKind;
   status: ComponentStatus;
   autoStart: boolean;
+  properties?: Record<string, unknown>;
   error?: string;
 }
 
@@ -116,6 +117,7 @@ export interface ReactionStatusResponse {
   status: ComponentStatus;
   queries: string[];
   autoStart: boolean;
+  properties?: Record<string, unknown>;
   error?: string;
 }
 
@@ -165,11 +167,13 @@ export interface ChangeEvent {
 
 // Normalization helpers
 export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
+  const { kind: _kind, id: _id, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
   return {
     id: raw.id,
     kind: raw.config?.kind ?? "mock",
     status: raw.status,
     autoStart: raw.config?.autoStart ?? false,
+    properties: Object.keys(rest).length > 0 ? rest : undefined,
   };
 }
 
@@ -204,12 +208,14 @@ export function normalizeQuerySummary(raw: RawComponentSummary): QueryConfigResp
 }
 
 export function normalizeReaction(raw: RawReactionFull): ReactionStatusResponse {
+  const { kind: _kind, id: _id, queries: _q, autoStart: _auto, ...rest } = raw.config ?? {} as Record<string, unknown>;
   return {
     id: raw.id,
     kind: raw.config?.kind ?? "log",
     status: raw.status,
     queries: raw.config?.queries ?? [],
     autoStart: raw.config?.autoStart ?? false,
+    properties: Object.keys(rest).length > 0 ? rest : undefined,
   };
 }
 

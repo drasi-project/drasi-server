@@ -11,6 +11,8 @@ export interface SourceInfo {
   kind: string;
   status: string;
   autoStart: boolean;
+  properties?: Record<string, unknown>;
+  instanceId?: string;
 }
 
 export interface QueryInfo {
@@ -18,6 +20,8 @@ export interface QueryInfo {
   status: string;
   sourceIds: string[];
   resultCount?: number;
+  query?: string;
+  queryLanguage?: string;
 }
 
 export interface ReactionInfo {
@@ -25,11 +29,12 @@ export interface ReactionInfo {
   kind: string;
   status: string;
   queryIds: string[];
+  properties?: Record<string, unknown>;
 }
 
-const COLUMN_X = { source: 50, query: 400, reaction: 750 };
-const NODE_SPACING_Y = 140;
-const NODE_START_Y = 60;
+export const COLUMN_X = { source: 50, query: 400, reaction: 750 };
+export const NODE_SPACING_Y = 140;
+export const NODE_START_Y = 60;
 
 export function buildFlowGraph(data: PipelineData): {
   nodes: Node[];
