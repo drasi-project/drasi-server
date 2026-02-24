@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { useStore, useStoreApi, useReactFlow, type Node } from "@xyflow/react";
 
 const NODE_MARGIN = 20;
@@ -22,6 +22,49 @@ function getMeasuredHeight(
 ): number {
   const entry = nodeLookup.get(id);
   return (entry as { measured?: { height?: number } })?.measured?.height ?? 0;
+}
+
+/**
+ * Return the effective height for layout calculations.
+ *
+ * When a node's expanded state just changed, we compute the target (final)
+ * height immediately using the pre-measured expandContentHeight and lock it in
+ * `heightTargets`.  While the CSS transition is in progress the measured height
+ * gradually approaches the target; we keep returning the locked target so that
+ * intermediate measurements don't create reverse deltas (bouncing).  Once the
+ * measured height converges we release the lock.
+ */
+function getEffectiveHeight(
+  node: Node,
+  nodeLookup: Map<string, { measured?: { height?: number } }>,
+  prevExpandedMap: Map<string, boolean>,
+  heightTargets: Map<string, number>,
+): number {
+  const measured = getMeasuredHeight(nodeLookup, node.id);
+  const isExpanded = !!node.data?.expanded;
+  const wasExpanded = prevExpandedMap.get(node.id);
+
+  // Expanded state just changed — compute & lock NEW target height.
+  // Must check BEFORE the lock so that collapse overwrites the expand lock.
+  if (wasExpanded !== undefined && isExpanded !== wasExpanded) {
+    const contentH = Number(node.data?.expandContentHeight ?? 0);
+    if (contentH > 0) {
+      const target = isExpanded
+        ? measured + contentH
+        : Math.max(0, measured - contentH);
+      heightTargets.set(node.id, target);
+      return target;
+    }
+  }
+
+  // Still transitioning — keep using locked target to prevent
+  // small measurement fluctuations from restarting CSS transitions.
+  const locked = heightTargets.get(node.id);
+  if (locked !== undefined) {
+    return locked;
+  }
+
+  return measured;
 }
 
 interface Rect {
@@ -114,8 +157,10 @@ export function useAutoLayout() {
   const dimFingerprint = useStore(dimensionSelector);
   const prevFingerprint = useRef<string>("");
   const prevDims = useRef<Map<string, Dimensions>>(new Map());
+  const prevExpanded = useRef<Map<string, boolean>>(new Map());
+  const heightTargets = useRef<Map<string, number>>(new Map());
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!dimFingerprint || dimFingerprint === prevFingerprint.current) return;
     prevFingerprint.current = dimFingerprint;
 
@@ -127,12 +172,21 @@ export function useAutoLayout() {
     for (const node of nodes) {
       currentDims.set(node.id, {
         width: getTargetWidth(node),
-        height: getMeasuredHeight(nodeLookup, node.id),
+        height: getEffectiveHeight(
+          node,
+          nodeLookup,
+          prevExpanded.current,
+          heightTargets.current,
+        ),
       });
     }
 
     if (prevDims.current.size === 0) {
       prevDims.current = currentDims;
+      // Seed expanded state tracking
+      for (const node of nodes) {
+        prevExpanded.current.set(node.id, !!node.data?.expanded);
+      }
       return;
     }
 
@@ -152,7 +206,12 @@ export function useAutoLayout() {
       const deltaW = curr.width - prev.width;
       const deltaH = Math.round(curr.height) - Math.round(prev.height);
 
-      if (Math.abs(deltaW) > 1 || Math.abs(deltaH) > 1) {
+      // Skip height-based shifts for nodes whose vertical displacement was
+      // already applied in handleToggle (same setNodes call as expansion).
+      const skipHeight = !!node.data?.heightShiftApplied;
+      const effectiveDeltaH = skipHeight ? 0 : deltaH;
+
+      if (Math.abs(deltaW) > 1 || Math.abs(effectiveDeltaH) > 1) {
         shifts.push({
           id: node.id,
           x: node.position.x,
@@ -160,14 +219,36 @@ export function useAutoLayout() {
           width: curr.width,
           height: curr.height,
           deltaW,
-          deltaH,
+          deltaH: effectiveDeltaH,
         });
       }
     }
 
     prevDims.current = currentDims;
 
-    if (shifts.length === 0) return;
+    // Update expanded state tracking for next comparison
+    const expandedChanged = new Set<string>();
+    for (const node of nodes) {
+      const isExp = !!node.data?.expanded;
+      if (prevExpanded.current.get(node.id) !== isExp) {
+        expandedChanged.add(node.id);
+      }
+      prevExpanded.current.set(node.id, isExp);
+    }
+
+    if (shifts.length === 0) {
+      // Even with no shifts, clean up flags from nodes that toggled
+      if (expandedChanged.size > 0) {
+        setNodes((prev) =>
+          prev.map((n) =>
+            expandedChanged.has(n.id) && (n.data?.expandContentHeight != null || n.data?.heightShiftApplied)
+              ? { ...n, data: { ...n.data, expandContentHeight: undefined, heightShiftApplied: undefined } }
+              : n,
+          ),
+        );
+      }
+      return;
+    }
 
     const shiftIds = new Set(shifts.map((s) => s.id));
 
@@ -243,7 +324,14 @@ export function useAutoLayout() {
         obstacles.push({ ...rect, x: clamped.x, y: clamped.y });
       }
 
-      return result;
+      // Clear expandContentHeight and heightShiftApplied from nodes that just toggled.
+      const final = result.map((n) =>
+        expandedChanged.has(n.id) && (n.data?.expandContentHeight != null || n.data?.heightShiftApplied)
+          ? { ...n, data: { ...n.data, expandContentHeight: undefined, heightShiftApplied: undefined } }
+          : n,
+      );
+
+      return final;
     });
   }, [dimFingerprint, store, getNodes, setNodes]);
 

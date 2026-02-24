@@ -6,7 +6,7 @@ import {
 } from "@xyflow/react";
 import { Maximize2, Minimize2, Lock, Unlock } from "lucide-react";
 import { motion } from "framer-motion";
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { getStatusGlowClass } from "@/utils/colors";
 import type { ComponentStatus } from "@/utils/colors";
 
@@ -67,21 +67,55 @@ export default function NodeShell({
   const isLocked = locked || canvasLocked;
   const { setNodes } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
+  const expandContentRef = useRef<HTMLDivElement>(null);
 
   const handleToggle = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       if (isLocked) return;
-      setNodes((nodes) =>
-        nodes.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, expanded: !n.data.expanded } }
-            : n,
-        ),
-      );
-      setTimeout(() => updateNodeInternals(nodeId), 400);
+      // Measure the expand content's natural height before toggling so we
+      // can apply vertical displacement in the SAME state update — ensuring
+      // both the expansion and neighbour movement start in the same paint frame.
+      const expandContentHeight = expandContentRef.current?.scrollHeight ?? 0;
+      setNodes((nodes) => {
+        const self = nodes.find((n) => n.id === nodeId);
+        if (!self) return nodes;
+
+        const willExpand = !self.data?.expanded;
+        const deltaH = willExpand ? expandContentHeight : -expandContentHeight;
+        // Pre-toggle width determines the right-edge boundary
+        const preWidth = willExpand ? collapsedWidth : expandedWidth;
+        const rightEdge = self.position.x + preWidth;
+
+        return nodes.map((n) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                expanded: willExpand,
+                expandContentHeight,
+                heightShiftApplied: true,
+              },
+            };
+          }
+
+          // Apply vertical displacement to nodes below & within horizontal span
+          const a = n.position.x;
+          const b = n.position.y;
+          if (Math.abs(deltaH) > 1 && a < rightEdge && b >= self.position.y) {
+            return {
+              ...n,
+              position: { ...n.position, y: n.position.y + deltaH },
+            };
+          }
+
+          return n;
+        });
+      });
+      setTimeout(() => updateNodeInternals(nodeId), 405);
     },
-    [nodeId, setNodes, updateNodeInternals, isLocked],
+    [nodeId, setNodes, updateNodeInternals, isLocked, collapsedWidth, expandedWidth],
   );
 
   const handleLockToggle = useCallback(
@@ -153,13 +187,14 @@ export default function NodeShell({
 
       {expandContent && (
         <div
-          className="grid transition-[grid-template-rows,opacity] duration-400 ease-in-out"
+          className="grid transition-[grid-template-rows,opacity] duration-[405ms]"
           style={{
             gridTemplateRows: expanded ? "1fr" : "0fr",
             opacity: expanded ? 1 : 0,
+            transitionTimingFunction: "ease-in-out",
           }}
         >
-          <div className="overflow-hidden">{expandContent}</div>
+          <div ref={expandContentRef} className="overflow-hidden">{expandContent}</div>
         </div>
       )}
 
