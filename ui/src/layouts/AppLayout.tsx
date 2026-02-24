@@ -1,4 +1,5 @@
 import { Plus, Activity } from "lucide-react";
+import DrasiLogo from "@/components/DrasiLogo";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -19,11 +20,9 @@ export default function AppLayout({
       <header className="h-12 flex items-center justify-between px-4 border-b border-drasi-border bg-drasi-surface flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-gradient-to-br from-drasi-source via-drasi-query to-drasi-reaction flex items-center justify-center">
-              <span className="text-[10px] font-black text-white">D</span>
-            </div>
+            <DrasiLogo iconOnly size={22} />
             <span className="text-sm font-bold text-drasi-text-primary tracking-tight">
-              DRASI CONTROL
+              DRASI SERVER
             </span>
           </div>
           {instanceSlot}

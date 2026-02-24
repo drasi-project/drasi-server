@@ -365,10 +365,10 @@ impl DrasiServer {
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
-        // Serve the Drasi Control UI if the dist directory exists
+        // Serve the Drasi Server Admin UI if the dist directory exists
         let ui_dir = std::path::Path::new("ui/dist");
         if ui_dir.exists() {
-            info!("Drasi Control UI found, serving at /ui/");
+            info!("Drasi Server Admin UI found, serving at /ui/");
             app = app
                 .nest_service(
                     "/ui",
@@ -387,7 +387,7 @@ impl DrasiServer {
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
         if ui_dir.exists() {
-            info!("Drasi Control UI at http://{addr}/ui/");
+            info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
