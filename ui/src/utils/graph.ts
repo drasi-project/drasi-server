@@ -24,6 +24,7 @@ export interface QueryInfo {
   query?: string;
   queryLanguage?: string;
   error?: string;
+  instanceId?: string;
 }
 
 export interface ReactionInfo {

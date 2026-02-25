@@ -133,6 +133,7 @@ export default function App() {
       query: q.query,
       queryLanguage: q.queryLanguage,
       error: q.error,
+      instanceId: selectedInstanceId,
     })),
     reactions: reactions.map((r) => ({
       id: r.id,
