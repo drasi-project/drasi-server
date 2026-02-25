@@ -39,6 +39,7 @@
 #   const events = new EventSource('http://localhost:8081/events');
 #   events.onmessage = (e) => console.log(JSON.parse(e.data));
 
+apiVersion: drasi.io/v1
 id: sse-streaming-demo
 host: "0.0.0.0"
 port: 8080

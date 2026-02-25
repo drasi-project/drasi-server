@@ -36,6 +36,7 @@
 #
 # Run with: cargo run -- --config examples/configs/05-advanced-features/persistent-storage.yaml
 
+apiVersion: drasi.io/v1
 id: persistent-storage-demo
 host: "0.0.0.0"
 port: 8080

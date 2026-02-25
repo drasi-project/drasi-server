@@ -14,6 +14,7 @@
 
 use crate::api::models::{ConfigValue, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
+use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
 use indexmap::IndexMap;
 use log::{debug, error, info};
@@ -27,7 +28,7 @@ use tokio::sync::RwLock;
 /// they cannot be retrieved from running plugin instances or drasi-lib.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
+    registry: InstanceRegistry,
     host: String,
     port: u16,
     log_level: String,
@@ -39,6 +40,8 @@ pub struct ConfigPersistence {
     reaction_configs: Arc<RwLock<IndexMap<String, IndexMap<String, ReactionConfig>>>>,
     /// Query configs by instance_id -> query_id -> config
     query_configs: Arc<RwLock<IndexMap<String, IndexMap<String, QueryConfigDto>>>>,
+    /// Instance configs for dynamic instances
+    instance_configs: Arc<RwLock<IndexMap<String, DrasiLibInstanceConfig>>>,
 }
 
 impl ConfigPersistence {
@@ -46,7 +49,7 @@ impl ConfigPersistence {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config_file_path: PathBuf,
-        instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
+        registry: InstanceRegistry,
         host: String,
         port: u16,
         log_level: String,
@@ -58,7 +61,7 @@ impl ConfigPersistence {
     ) -> Self {
         Self {
             config_file_path,
-            instances,
+            registry,
             host,
             port,
             log_level,
@@ -67,7 +70,25 @@ impl ConfigPersistence {
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
             query_configs: Arc::new(RwLock::new(initial_query_configs)),
+            instance_configs: Arc::new(RwLock::new(IndexMap::new())),
         }
+    }
+
+    /// Register a new instance config for persistence
+    pub async fn register_instance(&self, config: DrasiLibInstanceConfig) {
+        if !self.persist_config {
+            return;
+        }
+        let mut instance_configs = self.instance_configs.write().await;
+        // Extract the ID from the ConfigValue
+        let id = match &config.id {
+            crate::api::models::ConfigValue::Static(s) => s.clone(),
+            crate::api::models::ConfigValue::EnvironmentVariable { name, default } => {
+                std::env::var(name).unwrap_or_else(|_| default.clone().unwrap_or_default())
+            }
+            crate::api::models::ConfigValue::Secret { name } => name.clone(),
+        };
+        instance_configs.insert(id, config);
     }
 
     /// Register a source config for persistence
@@ -128,6 +149,42 @@ impl ConfigPersistence {
             .insert(config.id.clone(), config);
     }
 
+    /// Get a stored source config, if available
+    pub async fn get_source_config(
+        &self,
+        instance_id: &str,
+        source_id: &str,
+    ) -> Option<SourceConfig> {
+        let source_configs = self.source_configs.read().await;
+        source_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(source_id).cloned())
+    }
+
+    /// Get a stored reaction config, if available
+    pub async fn get_reaction_config(
+        &self,
+        instance_id: &str,
+        reaction_id: &str,
+    ) -> Option<ReactionConfig> {
+        let reaction_configs = self.reaction_configs.read().await;
+        reaction_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(reaction_id).cloned())
+    }
+
+    /// Get a stored query config, if available
+    pub async fn get_query_config(
+        &self,
+        instance_id: &str,
+        query_id: &str,
+    ) -> Option<QueryConfigDto> {
+        let query_configs = self.query_configs.read().await;
+        query_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(query_id).cloned())
+    }
+
     /// Unregister a query config (called on deletion)
     pub async fn unregister_query(&self, instance_id: &str, query_id: &str) {
         if !self.persist_config {
@@ -158,44 +215,65 @@ impl ConfigPersistence {
         let source_configs = self.source_configs.read().await;
         let reaction_configs = self.reaction_configs.read().await;
         let query_configs = self.query_configs.read().await;
+        let dynamic_instance_configs = self.instance_configs.read().await;
 
         let mut instance_configs = Vec::new();
 
-        for (id, core) in self.instances.iter() {
+        for (id, core) in self.registry.list().await {
             let lib_config = core.get_current_config().await.map_err(|e| {
                 anyhow::anyhow!("Failed to get current config from DrasiLib '{id}': {e}")
             })?;
 
-            let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
+            let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
 
             // Get source, reaction, and query configs for this instance from our DTO storage
             let sources: Vec<SourceConfig> = source_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let reactions: Vec<ReactionConfig> = reaction_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let queries: Vec<QueryConfigDto> = query_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
 
-            instance_configs.push(DrasiLibInstanceConfig {
-                id: ConfigValue::Static(lib_config.id.clone()),
-                persist_index,
-                state_store: None, // State store config not persisted dynamically
-                default_priority_queue_capacity: lib_config
-                    .priority_queue_capacity
-                    .map(ConfigValue::Static),
-                default_dispatch_buffer_capacity: lib_config
-                    .dispatch_buffer_capacity
-                    .map(ConfigValue::Static),
-                sources,
-                reactions,
-                queries, // Now using stored QueryConfigDto instead of empty vec
-            });
+            // Check if this is a dynamically created instance
+            let instance_config = if let Some(dynamic_config) = dynamic_instance_configs.get(&id) {
+                // Use stored config for dynamic instances
+                DrasiLibInstanceConfig {
+                    id: ConfigValue::Static(lib_config.id.clone()),
+                    persist_index: dynamic_config.persist_index,
+                    state_store: dynamic_config.state_store.clone(),
+                    default_priority_queue_capacity: lib_config
+                        .priority_queue_capacity
+                        .map(ConfigValue::Static),
+                    default_dispatch_buffer_capacity: lib_config
+                        .dispatch_buffer_capacity
+                        .map(ConfigValue::Static),
+                    sources,
+                    reactions,
+                    queries,
+                }
+            } else {
+                DrasiLibInstanceConfig {
+                    id: ConfigValue::Static(lib_config.id.clone()),
+                    persist_index,
+                    state_store: None, // State store config not persisted dynamically
+                    default_priority_queue_capacity: lib_config
+                        .priority_queue_capacity
+                        .map(ConfigValue::Static),
+                    default_dispatch_buffer_capacity: lib_config
+                        .dispatch_buffer_capacity
+                        .map(ConfigValue::Static),
+                    sources,
+                    reactions,
+                    queries, // Now using stored QueryConfigDto instead of empty vec
+                }
+            };
+            instance_configs.push(instance_config);
         }
 
         // Dynamic format selection based on instance count
@@ -203,6 +281,7 @@ impl ConfigPersistence {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
             DrasiServerConfig {
+                api_version: None,
                 id: instance.id,
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
@@ -228,6 +307,7 @@ impl ConfigPersistence {
                 .unwrap_or_default();
 
             DrasiServerConfig {
+                api_version: None,
                 id: ConfigValue::Static(first_id),
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
@@ -412,7 +492,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -474,7 +554,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -508,7 +588,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -549,7 +629,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -569,7 +649,7 @@ mod tests {
         missing_instances.insert("test-server".to_string(), create_test_core().await);
         let persistence_non_existent = ConfigPersistence::new(
             non_existent,
-            Arc::new(missing_instances),
+            InstanceRegistry::from_map(missing_instances),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -630,7 +710,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "0.0.0.0".to_string(),
             8080,
             "debug".to_string(),
@@ -864,7 +944,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -939,7 +1019,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1032,7 +1112,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1072,7 +1152,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1139,7 +1219,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(), // Different from initial
             8080,                    // Different from initial
             "info".to_string(),      // Different from initial
@@ -1187,7 +1267,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1327,7 +1407,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1392,7 +1472,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1453,7 +1533,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1534,7 +1614,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),

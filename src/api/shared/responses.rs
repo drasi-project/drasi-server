@@ -34,6 +34,24 @@ pub struct ComponentListItem {
     pub id: String,
     /// Current status of the component
     pub status: ComponentStatus,
+    /// Error message if the component is in error state
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    /// Hypermedia links for this component
+    pub links: ComponentLinks,
+    /// Optional component configuration (only present when view=full)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
+}
+
+/// Hypermedia links for a component
+#[derive(Serialize, ToSchema)]
+pub struct ComponentLinks {
+    /// Link to the status view of the component
+    #[serde(rename = "self")]
+    pub self_link: String,
+    /// Link to the full configuration view of the component
+    pub full: String,
 }
 
 /// Response listing a DrasiLib instance
@@ -41,6 +59,28 @@ pub struct ComponentListItem {
 pub struct InstanceListItem {
     /// ID of the DrasiLib instance
     pub id: String,
+    /// Number of sources in this instance
+    pub source_count: usize,
+    /// Number of queries in this instance
+    pub query_count: usize,
+    /// Number of reactions in this instance
+    pub reaction_count: usize,
+    /// HATEOAS links
+    pub links: InstanceLinks,
+}
+
+/// HATEOAS links for an instance
+#[derive(Serialize, ToSchema)]
+pub struct InstanceLinks {
+    /// Link to this instance's resources
+    #[serde(rename = "self")]
+    pub self_link: String,
+    /// Link to sources
+    pub sources: String,
+    /// Link to queries
+    pub queries: String,
+    /// Link to reactions
+    pub reactions: String,
 }
 
 /// Generic API response wrapper

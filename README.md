@@ -105,6 +105,7 @@ curl http://localhost:8080/api/v1/queries
 
 ```yaml
 # config/server.yaml
+apiVersion: drasi.io/v1
 host: 0.0.0.0
 port: 8080
 logLevel: info
@@ -218,6 +219,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 **Example:**
 
 ```yaml
+apiVersion: drasi.io/v1
 id: my-server
 host: 0.0.0.0
 port: 8080
@@ -291,6 +293,18 @@ sources:
         keyColumns: [id]
     bootstrapProvider:
       kind: postgres
+      host: localhost
+      port: 5432
+      database: mydb
+      user: postgres
+      password: ${DB_PASSWORD}
+      tables: [orders, customers]
+      slotName: drasi_slot
+      publicationName: drasi_pub
+      sslMode: prefer
+      tableKeys:
+        - table: orders
+          keyColumns: [id]
 ```
 
 | Field | Type | Default | Description |
@@ -606,7 +620,18 @@ Loads initial data from PostgreSQL using the COPY protocol.
 ```yaml
 bootstrapProvider:
   kind: postgres
-  # Uses source connection details
+  host: localhost
+  port: 5432
+  database: mydb
+  user: postgres
+  password: ${DB_PASSWORD}
+  tables: [orders, customers]
+  slotName: drasi_slot
+  publicationName: drasi_pub
+  sslMode: prefer
+  tableKeys:
+    - table: orders
+      keyColumns: [id]
 ```
 
 #### Script File Bootstrap (`scriptfile`)
@@ -927,6 +952,7 @@ reactions:
 For advanced use cases requiring isolated processing environments, configure multiple DrasiLib instances:
 
 ```yaml
+apiVersion: drasi.io/v1
 host: 0.0.0.0
 port: 8080
 logLevel: info
@@ -982,6 +1008,7 @@ Each instance has:
 All configuration values support environment variable substitution:
 
 ```yaml
+apiVersion: drasi.io/v1
 host: ${SERVER_HOST:-0.0.0.0}
 port: ${SERVER_PORT:-8080}
 

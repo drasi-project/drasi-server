@@ -20,10 +20,29 @@
 
 use utoipa::OpenApi;
 
+use crate::api::models::{
+    ApplicationBootstrapConfigDto, AuthConfigDto, BearerConfigDto, BootstrapProviderConfig,
+    CallSpecDto, ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
+    ConfigValueSslModeSchema, ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
+    ConfigValueU64Schema, ConfigValueUsizeSchema, CorsConfigDto, EffectiveFromConfigDto,
+    ElementTemplateDto, ElementTypeDto, ErrorBehaviorDto, GrpcAdaptiveReactionConfigDto,
+    GrpcReactionConfigDto, GrpcSourceConfigDto, HttpAdaptiveReactionConfigDto, HttpMethodDto,
+    HttpQueryConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogLevelDto, LogMessageDto,
+    LogReactionConfigDto, MappingConditionDto, MockSourceConfigDto, OperationTypeDto,
+    PlatformBootstrapConfigDto, PlatformReactionConfigDto, PlatformSourceConfigDto,
+    PostgresBootstrapConfigDto, PostgresSourceConfigDto, ProfilerReactionConfigDto, QueryConfigDto,
+    RedbStateStoreConfigDto, ScriptFileBootstrapConfigDto, SignatureAlgorithmDto,
+    SignatureConfigDto, SignatureEncodingDto, SourceSubscriptionConfigDto, StateStoreConfig,
+    TableKeyConfigDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
+};
+use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
-    HealthResponse, InstanceListItem, StatusResponse,
+    HealthResponse, InstanceLinks, InstanceListItem, StatusResponse,
 };
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
+use utoipa::openapi::schema::{OneOf, Ref, Schema};
+use utoipa::openapi::RefOr;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -31,22 +50,38 @@ use crate::api::shared::{
         super::handlers::list_api_versions,
         super::handlers::health_check,
         super::handlers::list_instances,
+        super::handlers::create_instance,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
+        super::handlers::upsert_source_handler,
         super::handlers::get_source,
+        super::handlers::get_source_events,
+        super::handlers::stream_source_events,
+        super::handlers::get_source_logs,
+        super::handlers::stream_source_logs,
         super::handlers::delete_source,
         super::handlers::start_source,
         super::handlers::stop_source,
         super::handlers::list_queries,
         super::handlers::create_query,
         super::handlers::get_query,
+        super::handlers::get_query_events,
+        super::handlers::stream_query_events,
+        super::handlers::get_query_logs,
+        super::handlers::stream_query_logs,
         super::handlers::delete_query,
         super::handlers::start_query,
         super::handlers::stop_query,
         super::handlers::get_query_results,
+        super::handlers::attach_query_stream,
         super::handlers::list_reactions,
         super::handlers::create_reaction_handler,
+        super::handlers::upsert_reaction_handler,
         super::handlers::get_reaction,
+        super::handlers::get_reaction_events,
+        super::handlers::stream_reaction_events,
+        super::handlers::get_reaction_logs,
+        super::handlers::stream_reaction_logs,
         super::handlers::delete_reaction,
         super::handlers::start_reaction,
         super::handlers::stop_reaction,
@@ -58,11 +93,71 @@ use crate::api::shared::{
             ApiResponseSchema,
             StatusResponse,
             InstanceListItem,
+            InstanceLinks,
+            CreateInstanceRequest,
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,
+            ComponentTypeDto,
+            ComponentStatusDto,
+            LogLevelDto,
+            ComponentEventDto,
+            LogMessageDto,
+            DrasiServerConfig,
+            DrasiLibInstanceConfig,
+            ConfigValueStringSchema,
+            ConfigValueU16Schema,
+            ConfigValueU32Schema,
+            ConfigValueU64Schema,
+            ConfigValueUsizeSchema,
+            ConfigValueBoolSchema,
+            ConfigValueSslModeSchema,
+            MockSourceConfigDto,
+            HttpSourceConfigDto,
+            GrpcSourceConfigDto,
+            PostgresSourceConfigDto,
+            PlatformSourceConfigDto,
+            TableKeyConfigDto,
+            PostgresBootstrapConfigDto,
+            ApplicationBootstrapConfigDto,
+            ScriptFileBootstrapConfigDto,
+            PlatformBootstrapConfigDto,
+            BootstrapProviderConfig,
+            LogReactionConfigDto,
+            HttpReactionConfigDto,
+            HttpAdaptiveReactionConfigDto,
+            HttpQueryConfigDto,
+            CallSpecDto,
+            GrpcReactionConfigDto,
+            GrpcAdaptiveReactionConfigDto,
+            crate::api::models::reactions::sse::SseReactionConfigDto,
+            crate::api::models::reactions::sse::SseQueryConfigDto,
+            crate::api::models::reactions::sse::SseTemplateSpecDto,
+            PlatformReactionConfigDto,
+            ProfilerReactionConfigDto,
+            QueryConfigDto,
+            SourceSubscriptionConfigDto,
+            RedbStateStoreConfigDto,
+            WebhookConfigDto,
+            CorsConfigDto,
+            ErrorBehaviorDto,
+            WebhookRouteDto,
+            HttpMethodDto,
+            AuthConfigDto,
+            SignatureConfigDto,
+            SignatureAlgorithmDto,
+            SignatureEncodingDto,
+            BearerConfigDto,
+            WebhookMappingDto,
+            MappingConditionDto,
+            OperationTypeDto,
+            ElementTypeDto,
+            EffectiveFromConfigDto,
+            TimestampFormatDto,
+            ElementTemplateDto,
         )
     ),
+    modifiers(&SourceReactionConfigSchemas),
     tags(
         (name = "API", description = "API version information"),
         (name = "Health", description = "Health check endpoints"),
@@ -86,3 +181,56 @@ use crate::api::shared::{
     )
 )]
 pub struct ApiDocV1;
+
+struct SourceReactionConfigSchemas;
+
+impl utoipa::Modify for SourceReactionConfigSchemas {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        let schemas = &mut components.schemas;
+
+        let source_variants = [
+            "MockSourceConfig",
+            "HttpSourceConfig",
+            "GrpcSourceConfig",
+            "PostgresSourceConfig",
+            "PlatformSourceConfig",
+        ];
+        let reaction_variants = [
+            "LogReactionConfig",
+            "HttpReactionConfig",
+            "HttpAdaptiveReactionConfig",
+            "GrpcReactionConfig",
+            "GrpcAdaptiveReactionConfig",
+            "SseReactionConfig",
+            "PlatformReactionConfig",
+            "ProfilerReactionConfig",
+        ];
+
+        if !schemas.contains_key("SourceConfig") {
+            schemas.insert(
+                "SourceConfig".to_string(),
+                RefOr::T(Schema::OneOf(OneOf {
+                    items: source_variants
+                        .iter()
+                        .map(|name| RefOr::Ref(Ref::from_schema_name(*name)))
+                        .collect(),
+                    ..Default::default()
+                })),
+            );
+        }
+
+        if !schemas.contains_key("ReactionConfig") {
+            schemas.insert(
+                "ReactionConfig".to_string(),
+                RefOr::T(Schema::OneOf(OneOf {
+                    items: reaction_variants
+                        .iter()
+                        .map(|name| RefOr::Ref(Ref::from_schema_name(*name)))
+                        .collect(),
+                    ..Default::default()
+                })),
+            );
+        }
+    }
+}

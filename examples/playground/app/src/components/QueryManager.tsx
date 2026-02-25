@@ -343,26 +343,26 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
       {/* Create Form Modal */}
       {showCreateForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl p-8 max-w-5xl w-full my-8 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-sm">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white rounded-2xl p-6 max-w-xl w-full my-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-sm">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900">
+              <h3 className="text-xl font-bold text-slate-900">
                 Create Continuous Query
               </h3>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               {/* Query ID */}
               <div>
-                <label className="block text-sm font-semibold mb-2 text-slate-700">Query ID</label>
+                <label className="block text-sm font-semibold mb-1 text-slate-700">Query ID</label>
                 <input
                   {...register('id', { required: 'Query ID is required' })}
                   type="text"
-                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 focus:outline-none transition-all text-slate-900 placeholder-gray-400"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 focus:outline-none transition-all text-slate-900 placeholder-gray-400 text-sm"
                   placeholder="my-query"
                 />
                 {errors.id && <p className="text-red-600 text-sm mt-1">{errors.id.message}</p>}
@@ -370,19 +370,18 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
 
               {/* Query Templates */}
               <div>
-                <label className="block text-sm font-semibold mb-3 text-slate-700">Query Templates (Click to Use)</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <label className="block text-sm font-semibold mb-2 text-slate-700">Templates</label>
+                <div className="grid grid-cols-2 gap-2">
                   {QUERY_TEMPLATES.map((template, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => applyTemplate(template.query)}
-                      className="p-4 bg-gray-50 border border-gray-200 rounded-xl hover:border-purple-300 hover:bg-purple-50 transition-all text-left group"
+                      className="p-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-all text-left group"
                     >
-                      <div className="font-semibold text-sm text-slate-900 group-hover:text-purple-700 transition-colors mb-1">
+                      <div className="font-medium text-xs text-slate-900 group-hover:text-purple-700 transition-colors">
                         {template.name}
                       </div>
-                      <div className="text-xs text-slate-600">{template.description}</div>
                     </button>
                   ))}
                 </div>
@@ -390,68 +389,63 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
 
               {/* Cypher Editor */}
               <div>
-                <label className="block text-sm font-semibold mb-2 text-slate-700">Cypher Query</label>
-                <div className="border border-gray-300 rounded-xl overflow-hidden shadow-sm">
+                <label className="block text-sm font-semibold mb-1 text-slate-700">Cypher Query</label>
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <Controller
                     name="query"
                     control={control}
                     rules={{ required: 'Query is required' }}
                     render={({ field }) => (
                       <Editor
-                        height="500px"
+                        height="150px"
                         defaultLanguage="cypher"
                         theme="light"
                         value={field.value}
                         onChange={(value) => field.onChange(value || '')}
                         options={{
-                          minimap: { enabled: true },
-                          fontSize: 14,
+                          minimap: { enabled: false },
+                          fontSize: 13,
                           lineNumbers: 'on',
                           scrollBeyondLastLine: false,
                           wordWrap: 'on',
-                          padding: { top: 16, bottom: 16 },
-                          roundedSelection: true,
+                          padding: { top: 8, bottom: 8 },
                           fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
-                          fontLigatures: true,
                         }}
                       />
                     )}
                   />
                 </div>
-                {errors.query && <p className="text-red-600 text-sm mt-2">{errors.query.message}</p>}
+                {errors.query && <p className="text-red-600 text-sm mt-1">{errors.query.message}</p>}
               </div>
 
               {/* Source Selection */}
               <div>
-                <label className="block text-sm font-semibold mb-3 text-slate-700">
-                  Select Data Sources ({selectedSources?.length || 0} selected)
+                <label className="block text-sm font-semibold mb-2 text-slate-700">
+                  Sources ({selectedSources?.length || 0} selected)
                 </label>
                 {sources.length === 0 ? (
-                  <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-xl">
-                    <p className="text-yellow-700 font-medium">No sources available</p>
-                    <p className="text-sm text-yellow-600 mt-1">Create a source first before creating queries.</p>
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-yellow-700 text-sm font-medium">No sources available</p>
+                    <p className="text-xs text-yellow-600 mt-1">Create a source first before creating queries.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-2">
                     {sources.map((source) => (
                       <label
                         key={source.id}
-                        className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-all border ${
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all border text-sm ${
                           selectedSources?.includes(source.id)
-                            ? 'bg-purple-50 border-purple-300 shadow-sm'
-                            : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                            ? 'bg-purple-50 border-purple-300'
+                            : 'bg-gray-50 border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={selectedSources?.includes(source.id) || false}
                           onChange={() => toggleSource(source.id)}
-                          className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                          className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                         />
-                        <div className="flex-1">
-                          <div className="font-medium text-sm text-slate-900">{source.id}</div>
-                          <div className="text-xs text-slate-600">{source.source_type}</div>
-                        </div>
+                        <span className="font-medium text-slate-900">{source.id}</span>
                       </label>
                     ))}
                   </div>
@@ -459,12 +453,12 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
               </div>
 
               {/* Auto Start */}
-              <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <input
                   {...register('auto_start')}
                   type="checkbox"
                   id="auto_start_query"
-                  className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                 />
                 <label htmlFor="auto_start_query" className="text-sm text-slate-700 font-medium cursor-pointer">
                   Auto-start query on creation
@@ -472,24 +466,24 @@ export function QueryManager({ defaultSourceId, onQuerySelect, selectedQueryId }
               </div>
 
               {/* Form Actions */}
-              <div className="flex gap-3 justify-end pt-6 border-t border-gray-200">
+              <div className="flex gap-3 justify-end pt-3 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => {
                     setShowCreateForm(false);
                     reset();
                   }}
-                  className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all font-medium"
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all font-medium text-sm"
                   disabled={creating}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm"
                   disabled={creating || !selectedSources?.length}
                 >
-                  {creating ? 'Creating Query...' : 'Create Query'}
+                  {creating ? 'Creating...' : 'Create Query'}
                 </button>
               </div>
             </form>

@@ -17,6 +17,7 @@ pub mod builder;
 pub mod builder_result;
 pub mod config;
 pub mod factories;
+pub mod instance_registry;
 pub mod persistence;
 pub mod server;
 

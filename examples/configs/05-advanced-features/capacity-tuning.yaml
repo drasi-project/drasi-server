@@ -44,6 +44,7 @@
 #
 # Run with: cargo run -- --config examples/configs/05-advanced-features/capacity-tuning.yaml
 
+apiVersion: drasi.io/v1
 id: capacity-tuning-demo
 host: "0.0.0.0"
 port: 8080

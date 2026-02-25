@@ -1403,6 +1403,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-reaction-application"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b01f1edeb6703021dc1d673b95327a0bafb7e7132fb4d6f47a9121746a0cabef"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-lib",
+ "log",
+ "ordered-float",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-reaction-grpc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1648,8 +1668,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "async-stream",
  "async-trait",
  "axum 0.7.9",
+ "bytes",
  "chrono",
  "clap",
  "dotenvy",
@@ -1662,6 +1684,7 @@ dependencies = [
  "drasi-index-garnet",
  "drasi-index-rocksdb",
  "drasi-lib",
+ "drasi-reaction-application",
  "drasi-reaction-grpc",
  "drasi-reaction-grpc-adaptive",
  "drasi-reaction-http",
@@ -1679,8 +1702,8 @@ dependencies = [
  "drasi-source-platform",
  "drasi-source-postgres",
  "drasi-state-store-redb",
- "env_logger",
  "futures",
+ "futures-util",
  "handlebars 6.4.0",
  "hyper 1.8.1",
  "indexmap 2.13.0",
@@ -1701,9 +1724,11 @@ dependencies = [
  "testcontainers-modules",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "tower 0.4.13",
  "tower-http",
+ "tracing",
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
@@ -1907,19 +1932,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.115",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
 ]
 
 [[package]]
@@ -2553,12 +2565,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
-name = "humantime"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
-
-[[package]]
 name = "hyper"
 version = "0.14.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2894,17 +2900,6 @@ name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
-
-[[package]]
-name = "is-terminal"
-version = "0.4.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
-dependencies = [
- "hermit-abi",
- "libc",
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "is_terminal_polyfill"

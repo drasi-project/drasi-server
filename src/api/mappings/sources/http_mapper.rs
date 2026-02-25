@@ -15,12 +15,8 @@
 //! HTTP source configuration mapper.
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
-use crate::api::models::sources::http_source::{
-    AuthConfigDto, BearerConfigDto, CorsConfigDto, EffectiveFromConfigDto, ElementTemplateDto,
-    ElementTypeDto, ErrorBehaviorDto, HttpMethodDto, HttpSourceConfigDto, MappingConditionDto,
-    OperationTypeDto, SignatureAlgorithmDto, SignatureConfigDto, SignatureEncodingDto,
-    TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
-};
+use crate::api::models::sources::http_source::*;
+use crate::api::models::HttpSourceConfigDto;
 use drasi_source_http::config::{
     AuthConfig, BearerConfig, CorsConfig, EffectiveFromConfig, ElementTemplate, ElementType,
     ErrorBehavior, HttpMethod, MappingCondition, OperationType, SignatureAlgorithm,
@@ -48,29 +44,44 @@ impl ConfigMapper<HttpSourceConfigDto, HttpSourceConfig> for HttpSourceConfigMap
             adaptive_min_wait_ms: resolver.resolve_optional(&dto.adaptive_min_wait_ms)?,
             adaptive_window_secs: resolver.resolve_optional(&dto.adaptive_window_secs)?,
             adaptive_enabled: resolver.resolve_optional(&dto.adaptive_enabled)?,
-            webhooks: dto.webhooks.as_ref().map(map_webhook_config),
+            webhooks: dto
+                .webhooks
+                .as_ref()
+                .map(|w| map_webhook_config(w, resolver))
+                .transpose()?,
         })
     }
 }
 
-fn map_webhook_config(dto: &WebhookConfigDto) -> WebhookConfig {
-    WebhookConfig {
+fn map_webhook_config(
+    dto: &WebhookConfigDto,
+    resolver: &DtoMapper,
+) -> Result<WebhookConfig, MappingError> {
+    Ok(WebhookConfig {
         error_behavior: map_error_behavior(&dto.error_behavior),
-        cors: dto.cors.as_ref().map(map_cors_config),
-        routes: dto.routes.iter().map(map_webhook_route).collect(),
-    }
+        cors: dto
+            .cors
+            .as_ref()
+            .map(|c| map_cors_config(c, resolver))
+            .transpose()?,
+        routes: dto
+            .routes
+            .iter()
+            .map(|r| map_webhook_route(r, resolver))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
-fn map_cors_config(dto: &CorsConfigDto) -> CorsConfig {
-    CorsConfig {
+fn map_cors_config(dto: &CorsConfigDto, resolver: &DtoMapper) -> Result<CorsConfig, MappingError> {
+    Ok(CorsConfig {
         enabled: dto.enabled,
-        allow_origins: dto.allow_origins.clone(),
-        allow_methods: dto.allow_methods.clone(),
-        allow_headers: dto.allow_headers.clone(),
-        expose_headers: dto.expose_headers.clone(),
+        allow_origins: resolver.resolve_string_vec(&dto.allow_origins)?,
+        allow_methods: resolver.resolve_string_vec(&dto.allow_methods)?,
+        allow_headers: resolver.resolve_string_vec(&dto.allow_headers)?,
+        expose_headers: resolver.resolve_string_vec(&dto.expose_headers)?,
         allow_credentials: dto.allow_credentials,
         max_age: dto.max_age,
-    }
+    })
 }
 
 fn map_error_behavior(dto: &ErrorBehaviorDto) -> ErrorBehavior {
@@ -81,14 +92,25 @@ fn map_error_behavior(dto: &ErrorBehaviorDto) -> ErrorBehavior {
     }
 }
 
-fn map_webhook_route(dto: &WebhookRouteDto) -> WebhookRoute {
-    WebhookRoute {
-        path: dto.path.clone(),
+fn map_webhook_route(
+    dto: &WebhookRouteDto,
+    resolver: &DtoMapper,
+) -> Result<WebhookRoute, MappingError> {
+    Ok(WebhookRoute {
+        path: resolver.resolve_string(&dto.path)?,
         methods: dto.methods.iter().map(map_http_method).collect(),
-        auth: dto.auth.as_ref().map(map_auth_config),
+        auth: dto
+            .auth
+            .as_ref()
+            .map(|a| map_auth_config(a, resolver))
+            .transpose()?,
         error_behavior: dto.error_behavior.as_ref().map(map_error_behavior),
-        mappings: dto.mappings.iter().map(map_webhook_mapping).collect(),
-    }
+        mappings: dto
+            .mappings
+            .iter()
+            .map(|m| map_webhook_mapping(m, resolver))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
 fn map_http_method(dto: &HttpMethodDto) -> HttpMethod {
@@ -101,21 +123,32 @@ fn map_http_method(dto: &HttpMethodDto) -> HttpMethod {
     }
 }
 
-fn map_auth_config(dto: &AuthConfigDto) -> AuthConfig {
-    AuthConfig {
-        signature: dto.signature.as_ref().map(map_signature_config),
-        bearer: dto.bearer.as_ref().map(map_bearer_config),
-    }
+fn map_auth_config(dto: &AuthConfigDto, resolver: &DtoMapper) -> Result<AuthConfig, MappingError> {
+    Ok(AuthConfig {
+        signature: dto
+            .signature
+            .as_ref()
+            .map(|s| map_signature_config(s, resolver))
+            .transpose()?,
+        bearer: dto
+            .bearer
+            .as_ref()
+            .map(|b| map_bearer_config(b, resolver))
+            .transpose()?,
+    })
 }
 
-fn map_signature_config(dto: &SignatureConfigDto) -> SignatureConfig {
-    SignatureConfig {
+fn map_signature_config(
+    dto: &SignatureConfigDto,
+    resolver: &DtoMapper,
+) -> Result<SignatureConfig, MappingError> {
+    Ok(SignatureConfig {
         algorithm: map_signature_algorithm(&dto.algorithm),
-        secret_env: dto.secret_env.clone(),
-        header: dto.header.clone(),
-        prefix: dto.prefix.clone(),
+        secret_env: resolver.resolve_string(&dto.secret_env)?,
+        header: resolver.resolve_string(&dto.header)?,
+        prefix: resolver.resolve_optional_string(&dto.prefix)?,
         encoding: map_signature_encoding(&dto.encoding),
-    }
+    })
 }
 
 fn map_signature_algorithm(dto: &SignatureAlgorithmDto) -> SignatureAlgorithm {
@@ -132,36 +165,53 @@ fn map_signature_encoding(dto: &SignatureEncodingDto) -> SignatureEncoding {
     }
 }
 
-fn map_bearer_config(dto: &BearerConfigDto) -> BearerConfig {
-    BearerConfig {
-        token_env: dto.token_env.clone(),
-    }
+fn map_bearer_config(
+    dto: &BearerConfigDto,
+    resolver: &DtoMapper,
+) -> Result<BearerConfig, MappingError> {
+    Ok(BearerConfig {
+        token_env: resolver.resolve_string(&dto.token_env)?,
+    })
 }
 
-fn map_webhook_mapping(dto: &WebhookMappingDto) -> WebhookMapping {
-    WebhookMapping {
-        when: dto.when.as_ref().map(map_mapping_condition),
+fn map_webhook_mapping(
+    dto: &WebhookMappingDto,
+    resolver: &DtoMapper,
+) -> Result<WebhookMapping, MappingError> {
+    Ok(WebhookMapping {
+        when: dto
+            .when
+            .as_ref()
+            .map(|c| map_mapping_condition(c, resolver))
+            .transpose()?,
         operation: dto.operation.as_ref().map(map_operation_type),
-        operation_from: dto.operation_from.clone(),
+        operation_from: resolver.resolve_optional_string(&dto.operation_from)?,
         operation_map: dto.operation_map.as_ref().map(|m| {
             m.iter()
                 .map(|(k, v)| (k.clone(), map_operation_type(v)))
                 .collect()
         }),
         element_type: map_element_type(&dto.element_type),
-        effective_from: dto.effective_from.as_ref().map(map_effective_from_config),
-        template: map_element_template(&dto.template),
-    }
+        effective_from: dto
+            .effective_from
+            .as_ref()
+            .map(|e| map_effective_from(e, resolver))
+            .transpose()?,
+        template: map_element_template(&dto.template, resolver)?,
+    })
 }
 
-fn map_mapping_condition(dto: &MappingConditionDto) -> MappingCondition {
-    MappingCondition {
-        header: dto.header.clone(),
-        field: dto.field.clone(),
-        equals: dto.equals.clone(),
-        contains: dto.contains.clone(),
-        regex: dto.regex.clone(),
-    }
+fn map_mapping_condition(
+    dto: &MappingConditionDto,
+    resolver: &DtoMapper,
+) -> Result<MappingCondition, MappingError> {
+    Ok(MappingCondition {
+        header: resolver.resolve_optional_string(&dto.header)?,
+        field: resolver.resolve_optional_string(&dto.field)?,
+        equals: resolver.resolve_optional_string(&dto.equals)?,
+        contains: resolver.resolve_optional_string(&dto.contains)?,
+        regex: resolver.resolve_optional_string(&dto.regex)?,
+    })
 }
 
 fn map_operation_type(dto: &OperationTypeDto) -> OperationType {
@@ -179,13 +229,18 @@ fn map_element_type(dto: &ElementTypeDto) -> ElementType {
     }
 }
 
-fn map_effective_from_config(dto: &EffectiveFromConfigDto) -> EffectiveFromConfig {
+fn map_effective_from(
+    dto: &EffectiveFromConfigDto,
+    resolver: &DtoMapper,
+) -> Result<EffectiveFromConfig, MappingError> {
     match dto {
-        EffectiveFromConfigDto::Simple(s) => EffectiveFromConfig::Simple(s.clone()),
-        EffectiveFromConfigDto::Explicit { value, format } => EffectiveFromConfig::Explicit {
-            value: value.clone(),
+        EffectiveFromConfigDto::Simple(v) => {
+            Ok(EffectiveFromConfig::Simple(resolver.resolve_string(v)?))
+        }
+        EffectiveFromConfigDto::Explicit { value, format } => Ok(EffectiveFromConfig::Explicit {
+            value: resolver.resolve_string(value)?,
             format: map_timestamp_format(format),
-        },
+        }),
     }
 }
 
@@ -198,12 +253,15 @@ fn map_timestamp_format(dto: &TimestampFormatDto) -> TimestampFormat {
     }
 }
 
-fn map_element_template(dto: &ElementTemplateDto) -> ElementTemplate {
-    ElementTemplate {
-        id: dto.id.clone(),
-        labels: dto.labels.clone(),
+fn map_element_template(
+    dto: &ElementTemplateDto,
+    resolver: &DtoMapper,
+) -> Result<ElementTemplate, MappingError> {
+    Ok(ElementTemplate {
+        id: resolver.resolve_string(&dto.id)?,
+        labels: resolver.resolve_string_vec(&dto.labels)?,
         properties: dto.properties.clone(),
-        from: dto.from.clone(),
-        to: dto.to.clone(),
-    }
+        from: resolver.resolve_optional_string(&dto.from)?,
+        to: resolver.resolve_optional_string(&dto.to)?,
+    })
 }
