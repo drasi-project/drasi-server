@@ -64,14 +64,16 @@ export function buildFlowGraph(data: PipelineData): {
     });
 
     q.sourceIds.forEach((srcId) => {
+      const source = data.sources.find((s) => s.id === srcId);
+      const bothRunning = source?.status === "Running" && q.status === "Running";
       edges.push({
         id: `e-source-${srcId}-query-${q.id}`,
         source: `source-${srcId}`,
         target: `query-${q.id}`,
         type: "animatedEdge",
-        animated: q.status === "Running",
+        animated: bothRunning,
         style: {
-          stroke: q.status === "Running" ? "#10b981" : "var(--drasi-border)",
+          stroke: bothRunning ? "#10b981" : "var(--drasi-border)",
           strokeWidth: 2,
         },
       });
@@ -90,14 +92,16 @@ export function buildFlowGraph(data: PipelineData): {
     });
 
     r.queryIds.forEach((qId) => {
+      const query = data.queries.find((q) => q.id === qId);
+      const bothRunning = query?.status === "Running" && r.status === "Running";
       edges.push({
         id: `e-query-${qId}-reaction-${r.id}`,
         source: `query-${qId}`,
         target: `reaction-${r.id}`,
         type: "animatedEdge",
-        animated: r.status === "Running",
+        animated: bothRunning,
         style: {
-          stroke: r.status === "Running" ? "#10b981" : "var(--drasi-border)",
+          stroke: bothRunning ? "#10b981" : "var(--drasi-border)",
           strokeWidth: 2,
         },
       });
