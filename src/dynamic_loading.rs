@@ -288,7 +288,7 @@ pub fn load_plugins_from_directory(
     for path in &plugin_paths {
         let path_str = path.display().to_string();
         match load_single_plugin(path, registry) {
-            Ok(loaded) => {
+            Ok(Some(loaded)) => {
                 info!(
                     "  [dynamic] loaded: {} ({} descriptors)",
                     path_str, loaded.descriptor_count
@@ -296,6 +296,10 @@ pub fn load_plugins_from_directory(
                 stats.loaded += 1;
                 stats.descriptors += loaded.descriptor_count;
                 loaded_plugins.push(loaded.handle);
+            }
+            Ok(None) => {
+                // Not a plugin (no drasi_plugin_init symbol) — skip silently
+                stats.found -= 1; // Don't count non-plugins
             }
             Err(_) => {
                 retry_paths.push(path.clone());
@@ -308,7 +312,7 @@ pub fn load_plugins_from_directory(
     for path in &retry_paths {
         let path_str = path.display().to_string();
         match load_single_plugin(path, registry) {
-            Ok(loaded) => {
+            Ok(Some(loaded)) => {
                 info!(
                     "  [dynamic] loaded (retry): {} ({} descriptors)",
                     path_str, loaded.descriptor_count
@@ -316,6 +320,10 @@ pub fn load_plugins_from_directory(
                 stats.loaded += 1;
                 stats.descriptors += loaded.descriptor_count;
                 loaded_plugins.push(loaded.handle);
+            }
+            Ok(None) => {
+                // Not a plugin — skip silently
+                stats.found -= 1;
             }
             Err(err) => {
                 error!("Failed to load plugin '{}': {:#}", path_str, err);
@@ -343,10 +351,14 @@ struct SingleLoadResult {
 }
 
 /// Load a single plugin shared library and register its descriptors.
+///
+/// Returns `Ok(None)` if the library does not export the plugin init symbol
+/// (i.e. it's not a Drasi plugin — just a regular shared library that happens
+/// to match the naming convention).
 fn load_single_plugin(
     path: &Path,
     registry: &mut PluginRegistry,
-) -> Result<SingleLoadResult> {
+) -> Result<Option<SingleLoadResult>> {
     let path_str = path.display().to_string();
 
     // SAFETY: Loading a shared library is inherently unsafe. We require that:
@@ -370,6 +382,23 @@ fn load_single_plugin(
         Library::new(path)
             .with_context(|| format!("Failed to open shared library: {path_str}"))?
     };
+
+    // First, check if this library exports the plugin init symbol.
+    // If not, it's not a Drasi plugin — skip it without warnings.
+    let has_init = unsafe {
+        library
+            .get::<unsafe extern "C" fn() -> *mut PluginRegistration>(
+                PLUGIN_INIT_SYMBOL.as_bytes(),
+            )
+            .is_ok()
+    };
+    if !has_init {
+        debug!(
+            "Library '{}' does not export '{}', skipping (not a plugin)",
+            path_str, PLUGIN_INIT_SYMBOL
+        );
+        return Ok(None);
+    }
 
     // Pre-check: verify build hash BEFORE calling drasi_plugin_init().
     // This uses a simple extern "C" fn() -> *const u8 that doesn't involve
@@ -405,13 +434,13 @@ fn load_single_plugin(
         }
     }
 
-    // Resolve the common entry point symbol
+    // Resolve the entry point symbol (we already verified it exists above)
     let init_fn: Symbol<unsafe extern "C" fn() -> *mut PluginRegistration> = unsafe {
         library
             .get(PLUGIN_INIT_SYMBOL.as_bytes())
             .with_context(|| {
                 format!(
-                    "Plugin '{}' does not export '{}' symbol",
+                    "Plugin '{}' failed to resolve '{}' symbol",
                     path_str, PLUGIN_INIT_SYMBOL
                 )
             })?
@@ -501,13 +530,13 @@ fn load_single_plugin(
     // Register all descriptors
     registry.register_all(*registration);
 
-    Ok(SingleLoadResult {
+    Ok(Some(SingleLoadResult {
         handle: LoadedPlugin {
             path: path_str,
             library,
         },
         descriptor_count,
-    })
+    }))
 }
 
 /// Pre-load `libstd-*.{so,dylib}` with `RTLD_GLOBAL` so that the shared runtime

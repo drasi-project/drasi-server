@@ -24,6 +24,32 @@
 # Path to drasi-core workspace (relative to this Makefile)
 DRASI_CORE_DIR := ../drasi-core
 
+# Platform detection
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    PLUGIN_LIB_EXT := dylib
+    PLUGIN_LIB_PREFIX := lib
+    # macOS uses @loader_path instead of $ORIGIN
+    RPATH_FLAG := -C link-args=-Wl,-rpath,@loader_path
+else ifeq ($(OS),Windows_NT)
+    PLUGIN_LIB_EXT := dll
+    PLUGIN_LIB_PREFIX :=
+    # Windows doesn't need rpath
+    RPATH_FLAG :=
+else
+    # Linux and other Unix
+    PLUGIN_LIB_EXT := so
+    PLUGIN_LIB_PREFIX := lib
+    RPATH_FLAG := -C link-args=-Wl,-rpath,$$ORIGIN
+endif
+
+# Binary name
+ifeq ($(OS),Windows_NT)
+    SERVER_BIN := drasi-server.exe
+else
+    SERVER_BIN := drasi-server
+endif
+
 # All plugin crate names that support dynamic loading.
 # These must be listed as dependencies in Cargo.toml (even if optional) so they
 # can be built from this workspace with `cargo build -p <name>`.
@@ -57,7 +83,7 @@ PLUGIN_PKG_FLAGS := $(foreach p,$(DYNAMIC_PLUGINS),-p $(p))
 #   -C prefer-dynamic    → share libstd/tokio with plugins (avoid dual-runtime)
 #   --cfg ...            → enable drasi_plugin_init export in plugin crates
 #   -C link-args=...     → RUNPATH=$ORIGIN so binary finds .so in its own dir
-DYNAMIC_RUSTFLAGS := -C prefer-dynamic --cfg feature="dynamic-plugin" -C link-args=-Wl,-rpath,$$ORIGIN
+DYNAMIC_RUSTFLAGS := -C prefer-dynamic --cfg feature="dynamic-plugin" $(RPATH_FLAG)
 
 # Default target
 help:
@@ -72,7 +98,7 @@ help:
 	@echo "Static Build (all plugins linked into binary):"
 	@echo "  make build              - Build debug binary"
 	@echo "  make build-release      - Build release binary"
-	@echo "  make build-static       - Alias for build-release"
+	@echo "  make build-static       - Alias for build (debug)"
 	@echo ""
 	@echo "Dynamic Build (plugins as shared libraries):"
 	@echo "  make build-dynamic              - Build server + plugins (debug)"
@@ -143,14 +169,26 @@ run-release:
 
 # === Static Build (default) ===
 
+# Remove plugin shared library files that are side effects of crate-type = ["lib", "dylib"].
+# These are unused in static builds (the rlib is linked into the binary).
+define clean_plugin_libs
+	@rm -f $(1)/$(PLUGIN_LIB_PREFIX)drasi_source_*.$(PLUGIN_LIB_EXT) \
+	       $(1)/$(PLUGIN_LIB_PREFIX)drasi_reaction_*.$(PLUGIN_LIB_EXT) \
+	       $(1)/$(PLUGIN_LIB_PREFIX)drasi_bootstrap_*.$(PLUGIN_LIB_EXT) \
+	       $(1)/$(PLUGIN_LIB_PREFIX)drasi_plugin_runtime.$(PLUGIN_LIB_EXT)
+endef
+
 build:
 	cargo build
+	$(call clean_plugin_libs,target/debug)
 
 build-release:
 	cargo build --release
+	$(call clean_plugin_libs,target/release)
 
 build-static:
-	cargo build --release
+	cargo build
+	$(call clean_plugin_libs,target/debug)
 
 # === Dynamic Build ===
 
@@ -158,38 +196,56 @@ build-static:
 build-dynamic: build-dynamic-server
 	@echo ""
 	@echo "=== Dynamic build complete (debug) ==="
-	@echo "Server:  target/debug/drasi-server"
-	@echo "Plugins: target/debug/libdrasi_*.so"
-	@echo "Runtime: target/debug/libdrasi_plugin_runtime.so"
+	@echo "Server:  target/debug/$(SERVER_BIN)"
+	@echo "Plugins: target/debug/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT)"
+	@echo "Runtime: target/debug/$(PLUGIN_LIB_PREFIX)drasi_plugin_runtime.$(PLUGIN_LIB_EXT)"
 
 # Build server + all plugins as shared libraries (release)
 build-dynamic-release: build-dynamic-server-release
 	@echo ""
 	@echo "=== Dynamic build complete (release) ==="
-	@echo "Server:  target/release/drasi-server"
-	@echo "Plugins: target/release/libdrasi_*.so"
-	@echo "Runtime: target/release/libdrasi_plugin_runtime.so"
+	@echo "Server:  target/release/$(SERVER_BIN)"
+	@echo "Plugins: target/release/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT)"
+	@echo "Runtime: target/release/$(PLUGIN_LIB_PREFIX)drasi_plugin_runtime.$(PLUGIN_LIB_EXT)"
 
 # Build server + all plugins in a SINGLE cargo invocation (debug).
 # Using a single command ensures shared deps get unified feature resolution
-# and identical symbol hashes across server and all plugin .so files.
+# and identical symbol hashes across server and all plugin shared library files.
+# The libstd copy ensures the binary can start on machines without the Rust toolchain
+# (prefer-dynamic means the binary dynamically links libstd).
 build-dynamic-server:
 	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
 		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps'
+ifeq ($(OS),Windows_NT)
 	@echo "Copying Rust libstd to target/debug/..."
 	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.so; do \
+		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/std-*.dll; do \
 			[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
 		done
+else
+	@echo "Copying Rust libstd to target/debug/..."
+	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
+		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.$(PLUGIN_LIB_EXT); do \
+			[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
+		done
+endif
 
 build-dynamic-server-release:
 	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
 		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps' --release
+ifeq ($(OS),Windows_NT)
 	@echo "Copying Rust libstd to target/release/..."
 	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.so; do \
+		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/std-*.dll; do \
 			[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
 		done
+else
+	@echo "Copying Rust libstd to target/release/..."
+	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
+		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.$(PLUGIN_LIB_EXT); do \
+			[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
+		done
+endif
 
 # Build ONLY plugin shared libraries (without server binary).
 # Still uses the same features so deps are compatible if server is built later.

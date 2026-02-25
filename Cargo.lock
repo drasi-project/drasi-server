@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "addr2line"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
+dependencies = [
+ "gimli",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -109,15 +118,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arc-swap"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ded5f9a03ac8f24d1b8a25101ee812cd32cdc8c50a4c50237de2c4915850e73"
-dependencies = [
- "rustversion",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,6 +148,18 @@ dependencies = [
  "concurrent-queue",
  "event-listener",
  "futures-core",
+]
+
+[[package]]
+name = "async-native-tls"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d57d4cec3c647232e1094dc013546c0b33ce785d8aeb251e1f20dfaf8a9a13fe"
+dependencies = [
+ "futures-util",
+ "native-tls",
+ "thiserror 1.0.69",
+ "url",
 ]
 
 [[package]]
@@ -329,6 +341,21 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "backtrace"
+version = "0.3.76"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb531853791a215d7c62a30daf0dde835f381ab5de4589cfe7c649d2cbe92bd6"
+dependencies = [
+ "addr2line",
+ "cfg-if",
+ "libc",
+ "miniz_oxide",
+ "object",
+ "rustc-demangle",
+ "windows-link",
 ]
 
 [[package]]
@@ -1091,14 +1118,14 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 [[package]]
 name = "drasi-bootstrap-application"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0385f0e24dd51dd76663f31995c6e91d88138ae5516bb6ed33c343139872206a"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "postgres-types",
@@ -1109,19 +1136,44 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-stream",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "drasi-bootstrap-mssql"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-core",
+ "drasi-lib",
+ "drasi-mssql-common",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
+ "log",
+ "ordered-float",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "tiberius",
+ "tokio",
+ "tokio-util",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-bootstrap-noop"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e52122b852bc3bdc196126aa818e014b1d22e7f2e8c1c575601c06c42b969f6"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
  "log",
  "ordered-float",
@@ -1133,45 +1185,21 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-stream",
- "uuid",
-]
-
-[[package]]
-name = "drasi-bootstrap-platform"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb11f0cbd6910f2fd016effe6e93f5cec4a42e7414e353f2b2567d9e54047bc0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "drasi-core",
- "drasi-lib",
- "futures",
- "log",
- "ordered-float",
- "postgres-types",
- "prost-types",
- "redis 0.25.4",
- "reqwest",
- "serde",
- "serde_json",
- "tokio-postgres",
- "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-bootstrap-postgres"
 version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad4d576fcfd205b8ebd3e5e6c1090363d36c2fbc22f51f50584553d0fd42060"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "postgres-types",
@@ -1183,20 +1211,21 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-bootstrap-scriptfile"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4754e666f9edd81e2ab5a8d62daf0203f7e3cf3e8b32a77d037814c3187cb3c7"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "postgres-types",
@@ -1206,14 +1235,13 @@ dependencies = [
  "serde_json",
  "tokio-postgres",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-core"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa5f1e830b9f36d7eeed7843fa2e941670a158b77b00f72b31c8142947f98d2c"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1253,8 +1281,6 @@ dependencies = [
 [[package]]
 name = "drasi-functions-cypher"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7eb3e6a99ff6baacd4abdb3c51e76b4754e7b7eaa62eafd07883f106255ae2e"
 dependencies = [
  "drasi-core",
 ]
@@ -1262,8 +1288,6 @@ dependencies = [
 [[package]]
 name = "drasi-functions-gql"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86d920978fd2e39e14a89741931583bb46180f9cf01e250634ba714406ea5b61"
 dependencies = [
  "drasi-core",
 ]
@@ -1271,8 +1295,6 @@ dependencies = [
 [[package]]
 name = "drasi-index-garnet"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfda6c014a8bae85eb63e3e63233371196b79908ac3e4ec0369eddd4d4b60ae3"
 dependencies = [
  "async-recursion",
  "async-stream",
@@ -1296,8 +1318,6 @@ dependencies = [
 [[package]]
 name = "drasi-index-rocksdb"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e979e7500881296b1b9fbde28ffd3220040f539f333657162ccc6943b538802"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1320,8 +1340,6 @@ dependencies = [
 [[package]]
 name = "drasi-lib"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4f7100c94828b213fe59e02157daba066064f715611b1655839bdadfc6d96c4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1351,8 +1369,6 @@ dependencies = [
 [[package]]
 name = "drasi-middleware"
 version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa937215dd98c9a886c5485f70fb444388b50c8bccc4dec89550006543d7a924"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1368,10 +1384,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-mssql-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "drasi-core",
+ "hex",
+ "log",
+ "ordered-float",
+ "rust_decimal",
+ "serde",
+ "tiberius",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
+name = "drasi-plugin-runtime"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-lib",
+ "futures",
+ "log",
+ "ordered-float",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "drasi-plugin-sdk"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "drasi-lib",
+ "drasi-plugin-runtime",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "utoipa",
+]
+
+[[package]]
 name = "drasi-query-ast"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "028a4f067c147caa2d2f4490ed5b8b14d7741beee88859a124446855817e18c9"
 dependencies = [
  "serde",
  "serde_json",
@@ -1381,8 +1449,6 @@ dependencies = [
 [[package]]
 name = "drasi-query-cypher"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "079774bd75a27f127efc75f43754b8ddffdddbbf8b75523969a0a355ccffb7fa"
 dependencies = [
  "drasi-query-ast",
  "peg",
@@ -1393,8 +1459,6 @@ dependencies = [
 [[package]]
 name = "drasi-query-gql"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fbaee580b43bfe89f1c9ffb16a759208ded7b9a13fa26e5a5710d4804003acb"
 dependencies = [
  "drasi-query-ast",
  "peg",
@@ -1405,13 +1469,13 @@ dependencies = [
 [[package]]
 name = "drasi-reaction-application"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b01f1edeb6703021dc1d673b95327a0bafb7e7132fb4d6f47a9121746a0cabef"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "prost-types",
@@ -1419,19 +1483,20 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-grpc"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ac94104ea3acc0658e449acd3ee904ef1b38b8398e2a6d6d5125c299ccbdd83"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "prost",
@@ -1443,19 +1508,20 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-grpc-adaptive"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d8115ce6f68d11ea5288fbf7c5ca2c732e59cac53e5196a5bce493bb49f1a04"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "drasi-reaction-grpc",
  "log",
  "ordered-float",
@@ -1467,20 +1533,21 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-http"
 version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4787647de9a044cd3a8d64fe0c6b0626af50d40cd2772c1425e3661a19630f12"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
  "log",
@@ -1491,19 +1558,20 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-http-adaptive"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b97ee3a3f9c23e15e0e9475fb45dcf651713abc994edf221212eb063ed4567"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "drasi-reaction-http",
  "handlebars 5.1.2",
  "log",
@@ -1514,20 +1582,21 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-log"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46f53d5a6b42e7e70d0ccb84f53770afb56c46442783281aaf7319bbd1275343"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
  "log",
@@ -1537,41 +1606,20 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
- "uuid",
-]
-
-[[package]]
-name = "drasi-reaction-platform"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62689c807900510b21f5514cbdb5b3eb6503542e41f806228bcf2afaa5bbbf70"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "drasi-core",
- "drasi-lib",
- "log",
- "ordered-float",
- "prost-types",
- "redis 0.25.4",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-profiler"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1b4b79dab24ee0c8173e5e87777c58bbc24a21515b3d4455aefc74850c4072b"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "prost-types",
@@ -1579,20 +1627,21 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-sse"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a115350ad3699bffa6c886c51b979e818a7c9f19d22786731525fd43c9d7e8c"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum 0.7.9",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
  "log",
@@ -1604,18 +1653,19 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tower-http",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-reaction-storedproc-mssql"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68c2590a7e447481ac4f589f581926a076b124d6701e8dec5ee0af932c1837bf"
 dependencies = [
  "anyhow",
  "async-trait",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "regex",
  "serde",
@@ -1623,43 +1673,48 @@ dependencies = [
  "tiberius",
  "tokio",
  "tokio-util",
+ "utoipa",
 ]
 
 [[package]]
 name = "drasi-reaction-storedproc-mysql"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51b66ee6b478c9037c77686d68e69e5db4c4f4733a0802454c4d7e609acf7ff8"
 dependencies = [
  "anyhow",
  "async-trait",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "mysql_async",
  "regex",
  "serde",
  "serde_json",
  "tokio",
+ "utoipa",
 ]
 
 [[package]]
 name = "drasi-reaction-storedproc-postgres"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c01a6c8c69bd73e83418ed1fa6da66f348494f0b3ab928b0478d98a3f5198965"
 dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
  "chrono",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
+ "native-tls",
+ "postgres-native-tls",
  "postgres-types",
  "regex",
  "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
+ "utoipa",
 ]
 
 [[package]]
@@ -1676,21 +1731,22 @@ dependencies = [
  "clap",
  "dotenvy",
  "drasi-bootstrap-application",
+ "drasi-bootstrap-mssql",
  "drasi-bootstrap-noop",
- "drasi-bootstrap-platform",
  "drasi-bootstrap-postgres",
  "drasi-bootstrap-scriptfile",
  "drasi-core",
  "drasi-index-garnet",
  "drasi-index-rocksdb",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "drasi-reaction-application",
  "drasi-reaction-grpc",
  "drasi-reaction-grpc-adaptive",
  "drasi-reaction-http",
  "drasi-reaction-http-adaptive",
  "drasi-reaction-log",
- "drasi-reaction-platform",
  "drasi-reaction-profiler",
  "drasi-reaction-sse",
  "drasi-reaction-storedproc-mssql",
@@ -1699,7 +1755,7 @@ dependencies = [
  "drasi-source-grpc",
  "drasi-source-http",
  "drasi-source-mock",
- "drasi-source-platform",
+ "drasi-source-mssql",
  "drasi-source-postgres",
  "drasi-state-store-redb",
  "futures",
@@ -1708,12 +1764,14 @@ dependencies = [
  "hyper 1.8.1",
  "indexmap 2.13.0",
  "inquire",
+ "libloading",
  "log",
  "mockall",
  "openssl",
  "pretty_assertions",
  "redis 0.24.0",
  "rstest",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1738,14 +1796,14 @@ dependencies = [
 [[package]]
 name = "drasi-source-grpc"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ece34b6c1059f0140ab8535780498f806d70a68dc07473df5ab674495d3f2fb"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "prost",
@@ -1757,14 +1815,13 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tracing",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-source-http"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fcdd11e0b26f6d1d306f2c805a43d3037dd6f0fad33386b80e37c51e50a9d62"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1773,6 +1830,8 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "handlebars 6.4.0",
  "hex",
  "hmac",
@@ -1795,20 +1854,21 @@ dependencies = [
  "tower-http",
  "tower-service",
  "tracing",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-source-mock"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71f5f1c7ee447a7b5d12f13ccd42a49945b733ad9442cf92556147926f12fe22"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "log",
  "ordered-float",
  "prost-types",
@@ -1818,38 +1878,39 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
-name = "drasi-source-platform"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48443f0333a6797018e5d302f3e0fecb5829f2e3e7279fdf32ec3b4fe1f1da8d"
+name = "drasi-source-mssql"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-mssql-common",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
+ "hex",
  "log",
  "ordered-float",
- "prost-types",
- "redis 0.25.4",
+ "rust_decimal",
  "serde",
  "serde_json",
+ "tiberius",
  "tokio",
- "tokio-stream",
- "tracing",
+ "tokio-util",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-source-postgres"
 version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12d1d0a31d0206d984029eb394de2406cd0b27b7898e42a42cb53aebc64761a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1859,10 +1920,12 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
+ "drasi-plugin-runtime",
+ "drasi-plugin-sdk",
  "futures",
  "hmac",
  "log",
- "md5",
+ "md5 0.7.0",
  "ordered-float",
  "pbkdf2",
  "postgres-types",
@@ -1876,14 +1939,13 @@ dependencies = [
  "tokio-postgres",
  "tokio-stream",
  "tracing",
+ "utoipa",
  "uuid",
 ]
 
 [[package]]
 name = "drasi-state-store-redb"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96f3a912393984736d8c6a9d77dbdbfc68086488d2bc5a8018bbdcd15180790d"
 dependencies = [
  "async-trait",
  "drasi-lib",
@@ -2324,6 +2386,12 @@ dependencies = [
  "wasip2",
  "wasip3",
 ]
+
+[[package]]
+name = "gimli"
+version = "0.32.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "glob"
@@ -3153,6 +3221,12 @@ dependencies = [
 
 [[package]]
 name = "md5"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e6bcd6433cff03a4bfc3d9834d504467db1f1cf6d0ea765d37d330249ed629d"
+
+[[package]]
+name = "md5"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
@@ -3517,6 +3591,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396"
 dependencies = [
  "objc2-core-foundation",
+]
+
+[[package]]
+name = "object"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -3896,6 +3979,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.115",
+]
+
+[[package]]
+name = "postgres-native-tls"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac73153d92e4bde922bd6f1dfba7f1ab8132266c031153b55e20a1521cd36d49"
+dependencies = [
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -4436,11 +4531,9 @@ version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0d7a6955c7511f60f3ba9e86c6d02b3c3f144f8c24b288d1f4e18074ab8bbec"
 dependencies = [
- "arc-swap",
  "async-trait",
  "bytes",
  "combine",
- "futures",
  "futures-util",
  "itoa",
  "percent-encoding",
@@ -4449,7 +4542,6 @@ dependencies = [
  "sha1_smol",
  "socket2 0.5.10",
  "tokio",
- "tokio-retry",
  "tokio-util",
  "url",
 ]
@@ -4731,6 +4823,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b50b8869d9fc858ce7266cce0194bd74df58b9d0e3f6df3a9fc8eb470d95c09d"
 
 [[package]]
 name = "rustc-hash"
@@ -5561,6 +5659,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1446cb4198848d1562301a3340424b4f425ef79f35ef9ee034769a9dd92c10d"
 dependencies = [
+ "async-native-tls",
  "async-trait",
  "asynchronous-codec",
  "byteorder",
@@ -5574,9 +5673,11 @@ dependencies = [
  "once_cell",
  "pin-project-lite",
  "pretty-hex",
+ "rust_decimal",
  "thiserror 1.0.69",
  "tracing",
  "uuid",
+ "winauth",
 ]
 
 [[package]]
@@ -5637,19 +5738,20 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.49.0"
+version = "1.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86"
+checksum = "f382da615b842244d4b8738c82ed1275e6c5dd90c459a30941cd07080b06c91a"
 dependencies = [
+ "backtrace",
  "bytes",
  "libc",
  "mio 1.1.1",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "tokio-macros",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5664,9 +5766,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "2.6.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af407857209536a95c8e56f8231ef2c2e2aff839b22e07a1ffcbc617e9db9fa5"
+checksum = "6e06d43f1345a3bcd39f6a56dbb7dcab2ba47e68e8ac134855e7e2bdbaf8cab8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5707,17 +5809,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "whoami",
-]
-
-[[package]]
-name = "tokio-retry"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
-dependencies = [
- "pin-project",
- "rand 0.8.5",
- "tokio",
 ]
 
 [[package]]
@@ -6451,6 +6542,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
+name = "winauth"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f820cd208ce9c6b050812dc2d724ba98c6c1e9db5ce9b3f58d925ae5723a5e6"
+dependencies = [
+ "bitflags 1.3.2",
+ "byteorder",
+ "md5 0.6.1",
+ "rand 0.7.3",
+ "winapi",
+]
+
+[[package]]
 name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7040,3 +7144,23 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "drasi-bootstrap-platform"
+version = "0.1.7"
+
+[[patch.unused]]
+name = "drasi-reaction-platform"
+version = "0.2.6"
+
+[[patch.unused]]
+name = "drasi-source-application"
+version = "0.1.7"
+
+[[patch.unused]]
+name = "drasi-source-platform"
+version = "0.1.7"
+
+[[patch.unused]]
+name = "drasi-tokio-bridge"
+version = "0.3.1"
