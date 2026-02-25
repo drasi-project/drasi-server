@@ -15,6 +15,7 @@
 //! Configuration building logic for init command.
 
 use anyhow::Result;
+use drasi_lib::config::QueryLanguage;
 
 use drasi_server::api::models::{
     ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
@@ -40,14 +41,14 @@ pub fn build_config(
             .unwrap_or_default();
         vec![QueryConfigDto {
             id: "my-query".to_string(),
-            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("GQL".to_string()),
+            query: "MATCH (n) RETURN n".to_string(),
+            query_language: QueryLanguage::GQL,
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static(source_id),
+                source_id: source_id,
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],
@@ -107,10 +108,7 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server::api::models::sources::mock::DataTypeDto;
-    use drasi_server::api::models::{
-        HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
-    };
+    use serde_json::json;
 
     /// Helper to create test server settings
     fn test_server_settings() -> ServerSettings {
@@ -125,63 +123,45 @@ mod tests {
 
     /// Helper to create a mock source config for testing
     fn mock_source_config(id: &str) -> SourceConfig {
-        SourceConfig::Mock {
+        SourceConfig {
+            kind: "mock".to_string(),
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                interval_ms: ConfigValue::Static(5000),
-                data_type: DataTypeDto::Generic,
-            },
+            config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }
     }
 
     /// Helper to create an HTTP source config for testing
     fn http_source_config(id: &str) -> SourceConfig {
-        SourceConfig::Http {
+        SourceConfig {
+            kind: "http".to_string(),
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: HttpSourceConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(9000),
-                endpoint: None,
-                timeout_ms: ConfigValue::Static(10000),
-                adaptive_max_batch_size: None,
-                adaptive_min_batch_size: None,
-                adaptive_max_wait_ms: None,
-                adaptive_min_wait_ms: None,
-                adaptive_window_secs: None,
-                adaptive_enabled: None,
-                webhooks: None,
-            },
+            config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }
     }
 
     /// Helper to create a log reaction config for testing
     fn log_reaction_config(id: &str) -> ReactionConfig {
-        ReactionConfig::Log {
+        ReactionConfig {
+            kind: "log".to_string(),
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            config: json!({"routes": {}}),
         }
     }
 
     /// Helper to create an SSE reaction config for testing
     fn sse_reaction_config(id: &str) -> ReactionConfig {
-        ReactionConfig::Sse {
+        ReactionConfig {
+            kind: "sse".to_string(),
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: SseReactionConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(8081),
-                sse_path: ConfigValue::Static("/events".to_string()),
-                heartbeat_interval_ms: ConfigValue::Static(30000),
-                routes: std::collections::HashMap::new(),
-                default_template: None,
-            },
+            config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }
     }
 
@@ -228,20 +208,14 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         let query = &config.queries[0];
         assert_eq!(query.id, "my-query");
-        assert_eq!(
-            query.query,
-            ConfigValue::Static("MATCH (n) RETURN n".to_string())
-        );
+        assert_eq!(query.query, "MATCH (n) RETURN n".to_string());
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
         assert_eq!(query.bootstrap_buffer_size, 10000);
 
         // Check query subscribes to the source
         assert_eq!(query.sources.len(), 1);
-        assert_eq!(
-            query.sources[0].source_id,
-            ConfigValue::Static("my-mock".to_string())
-        );
+        assert_eq!(query.sources[0].source_id, "my-mock".to_string());
     }
 
     #[test]
@@ -262,7 +236,7 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         assert_eq!(
             config.queries[0].sources[0].source_id,
-            ConfigValue::Static("source-1".to_string())
+            "source-1".to_string()
         );
     }
 

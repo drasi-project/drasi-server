@@ -58,6 +58,7 @@ pub use shared::responses::*;
 // Re-export v1 handlers and types for convenience
 pub use v1::handlers::*;
 pub use v1::openapi::ApiDocV1;
+pub use v1::openapi::inject_plugin_schemas;
 pub use v1::routes::build_v1_router;
 
 // Re-export version utilities

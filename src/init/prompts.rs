@@ -17,15 +17,7 @@
 use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
-use drasi_server::api::models::sources::mock::DataTypeDto;
-use drasi_server::api::models::{
-    ApplicationBootstrapConfigDto, BootstrapProviderConfig, ConfigValue, GrpcReactionConfigDto,
-    GrpcSourceConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto,
-    MockSourceConfigDto, PlatformBootstrapConfigDto, PlatformReactionConfigDto,
-    PlatformSourceConfigDto, PostgresBootstrapConfigDto, PostgresSourceConfigDto, ReactionConfig,
-    ScriptFileBootstrapConfigDto, SourceConfig, SseReactionConfigDto, SslModeDto,
-    TableKeyConfigDto,
-};
+use drasi_server::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
 
 use drasi_server::api::models::StateStoreConfig;
 
@@ -45,7 +37,6 @@ pub enum SourceType {
     Http,
     Grpc,
     Mock,
-    Platform,
 }
 
 impl std::fmt::Display for SourceType {
@@ -55,7 +46,6 @@ impl std::fmt::Display for SourceType {
             SourceType::Http => write!(f, "HTTP - Receive events via HTTP endpoint"),
             SourceType::Grpc => write!(f, "gRPC - Stream events via gRPC"),
             SourceType::Mock => write!(f, "Mock - Generate test data (for development)"),
-            SourceType::Platform => write!(f, "Platform - Redis Streams integration"),
         }
     }
 }
@@ -66,7 +56,6 @@ pub enum BootstrapType {
     None,
     Postgres,
     ScriptFile,
-    Platform,
 }
 
 impl std::fmt::Display for BootstrapType {
@@ -77,7 +66,6 @@ impl std::fmt::Display for BootstrapType {
                 write!(f, "PostgreSQL - Load initial data from PostgreSQL")
             }
             BootstrapType::ScriptFile => write!(f, "Script File - Load from JSONL file"),
-            BootstrapType::Platform => write!(f, "Platform - Load from Redis/Platform"),
         }
     }
 }
@@ -89,7 +77,6 @@ pub enum ReactionType {
     Http,
     Sse,
     Grpc,
-    Platform,
 }
 
 impl std::fmt::Display for ReactionType {
@@ -99,7 +86,6 @@ impl std::fmt::Display for ReactionType {
             ReactionType::Http => write!(f, "HTTP Webhook - POST results to external URL"),
             ReactionType::Sse => write!(f, "SSE - Server-Sent Events endpoint"),
             ReactionType::Grpc => write!(f, "gRPC - Stream results via gRPC"),
-            ReactionType::Platform => write!(f, "Platform - Drasi Platform integration"),
         }
     }
 }
@@ -198,7 +184,6 @@ pub fn prompt_sources() -> Result<Vec<SourceConfig>> {
         SourceType::Http,
         SourceType::Grpc,
         SourceType::Mock,
-        SourceType::Platform,
     ];
 
     let selected = MultiSelect::new(
@@ -233,7 +218,6 @@ fn prompt_source_details(source_type: SourceType) -> Result<SourceConfig> {
         SourceType::Http => prompt_http_source(),
         SourceType::Grpc => prompt_grpc_source(),
         SourceType::Mock => prompt_mock_source(),
-        SourceType::Platform => prompt_platform_source(),
     }
 }
 
@@ -287,22 +271,23 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
     let bootstrap_provider =
         prompt_bootstrap_provider_for_postgres(&host, port, &database, &user, &password, &tables)?;
 
-    Ok(SourceConfig::Postgres {
+    Ok(SourceConfig {
+        kind: "postgres".to_string(),
         id,
         auto_start: true,
         bootstrap_provider,
-        config: PostgresSourceConfigDto {
-            host: ConfigValue::Static(host),
-            port: ConfigValue::Static(port),
-            database: ConfigValue::Static(database),
-            user: ConfigValue::Static(user),
-            password: ConfigValue::Static(password),
-            tables,
-            slot_name: "drasi_slot".to_string(),
-            publication_name: "drasi_pub".to_string(),
-            ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-            table_keys,
-        },
+        config: serde_json::json!({
+            "host": host,
+            "port": port,
+            "database": database,
+            "user": user,
+            "password": password,
+            "tables": tables,
+            "slotName": "drasi_slot",
+            "publicationName": "drasi_pub",
+            "sslMode": "prefer",
+            "tableKeys": table_keys
+        }),
     })
 }
 
@@ -330,28 +315,27 @@ fn prompt_bootstrap_provider_for_postgres(
 
     match selected {
         BootstrapType::None => Ok(None),
-        BootstrapType::Postgres => Ok(Some(BootstrapProviderConfig::Postgres(
-            PostgresBootstrapConfigDto {
-                host: ConfigValue::Static(host.to_string()),
-                port: ConfigValue::Static(port),
-                database: ConfigValue::Static(database.to_string()),
-                user: ConfigValue::Static(user.to_string()),
-                password: ConfigValue::Static(password.to_string()),
-                tables: tables.to_vec(),
-                slot_name: "drasi_slot".to_string(),
-                publication_name: "drasi_pub".to_string(),
-                ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-                table_keys: vec![],
-            },
-        ))),
+        BootstrapType::Postgres => Ok(Some(BootstrapProviderConfig {
+            kind: "postgres".to_string(),
+            config: serde_json::json!({
+                "host": host,
+                "port": port,
+                "database": database,
+                "user": user,
+                "password": password,
+                "tables": tables,
+                "slotName": "drasi_slot",
+                "publicationName": "drasi_pub",
+                "sslMode": "prefer"
+            }),
+        })),
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
-        BootstrapType::Platform => prompt_platform_bootstrap(),
     }
 }
 
 /// Prompt for table keys configuration.
 /// Table keys are needed for tables that don't have a primary key defined.
-fn prompt_table_keys(tables: &[String]) -> Result<Vec<TableKeyConfigDto>> {
+fn prompt_table_keys(tables: &[String]) -> Result<Vec<serde_json::Value>> {
     let configure_keys = Confirm::new("Configure table keys for tables without primary keys?")
         .with_default(false)
         .with_help_message("Required for tables lacking a primary key constraint")
@@ -397,7 +381,10 @@ fn prompt_table_keys(tables: &[String]) -> Result<Vec<TableKeyConfigDto>> {
             .collect();
 
         if !key_columns.is_empty() {
-            table_keys.push(TableKeyConfigDto { table, key_columns });
+            table_keys.push(serde_json::json!({
+                "table": table,
+                "keyColumns": key_columns
+            }));
         }
     }
 
@@ -424,23 +411,16 @@ fn prompt_http_source() -> Result<SourceConfig> {
     // Ask about bootstrap provider
     let bootstrap_provider = prompt_bootstrap_provider_generic()?;
 
-    Ok(SourceConfig::Http {
+    Ok(SourceConfig {
+        kind: "http".to_string(),
         id,
         auto_start: true,
         bootstrap_provider,
-        config: HttpSourceConfigDto {
-            host: ConfigValue::Static(host),
-            port: ConfigValue::Static(port),
-            endpoint: None,
-            timeout_ms: ConfigValue::Static(10000),
-            adaptive_max_batch_size: None,
-            adaptive_min_batch_size: None,
-            adaptive_max_wait_ms: None,
-            adaptive_min_wait_ms: None,
-            adaptive_window_secs: None,
-            adaptive_enabled: None,
-            webhooks: None,
-        },
+        config: serde_json::json!({
+            "host": host,
+            "port": port,
+            "timeoutMs": 10000
+        }),
     })
 }
 
@@ -464,16 +444,16 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
     // Ask about bootstrap provider
     let bootstrap_provider = prompt_bootstrap_provider_generic()?;
 
-    Ok(SourceConfig::Grpc {
+    Ok(SourceConfig {
+        kind: "grpc".to_string(),
         id,
         auto_start: true,
         bootstrap_provider,
-        config: GrpcSourceConfigDto {
-            host: ConfigValue::Static(host),
-            port: ConfigValue::Static(port),
-            endpoint: None,
-            timeout_ms: ConfigValue::Static(5000),
-        },
+        config: serde_json::json!({
+            "host": host,
+            "port": port,
+            "timeoutMs": 5000
+        }),
     })
 }
 
@@ -492,16 +472,16 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .prompt()?;
 
     let data_type = match data_type_selection {
-        "counter" => DataTypeDto::Counter,
+        "counter" => serde_json::json!({"type": "counter"}),
         "sensorReading" => {
             let sensor_count_str = Text::new("Number of sensors to simulate:")
                 .with_default("5")
                 .with_help_message("How many unique sensors to simulate (1-100)")
                 .prompt()?;
             let sensor_count: u32 = sensor_count_str.parse().unwrap_or(5).clamp(1, 100);
-            DataTypeDto::SensorReading { sensor_count }
+            serde_json::json!({"type": "sensorReading", "sensorCount": sensor_count})
         }
-        _ => DataTypeDto::Generic,
+        _ => serde_json::json!({"type": "generic"}),
     };
 
     let interval_str = Text::new("Data generation interval (milliseconds):")
@@ -510,55 +490,15 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .prompt()?;
     let interval_ms: u64 = interval_str.parse().unwrap_or(5000);
 
-    Ok(SourceConfig::Mock {
+    Ok(SourceConfig {
+        kind: "mock".to_string(),
         id,
         auto_start: true,
         bootstrap_provider: None,
-        config: MockSourceConfigDto {
-            interval_ms: ConfigValue::Static(interval_ms),
-            data_type,
-        },
-    })
-}
-
-/// Prompt for Platform source configuration.
-fn prompt_platform_source() -> Result<SourceConfig> {
-    println!("Configuring Platform Source");
-    println!("---------------------------");
-
-    let id = Text::new("Source ID:")
-        .with_default("platform-source")
-        .prompt()?;
-
-    let redis_url = Text::new("Redis URL:")
-        .with_default("redis://localhost:6379")
-        .with_help_message("Redis connection URL for streams")
-        .prompt()?;
-
-    let stream_key = Text::new("Stream key in Redis:")
-        .with_default("external-source:changes")
-        .with_help_message("Redis stream key to consume from")
-        .prompt()?;
-
-    let consumer_group = Text::new("Consumer group name:")
-        .with_default("drasi-core")
-        .prompt()?;
-
-    // Ask about bootstrap provider
-    let bootstrap_provider = prompt_bootstrap_provider_generic()?;
-
-    Ok(SourceConfig::Platform {
-        id,
-        auto_start: true,
-        bootstrap_provider,
-        config: PlatformSourceConfigDto {
-            redis_url: ConfigValue::Static(redis_url),
-            stream_key: ConfigValue::Static(stream_key),
-            consumer_group: ConfigValue::Static(consumer_group),
-            consumer_name: None,
-            batch_size: ConfigValue::Static(100),
-            block_ms: ConfigValue::Static(5000),
-        },
+        config: serde_json::json!({
+            "intervalMs": interval_ms,
+            "dataType": data_type
+        }),
     })
 }
 
@@ -567,7 +507,6 @@ fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>
     let bootstrap_types = vec![
         BootstrapType::None,
         BootstrapType::ScriptFile,
-        BootstrapType::Platform,
     ];
 
     let selected = Select::new(
@@ -580,7 +519,6 @@ fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>
     match selected {
         BootstrapType::None => Ok(None),
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
-        BootstrapType::Platform => prompt_platform_bootstrap(),
         BootstrapType::Postgres => Ok(None), // Not offered for non-Postgres sources
     }
 }
@@ -592,26 +530,12 @@ fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
         .with_help_message("Path to JSONL file with initial data")
         .prompt()?;
 
-    Ok(Some(BootstrapProviderConfig::ScriptFile(
-        ScriptFileBootstrapConfigDto {
-            file_paths: vec![file_path],
-        },
-    )))
-}
-
-/// Prompt for Platform bootstrap configuration.
-fn prompt_platform_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
-    let query_api_url = Text::new("Query API URL:")
-        .with_default("http://localhost:8080")
-        .with_help_message("URL of the Query API service for bootstrap data")
-        .prompt()?;
-
-    Ok(Some(BootstrapProviderConfig::Platform(
-        PlatformBootstrapConfigDto {
-            query_api_url: Some(query_api_url),
-            timeout_seconds: 300,
-        },
-    )))
+    Ok(Some(BootstrapProviderConfig {
+        kind: "scriptfile".to_string(),
+        config: serde_json::json!({
+            "filePaths": [file_path]
+        }),
+    }))
 }
 
 /// Prompt for reaction selection and configuration.
@@ -626,7 +550,6 @@ pub fn prompt_reactions(sources: &[SourceConfig]) -> Result<Vec<ReactionConfig>>
         ReactionType::Sse,
         ReactionType::Http,
         ReactionType::Grpc,
-        ReactionType::Platform,
     ];
 
     let selected = MultiSelect::new(
@@ -667,7 +590,6 @@ fn prompt_reaction_details(
         ReactionType::Http => prompt_http_reaction(),
         ReactionType::Sse => prompt_sse_reaction(),
         ReactionType::Grpc => prompt_grpc_reaction(),
-        ReactionType::Platform => prompt_platform_reaction(),
     }
 }
 
@@ -680,11 +602,14 @@ fn prompt_log_reaction() -> Result<ReactionConfig> {
         .with_default("log-reaction")
         .prompt()?;
 
-    Ok(ReactionConfig::Log {
+    Ok(ReactionConfig {
+        kind: "log".to_string(),
         id,
-        queries: vec!["my-query".to_string()], // Placeholder - user needs to edit
+        queries: vec!["my-query".to_string()],
         auto_start: true,
-        config: LogReactionConfigDto::default(),
+        config: serde_json::json!({
+            "routes": {}
+        }),
     })
 }
 
@@ -702,16 +627,16 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
         .with_help_message("URL to POST query results to")
         .prompt()?;
 
-    Ok(ReactionConfig::Http {
+    Ok(ReactionConfig {
+        kind: "http".to_string(),
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
-        config: HttpReactionConfigDto {
-            base_url: ConfigValue::Static(base_url),
-            token: None,
-            timeout_ms: ConfigValue::Static(5000),
-            routes: std::collections::HashMap::new(),
-        },
+        config: serde_json::json!({
+            "baseUrl": base_url,
+            "timeoutMs": 5000,
+            "routes": {}
+        }),
     })
 }
 
@@ -734,18 +659,18 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
         .prompt()?;
     let port: u16 = port_str.parse().unwrap_or(8081);
 
-    Ok(ReactionConfig::Sse {
+    Ok(ReactionConfig {
+        kind: "sse".to_string(),
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
-        config: SseReactionConfigDto {
-            host: ConfigValue::Static(host),
-            port: ConfigValue::Static(port),
-            sse_path: ConfigValue::Static("/events".to_string()),
-            heartbeat_interval_ms: ConfigValue::Static(30000),
-            routes: std::collections::HashMap::new(),
-            default_template: None,
-        },
+        config: serde_json::json!({
+            "host": host,
+            "port": port,
+            "ssePath": "/events",
+            "heartbeatIntervalMs": 30000,
+            "routes": {}
+        }),
     })
 }
 
@@ -763,51 +688,21 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
         .with_help_message("Endpoint for gRPC streaming")
         .prompt()?;
 
-    Ok(ReactionConfig::Grpc {
+    Ok(ReactionConfig {
+        kind: "grpc".to_string(),
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
-        config: GrpcReactionConfigDto {
-            endpoint: ConfigValue::Static(endpoint),
-            timeout_ms: ConfigValue::Static(5000),
-            batch_size: ConfigValue::Static(100),
-            batch_flush_timeout_ms: ConfigValue::Static(1000),
-            max_retries: ConfigValue::Static(3),
-            connection_retry_attempts: ConfigValue::Static(5),
-            initial_connection_timeout_ms: ConfigValue::Static(10000),
-            metadata: std::collections::HashMap::new(),
-        },
-    })
-}
-
-/// Prompt for Platform reaction configuration.
-fn prompt_platform_reaction() -> Result<ReactionConfig> {
-    println!("Configuring Platform Reaction");
-    println!("-----------------------------");
-
-    let id = Text::new("Reaction ID:")
-        .with_default("platform-reaction")
-        .prompt()?;
-
-    let redis_url = Text::new("Redis URL:")
-        .with_default("redis://localhost:6379")
-        .with_help_message("Redis connection for publishing results")
-        .prompt()?;
-
-    Ok(ReactionConfig::Platform {
-        id,
-        queries: vec!["my-query".to_string()],
-        auto_start: true,
-        config: PlatformReactionConfigDto {
-            redis_url: ConfigValue::Static(redis_url),
-            pubsub_name: None,
-            source_name: None,
-            max_stream_length: None,
-            emit_control_events: ConfigValue::Static(false),
-            batch_enabled: ConfigValue::Static(false),
-            batch_max_size: ConfigValue::Static(100),
-            batch_max_wait_ms: ConfigValue::Static(100),
-        },
+        config: serde_json::json!({
+            "endpoint": endpoint,
+            "timeoutMs": 5000,
+            "batchSize": 100,
+            "batchFlushTimeoutMs": 1000,
+            "maxRetries": 3,
+            "connectionRetryAttempts": 5,
+            "initialConnectionTimeoutMs": 10000,
+            "metadata": {}
+        }),
     })
 }
 
@@ -899,14 +794,6 @@ mod tests {
     }
 
     #[test]
-    fn test_source_type_display_platform() {
-        let source_type = SourceType::Platform;
-        let display = source_type.to_string();
-        assert!(display.contains("Platform"));
-        assert!(display.contains("Redis"));
-    }
-
-    #[test]
     fn test_source_type_equality() {
         assert_eq!(SourceType::Postgres, SourceType::Postgres);
         assert_ne!(SourceType::Postgres, SourceType::Http);
@@ -951,14 +838,6 @@ mod tests {
         let display = bootstrap_type.to_string();
         assert!(display.contains("Script File"));
         assert!(display.contains("JSONL"));
-    }
-
-    #[test]
-    fn test_bootstrap_type_display_platform() {
-        let bootstrap_type = BootstrapType::Platform;
-        let display = bootstrap_type.to_string();
-        assert!(display.contains("Platform"));
-        assert!(display.contains("Redis"));
     }
 
     #[test]
@@ -1008,18 +887,10 @@ mod tests {
     }
 
     #[test]
-    fn test_reaction_type_display_platform() {
-        let reaction_type = ReactionType::Platform;
-        let display = reaction_type.to_string();
-        assert!(display.contains("Platform"));
-        assert!(display.contains("Drasi"));
-    }
-
-    #[test]
     fn test_reaction_type_equality() {
         assert_eq!(ReactionType::Log, ReactionType::Log);
         assert_ne!(ReactionType::Http, ReactionType::Sse);
-        assert_ne!(ReactionType::Grpc, ReactionType::Platform);
+        assert_ne!(ReactionType::Grpc, ReactionType::Log);
     }
 
     #[test]
@@ -1027,13 +898,6 @@ mod tests {
         let original = ReactionType::Sse;
         let cloned = original;
         assert_eq!(original, cloned);
-    }
-
-    #[test]
-    fn test_reaction_type_debug() {
-        let reaction_type = ReactionType::Platform;
-        let debug = format!("{reaction_type:?}");
-        assert_eq!(debug, "Platform");
     }
 
     // ==================== All enum variants coverage ====================
@@ -1045,7 +909,6 @@ mod tests {
             SourceType::Http,
             SourceType::Grpc,
             SourceType::Mock,
-            SourceType::Platform,
         ];
 
         for source_type in source_types {
@@ -1063,7 +926,6 @@ mod tests {
             BootstrapType::None,
             BootstrapType::Postgres,
             BootstrapType::ScriptFile,
-            BootstrapType::Platform,
         ];
 
         for bootstrap_type in bootstrap_types {
@@ -1082,7 +944,6 @@ mod tests {
             ReactionType::Http,
             ReactionType::Sse,
             ReactionType::Grpc,
-            ReactionType::Platform,
         ];
 
         for reaction_type in reaction_types {
@@ -1103,7 +964,6 @@ mod tests {
         assert!(SourceType::Http.to_string().len() > 15);
         assert!(SourceType::Grpc.to_string().len() > 15);
         assert!(SourceType::Mock.to_string().len() > 15);
-        assert!(SourceType::Platform.to_string().len() > 15);
     }
 
     #[test]
@@ -1111,7 +971,6 @@ mod tests {
         assert!(BootstrapType::None.to_string().len() > 10);
         assert!(BootstrapType::Postgres.to_string().len() > 15);
         assert!(BootstrapType::ScriptFile.to_string().len() > 15);
-        assert!(BootstrapType::Platform.to_string().len() > 15);
     }
 
     #[test]
@@ -1120,7 +979,6 @@ mod tests {
         assert!(ReactionType::Http.to_string().len() > 15);
         assert!(ReactionType::Sse.to_string().len() > 15);
         assert!(ReactionType::Grpc.to_string().len() > 15);
-        assert!(ReactionType::Platform.to_string().len() > 15);
     }
 
     // ==================== StateStoreType enum tests ====================

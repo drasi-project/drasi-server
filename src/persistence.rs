@@ -376,7 +376,7 @@ impl ConfigPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::sources::mock::DataTypeDto;
+
     use async_trait::async_trait;
     use drasi_lib::channels::dispatcher::ChangeDispatcher;
     use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
@@ -956,28 +956,24 @@ instances:
         );
 
         // Register a source config
-        let source_config = SourceConfig::Mock {
+        let source_config = SourceConfig {
+            kind: "mock".to_string(),
             id: "dynamic-source".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: crate::api::models::MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
         };
         persistence
             .register_source("test-server", source_config)
             .await;
 
         // Register a reaction config
-        let reaction_config = ReactionConfig::Log {
+        let reaction_config = ReactionConfig {
+            kind: "log".to_string(),
             id: "dynamic-reaction".to_string(),
             queries: vec!["test-query".to_string()],
             auto_start: true,
-            config: crate::api::models::LogReactionConfigDto {
-                routes: std::collections::HashMap::new(),
-                default_template: None,
-            },
+            config: serde_json::json!({"routes": {}}),
         };
         persistence
             .register_reaction("test-server", reaction_config)
@@ -1031,28 +1027,24 @@ instances:
         );
 
         // Try to register a source config - should be skipped
-        let source_config = SourceConfig::Mock {
+        let source_config = SourceConfig {
+            kind: "mock".to_string(),
             id: "dynamic-source".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: crate::api::models::MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
         };
         persistence
             .register_source("test-server", source_config)
             .await;
 
         // Try to register a reaction config - should be skipped
-        let reaction_config = ReactionConfig::Log {
+        let reaction_config = ReactionConfig {
+            kind: "log".to_string(),
             id: "dynamic-reaction".to_string(),
             queries: vec!["test-query".to_string()],
             auto_start: true,
-            config: crate::api::models::LogReactionConfigDto {
-                routes: std::collections::HashMap::new(),
-                default_template: None,
-            },
+            config: serde_json::json!({"routes": {}}),
         };
         persistence
             .register_reaction("test-server", reaction_config)
@@ -1098,14 +1090,12 @@ instances:
         let mut instance_sources = IndexMap::new();
         instance_sources.insert(
             "existing-source".to_string(),
-            SourceConfig::Mock {
+            SourceConfig {
+                kind: "mock".to_string(),
                 id: "existing-source".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
-                config: crate::api::models::MockSourceConfigDto {
-                    data_type: DataTypeDto::Generic,
-                    interval_ms: ConfigValue::Static(1000),
-                },
+                config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
             },
         );
         initial_sources.insert("test-server".to_string(), instance_sources);
@@ -1174,14 +1164,12 @@ instances:
         // Since no queries were registered, the config should not contain any
 
         // Register a new source
-        let source_config = SourceConfig::Mock {
+        let source_config = SourceConfig {
+            kind: "mock".to_string(),
             id: "new-source".to_string(),
             auto_start: false,
             bootstrap_provider: None,
-            config: crate::api::models::MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
         };
         persistence
             .register_source("test-server", source_config)
@@ -1279,27 +1267,23 @@ logLevel: warn
         );
 
         // Register some configs
-        let source_config = SourceConfig::Mock {
+        let source_config = SourceConfig {
+            kind: "mock".to_string(),
             id: "added-source".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: crate::api::models::MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
         };
         persistence
             .register_source("test-server", source_config)
             .await;
 
-        let reaction_config = ReactionConfig::Log {
+        let reaction_config = ReactionConfig {
+            kind: "log".to_string(),
             id: "added-reaction".to_string(),
             queries: vec!["test-query".to_string()],
             auto_start: true,
-            config: crate::api::models::LogReactionConfigDto {
-                routes: std::collections::HashMap::new(),
-                default_template: None,
-            },
+            config: serde_json::json!({"routes": {}}),
         };
         persistence
             .register_reaction("test-server", reaction_config)
@@ -1339,12 +1323,12 @@ logLevel: warn
         crate::api::models::QueryConfigDto {
             id: id.to_string(),
             auto_start: true,
-            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("Cypher".to_string()),
+            query: "MATCH (n) RETURN n".to_string(),
+            query_language: drasi_lib::config::QueryLanguage::Cypher,
             middleware: vec![],
             sources: vec![
                 crate::api::models::queries::query::SourceSubscriptionConfigDto {
-                    source_id: ConfigValue::Static(source_id.to_string()),
+                    source_id: source_id.to_string(),
                     nodes: vec![],
                     relations: vec![],
                     pipeline: vec![],
@@ -1362,27 +1346,23 @@ logLevel: warn
 
     /// Helper to create a SourceConfig for testing
     fn make_source_config(id: &str) -> SourceConfig {
-        SourceConfig::Mock {
+        SourceConfig {
+            kind: "mock".to_string(),
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: crate::api::models::MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 1000}),
         }
     }
 
     /// Helper to create a ReactionConfig for testing
     fn make_reaction_config(id: &str, queries: Vec<&str>) -> ReactionConfig {
-        ReactionConfig::Log {
+        ReactionConfig {
+            kind: "log".to_string(),
             id: id.to_string(),
             queries: queries.into_iter().map(String::from).collect(),
             auto_start: true,
-            config: crate::api::models::LogReactionConfigDto {
-                routes: HashMap::new(),
-                default_template: None,
-            },
+            config: serde_json::json!({"routes": {}}),
         }
     }
 

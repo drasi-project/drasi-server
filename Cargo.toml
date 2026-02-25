@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+[workspace]
+members = [".", "xtask"]
+
 [package]
 name = "drasi-server"
 version = "0.1.0"
@@ -43,31 +46,30 @@ drasi-lib = { version = "0.3.8", features = [
 ] }
 
 # Source plugins
-drasi-source-mock = "0.1.7"
-drasi-source-http = "0.1.7"
-drasi-source-grpc = "0.1.7"
-drasi-source-postgres = "0.1.8"
-drasi-source-platform = "0.1.7"
+drasi-source-mock = { version = "0.1.7", optional = true }
+drasi-source-http = { version = "0.1.7", optional = true }
+drasi-source-grpc = { version = "0.1.7", optional = true }
+drasi-source-postgres = { version = "0.1.8", optional = true }
+drasi-source-mssql = { version = "0.1.0", optional = true }
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.8"
-drasi-bootstrap-scriptfile = "0.1.7"
-drasi-bootstrap-platform = "0.1.7"
+drasi-bootstrap-postgres = { version = "0.1.8", optional = true }
+drasi-bootstrap-scriptfile = { version = "0.1.7", optional = true }
 drasi-bootstrap-noop = "0.1.6"
 drasi-bootstrap-application = "0.1.7"
+drasi-bootstrap-mssql = { version = "0.1.0", optional = true }
 
 # Reaction plugins
-drasi-reaction-log = "0.1.7"
-drasi-reaction-http = "0.1.8"
-drasi-reaction-http-adaptive = "0.2.5"
-drasi-reaction-grpc = "0.2.5"
-drasi-reaction-grpc-adaptive = "0.1.6"
-drasi-reaction-sse = "0.2.6"
-drasi-reaction-platform = "0.2.6"
-drasi-reaction-profiler = "0.2.5"
-drasi-reaction-storedproc-postgres = "0.2.5"
-drasi-reaction-storedproc-mysql = "0.2.5"
-drasi-reaction-storedproc-mssql = "0.2.5"
+drasi-reaction-log = { version = "0.1.7", optional = true }
+drasi-reaction-http = { version = "0.1.8", optional = true }
+drasi-reaction-http-adaptive = { version = "0.2.5", optional = true }
+drasi-reaction-grpc = { version = "0.2.5", optional = true }
+drasi-reaction-grpc-adaptive = { version = "0.1.6", optional = true }
+drasi-reaction-sse = { version = "0.2.6", optional = true }
+drasi-reaction-profiler = { version = "0.2.5", optional = true }
+drasi-reaction-storedproc-postgres = { version = "0.2.5", optional = true }
+drasi-reaction-storedproc-mysql = { version = "0.2.5", optional = true }
+drasi-reaction-storedproc-mssql = { version = "0.2.5", optional = true }
 drasi-reaction-application = "0.2.5"
 
 # Index plugins
@@ -76,6 +78,12 @@ drasi-index-garnet = "0.1.4"
 
 # State store plugins
 drasi-state-store-redb = "0.1.5"
+
+# Plugin SDK
+drasi-plugin-sdk = "0.3.1"
+
+# Shared runtime for dynamic plugin loading
+drasi-plugin-runtime = "0.3.1"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -101,6 +109,7 @@ inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
 openssl = { version = "0.10", features = ["vendored"] }
+libloading = "0.8"
 
 [dev-dependencies]
 # Testing utilities
@@ -112,6 +121,7 @@ tokio-test = "0.4"
 assert_matches = "1.5"
 serial_test = "3.0"
 pretty_assertions = "1.4"
+semver = "1.0"
 test-case = "3.3"
 wiremock = "0.5"
 
@@ -126,6 +136,30 @@ drasi-core = "0.3.3"
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["redis"] }
 redis = { version = "0.24", features = ["tokio-comp", "streams"] }
+
+[features]
+default = ["builtin-plugins"]
+builtin-plugins = [
+    "dep:drasi-source-mock",
+    "dep:drasi-source-http",
+    "dep:drasi-source-grpc",
+    "dep:drasi-source-postgres",
+    "dep:drasi-source-mssql",
+    "dep:drasi-bootstrap-postgres",
+    "dep:drasi-bootstrap-scriptfile",
+    "dep:drasi-bootstrap-mssql",
+    "dep:drasi-reaction-log",
+    "dep:drasi-reaction-http",
+    "dep:drasi-reaction-http-adaptive",
+    "dep:drasi-reaction-grpc",
+    "dep:drasi-reaction-grpc-adaptive",
+    "dep:drasi-reaction-sse",
+    "dep:drasi-reaction-profiler",
+    "dep:drasi-reaction-storedproc-postgres",
+    "dep:drasi-reaction-storedproc-mysql",
+    "dep:drasi-reaction-storedproc-mssql",
+]
+dynamic-plugins = []
 
 [lints.rust]
 warnings = "deny"
@@ -149,10 +183,8 @@ large_enum_variant = "allow"
 # drasi-source-http = { path = "../drasi-core/components/sources/http" }
 # drasi-source-grpc = { path = "../drasi-core/components/sources/grpc" }
 # drasi-source-postgres = { path = "../drasi-core/components/sources/postgres" }
-# drasi-source-platform = { path = "../drasi-core/components/sources/platform" }
 # drasi-bootstrap-postgres = { path = "../drasi-core/components/bootstrappers/postgres" }
 # drasi-bootstrap-scriptfile = { path = "../drasi-core/components/bootstrappers/scriptfile" }
-# drasi-bootstrap-platform = { path = "../drasi-core/components/bootstrappers/platform" }
 # drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
 # drasi-reaction-log = { path = "../drasi-core/components/reactions/log" }
 # drasi-reaction-http = { path = "../drasi-core/components/reactions/http" }
@@ -160,7 +192,6 @@ large_enum_variant = "allow"
 # drasi-reaction-grpc = { path = "../drasi-core/components/reactions/grpc" }
 # drasi-reaction-grpc-adaptive = { path = "../drasi-core/components/reactions/grpc-adaptive" }
 # drasi-reaction-sse = { path = "../drasi-core/components/reactions/sse" }
-# drasi-reaction-platform = { path = "../drasi-core/components/reactions/platform" }
 # drasi-reaction-profiler = { path = "../drasi-core/components/reactions/profiler" }
 # drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
 # drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }

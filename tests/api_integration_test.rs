@@ -45,6 +45,7 @@ use tower::ServiceExt;
 async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
     use drasi_lib::DrasiLib;
     use drasi_server::api::v1::routes::build_v1_router;
+    use drasi_server::plugin_registry::PluginRegistry;
 
     // Create mock source instances
     let test_source = create_mock_source("test-source");
@@ -83,7 +84,10 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     let registry = InstanceRegistry::from_map(instances_map);
 
     // Use the production router builder
-    let v1_router = build_v1_router(registry, read_only, config_persistence);
+    let mut plugin_registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugin_registry);
+    drasi_server::register_builtin_plugins(&mut plugin_registry);
+    let v1_router = build_v1_router(registry, read_only, config_persistence, Arc::new(plugin_registry));
 
     let router = Router::new()
         // Health endpoint

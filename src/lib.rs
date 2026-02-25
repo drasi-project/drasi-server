@@ -15,21 +15,32 @@
 pub mod api;
 pub mod builder;
 pub mod builder_result;
+#[cfg(feature = "builtin-plugins")]
+pub mod builtin_plugins;
 pub mod config;
+pub mod dynamic_loading;
 pub mod factories;
 pub mod instance_registry;
 pub mod persistence;
+pub mod plugin_registry;
 pub mod server;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
+#[cfg(feature = "builtin-plugins")]
+pub use builtin_plugins::register_builtin_plugins;
 pub use config::{
     load_config_file, save_config_file, ConfigError, DrasiLibInstanceConfig, DrasiServerConfig,
     ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
+pub use plugin_registry::PluginRegistry;
+pub use server::register_core_plugins;
 pub use server::DrasiServer;
+
+// Re-export the Plugin SDK for library users
+pub use drasi_plugin_sdk;
 
 // Re-export API models and mappings for external use
 pub use api::mappings;

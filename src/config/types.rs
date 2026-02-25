@@ -23,8 +23,7 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto, ReactionConfig,
-    SourceConfig, StateStoreConfig,
+    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -76,14 +75,14 @@ pub struct DrasiServerConfig {
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<MockSourceConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<LogReactionConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
@@ -163,14 +162,14 @@ pub struct DrasiLibInstanceConfig {
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<MockSourceConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<LogReactionConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
 }
 

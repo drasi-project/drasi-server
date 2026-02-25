@@ -14,8 +14,8 @@
 
 # Makefile for Drasi Server
 
-.PHONY: all build build-release run run-release setup demo demo-cleanup \
-        doctor validate clean clippy test fmt fmt-check help docker-build \
+.PHONY: all build build-release build-static build-dynamic build-plugins run run-release setup demo demo-cleanup \
+        doctor validate clean clippy test test-static test-dynamic fmt fmt-check help docker-build \
         submodule-update vscode-test
 
 # Default target
@@ -31,7 +31,12 @@ help:
 	@echo "Development:"
 	@echo "  make build         - Build debug binary"
 	@echo "  make build-release - Build release binary"
+	@echo "  make build-static  - Build fully static binary (all plugins compiled in)"
+	@echo "  make build-dynamic - Build server (no static plugins) + plugin shared libraries"
+	@echo "  make build-plugins - Build only the plugin shared libraries into ./plugins/"
 	@echo "  make test          - Run all tests"
+	@echo "  make test-static   - Build static binary and run tests"
+	@echo "  make test-dynamic  - Build dynamic binary + plugins and verify loading"
 	@echo "  make vscode-test   - Run VSCode extension tests"
 	@echo "  make clippy        - Run linter"
 	@echo "  make fmt           - Format code"
@@ -90,6 +95,22 @@ build:
 build-release:
 	cargo build --release
 
+# Build the server with all plugins statically linked (default behavior)
+build-static:
+	cargo build --release
+
+# Plugin crate names are defined in xtask/src/main.rs.
+# Note: drasi-bootstrap-noop, drasi-bootstrap-application, and drasi-reaction-application
+# are always statically linked (core plugins) and not built as dynamic libraries.
+
+# Build plugin shared libraries and package them into ./plugins/
+build-plugins:
+	cargo xtask build-plugins --release
+
+# Build the server without static plugins, then build and package dynamic plugin libraries
+build-dynamic:
+	cargo xtask build-dynamic --release
+
 clippy:
 	cargo clippy --all-targets --all-features
 
@@ -101,6 +122,31 @@ fmt-check:
 
 test:
 	cargo test --all-features
+
+# Test the static build: build with default features and run unit tests
+test-static:
+	@echo "=== Testing static build ==="
+	cargo build
+	cargo test --all-features
+	@echo "=== Static build: OK ==="
+
+# Test the dynamic build: build dynamic server + plugins, start server, verify plugins load
+test-dynamic:
+	@echo "=== Testing dynamic build ==="
+	cargo xtask build-dynamic
+	@echo "Starting dynamic server to verify plugin loading..."
+	@LD_LIBRARY_PATH=./plugins timeout 10 ./target/debug/drasi-server \
+		--plugins-dir ./plugins 2>&1 \
+		| tee /tmp/drasi-dynamic-test.log & \
+	SERVER_PID=$$!; \
+	sleep 5; \
+	if grep -q "Dynamic plugin loading complete" /tmp/drasi-dynamic-test.log; then \
+		echo "=== Dynamic build: OK (plugins loaded) ==="; \
+	else \
+		echo "=== Dynamic build: FAILED (plugins did not load) ==="; \
+		cat /tmp/drasi-dynamic-test.log; \
+		exit 1; \
+	fi
 
 vscode-test:
 	cd dev-tools/vscode/drasi-server && npm test

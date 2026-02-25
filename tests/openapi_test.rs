@@ -10,6 +10,7 @@ use axum::{
 use drasi_server::api::v1::openapi::ApiDocV1;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
+use drasi_server::plugin_registry::PluginRegistry;
 use std::sync::Arc;
 use tower::ServiceExt;
 use utoipa::OpenApi;
@@ -18,8 +19,11 @@ async fn create_test_router() -> Router {
     let registry = InstanceRegistry::new();
     let read_only = Arc::new(false);
     let config_persistence = None;
+    let mut plugin_registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugin_registry);
+    drasi_server::register_builtin_plugins(&mut plugin_registry);
 
-    build_v1_router(registry, read_only, config_persistence)
+    build_v1_router(registry, read_only, config_persistence, Arc::new(plugin_registry))
 }
 
 #[test]

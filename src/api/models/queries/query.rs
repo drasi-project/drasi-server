@@ -14,7 +14,7 @@
 
 //! Query configuration DTOs with camelCase serialization.
 
-use crate::api::models::ConfigValue;
+use drasi_lib::config::QueryLanguage;
 use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
 
@@ -26,9 +26,9 @@ pub struct QueryConfigDto {
     pub id: String,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
-    pub query: ConfigValue<String>,
+    pub query: String,
     #[serde(default = "default_query_language")]
-    pub query_language: ConfigValue<String>,
+    pub query_language: QueryLanguage,
     #[serde(default)]
     pub middleware: Vec<String>,
     #[serde(default)]
@@ -55,7 +55,7 @@ pub struct QueryConfigDto {
 #[schema(as = SourceSubscriptionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSubscriptionConfigDto {
-    pub source_id: ConfigValue<String>,
+    pub source_id: String,
     #[serde(default)]
     pub nodes: Vec<String>,
     #[serde(default)]
@@ -68,8 +68,8 @@ fn default_auto_start() -> bool {
     false
 }
 
-fn default_query_language() -> ConfigValue<String> {
-    ConfigValue::Static("GQL".to_string())
+fn default_query_language() -> QueryLanguage {
+    QueryLanguage::default()
 }
 
 fn default_enable_bootstrap() -> bool {
@@ -85,8 +85,8 @@ impl From<QueryConfig> for QueryConfigDto {
         Self {
             id: config.id,
             auto_start: config.auto_start,
-            query: ConfigValue::Static(config.query),
-            query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+            query: config.query,
+            query_language: config.query_language,
             middleware: config
                 .middleware
                 .into_iter()
@@ -96,7 +96,7 @@ impl From<QueryConfig> for QueryConfigDto {
                 .sources
                 .into_iter()
                 .map(|s| SourceSubscriptionConfigDto {
-                    source_id: ConfigValue::Static(s.source_id),
+                    source_id: s.source_id,
                     nodes: s.nodes,
                     relations: s.relations,
                     pipeline: s.pipeline,

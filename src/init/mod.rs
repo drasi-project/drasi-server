@@ -32,9 +32,9 @@ use std::path::PathBuf;
 ///
 /// This function guides the user through selecting:
 /// 1. Server settings (host, port, log level)
-/// 2. Data sources (PostgreSQL, HTTP, gRPC, Mock, Platform)
+/// 2. Data sources (PostgreSQL, HTTP, gRPC, Mock)
 /// 3. Bootstrap providers for each source
-/// 4. Reactions (Log, HTTP, SSE, gRPC, Platform)
+/// 4. Reactions (Log, HTTP, SSE, gRPC)
 ///
 /// The resulting configuration is written to the specified output file.
 pub fn run_init(output_path: PathBuf, force: bool) -> Result<()> {

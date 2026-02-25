@@ -27,6 +27,7 @@ use std::sync::Arc;
 use super::handlers;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_registry::PluginRegistry;
 
 /// Build the complete v1 API router with dynamic instance routing.
 ///
@@ -35,6 +36,7 @@ pub fn build_v1_router(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
     config_persistence: Option<Arc<ConfigPersistence>>,
+    plugin_registry: Arc<PluginRegistry>,
 ) -> Router {
     // Instance management routes
     let instance_routes = Router::new()
@@ -54,6 +56,7 @@ pub fn build_v1_router(
         .layer(Extension(registry))
         .layer(Extension(read_only))
         .layer(Extension(config_persistence))
+        .layer(Extension(plugin_registry))
 }
 
 /// Build routes for dynamic instance resources.

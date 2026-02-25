@@ -18,7 +18,8 @@
 //! with queries. Sources and reactions are created as instances and passed
 //! directly to the builder.
 
-use drasi_server::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_lib::config::QueryLanguage;
+use drasi_server::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[tokio::main]
 #[allow(clippy::print_stdout)]
@@ -30,19 +31,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let available_drivers_query = QueryConfigDto {
         id: "available-drivers-query".to_string(),
         auto_start: true,
-        query: ConfigValue::Static(
-            r#"
+        query: r#"
             MATCH (d:Driver {status: 'available'})
             WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
             RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                    d.latitude AS lat, d.longitude AS lng, d.status AS status
         "#
             .to_string(),
-        ),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("vehicle-location-source".to_string()),
+            source_id: "vehicle-location-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -59,19 +58,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pending_orders_query = QueryConfigDto {
         id: "pending-orders-query".to_string(),
         auto_start: true,
-        query: ConfigValue::Static(
-            r#"
+        query: r#"
             MATCH (o:Order)
             WHERE o.status IN ['pending', 'preparing', 'ready']
             RETURN elementId(o) AS orderId, o.status AS status,
                    o.restaurant AS restaurant, o.delivery_address AS address
         "#
             .to_string(),
-        ),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("vehicle-location-source".to_string()),
+            source_id: "vehicle-location-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],

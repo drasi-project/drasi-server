@@ -17,29 +17,17 @@
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 use drasi_lib::channels::DispatchMode;
-use drasi_lib::config::{QueryConfig, QueryLanguage, SourceSubscriptionConfig};
+use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
 
 pub struct QueryConfigMapper;
 
 impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
-    fn map(&self, dto: &QueryConfigDto, resolver: &DtoMapper) -> Result<QueryConfig, MappingError> {
+    fn map(&self, dto: &QueryConfigDto, _resolver: &DtoMapper) -> Result<QueryConfig, MappingError> {
         let sources = dto
             .sources
             .iter()
-            .map(|src| map_source_subscription(src, resolver))
+            .map(map_source_subscription)
             .collect::<Result<Vec<_>, _>>()?;
-
-        // Parse query language string to enum
-        let query_language_str = resolver.resolve_string(&dto.query_language)?;
-        let query_language = match query_language_str.as_str() {
-            "Cypher" => QueryLanguage::Cypher,
-            "GQL" => QueryLanguage::GQL,
-            _ => {
-                return Err(MappingError::SourceCreationError(format!(
-                    "Invalid query language: {query_language_str}. Must be 'Cypher' or 'GQL'"
-                )))
-            }
-        };
 
         // Middleware is empty for now (optional field, defaults to empty vec)
         let middleware = Vec::new();
@@ -83,8 +71,8 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
         Ok(QueryConfig {
             id: dto.id.clone(),
             auto_start: dto.auto_start,
-            query: resolver.resolve_string(&dto.query)?,
-            query_language,
+            query: dto.query.clone(),
+            query_language: dto.query_language.clone(),
             middleware,
             sources,
             enable_bootstrap: dto.enable_bootstrap,
@@ -100,10 +88,9 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
 
 fn map_source_subscription(
     dto: &SourceSubscriptionConfigDto,
-    resolver: &DtoMapper,
 ) -> Result<SourceSubscriptionConfig, MappingError> {
     Ok(SourceSubscriptionConfig {
-        source_id: resolver.resolve_string(&dto.source_id)?,
+        source_id: dto.source_id.clone(),
         nodes: dto.nodes.clone(),
         relations: dto.relations.clone(),
         pipeline: dto.pipeline.clone(),

@@ -1,19 +1,17 @@
-// Test to verify that SourceConfig and ReactionConfig enums serialize as camelCase
-// This tests the full enum wrappers with flattened DTO config structs
+// Test to verify that SourceConfig and ReactionConfig structs serialize as camelCase
+// This tests the struct wrappers with serde_json::Value config fields
 
-use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::*;
+use serde_json::json;
 
 #[test]
 fn test_source_config_mock_serializes_camelcase() {
-    let source = SourceConfig::Mock {
+    let source = SourceConfig {
+        kind: "mock".to_string(),
         id: "test-mock".to_string(),
         auto_start: true,
         bootstrap_provider: None,
-        config: MockSourceConfigDto {
-            data_type: DataTypeDto::SensorReading { sensor_count: 5 },
-            interval_ms: ConfigValue::Static(1000),
-        },
+        config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 1000}),
     };
 
     let json = serde_json::to_value(&source).unwrap();
@@ -49,27 +47,28 @@ fn test_source_config_mock_serializes_camelcase() {
     assert_eq!(data_type["sensorCount"], 5);
     assert_eq!(json["intervalMs"], 1000);
 
-    println!("✅ SourceConfig::Mock serializes correctly");
+    println!("✅ SourceConfig mock serializes correctly");
 }
 
 #[test]
 fn test_source_config_postgres_serializes_camelcase() {
-    let source = SourceConfig::Postgres {
+    let source = SourceConfig {
+        kind: "postgres".to_string(),
         id: "test-postgres".to_string(),
         auto_start: false,
         bootstrap_provider: None,
-        config: PostgresSourceConfigDto {
-            host: ConfigValue::Static("localhost".to_string()),
-            port: ConfigValue::Static(5432),
-            database: ConfigValue::Static("testdb".to_string()),
-            user: ConfigValue::Static("testuser".to_string()),
-            password: ConfigValue::Static("testpass".to_string()),
-            tables: vec![],
-            slot_name: "test_slot".to_string(),
-            publication_name: "test_pub".to_string(),
-            ssl_mode: ConfigValue::Static(SslModeDto::Disable),
-            table_keys: vec![],
-        },
+        config: json!({
+            "host": "localhost",
+            "port": 5432,
+            "database": "testdb",
+            "user": "testuser",
+            "password": "testpass",
+            "tables": [],
+            "slotName": "test_slot",
+            "publicationName": "test_pub",
+            "sslMode": "disable",
+            "tableKeys": []
+        }),
     };
 
     let json = serde_json::to_value(&source).unwrap();
@@ -105,28 +104,27 @@ fn test_source_config_postgres_serializes_camelcase() {
     );
     assert!(json.get("ssl_mode").is_none(), "ssl_mode should NOT exist");
 
-    println!("✅ SourceConfig::Postgres serializes as camelCase");
+    println!("✅ SourceConfig postgres serializes as camelCase");
 }
 
 #[test]
 fn test_source_config_http_serializes_camelcase() {
-    let source = SourceConfig::Http {
+    let source = SourceConfig {
+        kind: "http".to_string(),
         id: "test-http".to_string(),
         auto_start: true,
         bootstrap_provider: None,
-        config: HttpSourceConfigDto {
-            host: ConfigValue::Static("localhost".to_string()),
-            port: ConfigValue::Static(8080),
-            endpoint: None,
-            timeout_ms: ConfigValue::Static(5000),
-            adaptive_max_batch_size: Some(ConfigValue::Static(100)),
-            adaptive_min_batch_size: Some(ConfigValue::Static(10)),
-            adaptive_max_wait_ms: Some(ConfigValue::Static(500)),
-            adaptive_min_wait_ms: Some(ConfigValue::Static(10)),
-            adaptive_window_secs: Some(ConfigValue::Static(60)),
-            adaptive_enabled: Some(ConfigValue::Static(true)),
-            webhooks: None,
-        },
+        config: json!({
+            "host": "localhost",
+            "port": 8080,
+            "timeoutMs": 5000,
+            "adaptiveMaxBatchSize": 100,
+            "adaptiveMinBatchSize": 10,
+            "adaptiveMaxWaitMs": 500,
+            "adaptiveMinWaitMs": 10,
+            "adaptiveWindowSecs": 60,
+            "adaptiveEnabled": true
+        }),
     };
 
     let json = serde_json::to_value(&source).unwrap();
@@ -152,19 +150,17 @@ fn test_source_config_http_serializes_camelcase() {
         "adaptive_max_batch_size should NOT exist"
     );
 
-    println!("✅ SourceConfig::Http serializes as camelCase");
+    println!("✅ SourceConfig http serializes as camelCase");
 }
 
 #[test]
 fn test_reaction_config_log_serializes_camelcase() {
-    let reaction = ReactionConfig::Log {
+    let reaction = ReactionConfig {
+        kind: "log".to_string(),
         id: "test-log".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: true,
-        config: LogReactionConfigDto {
-            routes: std::collections::HashMap::new(),
-            default_template: None,
-        },
+        config: json!({"routes": {}}),
     };
 
     let json = serde_json::to_value(&reaction).unwrap();
@@ -178,21 +174,21 @@ fn test_reaction_config_log_serializes_camelcase() {
         "auto_start should NOT exist"
     );
 
-    println!("✅ ReactionConfig::Log serializes as camelCase");
+    println!("✅ ReactionConfig log serializes as camelCase");
 }
 
 #[test]
 fn test_reaction_config_http_serializes_camelcase() {
-    let reaction = ReactionConfig::Http {
+    let reaction = ReactionConfig {
+        kind: "http".to_string(),
         id: "test-http-reaction".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: false,
-        config: HttpReactionConfigDto {
-            base_url: ConfigValue::Static("http://localhost:8080".to_string()),
-            token: None,
-            timeout_ms: ConfigValue::Static(5000),
-            routes: Default::default(),
-        },
+        config: json!({
+            "baseUrl": "http://localhost:8080",
+            "timeoutMs": 5000,
+            "routes": {}
+        }),
     };
 
     let json = serde_json::to_value(&reaction).unwrap();
@@ -215,25 +211,26 @@ fn test_reaction_config_http_serializes_camelcase() {
         "timeout_ms should NOT exist"
     );
 
-    println!("✅ ReactionConfig::Http serializes as camelCase");
+    println!("✅ ReactionConfig http serializes as camelCase");
 }
 
 #[test]
 fn test_reaction_config_grpc_serializes_camelcase() {
-    let reaction = ReactionConfig::Grpc {
+    let reaction = ReactionConfig {
+        kind: "grpc".to_string(),
         id: "test-grpc-reaction".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: true,
-        config: GrpcReactionConfigDto {
-            endpoint: ConfigValue::Static("localhost:50051".to_string()),
-            timeout_ms: ConfigValue::Static(3000),
-            batch_size: ConfigValue::Static(50),
-            batch_flush_timeout_ms: ConfigValue::Static(1000),
-            max_retries: ConfigValue::Static(3),
-            connection_retry_attempts: ConfigValue::Static(5),
-            initial_connection_timeout_ms: ConfigValue::Static(10000),
-            metadata: Default::default(),
-        },
+        config: json!({
+            "endpoint": "localhost:50051",
+            "timeoutMs": 3000,
+            "batchSize": 50,
+            "batchFlushTimeoutMs": 1000,
+            "maxRetries": 3,
+            "connectionRetryAttempts": 5,
+            "initialConnectionTimeoutMs": 10000,
+            "metadata": {}
+        }),
     };
 
     let json = serde_json::to_value(&reaction).unwrap();
@@ -288,5 +285,5 @@ fn test_reaction_config_grpc_serializes_camelcase() {
         "initial_connection_timeout_ms should NOT exist"
     );
 
-    println!("✅ ReactionConfig::Grpc serializes as camelCase");
+    println!("✅ ReactionConfig grpc serializes as camelCase");
 }

@@ -14,8 +14,8 @@
 
 //! Factory functions for creating source, reaction, and state store instances from config.
 //!
-//! This module provides factory functions that match on the tagged enum config
-//! types and use the existing plugin constructors to create instances.
+//! This module provides factory functions that use the PluginRegistry to look up
+//! descriptors and create instances from generic config structs.
 
 use anyhow::Result;
 use drasi_lib::state_store::StateStoreProvider;
@@ -23,149 +23,32 @@ use drasi_lib::{Reaction, Source};
 use log::info;
 use std::sync::Arc;
 
-use crate::api::mappings::{
-    ConfigMapper,
-    DtoMapper,
-    GrpcAdaptiveReactionConfigMapper,
-    GrpcReactionConfigMapper,
-    GrpcSourceConfigMapper,
-    HttpAdaptiveReactionConfigMapper,
-    // Reaction mappers
-    HttpReactionConfigMapper,
-    HttpSourceConfigMapper,
-    LogReactionConfigMapper,
-    MockSourceConfigMapper,
-    PlatformReactionConfigMapper,
-    PlatformSourceConfigMapper,
-    PostgresConfigMapper,
-    ProfilerReactionConfigMapper,
-    SseReactionConfigMapper,
-};
+use crate::api::mappings::DtoMapper;
 use crate::api::models::BootstrapProviderConfig;
 use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
+use crate::plugin_registry::PluginRegistry;
 
-/// Create a source instance from a SourceConfig.
-///
-/// This function matches on the config variant and creates the appropriate
-/// source type using the plugin's constructor. If a bootstrap provider is
-/// configured, it will also be created and attached to the source.
-///
-/// # Arguments
-///
-/// * `config` - The source configuration
-///
-/// # Returns
-///
-/// A boxed Source trait object
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use drasi_server::config::SourceConfig;
-/// use drasi_server::factories::create_source;
-///
-/// let config = SourceConfig::Mock {
-///     id: "test-source".to_string(),
-///     auto_start: true,
-///     bootstrap_provider: None,
-///     config: MockSourceConfig::default(),
-/// };
-///
-/// let source = create_source(config).await?;
-/// ```
-pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'static>> {
-    let source: Box<dyn Source + 'static> = match &config {
-        SourceConfig::Mock {
-            id,
-            auto_start,
-            config: c,
-            ..
-        } => {
-            use drasi_source_mock::MockSourceBuilder;
-            let mapper = DtoMapper::new();
-            let mock_mapper = MockSourceConfigMapper;
-            let domain_config = mock_mapper.map(c, &mapper)?;
-            Box::new(
-                MockSourceBuilder::new(id)
-                    .with_data_type(domain_config.data_type)
-                    .with_interval_ms(domain_config.interval_ms)
-                    .with_auto_start(*auto_start)
-                    .build()?,
-            )
-        }
-        SourceConfig::Http {
-            id,
-            auto_start,
-            config: c,
-            ..
-        } => {
-            use drasi_source_http::HttpSourceBuilder;
-            let mapper = DtoMapper::new();
-            let http_mapper = HttpSourceConfigMapper;
-            let domain_config = http_mapper.map(c, &mapper)?;
-            Box::new(
-                HttpSourceBuilder::new(id)
-                    .with_config(domain_config)
-                    .with_auto_start(*auto_start)
-                    .build()?,
-            )
-        }
-        SourceConfig::Grpc {
-            id,
-            auto_start,
-            config: c,
-            ..
-        } => {
-            use drasi_source_grpc::GrpcSourceBuilder;
-            let mapper = DtoMapper::new();
-            let grpc_mapper = GrpcSourceConfigMapper;
-            let domain_config = grpc_mapper.map(c, &mapper)?;
-            Box::new(
-                GrpcSourceBuilder::new(id)
-                    .with_config(domain_config)
-                    .with_auto_start(*auto_start)
-                    .build()?,
-            )
-        }
-        SourceConfig::Postgres {
-            id,
-            auto_start,
-            config: c,
-            ..
-        } => {
-            use drasi_source_postgres::PostgresSourceBuilder;
-            let mapper = DtoMapper::new();
-            let postgres_mapper = PostgresConfigMapper;
-            let domain_config = postgres_mapper.map(c, &mapper)?;
-            Box::new(
-                PostgresSourceBuilder::new(id)
-                    .with_config(domain_config)
-                    .with_auto_start(*auto_start)
-                    .build()?,
-            )
-        }
-        SourceConfig::Platform {
-            id,
-            auto_start,
-            config: c,
-            ..
-        } => {
-            use drasi_source_platform::PlatformSourceBuilder;
-            let mapper = DtoMapper::new();
-            let platform_mapper = PlatformSourceConfigMapper;
-            let domain_config = platform_mapper.map(c, &mapper)?;
-            Box::new(
-                PlatformSourceBuilder::new(id)
-                    .with_config(domain_config)
-                    .with_auto_start(*auto_start)
-                    .build()?,
-            )
-        }
-    };
+/// Create a source instance from a SourceConfig using the plugin registry.
+pub async fn create_source(
+    registry: &PluginRegistry,
+    config: SourceConfig,
+) -> Result<Box<dyn Source + 'static>> {
+    let descriptor = registry.get_source(&config.kind).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown source kind: '{}'. Available: {:?}",
+            config.kind,
+            registry.source_kinds()
+        )
+    })?;
+
+    let mut source = descriptor
+        .create_source(&config.id, &config.config, config.auto_start)
+        .await?;
 
     // If a bootstrap provider is configured, create and attach it
-    if let Some(bootstrap_config) = config.bootstrap_provider() {
-        let provider = create_bootstrap_provider(bootstrap_config, &config)?;
+    if let Some(bootstrap_config) = &config.bootstrap_provider {
+        let provider =
+            create_bootstrap_provider(registry, bootstrap_config, &config.config).await?;
         info!("Setting bootstrap provider for source '{}'", config.id());
         source.set_bootstrap_provider(provider).await;
     }
@@ -173,274 +56,50 @@ pub async fn create_source(config: SourceConfig) -> Result<Box<dyn Source + 'sta
     Ok(source)
 }
 
-/// Create a bootstrap provider from configuration.
-///
-/// This function creates the appropriate bootstrap provider based on the config type.
-fn create_bootstrap_provider(
+/// Create a bootstrap provider from configuration using the plugin registry.
+async fn create_bootstrap_provider(
+    registry: &PluginRegistry,
     bootstrap_config: &BootstrapProviderConfig,
-    source_config: &SourceConfig,
+    source_config_json: &serde_json::Value,
 ) -> Result<Box<dyn drasi_lib::bootstrap::BootstrapProvider + 'static>> {
-    match bootstrap_config {
-        BootstrapProviderConfig::Postgres(config) => {
-            use drasi_bootstrap_postgres::PostgresBootstrapProvider;
-            let mapper = DtoMapper::new();
-            let domain_config = map_postgres_bootstrap_config(config, &mapper)?;
-            Ok(Box::new(PostgresBootstrapProvider::new(domain_config)))
-        }
-        BootstrapProviderConfig::ScriptFile(script_config) => {
-            use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
-            // Convert local DTO to drasi-lib type
-            let lib_config: drasi_lib::bootstrap::ScriptFileBootstrapConfig = script_config.into();
-            Ok(Box::new(ScriptFileBootstrapProvider::new(lib_config)))
-        }
-        BootstrapProviderConfig::Platform(platform_config) => {
-            use drasi_bootstrap_platform::PlatformBootstrapProvider;
-            // Convert local DTO to drasi-lib type
-            let lib_config: drasi_lib::bootstrap::PlatformBootstrapConfig = platform_config.into();
-            Ok(Box::new(PlatformBootstrapProvider::new(lib_config)?))
-        }
-        BootstrapProviderConfig::Application(_) => {
-            // Application bootstrap is typically handled internally by application sources
-            Err(anyhow::anyhow!(
-                "Application bootstrap provider is managed internally by application sources"
-            ))
-        }
-        BootstrapProviderConfig::Noop => {
-            use drasi_bootstrap_noop::NoOpBootstrapProvider;
-            Ok(Box::new(NoOpBootstrapProvider::new()))
-        }
-    }
+    let kind = bootstrap_config.kind();
+    let descriptor = registry.get_bootstrapper(kind).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown bootstrap kind: '{}'. Available: {:?}",
+            kind,
+            registry.bootstrapper_kinds()
+        )
+    })?;
+
+    descriptor
+        .create_bootstrap_provider(&bootstrap_config.config, source_config_json)
+        .await
 }
 
-fn map_postgres_bootstrap_config(
-    dto: &crate::api::models::bootstrap::PostgresBootstrapConfigDto,
-    mapper: &DtoMapper,
-) -> Result<drasi_bootstrap_postgres::PostgresBootstrapConfig> {
-    Ok(drasi_bootstrap_postgres::PostgresBootstrapConfig {
-        host: mapper.resolve_string(&dto.host)?,
-        port: mapper.resolve_typed(&dto.port)?,
-        database: mapper.resolve_string(&dto.database)?,
-        user: mapper.resolve_string(&dto.user)?,
-        password: mapper.resolve_string(&dto.password)?,
-        tables: dto.tables.clone(),
-        slot_name: dto.slot_name.clone(),
-        publication_name: dto.publication_name.clone(),
-        ssl_mode: match mapper.resolve_typed::<crate::api::models::SslModeDto>(&dto.ssl_mode)? {
-            crate::api::models::SslModeDto::Disable => drasi_bootstrap_postgres::SslMode::Disable,
-            crate::api::models::SslModeDto::Prefer => drasi_bootstrap_postgres::SslMode::Prefer,
-            crate::api::models::SslModeDto::Require => drasi_bootstrap_postgres::SslMode::Require,
-        },
-        table_keys: dto
-            .table_keys
-            .iter()
-            .map(|tk| drasi_bootstrap_postgres::TableKeyConfig {
-                table: tk.table.clone(),
-                key_columns: tk.key_columns.clone(),
-            })
-            .collect(),
-    })
-}
+/// Create a reaction instance from a ReactionConfig using the plugin registry.
+pub async fn create_reaction(
+    registry: &PluginRegistry,
+    config: ReactionConfig,
+) -> Result<Box<dyn Reaction + 'static>> {
+    let descriptor = registry.get_reaction(&config.kind).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown reaction kind: '{}'. Available: {:?}",
+            config.kind,
+            registry.reaction_kinds()
+        )
+    })?;
 
-/// Create a reaction instance from a ReactionConfig.
-///
-/// This function matches on the config variant and creates the appropriate
-/// reaction type using the plugin's constructor.
-///
-/// # Arguments
-///
-/// * `config` - The reaction configuration
-///
-/// # Returns
-///
-/// A boxed Reaction trait object
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use drasi_server::config::ReactionConfig;
-/// use drasi_server::factories::create_reaction;
-///
-/// let config = ReactionConfig::Log {
-///     id: "log-reaction".to_string(),
-///     queries: vec!["my-query".to_string()],
-///     auto_start: true,
-///     config: LogReactionConfig::default(),
-/// };
-///
-/// let reaction = create_reaction(config)?;
-/// ```
-pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'static>> {
-    let mapper = DtoMapper::new();
-
-    match config {
-        ReactionConfig::Log {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_log::LogReactionBuilder;
-            let log_mapper = LogReactionConfigMapper;
-            let domain_config = log_mapper.map(&config, &mapper)?;
-
-            let mut builder = LogReactionBuilder::new(&id)
-                .with_queries(queries)
-                .with_auto_start(auto_start);
-            if let Some(template) = domain_config.default_template {
-                builder = builder.with_default_template(template);
-            }
-            for (query_id, route_config) in domain_config.routes {
-                builder = builder.with_route(query_id, route_config);
-            }
-            Ok(Box::new(builder.build()?))
-        }
-        ReactionConfig::Http {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_http::HttpReactionBuilder;
-            let http_mapper = HttpReactionConfigMapper;
-            let domain_config = http_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                HttpReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::HttpAdaptive {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_http_adaptive::HttpAdaptiveReactionBuilder;
-            let http_adaptive_mapper = HttpAdaptiveReactionConfigMapper;
-            let domain_config = http_adaptive_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                HttpAdaptiveReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::Grpc {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_grpc::GrpcReactionBuilder;
-            let grpc_mapper = GrpcReactionConfigMapper;
-            let domain_config = grpc_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                GrpcReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::GrpcAdaptive {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_grpc_adaptive::GrpcAdaptiveReactionBuilder;
-            let grpc_adaptive_mapper = GrpcAdaptiveReactionConfigMapper;
-            let domain_config = grpc_adaptive_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                GrpcAdaptiveReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::Sse {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_sse::SseReactionBuilder;
-            let sse_mapper = SseReactionConfigMapper;
-            let domain_config = sse_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                SseReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::Platform {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_platform::PlatformReactionBuilder;
-            let platform_mapper = PlatformReactionConfigMapper;
-            let domain_config = platform_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                PlatformReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-        ReactionConfig::Profiler {
-            id,
-            queries,
-            auto_start,
-            config,
-        } => {
-            use drasi_reaction_profiler::ProfilerReactionBuilder;
-            let profiler_mapper = ProfilerReactionConfigMapper;
-            let domain_config = profiler_mapper.map(&config, &mapper)?;
-            Ok(Box::new(
-                ProfilerReactionBuilder::new(&id)
-                    .with_queries(queries)
-                    .with_auto_start(auto_start)
-                    .with_config(domain_config)
-                    .build()?,
-            ))
-        }
-    }
+    descriptor
+        .create_reaction(
+            &config.id,
+            config.queries.clone(),
+            &config.config,
+            config.auto_start,
+        )
+        .await
 }
 
 /// Create a state store provider from a StateStoreConfig.
-///
-/// This function matches on the config variant and creates the appropriate
-/// state store provider type using the plugin's constructor.
-///
-/// # Arguments
-///
-/// * `config` - The state store configuration
-///
-/// # Returns
-///
-/// An Arc-wrapped StateStoreProvider trait object
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use drasi_server::config::StateStoreConfig;
-/// use drasi_server::factories::create_state_store_provider;
-///
-/// let config = StateStoreConfig::Redb {
-///     path: ConfigValue::Static("./data/state.redb".to_string()),
-/// };
-///
-/// let provider = create_state_store_provider(config)?;
-/// ```
 pub fn create_state_store_provider(
     config: StateStoreConfig,
 ) -> Result<Arc<dyn StateStoreProvider + Send + Sync + 'static>> {
@@ -462,88 +121,111 @@ pub fn create_state_store_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::sources::mock::DataTypeDto;
-    use crate::models::{ConfigValue, LogReactionConfigDto, MockSourceConfigDto};
+    #[cfg(feature = "builtin-plugins")]
+    use crate::builtin_plugins::register_builtin_plugins;
     use tempfile::TempDir;
+
+    fn test_registry() -> PluginRegistry {
+        let mut registry = PluginRegistry::new();
+        // Always register core plugins (noop, application)
+        crate::server::register_core_plugins(&mut registry);
+        #[cfg(feature = "builtin-plugins")]
+        register_builtin_plugins(&mut registry);
+        registry
+    }
 
     // ==========================================================================
     // Source Factory Tests
     // ==========================================================================
 
+    #[cfg(feature = "builtin-plugins")]
     #[tokio::test]
     async fn test_create_mock_source() {
-        let config = SourceConfig::Mock {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "mock".to_string(),
             id: "test-mock-source".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({
+                "dataType": { "type": "generic" },
+                "intervalMs": 1000
+            }),
         };
 
-        let source = create_source(config)
+        let source = create_source(&registry, config)
             .await
             .expect("Failed to create mock source");
         assert_eq!(source.id(), "test-mock-source");
         assert_eq!(source.type_name(), "mock");
     }
 
+    #[cfg(feature = "builtin-plugins")]
     #[tokio::test]
     async fn test_create_mock_source_auto_start_false() {
-        let config = SourceConfig::Mock {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "mock".to_string(),
             id: "manual-source".to_string(),
             auto_start: false,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(500),
-            },
+            config: serde_json::json!({
+                "dataType": { "type": "generic" },
+                "intervalMs": 500
+            }),
         };
 
-        let source = create_source(config)
+        let source = create_source(&registry, config)
             .await
             .expect("Failed to create mock source");
         assert_eq!(source.id(), "manual-source");
     }
 
+    #[cfg(feature = "builtin-plugins")]
     #[tokio::test]
     async fn test_create_mock_source_with_noop_bootstrap() {
-        let config = SourceConfig::Mock {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "mock".to_string(),
             id: "bootstrap-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::Noop),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "noop".to_string(),
+                config: serde_json::json!({}),
+            }),
+            config: serde_json::json!({
+                "dataType": { "type": "generic" },
+                "intervalMs": 1000
+            }),
         };
 
-        let source = create_source(config)
+        let source = create_source(&registry, config)
             .await
             .expect("Failed to create source with bootstrap");
         assert_eq!(source.id(), "bootstrap-source");
     }
 
+    #[cfg(feature = "builtin-plugins")]
     #[tokio::test]
     async fn test_create_mock_source_with_scriptfile_bootstrap() {
-        use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
-
-        let config = SourceConfig::Mock {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "mock".to_string(),
             id: "script-bootstrap-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::ScriptFile(
-                ScriptFileBootstrapConfigDto {
-                    file_paths: vec!["test.jsonl".to_string()],
-                },
-            )),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "scriptfile".to_string(),
+                config: serde_json::json!({
+                    "filePaths": ["test.jsonl"]
+                }),
+            }),
+            config: serde_json::json!({
+                "dataType": { "type": "generic" },
+                "intervalMs": 1000
+            }),
         };
 
-        let source = create_source(config)
+        let source = create_source(&registry, config)
             .await
             .expect("Failed to create source with scriptfile bootstrap");
         assert_eq!(source.id(), "script-bootstrap-source");
@@ -553,24 +235,32 @@ mod tests {
     // Reaction Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_log_reaction() {
-        let config = ReactionConfig::Log {
+    #[cfg(feature = "builtin-plugins")]
+    #[tokio::test]
+    async fn test_create_log_reaction() {
+        let registry = test_registry();
+        let config = ReactionConfig {
+            kind: "log".to_string(),
             id: "test-log-reaction".to_string(),
             queries: vec!["query1".to_string()],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            config: serde_json::json!({}),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(&registry, config)
+            .await
+            .expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "test-log-reaction");
         assert_eq!(reaction.type_name(), "log");
         assert_eq!(reaction.query_ids(), vec!["query1".to_string()]);
     }
 
-    #[test]
-    fn test_create_log_reaction_multiple_queries() {
-        let config = ReactionConfig::Log {
+    #[cfg(feature = "builtin-plugins")]
+    #[tokio::test]
+    async fn test_create_log_reaction_multiple_queries() {
+        let registry = test_registry();
+        let config = ReactionConfig {
+            kind: "log".to_string(),
             id: "multi-query-reaction".to_string(),
             queries: vec![
                 "query1".to_string(),
@@ -578,29 +268,34 @@ mod tests {
                 "query3".to_string(),
             ],
             auto_start: false,
-            config: LogReactionConfigDto::default(),
+            config: serde_json::json!({}),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(&registry, config)
+            .await
+            .expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "multi-query-reaction");
         assert_eq!(reaction.query_ids().len(), 3);
     }
 
-    #[test]
-    fn test_create_profiler_reaction() {
-        use crate::models::ProfilerReactionConfigDto;
-
-        let config = ReactionConfig::Profiler {
+    #[cfg(feature = "builtin-plugins")]
+    #[tokio::test]
+    async fn test_create_profiler_reaction() {
+        let registry = test_registry();
+        let config = ReactionConfig {
+            kind: "profiler".to_string(),
             id: "profiler-reaction".to_string(),
             queries: vec!["perf-query".to_string()],
             auto_start: true,
-            config: ProfilerReactionConfigDto {
-                window_size: ConfigValue::Static(1000),
-                report_interval_secs: ConfigValue::Static(60),
-            },
+            config: serde_json::json!({
+                "windowSize": 1000,
+                "reportIntervalSecs": 60
+            }),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create profiler reaction");
+        let reaction = create_reaction(&registry, config)
+            .await
+            .expect("Failed to create profiler reaction");
         assert_eq!(reaction.id(), "profiler-reaction");
         assert_eq!(reaction.type_name(), "profiler");
     }
@@ -615,11 +310,10 @@ mod tests {
         let path = temp_dir.path().join("state.redb");
 
         let config = StateStoreConfig::Redb {
-            path: ConfigValue::Static(path.to_string_lossy().to_string()),
+            path: crate::api::models::ConfigValue::Static(path.to_string_lossy().to_string()),
         };
 
         let provider = create_state_store_provider(config).expect("Failed to create REDB provider");
-        // Provider is created successfully - we can't test much more without internal access
         assert!(std::sync::Arc::strong_count(&provider) >= 1);
     }
 
@@ -629,12 +323,10 @@ mod tests {
         let path = temp_dir.path().join("test_store.redb");
 
         let config = StateStoreConfig::Redb {
-            path: ConfigValue::Static(path.to_string_lossy().to_string()),
+            path: crate::api::models::ConfigValue::Static(path.to_string_lossy().to_string()),
         };
 
         let _provider = create_state_store_provider(config).expect("Failed to create provider");
-
-        // Verify the file was created
         assert!(path.exists(), "REDB file should be created");
     }
 
@@ -642,104 +334,75 @@ mod tests {
     // Bootstrap Provider Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_noop_bootstrap_provider() {
-        let bootstrap_config = BootstrapProviderConfig::Noop;
-        let source_config = SourceConfig::Mock {
-            id: "test".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+    #[tokio::test]
+    async fn test_create_noop_bootstrap_provider() {
+        let registry = test_registry();
+        let bootstrap_config = BootstrapProviderConfig {
+            kind: "noop".to_string(),
+            config: serde_json::json!({}),
         };
+        let source_config_json = serde_json::json!({});
 
-        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
+        let result =
+            create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json).await;
         assert!(result.is_ok(), "Failed to create noop bootstrap provider");
     }
 
-    #[test]
-    fn test_create_scriptfile_bootstrap_provider() {
-        use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
-
-        let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfigDto {
-            file_paths: vec!["/path/to/data.jsonl".to_string()],
-        });
-        let source_config = SourceConfig::Mock {
-            id: "test".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+    #[cfg(feature = "builtin-plugins")]
+    #[tokio::test]
+    async fn test_create_scriptfile_bootstrap_provider() {
+        let registry = test_registry();
+        let bootstrap_config = BootstrapProviderConfig {
+            kind: "scriptfile".to_string(),
+            config: serde_json::json!({
+                "filePaths": ["/path/to/data.jsonl"]
+            }),
         };
+        let source_config_json = serde_json::json!({});
 
-        let provider = create_bootstrap_provider(&bootstrap_config, &source_config)
-            .expect("Failed to create scriptfile bootstrap provider");
-
-        // Provider was created successfully
+        let provider =
+            create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json)
+                .await
+                .expect("Failed to create scriptfile bootstrap provider");
         drop(provider);
     }
 
-    #[test]
-    fn test_postgres_bootstrap_provider_from_config() {
-        use crate::api::models::bootstrap::PostgresBootstrapConfigDto;
-
-        let bootstrap_config = BootstrapProviderConfig::Postgres(PostgresBootstrapConfigDto {
-            host: ConfigValue::Static("localhost".to_string()),
-            port: ConfigValue::Static(5432),
-            database: ConfigValue::Static("testdb".to_string()),
-            user: ConfigValue::Static("testuser".to_string()),
-            password: ConfigValue::Static("testpass".to_string()),
-            tables: vec!["users".to_string()],
-            slot_name: "drasi_slot".to_string(),
-            publication_name: "drasi_pub".to_string(),
-            ssl_mode: ConfigValue::Static(crate::api::models::SslModeDto::Prefer),
-            table_keys: vec![crate::api::models::TableKeyConfigDto {
-                table: "users".to_string(),
-                key_columns: vec!["id".to_string()],
-            }],
-        });
-        let source_config = SourceConfig::Mock {
+    #[tokio::test]
+    async fn test_unknown_source_kind_rejected() {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "nonexistent".to_string(),
             id: "test".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({}),
         };
 
-        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
-        assert!(
-            result.is_ok(),
-            "Failed to create postgres bootstrap provider"
-        );
-    }
-
-    #[test]
-    fn test_application_bootstrap_returns_error() {
-        use crate::api::models::bootstrap::ApplicationBootstrapConfigDto;
-
-        let bootstrap_config =
-            BootstrapProviderConfig::Application(ApplicationBootstrapConfigDto::default());
-        let source_config = SourceConfig::Mock {
-            id: "test".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(1000),
-            },
-        };
-
-        let result = create_bootstrap_provider(&bootstrap_config, &source_config);
+        let result = create_source(&registry, config).await;
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(
-            err_msg.contains("Application bootstrap provider is managed internally"),
+            err_msg.contains("Unknown source kind"),
+            "Unexpected error: {err_msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unknown_reaction_kind_rejected() {
+        let registry = test_registry();
+        let config = ReactionConfig {
+            kind: "nonexistent".to_string(),
+            id: "test".to_string(),
+            queries: vec![],
+            auto_start: true,
+            config: serde_json::json!({}),
+        };
+
+        let result = create_reaction(&registry, config).await;
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("Unknown reaction kind"),
             "Unexpected error: {err_msg}"
         );
     }
@@ -748,34 +411,42 @@ mod tests {
     // Edge Case Tests
     // ==========================================================================
 
+    #[cfg(feature = "builtin-plugins")]
     #[tokio::test]
     async fn test_source_with_custom_interval() {
-        let config = SourceConfig::Mock {
+        let registry = test_registry();
+        let config = SourceConfig {
+            kind: "mock".to_string(),
             id: "custom-interval".to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(60000), // 60 seconds
-            },
+            config: serde_json::json!({
+                "dataType": { "type": "generic" },
+                "intervalMs": 60000
+            }),
         };
 
-        let source = create_source(config)
+        let source = create_source(&registry, config)
             .await
             .expect("Failed to create source");
         assert_eq!(source.id(), "custom-interval");
     }
 
-    #[test]
-    fn test_reaction_with_empty_queries_list() {
-        let config = ReactionConfig::Log {
+    #[cfg(feature = "builtin-plugins")]
+    #[tokio::test]
+    async fn test_reaction_with_empty_queries_list() {
+        let registry = test_registry();
+        let config = ReactionConfig {
+            kind: "log".to_string(),
             id: "no-queries".to_string(),
             queries: vec![],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            config: serde_json::json!({}),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create reaction");
+        let reaction = create_reaction(&registry, config)
+            .await
+            .expect("Failed to create reaction");
         assert!(reaction.query_ids().is_empty());
     }
 }

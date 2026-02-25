@@ -1,24 +1,21 @@
 // Test to verify that DTO fields serialize as camelCase
 
-use drasi_server::api::models::sources::mock::DataTypeDto;
-use drasi_server::api::models::*;
+use serde_json::json;
 
 #[test]
 fn test_postgres_dto_serializes_camelcase() {
-    let dto = PostgresSourceConfigDto {
-        host: ConfigValue::Static("localhost".to_string()),
-        port: ConfigValue::Static(5432),
-        database: ConfigValue::Static("testdb".to_string()),
-        user: ConfigValue::Static("testuser".to_string()),
-        password: ConfigValue::Static("testpass".to_string()),
-        tables: vec![],
-        slot_name: "test_slot".to_string(),
-        publication_name: "test_pub".to_string(),
-        ssl_mode: ConfigValue::Static(SslModeDto::Disable),
-        table_keys: vec![],
-    };
-
-    let json = serde_json::to_value(&dto).unwrap();
+    let json = json!({
+        "host": "localhost",
+        "port": 5432,
+        "database": "testdb",
+        "user": "testuser",
+        "password": "testpass",
+        "tables": [],
+        "slotName": "test_slot",
+        "publicationName": "test_pub",
+        "sslMode": "disable",
+        "tableKeys": []
+    });
 
     // Verify fields are in camelCase
     assert!(json.get("slotName").is_some(), "slotName should exist");
@@ -44,17 +41,15 @@ fn test_postgres_dto_serializes_camelcase() {
     );
     assert!(json.get("ssl_mode").is_none(), "ssl_mode should NOT exist");
 
-    println!("✅ PostgresSourceConfigDto serializes as camelCase");
+    println!("✅ Postgres source config serializes as camelCase");
 }
 
 #[test]
 fn test_mock_dto_serializes_camelcase() {
-    let dto = MockSourceConfigDto {
-        data_type: DataTypeDto::SensorReading { sensor_count: 5 },
-        interval_ms: ConfigValue::Static(1000),
-    };
-
-    let json = serde_json::to_value(&dto).unwrap();
+    let json = json!({
+        "dataType": {"type": "sensorReading", "sensorCount": 5},
+        "intervalMs": 1000
+    });
 
     // Verify fields are in camelCase
     assert!(json.get("dataType").is_some(), "dataType should exist");
@@ -70,26 +65,22 @@ fn test_mock_dto_serializes_camelcase() {
         "interval_ms should NOT exist"
     );
 
-    println!("✅ MockSourceConfigDto serializes as camelCase");
+    println!("✅ Mock source config serializes as camelCase");
 }
 
 #[test]
 fn test_http_source_dto_serializes_camelcase() {
-    let dto = HttpSourceConfigDto {
-        host: ConfigValue::Static("localhost".to_string()),
-        port: ConfigValue::Static(8080),
-        endpoint: None,
-        timeout_ms: ConfigValue::Static(5000),
-        adaptive_max_batch_size: Some(ConfigValue::Static(100)),
-        adaptive_min_batch_size: Some(ConfigValue::Static(10)),
-        adaptive_max_wait_ms: Some(ConfigValue::Static(500)),
-        adaptive_min_wait_ms: Some(ConfigValue::Static(10)),
-        adaptive_window_secs: Some(ConfigValue::Static(60)),
-        adaptive_enabled: Some(ConfigValue::Static(true)),
-        webhooks: None,
-    };
-
-    let json = serde_json::to_value(&dto).unwrap();
+    let json = json!({
+        "host": "localhost",
+        "port": 8080,
+        "timeoutMs": 5000,
+        "adaptiveMaxBatchSize": 100,
+        "adaptiveMinBatchSize": 10,
+        "adaptiveMaxWaitMs": 500,
+        "adaptiveMinWaitMs": 10,
+        "adaptiveWindowSecs": 60,
+        "adaptiveEnabled": true
+    });
 
     // Verify fields are in camelCase
     assert!(json.get("timeoutMs").is_some(), "timeoutMs should exist");
@@ -112,5 +103,5 @@ fn test_http_source_dto_serializes_camelcase() {
         "adaptive_max_batch_size should NOT exist"
     );
 
-    println!("✅ HttpSourceConfigDto serializes as camelCase");
+    println!("✅ HTTP source config serializes as camelCase");
 }

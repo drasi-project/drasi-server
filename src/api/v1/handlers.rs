@@ -35,6 +35,7 @@ use crate::api::shared::{
 };
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_registry::PluginRegistry;
 
 // Re-export shared handler implementations
 use crate::api::shared::handlers as shared;
@@ -168,7 +169,7 @@ pub async fn list_sources(
 /// Create a new source
 ///
 /// Creates a source from a configuration object. The `kind` field determines
-/// the source type (mock, http, grpc, postgres, platform).
+/// the source type (mock, http, grpc, postgres).
 ///
 /// Example request body:
 /// ```json
@@ -198,6 +199,7 @@ pub async fn create_source_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -210,6 +212,7 @@ pub async fn create_source_handler(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -249,6 +252,7 @@ pub async fn upsert_source_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -261,6 +265,7 @@ pub async fn upsert_source_handler(
         Extension(read_only),
         Extension(config_persistence),
         Extension(path.instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -865,7 +870,7 @@ pub async fn list_reactions(
 /// Create a new reaction
 ///
 /// Creates a reaction from a configuration object. The `kind` field determines
-/// the reaction type (log, http, http-adaptive, grpc, grpc-adaptive, sse, platform, profiler).
+/// the reaction type (log, http, http-adaptive, grpc, grpc-adaptive, sse, profiler).
 ///
 /// Example request body:
 /// ```json
@@ -895,6 +900,7 @@ pub async fn create_reaction_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -907,6 +913,7 @@ pub async fn create_reaction_handler(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -945,6 +952,7 @@ pub async fn upsert_reaction_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -957,6 +965,7 @@ pub async fn upsert_reaction_handler(
         Extension(read_only),
         Extension(config_persistence),
         Extension(path.instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -1212,6 +1221,7 @@ pub async fn create_source_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
@@ -1220,6 +1230,7 @@ pub async fn create_source_default(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -1230,6 +1241,7 @@ pub async fn upsert_source_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1239,6 +1251,7 @@ pub async fn upsert_source_default(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -1507,6 +1520,7 @@ pub async fn create_reaction_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
@@ -1515,6 +1529,7 @@ pub async fn create_reaction_default(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await
@@ -1525,6 +1540,7 @@ pub async fn upsert_reaction_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1534,6 +1550,7 @@ pub async fn upsert_reaction_default(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(plugin_registry),
         Json(config_json),
     )
     .await

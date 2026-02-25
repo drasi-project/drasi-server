@@ -16,203 +16,117 @@
 
 #[cfg(test)]
 mod tests {
-    use drasi_server::api::mappings::{ConfigMapper, DtoMapper, PostgresConfigMapper};
-    use drasi_server::api::models::{ConfigValue, PostgresSourceConfigDto, SslModeDto};
+    use drasi_server::api::mappings::DtoMapper;
+    use drasi_server::api::models::ConfigValue;
+    use serde_json::json;
 
     #[test]
-    fn test_postgres_with_static_values() {
-        let dto = PostgresSourceConfigDto {
-            host: ConfigValue::Static("db.example.com".to_string()),
-            port: ConfigValue::Static(5433),
-            database: ConfigValue::Static("production".to_string()),
-            user: ConfigValue::Static("app_user".to_string()),
-            password: ConfigValue::Static("secret123".to_string()),
-            tables: vec!["users".to_string(), "orders".to_string()],
-            slot_name: "my_slot".to_string(),
-            publication_name: "my_pub".to_string(),
-            ssl_mode: ConfigValue::Static(SslModeDto::Require),
-            table_keys: vec![],
-        };
-
+    fn test_config_value_static_string_resolution() {
+        let value: ConfigValue<String> = serde_json::from_value(json!("db.example.com")).unwrap();
         let mapper = DtoMapper::new();
-        let postgres_mapper = PostgresConfigMapper;
-        let config = postgres_mapper.map(&dto, &mapper).unwrap();
-
-        assert_eq!(config.host, "db.example.com");
-        assert_eq!(config.port, 5433);
-        assert_eq!(config.database, "production");
-        assert_eq!(config.user, "app_user");
-        assert_eq!(config.password, "secret123");
+        let resolved = mapper.resolve_string(&value).unwrap();
+        assert_eq!(resolved, "db.example.com");
     }
 
     #[test]
-    fn test_postgres_with_environment_variables() {
-        // Set up environment variables
-        std::env::set_var("TEST_DB_HOST", "env-host.com");
-        std::env::set_var("TEST_DB_PORT", "5434");
-        std::env::set_var("TEST_DB_NAME", "env_database");
-        std::env::set_var("TEST_DB_USER", "env_user");
-        std::env::set_var("TEST_DB_PASSWORD", "env_secret");
-        std::env::set_var("TEST_SSL_MODE", "require");
-
-        let dto = PostgresSourceConfigDto {
-            host: ConfigValue::EnvironmentVariable {
-                name: "TEST_DB_HOST".to_string(),
-                default: None,
-            },
-            port: ConfigValue::EnvironmentVariable {
-                name: "TEST_DB_PORT".to_string(),
-                default: Some("5432".to_string()),
-            },
-            database: ConfigValue::EnvironmentVariable {
-                name: "TEST_DB_NAME".to_string(),
-                default: None,
-            },
-            user: ConfigValue::EnvironmentVariable {
-                name: "TEST_DB_USER".to_string(),
-                default: None,
-            },
-            password: ConfigValue::EnvironmentVariable {
-                name: "TEST_DB_PASSWORD".to_string(),
-                default: None,
-            },
-            tables: vec![],
-            slot_name: "slot".to_string(),
-            publication_name: "pub".to_string(),
-            ssl_mode: ConfigValue::EnvironmentVariable {
-                name: "TEST_SSL_MODE".to_string(),
-                default: Some("prefer".to_string()),
-            },
-            table_keys: vec![],
-        };
-
+    fn test_config_value_static_typed_resolution() {
+        let value: ConfigValue<u16> = serde_json::from_value(json!(5433)).unwrap();
         let mapper = DtoMapper::new();
-        let postgres_mapper = PostgresConfigMapper;
-        let config = postgres_mapper.map(&dto, &mapper).unwrap();
-
-        assert_eq!(config.host, "env-host.com");
-        assert_eq!(config.port, 5434);
-        assert_eq!(config.database, "env_database");
-        assert_eq!(config.user, "env_user");
-        assert_eq!(config.password, "env_secret");
-
-        // Clean up
-        std::env::remove_var("TEST_DB_HOST");
-        std::env::remove_var("TEST_DB_PORT");
-        std::env::remove_var("TEST_DB_NAME");
-        std::env::remove_var("TEST_DB_USER");
-        std::env::remove_var("TEST_DB_PASSWORD");
-        std::env::remove_var("TEST_SSL_MODE");
+        let resolved = mapper.resolve_typed(&value).unwrap();
+        assert_eq!(resolved, 5433);
     }
 
     #[test]
-    fn test_postgres_with_defaults() {
-        // Don't set environment variables, rely on defaults
-        let dto = PostgresSourceConfigDto {
-            host: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_HOST".to_string(),
-                default: Some("default-host.com".to_string()),
-            },
-            port: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_PORT".to_string(),
-                default: Some("9999".to_string()),
-            },
-            database: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_DB".to_string(),
-                default: Some("default_db".to_string()),
-            },
-            user: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_USER".to_string(),
-                default: Some("default_user".to_string()),
-            },
-            password: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_PASSWORD".to_string(),
-                default: Some("default_pass".to_string()),
-            },
-            tables: vec![],
-            slot_name: "slot".to_string(),
-            publication_name: "pub".to_string(),
-            ssl_mode: ConfigValue::EnvironmentVariable {
-                name: "NONEXISTENT_SSL".to_string(),
-                default: Some("disable".to_string()),
-            },
-            table_keys: vec![],
-        };
+    fn test_config_value_environment_variable_resolution() {
+        std::env::set_var("TEST_CV_HOST", "env-host.com");
+        std::env::set_var("TEST_CV_PORT", "5434");
+
+        let host: ConfigValue<String> =
+            serde_json::from_value(json!({"kind": "EnvironmentVariable", "name": "TEST_CV_HOST"}))
+                .unwrap();
+        let port: ConfigValue<u16> = serde_json::from_value(
+            json!({"kind": "EnvironmentVariable", "name": "TEST_CV_PORT", "default": "5432"}),
+        )
+        .unwrap();
 
         let mapper = DtoMapper::new();
-        let postgres_mapper = PostgresConfigMapper;
-        let config = postgres_mapper.map(&dto, &mapper).unwrap();
+        assert_eq!(mapper.resolve_string(&host).unwrap(), "env-host.com");
+        assert_eq!(mapper.resolve_typed(&port).unwrap(), 5434);
 
-        assert_eq!(config.host, "default-host.com");
-        assert_eq!(config.port, 9999);
-        assert_eq!(config.database, "default_db");
-        assert_eq!(config.user, "default_user");
-        assert_eq!(config.password, "default_pass");
+        std::env::remove_var("TEST_CV_HOST");
+        std::env::remove_var("TEST_CV_PORT");
     }
 
     #[test]
-    fn test_postgres_mixed_static_and_env() {
-        std::env::set_var("TEST_MIXED_PASSWORD", "secure_password");
-
-        let dto = PostgresSourceConfigDto {
-            host: ConfigValue::Static("localhost".to_string()),
-            port: ConfigValue::Static(5432),
-            database: ConfigValue::Static("testdb".to_string()),
-            user: ConfigValue::Static("testuser".to_string()),
-            password: ConfigValue::EnvironmentVariable {
-                name: "TEST_MIXED_PASSWORD".to_string(),
-                default: None,
-            },
-            tables: vec!["table1".to_string()],
-            slot_name: "slot".to_string(),
-            publication_name: "pub".to_string(),
-            ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-            table_keys: vec![],
-        };
+    fn test_config_value_environment_variable_defaults() {
+        let host: ConfigValue<String> = serde_json::from_value(
+            json!({"kind": "EnvironmentVariable", "name": "NONEXISTENT_CV_HOST", "default": "default-host.com"}),
+        )
+        .unwrap();
+        let port: ConfigValue<u16> = serde_json::from_value(
+            json!({"kind": "EnvironmentVariable", "name": "NONEXISTENT_CV_PORT", "default": "9999"}),
+        )
+        .unwrap();
 
         let mapper = DtoMapper::new();
-        let postgres_mapper = PostgresConfigMapper;
-        let config = postgres_mapper.map(&dto, &mapper).unwrap();
-
-        assert_eq!(config.host, "localhost");
-        assert_eq!(config.port, 5432);
-        assert_eq!(config.password, "secure_password");
-
-        std::env::remove_var("TEST_MIXED_PASSWORD");
+        assert_eq!(mapper.resolve_string(&host).unwrap(), "default-host.com");
+        assert_eq!(mapper.resolve_typed(&port).unwrap(), 9999);
     }
 
     #[test]
-    fn test_deserialization_from_yaml() {
+    fn test_config_value_mixed_static_and_env() {
+        std::env::set_var("TEST_CV_MIXED_PASSWORD", "secure_password");
+
+        let host: ConfigValue<String> = serde_json::from_value(json!("localhost")).unwrap();
+        let port: ConfigValue<u16> = serde_json::from_value(json!(5432)).unwrap();
+        let password: ConfigValue<String> = serde_json::from_value(
+            json!({"kind": "EnvironmentVariable", "name": "TEST_CV_MIXED_PASSWORD"}),
+        )
+        .unwrap();
+
+        let mapper = DtoMapper::new();
+        assert_eq!(mapper.resolve_string(&host).unwrap(), "localhost");
+        assert_eq!(mapper.resolve_typed(&port).unwrap(), 5432);
+        assert_eq!(
+            mapper.resolve_string(&password).unwrap(),
+            "secure_password"
+        );
+
+        std::env::remove_var("TEST_CV_MIXED_PASSWORD");
+    }
+
+    #[test]
+    fn test_config_value_deserialization_from_yaml() {
         let yaml = r#"
 host: "yaml-host.com"
-port: 5432
 database: "${DB_NAME:-default_db}"
-user: "yaml_user"
 password:
   kind: EnvironmentVariable
   name: DB_PASSWORD
   default: "default_password"
-tables:
-  - users
-  - orders
-slotName: "yaml_slot"
-publicationName: "yaml_pub"
 sslMode:
   kind: EnvironmentVariable
   name: SSL_MODE
   default: "prefer"
-tableKeys: []
         "#;
 
-        let dto: PostgresSourceConfigDto = serde_yaml::from_str(yaml).unwrap();
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct TestConfig {
+            host: ConfigValue<String>,
+            database: ConfigValue<String>,
+            password: ConfigValue<String>,
+            ssl_mode: ConfigValue<String>,
+        }
 
-        // Check deserialization worked correctly
-        match dto.host {
+        let config: TestConfig = serde_yaml::from_str(yaml).unwrap();
+
+        match config.host {
             ConfigValue::Static(ref s) => assert_eq!(s, "yaml-host.com"),
             _ => panic!("Expected static host"),
         }
 
-        match dto.database {
+        match config.database {
             ConfigValue::EnvironmentVariable {
                 ref name,
                 ref default,
@@ -223,7 +137,7 @@ tableKeys: []
             _ => panic!("Expected environment variable for database"),
         }
 
-        match dto.password {
+        match config.password {
             ConfigValue::EnvironmentVariable {
                 ref name,
                 ref default,
@@ -234,7 +148,7 @@ tableKeys: []
             _ => panic!("Expected environment variable for password"),
         }
 
-        match dto.ssl_mode {
+        match config.ssl_mode {
             ConfigValue::EnvironmentVariable {
                 ref name,
                 ref default,

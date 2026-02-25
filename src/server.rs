@@ -25,15 +25,20 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
+#[cfg(feature = "builtin-plugins")]
+use crate::builtin_plugins::register_builtin_plugins;
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
+use crate::dynamic_loading::{load_plugins_from_directory, load_shared_runtime, LoadedPlugin, RuntimeHandle};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_registry::PluginRegistry;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
+use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor};
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -42,8 +47,15 @@ pub struct DrasiServer {
     port: u16,
     config_file_path: Option<String>,
     read_only: Arc<bool>,
+    plugin_registry: Arc<PluginRegistry>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
+    /// Keeps loaded plugin libraries alive for the server's lifetime.
+    #[allow(dead_code)]
+    loaded_plugins: Vec<LoadedPlugin>,
+    /// Keeps the shared runtime library loaded for the server's lifetime.
+    #[allow(dead_code)]
+    runtime_handle: Option<RuntimeHandle>,
 }
 
 struct PreparedInstance {
@@ -54,9 +66,33 @@ struct PreparedInstance {
 
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
-    pub async fn new(config_path: PathBuf, port: u16) -> Result<Self> {
+    pub async fn new(config_path: PathBuf, port: u16, plugins_dir: PathBuf) -> Result<Self> {
         let config = load_config_file(&config_path)?;
         config.validate()?;
+
+        // Create and populate the plugin registry
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
+        #[cfg(feature = "builtin-plugins")]
+        register_builtin_plugins(&mut plugin_registry);
+
+        // Load dynamic plugins from the plugins directory
+        let (loaded_plugins, runtime_handle) = if plugins_dir.exists() {
+            let plugins_dir_str = plugins_dir.to_string_lossy().to_string();
+            let runtime = load_shared_runtime(&plugins_dir)
+                .map(Some)
+                .unwrap_or_else(|e| {
+                    info!("Shared runtime not loaded: {e}");
+                    None
+                });
+            let (_stats, handles) =
+                load_plugins_from_directory(&plugins_dir_str, &mut plugin_registry)?;
+            (handles, runtime)
+        } else {
+            (Vec::new(), None)
+        };
+
+        let plugin_registry = Arc::new(plugin_registry);
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
@@ -127,7 +163,7 @@ impl DrasiServer {
                 instance.id
             );
             for source_config in instance.sources.clone() {
-                let source = create_source(source_config).await?;
+                let source = create_source(&plugin_registry, source_config).await?;
                 builder = builder.with_source(source);
             }
 
@@ -138,7 +174,7 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
-                let reaction = create_reaction(reaction_config)?;
+                let reaction = create_reaction(&plugin_registry, reaction_config).await?;
                 builder = builder.with_reaction(reaction);
             }
 
@@ -162,7 +198,10 @@ impl DrasiServer {
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
+            plugin_registry,
             config_persistence: None, // Will be set after core is started
+            loaded_plugins,
+            runtime_handle,
         })
     }
 
@@ -174,6 +213,10 @@ impl DrasiServer {
         port: u16,
         config_file_path: Option<String>,
     ) -> Self {
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
+        #[cfg(feature = "builtin-plugins")]
+        register_builtin_plugins(&mut plugin_registry);
         Self {
             instances: vec![PreparedInstance {
                 id_hint: None,
@@ -185,7 +228,10 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
+            plugin_registry: Arc::new(plugin_registry),
             config_persistence: None,   // Will be set up if config file is provided
+            loaded_plugins: Vec::new(), // No dynamic plugins in builder mode
+            runtime_handle: None,
         }
     }
 
@@ -206,6 +252,10 @@ impl DrasiServer {
             })
             .collect();
 
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
+        #[cfg(feature = "builtin-plugins")]
+        register_builtin_plugins(&mut plugin_registry);
         Self {
             instances,
             enable_api,
@@ -213,7 +263,10 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false),
+            plugin_registry: Arc::new(plugin_registry),
             config_persistence: None,
+            loaded_plugins: Vec::new(),
+            runtime_handle: None,
         }
     }
 
@@ -226,6 +279,9 @@ impl DrasiServer {
     #[allow(clippy::print_stdout)]
     pub async fn run(mut self) -> Result<()> {
         println!("Starting Drasi Server");
+        println!("  Version: {}", env!("CARGO_PKG_VERSION"));
+        println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
+        println!("  Plugin SDK: {}", env!("DRASI_PLUGIN_SDK_VERSION"));
         if let Some(config_file) = &self.config_file_path {
             println!("  Config file: {config_file}");
         }
@@ -347,11 +403,12 @@ impl DrasiServer {
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation for v1
-        let openapi_v1 = api::ApiDocV1::openapi();
+        let mut openapi_v1 = api::ApiDocV1::openapi();
+        api::inject_plugin_schemas(&mut openapi_v1, &self.plugin_registry);
 
         // Build the v1 API router
         let v1_router =
-            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
+            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone(), self.plugin_registry.clone());
 
         // Build the main application router
         let app = Router::new()
@@ -438,4 +495,23 @@ impl DrasiServer {
 
         Ok((source_configs, reaction_configs, query_configs))
     }
+}
+
+/// Register plugins that are always available regardless of feature flags.
+pub fn register_core_plugins(registry: &mut PluginRegistry) {
+    use std::sync::Arc;
+
+    info!("Loading core plugins (static)...");
+
+    let desc = drasi_bootstrap_noop::descriptor::NoOpBootstrapDescriptor;
+    info!("  [static/core] bootstrap: {}", desc.kind());
+    registry.register_bootstrapper(Arc::new(desc));
+
+    let desc = drasi_bootstrap_application::descriptor::ApplicationBootstrapDescriptor;
+    info!("  [static/core] bootstrap: {}", desc.kind());
+    registry.register_bootstrapper(Arc::new(desc));
+
+    let desc = drasi_reaction_application::descriptor::ApplicationReactionDescriptor;
+    info!("  [static/core] reaction: {}", desc.kind());
+    registry.register_reaction(Arc::new(desc));
 }

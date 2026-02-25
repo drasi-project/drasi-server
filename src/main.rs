@@ -32,7 +32,14 @@ mod init;
 #[derive(Parser)]
 #[command(name = "drasi-server")]
 #[command(about = "Standalone Drasi server for data change processing")]
-#[command(version)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(long_version = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\nrustc: ",
+    env!("DRASI_RUSTC_VERSION"),
+    "\nplugin-sdk: ",
+    env!("DRASI_PLUGIN_SDK_VERSION"),
+))]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -44,6 +51,10 @@ struct Cli {
     /// Override the server port
     #[arg(short, long, global = true)]
     port: Option<u16>,
+
+    /// Directory to scan for plugin shared libraries
+    #[arg(long, default_value = "./plugins", global = true)]
+    plugins_dir: PathBuf,
 }
 
 #[derive(Subcommand)]
@@ -57,6 +68,10 @@ enum Commands {
         /// Override the server port
         #[arg(short, long)]
         port: Option<u16>,
+
+        /// Directory to scan for plugin shared libraries
+        #[arg(long, default_value = "./plugins")]
+        plugins_dir: PathBuf,
     },
 
     /// Validate a configuration file without starting the server
@@ -94,7 +109,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Run { config, port }) => run_server(config, port).await,
+        Some(Commands::Run {
+            config,
+            port,
+            plugins_dir,
+        }) => run_server(config, port, plugins_dir).await,
         Some(Commands::Validate {
             config,
             show_resolved,
@@ -103,13 +122,17 @@ async fn main() -> Result<()> {
         Some(Commands::Init { output, force }) => init::run_init(output, force),
         None => {
             // Default behavior: run the server (backward compatible)
-            run_server(cli.config, cli.port).await
+            run_server(cli.config, cli.port, cli.plugins_dir).await
         }
     }
 }
 
 /// Run the Drasi Server
-async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<()> {
+async fn run_server(
+    config_path: PathBuf,
+    port_override: Option<u16>,
+    plugins_dir: PathBuf,
+) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
     let env_file_loaded = if let Some(config_dir) = config_path.parent() {
@@ -202,7 +225,7 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
     info!("Port: {final_port}");
     debug!("Server configuration: {resolved_settings:?}");
 
-    let server = DrasiServer::new(config_path, final_port).await?;
+    let server = DrasiServer::new(config_path, final_port, plugins_dir).await?;
     server.run().await?;
 
     Ok(())

@@ -24,15 +24,8 @@
 //!   - `http_source` - HTTP source
 //!   - `grpc_source` - gRPC source
 //!   - `mock` - Mock source for testing
-//!   - `platform_source` - Platform/Redis source
 //!
-//! - **`reactions/`**: DTOs for reaction configurations
-//!   - `http_reaction` - HTTP and HTTP Adaptive reactions
-//!   - `grpc_reaction` - gRPC and gRPC Adaptive reactions
-//!   - `sse` - Server-Sent Events reaction
-//!   - `log` - Log reaction
-//!   - `platform_reaction` - Platform reaction
-//!   - `profiler` - Profiler reaction
+//! - **Reaction configs**: Provided dynamically by plugin descriptors
 //!
 //! - **`queries/`**: DTOs for query configurations
 //!   - `query` - Continuous query configuration
@@ -43,28 +36,18 @@ use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-// Config value module
-pub mod config_value;
-
 // Bootstrap provider module
 pub mod bootstrap;
 
 // Organized submodules
 pub mod observability;
 pub mod queries;
-pub mod reactions;
-pub mod sources;
 
 // Re-export all DTO types for convenient access
-pub use bootstrap::{
-    ApplicationBootstrapConfigDto, BootstrapProviderConfig, PlatformBootstrapConfigDto,
-    PostgresBootstrapConfigDto, ScriptFileBootstrapConfigDto,
-};
-pub use config_value::*;
+pub use bootstrap::BootstrapProviderConfig;
+pub use drasi_plugin_sdk::config_value::*;
 pub use observability::*;
 pub use queries::*;
-pub use reactions::*;
-pub use sources::*;
 
 // =============================================================================
 // Configuration Enums (Top-level aggregates)
@@ -77,8 +60,9 @@ fn default_true() -> bool {
 
 /// Source configuration with kind discriminator.
 ///
-/// Uses a custom deserializer to handle the `kind` field and validate unknown fields.
-/// The inner config DTOs use `#[serde(deny_unknown_fields)]` to catch typos.
+/// A generic struct that holds the plugin kind, common fields (id, auto_start,
+/// bootstrap_provider), and plugin-specific configuration as a JSON value.
+/// The PluginRegistry is used at runtime to create the actual source instance.
 ///
 /// # Example YAML
 ///
@@ -96,64 +80,36 @@ fn default_true() -> bool {
 ///     host: "0.0.0.0"
 ///     port: 9000
 /// ```
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind")]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum SourceConfig {
-    /// Mock source for testing
-    #[serde(rename = "mock")]
-    Mock {
-        id: String,
-        auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<BootstrapProviderConfig>,
-        #[serde(flatten)]
-        config: MockSourceConfigDto,
-    },
-    /// HTTP source for receiving events via HTTP endpoints
-    #[serde(rename = "http")]
-    Http {
-        id: String,
-        auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<BootstrapProviderConfig>,
-        #[serde(flatten)]
-        config: HttpSourceConfigDto,
-    },
-    /// gRPC source for receiving events via gRPC streaming
-    #[serde(rename = "grpc")]
-    Grpc {
-        id: String,
-        auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<BootstrapProviderConfig>,
-        #[serde(flatten)]
-        config: GrpcSourceConfigDto,
-    },
-    /// PostgreSQL replication source for CDC
-    #[serde(rename = "postgres")]
-    Postgres {
-        id: String,
-        auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<BootstrapProviderConfig>,
-        #[serde(flatten)]
-        config: PostgresSourceConfigDto,
-    },
-    /// Platform source for Redis Streams consumption
-    #[serde(rename = "platform")]
-    Platform {
-        id: String,
-        auto_start: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        bootstrap_provider: Option<BootstrapProviderConfig>,
-        #[serde(flatten)]
-        config: PlatformSourceConfigDto,
-    },
+#[derive(Debug, Clone)]
+pub struct SourceConfig {
+    pub kind: String,
+    pub id: String,
+    pub auto_start: bool,
+    pub bootstrap_provider: Option<BootstrapProviderConfig>,
+    pub config: serde_json::Value,
 }
 
-// Known source kinds for error messages
-const SOURCE_KINDS: &[&str] = &["mock", "http", "grpc", "postgres", "platform"];
+impl Serialize for SourceConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("kind", &self.kind)?;
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("autoStart", &self.auto_start)?;
+        if let Some(bp) = &self.bootstrap_provider {
+            map.serialize_entry("bootstrapProvider", bp)?;
+        }
+        if let serde_json::Value::Object(config_map) = &self.config {
+            for (k, v) in config_map {
+                map.serialize_entry(k, v)?;
+            }
+        }
+        map.end()
+    }
+}
 
 impl<'de> Deserialize<'de> for SourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -208,6 +164,17 @@ impl<'de> Deserialize<'de> for SourceConfig {
                             }
                             bootstrap_provider = Some(map.next_value()?);
                         }
+                        // Reject common snake_case misspellings of known fields
+                        "auto_start" => {
+                            return Err(de::Error::custom(
+                                "unknown field `auto_start`, did you mean `autoStart`?"
+                            ));
+                        }
+                        "bootstrap_provider" => {
+                            return Err(de::Error::custom(
+                                "unknown field `bootstrap_provider`, did you mean `bootstrapProvider`?"
+                            ));
+                        }
                         // Collect all other fields for the inner config
                         other => {
                             let value: serde_json::Value = map.next_value()?;
@@ -234,69 +201,13 @@ impl<'de> Deserialize<'de> for SourceConfig {
                         de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
                     })?;
 
-                match kind.as_str() {
-                    "mock" => {
-                        let config: MockSourceConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                            de::Error::custom(format!("in source '{id}' (kind=mock): {e}"))
-                        })?;
-                        Ok(SourceConfig::Mock {
-                            id,
-                            auto_start,
-                            bootstrap_provider,
-                            config,
-                        })
-                    }
-                    "http" => {
-                        let config: HttpSourceConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                            de::Error::custom(format!("in source '{id}' (kind=http): {e}"))
-                        })?;
-                        Ok(SourceConfig::Http {
-                            id,
-                            auto_start,
-                            bootstrap_provider,
-                            config,
-                        })
-                    }
-                    "grpc" => {
-                        let config: GrpcSourceConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                            de::Error::custom(format!("in source '{id}' (kind=grpc): {e}"))
-                        })?;
-                        Ok(SourceConfig::Grpc {
-                            id,
-                            auto_start,
-                            bootstrap_provider,
-                            config,
-                        })
-                    }
-                    "postgres" => {
-                        let config: PostgresSourceConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!("in source '{id}' (kind=postgres): {e}"))
-                            })?;
-                        Ok(SourceConfig::Postgres {
-                            id,
-                            auto_start,
-                            bootstrap_provider,
-                            config,
-                        })
-                    }
-                    "platform" => {
-                        let config: PlatformSourceConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!("in source '{id}' (kind=platform): {e}"))
-                            })?;
-                        Ok(SourceConfig::Platform {
-                            id,
-                            auto_start,
-                            bootstrap_provider,
-                            config,
-                        })
-                    }
-                    unknown => Err(de::Error::unknown_variant(unknown, SOURCE_KINDS)),
-                }
+                Ok(SourceConfig {
+                    kind,
+                    id,
+                    auto_start,
+                    bootstrap_provider,
+                    config: remaining_value,
+                })
             }
         }
 
@@ -307,45 +218,22 @@ impl<'de> Deserialize<'de> for SourceConfig {
 impl SourceConfig {
     /// Get the source ID
     pub fn id(&self) -> &str {
-        match self {
-            SourceConfig::Mock { id, .. } => id,
-            SourceConfig::Http { id, .. } => id,
-            SourceConfig::Grpc { id, .. } => id,
-            SourceConfig::Postgres { id, .. } => id,
-            SourceConfig::Platform { id, .. } => id,
-        }
+        &self.id
     }
 
     /// Check if auto_start is enabled
     pub fn auto_start(&self) -> bool {
-        match self {
-            SourceConfig::Mock { auto_start, .. } => *auto_start,
-            SourceConfig::Http { auto_start, .. } => *auto_start,
-            SourceConfig::Grpc { auto_start, .. } => *auto_start,
-            SourceConfig::Postgres { auto_start, .. } => *auto_start,
-            SourceConfig::Platform { auto_start, .. } => *auto_start,
-        }
+        self.auto_start
     }
 
     /// Get the bootstrap provider configuration if any
     pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
-        match self {
-            SourceConfig::Mock {
-                bootstrap_provider, ..
-            } => bootstrap_provider.as_ref(),
-            SourceConfig::Http {
-                bootstrap_provider, ..
-            } => bootstrap_provider.as_ref(),
-            SourceConfig::Grpc {
-                bootstrap_provider, ..
-            } => bootstrap_provider.as_ref(),
-            SourceConfig::Postgres {
-                bootstrap_provider, ..
-            } => bootstrap_provider.as_ref(),
-            SourceConfig::Platform {
-                bootstrap_provider, ..
-            } => bootstrap_provider.as_ref(),
-        }
+        self.bootstrap_provider.as_ref()
+    }
+
+    /// Get the source kind
+    pub fn kind(&self) -> &str {
+        &self.kind
     }
 }
 
@@ -401,7 +289,6 @@ fn allowed_bootstrap_provider_fields(kind: &str) -> Option<&'static [&'static st
             "sslMode",
             "tableKeys",
         ]),
-        "platform" => Some(&["queryApiUrl", "timeoutSeconds"]),
         "scriptfile" => Some(&["filePaths"]),
         "application" | "noop" => Some(&[]),
         _ => None,
@@ -410,97 +297,37 @@ fn allowed_bootstrap_provider_fields(kind: &str) -> Option<&'static [&'static st
 
 /// Reaction configuration with kind discriminator.
 ///
-/// Uses a custom deserializer to handle the `kind` field and validate unknown fields.
-/// The inner config DTOs use `#[serde(deny_unknown_fields)]` to catch typos.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind")]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum ReactionConfig {
-    /// Log reaction for console output
-    #[serde(rename = "log")]
-    Log {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: LogReactionConfigDto,
-    },
-    /// HTTP reaction for webhooks
-    #[serde(rename = "http")]
-    Http {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: HttpReactionConfigDto,
-    },
-    /// HTTP adaptive reaction with batching
-    #[serde(rename = "http-adaptive")]
-    HttpAdaptive {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: HttpAdaptiveReactionConfigDto,
-    },
-    /// gRPC reaction for streaming results
-    #[serde(rename = "grpc")]
-    Grpc {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: GrpcReactionConfigDto,
-    },
-    /// gRPC adaptive reaction with batching
-    #[serde(rename = "grpc-adaptive")]
-    GrpcAdaptive {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: GrpcAdaptiveReactionConfigDto,
-    },
-    /// SSE reaction for Server-Sent Events
-    #[serde(rename = "sse")]
-    Sse {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: SseReactionConfigDto,
-    },
-    /// Platform reaction for Drasi platform integration
-    #[serde(rename = "platform")]
-    Platform {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: PlatformReactionConfigDto,
-    },
-    /// Profiler reaction for performance analysis
-    #[serde(rename = "profiler")]
-    Profiler {
-        id: String,
-        queries: Vec<String>,
-        auto_start: bool,
-        #[serde(flatten)]
-        config: ProfilerReactionConfigDto,
-    },
+/// A generic struct that holds the plugin kind, common fields (id, queries,
+/// auto_start), and plugin-specific configuration as a JSON value.
+/// The PluginRegistry is used at runtime to create the actual reaction instance.
+#[derive(Debug, Clone)]
+pub struct ReactionConfig {
+    pub kind: String,
+    pub id: String,
+    pub queries: Vec<String>,
+    pub auto_start: bool,
+    pub config: serde_json::Value,
 }
 
-// Known reaction kinds for error messages
-const REACTION_KINDS: &[&str] = &[
-    "log",
-    "http",
-    "http-adaptive",
-    "grpc",
-    "grpc-adaptive",
-    "sse",
-    "platform",
-    "profiler",
-];
+impl Serialize for ReactionConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("kind", &self.kind)?;
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("queries", &self.queries)?;
+        map.serialize_entry("autoStart", &self.auto_start)?;
+        if let serde_json::Value::Object(config_map) = &self.config {
+            for (k, v) in config_map {
+                map.serialize_entry(k, v)?;
+            }
+        }
+        map.end()
+    }
+}
 
 impl<'de> Deserialize<'de> for ReactionConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -556,6 +383,12 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                             }
                             auto_start = Some(map.next_value()?);
                         }
+                        // Reject common snake_case misspellings of known fields
+                        "auto_start" => {
+                            return Err(de::Error::custom(
+                                "unknown field `auto_start`, did you mean `autoStart`?"
+                            ));
+                        }
                         // Collect all other fields for the inner config
                         other => {
                             let value: serde_json::Value = map.next_value()?;
@@ -572,113 +405,13 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 
                 let remaining_value = serde_json::Value::Object(remaining);
 
-                match kind.as_str() {
-                    "log" => {
-                        let config: LogReactionConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                                de::Error::custom(format!("in reaction '{id}' (kind=log): {e}"))
-                            })?;
-                        Ok(ReactionConfig::Log {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "http" => {
-                        let config: HttpReactionConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                                de::Error::custom(format!("in reaction '{id}' (kind=http): {e}"))
-                            })?;
-                        Ok(ReactionConfig::Http {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "http-adaptive" => {
-                        let config: HttpAdaptiveReactionConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!(
-                                    "in reaction '{id}' (kind=http-adaptive): {e}"
-                                ))
-                            })?;
-                        Ok(ReactionConfig::HttpAdaptive {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "grpc" => {
-                        let config: GrpcReactionConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                                de::Error::custom(format!("in reaction '{id}' (kind=grpc): {e}"))
-                            })?;
-                        Ok(ReactionConfig::Grpc {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "grpc-adaptive" => {
-                        let config: GrpcAdaptiveReactionConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!(
-                                    "in reaction '{id}' (kind=grpc-adaptive): {e}"
-                                ))
-                            })?;
-                        Ok(ReactionConfig::GrpcAdaptive {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "sse" => {
-                        let config: SseReactionConfigDto = serde_json::from_value(remaining_value)
-                            .map_err(|e| {
-                                de::Error::custom(format!("in reaction '{id}' (kind=sse): {e}"))
-                            })?;
-                        Ok(ReactionConfig::Sse {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "platform" => {
-                        let config: PlatformReactionConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!(
-                                    "in reaction '{id}' (kind=platform): {e}"
-                                ))
-                            })?;
-                        Ok(ReactionConfig::Platform {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    "profiler" => {
-                        let config: ProfilerReactionConfigDto =
-                            serde_json::from_value(remaining_value).map_err(|e| {
-                                de::Error::custom(format!(
-                                    "in reaction '{id}' (kind=profiler): {e}"
-                                ))
-                            })?;
-                        Ok(ReactionConfig::Profiler {
-                            id,
-                            queries,
-                            auto_start,
-                            config,
-                        })
-                    }
-                    unknown => Err(de::Error::unknown_variant(unknown, REACTION_KINDS)),
-                }
+                Ok(ReactionConfig {
+                    kind,
+                    id,
+                    queries,
+                    auto_start,
+                    config: remaining_value,
+                })
             }
         }
 
@@ -689,44 +422,22 @@ impl<'de> Deserialize<'de> for ReactionConfig {
 impl ReactionConfig {
     /// Get the reaction ID
     pub fn id(&self) -> &str {
-        match self {
-            ReactionConfig::Log { id, .. } => id,
-            ReactionConfig::Http { id, .. } => id,
-            ReactionConfig::HttpAdaptive { id, .. } => id,
-            ReactionConfig::Grpc { id, .. } => id,
-            ReactionConfig::GrpcAdaptive { id, .. } => id,
-            ReactionConfig::Sse { id, .. } => id,
-            ReactionConfig::Platform { id, .. } => id,
-            ReactionConfig::Profiler { id, .. } => id,
-        }
+        &self.id
     }
 
     /// Get the query IDs this reaction subscribes to
     pub fn queries(&self) -> &[String] {
-        match self {
-            ReactionConfig::Log { queries, .. } => queries,
-            ReactionConfig::Http { queries, .. } => queries,
-            ReactionConfig::HttpAdaptive { queries, .. } => queries,
-            ReactionConfig::Grpc { queries, .. } => queries,
-            ReactionConfig::GrpcAdaptive { queries, .. } => queries,
-            ReactionConfig::Sse { queries, .. } => queries,
-            ReactionConfig::Platform { queries, .. } => queries,
-            ReactionConfig::Profiler { queries, .. } => queries,
-        }
+        &self.queries
     }
 
     /// Check if auto_start is enabled
     pub fn auto_start(&self) -> bool {
-        match self {
-            ReactionConfig::Log { auto_start, .. } => *auto_start,
-            ReactionConfig::Http { auto_start, .. } => *auto_start,
-            ReactionConfig::HttpAdaptive { auto_start, .. } => *auto_start,
-            ReactionConfig::Grpc { auto_start, .. } => *auto_start,
-            ReactionConfig::GrpcAdaptive { auto_start, .. } => *auto_start,
-            ReactionConfig::Sse { auto_start, .. } => *auto_start,
-            ReactionConfig::Platform { auto_start, .. } => *auto_start,
-            ReactionConfig::Profiler { auto_start, .. } => *auto_start,
-        }
+        self.auto_start
+    }
+
+    /// Get the reaction kind
+    pub fn kind(&self) -> &str {
+        &self.kind
     }
 }
 
@@ -864,25 +575,8 @@ impl StateStoreConfig {
 mod tests {
     use super::*;
 
-    // =========================================================================
-    // SourceConfig Deserialization Tests
-    // =========================================================================
 
-    #[test]
-    fn test_source_deserialize_mock_valid() {
-        let json = r#"{
-            "kind": "mock",
-            "id": "test-source",
-            "autoStart": true,
-            "dataType": { "type": "sensorReading" },
-            "intervalMs": 1000
-        }"#;
 
-        let source: SourceConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(source.id(), "test-source");
-        assert!(source.auto_start());
-        assert!(matches!(source, SourceConfig::Mock { .. }));
-    }
 
     #[test]
     fn test_source_deserialize_mock_minimal() {
@@ -932,7 +626,7 @@ mod tests {
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "http-source");
-        assert!(matches!(source, SourceConfig::Http { .. }));
+        assert_eq!(source.kind(), "http");
     }
 
     #[test]
@@ -945,7 +639,7 @@ mod tests {
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "grpc-source");
-        assert!(matches!(source, SourceConfig::Grpc { .. }));
+        assert_eq!(source.kind(), "grpc");
     }
 
     #[test]
@@ -964,7 +658,7 @@ mod tests {
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "pg-source");
-        assert!(matches!(source, SourceConfig::Postgres { .. }));
+        assert_eq!(source.kind(), "postgres");
     }
 
     #[test]
@@ -978,7 +672,7 @@ mod tests {
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "platform-source");
-        assert!(matches!(source, SourceConfig::Platform { .. }));
+        assert_eq!(source.kind(), "platform");
     }
 
     #[test]
@@ -1004,42 +698,66 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("id"), "Error should mention 'id': {err}");
     }
-
     #[test]
-    fn test_source_deserialize_unknown_kind() {
+    fn test_source_deserialize_unknown_kind_accepted() {
+        // With registry-driven approach, unknown kinds are accepted at deserialization
+        // and rejected at creation time by the registry.
         let json = r#"{
             "kind": "unknown-source-type",
             "id": "test-source"
         }"#;
 
-        let result: Result<SourceConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("unknown-source-type") || err.contains("unknown variant"),
-            "Error should mention unknown kind: {err}"
-        );
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.kind(), "unknown-source-type");
+        assert_eq!(source.id(), "test-source");
     }
 
     #[test]
-    fn test_source_deserialize_unknown_field_rejected() {
+    fn test_source_deserialize_extra_fields_stored_in_config() {
+        // Extra fields are stored in the config JSON value for the plugin to validate.
+        let json = r#"{
+            "kind": "mock",
+            "id": "test-source",
+            "extraField": "value"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.config["extraField"], "value");
+    }
+
+
+    #[test]
+    fn test_source_deserialize_unknown_kind_accepted_at_deser() {
+        // With generic struct approach, unknown kinds are accepted at deserialization
+        // and only validated at creation time via the plugin registry.
+        let json = r#"{
+            "kind": "unknown-source-type",
+            "id": "test-source"
+        }"#;
+
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.kind(), "unknown-source-type");
+        assert_eq!(source.id(), "test-source");
+    }
+
+    #[test]
+    fn test_source_deserialize_unknown_field_stored_in_config() {
+        // Extra/unknown fields are stored in the config JSON for plugin validation.
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
             "unknownField": "value"
         }"#;
 
-        let result: Result<SourceConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("unknownField") || err.contains("unknown field"),
-            "Error should mention unknown field: {err}"
-        );
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.config["unknownField"], "value");
     }
 
     #[test]
     fn test_source_deserialize_snake_case_auto_start_rejected() {
+        // snake_case auto_start is explicitly rejected with a helpful hint.
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
@@ -1049,61 +767,49 @@ mod tests {
         let result: Result<SourceConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("auto_start"),
-            "Error should mention snake_case field: {err}"
-        );
+        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
+        assert!(err.contains("autoStart"), "Error should suggest autoStart: {err}");
     }
 
     #[test]
-    fn test_source_deserialize_snake_case_data_type_rejected() {
+    fn test_source_deserialize_snake_case_data_type_stored_in_config() {
+        // snake_case fields go into config JSON.
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
             "data_type": "sensor"
         }"#;
 
-        let result: Result<SourceConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("data_type"),
-            "Error should mention snake_case field: {err}"
-        );
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "test-source");
+        assert_eq!(source.config["data_type"], "sensor");
     }
 
     #[test]
-    fn test_source_deserialize_error_includes_source_id() {
+    fn test_source_deserialize_extra_field_stored_with_kind_context() {
+        // Extra fields are stored; kind is available for context.
         let json = r#"{
             "kind": "mock",
             "id": "my-unique-source",
             "badField": "value"
         }"#;
 
-        let result: Result<SourceConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("my-unique-source"),
-            "Error should include source id for context: {err}"
-        );
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.id(), "my-unique-source");
+        assert_eq!(source.kind(), "mock");
+        assert_eq!(source.config["badField"], "value");
     }
 
     #[test]
-    fn test_source_deserialize_error_includes_kind() {
+    fn test_source_deserialize_kind_preserved() {
         let json = r#"{
             "kind": "mock",
             "id": "test-source",
             "badField": "value"
         }"#;
 
-        let result: Result<SourceConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("mock"),
-            "Error should include kind for context: {err}"
-        );
+        let source: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(source.kind(), "mock");
     }
 
     #[test]
@@ -1138,23 +844,17 @@ bootstrapProvider:
 "#;
 
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
-        let Some(BootstrapProviderConfig::Postgres(bootstrap)) = source.bootstrap_provider() else {
-            panic!("Expected postgres bootstrap provider");
-        };
+        let bp = source.bootstrap_provider().expect("Expected bootstrap provider");
+        assert_eq!(bp.kind(), "postgres");
 
-        assert_eq!(bootstrap.host, ConfigValue::Static("localhost".to_string()));
-        assert_eq!(bootstrap.port, ConfigValue::Static(5432));
-        assert_eq!(bootstrap.database, ConfigValue::Static("drasi".to_string()));
-        assert_eq!(
-            bootstrap.user,
-            ConfigValue::Static("drasi_user".to_string())
-        );
-        assert_eq!(
-            bootstrap.password,
-            ConfigValue::Static("drasi_pass".to_string())
-        );
-        assert_eq!(bootstrap.slot_name, "drasi_slot".to_string());
-        assert_eq!(bootstrap.publication_name, "drasi_pub".to_string());
+        // After merge_bootstrap_provider_with_source, inherited fields should be present
+        assert_eq!(bp.config["host"], "localhost");
+        assert_eq!(bp.config["port"], 5432);
+        assert_eq!(bp.config["database"], "drasi");
+        assert_eq!(bp.config["user"], "drasi_user");
+        assert_eq!(bp.config["password"], "drasi_pass");
+        assert_eq!(bp.config["slotName"], "drasi_slot");
+        assert_eq!(bp.config["publicationName"], "drasi_pub");
     }
 
     #[test]
@@ -1176,22 +876,14 @@ bootstrapProvider:
 "#;
 
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
-        let Some(BootstrapProviderConfig::Postgres(bootstrap)) = source.bootstrap_provider() else {
-            panic!("Expected postgres bootstrap provider");
-        };
+        let bp = source.bootstrap_provider().expect("Expected bootstrap provider");
+        assert_eq!(bp.kind(), "postgres");
 
-        assert_eq!(
-            bootstrap.database,
-            ConfigValue::Static("bootstrap_db".to_string())
-        );
-        assert_eq!(
-            bootstrap.user,
-            ConfigValue::Static("bootstrap_user".to_string())
-        );
-        assert_eq!(
-            bootstrap.password,
-            ConfigValue::Static("drasi_pass".to_string())
-        );
+        // Overridden fields
+        assert_eq!(bp.config["database"], "bootstrap_db");
+        assert_eq!(bp.config["user"], "bootstrap_user");
+        // Inherited field
+        assert_eq!(bp.config["password"], "drasi_pass");
     }
 
     #[test]
@@ -1227,7 +919,7 @@ intervalMs: 1000
         assert_eq!(reaction.id(), "test-log");
         assert_eq!(reaction.queries(), &["query1", "query2"]);
         assert!(reaction.auto_start());
-        assert!(matches!(reaction, ReactionConfig::Log { .. }));
+        assert_eq!(reaction.kind(), "log");
     }
 
     #[test]
@@ -1281,7 +973,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "http-reaction");
-        assert!(matches!(reaction, ReactionConfig::Http { .. }));
+        assert_eq!(reaction.kind(), "http");
     }
 
     #[test]
@@ -1297,7 +989,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "http-adaptive-reaction");
-        assert!(matches!(reaction, ReactionConfig::HttpAdaptive { .. }));
+        assert_eq!(reaction.kind(), "http-adaptive");
     }
 
     #[test]
@@ -1311,7 +1003,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "grpc-reaction");
-        assert!(matches!(reaction, ReactionConfig::Grpc { .. }));
+        assert_eq!(reaction.kind(), "grpc");
     }
 
     #[test]
@@ -1325,7 +1017,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "grpc-adaptive-reaction");
-        assert!(matches!(reaction, ReactionConfig::GrpcAdaptive { .. }));
+        assert_eq!(reaction.kind(), "grpc-adaptive");
     }
 
     #[test]
@@ -1338,7 +1030,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "sse-reaction");
-        assert!(matches!(reaction, ReactionConfig::Sse { .. }));
+        assert_eq!(reaction.kind(), "sse");
     }
 
     #[test]
@@ -1352,7 +1044,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "platform-reaction");
-        assert!(matches!(reaction, ReactionConfig::Platform { .. }));
+        assert_eq!(reaction.kind(), "platform");
     }
 
     #[test]
@@ -1365,7 +1057,7 @@ intervalMs: 1000
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "profiler-reaction");
-        assert!(matches!(reaction, ReactionConfig::Profiler { .. }));
+        assert_eq!(reaction.kind(), "profiler");
     }
 
     #[test]
@@ -1409,26 +1101,51 @@ intervalMs: 1000
             "Error should mention 'queries': {err}"
         );
     }
-
     #[test]
-    fn test_reaction_deserialize_unknown_kind() {
+    fn test_reaction_deserialize_unknown_kind_accepted() {
+        // With registry-driven approach, unknown kinds are accepted at deserialization
         let json = r#"{
             "kind": "unknown-reaction-type",
             "id": "test-reaction",
             "queries": ["query1"]
         }"#;
 
-        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("unknown-reaction-type") || err.contains("unknown variant"),
-            "Error should mention unknown kind: {err}"
-        );
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.kind(), "unknown-reaction-type");
     }
 
     #[test]
-    fn test_reaction_deserialize_unknown_field_rejected() {
+    fn test_reaction_deserialize_extra_fields_stored_in_config() {
+        // Extra fields are stored in the config JSON value
+        let json = r#"{
+            "kind": "log",
+            "id": "test-reaction",
+            "queries": ["query1"],
+            "extraField": "value"
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.config["extraField"], "value");
+    }
+
+
+    #[test]
+    fn test_reaction_deserialize_unknown_kind_accepted_at_deser() {
+        // With generic struct approach, unknown kinds are accepted at deserialization.
+        let json = r#"{
+            "kind": "unknown-reaction-type",
+            "id": "test-reaction",
+            "queries": ["query1"]
+        }"#;
+
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.kind(), "unknown-reaction-type");
+        assert_eq!(reaction.id(), "test-reaction");
+    }
+
+    #[test]
+    fn test_reaction_deserialize_unknown_field_stored_in_config() {
+        // Extra fields stored in config JSON for plugin validation.
         let json = r#"{
             "kind": "log",
             "id": "test-reaction",
@@ -1436,17 +1153,14 @@ intervalMs: 1000
             "unknownField": "value"
         }"#;
 
-        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("unknownField") || err.contains("unknown field"),
-            "Error should mention unknown field: {err}"
-        );
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "test-reaction");
+        assert_eq!(reaction.config["unknownField"], "value");
     }
 
     #[test]
     fn test_reaction_deserialize_snake_case_auto_start_rejected() {
+        // snake_case auto_start is explicitly rejected with a helpful hint.
         let json = r#"{
             "kind": "log",
             "id": "test-reaction",
@@ -1457,14 +1171,13 @@ intervalMs: 1000
         let result: Result<ReactionConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("auto_start"),
-            "Error should mention snake_case field: {err}"
-        );
+        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
+        assert!(err.contains("autoStart"), "Error should suggest autoStart: {err}");
     }
 
     #[test]
-    fn test_reaction_deserialize_error_includes_reaction_id() {
+    fn test_reaction_deserialize_extra_field_stored_with_id_context() {
+        // Extra fields are stored; id is available for context.
         let json = r#"{
             "kind": "log",
             "id": "my-unique-reaction",
@@ -1472,17 +1185,13 @@ intervalMs: 1000
             "badField": "value"
         }"#;
 
-        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("my-unique-reaction"),
-            "Error should include reaction id for context: {err}"
-        );
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.id(), "my-unique-reaction");
+        assert_eq!(reaction.config["badField"], "value");
     }
 
     #[test]
-    fn test_reaction_deserialize_error_includes_kind() {
+    fn test_reaction_deserialize_kind_preserved() {
         let json = r#"{
             "kind": "log",
             "id": "test-reaction",
@@ -1490,13 +1199,8 @@ intervalMs: 1000
             "badField": "value"
         }"#;
 
-        let result: Result<ReactionConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("log"),
-            "Error should include kind for context: {err}"
-        );
+        let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(reaction.kind(), "log");
     }
 
     #[test]
@@ -1534,14 +1238,15 @@ autoStart: true
 
     #[test]
     fn test_source_serialize_deserialize_roundtrip() {
-        let original = SourceConfig::Mock {
+        let original = SourceConfig {
+            kind: "mock".to_string(),
             id: "roundtrip-source".to_string(),
             auto_start: false,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
-                interval_ms: ConfigValue::Static(1000),
-            },
+            config: serde_json::json!({
+                "dataType": { "type": "sensorReading", "sensorCount": 5 },
+                "intervalMs": 1000
+            }),
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -1553,11 +1258,12 @@ autoStart: true
 
     #[test]
     fn test_reaction_serialize_deserialize_roundtrip() {
-        let original = ReactionConfig::Log {
+        let original = ReactionConfig {
+            kind: "log".to_string(),
             id: "roundtrip-reaction".to_string(),
             queries: vec!["q1".to_string(), "q2".to_string()],
             auto_start: false,
-            config: LogReactionConfigDto::default(),
+            config: serde_json::json!({"routes": {}}),
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -1601,13 +1307,10 @@ autoStart: true
 
         let source: SourceConfig = serde_json::from_str(json).unwrap();
         assert_eq!(source.id(), "test-source");
-        if let SourceConfig::Mock { config, .. } = source {
-            assert_eq!(
-                config.data_type,
-                mock::DataTypeDto::SensorReading { sensor_count: 10 },
-                "Expected SensorReading data type with sensorCount 10"
-            );
-        }
+        assert_eq!(source.kind(), "mock");
+        let config = &source.config;
+        assert_eq!(config["dataType"]["type"], "sensorReading");
+        assert_eq!(config["dataType"]["sensorCount"], 10);
     }
 
     #[test]
@@ -1623,18 +1326,10 @@ autoStart: true
 
         let reaction: ReactionConfig = serde_json::from_str(json).unwrap();
         assert_eq!(reaction.id(), "test-http");
-        // ConfigValue parses env var syntax into EnvironmentVariable variant
-        if let ReactionConfig::Http { config, .. } = reaction {
-            assert!(
-                matches!(
-                    &config.base_url,
-                    ConfigValue::EnvironmentVariable { name, default }
-                    if name == "BASE_URL" && *default == Some("http://localhost:8080".to_string())
-                ),
-                "Expected EnvironmentVariable variant, got {:?}",
-                config.base_url
-            );
-        }
+        assert_eq!(reaction.kind(), "http");
+        // Verify the env var config is preserved in the raw config
+        let base_url = &reaction.config["baseUrl"];
+        assert_eq!(base_url.as_str().unwrap(), "${BASE_URL:-http://localhost:8080}");
     }
 
     // =========================================================================

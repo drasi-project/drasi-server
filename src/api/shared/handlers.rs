@@ -41,6 +41,7 @@ use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_registry::PluginRegistry;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, DrasiLib};
 use drasi_reaction_application::subscription::SubscriptionOptions;
 use drasi_reaction_application::ApplicationReaction;
@@ -356,6 +357,7 @@ pub async fn create_source_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -377,7 +379,7 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let source = match create_source(config.clone()).await {
+    let source = match create_source(&plugin_registry, config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -425,6 +427,7 @@ pub async fn upsert_source_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -451,7 +454,7 @@ pub async fn upsert_source_handler(
 
     if exists {
         // Create a new source instance and use update_source to replace in place
-        let new_source = match create_source(config.clone()).await {
+        let new_source = match create_source(&plugin_registry, config.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to create source instance for update: {e}");
@@ -483,7 +486,7 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let source = match create_source(config.clone()).await {
+    let source = match create_source(&plugin_registry, config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -1214,6 +1217,7 @@ pub async fn create_reaction_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1235,7 +1239,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let reaction = match create_reaction(config.clone()) {
+    let reaction = match create_reaction(&plugin_registry, config.clone()).await {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");
@@ -1283,6 +1287,7 @@ pub async fn upsert_reaction_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1309,7 +1314,7 @@ pub async fn upsert_reaction_handler(
 
     if exists {
         // Create a new reaction instance and use update_reaction to replace in place
-        let new_reaction = match create_reaction(config.clone()) {
+        let new_reaction = match create_reaction(&plugin_registry, config.clone()).await {
             Ok(r) => r,
             Err(e) => {
                 log::error!("Failed to create reaction instance for update: {e}");
@@ -1341,7 +1346,7 @@ pub async fn upsert_reaction_handler(
         })));
     }
 
-    let reaction = match create_reaction(config.clone()) {
+    let reaction = match create_reaction(&plugin_registry, config.clone()).await {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");

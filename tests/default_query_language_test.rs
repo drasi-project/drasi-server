@@ -19,12 +19,13 @@
 //! 2. The default can be overridden by explicitly setting queryLanguage
 //! 3. Both GQL and Cypher are supported
 
+use drasi_lib::config::QueryLanguage;
 use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
-use drasi_server::api::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[test]
-fn test_default_query_language_is_gql() {
-    // Test YAML without queryLanguage field deserializes with GQL default
+fn test_default_query_language_is_cypher() {
+    // Test YAML without queryLanguage field deserializes with Cypher default
     // This tests the Serde default mechanism
     let yaml = r#"
 id: test-query
@@ -43,9 +44,9 @@ sources:
         .expect("Should map successfully");
 
     assert_eq!(
-        format!("{:?}", config.query_language),
-        "GQL",
-        "Default query language should be GQL when not specified in YAML"
+        config.query_language,
+        QueryLanguage::Cypher,
+        "Default query language should be Cypher when not specified in YAML"
     );
 }
 
@@ -55,11 +56,11 @@ fn test_explicit_cypher_language() {
     let dto = QueryConfigDto {
         id: "test-query".to_string(),
         auto_start: false,
-        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (n) RETURN n".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("test-source".to_string()),
+            source_id: "test-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -94,11 +95,11 @@ fn test_explicit_gql_language() {
     let dto = QueryConfigDto {
         id: "test-query".to_string(),
         auto_start: false,
-        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-        query_language: ConfigValue::Static("GQL".to_string()),
+        query: "MATCH (n) RETURN n".to_string(),
+        query_language: QueryLanguage::GQL,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("test-source".to_string()),
+            source_id: "test-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -129,40 +130,19 @@ fn test_explicit_gql_language() {
 
 #[test]
 fn test_invalid_query_language_rejected() {
-    // Create a query config with invalid language
-    let dto = QueryConfigDto {
-        id: "test-query".to_string(),
-        auto_start: false,
-        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-        query_language: ConfigValue::Static("SQL".to_string()), // Invalid!
-        middleware: vec![],
-        sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("test-source".to_string()),
-            nodes: vec![],
-            relations: vec![],
-            pipeline: vec![],
-        }],
-        enable_bootstrap: true,
-        bootstrap_buffer_size: 10000,
-        joins: None,
-        priority_queue_capacity: None,
-        dispatch_buffer_capacity: None,
-        dispatch_mode: None,
-        storage_backend: None,
-    };
-
-    // Map the DTO to a QueryConfig - should fail
-    let mapper = QueryConfigMapper;
-    let resolver = DtoMapper::new();
-    let result = mapper.map(&dto, &resolver);
-
-    assert!(result.is_err(), "Invalid query language should be rejected");
-
-    let err = result.unwrap_err();
-    let err_msg = format!("{err:?}");
+    // With QueryLanguage as a typed enum, invalid values are rejected at deserialization time.
+    // Test that deserializing an invalid query language from YAML fails.
+    let yaml = r#"
+id: test-query
+query: "MATCH (n) RETURN n"
+queryLanguage: SQL
+sources:
+  - sourceId: test-source
+"#;
+    let result: Result<QueryConfigDto, _> = serde_yaml::from_str(yaml);
     assert!(
-        err_msg.contains("Invalid query language"),
-        "Error should mention invalid query language, got: {err_msg}"
+        result.is_err(),
+        "Invalid query language should be rejected during deserialization"
     );
 }
 

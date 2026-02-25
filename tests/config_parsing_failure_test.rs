@@ -48,6 +48,17 @@ fn assert_fails_with_field(yaml: &str, expected_field: &str) {
     );
 }
 
+
+/// Helper to assert that loading succeeds (fields stored in config JSON for plugin validation)
+fn assert_loads_successfully(yaml: &str) {
+    let result = try_load_config(yaml);
+    assert!(
+        result.is_ok(),
+        "Config should load successfully (unknown/snake_case source/reaction fields stored in config JSON), but got error: {}",
+        result.unwrap_err()
+    );
+}
+
 // ==================== Server-level snake_case rejection ====================
 
 #[test]
@@ -111,7 +122,7 @@ reactions: []
 // ==================== Source snake_case rejection ====================
 
 #[test]
-fn test_load_fails_with_source_snake_case_auto_start() {
+fn test_load_succeeds_with_source_snake_case_auto_start() {
     let yaml = r#"
 id: test-server
 sources:
@@ -125,7 +136,7 @@ reactions: []
 }
 
 #[test]
-fn test_load_fails_with_source_snake_case_bootstrap_provider() {
+fn test_load_succeeds_with_source_snake_case_bootstrap_provider() {
     let yaml = r#"
 id: test-server
 sources:
@@ -144,7 +155,7 @@ reactions: []
 }
 
 #[test]
-fn test_load_fails_with_mock_snake_case_data_type() {
+fn test_load_succeeds_with_mock_snake_case_data_type() {
     let yaml = r#"
 id: test-server
 sources:
@@ -155,11 +166,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "data_type");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_mock_snake_case_interval_ms() {
+fn test_load_succeeds_with_mock_snake_case_interval_ms() {
     let yaml = r#"
 id: test-server
 sources:
@@ -170,11 +181,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "interval_ms");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_postgres_snake_case_slot_name() {
+fn test_load_succeeds_with_postgres_snake_case_slot_name() {
     let yaml = r#"
 id: test-server
 sources:
@@ -186,11 +197,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "slot_name");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_postgres_snake_case_publication_name() {
+fn test_load_succeeds_with_postgres_snake_case_publication_name() {
     let yaml = r#"
 id: test-server
 sources:
@@ -202,11 +213,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "publication_name");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_postgres_snake_case_ssl_mode() {
+fn test_load_succeeds_with_postgres_snake_case_ssl_mode() {
     let yaml = r#"
 id: test-server
 sources:
@@ -218,11 +229,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "ssl_mode");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_postgres_snake_case_table_keys() {
+fn test_load_succeeds_with_postgres_snake_case_table_keys() {
     let yaml = r#"
 id: test-server
 sources:
@@ -236,11 +247,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "table_keys");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_table_key_snake_case_key_columns() {
+fn test_load_succeeds_with_table_key_snake_case_key_columns() {
     let yaml = r#"
 id: test-server
 sources:
@@ -254,11 +265,11 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "key_columns");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_http_source_snake_case_timeout_ms() {
+fn test_load_succeeds_with_http_source_snake_case_timeout_ms() {
     let yaml = r#"
 id: test-server
 sources:
@@ -270,7 +281,7 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "timeout_ms");
+    assert_loads_successfully(yaml);
 }
 
 // ==================== Query snake_case rejection ====================
@@ -342,7 +353,7 @@ reactions: []
 // ==================== Reaction snake_case rejection ====================
 
 #[test]
-fn test_load_fails_with_reaction_snake_case_auto_start() {
+fn test_load_succeeds_with_reaction_snake_case_auto_start() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -357,7 +368,7 @@ reactions:
 }
 
 #[test]
-fn test_load_fails_with_log_reaction_snake_case_default_template() {
+fn test_load_succeeds_with_log_reaction_snake_case_default_template() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -371,11 +382,11 @@ reactions:
       added:
         template: "{{after}}"
 "#;
-    assert_fails_with_field(yaml, "default_template");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_http_reaction_snake_case_base_url() {
+fn test_load_succeeds_with_http_reaction_snake_case_base_url() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -387,11 +398,11 @@ reactions:
     autoStart: true
     base_url: "http://localhost"
 "#;
-    assert_fails_with_field(yaml, "base_url");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_http_reaction_snake_case_timeout_ms() {
+fn test_load_succeeds_with_http_reaction_snake_case_timeout_ms() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -404,11 +415,11 @@ reactions:
     baseUrl: "http://localhost"
     timeout_ms: 5000
 "#;
-    assert_fails_with_field(yaml, "timeout_ms");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_sse_reaction_snake_case_sse_path() {
+fn test_load_succeeds_with_sse_reaction_snake_case_sse_path() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -420,11 +431,11 @@ reactions:
     autoStart: true
     sse_path: "/events"
 "#;
-    assert_fails_with_field(yaml, "sse_path");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_sse_reaction_snake_case_heartbeat_interval_ms() {
+fn test_load_succeeds_with_sse_reaction_snake_case_heartbeat_interval_ms() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -436,11 +447,11 @@ reactions:
     autoStart: true
     heartbeat_interval_ms: 30000
 "#;
-    assert_fails_with_field(yaml, "heartbeat_interval_ms");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_grpc_reaction_snake_case_batch_size() {
+fn test_load_succeeds_with_grpc_reaction_snake_case_batch_size() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -453,11 +464,11 @@ reactions:
     endpoint: "grpc://localhost:50051"
     batch_size: 100
 "#;
-    assert_fails_with_field(yaml, "batch_size");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_profiler_reaction_snake_case_window_size() {
+fn test_load_succeeds_with_profiler_reaction_snake_case_window_size() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -469,7 +480,7 @@ reactions:
     autoStart: true
     window_size: 100
 "#;
-    assert_fails_with_field(yaml, "window_size");
+    assert_loads_successfully(yaml);
 }
 
 // ==================== Unknown field rejection ====================
@@ -489,7 +500,7 @@ reactions: []
 }
 
 #[test]
-fn test_load_fails_with_unknown_source_field() {
+fn test_load_succeeds_with_unknown_source_field() {
     let yaml = r#"
 id: test-server
 sources:
@@ -500,7 +511,7 @@ sources:
 queries: []
 reactions: []
 "#;
-    assert_fails_with_field(yaml, "unknownSourceField");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
@@ -520,7 +531,7 @@ reactions: []
 }
 
 #[test]
-fn test_load_fails_with_unknown_reaction_field() {
+fn test_load_succeeds_with_unknown_reaction_field() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -532,11 +543,11 @@ reactions:
     autoStart: true
     unknownReactionField: value
 "#;
-    assert_fails_with_field(yaml, "unknownReactionField");
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_unknown_http_route_field() {
+fn test_load_succeeds_with_unknown_http_route_field() {
     let yaml = r#"
 id: test-server
 sources: []
@@ -554,7 +565,7 @@ reactions:
           method: "POST"
           unknownRouteField: value
 "#;
-    assert_fails_with_field(yaml, "unknownRouteField");
+    assert_loads_successfully(yaml);
 }
 
 // ==================== Multiple errors ====================
@@ -586,9 +597,8 @@ reactions: []
 }
 
 #[test]
-fn test_load_fails_with_source_snake_case_fields() {
-    // Source errors are caught by custom deserializers after validation passes
-    // Note: deserializers fail-fast, so only first error is reported
+fn test_load_succeeds_with_source_snake_case_fields() {
+    // auto_start is explicitly rejected as a snake_case error
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -601,17 +611,7 @@ sources:
 queries: []
 reactions: []
 "#;
-    let result = try_load_config(yaml);
-    assert!(result.is_err(), "Config should fail with source errors");
-    let err = result.unwrap_err();
-
-    // Should mention the source context and unknown field
-    // auto_start goes to inner config (not recognized as common field)
-    // and gets caught by deny_unknown_fields
-    assert!(
-        err.contains("test-source"),
-        "Error should mention source id: {err}"
-    );
+    assert_fails_with_field(yaml, "auto_start");
 }
 
 // ==================== Instance config rejection ====================
@@ -835,7 +835,8 @@ instances:
 // =============================================================================
 
 #[test]
-fn test_load_fails_with_unknown_field_in_bootstrap_provider_scriptfile() {
+fn test_load_succeeds_with_extra_field_in_bootstrap_provider_scriptfile() {
+    // With generic struct, extra fields are stored in config for plugin validation
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -846,24 +847,16 @@ sources:
     bootstrapProvider:
       kind: scriptfile
       filePaths: ["/test.jsonl"]
-      unknownField: "should fail"
+      unknownField: "stored in config"
 queries: []
 reactions: []
 "#;
-    let result = try_load_config(yaml);
-    assert!(
-        result.is_err(),
-        "Unknown field in bootstrapProvider should fail"
-    );
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("unknown field"),
-        "Error should mention unknown field: {err}"
-    );
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_unknown_field_in_bootstrap_provider_platform() {
+fn test_load_succeeds_with_extra_field_in_bootstrap_provider_platform() {
+    // With generic struct, extra fields are stored in config for plugin validation
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -878,20 +871,12 @@ sources:
 queries: []
 reactions: []
 "#;
-    let result = try_load_config(yaml);
-    assert!(
-        result.is_err(),
-        "Unknown field in bootstrapProvider should fail"
-    );
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("unknown field"),
-        "Error should mention unknown field: {err}"
-    );
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_unknown_field_in_bootstrap_provider_postgres() {
+fn test_load_succeeds_with_extra_field_in_bootstrap_provider_postgres() {
+    // With generic struct, extra fields are stored in config for plugin validation
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -903,24 +888,17 @@ sources:
       kind: postgres
       database: testdb
       user: testuser
-      extraField: "should fail"
+      extraField: "stored in config"
 queries: []
 reactions: []
 "#;
-    let result = try_load_config(yaml);
-    assert!(
-        result.is_err(),
-        "Unknown field in bootstrapProvider should fail"
-    );
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("unknown field"),
-        "Error should mention unknown field: {err}"
-    );
+    assert_loads_successfully(yaml);
 }
 
 #[test]
-fn test_load_fails_with_unknown_bootstrap_provider_type() {
+fn test_load_succeeds_with_unknown_bootstrap_provider_type() {
+    // With generic struct, unknown kinds are accepted at parse time;
+    // validation happens at runtime via PluginRegistry lookup
     let yaml = r#"
 id: test-server
 host: 0.0.0.0
@@ -933,16 +911,7 @@ sources:
 queries: []
 reactions: []
 "#;
-    let result = try_load_config(yaml);
-    assert!(
-        result.is_err(),
-        "Unknown bootstrap provider kind should fail"
-    );
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("unknown bootstrap provider kind"),
-        "Error should mention unknown kind: {err}"
-    );
+    assert_loads_successfully(yaml);
 }
 
 #[test]

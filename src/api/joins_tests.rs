@@ -53,14 +53,14 @@ mod api_query_joins_tests {
         QueryConfigDto {
             id: config.id,
             auto_start: config.auto_start,
-            query: ConfigValue::Static(config.query),
-            query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+            query: config.query,
+            query_language: config.query_language,
             middleware: vec![], // Simplified for testing - middleware is complex
             sources: config
                 .sources
                 .iter()
                 .map(|s| SourceSubscriptionConfigDto {
-                    source_id: ConfigValue::Static(s.source_id.clone()),
+                    source_id: s.source_id.clone(),
                     nodes: s.nodes.clone(),
                     relations: s.relations.clone(),
                     pipeline: s.pipeline.clone(),
