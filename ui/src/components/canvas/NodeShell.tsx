@@ -4,7 +4,7 @@ import {
   useReactFlow,
   useUpdateNodeInternals,
 } from "@xyflow/react";
-import { Maximize2, Minimize2, Lock, Unlock } from "lucide-react";
+import { Maximize2, Minimize2, Pin, Play, Square } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCallback, useRef, type ReactNode } from "react";
 import { getStatusGlowClass } from "@/utils/colors";
@@ -45,6 +45,8 @@ export interface NodeShellProps {
   locked?: boolean;
   /** Whether the entire canvas is locked */
   canvasLocked?: boolean;
+  /** Callback when start/stop is clicked */
+  onStartStop?: () => void;
 }
 
 export default function NodeShell({
@@ -65,9 +67,12 @@ export default function NodeShell({
   expandContent,
   locked = false,
   canvasLocked = false,
+  onStartStop,
 }: NodeShellProps) {
   const glowClass = getStatusGlowClass(status);
   const isLocked = locked || canvasLocked;
+  const isRunning = status === "Running";
+  const isTransitioning = status === "Starting" || status === "Stopping" || status === "Reconfiguring";
   const { setNodes } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const expandContentRef = useRef<HTMLDivElement>(null);
@@ -143,6 +148,14 @@ export default function NodeShell({
   const targetWidth = expanded ? expandedWidth : collapsedWidth;
   const minHeight = !expanded && collapsedMinHeight ? collapsedMinHeight : undefined;
 
+  const handleStartStop = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onStartStop?.();
+    },
+    [onStartStop],
+  );
+
   return (
     <motion.div
       className={`${cardClass} ${glowClass}`}
@@ -151,41 +164,9 @@ export default function NodeShell({
       animate={{ width: targetWidth }}
       transition={{ type: "tween", duration: 0.4, ease: "easeInOut" }}
     >
-      <div className="flex items-center gap-2 mb-2">
+      {/* Header - just icon and title */}
+      <div className="flex items-center gap-2 mb-1">
         {header}
-        {!canvasLocked && (
-          <motion.button
-            onClick={handleLockToggle}
-            className="nodrag p-1 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
-            whileHover={{ scale: 1.2 }}
-            whileTap={{ scale: 0.9 }}
-            title={locked ? "Unlock node" : "Lock node"}
-          >
-            {locked ? (
-              <Lock size={10} className="text-drasi-warning" />
-            ) : (
-              <Unlock size={10} className="text-drasi-text-secondary/40" />
-            )}
-          </motion.button>
-        )}
-        {canvasLocked && locked && (
-          <Lock size={10} className="text-drasi-warning/60 shrink-0" />
-        )}
-        {canToggle && !isLocked && (
-          <motion.button
-            onClick={handleToggle}
-            className="nodrag p-1 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
-            whileHover={{ scale: 1.2 }}
-            whileTap={{ scale: 0.9 }}
-            title={toggleTitle ?? (expanded ? "Collapse" : "Expand")}
-          >
-            {expanded ? (
-              <Minimize2 size={12} className={accentClass} />
-            ) : (
-              <Maximize2 size={12} className={accentClass} />
-            )}
-          </motion.button>
-        )}
       </div>
 
       {children}
@@ -202,6 +183,69 @@ export default function NodeShell({
           <div ref={expandContentRef} className="overflow-hidden">{expandContent}</div>
         </div>
       )}
+
+      {/* Bottom toolbar */}
+      <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-drasi-border/50">
+        {/* Pin button */}
+        {!canvasLocked && (
+          <motion.button
+            onClick={handleLockToggle}
+            className="nodrag p-1.5 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title={locked ? "Unpin node" : "Pin node"}
+          >
+            <Pin 
+              size={14} 
+              className={locked ? "text-drasi-warning" : "text-drasi-text-secondary/50 -rotate-45"} 
+            />
+          </motion.button>
+        )}
+
+        {/* Start/Stop button */}
+        {onStartStop && (
+          <motion.button
+            onClick={handleStartStop}
+            disabled={isTransitioning}
+            className={`nodrag p-1.5 rounded-md transition-colors ${
+              isTransitioning
+                ? "opacity-50 cursor-not-allowed"
+                : isRunning
+                  ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error"
+                  : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running"
+            }`}
+            whileHover={isTransitioning ? {} : { scale: 1.1 }}
+            whileTap={isTransitioning ? {} : { scale: 0.9 }}
+            title={isRunning ? "Stop" : "Start"}
+          >
+            {isRunning ? (
+              <Square size={14} fill="currentColor" />
+            ) : (
+              <Play size={14} fill="currentColor" />
+            )}
+          </motion.button>
+        )}
+
+        {/* Expand button - always visible, disabled when not expandable */}
+        <motion.button
+          onClick={canToggle && !isLocked ? handleToggle : undefined}
+          disabled={!canToggle || isLocked}
+          className={`nodrag p-1.5 rounded-md transition-colors ${
+            canToggle && !isLocked
+              ? "hover:bg-drasi-text-secondary/10"
+              : "opacity-30 cursor-not-allowed"
+          }`}
+          whileHover={canToggle && !isLocked ? { scale: 1.1 } : {}}
+          whileTap={canToggle && !isLocked ? { scale: 0.9 } : {}}
+          title={!canToggle || isLocked ? "Cannot expand" : (toggleTitle ?? (expanded ? "Collapse" : "Expand"))}
+        >
+          {expanded ? (
+            <Minimize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
+          ) : (
+            <Maximize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
+          )}
+        </motion.button>
+      </div>
 
       {(handles === "target" || handles === "both") && (
         <Handle

@@ -355,3 +355,18 @@ export function useReactions(instanceId?: string) {
     },
   };
 }
+
+/**
+ * Direct API access hook for components that need to call start/stop
+ * without managing local state. SSE events will update the UI reactively.
+ */
+export function useApi() {
+  return {
+    startSource: api.startSource,
+    stopSource: api.stopSource,
+    startQuery: api.startQuery,
+    stopQuery: api.stopQuery,
+    startReaction: api.startReaction,
+    stopReaction: api.stopReaction,
+  };
+}

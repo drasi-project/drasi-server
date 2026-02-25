@@ -1,9 +1,9 @@
 import { type NodeProps } from "@xyflow/react";
 import { Search, Loader2, Radio, WifiOff } from "lucide-react";
-import StatusBadge from "@/components/shared/StatusBadge";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
 import { useQueryResults } from "@/hooks/useQueryResults";
+import { useApi } from "@/hooks/useApi";
 
 interface QueryNodeData {
   id: string;
@@ -23,6 +23,7 @@ interface QueryNodeData {
 export default function QueryNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as QueryNodeData;
   const expanded = !!d.expanded;
+  const { startQuery, stopQuery } = useApi();
 
   // Only fetch/stream results when expanded and query is running
   const shouldFetchResults = expanded && d.status === "Running";
@@ -45,6 +46,14 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
   // Get column headers from first result
   const columns = results.length > 0 ? Object.keys(results[0]) : [];
 
+  const handleStartStop = () => {
+    if (d.status === "Running") {
+      stopQuery(d.id, d.instanceId);
+    } else if (d.status === "Stopped" || d.status === "Error") {
+      startQuery(d.id, d.instanceId);
+    }
+  };
+
   return (
     <NodeShell
       nodeId={nodeId}
@@ -52,7 +61,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-query"
       collapsedWidth={180}
       expandedWidth={420}
-      collapsedMinHeight={85}
+      collapsedMinHeight={72}
       status={d.status as ComponentStatus}
       expanded={expanded}
       locked={!!d.locked}
@@ -60,6 +69,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       toggleTitle={expanded ? "Collapse" : "View query"}
       handles="both"
       handleClass="!bg-drasi-query"
+      onStartStop={handleStartStop}
       header={
         <>
           <div className="p-1.5 rounded-lg bg-drasi-query/20">
@@ -208,20 +218,6 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
           )}
         </div>
       }
-    >
-      <div className="flex items-center justify-between">
-        <StatusBadge status={d.status as ComponentStatus} error={d.error} />
-        {d.status === "Running" && expanded && results.length > 0 && (
-          <span className="text-[10px] font-mono text-drasi-text-secondary">
-            {results.length} rows
-          </span>
-        )}
-        {d.resultCount !== undefined && !expanded && (
-          <span className="text-[10px] font-mono text-drasi-text-secondary">
-            {d.resultCount} rows
-          </span>
-        )}
-      </div>
-    </NodeShell>
+    />
   );
 }

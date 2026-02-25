@@ -37,6 +37,7 @@ interface FlowCanvasProps {
   data: PipelineData;
   instanceId?: string;
   onNodeClick?: (nodeId: string, type: string) => void;
+  onPaneClick?: () => void;
   onDeleteNodes?: (nodeIds: Array<{ id: string; type: string }>) => void;
 }
 
@@ -59,7 +60,7 @@ function AutoLayout({
   return null;
 }
 
-export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNodes }: FlowCanvasProps) {
+export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick, onDeleteNodes }: FlowCanvasProps) {
   // Build initial nodes and pre-apply any persisted state (positions, expanded,
   // locked) so that nodes mount at their correct size and position. This avoids
   // a visible shrink/grow animation when Framer Motion transitions from the
@@ -250,6 +251,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onDeleteNode
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         nodesDraggable={!canvasLocked}

@@ -68,7 +68,7 @@
 
 @layer components {
   .node-card {
-    @apply bg-drasi-card border border-drasi-border rounded-xl p-3
+    @apply bg-drasi-card border border-drasi-border rounded-xl px-2 py-1.5
            cursor-pointer select-none;
     box-shadow: var(--drasi-card-shadow);
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -124,8 +124,7 @@
 
   .inspector-panel {
     @apply fixed right-0 top-0 h-full w-[420px] bg-drasi-surface
-           border-l border-drasi-border z-50 overflow-y-auto
-           animate-slide-in-right;
+           border-l border-drasi-border z-50 overflow-y-auto;
   }
 
 

@@ -8,9 +8,9 @@ import {
   Server,
   Gauge,
 } from "lucide-react";
-import StatusBadge from "@/components/shared/StatusBadge";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
+import { useApi } from "@/hooks/useApi";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   log: FileText,
@@ -33,6 +33,7 @@ interface ReactionNodeData {
   queryIds?: string[];
   properties?: Record<string, unknown>;
   error?: string;
+  instanceId?: string;
   [key: string]: unknown;
 }
 
@@ -40,6 +41,15 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as ReactionNodeData;
   const Icon = ICON_MAP[d.kind] || Zap;
   const expanded = !!d.expanded;
+  const { startReaction, stopReaction } = useApi();
+
+  const handleStartStop = () => {
+    if (d.status === "Running") {
+      stopReaction(d.id, d.instanceId);
+    } else if (d.status === "Stopped" || d.status === "Error") {
+      startReaction(d.id, d.instanceId);
+    }
+  };
 
   return (
     <NodeShell
@@ -48,7 +58,7 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-reaction"
       collapsedWidth={180}
       expandedWidth={300}
-      collapsedMinHeight={85}
+      collapsedMinHeight={72}
       status={d.status as ComponentStatus}
       expanded={expanded}
       toggleTitle={expanded ? "Collapse" : "View details"}
@@ -56,6 +66,7 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
       canvasLocked={!!d.canvasLocked}
       handles="target"
       handleClass="!bg-drasi-reaction"
+      onStartStop={handleStartStop}
       header={
         <>
           <div className="p-1.5 rounded-lg bg-drasi-reaction/20">
@@ -121,8 +132,6 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
           )}
         </div>
       }
-    >
-      <StatusBadge status={d.status as ComponentStatus} error={d.error} />
-    </NodeShell>
+    />
   );
 }

@@ -6,10 +6,10 @@ import {
   FlaskConical,
   Server,
 } from "lucide-react";
-import StatusBadge from "@/components/shared/StatusBadge";
 import SourcePushPanel from "./SourcePushPanel";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
+import { useApi } from "@/hooks/useApi";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   postgres: Database,
@@ -39,6 +39,15 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
   const Icon = ICON_MAP[d.kind] || Database;
   const canPush = PUSHABLE_KINDS.has(d.kind) && d.status === "Running";
   const expanded = !!d.expanded;
+  const { startSource, stopSource } = useApi();
+
+  const handleStartStop = () => {
+    if (d.status === "Running") {
+      stopSource(d.id, d.instanceId);
+    } else if (d.status === "Stopped" || d.status === "Error") {
+      startSource(d.id, d.instanceId);
+    }
+  };
 
   return (
     <NodeShell
@@ -47,7 +56,7 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-source"
       collapsedWidth={180}
       expandedWidth={320}
-      collapsedMinHeight={85}
+      collapsedMinHeight={72}
       status={d.status as ComponentStatus}
       expanded={expanded}
       canToggle={canPush}
@@ -56,6 +65,7 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
       canvasLocked={!!d.canvasLocked}
       handles="source"
       handleClass="!bg-drasi-source"
+      onStartStop={handleStartStop}
       header={
         <>
           <div className="p-1.5 rounded-lg bg-drasi-source/20">
@@ -82,8 +92,6 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
           />
         ) : undefined
       }
-    >
-      <StatusBadge status={d.status as ComponentStatus} error={d.error} />
-    </NodeShell>
+    />
   );
 }

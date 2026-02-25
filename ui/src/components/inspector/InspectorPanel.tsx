@@ -1,4 +1,5 @@
 import { X, AlertCircle } from "lucide-react";
+import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
@@ -39,7 +40,13 @@ export default function InspectorPanel({
   const showError = status === "Error" && error;
 
   return (
-    <div className="inspector-panel">
+    <motion.div
+      className="inspector-panel"
+      initial={{ x: "100%" }}
+      animate={{ x: 0 }}
+      exit={{ x: "100%" }}
+      transition={{ type: "tween", duration: 0.25, ease: "easeInOut" }}
+    >
       {/* Header */}
       <div
         className="sticky top-0 z-10 bg-drasi-surface border-b border-drasi-border p-4"
@@ -158,6 +165,6 @@ export default function InspectorPanel({
 
       {/* Custom content */}
       {children && <div className="p-4">{children}</div>}
-    </div>
+    </motion.div>
   );
 }

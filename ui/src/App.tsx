@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { AnimatePresence } from "framer-motion";
 import AppLayout from "@/layouts/AppLayout";
 import FlowCanvas from "@/components/canvas/FlowCanvas";
 import InspectorPanel from "@/components/inspector/InspectorPanel";
@@ -171,6 +172,10 @@ export default function App() {
 
   const handleNodeClick = useCallback((id: string, type: string) => {
     setSelected({ id, type: type as ComponentType });
+  }, []);
+
+  const handlePaneClick = useCallback(() => {
+    setSelected(null);
   }, []);
 
   // TypeSelector flow: component → kind → open CreatePanel with draft
@@ -503,13 +508,15 @@ export default function App() {
           </button>
         </div>
       ) : (
-        <FlowCanvas data={pipelineData} instanceId={selectedInstanceId} onNodeClick={handleNodeClick} />
+        <FlowCanvas data={pipelineData} instanceId={selectedInstanceId} onNodeClick={handleNodeClick} onPaneClick={handlePaneClick} />
       )}
 
       {/* Inspector Panel */}
-      {inspectorProps && (
-        <InspectorPanel {...inspectorProps} onClose={() => setSelected(null)} />
-      )}
+      <AnimatePresence>
+        {inspectorProps && (
+          <InspectorPanel {...inspectorProps} onClose={() => setSelected(null)} />
+        )}
+      </AnimatePresence>
 
       {/* Type Selector Overlay */}
       {createStep && (
