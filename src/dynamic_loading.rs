@@ -39,13 +39,11 @@
 //!
 //! # Plugin Entry Point Convention
 //!
-//! Each plugin shared library must export a function named
-//! `drasi_<crate_name>_plugin_init` (with hyphens replaced by underscores)
-//! matching the crate name. For example, the `drasi-source-mock` crate exports:
+//! Each plugin shared library must export a common `drasi_plugin_init` function:
 //!
 //! ```rust,ignore
 //! #[no_mangle]
-//! pub extern "C" fn drasi_source_mock_plugin_init() -> *mut PluginRegistration {
+//! pub extern "C" fn drasi_plugin_init() -> *mut PluginRegistration {
 //!     let registration = PluginRegistration::new()
 //!         .with_source(Box::new(MySourceDescriptor));
 //!     Box::into_raw(Box::new(registration))
@@ -66,11 +64,11 @@ use log::{debug, error, info, warn};
 use std::path::{Path, PathBuf};
 
 /// Suffix appended to the crate name to form the entry point symbol.
-/// Each plugin exports `drasi_<crate_name>_plugin_init` (with hyphens as underscores).
-const PLUGIN_INIT_SUFFIX: &str = "_plugin_init";
+/// All plugins export a common `drasi_plugin_init` symbol.
+const PLUGIN_INIT_SYMBOL: &str = "drasi_plugin_init";
 
-/// Suffix for the build hash symbol exported by each plugin.
-const BUILD_HASH_SUFFIX: &str = "_build_hash";
+/// The build hash symbol exported by each plugin (optional pre-check).
+const BUILD_HASH_SYMBOL: &str = "drasi_plugin_build_hash";
 
 /// File extensions recognized as plugin shared libraries.
 #[cfg(target_os = "linux")]
@@ -125,14 +123,19 @@ pub struct LoadedPlugin {
 pub struct RuntimeHandle {
     #[cfg(unix)]
     library: libloading::os::unix::Library,
+    /// Pre-loaded transitive dependencies (e.g. libstd) — must stay alive.
+    #[cfg(unix)]
+    preloaded: Vec<libloading::os::unix::Library>,
     #[cfg(windows)]
     _marker: (),
 }
 
 /// Load the shared runtime library (`libdrasi_plugin_runtime`).
 ///
-/// On Unix, this loads the runtime with `RTLD_GLOBAL` so its symbols are
-/// available to all subsequently loaded plugin libraries.
+/// On Unix, this first pre-loads `libstd-*.so` with `RTLD_GLOBAL` (the dynamic
+/// linker caches `LD_LIBRARY_PATH` at process startup, so `setenv` after that
+/// point has no effect on `dlopen`). Then loads the runtime itself with
+/// `RTLD_GLOBAL` so its symbols are available to all subsequently loaded plugins.
 ///
 /// On Windows, this is a no-op — Windows resolves runtime symbols automatically
 /// via import libraries when plugins are loaded.
@@ -141,6 +144,12 @@ pub struct RuntimeHandle {
 pub fn load_shared_runtime(dir: &Path) -> Result<RuntimeHandle> {
     #[cfg(unix)]
     {
+        // Pre-load libstd with RTLD_GLOBAL. The dynamic linker caches library
+        // search paths at process startup, so setting LD_LIBRARY_PATH later has
+        // no effect. Instead we explicitly load libstd from the Rust sysroot (or
+        // from the plugins directory if it's been copied there for deployment).
+        let preloaded = preload_rust_std(dir);
+
         let runtime_name = if cfg!(target_os = "macos") {
             "libdrasi_plugin_runtime.dylib"
         } else {
@@ -165,7 +174,7 @@ pub fn load_shared_runtime(dir: &Path) -> Result<RuntimeHandle> {
                 })?
         };
         info!("Shared runtime loaded (RTLD_GLOBAL)");
-        Ok(RuntimeHandle { library })
+        Ok(RuntimeHandle { library, preloaded })
     }
 
     #[cfg(windows)]
@@ -232,6 +241,8 @@ pub fn load_plugins_from_directory(
     let entries = std::fs::read_dir(dir_path)
         .with_context(|| format!("Failed to read plugins directory: {dir}"))?;
 
+    // Collect candidate plugin paths
+    let mut plugin_paths: Vec<PathBuf> = Vec::new();
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
@@ -243,12 +254,10 @@ pub fn load_plugins_from_directory(
 
         let path = entry.path();
 
-        // Skip non-files
         if !path.is_file() {
             continue;
         }
 
-        // Check file extension
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -258,7 +267,6 @@ pub fn load_plugins_from_directory(
             continue;
         }
 
-        // Skip non-plugin shared libraries (runtime, std, serde, etc.)
         let file_stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -268,13 +276,41 @@ pub fn load_plugins_from_directory(
             continue;
         }
 
-        stats.found += 1;
-        let path_str = path.display().to_string();
+        plugin_paths.push(path);
+    }
 
-        match load_single_plugin(&path, registry) {
+    stats.found = plugin_paths.len();
+
+    // First pass: try to load all plugins. Some may fail if they depend on
+    // other plugin libraries that haven't been loaded yet.
+    let mut retry_paths: Vec<PathBuf> = Vec::new();
+
+    for path in &plugin_paths {
+        let path_str = path.display().to_string();
+        match load_single_plugin(path, registry) {
             Ok(loaded) => {
                 info!(
                     "  [dynamic] loaded: {} ({} descriptors)",
+                    path_str, loaded.descriptor_count
+                );
+                stats.loaded += 1;
+                stats.descriptors += loaded.descriptor_count;
+                loaded_plugins.push(loaded.handle);
+            }
+            Err(_) => {
+                retry_paths.push(path.clone());
+            }
+        }
+    }
+
+    // Retry pass: plugins that failed may now succeed because their
+    // dependencies were loaded (with RTLD_GLOBAL) in the first pass.
+    for path in &retry_paths {
+        let path_str = path.display().to_string();
+        match load_single_plugin(path, registry) {
+            Ok(loaded) => {
+                info!(
+                    "  [dynamic] loaded (retry): {} ({} descriptors)",
                     path_str, loaded.descriptor_count
                 );
                 stats.loaded += 1;
@@ -313,28 +349,33 @@ fn load_single_plugin(
 ) -> Result<SingleLoadResult> {
     let path_str = path.display().to_string();
 
-    // Derive the entry point symbol name from the filename.
-    // e.g., "libdrasi_source_mock.so" -> "drasi_source_mock_plugin_init"
-    let symbol_name = derive_symbol_name(path)
-        .with_context(|| format!("Cannot derive plugin symbol name from: {path_str}"))?;
-
     // SAFETY: Loading a shared library is inherently unsafe. We require that:
     // 1. The plugin is compiled with the same Rust toolchain version
     // 2. The plugin uses the same drasi-plugin-sdk version
     // 3. The plugin exports the expected symbol with the correct signature
+    //
+    // We use RTLD_GLOBAL so that plugins which depend on other plugin crates
+    // (e.g. grpc-adaptive depends on grpc) can resolve those symbols.
+    // Symbol lookups via Library::get() are still scoped to the specific handle.
+    #[cfg(unix)]
+    let library = unsafe {
+        let flags = libloading::os::unix::RTLD_NOW | libloading::os::unix::RTLD_GLOBAL;
+        let lib = libloading::os::unix::Library::open(Some(path), flags)
+            .with_context(|| format!("Failed to open shared library: {path_str}"))?;
+        Library::from(lib)
+    };
+
+    #[cfg(not(unix))]
     let library = unsafe {
         Library::new(path)
             .with_context(|| format!("Failed to open shared library: {path_str}"))?
     };
 
-    // Pre-check: verify build hash BEFORE calling plugin_init().
+    // Pre-check: verify build hash BEFORE calling drasi_plugin_init().
     // This uses a simple extern "C" fn() -> *const u8 that doesn't involve
     // any complex Rust types, making it safe even with ABI mismatches.
-    let hash_symbol_name = derive_build_hash_symbol_name(path)
-        .with_context(|| format!("Cannot derive build hash symbol name from: {path_str}"))?;
-
     let server_hash = drasi_plugin_runtime::BUILD_HASH;
-    match unsafe { library.get::<unsafe extern "C" fn() -> *const u8>(hash_symbol_name.as_bytes()) }
+    match unsafe { library.get::<unsafe extern "C" fn() -> *const u8>(BUILD_HASH_SYMBOL.as_bytes()) }
     {
         Ok(hash_fn) => {
             let plugin_hash_ptr = unsafe { hash_fn() };
@@ -355,22 +396,23 @@ fn load_single_plugin(
             }
         }
         Err(_) => {
-            // Plugin doesn't export build hash — skip the pre-check but warn
+            // Plugin doesn't export build hash symbol — skip the pre-check but warn.
+            // The build hash is still verified post-init via registration.build_hash.
             warn!(
-                "Plugin '{}' does not export '{}', skipping build hash check",
-                path_str, hash_symbol_name
+                "Plugin '{}' does not export '{}', skipping build hash pre-check",
+                path_str, BUILD_HASH_SYMBOL
             );
         }
     }
 
-    // Resolve the entry point symbol
+    // Resolve the common entry point symbol
     let init_fn: Symbol<unsafe extern "C" fn() -> *mut PluginRegistration> = unsafe {
         library
-            .get(symbol_name.as_bytes())
+            .get(PLUGIN_INIT_SYMBOL.as_bytes())
             .with_context(|| {
                 format!(
                     "Plugin '{}' does not export '{}' symbol",
-                    path_str, symbol_name
+                    path_str, PLUGIN_INIT_SYMBOL
                 )
             })?
     };
@@ -468,37 +510,65 @@ fn load_single_plugin(
     })
 }
 
-/// Derive the plugin init symbol name from the shared library filename.
+/// Pre-load `libstd-*.{so,dylib}` with `RTLD_GLOBAL` so that the shared runtime
+/// and plugins can resolve their dependency on Rust's standard library.
 ///
-/// Convention: `lib<crate_name>.so` → `<crate_name>_plugin_init`
-///
-/// Examples:
-/// - `libdrasi_source_mock.so` → `drasi_source_mock_plugin_init`
-/// - `libdrasi_reaction_http.so` → `drasi_reaction_http_plugin_init`
-fn derive_symbol_name(path: &Path) -> Result<String> {
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
+/// Searches the plugins directory first (for deployment scenarios where libstd is
+/// copied alongside plugins), then falls back to the Rust sysroot lib directory
+/// embedded at build time.
+#[cfg(unix)]
+fn preload_rust_std(plugins_dir: &Path) -> Vec<libloading::os::unix::Library> {
+    let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
+    let prefix = "libstd-";
+    let mut loaded = Vec::new();
 
-    // Strip the "lib" prefix (standard on Unix)
-    let crate_name = stem.strip_prefix("lib").unwrap_or(stem);
+    // Search order: plugins directory, then Rust sysroot
+    let search_dirs: Vec<PathBuf> = {
+        let mut dirs = vec![plugins_dir.to_path_buf()];
+        if let Some(sysroot) = option_env!("DRASI_RUST_LIB_DIR") {
+            dirs.push(PathBuf::from(sysroot));
+        }
+        dirs
+    };
 
-    Ok(format!("{crate_name}{PLUGIN_INIT_SUFFIX}"))
-}
+    for dir in &search_dirs {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(prefix) && name.ends_with(ext) {
+                let path = entry.path();
+                debug!("Pre-loading Rust std library: {}", path.display());
+                match unsafe {
+                    let flags =
+                        libloading::os::unix::RTLD_NOW | libloading::os::unix::RTLD_GLOBAL;
+                    libloading::os::unix::Library::open(Some(&path), flags)
+                } {
+                    Ok(lib) => {
+                        info!("Loaded libstd (RTLD_GLOBAL): {}", path.display());
+                        loaded.push(lib);
+                        return loaded; // Only one libstd needed
+                    }
+                    Err(e) => {
+                        warn!("Failed to pre-load {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+    }
 
-/// Derive the build hash symbol name from the shared library filename.
-///
-/// Convention: `lib<crate_name>.so` → `<crate_name>_build_hash`
-fn derive_build_hash_symbol_name(path: &Path) -> Result<String> {
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
+    if loaded.is_empty() {
+        warn!(
+            "Could not find libstd-*.{ext} in plugins dir or Rust sysroot. \
+             Dynamic plugins may fail to load. Set LD_LIBRARY_PATH to include \
+             the Rust sysroot lib directory."
+        );
+    }
 
-    let crate_name = stem.strip_prefix("lib").unwrap_or(stem);
-
-    Ok(format!("{crate_name}{BUILD_HASH_SUFFIX}"))
+    loaded
 }
 
 #[cfg(test)]
@@ -583,5 +653,100 @@ mod tests {
         assert_eq!(stats.loaded, 0);
         assert_eq!(stats.failed, 0);
         assert_eq!(stats.descriptors, 0);
+    }
+
+    #[test]
+    fn test_plugin_init_symbol_constant() {
+        assert_eq!(PLUGIN_INIT_SYMBOL, "drasi_plugin_init");
+        assert_eq!(BUILD_HASH_SYMBOL, "drasi_plugin_build_hash");
+    }
+
+    #[test]
+    fn test_plugin_prefixes_filter_matches() {
+        let valid_names = [
+            "libdrasi_source_mock",
+            "libdrasi_reaction_log",
+            "libdrasi_bootstrap_postgres",
+            "drasi_source_http",      // Windows (no lib prefix)
+            "drasi_reaction_sse",
+            "drasi_bootstrap_noop",
+        ];
+        for name in &valid_names {
+            assert!(
+                PLUGIN_PREFIXES.iter().any(|prefix| name.starts_with(prefix)),
+                "{name} should match PLUGIN_PREFIXES"
+            );
+        }
+    }
+
+    #[test]
+    fn test_plugin_prefixes_filter_rejects() {
+        let invalid_names = [
+            "libdrasi_plugin_runtime",
+            "libstd",
+            "libdrasi_core",
+            "libdrasi_lib",
+            "libserde",
+            "libtokio",
+        ];
+        for name in &invalid_names {
+            assert!(
+                !PLUGIN_PREFIXES.iter().any(|prefix| name.starts_with(prefix)),
+                "{name} should NOT match PLUGIN_PREFIXES"
+            );
+        }
+    }
+
+    #[test]
+    fn test_default_plugin_dir_returns_something() {
+        // default_plugin_dir returns the binary's parent directory
+        let dir = default_plugin_dir();
+        assert!(dir.is_ok(), "default_plugin_dir should succeed");
+        let dir = dir.unwrap();
+        assert!(dir.exists(), "plugin dir should exist");
+    }
+
+    #[test]
+    fn test_load_skips_runtime_library() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let ext = PLUGIN_EXTENSIONS[0];
+        // Create a file that looks like the runtime library — should be skipped
+        std::fs::write(
+            temp_dir
+                .path()
+                .join(format!("libdrasi_plugin_runtime.{ext}")),
+            "not a real library",
+        )
+        .unwrap();
+
+        let mut registry = PluginRegistry::new();
+        let (stats, handles) =
+            load_plugins_from_directory(temp_dir.path().to_str().unwrap(), &mut registry).unwrap();
+        // Runtime library should be skipped by prefix filter (doesn't match PLUGIN_PREFIXES)
+        assert_eq!(stats.found, 0);
+        assert!(handles.is_empty());
+    }
+
+    #[test]
+    fn test_load_skips_non_plugin_libraries() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let ext = PLUGIN_EXTENSIONS[0];
+        // Create files that are .so but don't match plugin prefixes
+        std::fs::write(
+            temp_dir.path().join(format!("libserde.{ext}")),
+            "not a plugin",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_dir.path().join(format!("libtokio.{ext}")),
+            "not a plugin",
+        )
+        .unwrap();
+
+        let mut registry = PluginRegistry::new();
+        let (stats, handles) =
+            load_plugins_from_directory(temp_dir.path().to_str().unwrap(), &mut registry).unwrap();
+        assert_eq!(stats.found, 0);
+        assert!(handles.is_empty());
     }
 }

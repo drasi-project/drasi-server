@@ -52,9 +52,9 @@ struct Cli {
     #[arg(short, long, global = true)]
     port: Option<u16>,
 
-    /// Directory to scan for plugin shared libraries
-    #[arg(long, default_value = "./plugins", global = true)]
-    plugins_dir: PathBuf,
+    /// Directory to scan for plugin shared libraries (defaults to binary directory)
+    #[arg(long, global = true)]
+    plugins_dir: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -69,9 +69,9 @@ enum Commands {
         #[arg(short, long)]
         port: Option<u16>,
 
-        /// Directory to scan for plugin shared libraries
-        #[arg(long, default_value = "./plugins")]
-        plugins_dir: PathBuf,
+        /// Directory to scan for plugin shared libraries (defaults to binary directory)
+        #[arg(long)]
+        plugins_dir: Option<PathBuf>,
     },
 
     /// Validate a configuration file without starting the server
@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
 async fn run_server(
     config_path: PathBuf,
     port_override: Option<u16>,
-    plugins_dir: PathBuf,
+    plugins_dir: Option<PathBuf>,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
@@ -224,6 +224,17 @@ async fn run_server(
     let final_port = port_override.unwrap_or(resolved_settings.port);
     info!("Port: {final_port}");
     debug!("Server configuration: {resolved_settings:?}");
+
+    // Resolve the plugins directory: use CLI arg if provided, otherwise default to binary directory
+    let plugins_dir = match plugins_dir {
+        Some(dir) => dir,
+        None => drasi_server::dynamic_loading::default_plugin_dir()
+            .unwrap_or_else(|e| {
+                warn!("Could not determine binary directory for plugin loading: {e}");
+                PathBuf::from(".")
+            }),
+    };
+    info!("Plugins directory: {}", plugins_dir.display());
 
     let server = DrasiServer::new(config_path, final_port, plugins_dir).await?;
     server.run().await?;

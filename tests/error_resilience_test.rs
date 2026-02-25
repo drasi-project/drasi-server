@@ -234,7 +234,7 @@ fn test_dynamic_loading_invalid_library_file() {
     let ext = "dll";
 
     std::fs::write(
-        temp_dir.path().join(format!("libdrasi_fake_plugin.{ext}")),
+        temp_dir.path().join(format!("libdrasi_source_fake.{ext}")),
         b"not a real shared library",
     )
     .unwrap();

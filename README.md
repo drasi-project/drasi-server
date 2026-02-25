@@ -1168,7 +1168,7 @@ RUST_LOG=drasi_server=trace cargo run
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Build
+# Build (default: all plugins statically linked)
 cargo build --release
 
 # Run tests
@@ -1177,6 +1177,25 @@ cargo test
 # Format and lint
 cargo fmt
 cargo clippy
+```
+
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `builtin-plugins` | ✅ | All source/reaction/bootstrap plugins are statically linked into the binary |
+| `dynamic-plugins` | | Enables loading plugins from `.so`/`.dylib`/`.dll` files at runtime |
+
+#### Dynamic Plugin Build
+
+To build with dynamic plugin loading instead of static linking:
+
+```bash
+# Build the server without static plugins
+RUSTFLAGS="-C prefer-dynamic" cargo build --no-default-features --features dynamic-plugins
+
+# Plugin shared libraries (.so/.dylib) must be placed alongside the server binary
+# When building from the same workspace, Cargo places them in target/{profile}/
 ```
 
 ## License

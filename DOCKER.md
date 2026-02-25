@@ -30,7 +30,7 @@ docker compose ps
 docker compose logs -f drasi-server
 
 # Open API documentation
-open http://localhost:8080/swagger-ui/
+open http://localhost:8080/api/v1/docs/
 ```
 
 ## Configuration
@@ -263,8 +263,8 @@ Once running, the following endpoints are available:
 | Endpoint | Description |
 |----------|-------------|
 | `http://localhost:8080/health` | Health check |
-| `http://localhost:8080/swagger-ui/` | API documentation |
-| `http://localhost:8080/openapi.json` | OpenAPI spec |
-| `http://localhost:8080/api/sources` | Source management |
-| `http://localhost:8080/api/queries` | Query management |
-| `http://localhost:8080/api/reactions` | Reaction management |
+| `http://localhost:8080/api/v1/docs/` | API documentation (Swagger UI) |
+| `http://localhost:8080/api/v1/openapi.json` | OpenAPI spec |
+| `http://localhost:8080/api/v1/sources` | Source management |
+| `http://localhost:8080/api/v1/queries` | Query management |
+| `http://localhost:8080/api/v1/reactions` | Reaction management |

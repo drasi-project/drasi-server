@@ -102,3 +102,68 @@ pub fn register_builtin_plugins(registry: &mut PluginRegistry) {
     info!("  [static] reaction: {}", desc.kind());
     registry.register_reaction(Arc::new(desc));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_builtin_plugins_populates_registry() {
+        let mut registry = PluginRegistry::new();
+        register_builtin_plugins(&mut registry);
+
+        // Verify expected source plugins
+        assert!(
+            registry.get_source("mock").is_some(),
+            "mock source should be registered"
+        );
+        assert!(
+            registry.get_source("http").is_some(),
+            "http source should be registered"
+        );
+        assert!(
+            registry.get_source("grpc").is_some(),
+            "grpc source should be registered"
+        );
+        assert!(
+            registry.get_source("postgres").is_some(),
+            "postgres source should be registered"
+        );
+        assert!(
+            registry.get_source("mssql").is_some(),
+            "mssql source should be registered"
+        );
+
+        // Verify expected bootstrap plugins
+        assert!(
+            registry.get_bootstrapper("postgres").is_some(),
+            "postgres bootstrapper should be registered"
+        );
+        assert!(
+            registry.get_bootstrapper("scriptfile").is_some(),
+            "scriptfile bootstrapper should be registered"
+        );
+        assert!(
+            registry.get_bootstrapper("mssql").is_some(),
+            "mssql bootstrapper should be registered"
+        );
+
+        // Verify expected reaction plugins
+        assert!(
+            registry.get_reaction("log").is_some(),
+            "log reaction should be registered"
+        );
+        assert!(
+            registry.get_reaction("http").is_some(),
+            "http reaction should be registered"
+        );
+        assert!(
+            registry.get_reaction("sse").is_some(),
+            "sse reaction should be registered"
+        );
+        assert!(
+            registry.get_reaction("profiler").is_some(),
+            "profiler reaction should be registered"
+        );
+    }
+}

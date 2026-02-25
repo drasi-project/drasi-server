@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [workspace]
-members = [".", "xtask"]
+members = ["."]
 
 [package]
 name = "drasi-server"
@@ -139,7 +139,10 @@ redis = { version = "0.24", features = ["tokio-comp", "streams"] }
 
 [features]
 default = ["builtin-plugins"]
-builtin-plugins = [
+
+# Enable all optional plugin crate dependencies (for building them in-tree).
+# Does NOT register them statically — just adds them to the dependency graph.
+all-plugin-deps = [
     "dep:drasi-source-mock",
     "dep:drasi-source-http",
     "dep:drasi-source-grpc",
@@ -159,6 +162,11 @@ builtin-plugins = [
     "dep:drasi-reaction-storedproc-mysql",
     "dep:drasi-reaction-storedproc-mssql",
 ]
+
+# Static build: plugins compiled into the binary via register_*_factory() calls.
+builtin-plugins = ["all-plugin-deps"]
+
+# Dynamic build: plugins loaded at runtime from .so/.dylib/.dll files.
 dynamic-plugins = []
 
 [lints.rust]

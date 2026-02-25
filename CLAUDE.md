@@ -9,17 +9,26 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ## Development Commands
 
 ### Build and Run
-- Build: `cargo build`
+- Build (static, all plugins built-in): `cargo build`
 - Build release: `cargo build --release`
+- Build (dynamic plugin loading): `cargo build --no-default-features --features dynamic-plugins`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
 - Check compilation: `cargo check`
+
+### Feature Flags
+- `builtin-plugins` (default): All source/reaction/bootstrap plugins are statically linked into the binary
+- `dynamic-plugins`: Plugins are loaded at runtime from `.so`/`.dylib`/`.dll` files in the binary's directory
+- `all-plugin-deps`: Enables all optional plugin crate dependencies without static registration (used by dynamic build)
+
+When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins in a **single** `cargo build` invocation. This is critical — separate cargo invocations cause symbol hash mismatches in shared dependencies (serde, tokio).
 
 ### Testing
 - Run all tests: `cargo test`
 - Run unit tests only: `cargo test --lib`
 - Run specific test: `cargo test test_name`
 - Run integration tests: `./tests/run_working_tests.sh`
+- Run plugin smoke tests: `make test-smoke`
 - Run with logging: `RUST_LOG=debug cargo test -- --nocapture`
 
 ### Code Quality
@@ -42,6 +51,8 @@ This repository contains only the server wrapper functionality:
    - `mappings/` - DTO to domain model conversions
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
+5. **Dynamic Loading** (`src/dynamic_loading.rs`) - Runtime plugin loading from shared libraries
+6. **Builtin Plugins** (`src/builtin_plugins.rs`) - Static plugin registration (gated by `builtin-plugins` feature)
 
 ### Core Components (External Dependency)
 
@@ -404,7 +415,9 @@ server.run().await?;
 
 ### Important Notes
 - The core functionality is provided by the external `drasi-lib` library
-- Sources and reactions are plugins that must be provided as instances (no YAML configuration)
-- Queries can be created via the builder pattern
+- Plugins (sources, reactions, bootstrappers) use `dylib` crate-type and export a common `drasi_plugin_init()` entry point
+- With `builtin-plugins` (default), plugins are statically linked; with `dynamic-plugins`, they are loaded from `.so`/`.dylib`/`.dll` files at runtime
+- `drasi-plugin-runtime` is the shared runtime dylib containing pinned versions of tokio, serde, tracing, etc. — loaded with `RTLD_GLOBAL` so plugins share symbols
+- Build hash verification ensures plugins were compiled with the same Rust toolchain as the server
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
