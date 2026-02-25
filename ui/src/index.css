@@ -2,15 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light theme (default) */
+/* Light theme (default) - Improved contrast */
 :root {
-  --drasi-bg: #f8fafc;
-  --drasi-surface: #ffffff;
-  --drasi-card: #f1f5f9;
-  --drasi-border: #cbd5e1;
+  --drasi-bg: #e2e8f0;
+  --drasi-surface: #f8fafc;
+  --drasi-card: #ffffff;
+  --drasi-border: #94a3b8;
   --drasi-text-primary: #0f172a;
-  --drasi-text-secondary: #64748b;
-  --drasi-minimap-mask: rgba(248, 250, 252, 0.8);
+  --drasi-text-secondary: #475569;
+  --drasi-minimap-mask: rgba(226, 232, 240, 0.85);
+  --drasi-edge: #64748b;
+  --drasi-card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
 }
 
 /* Dark theme */
@@ -22,6 +24,8 @@
   --drasi-text-primary: #f1f5f9;
   --drasi-text-secondary: #94a3b8;
   --drasi-minimap-mask: rgba(10, 14, 23, 0.8);
+  --drasi-edge: #475569;
+  --drasi-card-shadow: 0 0 0 0 transparent;
 }
 
 /* Render edges above nodes so connections are never hidden by expanded nodes */
@@ -66,6 +70,7 @@
   .node-card {
     @apply bg-drasi-card border border-drasi-border rounded-xl p-3
            cursor-pointer select-none;
+    box-shadow: var(--drasi-card-shadow);
     transition: border-color 0.2s, box-shadow 0.2s;
   }
 

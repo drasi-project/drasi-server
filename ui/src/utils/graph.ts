@@ -74,7 +74,7 @@ export function buildFlowGraph(data: PipelineData): {
         type: "animatedEdge",
         animated: bothRunning,
         style: {
-          stroke: bothRunning ? "#10b981" : "var(--drasi-border)",
+          stroke: bothRunning ? "#10b981" : "var(--drasi-edge)",
           strokeWidth: 2,
         },
       });
@@ -102,7 +102,7 @@ export function buildFlowGraph(data: PipelineData): {
         type: "animatedEdge",
         animated: bothRunning,
         style: {
-          stroke: bothRunning ? "#10b981" : "var(--drasi-border)",
+          stroke: bothRunning ? "#10b981" : "var(--drasi-edge)",
           strokeWidth: 2,
         },
       });

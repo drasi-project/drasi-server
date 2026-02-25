@@ -19,7 +19,7 @@ sources:
 
 queries:
   - id: high-temp-alert
-    query: "MATCH (s:sensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-75} RETURN s"  # Temperature threshold for alerts
+    query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-75} RETURN s"  # Temperature threshold for alerts
     queryLanguage: Cypher
     sources:
       - sourceId: sensor-feed
