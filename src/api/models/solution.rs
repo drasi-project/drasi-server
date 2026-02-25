@@ -290,7 +290,9 @@ pub enum DeployPhase {
 ///
 /// let vars = extract_variables(yaml);
 /// assert_eq!(vars.len(), 3);
-/// assert_eq!(vars[0].description, Some("Database host address".to_string()));
+/// // Variables are sorted by name: DB, HOST, PORT
+/// let host_var = vars.iter().find(|v| v.name == "HOST").unwrap();
+/// assert_eq!(host_var.description, Some("Database host address".to_string()));
 /// ```
 pub fn extract_variables(yaml: &str) -> Vec<SolutionVariable> {
     use regex::Regex;
@@ -345,9 +347,9 @@ pub fn extract_variables(yaml: &str) -> Vec<SolutionVariable> {
             // Extract comment from the line (after #)
             let description = extract_line_comment(line);
 
-            let entry = var_map.entry(name).or_insert_with(|| {
-                (default.clone(), required, description.clone(), Vec::new())
-            });
+            let entry = var_map
+                .entry(name)
+                .or_insert_with(|| (default.clone(), required, description.clone(), Vec::new()));
 
             // Update description if we found one and don't have one yet
             if entry.2.is_none() && description.is_some() {
@@ -366,13 +368,15 @@ pub fn extract_variables(yaml: &str) -> Vec<SolutionVariable> {
     // Convert map to vector
     let mut variables: Vec<SolutionVariable> = var_map
         .into_iter()
-        .map(|(name, (default, required, description, used_by))| SolutionVariable {
-            name,
-            default,
-            required,
-            description,
-            used_by,
-        })
+        .map(
+            |(name, (default, required, description, used_by))| SolutionVariable {
+                name,
+                default,
+                required,
+                description,
+                used_by,
+            },
+        )
         .collect();
 
     // Sort by name for consistent ordering

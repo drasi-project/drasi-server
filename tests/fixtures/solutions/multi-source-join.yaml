@@ -1,0 +1,50 @@
+# Multi-Source Join Solution
+# Tests queries that join data across multiple sources
+
+name: Multi-Source Join Pipeline
+description: Pipeline demonstrating query joins across multiple sources
+version: "1.0.0"
+author: Test Suite
+
+sources:
+  - kind: mock
+    id: device-source
+    autoStart: true
+    dataType:
+      type: generic
+    intervalMs: 100
+
+  - kind: mock
+    id: location-source
+    autoStart: true
+    dataType:
+      type: generic
+    intervalMs: 100
+
+queries:
+  - id: device-location-join
+    query: |
+      MATCH (d:Device)-[:LOCATED_AT]->(l:Location)
+      RETURN d.device_id AS deviceId, d.status AS status, l.name AS locationName
+    queryLanguage: Cypher
+    sources:
+      - sourceId: device-source
+      - sourceId: location-source
+    joins:
+      - id: LOCATED_AT
+        keys:
+          - label: Device
+            property: location_id
+          - label: Location
+            property: id
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: join-logger
+    queries:
+      - device-location-join
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[DEVICE] {{after.deviceId}} at {{after.locationName}}: {{after.status}}"

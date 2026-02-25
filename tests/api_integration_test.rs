@@ -43,6 +43,15 @@ use tower::ServiceExt;
 
 /// Helper to create a test router with all dependencies
 async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
+    create_test_router_with_id("test-server").await
+}
+
+/// Helper to create a test router with a specific instance ID
+/// Use unique IDs for tests that emit logs to avoid cross-test interference
+/// with the global log registry.
+async fn create_test_router_with_id(
+    instance_id: &str,
+) -> (Router, Arc<drasi_lib::DrasiLib>, TestComponentRegistry) {
     use drasi_lib::DrasiLib;
     use drasi_server::api::v1::routes::build_v1_router;
 
@@ -57,7 +66,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 
     // Create a minimal DrasiLib using the builder with mock instances
     let core = DrasiLib::builder()
-        .with_id("test-server")
+        .with_id(instance_id)
         .with_source(test_source.clone())
         .with_source(query_source.clone())
         .with_source(auto_source.clone())
@@ -74,8 +83,6 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 
     let read_only = Arc::new(false);
     let config_persistence: Option<Arc<drasi_server::persistence::ConfigPersistence>> = None;
-
-    let instance_id = "test-server";
 
     // Create registry with the test instance
     let mut instances_map = indexmap::IndexMap::new();
@@ -387,7 +394,9 @@ async fn test_reaction_lifecycle_via_api() {
 
 #[tokio::test]
 async fn test_source_logs_snapshot_via_api() {
-    let (router, _core, registry) = create_test_router().await;
+    // Use unique instance ID to avoid interference with parallel tests
+    let instance_id = "test-source-logs-snapshot";
+    let (router, _core, registry) = create_test_router_with_id(instance_id).await;
     registry.source.emit_log("source log entry").await;
 
     // Poll the log buffer until the entry arrives (async log pipeline)
@@ -410,7 +419,7 @@ async fn test_source_logs_snapshot_via_api() {
     let response = router
         .oneshot(
             Request::builder()
-                .uri("/instances/test-server/sources/test-source/logs")
+                .uri(format!("/instances/{instance_id}/sources/test-source/logs"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -430,7 +439,9 @@ async fn test_source_logs_snapshot_via_api() {
 
 #[tokio::test]
 async fn test_reaction_logs_snapshot_via_api() {
-    let (router, _core, registry) = create_test_router().await;
+    // Use unique instance ID to avoid interference with parallel tests
+    let instance_id = "test-reaction-logs-snapshot";
+    let (router, _core, registry) = create_test_router_with_id(instance_id).await;
     registry.reaction.emit_log("reaction log entry").await;
 
     // Poll the log buffer until the entry arrives (async log pipeline)
@@ -453,7 +464,9 @@ async fn test_reaction_logs_snapshot_via_api() {
     let response = router
         .oneshot(
             Request::builder()
-                .uri("/instances/test-server/reactions/test-reaction/logs")
+                .uri(format!(
+                    "/instances/{instance_id}/reactions/test-reaction/logs"
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -473,12 +486,16 @@ async fn test_reaction_logs_snapshot_via_api() {
 
 #[tokio::test]
 async fn test_source_logs_stream_via_api() {
-    let (router, _core, registry) = create_test_router().await;
+    // Use unique instance ID to avoid interference with parallel tests
+    let instance_id = "test-source-logs-stream";
+    let (router, _core, registry) = create_test_router_with_id(instance_id).await;
     let mut response = router
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/instances/test-server/sources/test-source/logs/stream")
+                .uri(format!(
+                    "/instances/{instance_id}/sources/test-source/logs/stream"
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )

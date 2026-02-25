@@ -1,0 +1,37 @@
+# Configurable Threshold Solution
+# Tests variable substitution during deployment
+
+name: Configurable Threshold Pipeline
+description: Pipeline with configurable temperature threshold
+version: "1.0.0"
+author: Test Suite
+
+sources:
+  - kind: mock
+    id: temp-sensor
+    autoStart: true
+    dataType:
+      type: sensorReading
+      sensorCount: ${SENSOR_COUNT:-5}
+    intervalMs: ${POLL_INTERVAL_MS:-1000}  # Sensor polling interval in milliseconds
+
+queries:
+  - id: high-temp-alert
+    query: |
+      MATCH (s:SensorReading)
+      WHERE s.temperature > ${TEMP_THRESHOLD:-75}
+      RETURN s.sensor_id AS sensorId, s.temperature AS temp
+    queryLanguage: Cypher
+    sources:
+      - sourceId: temp-sensor
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: alert-logger
+    queries:
+      - high-temp-alert
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[ALERT] High temperature on sensor {{after.sensorId}}: {{after.temp}}°C"

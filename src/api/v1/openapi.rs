@@ -20,6 +20,10 @@
 
 use utoipa::OpenApi;
 
+use crate::api::models::solution::{
+    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
+    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
+};
 use crate::api::models::{
     ApplicationBootstrapConfigDto, AuthConfigDto, BearerConfigDto, BootstrapProviderConfig,
     CallSpecDto, ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
@@ -34,10 +38,6 @@ use crate::api::models::{
     RedbStateStoreConfigDto, ScriptFileBootstrapConfigDto, SignatureAlgorithmDto,
     SignatureConfigDto, SignatureEncodingDto, SourceSubscriptionConfigDto, StateStoreConfig,
     TableKeyConfigDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
-};
-use crate::api::models::solution::{
-    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
-    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
