@@ -1,0 +1,31 @@
+# Simple Log Pipeline Solution Template
+# A minimal pipeline that logs all events from a mock source
+
+name: Simple Log Pipeline
+description: Basic pipeline with mock source and log reaction for testing
+version: "1.0.0"
+author: Drasi Team
+defaultInstanceId: simple-pipeline
+
+sources:
+  - kind: mock
+    id: test-source
+    autoStart: true
+    dataType:
+      type: generic
+    intervalMs: 1000  # Event generation interval in milliseconds
+
+queries:
+  - id: all-events
+    query: "MATCH (n) RETURN n"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: test-source
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: event-logger
+    queries:
+      - all-events
+    autoStart: true

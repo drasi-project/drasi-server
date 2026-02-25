@@ -16,7 +16,7 @@
 
 .PHONY: all build build-release run run-release setup demo demo-cleanup \
         doctor validate clean clippy test fmt fmt-check help docker-build \
-        submodule-update vscode-test
+        submodule-update vscode-test dev-build clean-dev-build
 
 # Default target
 help:
@@ -29,13 +29,15 @@ help:
 	@echo "  make demo          - Run the getting-started example"
 	@echo ""
 	@echo "Development:"
-	@echo "  make build         - Build debug binary"
-	@echo "  make build-release - Build release binary"
-	@echo "  make test          - Run all tests"
-	@echo "  make vscode-test   - Run VSCode extension tests"
-	@echo "  make clippy        - Run linter"
-	@echo "  make fmt           - Format code"
-	@echo "  make fmt-check     - Check formatting"
+	@echo "  make build           - Build debug binary"
+	@echo "  make build-release   - Build release binary"
+	@echo "  make dev-build       - Format, lint, and test"
+	@echo "  make clean-dev-build - Clean, format, lint, and test"
+	@echo "  make test            - Run all tests"
+	@echo "  make vscode-test     - Run VSCode extension tests"
+	@echo "  make clippy          - Run linter"
+	@echo "  make fmt             - Format code"
+	@echo "  make fmt-check       - Check formatting"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build  - Build Docker image (IMAGE_PREFIX, DOCKER_TAG_VERSION)"
@@ -101,6 +103,15 @@ fmt-check:
 
 test:
 	cargo test --all-features
+
+dev-run:
+	cargo run -- --config config/server.yaml
+
+dev-build: fmt clippy test
+	@echo "Dev build complete!"
+
+clean-dev-build: clean fmt clippy test
+	@echo "Clean dev build complete!"
 
 vscode-test:
 	cd dev-tools/vscode/drasi-server && npm test

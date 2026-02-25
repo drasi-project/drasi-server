@@ -13,6 +13,7 @@ export interface SourceInfo {
   autoStart: boolean;
   properties?: Record<string, unknown>;
   instanceId?: string;
+  error?: string;
 }
 
 export interface QueryInfo {
@@ -22,6 +23,7 @@ export interface QueryInfo {
   resultCount?: number;
   query?: string;
   queryLanguage?: string;
+  error?: string;
 }
 
 export interface ReactionInfo {
@@ -30,6 +32,7 @@ export interface ReactionInfo {
   status: string;
   queryIds: string[];
   properties?: Record<string, unknown>;
+  error?: string;
 }
 
 export const COLUMN_X = { source: 50, query: 400, reaction: 750 };

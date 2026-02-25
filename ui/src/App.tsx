@@ -13,6 +13,7 @@ import EventPanel, { type EventEntry } from "@/components/events/EventPanel";
 import InstanceSelector from "@/components/instances/InstanceSelector";
 import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
+import SolutionDeployDialog from "@/components/solutions/SolutionDeployDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
 import { useDraft } from "@/hooks/useDraft";
@@ -53,6 +54,7 @@ export default function App() {
     selectedId: selectedInstanceId,
     setSelectedId: setSelectedInstanceId,
     create: createInstanceApi,
+    refresh: refreshInstances,
     requestedNotFound,
   } = useInstances();
   const [showCreateInstance, setShowCreateInstance] = useState(false);
@@ -94,6 +96,10 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [connected, setConnected] = useState(false);
 
+  // Solution deploy state
+  const [deployTemplateId, setDeployTemplateId] = useState<string | undefined>(undefined);
+  const [deployUploadedYaml, setDeployUploadedYaml] = useState<string | undefined>(undefined);
+
   // Check server connectivity
   useEffect(() => {
     const check = async () => {
@@ -118,6 +124,7 @@ export default function App() {
       autoStart: s.autoStart,
       properties: s.properties,
       instanceId: selectedInstanceId,
+      error: s.error,
     })),
     queries: queries.map((q) => ({
       id: q.id,
@@ -125,6 +132,7 @@ export default function App() {
       sourceIds: q.sources.map((s) => s.sourceId),
       query: q.query,
       queryLanguage: q.queryLanguage,
+      error: q.error,
     })),
     reactions: reactions.map((r) => ({
       id: r.id,
@@ -132,14 +140,24 @@ export default function App() {
       status: r.status,
       queryIds: r.queries,
       properties: r.properties,
+      error: r.error,
     })),
   };
+
+  // Generate a unique ID - fallback for browsers without crypto.randomUUID
+  const generateId = useCallback(() => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    // Fallback: simple unique ID generator
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }, []);
 
   const pushEvent = useCallback(
     (message: string, type: EventEntry["type"] = "info") => {
       setEvents((prev) => [
         {
-          id: crypto.randomUUID(),
+          id: generateId(),
           timestamp: new Date().toISOString(),
           message,
           type,
@@ -147,7 +165,7 @@ export default function App() {
         ...prev.slice(0, 49),
       ]);
     },
-    [],
+    [generateId],
   );
 
   const handleNodeClick = useCallback((id: string, type: string) => {
@@ -292,6 +310,7 @@ export default function App() {
         subtitle: `${source.kind} source`,
         componentType: "source" as ComponentType,
         status: source.status as ComponentStatus,
+        error: source.error,
         config: { kind: source.kind, autoStart: source.autoStart },
         connections: connectedQueries,
         onStart: () => {
@@ -334,6 +353,7 @@ export default function App() {
         subtitle: "continuous query",
         componentType: "query" as ComponentType,
         status: (query.status ?? "Stopped") as ComponentStatus,
+        error: query.error,
         config: {
           query: query.query,
           language: query.queryLanguage ?? "Cypher",
@@ -373,6 +393,7 @@ export default function App() {
         subtitle: `${reaction.kind} reaction`,
         componentType: "reaction" as ComponentType,
         status: reaction.status as ComponentStatus,
+        error: reaction.error,
         config: {
           kind: reaction.kind,
           queries: reaction.queries.join(", "),
@@ -466,9 +487,6 @@ export default function App() {
       {/* Flow Canvas */}
       {isEmpty ? (
         <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-drasi-source via-drasi-query to-drasi-reaction flex items-center justify-center opacity-40">
-            <span className="text-2xl font-black text-white">D</span>
-          </div>
           <p className="text-lg font-semibold text-drasi-text-primary">
             No components yet
           </p>
@@ -480,7 +498,7 @@ export default function App() {
             onClick={() => setCreateStep("component")}
             className="action-btn-primary mt-2"
           >
-            + Create Component
+            + Add
           </button>
         </div>
       ) : (
@@ -497,6 +515,14 @@ export default function App() {
         <TypeSelector
           level={createStep}
           onSelect={handleCreateSelect}
+          onSelectSolution={(templateId) => {
+            setCreateStep(null);
+            setDeployTemplateId(templateId);
+          }}
+          onUploadSolution={(yaml) => {
+            setCreateStep(null);
+            setDeployUploadedYaml(yaml);
+          }}
           onCancel={() => setCreateStep(null)}
         />
       )}
@@ -561,6 +587,30 @@ export default function App() {
         onClose={() => setActivityOpen(false)}
         onClear={() => setEvents([])}
       />
+
+      {/* Solution Deploy Dialog */}
+      {(deployTemplateId || deployUploadedYaml) && (
+        <SolutionDeployDialog
+          templateId={deployTemplateId}
+          uploadedYaml={deployUploadedYaml}
+          onClose={() => {
+            setDeployTemplateId(undefined);
+            setDeployUploadedYaml(undefined);
+          }}
+          onSuccess={(deployedToInstanceId) => {
+            setDeployTemplateId(undefined);
+            setDeployUploadedYaml(undefined);
+            // Refresh instances list (in case a new one was created)
+            refreshInstances();
+            // Switch to the instance that was deployed to
+            setSelectedInstanceId(deployedToInstanceId);
+            // Refresh components for that instance
+            refreshSources();
+            refreshQueries();
+            refreshReactions();
+          }}
+        />
+      )}
     </AppLayout>
   );
 }

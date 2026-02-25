@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X, AlertCircle } from "lucide-react";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
@@ -9,6 +9,7 @@ interface InspectorPanelProps {
   subtitle: string;
   componentType: ComponentType;
   status: ComponentStatus;
+  error?: string;
   stats?: { label: string; value: string }[];
   config?: Record<string, unknown>;
   connections?: { id: string; type: ComponentType; status: ComponentStatus }[];
@@ -24,6 +25,7 @@ export default function InspectorPanel({
   subtitle,
   componentType,
   status,
+  error,
   stats = [],
   config,
   connections = [],
@@ -34,6 +36,7 @@ export default function InspectorPanel({
   children,
 }: InspectorPanelProps) {
   const accentColor = getTypeColor(componentType);
+  const showError = status === "Error" && error;
 
   return (
     <div className="inspector-panel">
@@ -75,6 +78,23 @@ export default function InspectorPanel({
           />
         </div>
       </div>
+
+      {/* Error Message */}
+      {showError && (
+        <div className="p-4 border-b border-drasi-border">
+          <div className="flex items-start gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+            <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-1">
+                Error Details
+              </h3>
+              <p className="text-sm text-red-300 break-words leading-relaxed">
+                {error}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       {stats.length > 0 && (

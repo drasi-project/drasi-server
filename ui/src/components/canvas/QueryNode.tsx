@@ -14,6 +14,7 @@ interface QueryNodeData {
   expanded?: boolean;
   locked?: boolean;
   canvasLocked?: boolean;
+  error?: string;
   [key: string]: unknown;
 }
 
@@ -98,7 +99,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       }
     >
       <div className="flex items-center justify-between">
-        <StatusBadge status={d.status as ComponentStatus} />
+        <StatusBadge status={d.status as ComponentStatus} error={d.error} />
         {d.resultCount !== undefined && (
           <span className="text-[10px] font-mono text-drasi-text-secondary">
             {d.resultCount} rows

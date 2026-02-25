@@ -83,7 +83,8 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     let registry = InstanceRegistry::from_map(instances_map);
 
     // Use the production router builder
-    let v1_router = build_v1_router(registry, read_only, config_persistence);
+    let solutions_dir = None;
+    let v1_router = build_v1_router(registry, read_only, config_persistence, solutions_dir);
 
     let router = Router::new()
         // Health endpoint

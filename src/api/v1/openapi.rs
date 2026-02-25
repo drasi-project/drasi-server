@@ -35,6 +35,10 @@ use crate::api::models::{
     SignatureConfigDto, SignatureEncodingDto, SourceSubscriptionConfigDto, StateStoreConfig,
     TableKeyConfigDto, TimestampFormatDto, WebhookConfigDto, WebhookMappingDto, WebhookRouteDto,
 };
+use crate::api::models::solution::{
+    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
+    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
+};
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
@@ -85,6 +89,9 @@ use utoipa::openapi::RefOr;
         super::handlers::delete_reaction,
         super::handlers::start_reaction,
         super::handlers::stop_reaction,
+        super::handlers::list_solutions,
+        super::handlers::get_solution,
+        super::handlers::deploy_solution,
     ),
     components(
         schemas(
@@ -155,6 +162,15 @@ use utoipa::openapi::RefOr;
             EffectiveFromConfigDto,
             TimestampFormatDto,
             ElementTemplateDto,
+            // Solution Templates
+            SolutionTemplateMetadata,
+            SolutionVariable,
+            SolutionTemplateSummary,
+            SolutionTemplateDetail,
+            SolutionDeployRequest,
+            SolutionDeployResponse,
+            SolutionDeployError,
+            DeployPhase,
         )
     ),
     modifiers(&SourceReactionConfigSchemas),
@@ -165,6 +181,8 @@ use utoipa::openapi::RefOr;
         (name = "Sources", description = "Data source management"),
         (name = "Queries", description = "Continuous query management"),
         (name = "Reactions", description = "Reaction management"),
+        (name = "Solutions", description = "Deploy solution templates to instances"),
+        (name = "Catalog", description = "Browse solution templates and other reusable configurations"),
     ),
     info(
         title = "Drasi Server API",

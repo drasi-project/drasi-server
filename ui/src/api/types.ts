@@ -23,6 +23,7 @@ interface RawComponentSummary {
   id: string;
   status: ComponentStatus;
   links: ComponentLinks;
+  errorMessage?: string;
 }
 
 interface RawSourceFull extends RawComponentSummary {
@@ -81,6 +82,7 @@ export interface QueryConfigResponse {
   autoStart?: boolean;
   enableBootstrap?: boolean;
   status?: ComponentStatus;
+  error?: string;
 }
 
 export interface QuerySourceSubscription {
@@ -174,6 +176,7 @@ export function normalizeSource(raw: RawSourceFull): SourceStatusResponse {
     status: raw.status,
     autoStart: raw.config?.autoStart ?? false,
     properties: Object.keys(rest).length > 0 ? rest : undefined,
+    error: raw.errorMessage,
   };
 }
 
@@ -183,6 +186,7 @@ export function normalizeSourceSummary(raw: RawComponentSummary): SourceStatusRe
     kind: "mock", // Unknown from summary, will be refined on detail fetch
     status: raw.status,
     autoStart: false,
+    error: raw.errorMessage,
   };
 }
 
@@ -195,6 +199,7 @@ export function normalizeQuery(raw: RawQueryFull): QueryConfigResponse {
     autoStart: raw.config?.autoStart,
     enableBootstrap: raw.config?.enableBootstrap,
     status: raw.status,
+    error: raw.errorMessage,
   };
 }
 
@@ -204,6 +209,7 @@ export function normalizeQuerySummary(raw: RawComponentSummary): QueryConfigResp
     query: "",
     sources: [],
     status: raw.status,
+    error: raw.errorMessage,
   };
 }
 
@@ -216,6 +222,7 @@ export function normalizeReaction(raw: RawReactionFull): ReactionStatusResponse 
     queries: raw.config?.queries ?? [],
     autoStart: raw.config?.autoStart ?? false,
     properties: Object.keys(rest).length > 0 ? rest : undefined,
+    error: raw.errorMessage,
   };
 }
 
@@ -226,5 +233,66 @@ export function normalizeReactionSummary(raw: RawComponentSummary): ReactionStat
     status: raw.status,
     queries: [],
     autoStart: false,
+    error: raw.errorMessage,
   };
+}
+
+// Solution template types
+export interface SolutionVariable {
+  name: string;
+  default?: string;
+  required: boolean;
+  description?: string;
+  usedBy?: string[];
+}
+
+export interface SolutionTemplateSummary {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  license?: string;
+  defaultInstanceId?: string;
+  sourceCount: number;
+  queryCount: number;
+  reactionCount: number;
+}
+
+export interface SolutionTemplateDetail {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  license?: string;
+  defaultInstanceId?: string;
+  variables: SolutionVariable[];
+  sourceIds: string[];
+  queryIds: string[];
+  reactionIds: string[];
+}
+
+export interface SolutionDeployRequest {
+  templateId?: string;
+  yaml?: string;
+  variables: Record<string, string>;
+}
+
+export type DeployPhase = "validation" | "creation" | "start";
+
+export interface SolutionDeployError {
+  phase: DeployPhase;
+  componentType?: string;
+  componentId?: string;
+  message: string;
+}
+
+export interface SolutionDeployResponse {
+  success: boolean;
+  sourcesCreated: string[];
+  queriesCreated: string[];
+  reactionsCreated: string[];
+  componentsStarted: string[];
+  errors: SolutionDeployError[];
 }

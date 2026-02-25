@@ -1,0 +1,33 @@
+# IoT Temperature Monitor Solution Template
+# Monitors sensor data for high temperature events
+
+name: IoT Temperature Monitor
+description: Monitors sensor data and alerts on high temperature events
+version: "1.0.0"
+author: Drasi Team
+license: MIT
+defaultInstanceId: iot-monitor
+
+sources:
+  - kind: mock
+    id: sensor-feed
+    autoStart: true
+    dataType:
+      type: sensorReading
+      sensorCount: 5  # Number of sensors to simulate
+    intervalMs: 5000  # Sensor reading interval in milliseconds
+
+queries:
+  - id: high-temp-alert
+    query: "MATCH (s:Sensor) WHERE s.temperature > ${TEMP_THRESHOLD:-75} RETURN s"  # Temperature threshold for alerts
+    queryLanguage: Cypher
+    sources:
+      - sourceId: sensor-feed
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: temp-logger
+    queries:
+      - high-temp-alert
+    autoStart: true

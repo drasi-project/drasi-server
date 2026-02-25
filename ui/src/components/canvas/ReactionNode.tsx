@@ -32,6 +32,7 @@ interface ReactionNodeData {
   canvasLocked?: boolean;
   queryIds?: string[];
   properties?: Record<string, unknown>;
+  error?: string;
   [key: string]: unknown;
 }
 
@@ -120,7 +121,7 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
         </div>
       }
     >
-      <StatusBadge status={d.status as ComponentStatus} />
+      <StatusBadge status={d.status as ComponentStatus} error={d.error} />
     </NodeShell>
   );
 }

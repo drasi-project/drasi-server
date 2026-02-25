@@ -30,6 +30,7 @@ interface SourceNodeData {
   canvasLocked?: boolean;
   properties?: Record<string, unknown>;
   instanceId?: string;
+  error?: string;
   [key: string]: unknown;
 }
 
@@ -81,7 +82,7 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
         ) : undefined
       }
     >
-      <StatusBadge status={d.status as ComponentStatus} />
+      <StatusBadge status={d.status as ComponentStatus} error={d.error} />
     </NodeShell>
   );
 }

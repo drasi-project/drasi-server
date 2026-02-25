@@ -59,6 +59,12 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Directory containing solution template YAML files (default: "./solutions")
+    #[serde(
+        default = "default_solutions_dir",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub solutions_dir: Option<String>,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -100,6 +106,7 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            solutions_dir: None,
             state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
@@ -133,6 +140,10 @@ fn default_persist_config() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+fn default_solutions_dir() -> Option<String> {
+    None
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)

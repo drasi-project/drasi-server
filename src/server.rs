@@ -271,11 +271,13 @@ impl DrasiServer {
         // Create the instance registry from the map
         let registry = InstanceRegistry::from_map((*instances).clone());
 
-        // Initialize persistence if config file is provided and persistence is enabled
-        let config_persistence = if let Some(config_file) = &self.config_file_path {
+        // Initialize persistence and extract solutions_dir if config file is provided
+        let (config_persistence, solutions_dir) = if let Some(config_file) = &self.config_file_path
+        {
             if !*self.read_only {
                 // Need to reload config to check persist_config flag and get initial configs
                 let config = load_config_file(PathBuf::from(config_file))?;
+                let solutions_dir = config.solutions_dir.clone();
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
                 let persistence_enabled = resolved_settings.persist_config;
@@ -295,23 +297,24 @@ impl DrasiServer {
                         resolved_settings.log_level,
                         true, // persist_config = true
                         persist_settings.clone(),
+                        config.solutions_dir.clone(),
                         initial_source_configs,
                         initial_reaction_configs,
                         initial_query_configs,
                     ));
                     info!("Configuration persistence enabled");
-                    Some(persistence)
+                    (Some(persistence), solutions_dir)
                 } else {
                     info!("Configuration persistence disabled (persist_config: false)");
-                    None
+                    (None, solutions_dir)
                 }
             } else {
                 info!("Configuration persistence disabled (read-only mode)");
-                None
+                (None, None)
             }
         } else {
             info!("No config file provided - persistence disabled");
-            None
+            (None, None)
         };
 
         // Start web API if enabled
@@ -320,6 +323,7 @@ impl DrasiServer {
                 instances.clone(),
                 registry.clone(),
                 config_persistence.clone(),
+                solutions_dir,
             )
             .await?;
             info!(
@@ -346,13 +350,18 @@ impl DrasiServer {
         instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
+        solutions_dir: Option<String>,
     ) -> Result<()> {
         // Create OpenAPI documentation for v1
         let openapi_v1 = api::ApiDocV1::openapi();
 
         // Build the v1 API router
-        let v1_router =
-            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
+        let v1_router = api::build_v1_router(
+            registry,
+            self.read_only.clone(),
+            config_persistence.clone(),
+            solutions_dir,
+        );
 
         // Build the main application router
         let mut app = Router::new()

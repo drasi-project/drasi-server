@@ -1,5 +1,13 @@
 {
     "github.copilot.enable": {
         "markdown": true
-    }
+    },
+    "drasiServer.connections": [
+        {
+            "id": "431c05b9-4d05-447d-92f9-97966aff2028",
+            "name": "Local Drasi Server",
+            "url": "http://localhost:8080",
+            "instanceId": "allen"
+        }
+    ]
 }

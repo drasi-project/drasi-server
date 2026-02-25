@@ -1689,3 +1689,70 @@ pub async fn push_source_data_default(
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::push_source_data(Extension(core), Path(id), Json(body)).await
 }
+
+// ==================== Solution Template Handlers ====================
+
+use crate::api::models::solution::{
+    SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
+};
+use crate::api::shared::solutions;
+
+/// List all available solution templates
+#[utoipa::path(
+    get,
+    path = "/api/v1/catalog/solutions",
+    responses(
+        (status = 200, description = "List of solution templates", body = ApiResponse<Vec<SolutionTemplateSummary>>),
+    ),
+    tag = "Catalog"
+)]
+pub async fn list_solutions(
+    Extension(solutions_dir): Extension<Option<String>>,
+) -> Json<ApiResponse<Vec<SolutionTemplateSummary>>> {
+    solutions::list_solutions(solutions_dir).await
+}
+
+/// Get detailed information about a solution template
+#[utoipa::path(
+    get,
+    path = "/api/v1/catalog/solutions/{id}",
+    params(
+        ("id" = String, Path, description = "Solution template ID (filename without extension)")
+    ),
+    responses(
+        (status = 200, description = "Solution template details", body = ApiResponse<SolutionTemplateDetail>),
+        (status = 404, description = "Solution template not found"),
+    ),
+    tag = "Catalog"
+)]
+pub async fn get_solution(
+    Extension(solutions_dir): Extension<Option<String>>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<SolutionTemplateDetail>> {
+    solutions::get_solution(solutions_dir, &id).await
+}
+
+/// Deploy a solution template to an instance
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/solutions",
+    params(
+        ("instanceId" = String, Path, description = "Target instance ID")
+    ),
+    request_body = SolutionDeployRequest,
+    responses(
+        (status = 200, description = "Deployment result", body = ApiResponse<SolutionDeployResponse>),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Instance or template not found"),
+    ),
+    tag = "Solutions"
+)]
+pub async fn deploy_solution(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(solutions_dir): Extension<Option<String>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Json(request): Json<SolutionDeployRequest>,
+) -> Json<ApiResponse<SolutionDeployResponse>> {
+    solutions::deploy_solution(registry, persistence, solutions_dir, &instance_id, request).await
+}

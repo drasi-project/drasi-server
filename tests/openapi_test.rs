@@ -18,8 +18,9 @@ async fn create_test_router() -> Router {
     let registry = InstanceRegistry::new();
     let read_only = Arc::new(false);
     let config_persistence = None;
+    let solutions_dir = None;
 
-    build_v1_router(registry, read_only, config_persistence)
+    build_v1_router(registry, read_only, config_persistence, solutions_dir)
 }
 
 #[test]

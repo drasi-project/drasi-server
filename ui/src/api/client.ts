@@ -285,3 +285,26 @@ export async function stopReaction(
     : `/reactions/${id}/stop`;
   await api.post(path);
 }
+
+// Solutions (Catalog)
+import type {
+  SolutionTemplateSummary,
+  SolutionTemplateDetail,
+  SolutionDeployRequest,
+  SolutionDeployResponse,
+} from "./types";
+
+export async function listSolutions(): Promise<SolutionTemplateSummary[]> {
+  return unwrap(await api.get("/catalog/solutions"));
+}
+
+export async function getSolution(id: string): Promise<SolutionTemplateDetail> {
+  return unwrap(await api.get(`/catalog/solutions/${id}`));
+}
+
+export async function deploySolution(
+  instanceId: string,
+  req: SolutionDeployRequest,
+): Promise<SolutionDeployResponse> {
+  return unwrap(await api.post(`/instances/${instanceId}/solutions`, req));
+}

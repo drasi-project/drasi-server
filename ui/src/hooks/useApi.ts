@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
 import * as api from "@/api/client";
 import type {
   SourceStatusResponse,
@@ -101,8 +102,12 @@ export function useSources(instanceId?: string) {
     try {
       const data = await api.listSources(instanceId);
       setSources(data.filter((s) => !isInternal(s.id)));
-    } catch {
-      // Ignore
+    } catch (e) {
+      // Only clear on 404 (instance not found) - preserve data on transient errors
+      if (axios.isAxiosError(e) && e.response?.status === 404) {
+        setSources([]);
+      }
+      // Otherwise keep existing data
     } finally {
       setLoading(false);
     }
@@ -146,10 +151,12 @@ export function useSources(instanceId?: string) {
         return;
       }
 
-      // Status update
+      // Status update - include error message if present
       setSources((prev) =>
         prev.map((s) =>
-          s.id === event.componentId ? { ...s, status: event.status } : s,
+          s.id === event.componentId
+            ? { ...s, status: event.status, error: event.message }
+            : s,
         ),
       );
     }, instanceId);
@@ -188,8 +195,11 @@ export function useQueries(instanceId?: string) {
     try {
       const data = await api.listQueries(instanceId);
       setQueries(data.filter((q) => !isInternal(q.id)));
-    } catch {
-      // Ignore
+    } catch (e) {
+      // Only clear on 404 (instance not found) - preserve data on transient errors
+      if (axios.isAxiosError(e) && e.response?.status === 404) {
+        setQueries([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -232,7 +242,9 @@ export function useQueries(instanceId?: string) {
 
       setQueries((prev) =>
         prev.map((q) =>
-          q.id === event.componentId ? { ...q, status: event.status } : q,
+          q.id === event.componentId
+            ? { ...q, status: event.status, error: event.message }
+            : q,
         ),
       );
     }, instanceId);
@@ -267,8 +279,11 @@ export function useReactions(instanceId?: string) {
     try {
       const data = await api.listReactions(instanceId);
       setReactions(data.filter((r) => !isInternal(r.id)));
-    } catch {
-      // Ignore
+    } catch (e) {
+      // Only clear on 404 (instance not found) - preserve data on transient errors
+      if (axios.isAxiosError(e) && e.response?.status === 404) {
+        setReactions([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -312,7 +327,9 @@ export function useReactions(instanceId?: string) {
 
       setReactions((prev) =>
         prev.map((r) =>
-          r.id === event.componentId ? { ...r, status: event.status } : r,
+          r.id === event.componentId
+            ? { ...r, status: event.status, error: event.message }
+            : r,
         ),
       );
     }, instanceId);

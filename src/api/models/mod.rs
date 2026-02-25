@@ -53,6 +53,7 @@ pub mod bootstrap;
 pub mod observability;
 pub mod queries;
 pub mod reactions;
+pub mod solution;
 pub mod sources;
 
 // Re-export all DTO types for convenient access
@@ -324,6 +325,17 @@ impl SourceConfig {
             SourceConfig::Grpc { auto_start, .. } => *auto_start,
             SourceConfig::Postgres { auto_start, .. } => *auto_start,
             SourceConfig::Platform { auto_start, .. } => *auto_start,
+        }
+    }
+
+    /// Set the auto_start flag
+    pub fn set_auto_start(&mut self, value: bool) {
+        match self {
+            SourceConfig::Mock { auto_start, .. } => *auto_start = value,
+            SourceConfig::Http { auto_start, .. } => *auto_start = value,
+            SourceConfig::Grpc { auto_start, .. } => *auto_start = value,
+            SourceConfig::Postgres { auto_start, .. } => *auto_start = value,
+            SourceConfig::Platform { auto_start, .. } => *auto_start = value,
         }
     }
 
@@ -726,6 +738,20 @@ impl ReactionConfig {
             ReactionConfig::Sse { auto_start, .. } => *auto_start,
             ReactionConfig::Platform { auto_start, .. } => *auto_start,
             ReactionConfig::Profiler { auto_start, .. } => *auto_start,
+        }
+    }
+
+    /// Set the auto_start flag
+    pub fn set_auto_start(&mut self, value: bool) {
+        match self {
+            ReactionConfig::Log { auto_start, .. } => *auto_start = value,
+            ReactionConfig::Http { auto_start, .. } => *auto_start = value,
+            ReactionConfig::HttpAdaptive { auto_start, .. } => *auto_start = value,
+            ReactionConfig::Grpc { auto_start, .. } => *auto_start = value,
+            ReactionConfig::GrpcAdaptive { auto_start, .. } => *auto_start = value,
+            ReactionConfig::Sse { auto_start, .. } => *auto_start = value,
+            ReactionConfig::Platform { auto_start, .. } => *auto_start = value,
+            ReactionConfig::Profiler { auto_start, .. } => *auto_start = value,
         }
     }
 }

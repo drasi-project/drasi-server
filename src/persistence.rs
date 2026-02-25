@@ -34,6 +34,7 @@ pub struct ConfigPersistence {
     log_level: String,
     persist_config: bool,
     persist_settings: IndexMap<String, bool>,
+    solutions_dir: Option<String>,
     /// Source configs by instance_id -> source_id -> config
     source_configs: Arc<RwLock<IndexMap<String, IndexMap<String, SourceConfig>>>>,
     /// Reaction configs by instance_id -> reaction_id -> config
@@ -55,6 +56,7 @@ impl ConfigPersistence {
         log_level: String,
         persist_config: bool,
         persist_settings: IndexMap<String, bool>,
+        solutions_dir: Option<String>,
         initial_source_configs: IndexMap<String, IndexMap<String, SourceConfig>>,
         initial_reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>>,
         initial_query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>>,
@@ -67,6 +69,7 @@ impl ConfigPersistence {
             log_level,
             persist_config,
             persist_settings,
+            solutions_dir,
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
             query_configs: Arc::new(RwLock::new(initial_query_configs)),
@@ -288,6 +291,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: instance.persist_index,
+                solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
@@ -314,7 +318,8 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
-                state_store: None,    // Per-instance setting in multi-instance mode
+                solutions_dir: self.solutions_dir.clone(),
+                state_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 sources: Vec::new(),
@@ -498,6 +503,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -560,6 +566,7 @@ mod tests {
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -594,6 +601,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -635,6 +643,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings.clone(),
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -655,6 +664,7 @@ mod tests {
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             IndexMap::new(),
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -716,6 +726,7 @@ mod tests {
             "debug".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -950,6 +961,7 @@ instances:
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -1025,6 +1037,7 @@ instances:
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -1118,6 +1131,7 @@ instances:
             "info".to_string(),
             false, // persist_config = false (persistence disabled)
             persist_settings,
+            None, // solutions_dir
             initial_sources,
             IndexMap::new(),
             IndexMap::new(),
@@ -1158,6 +1172,7 @@ instances:
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -1225,6 +1240,7 @@ logLevel: warn
             "info".to_string(),      // Different from initial
             false,                   // persist_config = false (persistence disabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -1273,6 +1289,7 @@ logLevel: warn
             "info".to_string(),
             true, // persist_config = true (persistence enabled)
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             IndexMap::new(),
@@ -1413,6 +1430,7 @@ logLevel: warn
             "info".to_string(),
             true,
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             IndexMap::new(),
             initial_query_configs,
@@ -1478,6 +1496,7 @@ logLevel: warn
             "info".to_string(),
             true,
             persist_settings,
+            None, // solutions_dir
             initial_source_configs,
             IndexMap::new(),
             IndexMap::new(),
@@ -1539,6 +1558,7 @@ logLevel: warn
             "info".to_string(),
             true,
             persist_settings,
+            None, // solutions_dir
             IndexMap::new(),
             initial_reaction_configs,
             IndexMap::new(),
@@ -1620,6 +1640,7 @@ logLevel: warn
             "info".to_string(),
             true,
             persist_settings,
+            None, // solutions_dir
             initial_source_configs,
             initial_reaction_configs,
             initial_query_configs,

@@ -15,6 +15,7 @@
 //! Value resolvers for different ConfigValue reference types.
 
 use crate::api::models::ConfigValue;
+use std::collections::HashMap;
 use thiserror::Error;
 
 /// Errors that can occur during value resolution
@@ -69,6 +70,49 @@ impl ValueResolver for SecretResolver {
             ConfigValue::Secret { name } => Err(ResolverError::NotImplemented(format!(
                 "Secret resolution not yet implemented for '{name}'"
             ))),
+            _ => Err(ResolverError::WrongResolverType),
+        }
+    }
+}
+
+/// Environment variable resolver with override support.
+///
+/// Resolution order:
+/// 1. Check overrides map first
+/// 2. Fall back to environment variable
+/// 3. Fall back to default value (if provided)
+/// 4. Return error if no value found
+///
+/// This enables Solution Templates to provide user-supplied variable values
+/// that take precedence over environment variables.
+pub struct OverridingEnvResolver {
+    overrides: HashMap<String, String>,
+}
+
+impl OverridingEnvResolver {
+    /// Create a new resolver with the given override values.
+    pub fn new(overrides: HashMap<String, String>) -> Self {
+        Self { overrides }
+    }
+}
+
+impl ValueResolver for OverridingEnvResolver {
+    fn resolve_to_string(&self, value: &ConfigValue<String>) -> Result<String, ResolverError> {
+        match value {
+            ConfigValue::EnvironmentVariable { name, default } => {
+                // 1. Check overrides first
+                if let Some(override_val) = self.overrides.get(name) {
+                    return Ok(override_val.clone());
+                }
+                // 2. Fall back to env var
+                if let Ok(env_val) = std::env::var(name) {
+                    return Ok(env_val);
+                }
+                // 3. Fall back to default
+                default
+                    .clone()
+                    .ok_or_else(|| ResolverError::EnvVarNotFound(name.clone()))
+            }
             _ => Err(ResolverError::WrongResolverType),
         }
     }
@@ -134,6 +178,99 @@ mod tests {
         assert!(matches!(
             result.unwrap_err(),
             ResolverError::NotImplemented(_)
+        ));
+    }
+
+    // OverridingEnvResolver tests
+
+    #[test]
+    fn test_overriding_resolver_override_takes_precedence() {
+        // Set env var that should be overridden
+        std::env::set_var("TEST_OVERRIDE_VAR", "env_value");
+
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "TEST_OVERRIDE_VAR".to_string(),
+            "override_value".to_string(),
+        );
+
+        let resolver = OverridingEnvResolver::new(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "TEST_OVERRIDE_VAR".to_string(),
+            default: Some("default_value".to_string()),
+        };
+
+        let result = resolver.resolve_to_string(&value).unwrap();
+        assert_eq!(result, "override_value");
+
+        std::env::remove_var("TEST_OVERRIDE_VAR");
+    }
+
+    #[test]
+    fn test_overriding_resolver_falls_back_to_env() {
+        std::env::set_var("TEST_FALLBACK_ENV_VAR", "env_value");
+
+        let overrides = HashMap::new(); // No overrides
+
+        let resolver = OverridingEnvResolver::new(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "TEST_FALLBACK_ENV_VAR".to_string(),
+            default: Some("default_value".to_string()),
+        };
+
+        let result = resolver.resolve_to_string(&value).unwrap();
+        assert_eq!(result, "env_value");
+
+        std::env::remove_var("TEST_FALLBACK_ENV_VAR");
+    }
+
+    #[test]
+    fn test_overriding_resolver_falls_back_to_default() {
+        let overrides = HashMap::new(); // No overrides
+                                        // No env var set
+
+        let resolver = OverridingEnvResolver::new(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "NONEXISTENT_OVERRIDE_VAR_123".to_string(),
+            default: Some("default_value".to_string()),
+        };
+
+        let result = resolver.resolve_to_string(&value).unwrap();
+        assert_eq!(result, "default_value");
+    }
+
+    #[test]
+    fn test_overriding_resolver_error_when_no_value() {
+        let overrides = HashMap::new(); // No overrides
+                                        // No env var set, no default
+
+        let resolver = OverridingEnvResolver::new(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "NONEXISTENT_REQUIRED_VAR_456".to_string(),
+            default: None,
+        };
+
+        let result = resolver.resolve_to_string(&value);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolverError::EnvVarNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_overriding_resolver_wrong_type() {
+        let overrides = HashMap::new();
+        let resolver = OverridingEnvResolver::new(overrides);
+        let value = ConfigValue::Secret {
+            name: "some-secret".to_string(),
+        };
+
+        let result = resolver.resolve_to_string(&value);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ResolverError::WrongResolverType
         ));
     }
 }

@@ -100,6 +100,7 @@ dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
+regex = "1"
 openssl = { version = "0.10", features = ["vendored"] }
 reqwest = { version = "0.12", features = ["json"] }
 
