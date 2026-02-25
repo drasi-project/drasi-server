@@ -29,6 +29,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-query"
       collapsedWidth={180}
       expandedWidth={360}
+      collapsedMinHeight={85}
       status={d.status as ComponentStatus}
       expanded={expanded}
       locked={!!d.locked}

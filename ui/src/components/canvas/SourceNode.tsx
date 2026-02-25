@@ -47,6 +47,7 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-source"
       collapsedWidth={180}
       expandedWidth={320}
+      collapsedMinHeight={85}
       status={d.status as ComponentStatus}
       expanded={expanded}
       canToggle={canPush}

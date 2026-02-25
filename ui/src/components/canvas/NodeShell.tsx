@@ -21,6 +21,8 @@ export interface NodeShellProps {
   collapsedWidth: number;
   /** Width in px when expanded */
   expandedWidth: number;
+  /** Minimum height in px when collapsed (ensures uniform sizing) */
+  collapsedMinHeight?: number;
   /** Component status for glow styling */
   status: ComponentStatus;
   /** Whether the node is currently expanded */
@@ -51,6 +53,7 @@ export default function NodeShell({
   accentClass,
   collapsedWidth,
   expandedWidth,
+  collapsedMinHeight,
   status,
   expanded,
   canToggle = true,
@@ -138,10 +141,12 @@ export default function NodeShell({
   );
 
   const targetWidth = expanded ? expandedWidth : collapsedWidth;
+  const minHeight = !expanded && collapsedMinHeight ? collapsedMinHeight : undefined;
 
   return (
     <motion.div
       className={`${cardClass} ${glowClass}`}
+      style={{ minHeight }}
       initial={{ width: targetWidth }}
       animate={{ width: targetWidth }}
       transition={{ type: "tween", duration: 0.4, ease: "easeInOut" }}
