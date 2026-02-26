@@ -20,6 +20,7 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [patch.crates-io]
 drasi-plugin-sdk = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/plugin-sdk" }
+drasi-ffi-primitives = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/ffi-primitives" }
 drasi-core = { path = "/home/danielgerlag/dev/drasi/drasi-core/core" }
 drasi-lib = { path = "/home/danielgerlag/dev/drasi/drasi-core/lib" }
 drasi-query-ast = { path = "/home/danielgerlag/dev/drasi/drasi-core/query-ast" }
@@ -57,5 +58,4 @@ drasi-index-rocksdb = { path = "/home/danielgerlag/dev/drasi/drasi-core/componen
 drasi-index-garnet = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/indexes/garnet" }
 drasi-state-store-redb = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/state_stores/redb" }
 drasi-mssql-common = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/mssql-common" }
-drasi-tokio-bridge = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/tokio-bridge" }
-drasi-plugin-runtime = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/plugin-runtime" }
+drasi-host-sdk = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/host-sdk" }

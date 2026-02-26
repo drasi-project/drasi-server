@@ -1124,7 +1124,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1150,7 +1149,6 @@ dependencies = [
  "drasi-core",
  "drasi-lib",
  "drasi-mssql-common",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1172,7 +1170,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "log",
@@ -1198,7 +1195,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1224,7 +1220,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1279,6 +1274,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-ffi-primitives"
+version = "0.3.1"
+
+[[package]]
 name = "drasi-functions-cypher"
 version = "0.3.3"
 dependencies = [
@@ -1290,6 +1289,23 @@ name = "drasi-functions-gql"
 version = "0.3.3"
 dependencies = [
  "drasi-core",
+]
+
+[[package]]
+name = "drasi-host-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-core",
+ "drasi-ffi-primitives",
+ "drasi-lib",
+ "drasi-plugin-sdk",
+ "libloading",
+ "log",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1402,16 +1418,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "drasi-plugin-runtime"
+name = "drasi-plugin-sdk"
 version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "drasi-core",
+ "drasi-ffi-primitives",
  "drasi-lib",
- "futures",
  "log",
- "ordered-float",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1419,21 +1435,6 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
- "utoipa",
- "uuid",
-]
-
-[[package]]
-name = "drasi-plugin-sdk"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "drasi-lib",
- "drasi-plugin-runtime",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
  "utoipa",
 ]
 
@@ -1474,7 +1475,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1495,7 +1495,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1520,7 +1519,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "drasi-reaction-grpc",
  "log",
@@ -1546,7 +1544,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
@@ -1570,7 +1567,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "drasi-reaction-http",
  "handlebars 5.1.2",
@@ -1595,7 +1591,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
@@ -1618,7 +1613,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1640,7 +1634,6 @@ dependencies = [
  "axum 0.7.9",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "handlebars 5.1.2",
@@ -1664,7 +1657,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "regex",
@@ -1683,7 +1675,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "mysql_async",
@@ -1703,7 +1694,6 @@ dependencies = [
  "bytes",
  "chrono",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "native-tls",
@@ -1736,10 +1726,10 @@ dependencies = [
  "drasi-bootstrap-postgres",
  "drasi-bootstrap-scriptfile",
  "drasi-core",
+ "drasi-host-sdk",
  "drasi-index-garnet",
  "drasi-index-rocksdb",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "drasi-reaction-application",
  "drasi-reaction-grpc",
@@ -1764,7 +1754,6 @@ dependencies = [
  "hyper 1.8.1",
  "indexmap 2.13.0",
  "inquire",
- "libloading",
  "log",
  "mockall",
  "openssl",
@@ -1802,7 +1791,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1830,7 +1818,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "handlebars 6.4.0",
  "hex",
@@ -1867,7 +1854,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "log",
  "ordered-float",
@@ -1892,7 +1878,6 @@ dependencies = [
  "drasi-core",
  "drasi-lib",
  "drasi-mssql-common",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "hex",
@@ -1920,7 +1905,6 @@ dependencies = [
  "chrono",
  "drasi-core",
  "drasi-lib",
- "drasi-plugin-runtime",
  "drasi-plugin-sdk",
  "futures",
  "hmac",
@@ -7160,7 +7144,3 @@ version = "0.1.7"
 [[patch.unused]]
 name = "drasi-source-platform"
 version = "0.1.7"
-
-[[patch.unused]]
-name = "drasi-tokio-bridge"
-version = "0.3.1"
