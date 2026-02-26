@@ -23,6 +23,11 @@ interface QueryNodeData {
 export default function QueryNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as QueryNodeData;
   const expanded = !!d.expanded;
+  
+  // Format query language label
+  const languageLabel = d.queryLanguage?.toLowerCase() === "gql" 
+    ? "GQL Query" 
+    : "Cypher Query";
   const { startQuery, stopQuery } = useApi();
 
   // Only fetch/stream results when expanded and query is running
@@ -79,8 +84,8 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
             <div className="text-xs font-semibold text-drasi-text-primary truncate">
               {d.id}
             </div>
-            <div className="text-[10px] text-drasi-text-secondary">
-              CONTINUOUS QUERY
+            <div className="text-[10px] text-drasi-text-secondary uppercase tracking-wider">
+              {languageLabel}
             </div>
           </div>
         </>
