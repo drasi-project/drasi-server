@@ -18,8 +18,8 @@ export default function InstanceSelector({
   const [open, setOpen] = useState(false);
   const current = instances.find((i) => i.id === selectedId);
   const displayName = current
-    ? current.id.length > 16
-      ? current.id.slice(0, 16) + "…"
+    ? current.id.length > 32
+      ? current.id.slice(0, 32) + "…"
       : current.id
     : "No instance";
 
@@ -43,7 +43,7 @@ export default function InstanceSelector({
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute top-full left-0 mt-1 w-64 bg-drasi-surface border border-drasi-border rounded-lg shadow-2xl z-50 overflow-hidden animate-fade-in">
+          <div className="absolute top-full left-0 mt-1 w-96 bg-drasi-surface border border-drasi-border rounded-lg shadow-2xl z-50 overflow-hidden animate-fade-in">
             <div className="p-2 border-b border-drasi-border">
               <p className="text-[10px] text-drasi-text-secondary uppercase tracking-wider px-2 py-1">
                 Instances
