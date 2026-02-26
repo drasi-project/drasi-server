@@ -12,7 +12,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Trash2, Pin, Lock, LockOpen } from "lucide-react";
+import { Trash2, Pin, Lock, LockOpen, LayoutGrid } from "lucide-react";
 
 import SourceNode from "./SourceNode";
 import QueryNode from "./QueryNode";
@@ -202,6 +202,38 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
     );
   }, [nodes, canvasLocked, setNodes]);
 
+  // Auto-layout: arrange nodes in columns by type
+  const autoLayoutNodes = useCallback(() => {
+    const COLUMN_X = { source: 50, query: 400, reaction: 750 };
+    const NODE_SPACING_Y = 140;
+    const NODE_START_Y = 60;
+
+    setNodes((prev) => {
+      // Group nodes by type
+      const sources = prev.filter((n) => n.type === "sourceNode");
+      const queries = prev.filter((n) => n.type === "queryNode");
+      const reactions = prev.filter((n) => n.type === "reactionNode");
+
+      // Assign positions by column
+      const positioned = new Map<string, { x: number; y: number }>();
+      
+      sources.forEach((n, i) => {
+        positioned.set(n.id, { x: COLUMN_X.source, y: NODE_START_Y + i * NODE_SPACING_Y });
+      });
+      queries.forEach((n, i) => {
+        positioned.set(n.id, { x: COLUMN_X.query, y: NODE_START_Y + i * NODE_SPACING_Y });
+      });
+      reactions.forEach((n, i) => {
+        positioned.set(n.id, { x: COLUMN_X.reaction, y: NODE_START_Y + i * NODE_SPACING_Y });
+      });
+
+      return prev.map((n) => {
+        const pos = positioned.get(n.id);
+        return pos ? { ...n, position: pos } : n;
+      });
+    });
+  }, [setNodes]);
+
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return;
     const deleteIds = new Set(pendingDelete.map((n) => n.id));
@@ -267,6 +299,12 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         <AutoLayout onCollisionRef={collisionRef} instanceId={instanceId} />
         <Background color="var(--drasi-border)" gap={24} size={1} />
         <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface [&>button]:!w-8 [&>button]:!h-8">
+          <ControlButton
+            onClick={autoLayoutNodes}
+            title="Auto-layout nodes"
+          >
+            <LayoutGrid size={18} />
+          </ControlButton>
           <ControlButton
             onClick={toggleCanvasLock}
             title={canvasLocked ? "Unlock canvas" : "Lock canvas"}
