@@ -187,6 +187,7 @@ fn test_state_store_with_full_config() {
 #[test]
 fn test_state_store_serialization_roundtrip() {
     let original = DrasiServerConfig {
+        api_version: None,
         state_store: Some(StateStoreConfig::redb("./data/test.redb")),
         ..Default::default()
     };

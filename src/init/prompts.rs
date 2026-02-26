@@ -17,12 +17,14 @@
 use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::{
     ApplicationBootstrapConfigDto, BootstrapProviderConfig, ConfigValue, GrpcReactionConfigDto,
     GrpcSourceConfigDto, HttpReactionConfigDto, HttpSourceConfigDto, LogReactionConfigDto,
     MockSourceConfigDto, PlatformBootstrapConfigDto, PlatformReactionConfigDto,
     PlatformSourceConfigDto, PostgresBootstrapConfigDto, PostgresSourceConfigDto, ReactionConfig,
     ScriptFileBootstrapConfigDto, SourceConfig, SseReactionConfigDto, SslModeDto,
+    TableKeyConfigDto,
 };
 
 use drasi_server::api::models::StateStoreConfig;
@@ -278,8 +280,12 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    // Ask about table keys (primary keys for tables without them)
+    let table_keys = prompt_table_keys(&tables)?;
+
     // Ask about bootstrap provider
-    let bootstrap_provider = prompt_bootstrap_provider_for_postgres()?;
+    let bootstrap_provider =
+        prompt_bootstrap_provider_for_postgres(&host, port, &database, &user, &password, &tables)?;
 
     Ok(SourceConfig::Postgres {
         id,
@@ -295,13 +301,20 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
             slot_name: "drasi_slot".to_string(),
             publication_name: "drasi_pub".to_string(),
             ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-            table_keys: vec![],
+            table_keys,
         },
     })
 }
 
 /// Prompt for bootstrap provider for PostgreSQL source.
-fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderConfig>> {
+fn prompt_bootstrap_provider_for_postgres(
+    host: &str,
+    port: u16,
+    database: &str,
+    user: &str,
+    password: &str,
+    tables: &[String],
+) -> Result<Option<BootstrapProviderConfig>> {
     let bootstrap_types = vec![
         BootstrapType::Postgres,
         BootstrapType::ScriptFile,
@@ -317,15 +330,78 @@ fn prompt_bootstrap_provider_for_postgres() -> Result<Option<BootstrapProviderCo
 
     match selected {
         BootstrapType::None => Ok(None),
-        BootstrapType::Postgres => {
-            // PostgresBootstrapConfig is now an empty struct - connection details come from source
-            Ok(Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto::default(),
-            )))
-        }
+        BootstrapType::Postgres => Ok(Some(BootstrapProviderConfig::Postgres(
+            PostgresBootstrapConfigDto {
+                host: ConfigValue::Static(host.to_string()),
+                port: ConfigValue::Static(port),
+                database: ConfigValue::Static(database.to_string()),
+                user: ConfigValue::Static(user.to_string()),
+                password: ConfigValue::Static(password.to_string()),
+                tables: tables.to_vec(),
+                slot_name: "drasi_slot".to_string(),
+                publication_name: "drasi_pub".to_string(),
+                ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
+                table_keys: vec![],
+            },
+        ))),
         BootstrapType::ScriptFile => prompt_scriptfile_bootstrap(),
         BootstrapType::Platform => prompt_platform_bootstrap(),
     }
+}
+
+/// Prompt for table keys configuration.
+/// Table keys are needed for tables that don't have a primary key defined.
+fn prompt_table_keys(tables: &[String]) -> Result<Vec<TableKeyConfigDto>> {
+    let configure_keys = Confirm::new("Configure table keys for tables without primary keys?")
+        .with_default(false)
+        .with_help_message("Required for tables lacking a primary key constraint")
+        .prompt()?;
+
+    if !configure_keys {
+        return Ok(vec![]);
+    }
+
+    let mut table_keys = Vec::new();
+
+    // Let user select which tables need key configuration
+    let tables_needing_keys = if tables.len() == 1 {
+        // If only one table, just ask if it needs keys
+        let needs_keys = Confirm::new(&format!(
+            "Does table '{}' need key columns specified?",
+            tables[0]
+        ))
+        .with_default(true)
+        .prompt()?;
+
+        if needs_keys {
+            vec![tables[0].clone()]
+        } else {
+            vec![]
+        }
+    } else {
+        // Multiple tables - let user select which ones
+        MultiSelect::new("Select tables that need key columns:", tables.to_vec())
+            .with_help_message("Space to select, Enter to confirm")
+            .prompt()?
+    };
+
+    for table in tables_needing_keys {
+        let key_columns_str = Text::new(&format!("Key columns for '{table}' (comma-separated):"))
+            .with_help_message("e.g., id or user_id,timestamp")
+            .prompt()?;
+
+        let key_columns: Vec<String> = key_columns_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if !key_columns.is_empty() {
+            table_keys.push(TableKeyConfigDto { table, key_columns });
+        }
+    }
+
+    Ok(table_keys)
 }
 
 /// Prompt for HTTP source configuration.
@@ -363,6 +439,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
             adaptive_min_wait_ms: None,
             adaptive_window_secs: None,
             adaptive_enabled: None,
+            webhooks: None,
         },
     })
 }
@@ -409,6 +486,24 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .with_default("mock-source")
         .prompt()?;
 
+    let data_type_options = vec!["generic", "sensorReading", "counter"];
+    let data_type_selection = Select::new("Data type to generate:", data_type_options)
+        .with_help_message("Type of synthetic data to generate")
+        .prompt()?;
+
+    let data_type = match data_type_selection {
+        "counter" => DataTypeDto::Counter,
+        "sensorReading" => {
+            let sensor_count_str = Text::new("Number of sensors to simulate:")
+                .with_default("5")
+                .with_help_message("How many unique sensors to simulate (1-100)")
+                .prompt()?;
+            let sensor_count: u32 = sensor_count_str.parse().unwrap_or(5).clamp(1, 100);
+            DataTypeDto::SensorReading { sensor_count }
+        }
+        _ => DataTypeDto::Generic,
+    };
+
     let interval_str = Text::new("Data generation interval (milliseconds):")
         .with_default("5000")
         .with_help_message("How often to generate test data (in milliseconds)")
@@ -421,7 +516,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         bootstrap_provider: None,
         config: MockSourceConfigDto {
             interval_ms: ConfigValue::Static(interval_ms),
-            data_type: ConfigValue::Static("generic".to_string()),
+            data_type,
         },
     })
 }

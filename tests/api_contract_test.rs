@@ -133,6 +133,7 @@ fn test_component_status_serialization() {
         ComponentStatus::Stopping,
         ComponentStatus::Stopped,
         ComponentStatus::Error,
+        ComponentStatus::Reconfiguring,
     ];
 
     for status in statuses {
@@ -143,6 +144,7 @@ fn test_component_status_serialization() {
             ComponentStatus::Stopping => assert_eq!(json, "Stopping"),
             ComponentStatus::Stopped => assert_eq!(json, "Stopped"),
             ComponentStatus::Error => assert_eq!(json, "Error"),
+            ComponentStatus::Reconfiguring => assert_eq!(json, "Reconfiguring"),
         }
     }
 }

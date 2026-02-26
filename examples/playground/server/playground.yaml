@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+apiVersion: drasi.io/v1
 id: playground-server
 host: 0.0.0.0
-port: 8080
+port: 8380
 logLevel: info
 persistConfig: false
 sources: []

@@ -88,7 +88,7 @@ echo $DRASI_PID > "$LOG_DIR/drasi-server.pid"
 echo -e "${GREEN}Drasi Server started (PID: $DRASI_PID)${NC}"
 
 # Wait for Drasi Server
-if ! wait_for_service "http://localhost:8080/health" "Drasi Server"; then
+if ! wait_for_service "http://localhost:8380/health" "Drasi Server"; then
     echo -e "${RED}Failed to start Drasi Server${NC}"
     exit 1
 fi
@@ -113,7 +113,7 @@ echo $REACT_PID > "$LOG_DIR/react-app.pid"
 echo -e "${GREEN}React app started (PID: $REACT_PID)${NC}"
 
 # Wait for Vite dev server
-if ! wait_for_service "http://localhost:5173" "React app"; then
+if ! wait_for_service "http://localhost:5373" "React app"; then
     echo -e "${RED}Failed to start React app${NC}"
     exit 1
 fi
@@ -128,10 +128,10 @@ echo -e "${GREEN}   Drasi Playground is ready!${NC}"
 echo "======================================"
 echo ""
 echo "Access the playground at:"
-echo -e "  ${GREEN}http://localhost:5173${NC}"
+echo -e "  ${GREEN}http://localhost:5373${NC}"
 echo ""
 echo "Drasi Server API:"
-echo -e "  ${GREEN}http://localhost:8080${NC}"
+echo -e "  ${GREEN}http://localhost:8380${NC}"
 echo ""
 echo "To stop the playground, run:"
 echo -e "  ${YELLOW}./stop-demo.sh${NC}"

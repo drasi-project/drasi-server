@@ -1,0 +1,6 @@
+{"kind": "Header", "start_time": "2024-01-01T00:00:00+00:00", "description": "Initial user locations"}
+{"kind": "Node", "id": "brian", "labels": ["UserLocation"], "properties": {"name": "Brian Kernighan", "location": "Building A, Floor 3", "status": "online"}}
+{"kind": "Node", "id": "buzz", "labels": ["UserLocation"], "properties": {"name": "Buzz Lightyear", "location": "Space Station", "status": "away"}}
+{"kind": "Node", "id": "antoninus", "labels": ["UserLocation"], "properties": {"name": "Antoninus", "location": "Rome", "status": "offline"}}
+{"kind": "Node", "id": "david", "labels": ["UserLocation"], "properties": {"name": "David", "location": "Rome", "status": "online"}}
+{"kind": "Finish", "description": "Done"}

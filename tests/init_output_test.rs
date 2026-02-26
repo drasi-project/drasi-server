@@ -22,6 +22,7 @@
 //! - All bootstrap provider types produce valid configurations
 //! - Generated configs use camelCase field names
 
+use drasi_server::api::models::sources::mock::DataTypeDto;
 use drasi_server::api::models::*;
 use drasi_server::DrasiServerConfig;
 use std::collections::HashMap;
@@ -128,6 +129,7 @@ fn assert_camel_case_fields(yaml: &str) {
 #[test]
 fn test_empty_config_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -155,6 +157,7 @@ fn test_empty_config_generates_valid_yaml() {
 #[test]
 fn test_config_with_state_store_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -191,6 +194,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
 #[test]
 fn test_mock_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -206,7 +210,7 @@ fn test_mock_source_generates_valid_yaml() {
             auto_start: true,
             bootstrap_provider: None,
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("sensor".to_string()),
+                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -229,6 +233,7 @@ fn test_mock_source_generates_valid_yaml() {
 #[test]
 fn test_http_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -254,6 +259,7 @@ fn test_http_source_generates_valid_yaml() {
                 adaptive_min_wait_ms: None,
                 adaptive_window_secs: None,
                 adaptive_enabled: None,
+                webhooks: None,
             },
         }],
         queries: vec![],
@@ -274,6 +280,7 @@ fn test_http_source_generates_valid_yaml() {
 #[test]
 fn test_grpc_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -312,6 +319,7 @@ fn test_grpc_source_generates_valid_yaml() {
 #[test]
 fn test_postgres_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -326,7 +334,21 @@ fn test_postgres_source_generates_valid_yaml() {
             id: "postgres-source".to_string(),
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto {},
+                PostgresBootstrapConfigDto {
+                    host: ConfigValue::Static("localhost".to_string()),
+                    port: ConfigValue::Static(5432),
+                    database: ConfigValue::Static("testdb".to_string()),
+                    user: ConfigValue::Static("testuser".to_string()),
+                    password: ConfigValue::Static("testpass".to_string()),
+                    tables: vec!["users".to_string(), "orders".to_string()],
+                    slot_name: "drasi_slot".to_string(),
+                    publication_name: "drasi_pub".to_string(),
+                    ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
+                    table_keys: vec![TableKeyConfigDto {
+                        table: "users".to_string(),
+                        key_columns: vec!["id".to_string()],
+                    }],
+                },
             )),
             config: PostgresSourceConfigDto {
                 host: ConfigValue::Static("localhost".to_string()),
@@ -356,6 +378,12 @@ fn test_postgres_source_generates_valid_yaml() {
         yaml.contains("kind: postgres"),
         "Should contain kind: postgres"
     );
+    assert!(
+        yaml.contains("bootstrapProvider:"),
+        "Should contain bootstrapProvider"
+    );
+    assert!(yaml.contains("database:"), "Should contain database");
+    assert!(yaml.contains("user:"), "Should contain user");
     assert!(yaml.contains("slotName:"), "Should contain slotName");
     assert!(
         yaml.contains("publicationName:"),
@@ -372,6 +400,7 @@ fn test_postgres_source_generates_valid_yaml() {
 #[test]
 fn test_platform_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -427,6 +456,7 @@ fn test_platform_source_generates_valid_yaml() {
 #[test]
 fn test_postgres_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -441,10 +471,24 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             id: "mock-source".to_string(),
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto {},
+                PostgresBootstrapConfigDto {
+                    host: ConfigValue::Static("localhost".to_string()),
+                    port: ConfigValue::Static(5432),
+                    database: ConfigValue::Static("testdb".to_string()),
+                    user: ConfigValue::Static("testuser".to_string()),
+                    password: ConfigValue::Static("testpass".to_string()),
+                    tables: vec!["users".to_string(), "orders".to_string()],
+                    slot_name: "drasi_slot".to_string(),
+                    publication_name: "drasi_pub".to_string(),
+                    ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
+                    table_keys: vec![TableKeyConfigDto {
+                        table: "users".to_string(),
+                        key_columns: vec!["id".to_string()],
+                    }],
+                },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -464,6 +508,8 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         yaml.contains("kind: postgres"),
         "Bootstrap provider should use kind: postgres"
     );
+    assert!(yaml.contains("database:"), "Should contain database");
+    assert!(yaml.contains("user:"), "Should contain user");
     // Should NOT contain "type: postgres"
     assert!(
         !yaml.contains("type: postgres"),
@@ -477,6 +523,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -496,7 +543,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -525,6 +572,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_platform_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -545,7 +593,7 @@ fn test_platform_bootstrap_provider_generates_valid_yaml() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -574,6 +622,7 @@ fn test_platform_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_noop_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -589,7 +638,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig::Noop),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(5000),
             },
         }],
@@ -617,6 +666,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_log_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -651,6 +701,7 @@ fn test_log_reaction_generates_valid_yaml() {
 #[test]
 fn test_http_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -691,6 +742,7 @@ fn test_http_reaction_generates_valid_yaml() {
 #[test]
 fn test_sse_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -736,6 +788,7 @@ fn test_sse_reaction_generates_valid_yaml() {
 #[test]
 fn test_grpc_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -784,6 +837,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
 #[test]
 fn test_platform_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -847,6 +901,7 @@ fn test_platform_reaction_generates_valid_yaml() {
 #[test]
 fn test_query_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -910,6 +965,7 @@ fn test_query_generates_valid_yaml() {
 #[test]
 fn test_full_config_roundtrip() {
     let config = DrasiServerConfig {
+        api_version: None,
         id: ConfigValue::Static("full-test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
         port: ConfigValue::Static(8080),
@@ -931,7 +987,7 @@ fn test_full_config_roundtrip() {
                 },
             )),
             config: MockSourceConfigDto {
-                data_type: ConfigValue::Static("sensor".to_string()),
+                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
                 interval_ms: ConfigValue::Static(5000),
             },
         }],

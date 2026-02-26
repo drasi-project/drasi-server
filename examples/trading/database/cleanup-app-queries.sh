@@ -18,7 +18,7 @@
 
 echo "Cleaning up all queries and reactions..."
 
-BASE_URL="http:#localhost:8080"
+BASE_URL="http:#localhost:8280"
 
 # Delete all queries
 QUERIES=$(curl -s "$BASE_URL/api/v1/queries" | jq -r '.data[]?.id')

@@ -213,6 +213,7 @@ fn test_persist_index_with_full_config() {
 #[test]
 fn test_persist_index_serialization_roundtrip() {
     let original = DrasiServerConfig {
+        api_version: None,
         persist_index: true,
         ..Default::default()
     };

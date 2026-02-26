@@ -28,6 +28,7 @@
 #
 # Run with: cargo run -- --config examples/configs/04-query-patterns/multi-source-queries.yaml
 
+apiVersion: drasi.io/v1
 id: multi-source-demo
 host: "0.0.0.0"
 port: 8080
@@ -39,21 +40,24 @@ sources:
   - kind: mock
     id: customer-service
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 3000
 
   # Source 2: Order data
   - kind: mock
     id: order-service
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
   # Source 3: Inventory data
   - kind: mock
     id: inventory-service
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2500
 
 queries:

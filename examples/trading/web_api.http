@@ -17,7 +17,7 @@
 # https://marketplace.visualstudio.com/items?itemName=humao.rest-client
 
 @hostname = localhost
-@port = 8080
+@port = 8280
 @instanceId = trading-server
 
 ### Health Check

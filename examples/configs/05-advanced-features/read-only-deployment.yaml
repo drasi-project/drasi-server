@@ -40,6 +40,7 @@
 #
 # Run with: cargo run -- --config examples/configs/05-advanced-features/read-only-deployment.yaml
 
+apiVersion: drasi.io/v1
 id: read-only-demo
 host: "0.0.0.0"
 port: 8080
@@ -55,7 +56,8 @@ sources:
   - kind: mock
     id: readonly-source
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 2000
 
 queries:

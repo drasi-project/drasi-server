@@ -39,6 +39,7 @@
 #   const events = new EventSource('http://localhost:8081/events');
 #   events.onmessage = (e) => console.log(JSON.parse(e.data));
 
+apiVersion: drasi.io/v1
 id: sse-streaming-demo
 host: "0.0.0.0"
 port: 8080
@@ -47,10 +48,12 @@ persistConfig: false
 
 sources:
   # Mock source generates SensorReading nodes with temperature, humidity, sensor_id
+  # First reading per sensor = INSERT, subsequent = UPDATE
   - kind: mock
     id: live-data
     autoStart: true
-    dataType: "sensor"
+    dataType:
+      type: sensorReading
     intervalMs: 1000
 
 queries:

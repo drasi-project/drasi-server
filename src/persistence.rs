@@ -14,6 +14,7 @@
 
 use crate::api::models::{ConfigValue, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
+use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
 use indexmap::IndexMap;
 use log::{debug, error, info};
@@ -27,7 +28,7 @@ use tokio::sync::RwLock;
 /// they cannot be retrieved from running plugin instances or drasi-lib.
 pub struct ConfigPersistence {
     config_file_path: PathBuf,
-    instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
+    registry: InstanceRegistry,
     host: String,
     port: u16,
     log_level: String,
@@ -39,6 +40,8 @@ pub struct ConfigPersistence {
     reaction_configs: Arc<RwLock<IndexMap<String, IndexMap<String, ReactionConfig>>>>,
     /// Query configs by instance_id -> query_id -> config
     query_configs: Arc<RwLock<IndexMap<String, IndexMap<String, QueryConfigDto>>>>,
+    /// Instance configs for dynamic instances
+    instance_configs: Arc<RwLock<IndexMap<String, DrasiLibInstanceConfig>>>,
 }
 
 impl ConfigPersistence {
@@ -46,7 +49,7 @@ impl ConfigPersistence {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config_file_path: PathBuf,
-        instances: Arc<IndexMap<String, Arc<drasi_lib::DrasiLib>>>,
+        registry: InstanceRegistry,
         host: String,
         port: u16,
         log_level: String,
@@ -58,7 +61,7 @@ impl ConfigPersistence {
     ) -> Self {
         Self {
             config_file_path,
-            instances,
+            registry,
             host,
             port,
             log_level,
@@ -67,7 +70,25 @@ impl ConfigPersistence {
             source_configs: Arc::new(RwLock::new(initial_source_configs)),
             reaction_configs: Arc::new(RwLock::new(initial_reaction_configs)),
             query_configs: Arc::new(RwLock::new(initial_query_configs)),
+            instance_configs: Arc::new(RwLock::new(IndexMap::new())),
         }
+    }
+
+    /// Register a new instance config for persistence
+    pub async fn register_instance(&self, config: DrasiLibInstanceConfig) {
+        if !self.persist_config {
+            return;
+        }
+        let mut instance_configs = self.instance_configs.write().await;
+        // Extract the ID from the ConfigValue
+        let id = match &config.id {
+            crate::api::models::ConfigValue::Static(s) => s.clone(),
+            crate::api::models::ConfigValue::EnvironmentVariable { name, default } => {
+                std::env::var(name).unwrap_or_else(|_| default.clone().unwrap_or_default())
+            }
+            crate::api::models::ConfigValue::Secret { name } => name.clone(),
+        };
+        instance_configs.insert(id, config);
     }
 
     /// Register a source config for persistence
@@ -128,6 +149,42 @@ impl ConfigPersistence {
             .insert(config.id.clone(), config);
     }
 
+    /// Get a stored source config, if available
+    pub async fn get_source_config(
+        &self,
+        instance_id: &str,
+        source_id: &str,
+    ) -> Option<SourceConfig> {
+        let source_configs = self.source_configs.read().await;
+        source_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(source_id).cloned())
+    }
+
+    /// Get a stored reaction config, if available
+    pub async fn get_reaction_config(
+        &self,
+        instance_id: &str,
+        reaction_id: &str,
+    ) -> Option<ReactionConfig> {
+        let reaction_configs = self.reaction_configs.read().await;
+        reaction_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(reaction_id).cloned())
+    }
+
+    /// Get a stored query config, if available
+    pub async fn get_query_config(
+        &self,
+        instance_id: &str,
+        query_id: &str,
+    ) -> Option<QueryConfigDto> {
+        let query_configs = self.query_configs.read().await;
+        query_configs
+            .get(instance_id)
+            .and_then(|configs| configs.get(query_id).cloned())
+    }
+
     /// Unregister a query config (called on deletion)
     pub async fn unregister_query(&self, instance_id: &str, query_id: &str) {
         if !self.persist_config {
@@ -158,45 +215,65 @@ impl ConfigPersistence {
         let source_configs = self.source_configs.read().await;
         let reaction_configs = self.reaction_configs.read().await;
         let query_configs = self.query_configs.read().await;
+        let dynamic_instance_configs = self.instance_configs.read().await;
 
         let mut instance_configs = Vec::new();
 
-        for (id, core) in self.instances.iter() {
+        for (id, core) in self.registry.list().await {
             let lib_config = core.get_current_config().await.map_err(|e| {
                 anyhow::anyhow!("Failed to get current config from DrasiLib '{id}': {e}")
             })?;
 
-            let persist_index = *self.persist_settings.get(id).unwrap_or(&false);
+            let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
 
             // Get source, reaction, and query configs for this instance from our DTO storage
             let sources: Vec<SourceConfig> = source_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let reactions: Vec<ReactionConfig> = reaction_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
             let queries: Vec<QueryConfigDto> = query_configs
-                .get(id)
+                .get(&id)
                 .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
 
-            instance_configs.push(DrasiLibInstanceConfig {
-                id: ConfigValue::Static(lib_config.id.clone()),
-                persist_index,
-                state_store: None, // State store config not persisted dynamically
-                default_priority_queue_capacity: lib_config
-                    .priority_queue_capacity
-                    .map(ConfigValue::Static),
-                default_dispatch_buffer_capacity: lib_config
-                    .dispatch_buffer_capacity
-                    .map(ConfigValue::Static),
-                identity_providers: Vec::new(), // Identity providers not persisted dynamically
-                sources,
-                reactions,
-                queries, // Now using stored QueryConfigDto instead of empty vec
-            });
+            // Check if this is a dynamically created instance
+            let instance_config = if let Some(dynamic_config) = dynamic_instance_configs.get(&id) {
+                // Use stored config for dynamic instances
+                DrasiLibInstanceConfig {
+                    id: ConfigValue::Static(lib_config.id.clone()),
+                    persist_index: dynamic_config.persist_index,
+                    state_store: dynamic_config.state_store.clone(),
+                    default_priority_queue_capacity: lib_config
+                        .priority_queue_capacity
+                        .map(ConfigValue::Static),
+                    default_dispatch_buffer_capacity: lib_config
+                        .dispatch_buffer_capacity
+                        .map(ConfigValue::Static),
+                    sources,
+                    reactions,
+                    queries,
+                }
+            } else {
+                DrasiLibInstanceConfig {
+                    id: ConfigValue::Static(lib_config.id.clone()),
+                    persist_index,
+                    state_store: None, // State store config not persisted dynamically
+                    default_priority_queue_capacity: lib_config
+                        .priority_queue_capacity
+                        .map(ConfigValue::Static),
+                    default_dispatch_buffer_capacity: lib_config
+                        .dispatch_buffer_capacity
+                        .map(ConfigValue::Static),
+                    sources,
+                    reactions,
+                    queries, // Now using stored QueryConfigDto instead of empty vec
+                }
+            };
+            instance_configs.push(instance_config);
         }
 
         // Dynamic format selection based on instance count
@@ -204,6 +281,7 @@ impl ConfigPersistence {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
             DrasiServerConfig {
+                api_version: None,
                 id: instance.id,
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
@@ -230,6 +308,7 @@ impl ConfigPersistence {
                 .unwrap_or_default();
 
             DrasiServerConfig {
+                api_version: None,
                 id: ConfigValue::Static(first_id),
                 host: ConfigValue::Static(self.host.clone()),
                 port: ConfigValue::Static(self.port),
@@ -299,6 +378,7 @@ impl ConfigPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::sources::mock::DataTypeDto;
     use async_trait::async_trait;
     use drasi_lib::channels::dispatcher::ChangeDispatcher;
     use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
@@ -414,7 +494,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -476,7 +556,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -510,7 +590,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -551,7 +631,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -571,7 +651,7 @@ mod tests {
         missing_instances.insert("test-server".to_string(), create_test_core().await);
         let persistence_non_existent = ConfigPersistence::new(
             non_existent,
-            Arc::new(missing_instances),
+            InstanceRegistry::from_map(missing_instances),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -632,7 +712,7 @@ mod tests {
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "0.0.0.0".to_string(),
             8080,
             "debug".to_string(),
@@ -866,7 +946,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -883,7 +963,7 @@ instances:
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -941,7 +1021,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -958,7 +1038,7 @@ instances:
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1025,7 +1105,7 @@ instances:
                 auto_start: true,
                 bootstrap_provider: None,
                 config: crate::api::models::MockSourceConfigDto {
-                    data_type: ConfigValue::Static("generic".to_string()),
+                    data_type: DataTypeDto::Generic,
                     interval_ms: ConfigValue::Static(1000),
                 },
             },
@@ -1034,7 +1114,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1074,7 +1154,7 @@ instances:
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1101,7 +1181,7 @@ instances:
             auto_start: false,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1141,7 +1221,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(), // Different from initial
             8080,                    // Different from initial
             "info".to_string(),      // Different from initial
@@ -1189,7 +1269,7 @@ logLevel: warn
 
         let persistence = ConfigPersistence::new(
             config_path.clone(),
-            Arc::new(instances_map),
+            InstanceRegistry::from_map(instances_map),
             "127.0.0.1".to_string(),
             8080,
             "info".to_string(),
@@ -1206,7 +1286,7 @@ logLevel: warn
             auto_start: true,
             bootstrap_provider: None,
             config: crate::api::models::MockSourceConfigDto {
-                data_type: ConfigValue::Static("generic".to_string()),
+                data_type: DataTypeDto::Generic,
                 interval_ms: ConfigValue::Static(1000),
             },
         };
@@ -1252,5 +1332,343 @@ logLevel: warn
         // Verify content
         assert_eq!(loaded_config.sources[0].id(), "added-source");
         assert_eq!(loaded_config.reactions[0].id(), "added-reaction");
+    }
+
+    // ==================== Initial Component Preservation Tests ====================
+
+    /// Helper to create a QueryConfigDto for testing
+    fn make_query_dto(id: &str, source_id: &str) -> crate::api::models::QueryConfigDto {
+        crate::api::models::QueryConfigDto {
+            id: id.to_string(),
+            auto_start: true,
+            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
+            query_language: ConfigValue::Static("Cypher".to_string()),
+            middleware: vec![],
+            sources: vec![
+                crate::api::models::queries::query::SourceSubscriptionConfigDto {
+                    source_id: ConfigValue::Static(source_id.to_string()),
+                    nodes: vec![],
+                    relations: vec![],
+                    pipeline: vec![],
+                },
+            ],
+            enable_bootstrap: true,
+            bootstrap_buffer_size: 10000,
+            joins: None,
+            priority_queue_capacity: None,
+            dispatch_buffer_capacity: None,
+            dispatch_mode: None,
+            storage_backend: None,
+        }
+    }
+
+    /// Helper to create a SourceConfig for testing
+    fn make_source_config(id: &str) -> SourceConfig {
+        SourceConfig::Mock {
+            id: id.to_string(),
+            auto_start: true,
+            bootstrap_provider: None,
+            config: crate::api::models::MockSourceConfigDto {
+                data_type: DataTypeDto::Generic,
+                interval_ms: ConfigValue::Static(1000),
+            },
+        }
+    }
+
+    /// Helper to create a ReactionConfig for testing
+    fn make_reaction_config(id: &str, queries: Vec<&str>) -> ReactionConfig {
+        ReactionConfig::Log {
+            id: id.to_string(),
+            queries: queries.into_iter().map(String::from).collect(),
+            auto_start: true,
+            config: crate::api::models::LogReactionConfigDto {
+                routes: HashMap::new(),
+                default_template: None,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_initial_queries_preserved_when_new_query_added() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Seed with an initial query (simulating loading from config file)
+        let initial_query = make_query_dto("initial-query", "test-source");
+        let mut initial_query_configs = IndexMap::new();
+        let mut instance_queries = IndexMap::new();
+        instance_queries.insert("initial-query".to_string(), initial_query);
+        initial_query_configs.insert("test-server".to_string(), instance_queries);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            InstanceRegistry::from_map(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            IndexMap::new(),
+            IndexMap::new(),
+            initial_query_configs,
+        );
+
+        // Register a NEW query via the API
+        let new_query = make_query_dto("new-query", "test-source");
+        persistence.register_query("test-server", new_query).await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Load and verify BOTH queries are present
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(
+            loaded_config.queries.len(),
+            2,
+            "Both initial and new queries should be preserved"
+        );
+
+        let query_ids: Vec<&str> = loaded_config
+            .queries
+            .iter()
+            .map(|q| q.id.as_str())
+            .collect();
+        assert!(
+            query_ids.contains(&"initial-query"),
+            "Initial query should be preserved"
+        );
+        assert!(
+            query_ids.contains(&"new-query"),
+            "New query should be present"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initial_sources_preserved_when_new_source_added() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Seed with an initial source (simulating loading from config file)
+        let initial_source = make_source_config("initial-source");
+        let mut initial_source_configs = IndexMap::new();
+        let mut instance_sources = IndexMap::new();
+        instance_sources.insert("initial-source".to_string(), initial_source);
+        initial_source_configs.insert("test-server".to_string(), instance_sources);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            InstanceRegistry::from_map(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            initial_source_configs,
+            IndexMap::new(),
+            IndexMap::new(),
+        );
+
+        // Register a NEW source via the API
+        let new_source = make_source_config("new-source");
+        persistence.register_source("test-server", new_source).await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Load and verify BOTH sources are present
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(
+            loaded_config.sources.len(),
+            2,
+            "Both initial and new sources should be preserved"
+        );
+
+        let source_ids: Vec<&str> = loaded_config.sources.iter().map(|s| s.id()).collect();
+        assert!(
+            source_ids.contains(&"initial-source"),
+            "Initial source should be preserved"
+        );
+        assert!(
+            source_ids.contains(&"new-source"),
+            "New source should be present"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initial_reactions_preserved_when_new_reaction_added() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Seed with an initial reaction (simulating loading from config file)
+        let initial_reaction = make_reaction_config("initial-reaction", vec!["test-query"]);
+        let mut initial_reaction_configs = IndexMap::new();
+        let mut instance_reactions = IndexMap::new();
+        instance_reactions.insert("initial-reaction".to_string(), initial_reaction);
+        initial_reaction_configs.insert("test-server".to_string(), instance_reactions);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            InstanceRegistry::from_map(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            IndexMap::new(),
+            initial_reaction_configs,
+            IndexMap::new(),
+        );
+
+        // Register a NEW reaction via the API
+        let new_reaction = make_reaction_config("new-reaction", vec!["test-query"]);
+        persistence
+            .register_reaction("test-server", new_reaction)
+            .await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Load and verify BOTH reactions are present
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        assert_eq!(
+            loaded_config.reactions.len(),
+            2,
+            "Both initial and new reactions should be preserved"
+        );
+
+        let reaction_ids: Vec<&str> = loaded_config.reactions.iter().map(|r| r.id()).collect();
+        assert!(
+            reaction_ids.contains(&"initial-reaction"),
+            "Initial reaction should be preserved"
+        );
+        assert!(
+            reaction_ids.contains(&"new-reaction"),
+            "New reaction should be present"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_all_initial_components_preserved_together() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config_path = temp_dir.path().join("test-config.yaml");
+        std::fs::write(&config_path, "").expect("Failed to create test file");
+
+        let core = create_test_core().await;
+        let mut instances_map = IndexMap::new();
+        instances_map.insert("test-server".to_string(), core.clone());
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert("test-server".to_string(), false);
+
+        // Seed with initial components for all three types
+        let mut initial_source_configs = IndexMap::new();
+        let mut instance_sources = IndexMap::new();
+        instance_sources.insert(
+            "config-source".to_string(),
+            make_source_config("config-source"),
+        );
+        initial_source_configs.insert("test-server".to_string(), instance_sources);
+
+        let mut initial_reaction_configs = IndexMap::new();
+        let mut instance_reactions = IndexMap::new();
+        instance_reactions.insert(
+            "config-reaction".to_string(),
+            make_reaction_config("config-reaction", vec!["test-query"]),
+        );
+        initial_reaction_configs.insert("test-server".to_string(), instance_reactions);
+
+        let mut initial_query_configs = IndexMap::new();
+        let mut instance_queries = IndexMap::new();
+        instance_queries.insert(
+            "config-query".to_string(),
+            make_query_dto("config-query", "test-source"),
+        );
+        initial_query_configs.insert("test-server".to_string(), instance_queries);
+
+        let persistence = ConfigPersistence::new(
+            config_path.clone(),
+            InstanceRegistry::from_map(instances_map),
+            "127.0.0.1".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            initial_source_configs,
+            initial_reaction_configs,
+            initial_query_configs,
+        );
+
+        // Register new components of each type via the API
+        persistence
+            .register_source("test-server", make_source_config("api-source"))
+            .await;
+        persistence
+            .register_reaction(
+                "test-server",
+                make_reaction_config("api-reaction", vec!["test-query"]),
+            )
+            .await;
+        persistence
+            .register_query("test-server", make_query_dto("api-query", "test-source"))
+            .await;
+
+        // Save
+        persistence.save().await.expect("Save failed");
+
+        // Load and verify all components are present
+        let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
+        let loaded_config: DrasiServerConfig =
+            crate::config::loader::from_yaml_str(&content).expect("Failed to parse saved config");
+
+        // Sources: initial + API-added
+        assert_eq!(loaded_config.sources.len(), 2, "Should have 2 sources");
+        let source_ids: Vec<&str> = loaded_config.sources.iter().map(|s| s.id()).collect();
+        assert!(source_ids.contains(&"config-source"));
+        assert!(source_ids.contains(&"api-source"));
+
+        // Queries: initial + API-added
+        assert_eq!(loaded_config.queries.len(), 2, "Should have 2 queries");
+        let query_ids: Vec<&str> = loaded_config
+            .queries
+            .iter()
+            .map(|q| q.id.as_str())
+            .collect();
+        assert!(query_ids.contains(&"config-query"));
+        assert!(query_ids.contains(&"api-query"));
+
+        // Reactions: initial + API-added
+        assert_eq!(loaded_config.reactions.len(), 2, "Should have 2 reactions");
+        let reaction_ids: Vec<&str> = loaded_config.reactions.iter().map(|r| r.id()).collect();
+        assert!(reaction_ids.contains(&"config-reaction"));
+        assert!(reaction_ids.contains(&"api-reaction"));
     }
 }

@@ -37,6 +37,7 @@
 #
 # View performance reports in the console output.
 
+apiVersion: drasi.io/v1
 id: profiler-demo
 host: "0.0.0.0"
 port: 8080
@@ -49,7 +50,8 @@ sources:
   - kind: mock
     id: high-volume
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 100
 
 queries:

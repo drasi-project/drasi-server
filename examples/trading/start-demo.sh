@@ -133,6 +133,8 @@ else
     docker-compose exec -T postgres psql -U postgres -d trading_demo -c "CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, stock_prices;"
 fi
 
+sleep 2
+
 # Step 2: Start Drasi Server
 echo ""
 echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamically)..."
@@ -154,8 +156,8 @@ if ! kill -0 $DRASI_PID 2>/dev/null; then
     tail -10 "$LOG_DIR/drasi-server.log" | grep -E "ERROR|Error|error" || tail -5 "$LOG_DIR/drasi-server.log"
     echo ""
     echo "Common issues:"
-    echo "  - Port 8080 already in use (check with: lsof -i :8080)"
-    echo "  - Port 9000 already in use (check with: lsof -i :9000)"
+    echo "  - Port 8280 already in use (check with: lsof -i :8280)"
+    echo "  - Port 9100 already in use (check with: lsof -i :9100)"
     echo "  - PostgreSQL connection failed"
     echo ""
     echo "To kill existing Drasi servers: pkill -f drasi-server"
@@ -163,7 +165,7 @@ if ! kill -0 $DRASI_PID 2>/dev/null; then
 fi
 
 # Wait for Drasi Server to be ready
-if ! wait_for_service "http://localhost:8080/health" "Drasi Server"; then
+if ! wait_for_service "http://localhost:8280/health" "Drasi Server"; then
     echo -e "${RED}✗ Drasi Server API is not responding${NC}"
     echo "Server process is running but API is not available"
     echo "Check logs: tail -50 $LOG_DIR/drasi-server.log"
@@ -173,7 +175,7 @@ fi
 
 # Verify sources are running
 echo "Verifying Drasi sources..."
-SOURCE_STATUS=$(curl -s http://localhost:8080/api/v1/sources)
+SOURCE_STATUS=$(curl -s http://localhost:8280/api/v1/sources)
 if echo "$SOURCE_STATUS" | grep -q '"status":"running"'; then
     echo -e "PostgreSQL replication source: ${GREEN}✓ Running${NC}"
     echo -e "HTTP source: ${GREEN}✓ Running${NC}"
@@ -202,8 +204,8 @@ npm run dev > "$LOG_DIR/react-app.log" 2>&1 &
 REACT_PID=$!
 echo "React app started with PID: $REACT_PID"
 
-# Wait for React app (Vite dev server runs on 5173)
-wait_for_service "http://localhost:5173" "React application"
+# Wait for React app (Vite dev server runs on 5273)
+wait_for_service "http://localhost:5273" "React application"
 
 # Step 5: Install Python dependencies
 echo ""
@@ -229,10 +231,10 @@ echo -e "${GREEN}   Demo Started Successfully!${NC}"
 echo "======================================"
 echo ""
 echo "Access the demo at:"
-echo "  • Trading UI: http://localhost:5173"
-echo "  • Drasi API: http://localhost:8080"
-echo "  • HTTP Source: http://localhost:9000"
-echo "  • SSE Stream: http://localhost:50051/events"
+echo "  • Trading UI: http://localhost:5273"
+echo "  • Drasi API: http://localhost:8280"
+echo "  • HTTP Source: http://localhost:9100"
+echo "  • SSE Stream: http://localhost:8281/events"
 echo ""
 echo "Process PIDs:"
 echo "  • Drasi Server: $DRASI_PID"

@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Template specification for SSE output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseTemplateSpec)]
 #[serde(deny_unknown_fields)]
 pub struct SseTemplateSpecDto {
     /// Optional custom path for this template
@@ -31,22 +32,27 @@ pub struct SseTemplateSpecDto {
 }
 
 /// Configuration for query-specific SSE output
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseQueryConfig)]
 #[serde(deny_unknown_fields)]
 pub struct SseQueryConfigDto {
     /// Template for ADD operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub added: Option<SseTemplateSpecDto>,
     /// Template for UPDATE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub updated: Option<SseTemplateSpecDto>,
     /// Template for DELETE operations
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseTemplateSpec>)]
     pub deleted: Option<SseTemplateSpecDto>,
 }
 
 /// Local copy of SSE reaction configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SseReactionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SseReactionConfigDto {
     #[serde(default = "default_sse_host")]
@@ -59,9 +65,11 @@ pub struct SseReactionConfigDto {
     pub heartbeat_interval_ms: ConfigValue<u64>,
     /// Query-specific template configurations
     #[serde(default)]
+    #[schema(value_type = HashMap<String, SseQueryConfig>)]
     pub routes: HashMap<String, SseQueryConfigDto>,
     /// Default template configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<SseQueryConfig>)]
     pub default_template: Option<SseQueryConfigDto>,
 }
 

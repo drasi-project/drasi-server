@@ -16,7 +16,7 @@
 
 .PHONY: all build build-release run run-release setup demo demo-cleanup \
         doctor validate clean clippy test fmt fmt-check help docker-build \
-        submodule-update
+        submodule-update vscode-test
 
 # Default target
 help:
@@ -32,6 +32,7 @@ help:
 	@echo "  make build         - Build debug binary"
 	@echo "  make build-release - Build release binary"
 	@echo "  make test          - Run all tests"
+	@echo "  make vscode-test   - Run VSCode extension tests"
 	@echo "  make clippy        - Run linter"
 	@echo "  make fmt           - Format code"
 	@echo "  make fmt-check     - Check formatting"
@@ -100,6 +101,9 @@ fmt-check:
 
 test:
 	cargo test --all-features
+
+vscode-test:
+	cd dev-tools/vscode/drasi-server && npm test
 
 # === Docker ===
 

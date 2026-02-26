@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Local copy of PostgreSQL source configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = PostgresSourceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PostgresSourceConfigDto {
     #[serde(default = "default_postgres_host")]
@@ -38,12 +39,15 @@ pub struct PostgresSourceConfigDto {
     #[serde(default = "default_publication_name")]
     pub publication_name: String,
     #[serde(default = "default_ssl_mode")]
+    #[schema(value_type = ConfigValue<SslMode>)]
     pub ssl_mode: ConfigValue<SslModeDto>,
     #[serde(default)]
+    #[schema(value_type = Vec<TableKeyConfig>)]
     pub table_keys: Vec<TableKeyConfigDto>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[schema(as = SslMode)]
 #[serde(rename_all = "lowercase")]
 pub enum SslModeDto {
     Disable,
@@ -90,7 +94,8 @@ impl From<SslMode> for SslModeDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = TableKeyConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableKeyConfigDto {
     pub table: String,

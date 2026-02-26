@@ -25,8 +25,11 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
-use crate::config::{ReactionConfig, ResolvedInstanceConfig, SourceConfig};
+use crate::config::{
+    DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
+};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
+use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
 use drasi_index_rocksdb::RocksDbIndexProvider;
@@ -264,7 +267,11 @@ impl DrasiServer {
             ));
         }
 
-        let instance_map = Arc::new(instance_map);
+        // Wrap the instance map in Arc for sharing
+        let instances = Arc::new(instance_map);
+
+        // Create the instance registry from the map
+        let registry = InstanceRegistry::from_map((*instances).clone());
 
         // Initialize persistence if config file is provided and persistence is enabled
         let config_persistence = if let Some(config_file) = &self.config_file_path {
@@ -279,12 +286,12 @@ impl DrasiServer {
                     // Extract source, reaction, and query configs from the loaded config
                     let resolved_instances = config.resolved_instances(&mapper)?;
                     let (initial_source_configs, initial_reaction_configs, initial_query_configs) =
-                        Self::extract_component_configs(&resolved_instances);
+                        Self::extract_component_configs(&config, &resolved_instances)?;
 
                     // Persistence is enabled - create ConfigPersistence instance
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
-                        instance_map.clone(),
+                        registry.clone(),
                         self.host.clone(),
                         self.port,
                         resolved_settings.log_level,
@@ -311,8 +318,12 @@ impl DrasiServer {
 
         // Start web API if enabled
         if self.enable_api {
-            self.start_api(instance_map.clone(), config_persistence.clone())
-                .await?;
+            self.start_api(
+                instances.clone(),
+                registry.clone(),
+                config_persistence.clone(),
+            )
+            .await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.port
@@ -325,7 +336,7 @@ impl DrasiServer {
         tokio::signal::ctrl_c().await?;
 
         info!("Shutting down Drasi Server");
-        for core in instance_map.values() {
+        for (_id, core) in registry.list().await {
             core.stop().await?;
         }
 
@@ -335,17 +346,15 @@ impl DrasiServer {
     async fn start_api(
         &self,
         instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
+        registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation for v1
         let openapi_v1 = api::ApiDocV1::openapi();
 
         // Build the v1 API router
-        let v1_router = api::build_v1_router(
-            instances.clone(),
-            self.read_only.clone(),
-            config_persistence.clone(),
-        );
+        let v1_router =
+            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
 
         // Build the main application router
         let app = Router::new()
@@ -375,14 +384,17 @@ impl DrasiServer {
         Ok(())
     }
 
-    /// Extract source and reaction configs from resolved instances for persistence initialization
+    /// Extract source, reaction, and query configs from resolved instances for persistence initialization.
+    /// The `config` parameter provides the original `QueryConfigDto` entries (before resolution)
+    /// since the persistence layer stores queries as DTOs, not resolved `QueryConfig` domain objects.
     fn extract_component_configs(
+        config: &DrasiServerConfig,
         resolved_instances: &[ResolvedInstanceConfig],
-    ) -> (
+    ) -> Result<(
         IndexMap<String, IndexMap<String, SourceConfig>>,
         IndexMap<String, IndexMap<String, ReactionConfig>>,
         IndexMap<String, IndexMap<String, crate::api::models::QueryConfigDto>>,
-    ) {
+    )> {
         use crate::api::models::QueryConfigDto;
 
         let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
@@ -390,7 +402,15 @@ impl DrasiServer {
             IndexMap::new();
         let mut query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>> = IndexMap::new();
 
-        for instance in resolved_instances {
+        // Get the raw instances (before resolution) to extract QueryConfigDto
+        let raw_instances: Vec<&DrasiLibInstanceConfig> = if config.instances.is_empty() {
+            // Single instance mode - create a temporary reference
+            vec![]
+        } else {
+            config.instances.iter().collect()
+        };
+
+        for (i, instance) in resolved_instances.iter().enumerate() {
             let mut sources = IndexMap::new();
             for source in &instance.sources {
                 sources.insert(source.id().to_string(), source.clone());
@@ -403,11 +423,22 @@ impl DrasiServer {
             }
             reaction_configs.insert(instance.id.clone(), reactions);
 
-            // Note: queries are not extracted because they're stored as QueryConfigDto
-            // during config load and managed separately in persistence layer
-            query_configs.insert(instance.id.clone(), IndexMap::new());
+            // Extract query configs from the original DTOs
+            let query_dtos: &Vec<QueryConfigDto> = if config.instances.is_empty() {
+                // Single instance mode - use root-level queries
+                &config.queries
+            } else {
+                // Multi-instance mode - use the corresponding instance's queries
+                &raw_instances[i].queries
+            };
+
+            let mut queries = IndexMap::new();
+            for dto in query_dtos {
+                queries.insert(dto.id.clone(), dto.clone());
+            }
+            query_configs.insert(instance.id.clone(), queries);
         }
 
-        (source_configs, reaction_configs, query_configs)
+        Ok((source_configs, reaction_configs, query_configs))
     }
 }

@@ -1,6 +1,7 @@
 # Docker example configuration for Drasi Server
 # This is an example config showing sources, queries, and reactions
 
+apiVersion: drasi.io/v1
 id: 1be50fe6-0dbf-4341-8836-73b23dbee2a1
 host: 0.0.0.0
 port: 8080
@@ -13,12 +14,15 @@ sources:
     autoStart: true
     kind: mock
     intervalMs: 5000
-    dataType: vehicle_location
+    dataType:
+      type: sensorReading
+      sensorCount: 10
 
   - id: order-status-source
     autoStart: true
     kind: mock
-    dataType: order_status
+    dataType:
+      type: generic
     intervalMs: 3000
 
 queries:

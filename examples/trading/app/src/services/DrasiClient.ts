@@ -43,7 +43,7 @@ export class DrasiClient {
 
   constructor(baseUrl?: string) {
     // Use direct URL - Drasi Server should have CORS enabled
-    this.baseUrl = baseUrl || 'http://localhost:8080';
+    this.baseUrl = baseUrl || 'http://localhost:8280';
   this.sseClient = new DrasiSSEClient();
     this.initializeQueries();
   }
@@ -112,12 +112,11 @@ export class DrasiClient {
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE sp.price > sp.previous_close
-        WITH s, sp, ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
         RETURN s.symbol AS symbol,
                s.name AS name,
                sp.price AS price,
                sp.previous_close AS previous_close,
-               change_percent
+               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
       sources: [
         { sourceId: 'postgres-stocks', pipeline: [] },
@@ -131,12 +130,11 @@ export class DrasiClient {
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE sp.price < sp.previous_close
-        WITH s, sp, ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
         RETURN s.symbol AS symbol,
                s.name AS name,
                sp.price AS price,
                sp.previous_close AS previous_close,
-               change_percent
+               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
       `,
       sources: [
         { sourceId: 'postgres-stocks', pipeline: [] },
@@ -196,12 +194,14 @@ export class DrasiClient {
       }
 
       // Check if sources exist
-      const sourcesResponse = await fetch(`${this.baseUrl}/api/v1/sources`);
-      const sourcesData = await sourcesResponse.json();
-      const sources = sourcesData.data || sourcesData; // Handle both wrapped and unwrapped responses
-      
-      const requiredSources = ['postgres-stocks', 'price-feed'];
-      const existingSources = Array.isArray(sources) ? sources.map((s: any) => s.id) : [];
+    const sourcesResponse = await fetch(`${this.baseUrl}/api/v1/sources`);
+    const sourcesData = await sourcesResponse.json();
+    const sources = sourcesData.data || sourcesData; // Handle both wrapped and unwrapped responses
+
+    const requiredSources = ['postgres-stocks', 'price-feed'];
+    const existingSources = Array.isArray(sources)
+      ? sources.map((s: any) => (s.config ?? s).id)
+      : [];
       
       for (const sourceId of requiredSources) {
         if (!existingSources.includes(sourceId)) {
@@ -263,7 +263,7 @@ export class DrasiClient {
   private async ensureReaction(): Promise<string> {
     try {
       // Check if reaction exists
-      const checkResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}?view=full`);
       
       if (checkResponse.status === 404) {
         // Reaction doesn't exist, create it
@@ -276,7 +276,7 @@ export class DrasiClient {
           autoStart: true,
           // SSE reaction config fields (camelCase for nested SseReactionConfigDto)
           host: '0.0.0.0',
-          port: 50051,
+          port: 8281,
           ssePath: '/events',
           heartbeatIntervalMs: 15000
         };
@@ -294,16 +294,18 @@ export class DrasiClient {
 
         // Start the reaction
         await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
-        return 'http://localhost:50051/events';
+        return 'http://localhost:8281/events';
       } else if (checkResponse.ok) {
         // Reaction exists, make sure it's running
         const reaction = await checkResponse.json();
-        if (reaction.status !== 'running') {
+        const payload = reaction.data ?? reaction;
+        const config = payload?.config ?? payload;
+        if ((payload?.status ?? config.status) !== 'running') {
           console.log(`Starting reaction: ${this.reactionId}`);
           await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
         }
         // Derive endpoint from existing reaction properties
-        const props = reaction.config?.properties || reaction.properties || {};
+        const props = config?.properties || config || {};
         const host = props.host || 'localhost';
         const port = props.port || 50051;
         const path = props.ssePath || '/events';
@@ -314,7 +316,7 @@ export class DrasiClient {
       throw error;
     }
     // Fallback default
-    return 'http://localhost:50051/events';
+    return 'http://localhost:8281/events';
   }
 
   /**
@@ -323,7 +325,7 @@ export class DrasiClient {
   private async ensureQuery(queryDef: QueryDefinition): Promise<void> {
     try {
       // Check if query exists
-      const checkResponse = await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}`);
+      const checkResponse = await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}?view=full`);
       
       if (checkResponse.status === 404) {
         // Query doesn't exist, create it
@@ -332,6 +334,7 @@ export class DrasiClient {
         const queryConfig = {
           id: queryDef.id,
           query: queryDef.query,
+          queryLanguage: 'Cypher',
           sources: queryDef.sources,
           joins: queryDef.joins,
           autoStart: true
@@ -357,7 +360,9 @@ export class DrasiClient {
       } else if (checkResponse.ok) {
         // Query exists, make sure it's running
         const query = await checkResponse.json();
-        if (query.status !== 'running') {
+        const payload = query.data ?? query;
+        const config = payload?.config ?? payload;
+        if ((payload?.status ?? config.status) !== 'running') {
           console.log(`Starting query: ${queryDef.id}`);
           await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}/start`, { method: 'POST' });
         }

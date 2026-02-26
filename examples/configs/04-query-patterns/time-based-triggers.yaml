@@ -33,6 +33,7 @@
 #
 # Run with: cargo run -- --config examples/configs/04-query-patterns/time-based-triggers.yaml
 
+apiVersion: drasi.io/v1
 id: time-triggers-demo
 host: "0.0.0.0"
 port: 8080
@@ -43,7 +44,8 @@ sources:
   - kind: mock
     id: activity-stream
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 5000
 
 queries:

@@ -39,6 +39,7 @@
 #
 # SECURITY: Use environment variables for tokens in production!
 
+apiVersion: drasi.io/v1
 id: http-webhook-demo
 host: "0.0.0.0"
 port: 8080
@@ -49,7 +50,8 @@ sources:
   - kind: mock
     id: orders
     autoStart: true
-    dataType: "generic"
+    dataType:
+      type: generic
     intervalMs: 3000
 
 queries:
