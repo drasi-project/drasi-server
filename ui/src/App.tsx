@@ -149,6 +149,7 @@ export default function App() {
       queryIds: r.queries,
       properties: r.properties,
       error: r.error,
+      instanceId: selectedInstanceId,
     })),
   };
 

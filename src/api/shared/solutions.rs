@@ -20,9 +20,9 @@ use std::sync::Arc;
 
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::solution::{
-    extract_variables, CreateSolutionTemplateRequest, CreateSolutionTemplateResponse,
-    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
-    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary,
+    extract_variables, CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, DeployPhase,
+    SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail,
+    SolutionTemplateMetadata, SolutionTemplateSummary,
 };
 use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
 use crate::api::shared::ApiResponse;
@@ -305,7 +305,7 @@ pub async fn create_solution_template(
             return Json(ApiResponse::success(CreateSolutionTemplateResponse {
                 success: false,
                 template_id: None,
-                error: Some(format!("Source '{}' not found", source_id)),
+                error: Some(format!("Source '{source_id}' not found")),
             }));
         }
     }
@@ -320,14 +320,17 @@ pub async fn create_solution_template(
             return Json(ApiResponse::success(CreateSolutionTemplateResponse {
                 success: false,
                 template_id: None,
-                error: Some(format!("Query '{}' not found", query_id)),
+                error: Some(format!("Query '{query_id}' not found")),
             }));
         }
     }
 
     // Collect reactions
     for reaction_id in &request.reaction_ids {
-        if let Some(reaction_config) = persistence.get_reaction_config(instance_id, reaction_id).await {
+        if let Some(reaction_config) = persistence
+            .get_reaction_config(instance_id, reaction_id)
+            .await
+        {
             if let Ok(yaml_value) = serde_yaml::to_value(&reaction_config) {
                 reactions.push(yaml_value);
             }
@@ -335,7 +338,7 @@ pub async fn create_solution_template(
             return Json(ApiResponse::success(CreateSolutionTemplateResponse {
                 success: false,
                 template_id: None,
-                error: Some(format!("Reaction '{}' not found", reaction_id)),
+                error: Some(format!("Reaction '{reaction_id}' not found")),
             }));
         }
     }
@@ -346,28 +349,28 @@ pub async fn create_solution_template(
         serde_yaml::Value::String("name".to_string()),
         serde_yaml::Value::String(request.name.clone()),
     );
-    
+
     if let Some(desc) = &request.description {
         template_map.insert(
             serde_yaml::Value::String("description".to_string()),
             serde_yaml::Value::String(desc.clone()),
         );
     }
-    
+
     if let Some(ver) = &request.version {
         template_map.insert(
             serde_yaml::Value::String("version".to_string()),
             serde_yaml::Value::String(ver.clone()),
         );
     }
-    
+
     if let Some(auth) = &request.author {
         template_map.insert(
             serde_yaml::Value::String("author".to_string()),
             serde_yaml::Value::String(auth.clone()),
         );
     }
-    
+
     if let Some(lic) = &request.license {
         template_map.insert(
             serde_yaml::Value::String("license".to_string()),
@@ -406,7 +409,7 @@ pub async fn create_solution_template(
             return Json(ApiResponse::success(CreateSolutionTemplateResponse {
                 success: false,
                 template_id: None,
-                error: Some(format!("Failed to serialize template: {}", e)),
+                error: Some(format!("Failed to serialize template: {e}")),
             }));
         }
     };
@@ -420,12 +423,12 @@ pub async fn create_solution_template(
         return Json(ApiResponse::success(CreateSolutionTemplateResponse {
             success: false,
             template_id: None,
-            error: Some(format!("Failed to create solutions directory: {}", e)),
+            error: Some(format!("Failed to create solutions directory: {e}")),
         }));
     }
 
     let file_path = dir_path.join(format!("{}.yaml", request.id));
-    
+
     // Check if file already exists
     if file_path.exists() {
         return Json(ApiResponse::success(CreateSolutionTemplateResponse {
@@ -439,7 +442,7 @@ pub async fn create_solution_template(
         return Json(ApiResponse::success(CreateSolutionTemplateResponse {
             success: false,
             template_id: None,
-            error: Some(format!("Failed to write template file: {}", e)),
+            error: Some(format!("Failed to write template file: {e}")),
         }));
     }
 

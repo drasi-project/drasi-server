@@ -21,9 +21,9 @@
 use utoipa::OpenApi;
 
 use crate::api::models::solution::{
-    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, DeployPhase, SolutionDeployError,
-    SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateMetadata,
-    SolutionTemplateSummary, SolutionVariable,
+    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, DeployPhase,
+    SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail,
+    SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
 };
 use crate::api::models::{
     ApplicationBootstrapConfigDto, AuthConfigDto, BearerConfigDto, BootstrapProviderConfig,
