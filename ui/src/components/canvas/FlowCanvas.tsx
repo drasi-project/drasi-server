@@ -8,6 +8,7 @@ import {
   Panel,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type NodeChange,
 } from "@xyflow/react";
@@ -45,17 +46,28 @@ interface CollisionApi {
   clampDragPosition: (id: string, x: number, y: number) => { x: number; y: number };
 }
 
+interface CanvasApi {
+  collision: CollisionApi | null;
+  fitView: () => void;
+}
+
 const CANVAS_LOCK_KEY = "drasi-canvas-locked";
 
 function AutoLayout({
-  onCollisionRef,
+  onApiRef,
   instanceId,
 }: {
-  onCollisionRef: React.MutableRefObject<CollisionApi | null>;
+  onApiRef: React.MutableRefObject<CanvasApi | null>;
   instanceId?: string;
 }) {
-  const api = useAutoLayout();
-  onCollisionRef.current = api;
+  const layoutApi = useAutoLayout();
+  const { fitView } = useReactFlow();
+  
+  onApiRef.current = {
+    collision: layoutApi,
+    fitView: () => fitView({ padding: 0.2, duration: 300 }),
+  };
+  
   useCanvasPersistence(instanceId);
   return null;
 }
@@ -92,7 +104,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
-  const collisionRef = useRef<CollisionApi | null>(null);
+  const canvasApiRef = useRef<CanvasApi | null>(null);
   const [canvasLocked, setCanvasLocked] = useState(() => {
     try { return localStorage.getItem(CANVAS_LOCK_KEY) === "true"; } catch { return false; }
   });
@@ -109,8 +121,8 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const clampedChanges = changes.map((c) => {
-        if (c.type === "position" && c.position && collisionRef.current) {
-          const clamped = collisionRef.current.clampDragPosition(
+        if (c.type === "position" && c.position && canvasApiRef.current?.collision) {
+          const clamped = canvasApiRef.current.collision.clampDragPosition(
             c.id,
             c.position.x,
             c.position.y,
@@ -232,6 +244,11 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         return pos ? { ...n, position: pos } : n;
       });
     });
+
+    // Fit view after layout with a small delay for React to render new positions
+    setTimeout(() => {
+      canvasApiRef.current?.fitView();
+    }, 50);
   }, [setNodes]);
 
   const confirmDelete = useCallback(() => {
@@ -296,7 +313,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <AutoLayout onCollisionRef={collisionRef} instanceId={instanceId} />
+        <AutoLayout onApiRef={canvasApiRef} instanceId={instanceId} />
         <Background color="var(--drasi-border)" gap={24} size={1} />
         <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface [&>button]:!w-8 [&>button]:!h-8">
           <ControlButton
