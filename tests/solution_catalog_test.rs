@@ -316,7 +316,7 @@ async fn test_get_solution_variable_extraction() {
         .iter()
         .find(|v| v["name"] == "TEMP_THRESHOLD")
         .expect("TEMP_THRESHOLD variable not found");
-    assert_eq!(threshold_var["default"], "75");
+    assert_eq!(threshold_var["default"], "25");
     assert_eq!(threshold_var["required"], false);
 }
 

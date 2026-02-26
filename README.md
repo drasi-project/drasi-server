@@ -2228,9 +2228,9 @@ id: "${SERVER_ID:-drasi-${ENVIRONMENT:-dev}}"
 host: "${SERVER_HOST:-0.0.0.0}"
 port: "${SERVER_PORT:-8080}"
 logLevel: "${LOG_LEVEL:-info}"
-persistConfig: "${PERSIST_CONFIG:-true}"
-persistIndex: "${PERSIST_INDEX:-false}"
-enableUi: "${ENABLE_UI:-true}"
+persistConfig: true   # Boolean fields don't support env var substitution
+persistIndex: false
+enableUi: true
 
 # Capacity tuning via env vars
 defaultPriorityQueueCapacity: "${QUEUE_CAPACITY:-10000}"
@@ -2243,7 +2243,7 @@ stateStore:
 sources:
   - kind: postgres
     id: main-db
-    autoStart: "${AUTO_START_SOURCES:-true}"
+    autoStart: true  # Boolean fields don't support env var substitution
     host: "${DB_HOST}"
     port: "${DB_PORT:-5432}"
     database: "${DB_NAME}"
@@ -2262,15 +2262,15 @@ queries:
     queryLanguage: Cypher
     sources:
       - sourceId: main-db
-    autoStart: "${AUTO_START_QUERIES:-true}"
-    enableBootstrap: "${ENABLE_BOOTSTRAP:-true}"
+    autoStart: true
+    enableBootstrap: true
 
 reactions:
-  - kind: "${REACTION_KIND:-log}"
+  - kind: log  # Enum fields don't support env var substitution
     id: main-reaction
     queries:
       - monitored-changes
-    autoStart: "${AUTO_START_REACTIONS:-true}"
+    autoStart: true
 ```
 
 **Corresponding .env file:**

@@ -96,7 +96,7 @@ sources:
 
 queries:
   - id: threshold-query
-    query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-75} RETURN s"
+    query: "MATCH (s:SensorReading) WHERE s.temperature > ${TEMP_THRESHOLD:-25} RETURN s"
     queryLanguage: Cypher
     sources:
       - sourceId: sensor-source
@@ -501,7 +501,7 @@ mod tests {
     fn test_template_with_variables_has_variables() {
         let template = template_with_variables();
         assert!(template.contains("${INTERVAL_MS:-1000}"));
-        assert!(template.contains("${TEMP_THRESHOLD:-75}"));
+        assert!(template.contains("${TEMP_THRESHOLD:-25}"));
     }
 
     #[test]
