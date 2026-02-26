@@ -22,9 +22,9 @@ use utoipa::OpenApi;
 
 use crate::api::models::{
     ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
-    ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema,
-    ConfigValueU64Schema, ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto,
-    RedbStateStoreConfigDto, SourceSubscriptionConfigDto, StateStoreConfig,
+    ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema, ConfigValueU64Schema,
+    ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto, RedbStateStoreConfigDto,
+    SourceSubscriptionConfigDto, StateStoreConfig,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
@@ -137,10 +137,7 @@ pub struct ApiDocV1;
 /// This function dynamically builds the `SourceConfig`, `ReactionConfig`, and
 /// `BootstrapProviderConfig` schemas from the registered plugins, replacing
 /// the previously hardcoded DTO list.
-pub fn inject_plugin_schemas(
-    openapi: &mut utoipa::openapi::OpenApi,
-    registry: &PluginRegistry,
-) {
+pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &PluginRegistry) {
     let components = openapi.components.get_or_insert_with(Default::default);
     let schemas = &mut components.schemas;
 
@@ -217,9 +214,7 @@ pub fn inject_plugin_schemas(
                 .iter()
                 .map(|name| RefOr::Ref(Ref::from_schema_name(name)))
                 .collect(),
-            description: Some(
-                "Provider-specific configuration (fields vary by kind)".to_string(),
-            ),
+            description: Some("Provider-specific configuration (fields vary by kind)".to_string()),
             ..Default::default()
         };
 
@@ -288,15 +283,12 @@ fn inject_schemas_from_json(
                         if let Ok(prop_schema) =
                             serde_json::from_value::<RefOr<Schema>>(prop_val.clone())
                         {
-                            obj.properties
-                                .insert(prop_name.clone(), prop_schema);
+                            obj.properties.insert(prop_name.clone(), prop_schema);
                         } else {
                             // Typeless properties (like serde_json::Value) — use empty object
                             obj.properties.insert(
                                 prop_name.clone(),
-                                RefOr::T(Schema::Object(
-                                    utoipa::openapi::schema::Object::new(),
-                                )),
+                                RefOr::T(Schema::Object(utoipa::openapi::schema::Object::new())),
                             );
                         }
                     }

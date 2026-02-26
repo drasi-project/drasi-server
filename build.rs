@@ -34,7 +34,11 @@ fn read_dep_version(crate_name: &str) -> Option<String> {
             continue;
         }
         if found && line.starts_with("version = ") {
-            return Some(line.trim_start_matches("version = ").trim_matches('"').to_string());
+            return Some(
+                line.trim_start_matches("version = ")
+                    .trim_matches('"')
+                    .to_string(),
+            );
         }
         if found && line.trim().is_empty() {
             break;
