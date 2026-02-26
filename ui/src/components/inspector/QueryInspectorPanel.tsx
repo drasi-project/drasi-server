@@ -214,7 +214,7 @@ export default function QueryInspectorPanel({
       </div>
 
       {/* Query Definition */}
-      <div className="p-4 border-b border-drasi-border">
+      <div className="p-4">
         <div className="flex items-center gap-2 mb-3">
           <Code size={14} className="text-drasi-query" />
           <h3 className="text-xs font-semibold text-drasi-text-secondary uppercase tracking-wider">
@@ -223,31 +223,11 @@ export default function QueryInspectorPanel({
         </div>
         <pre
           className="bg-drasi-bg rounded-xl p-4 text-sm font-mono text-drasi-text-primary
-                     overflow-auto max-h-64 border border-drasi-border whitespace-pre-wrap break-words
+                     overflow-y-auto max-h-96 border border-drasi-border whitespace-pre-wrap break-words
                      leading-relaxed"
         >
           {query}
         </pre>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="p-4">
-        <div className="grid grid-cols-3 gap-3">
-          <div className="text-center p-3 rounded-lg bg-drasi-card border border-drasi-border/50">
-            <div className="text-xl font-bold text-drasi-source">{sources.length}</div>
-            <div className="text-[10px] text-drasi-text-secondary uppercase tracking-wider">Sources</div>
-          </div>
-          <div className="text-center p-3 rounded-lg bg-drasi-card border border-drasi-border/50">
-            <div className="text-xl font-bold text-drasi-query">
-              {query.split('\n').length}
-            </div>
-            <div className="text-[10px] text-drasi-text-secondary uppercase tracking-wider">Lines</div>
-          </div>
-          <div className="text-center p-3 rounded-lg bg-drasi-card border border-drasi-border/50">
-            <div className="text-xl font-bold text-drasi-reaction">{reactions.length}</div>
-            <div className="text-[10px] text-drasi-text-secondary uppercase tracking-wider">Reactions</div>
-          </div>
-        </div>
       </div>
     </motion.div>
   );
