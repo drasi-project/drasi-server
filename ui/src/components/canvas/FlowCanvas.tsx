@@ -9,6 +9,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   type Node,
   type NodeChange,
 } from "@xyflow/react";
@@ -46,12 +47,30 @@ interface CollisionApi {
   clampDragPosition: (id: string, x: number, y: number) => { x: number; y: number };
 }
 
+interface StoreApi {
+  getState: () => { nodeLookup: Map<string, { measured?: { width?: number; height?: number } }> };
+}
+
 interface CanvasApi {
   collision: CollisionApi | null;
   fitView: () => void;
+  store: StoreApi | null;
 }
 
 const CANVAS_LOCK_KEY = "drasi-canvas-locked";
+
+// Known target widths from framer-motion animate props in each node component.
+const TARGET_WIDTHS: Record<string, { collapsed: number; expanded: number }> = {
+  sourceNode: { collapsed: 180, expanded: 320 },
+  queryNode: { collapsed: 180, expanded: 360 },
+  reactionNode: { collapsed: 180, expanded: 300 },
+};
+
+function getTargetWidth(node: Node): number {
+  const spec = TARGET_WIDTHS[node.type ?? ""];
+  if (!spec) return 180;
+  return node.data?.expanded ? spec.expanded : spec.collapsed;
+}
 
 function AutoLayout({
   onApiRef,
@@ -62,10 +81,12 @@ function AutoLayout({
 }) {
   const layoutApi = useAutoLayout();
   const { fitView } = useReactFlow();
+  const store = useStoreApi();
   
   onApiRef.current = {
     collision: layoutApi,
     fitView: () => fitView({ padding: 0.2, duration: 300 }),
+    store,
   };
   
   useCanvasPersistence(instanceId);
@@ -214,29 +235,73 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
     );
   }, [nodes, canvasLocked, setNodes]);
 
-  // Auto-layout: arrange nodes in columns by type
+  // Auto-layout: arrange nodes in columns by type, accounting for actual node sizes
   const autoLayoutNodes = useCallback(() => {
-    const COLUMN_X = { source: 50, query: 400, reaction: 750 };
-    const NODE_SPACING_Y = 140;
+    const NODE_MARGIN = 80;
+    const NODE_START_X = 50;
     const NODE_START_Y = 60;
 
     setNodes((prev) => {
-      // Group nodes by type
+      // Get measured dimensions from React Flow's nodeLookup
+      const nodeLookup = canvasApiRef.current?.store?.getState().nodeLookup;
+      
+      // Helper to get measured width for a node (use actual measured, fallback to target)
+      const getMeasuredWidth = (node: Node): number => {
+        if (!nodeLookup) return getTargetWidth(node);
+        const entry = nodeLookup.get(node.id);
+        const measured = entry?.measured?.width;
+        // Use measured width if available and reasonable, otherwise use target
+        return measured && measured > 50 ? measured : getTargetWidth(node);
+      };
+      
+      // Helper to get measured height for a node
+      const getMeasuredHeight = (node: Node): number => {
+        if (!nodeLookup) return 80;
+        const entry = nodeLookup.get(node.id);
+        return entry?.measured?.height ?? 80;
+      };
+
+      // Group nodes by type (Sources → Queries → Reactions, left to right)
       const sources = prev.filter((n) => n.type === "sourceNode");
       const queries = prev.filter((n) => n.type === "queryNode");
       const reactions = prev.filter((n) => n.type === "reactionNode");
 
-      // Assign positions by column
+      // Calculate max width for each column based on actual measured widths
+      const maxSourceWidth = sources.length > 0 
+        ? Math.max(...sources.map(getMeasuredWidth)) 
+        : 0;
+      const maxQueryWidth = queries.length > 0 
+        ? Math.max(...queries.map(getMeasuredWidth)) 
+        : 0;
+
+      // Calculate column X positions based on actual widths
+      const sourceColumnX = NODE_START_X;
+      const queryColumnX = sources.length > 0 
+        ? sourceColumnX + maxSourceWidth + NODE_MARGIN 
+        : NODE_START_X;
+      const reactionColumnX = queries.length > 0 
+        ? queryColumnX + maxQueryWidth + NODE_MARGIN 
+        : (sources.length > 0 ? sourceColumnX + maxSourceWidth + NODE_MARGIN : NODE_START_X);
+
+      // Assign positions by column, using actual heights for Y spacing
       const positioned = new Map<string, { x: number; y: number }>();
       
-      sources.forEach((n, i) => {
-        positioned.set(n.id, { x: COLUMN_X.source, y: NODE_START_Y + i * NODE_SPACING_Y });
+      let yOffset = NODE_START_Y;
+      sources.forEach((n) => {
+        positioned.set(n.id, { x: sourceColumnX, y: yOffset });
+        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
       });
-      queries.forEach((n, i) => {
-        positioned.set(n.id, { x: COLUMN_X.query, y: NODE_START_Y + i * NODE_SPACING_Y });
+
+      yOffset = NODE_START_Y;
+      queries.forEach((n) => {
+        positioned.set(n.id, { x: queryColumnX, y: yOffset });
+        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
       });
-      reactions.forEach((n, i) => {
-        positioned.set(n.id, { x: COLUMN_X.reaction, y: NODE_START_Y + i * NODE_SPACING_Y });
+
+      yOffset = NODE_START_Y;
+      reactions.forEach((n) => {
+        positioned.set(n.id, { x: reactionColumnX, y: yOffset });
+        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
       });
 
       return prev.map((n) => {
