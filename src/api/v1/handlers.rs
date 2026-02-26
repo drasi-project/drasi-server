@@ -1693,7 +1693,8 @@ pub async fn push_source_data_default(
 // ==================== Solution Template Handlers ====================
 
 use crate::api::models::solution::{
-    SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
+    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, SolutionDeployRequest,
+    SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
 };
 use crate::api::shared::solutions;
 
@@ -1730,6 +1731,30 @@ pub async fn get_solution(
     Path(id): Path<String>,
 ) -> Json<ApiResponse<SolutionTemplateDetail>> {
     solutions::get_solution(solutions_dir, &id).await
+}
+
+/// Create a new solution template from components in an instance
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/catalog/solutions",
+    params(
+        ("instanceId" = String, Path, description = "Source instance ID")
+    ),
+    request_body = CreateSolutionTemplateRequest,
+    responses(
+        (status = 200, description = "Creation result", body = ApiResponse<CreateSolutionTemplateResponse>),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Instance not found"),
+    ),
+    tag = "Catalog"
+)]
+pub async fn create_solution_template(
+    Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(solutions_dir): Extension<Option<String>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Json(request): Json<CreateSolutionTemplateRequest>,
+) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
+    solutions::create_solution_template(persistence, solutions_dir, &instance_id, request).await
 }
 
 /// Deploy a solution template to an instance

@@ -126,6 +126,11 @@ fn build_dynamic_instance_router() -> Router {
         .route("/sources/:id/push", post(handlers::push_source_data))
         // Solution deployment to this instance
         .route("/solutions", post(handlers::deploy_solution))
+        // Create solution template from this instance's components
+        .route(
+            "/catalog/solutions",
+            post(handlers::create_solution_template),
+        )
 }
 
 /// Build convenience routes that operate on the default (first) instance.

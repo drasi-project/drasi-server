@@ -20,9 +20,9 @@ use std::sync::Arc;
 
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::solution::{
-    extract_variables, DeployPhase, SolutionDeployError, SolutionDeployRequest,
-    SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateMetadata,
-    SolutionTemplateSummary,
+    extract_variables, CreateSolutionTemplateRequest, CreateSolutionTemplateResponse,
+    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
+    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary,
 };
 use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
 use crate::api::shared::ApiResponse;
@@ -258,6 +258,202 @@ pub async fn get_solution(
     };
 
     Json(ApiResponse::success(detail))
+}
+
+/// Create a new solution template from components in an instance.
+///
+/// The template is written as a YAML file to the solutions directory.
+pub async fn create_solution_template(
+    persistence: Option<Arc<ConfigPersistence>>,
+    solutions_dir: Option<String>,
+    instance_id: &str,
+    request: CreateSolutionTemplateRequest,
+) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
+    // Validate the request
+    if let Err(e) = request.validate() {
+        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+            success: false,
+            template_id: None,
+            error: Some(e.to_string()),
+        }));
+    }
+
+    // Need persistence to get component configs
+    let persistence = match persistence {
+        Some(p) => p,
+        None => {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some("Config persistence not available".to_string()),
+            }));
+        }
+    };
+
+    // Build the template YAML structure
+    let mut sources: Vec<serde_yaml::Value> = Vec::new();
+    let mut queries: Vec<serde_yaml::Value> = Vec::new();
+    let mut reactions: Vec<serde_yaml::Value> = Vec::new();
+
+    // Collect sources
+    for source_id in &request.source_ids {
+        if let Some(source_config) = persistence.get_source_config(instance_id, source_id).await {
+            if let Ok(yaml_value) = serde_yaml::to_value(&source_config) {
+                sources.push(yaml_value);
+            }
+        } else {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some(format!("Source '{}' not found", source_id)),
+            }));
+        }
+    }
+
+    // Collect queries
+    for query_id in &request.query_ids {
+        if let Some(query_config) = persistence.get_query_config(instance_id, query_id).await {
+            if let Ok(yaml_value) = serde_yaml::to_value(&query_config) {
+                queries.push(yaml_value);
+            }
+        } else {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some(format!("Query '{}' not found", query_id)),
+            }));
+        }
+    }
+
+    // Collect reactions
+    for reaction_id in &request.reaction_ids {
+        if let Some(reaction_config) = persistence.get_reaction_config(instance_id, reaction_id).await {
+            if let Ok(yaml_value) = serde_yaml::to_value(&reaction_config) {
+                reactions.push(yaml_value);
+            }
+        } else {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some(format!("Reaction '{}' not found", reaction_id)),
+            }));
+        }
+    }
+
+    // Build the template content
+    let mut template_map = serde_yaml::Mapping::new();
+    template_map.insert(
+        serde_yaml::Value::String("name".to_string()),
+        serde_yaml::Value::String(request.name.clone()),
+    );
+    
+    if let Some(desc) = &request.description {
+        template_map.insert(
+            serde_yaml::Value::String("description".to_string()),
+            serde_yaml::Value::String(desc.clone()),
+        );
+    }
+    
+    if let Some(ver) = &request.version {
+        template_map.insert(
+            serde_yaml::Value::String("version".to_string()),
+            serde_yaml::Value::String(ver.clone()),
+        );
+    }
+    
+    if let Some(auth) = &request.author {
+        template_map.insert(
+            serde_yaml::Value::String("author".to_string()),
+            serde_yaml::Value::String(auth.clone()),
+        );
+    }
+    
+    if let Some(lic) = &request.license {
+        template_map.insert(
+            serde_yaml::Value::String("license".to_string()),
+            serde_yaml::Value::String(lic.clone()),
+        );
+    }
+
+    // Add sources (already converted to YAML values)
+    if !sources.is_empty() {
+        template_map.insert(
+            serde_yaml::Value::String("sources".to_string()),
+            serde_yaml::Value::Sequence(sources),
+        );
+    }
+
+    // Add queries (already converted to YAML values)
+    if !queries.is_empty() {
+        template_map.insert(
+            serde_yaml::Value::String("queries".to_string()),
+            serde_yaml::Value::Sequence(queries),
+        );
+    }
+
+    // Add reactions (already converted to YAML values)
+    if !reactions.is_empty() {
+        template_map.insert(
+            serde_yaml::Value::String("reactions".to_string()),
+            serde_yaml::Value::Sequence(reactions),
+        );
+    }
+
+    // Serialize to YAML string
+    let yaml_content = match serde_yaml::to_string(&serde_yaml::Value::Mapping(template_map)) {
+        Ok(content) => content,
+        Err(e) => {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some(format!("Failed to serialize template: {}", e)),
+            }));
+        }
+    };
+
+    // Write to file
+    let dir = solutions_dir.as_deref().unwrap_or(DEFAULT_SOLUTIONS_DIR);
+    let dir_path = Path::new(dir);
+
+    // Create directory if it doesn't exist
+    if let Err(e) = std::fs::create_dir_all(dir_path) {
+        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+            success: false,
+            template_id: None,
+            error: Some(format!("Failed to create solutions directory: {}", e)),
+        }));
+    }
+
+    let file_path = dir_path.join(format!("{}.yaml", request.id));
+    
+    // Check if file already exists
+    if file_path.exists() {
+        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+            success: false,
+            template_id: None,
+            error: Some(format!("Template '{}' already exists", request.id)),
+        }));
+    }
+
+    if let Err(e) = std::fs::write(&file_path, yaml_content) {
+        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+            success: false,
+            template_id: None,
+            error: Some(format!("Failed to write template file: {}", e)),
+        }));
+    }
+
+    log::info!(
+        "Created solution template '{}' at '{}'",
+        request.id,
+        file_path.display()
+    );
+
+    Json(ApiResponse::success(CreateSolutionTemplateResponse {
+        success: true,
+        template_id: Some(request.id),
+        error: None,
+    }))
 }
 
 /// Deploy a solution template to an instance.

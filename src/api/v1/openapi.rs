@@ -21,8 +21,9 @@
 use utoipa::OpenApi;
 
 use crate::api::models::solution::{
-    DeployPhase, SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse,
-    SolutionTemplateDetail, SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
+    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, DeployPhase, SolutionDeployError,
+    SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateMetadata,
+    SolutionTemplateSummary, SolutionVariable,
 };
 use crate::api::models::{
     ApplicationBootstrapConfigDto, AuthConfigDto, BearerConfigDto, BootstrapProviderConfig,
@@ -91,6 +92,7 @@ use utoipa::openapi::RefOr;
         super::handlers::stop_reaction,
         super::handlers::list_solutions,
         super::handlers::get_solution,
+        super::handlers::create_solution_template,
         super::handlers::deploy_solution,
     ),
     components(
@@ -171,6 +173,8 @@ use utoipa::openapi::RefOr;
             SolutionDeployResponse,
             SolutionDeployError,
             DeployPhase,
+            CreateSolutionTemplateRequest,
+            CreateSolutionTemplateResponse,
         )
     ),
     modifiers(&SourceReactionConfigSchemas),

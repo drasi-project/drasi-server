@@ -16,7 +16,9 @@ import EventPanel, { type EventEntry } from "@/components/events/EventPanel";
 import InstanceSelector from "@/components/instances/InstanceSelector";
 import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
+import CloneInstanceDialog from "@/components/instances/CloneInstanceDialog";
 import SolutionDeployDialog from "@/components/solutions/SolutionDeployDialog";
+import CreateSolutionTemplateDialog from "@/components/solutions/CreateSolutionTemplateDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
 import { useDraft } from "@/hooks/useDraft";
@@ -61,6 +63,8 @@ export default function App() {
     requestedNotFound,
   } = useInstances();
   const [showCreateInstance, setShowCreateInstance] = useState(false);
+  const [showCloneInstance, setShowCloneInstance] = useState(false);
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false);
   const [createInstancePrefilledId, setCreateInstancePrefilledId] = useState<string | undefined>(undefined);
 
   // Component hooks - scoped to selected instance
@@ -486,6 +490,8 @@ export default function App() {
           selectedId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
           onCreateNew={() => setShowCreateInstance(true)}
+          onClone={() => setShowCloneInstance(true)}
+          onCreateTemplate={() => setShowCreateTemplate(true)}
         />
       }
     >
@@ -624,6 +630,39 @@ export default function App() {
             setCreateInstancePrefilledId(undefined);
           }}
           initialId={createInstancePrefilledId}
+        />
+      )}
+
+      {/* Clone Instance Dialog */}
+      {showCloneInstance && selectedInstanceId && (
+        <CloneInstanceDialog
+          sourceInstanceId={selectedInstanceId}
+          sourceComponentCounts={{
+            sources: sources.length,
+            queries: queries.length,
+            reactions: reactions.length,
+          }}
+          onSuccess={(newInstanceId) => {
+            setShowCloneInstance(false);
+            refreshInstances();
+            setSelectedInstanceId(newInstanceId);
+          }}
+          onCancel={() => setShowCloneInstance(false)}
+        />
+      )}
+
+      {/* Create Solution Template Dialog */}
+      {showCreateTemplate && selectedInstanceId && (
+        <CreateSolutionTemplateDialog
+          instanceId={selectedInstanceId}
+          sources={sources}
+          queries={queries}
+          reactions={reactions}
+          onSuccess={(templateId) => {
+            setShowCreateTemplate(false);
+            pushEvent(`Created solution template: ${templateId}`, "success");
+          }}
+          onCancel={() => setShowCreateTemplate(false)}
         />
       )}
 

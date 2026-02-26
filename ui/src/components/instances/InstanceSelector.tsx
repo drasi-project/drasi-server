@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Plus, Layers } from "lucide-react";
+import { ChevronDown, Plus, Layers, Copy, Package } from "lucide-react";
 import type { InstanceInfo } from "@/api/types";
 
 interface InstanceSelectorProps {
@@ -7,6 +7,8 @@ interface InstanceSelectorProps {
   selectedId?: string;
   onSelect: (id: string) => void;
   onCreateNew: () => void;
+  onClone?: () => void;
+  onCreateTemplate?: () => void;
 }
 
 export default function InstanceSelector({
@@ -14,6 +16,8 @@ export default function InstanceSelector({
   selectedId,
   onSelect,
   onCreateNew,
+  onClone,
+  onCreateTemplate,
 }: InstanceSelectorProps) {
   const [open, setOpen] = useState(false);
   const current = instances.find((i) => i.id === selectedId);
@@ -22,6 +26,8 @@ export default function InstanceSelector({
       ? current.id.slice(0, 32) + "…"
       : current.id
     : "No instance";
+
+  const hasCurrentInstance = !!current;
 
   return (
     <div className="relative">
@@ -73,7 +79,7 @@ export default function InstanceSelector({
                 </button>
               ))}
             </div>
-            <div className="p-1 border-t border-drasi-border">
+            <div className="p-1 border-t border-drasi-border space-y-0.5">
               <button
                 onClick={() => {
                   onCreateNew();
@@ -84,6 +90,30 @@ export default function InstanceSelector({
                 <Plus size={12} />
                 Create Instance
               </button>
+              {hasCurrentInstance && onClone && (
+                <button
+                  onClick={() => {
+                    onClone();
+                    setOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-drasi-text-secondary hover:bg-drasi-card hover:text-drasi-text-primary transition-colors"
+                >
+                  <Copy size={12} />
+                  Clone Instance
+                </button>
+              )}
+              {hasCurrentInstance && onCreateTemplate && (
+                <button
+                  onClick={() => {
+                    onCreateTemplate();
+                    setOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-drasi-text-secondary hover:bg-drasi-card hover:text-drasi-text-primary transition-colors"
+                >
+                  <Package size={12} />
+                  Create Solution Template
+                </button>
+              )}
             </div>
           </div>
         </>

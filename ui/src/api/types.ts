@@ -296,3 +296,22 @@ export interface SolutionDeployResponse {
   componentsStarted: string[];
   errors: SolutionDeployError[];
 }
+
+// Create Solution Template types
+export interface CreateSolutionTemplateRequest {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  license?: string;
+  sourceIds: string[];
+  queryIds: string[];
+  reactionIds: string[];
+}
+
+export interface CreateSolutionTemplateResponse {
+  success: boolean;
+  templateId?: string;
+  error?: string;
+}

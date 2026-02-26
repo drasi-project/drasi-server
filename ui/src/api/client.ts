@@ -292,6 +292,8 @@ import type {
   SolutionTemplateDetail,
   SolutionDeployRequest,
   SolutionDeployResponse,
+  CreateSolutionTemplateRequest,
+  CreateSolutionTemplateResponse,
 } from "./types";
 
 export async function listSolutions(): Promise<SolutionTemplateSummary[]> {
@@ -307,4 +309,11 @@ export async function deploySolution(
   req: SolutionDeployRequest,
 ): Promise<SolutionDeployResponse> {
   return unwrap(await api.post(`/instances/${instanceId}/solutions`, req));
+}
+
+export async function createSolutionTemplate(
+  instanceId: string,
+  req: CreateSolutionTemplateRequest,
+): Promise<CreateSolutionTemplateResponse> {
+  return unwrap(await api.post(`/instances/${instanceId}/catalog/solutions`, req));
 }

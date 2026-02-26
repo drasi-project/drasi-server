@@ -145,6 +145,77 @@ impl SolutionDeployRequest {
     }
 }
 
+/// Request to create a new solution template from existing components.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSolutionTemplateRequest {
+    /// Unique ID for the template (used as filename)
+    pub id: String,
+
+    /// Human-readable name of the solution
+    pub name: String,
+
+    /// Description of what this solution does
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Version of the solution template
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Author of the solution template
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+
+    /// License for the solution template
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+
+    /// IDs of sources to include in the template
+    #[serde(default)]
+    pub source_ids: Vec<String>,
+
+    /// IDs of queries to include in the template
+    #[serde(default)]
+    pub query_ids: Vec<String>,
+
+    /// IDs of reactions to include in the template
+    #[serde(default)]
+    pub reaction_ids: Vec<String>,
+}
+
+impl CreateSolutionTemplateRequest {
+    /// Validates the request.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.id.is_empty() {
+            return Err("Template ID is required");
+        }
+        if self.name.is_empty() {
+            return Err("Template name is required");
+        }
+        if self.source_ids.is_empty() && self.query_ids.is_empty() && self.reaction_ids.is_empty() {
+            return Err("At least one component must be selected");
+        }
+        Ok(())
+    }
+}
+
+/// Response from creating a solution template.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSolutionTemplateResponse {
+    /// Whether the creation was successful
+    pub success: bool,
+
+    /// The ID of the created template
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+
+    /// Error message if creation failed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Response from deploying a solution template.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -678,5 +749,180 @@ reactions:
             None // The # is inside quotes
         );
         assert_eq!(extract_line_comment("value: 123"), None);
+    }
+
+    #[test]
+    fn test_create_template_request_validate_empty_id() {
+        let req = CreateSolutionTemplateRequest {
+            id: "".to_string(),
+            name: "Test Template".to_string(),
+            description: None,
+            version: None,
+            author: None,
+            license: None,
+            source_ids: vec!["source-1".to_string()],
+            query_ids: vec![],
+            reaction_ids: vec![],
+        };
+        assert!(req.validate().is_err());
+        assert_eq!(req.validate().unwrap_err(), "Template ID is required");
+    }
+
+    #[test]
+    fn test_create_template_request_validate_empty_name() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "".to_string(),
+            description: None,
+            version: None,
+            author: None,
+            license: None,
+            source_ids: vec!["source-1".to_string()],
+            query_ids: vec![],
+            reaction_ids: vec![],
+        };
+        assert!(req.validate().is_err());
+        assert_eq!(req.validate().unwrap_err(), "Template name is required");
+    }
+
+    #[test]
+    fn test_create_template_request_validate_no_components() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "Test Template".to_string(),
+            description: None,
+            version: None,
+            author: None,
+            license: None,
+            source_ids: vec![],
+            query_ids: vec![],
+            reaction_ids: vec![],
+        };
+        assert!(req.validate().is_err());
+        assert_eq!(
+            req.validate().unwrap_err(),
+            "At least one component must be selected"
+        );
+    }
+
+    #[test]
+    fn test_create_template_request_validate_with_sources_only() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "Test Template".to_string(),
+            description: Some("A description".to_string()),
+            version: Some("1.0.0".to_string()),
+            author: Some("Test Author".to_string()),
+            license: Some("MIT".to_string()),
+            source_ids: vec!["source-1".to_string(), "source-2".to_string()],
+            query_ids: vec![],
+            reaction_ids: vec![],
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_create_template_request_validate_with_queries_only() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "Test Template".to_string(),
+            description: None,
+            version: None,
+            author: None,
+            license: None,
+            source_ids: vec![],
+            query_ids: vec!["query-1".to_string()],
+            reaction_ids: vec![],
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_create_template_request_validate_with_reactions_only() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "Test Template".to_string(),
+            description: None,
+            version: None,
+            author: None,
+            license: None,
+            source_ids: vec![],
+            query_ids: vec![],
+            reaction_ids: vec!["reaction-1".to_string()],
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_create_template_request_validate_with_all_components() {
+        let req = CreateSolutionTemplateRequest {
+            id: "full-template".to_string(),
+            name: "Full Template".to_string(),
+            description: Some("Has all component types".to_string()),
+            version: Some("2.0.0".to_string()),
+            author: Some("Drasi Team".to_string()),
+            license: Some("Apache-2.0".to_string()),
+            source_ids: vec!["s1".to_string(), "s2".to_string()],
+            query_ids: vec!["q1".to_string()],
+            reaction_ids: vec!["r1".to_string(), "r2".to_string()],
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_create_template_request_serialization() {
+        let req = CreateSolutionTemplateRequest {
+            id: "my-template".to_string(),
+            name: "Test Template".to_string(),
+            description: Some("Description".to_string()),
+            version: Some("1.0.0".to_string()),
+            author: None,
+            license: None,
+            source_ids: vec!["source-1".to_string()],
+            query_ids: vec!["query-1".to_string()],
+            reaction_ids: vec![],
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"id\":\"my-template\""));
+        assert!(json.contains("\"name\":\"Test Template\""));
+        assert!(json.contains("\"sourceIds\":[\"source-1\"]"));
+        assert!(json.contains("\"queryIds\":[\"query-1\"]"));
+        assert!(json.contains("\"reactionIds\":[]"));
+    }
+
+    #[test]
+    fn test_create_template_response_success() {
+        let resp = CreateSolutionTemplateResponse {
+            success: true,
+            template_id: Some("my-template".to_string()),
+            error: None,
+        };
+
+        assert!(resp.success);
+        assert_eq!(resp.template_id, Some("my-template".to_string()));
+        assert!(resp.error.is_none());
+
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"success\":true"));
+        assert!(json.contains("\"templateId\":\"my-template\""));
+        assert!(!json.contains("error")); // skip_serializing_if = None
+    }
+
+    #[test]
+    fn test_create_template_response_failure() {
+        let resp = CreateSolutionTemplateResponse {
+            success: false,
+            template_id: None,
+            error: Some("Source 'missing' not found".to_string()),
+        };
+
+        assert!(!resp.success);
+        assert!(resp.template_id.is_none());
+        assert_eq!(resp.error, Some("Source 'missing' not found".to_string()));
+
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"success\":false"));
+        assert!(json.contains("\"error\":\"Source 'missing' not found\""));
     }
 }

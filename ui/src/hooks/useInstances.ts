@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "@/api/client";
 import type { InstanceInfo, CreateInstanceRequest } from "@/api/types";
 
+/** Extended create request that includes optional solution template */
+export interface CreateInstanceWithTemplateRequest extends CreateInstanceRequest {
+  solutionTemplateId?: string;
+}
+
 const INSTANCE_KEY = "drasi-selected-instance";
 
 /** Read the `?instance=` search param from the current URL. */
@@ -97,10 +102,21 @@ export function useInstances() {
   }, [refresh]);
 
   const create = useCallback(
-    async (req: CreateInstanceRequest) => {
-      await api.createInstance(req);
+    async (req: CreateInstanceWithTemplateRequest) => {
+      const { solutionTemplateId, ...instanceReq } = req;
+      
+      // Create the instance first
+      await api.createInstance(instanceReq);
       await refresh();
       setSelectedId(req.id);
+      
+      // If a solution template was selected, deploy it
+      if (solutionTemplateId) {
+        await api.deploySolution(req.id, {
+          templateId: solutionTemplateId,
+          variables: {},
+        });
+      }
     },
     [refresh, setSelectedId],
   );
