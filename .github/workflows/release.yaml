@@ -804,7 +804,7 @@ jobs:
           Supported architectures: `linux/amd64`, `linux/arm64`
           NOTES_EOF
 
-      - name: Create or update GitHub Release
+      - name: Create or update versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -822,10 +822,33 @@ jobs:
               --notes-file release-notes.md
           fi
 
+      - name: Create or update 'latest' GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.determine-version.outputs.tag }}"
+
+          # Delete existing 'latest' release and tag if they exist
+          if gh release view "latest" --repo ${{ github.repository }} 2>/dev/null; then
+            echo "Deleting existing 'latest' release..."
+            gh release delete "latest" --repo ${{ github.repository }} --yes --cleanup-tag
+          fi
+
+          echo "Creating 'latest' release (pointing to ${TAG})..."
+          gh release create "latest" \
+            release-assets/* \
+            --repo ${{ github.repository }} \
+            --title "Latest Release (${TAG})" \
+            --notes-file release-notes.md \
+            --prerelease
+
       - name: Update summary
         run: |
           TAG="${{ needs.determine-version.outputs.tag }}"
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## GitHub Release Published :tada:" >> $GITHUB_STEP_SUMMARY
+          echo "## GitHub Releases Published :tada:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG}) published with ${{ steps.prepare.outputs.asset_count }} binary artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "- Versioned: [\`${TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${TAG})" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest: [\`latest\`](https://github.com/${{ github.repository }}/releases/tag/latest) (points to ${TAG})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Total assets: ${{ steps.prepare.outputs.asset_count }}" >> $GITHUB_STEP_SUMMARY
