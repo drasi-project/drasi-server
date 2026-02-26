@@ -1,9 +1,20 @@
-import { X, AlertCircle, Zap, Search, GitBranch } from "lucide-react";
+import { X, AlertCircle, Zap, Globe, Radio, FileText, Rss, Server, Gauge, Search, GitBranch } from "lucide-react";
 import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import { getTypeColor } from "@/utils/colors";
+
+const REACTION_ICON_MAP: Record<string, React.ElementType> = {
+  log: FileText,
+  http: Globe,
+  "http-adaptive": Globe,
+  grpc: Radio,
+  "grpc-adaptive": Radio,
+  sse: Rss,
+  platform: Server,
+  profiler: Gauge,
+};
 
 interface ConnectedComponent {
   id: string;
@@ -40,6 +51,7 @@ export default function ReactionInspectorPanel({
 }: ReactionInspectorPanelProps) {
   const accentColor = getTypeColor("reaction");
   const showError = status === "Error" && error;
+  const Icon = REACTION_ICON_MAP[kind] || Zap;
 
   return (
     <motion.div
@@ -60,7 +72,7 @@ export default function ReactionInspectorPanel({
               className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ backgroundColor: `${accentColor}20` }}
             >
-              <Zap size={20} style={{ color: accentColor }} />
+              <Icon size={20} style={{ color: accentColor }} />
             </div>
             <div>
               <h2 className="text-lg font-bold text-drasi-text-primary">

@@ -1,4 +1,4 @@
-import { X, AlertCircle, Database, Zap, Code, GitBranch } from "lucide-react";
+import { X, AlertCircle, Database, Zap, Search, Code, GitBranch } from "lucide-react";
 import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
@@ -61,7 +61,7 @@ export default function QueryInspectorPanel({
               className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ backgroundColor: `${accentColor}20` }}
             >
-              <Code size={20} style={{ color: accentColor }} />
+              <Search size={20} style={{ color: accentColor }} />
             </div>
             <div>
               <h2 className="text-lg font-bold text-drasi-text-primary">

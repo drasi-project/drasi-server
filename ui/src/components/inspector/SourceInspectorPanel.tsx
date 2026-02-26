@@ -1,9 +1,17 @@
-import { X, AlertCircle, Database, Search, GitBranch } from "lucide-react";
+import { X, AlertCircle, Database, Globe, Radio, FlaskConical, Server, Search, GitBranch } from "lucide-react";
 import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import { getTypeColor } from "@/utils/colors";
+
+const SOURCE_ICON_MAP: Record<string, React.ElementType> = {
+  postgres: Database,
+  http: Globe,
+  grpc: Radio,
+  mock: FlaskConical,
+  platform: Server,
+};
 
 interface ConnectedComponent {
   id: string;
@@ -40,6 +48,7 @@ export default function SourceInspectorPanel({
 }: SourceInspectorPanelProps) {
   const accentColor = getTypeColor("source");
   const showError = status === "Error" && error;
+  const Icon = SOURCE_ICON_MAP[kind] || Database;
 
   return (
     <motion.div
@@ -60,7 +69,7 @@ export default function SourceInspectorPanel({
               className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ backgroundColor: `${accentColor}20` }}
             >
-              <Database size={20} style={{ color: accentColor }} />
+              <Icon size={20} style={{ color: accentColor }} />
             </div>
             <div>
               <h2 className="text-lg font-bold text-drasi-text-primary">
