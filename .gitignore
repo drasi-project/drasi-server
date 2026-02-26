@@ -38,3 +38,5 @@ logs/
 # UI build artifacts
 ui/node_modules/
 ui/dist/
+
+.vscode
