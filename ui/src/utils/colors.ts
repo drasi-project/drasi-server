@@ -11,9 +11,9 @@ export function getTheme() {
     border: style.getPropertyValue("--drasi-border").trim() || "#334155",
     textPrimary: style.getPropertyValue("--drasi-text-primary").trim() || "#f1f5f9",
     textSecondary: style.getPropertyValue("--drasi-text-secondary").trim() || "#94a3b8",
-    source: "#3b82f6",
-    query: "#8b5cf6",
-    reaction: "#06b6d4",
+    source: "#22c55e",
+    query: "#3b82f6",
+    reaction: "#8b5cf6",
     running: "#10b981",
     warning: "#f59e0b",
     error: "#ef4444",
@@ -23,9 +23,9 @@ export function getTheme() {
 
 /** Static reference for semantic colors (not theme-dependent). */
 export const THEME = {
-  source: "#3b82f6",
-  query: "#8b5cf6",
-  reaction: "#06b6d4",
+  source: "#22c55e",
+  query: "#3b82f6",
+  reaction: "#8b5cf6",
   running: "#10b981",
   warning: "#f59e0b",
   error: "#ef4444",

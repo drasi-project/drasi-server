@@ -215,7 +215,7 @@ export default function SolutionDeployDialog({
         {/* Header */}
         <div className="shrink-0 p-6 pb-4">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-drasi-accent/20 to-purple-500/20 flex items-center justify-center shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-drasi-accent/20 to-drasi-reaction/20 flex items-center justify-center shrink-0">
               <Package size={24} className="text-drasi-accent" />
             </div>
             <div className="flex-1 min-w-0">
@@ -251,8 +251,8 @@ export default function SolutionDeployDialog({
                   <div className="p-4 space-y-3">
                     {template.sourceIds.length > 0 && (
                       <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                          <Database size={16} className="text-blue-400" />
+                        <div className="w-8 h-8 rounded-lg bg-drasi-source/10 flex items-center justify-center shrink-0">
+                          <Database size={16} className="text-drasi-source" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
@@ -274,8 +274,8 @@ export default function SolutionDeployDialog({
                     )}
                     {template.queryIds.length > 0 && (
                       <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
-                          <Search size={16} className="text-purple-400" />
+                        <div className="w-8 h-8 rounded-lg bg-drasi-query/10 flex items-center justify-center shrink-0">
+                          <Search size={16} className="text-drasi-query" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
@@ -297,8 +297,8 @@ export default function SolutionDeployDialog({
                     )}
                     {template.reactionIds.length > 0 && (
                       <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0">
-                          <Zap size={16} className="text-cyan-400" />
+                        <div className="w-8 h-8 rounded-lg bg-drasi-reaction/10 flex items-center justify-center shrink-0">
+                          <Zap size={16} className="text-drasi-reaction" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-drasi-text-primary">
@@ -493,19 +493,19 @@ export default function SolutionDeployDialog({
                 <div className="mt-4 flex items-center justify-center gap-4 text-sm text-drasi-text-secondary">
                   {deployResult.sourcesCreated.length > 0 && (
                     <span className="flex items-center gap-1.5">
-                      <Database size={14} className="text-blue-400" />
+                      <Database size={14} className="text-drasi-source" />
                       {deployResult.sourcesCreated.length}
                     </span>
                   )}
                   {deployResult.queriesCreated.length > 0 && (
                     <span className="flex items-center gap-1.5">
-                      <Search size={14} className="text-purple-400" />
+                      <Search size={14} className="text-drasi-query" />
                       {deployResult.queriesCreated.length}
                     </span>
                   )}
                   {deployResult.reactionsCreated.length > 0 && (
                     <span className="flex items-center gap-1.5">
-                      <Zap size={14} className="text-cyan-400" />
+                      <Zap size={14} className="text-drasi-reaction" />
                       {deployResult.reactionsCreated.length}
                     </span>
                   )}

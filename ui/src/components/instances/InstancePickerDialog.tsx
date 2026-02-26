@@ -14,7 +14,7 @@ export default function InstancePickerDialog({
   onSelect,
   onCreateNew,
 }: InstancePickerDialogProps) {
-  const accentColor = "#8b5cf6";
+  const accentColor = "#3b82f6";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
@@ -50,9 +50,9 @@ export default function InstancePickerDialog({
           <button onClick={onCreateNew} className="type-card">
             <div
               className="p-2.5 rounded-xl"
-              style={{ backgroundColor: "#06b6d420" }}
+              style={{ backgroundColor: "#22c55e20" }}
             >
-              <Plus size={24} style={{ color: "#06b6d4" }} />
+              <Plus size={24} style={{ color: "#22c55e" }} />
             </div>
             <span className="text-sm font-semibold text-drasi-text-primary">
               Create New

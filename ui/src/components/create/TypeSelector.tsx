@@ -52,21 +52,21 @@ const COMPONENT_TYPES: TypeOption[] = [
     label: "Source",
     description: "Ingest data from databases, APIs, or streams",
     icon: Database,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
   {
     id: "query",
     label: "Query",
     description: "Transform data with continuous Cypher queries",
     icon: Search,
-    color: "#8b5cf6",
+    color: "#3b82f6",
   },
   {
     id: "reaction",
     label: "Reaction",
     description: "Trigger actions when query results change",
     icon: Zap,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
 ];
 
@@ -76,35 +76,35 @@ const SOURCE_KINDS: TypeOption[] = [
     label: "PostgreSQL",
     description: "CDC via logical replication",
     icon: Database,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
   {
     id: "http",
     label: "HTTP",
     description: "Receive events via webhooks",
     icon: Globe,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
   {
     id: "grpc",
     label: "gRPC",
     description: "High-perf binary streaming",
     icon: Radio,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
   {
     id: "mock",
     label: "Mock",
     description: "Generate test data",
     icon: FlaskConical,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
   {
     id: "platform",
     label: "Platform",
     description: "Redis Streams integration",
     icon: Server,
-    color: "#3b82f6",
+    color: "#22c55e",
   },
 ];
 
@@ -114,42 +114,42 @@ const REACTION_KINDS: TypeOption[] = [
     label: "Log",
     description: "Output to console",
     icon: FileText,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
   {
     id: "http-reaction",
     label: "HTTP",
     description: "Send webhooks",
     icon: Globe,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
   {
     id: "http-adaptive",
     label: "HTTP Adaptive",
     description: "Dynamic batch webhooks",
     icon: Globe,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
   {
     id: "grpc-reaction",
     label: "gRPC",
     description: "Stream via gRPC",
     icon: Radio,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
   {
     id: "sse",
     label: "SSE",
     description: "Server-Sent Events",
     icon: Rss,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
   {
     id: "profiler",
     label: "Profiler",
     description: "Performance metrics",
     icon: Gauge,
-    color: "#06b6d4",
+    color: "#8b5cf6",
   },
 ];
 
@@ -364,15 +364,15 @@ export default function TypeSelector({
                             )}
                             <div className="flex items-center gap-2 text-xs text-drasi-text-secondary">
                               <span className="flex items-center gap-1">
-                                <Database size={12} className="text-blue-400" />
+                                <Database size={12} className="text-drasi-source" />
                                 {t.sourceCount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Search size={12} className="text-purple-400" />
+                                <Search size={12} className="text-drasi-query" />
                                 {t.queryCount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Zap size={12} className="text-cyan-400" />
+                                <Zap size={12} className="text-drasi-reaction" />
                                 {t.reactionCount}
                               </span>
                             </div>

@@ -432,10 +432,10 @@ export default function App() {
   // Determine accent color for CreatePanel based on draft type
   const draftAccent =
     draft?.componentType === "source"
-      ? "#3b82f6"
+      ? "#22c55e"
       : draft?.componentType === "query"
-        ? "#8b5cf6"
-        : "#06b6d4";
+        ? "#3b82f6"
+        : "#8b5cf6";
 
   const draftTitle = draft
     ? draft.componentType === "source"
