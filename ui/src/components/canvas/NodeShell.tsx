@@ -156,14 +156,90 @@ export default function NodeShell({
     [onStartStop],
   );
 
+  // Toolbar buttons component to avoid duplication
+  const toolbarButtons = (
+    <>
+      {/* Start/Stop button */}
+      {onStartStop && (
+        <motion.button
+          onClick={handleStartStop}
+          disabled={isTransitioning}
+          className={`nodrag p-1.5 rounded-md transition-colors ${
+            isTransitioning
+              ? "opacity-50 cursor-not-allowed"
+              : isRunning
+                ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error"
+                : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running"
+          }`}
+          whileHover={isTransitioning ? {} : { scale: 1.1 }}
+          whileTap={isTransitioning ? {} : { scale: 0.9 }}
+          title={isRunning ? "Stop" : "Start"}
+        >
+          {isRunning ? (
+            <Square size={14} fill="currentColor" />
+          ) : (
+            <Play size={14} fill="currentColor" />
+          )}
+        </motion.button>
+      )}
+
+      {/* Expand button - always visible, disabled when not expandable or canvas locked */}
+      <motion.button
+        onClick={canToggle && !isLocked ? handleToggle : undefined}
+        disabled={!canToggle || isLocked}
+        className={`nodrag p-1.5 rounded-md transition-colors ${
+          canToggle && !isLocked
+            ? "hover:bg-drasi-text-secondary/10"
+            : "opacity-30 cursor-not-allowed"
+        }`}
+        whileHover={canToggle && !isLocked ? { scale: 1.1 } : {}}
+        whileTap={canToggle && !isLocked ? { scale: 0.9 } : {}}
+        title={canvasLocked ? "Canvas is locked" : (!canToggle ? "Cannot expand" : (toggleTitle ?? (expanded ? "Collapse" : "Expand")))}
+      >
+        {expanded ? (
+          <Minimize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
+        ) : (
+          <Maximize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
+        )}
+      </motion.button>
+
+      {/* Pin button - always visible, disabled when canvas is locked */}
+      <motion.button
+        onClick={!canvasLocked ? handleLockToggle : undefined}
+        disabled={canvasLocked}
+        className={`nodrag p-1.5 rounded-md transition-colors ${
+          canvasLocked
+            ? "opacity-30 cursor-not-allowed"
+            : "hover:bg-drasi-text-secondary/10"
+        }`}
+        whileHover={!canvasLocked ? { scale: 1.1 } : {}}
+        whileTap={!canvasLocked ? { scale: 0.9 } : {}}
+        title={canvasLocked ? "Canvas is locked" : (locked ? "Unpin node" : "Pin node")}
+      >
+        <Pin 
+          size={14} 
+          className={locked ? "text-drasi-warning" : "text-drasi-text-secondary/50 -rotate-45"} 
+        />
+      </motion.button>
+    </>
+  );
+
   return (
     <motion.div
-      className={`${cardClass} ${glowClass}`}
+      className={`${cardClass} ${glowClass} relative`}
       style={{ minHeight }}
       initial={{ width: targetWidth }}
       animate={{ width: targetWidth }}
       transition={{ type: "tween", duration: 0.4, ease: "easeInOut" }}
     >
+      {/* Top-right toolbar (shown when expanded) */}
+      <div 
+        className="absolute top-1.5 right-2 flex items-center justify-end gap-1 transition-opacity duration-300"
+        style={{ opacity: expanded ? 1 : 0, pointerEvents: expanded ? "auto" : "none" }}
+      >
+        {toolbarButtons}
+      </div>
+
       {/* Header - just icon and title */}
       <div className="flex items-center gap-2 mb-1">
         {header}
@@ -184,67 +260,12 @@ export default function NodeShell({
         </div>
       )}
 
-      {/* Bottom toolbar */}
-      <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-drasi-border/50">
-        {/* Pin button */}
-        {!canvasLocked && (
-          <motion.button
-            onClick={handleLockToggle}
-            className="nodrag p-1.5 rounded-md transition-colors hover:bg-drasi-text-secondary/10"
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            title={locked ? "Unpin node" : "Pin node"}
-          >
-            <Pin 
-              size={14} 
-              className={locked ? "text-drasi-warning" : "text-drasi-text-secondary/50 -rotate-45"} 
-            />
-          </motion.button>
-        )}
-
-        {/* Start/Stop button */}
-        {onStartStop && (
-          <motion.button
-            onClick={handleStartStop}
-            disabled={isTransitioning}
-            className={`nodrag p-1.5 rounded-md transition-colors ${
-              isTransitioning
-                ? "opacity-50 cursor-not-allowed"
-                : isRunning
-                  ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error"
-                  : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running"
-            }`}
-            whileHover={isTransitioning ? {} : { scale: 1.1 }}
-            whileTap={isTransitioning ? {} : { scale: 0.9 }}
-            title={isRunning ? "Stop" : "Start"}
-          >
-            {isRunning ? (
-              <Square size={14} fill="currentColor" />
-            ) : (
-              <Play size={14} fill="currentColor" />
-            )}
-          </motion.button>
-        )}
-
-        {/* Expand button - always visible, disabled when not expandable */}
-        <motion.button
-          onClick={canToggle && !isLocked ? handleToggle : undefined}
-          disabled={!canToggle || isLocked}
-          className={`nodrag p-1.5 rounded-md transition-colors ${
-            canToggle && !isLocked
-              ? "hover:bg-drasi-text-secondary/10"
-              : "opacity-30 cursor-not-allowed"
-          }`}
-          whileHover={canToggle && !isLocked ? { scale: 1.1 } : {}}
-          whileTap={canToggle && !isLocked ? { scale: 0.9 } : {}}
-          title={!canToggle || isLocked ? "Cannot expand" : (toggleTitle ?? (expanded ? "Collapse" : "Expand"))}
-        >
-          {expanded ? (
-            <Minimize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
-          ) : (
-            <Maximize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
-          )}
-        </motion.button>
+      {/* Bottom toolbar (shown when collapsed) */}
+      <div 
+        className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-drasi-border/50 transition-opacity duration-300"
+        style={{ opacity: expanded ? 0 : 1, pointerEvents: expanded ? "none" : "auto" }}
+      >
+        {toolbarButtons}
       </div>
 
       {(handles === "target" || handles === "both") && (

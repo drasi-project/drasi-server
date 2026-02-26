@@ -7,6 +7,7 @@ import {
   Rss,
   Server,
   Gauge,
+  Activity,
 } from "lucide-react";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
@@ -61,7 +62,8 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
       collapsedMinHeight={72}
       status={d.status as ComponentStatus}
       expanded={expanded}
-      toggleTitle={expanded ? "Collapse" : "View details"}
+      canToggle={false}
+      toggleTitle={expanded ? "Collapse" : "View activity"}
       locked={!!d.locked}
       canvasLocked={!!d.canvasLocked}
       handles="target"
@@ -83,51 +85,23 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
         </>
       }
       expandContent={
-        <div className="mt-3 pt-3 border-t border-drasi-border space-y-2">
-          {/* Kind badge */}
-          <span
-            className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
-                       bg-drasi-reaction/20 text-drasi-reaction border border-drasi-reaction/30"
-          >
-            {d.kind}
-          </span>
-
-          {/* Connected queries */}
-          {d.queryIds && d.queryIds.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-wider text-drasi-text-secondary font-semibold">
-                Listening to
-              </div>
-              {d.queryIds.map((qId) => (
-                <div
-                  key={qId}
-                  className="text-[10px] text-drasi-query font-mono pl-2 border-l-2 border-drasi-query/30"
-                >
-                  {qId}
+        <div className="mt-3 pt-3 border-t border-drasi-border">
+          {/* Runtime activity - placeholder for future event stream */}
+          {d.status === "Running" ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="text-[9px] uppercase tracking-wider text-drasi-text-secondary font-semibold">
+                  Activity
                 </div>
-              ))}
+                <Activity size={10} className="text-drasi-reaction animate-pulse" />
+              </div>
+              <div className="text-[10px] text-drasi-text-secondary italic text-center py-4 bg-drasi-bg rounded border border-drasi-border">
+                Event stream coming soon
+              </div>
             </div>
-          )}
-
-          {/* Properties */}
-          {d.properties && Object.keys(d.properties).length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-wider text-drasi-text-secondary font-semibold">
-                Config
-              </div>
-              {Object.entries(d.properties).map(([key, value]) => (
-                <div
-                  key={key}
-                  className="flex justify-between text-[10px] gap-2"
-                >
-                  <span className="text-drasi-text-secondary truncate">
-                    {key}
-                  </span>
-                  <span className="text-drasi-text-primary font-mono truncate">
-                    {String(value)}
-                  </span>
-                </div>
-              ))}
+          ) : (
+            <div className="text-[10px] text-drasi-text-secondary italic text-center py-4">
+              Start reaction to see activity
             </div>
           )}
         </div>

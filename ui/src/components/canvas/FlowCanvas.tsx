@@ -12,7 +12,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Lock, Unlock, Trash2 } from "lucide-react";
+import { Trash2, Pin, Lock, LockOpen } from "lucide-react";
 
 import SourceNode from "./SourceNode";
 import QueryNode from "./QueryNode";
@@ -266,13 +266,13 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
       >
         <AutoLayout onCollisionRef={collisionRef} instanceId={instanceId} />
         <Background color="var(--drasi-border)" gap={24} size={1} />
-        <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface">
+        <Controls showInteractive={false} className="!bg-drasi-card !border-drasi-border !rounded-lg [&>button]:!bg-drasi-card [&>button]:!border-drasi-border [&>button]:!text-drasi-text-secondary [&>button:hover]:!bg-drasi-surface [&>button]:!w-8 [&>button]:!h-8">
           <ControlButton
             onClick={toggleCanvasLock}
             title={canvasLocked ? "Unlock canvas" : "Lock canvas"}
             className={canvasLocked ? "!text-drasi-warning !bg-drasi-warning/20" : ""}
           >
-            {canvasLocked ? <Lock size={12} /> : <Unlock size={12} />}
+            {canvasLocked ? <Lock size={18} /> : <LockOpen size={18} />}
           </ControlButton>
         </Controls>
 
@@ -284,14 +284,14 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
               className="p-2 rounded-lg border bg-drasi-card border-drasi-border text-drasi-text-secondary hover:text-drasi-warning hover:bg-drasi-warning/10 transition-colors"
               title={
                 nodes.filter((n) => n.selected).some((n) => !n.data?.locked)
-                  ? "Lock selected nodes"
-                  : "Unlock selected nodes"
+                  ? "Pin selected nodes"
+                  : "Unpin selected nodes"
               }
             >
               {nodes.filter((n) => n.selected).some((n) => !n.data?.locked) ? (
-                <Unlock size={14} />
+                <Pin size={16} className="-rotate-45" />
               ) : (
-                <Lock size={14} />
+                <Pin size={16} />
               )}
             </button>
             <button
@@ -299,7 +299,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
               className="p-2 rounded-lg border bg-drasi-card border-drasi-border text-drasi-error/70 hover:text-drasi-error hover:bg-drasi-error/10 transition-colors"
               title="Delete selected nodes"
             >
-              <Trash2 size={14} />
+              <Trash2 size={16} />
             </button>
           </Panel>
         )}

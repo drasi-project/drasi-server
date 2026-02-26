@@ -2,7 +2,9 @@ import { useState, useCallback, useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import AppLayout from "@/layouts/AppLayout";
 import FlowCanvas from "@/components/canvas/FlowCanvas";
-import InspectorPanel from "@/components/inspector/InspectorPanel";
+import SourceInspectorPanel from "@/components/inspector/SourceInspectorPanel";
+import QueryInspectorPanel from "@/components/inspector/QueryInspectorPanel";
+import ReactionInspectorPanel from "@/components/inspector/ReactionInspectorPanel";
 import TypeSelector, {
   type SelectableType,
 } from "@/components/create/TypeSelector";
@@ -312,13 +314,14 @@ export default function App() {
         }));
 
       return {
-        title: source.id,
-        subtitle: `${source.kind} source`,
-        componentType: "source" as ComponentType,
+        isSource: true as const,
+        id: source.id,
+        kind: source.kind,
         status: source.status as ComponentStatus,
         error: source.error,
-        config: { kind: source.kind, autoStart: source.autoStart },
-        connections: connectedQueries,
+        autoStart: source.autoStart,
+        properties: source.properties,
+        queries: connectedQueries,
         onStart: () => {
           startSource(source.id);
           pushEvent(`Started source: ${source.id}`, "success");
@@ -344,6 +347,7 @@ export default function App() {
           id: s.sourceId,
           type: "source" as ComponentType,
           status: (src?.status ?? "Stopped") as ComponentStatus,
+          kind: src?.kind,
         };
       });
       const connectedReactions = reactions
@@ -352,20 +356,18 @@ export default function App() {
           id: r.id,
           type: "reaction" as ComponentType,
           status: r.status as ComponentStatus,
+          kind: r.kind,
         }));
 
       return {
-        title: query.id,
-        subtitle: "continuous query",
-        componentType: "query" as ComponentType,
+        isQuery: true as const,
+        id: query.id,
         status: (query.status ?? "Stopped") as ComponentStatus,
         error: query.error,
-        config: {
-          query: query.query,
-          language: query.queryLanguage ?? "Cypher",
-          sources: query.sources.map((s) => s.sourceId).join(", "),
-        },
-        connections: [...connectedSources, ...connectedReactions],
+        query: query.query,
+        queryLanguage: query.queryLanguage ?? "Cypher",
+        sources: connectedSources,
+        reactions: connectedReactions,
         onStart: () => {
           startQuery(query.id);
           pushEvent(`Started query: ${query.id}`, "success");
@@ -395,17 +397,14 @@ export default function App() {
       });
 
       return {
-        title: reaction.id,
-        subtitle: `${reaction.kind} reaction`,
-        componentType: "reaction" as ComponentType,
+        isReaction: true as const,
+        id: reaction.id,
+        kind: reaction.kind,
         status: reaction.status as ComponentStatus,
         error: reaction.error,
-        config: {
-          kind: reaction.kind,
-          queries: reaction.queries.join(", "),
-          autoStart: reaction.autoStart,
-        },
-        connections: connectedQs,
+        autoStart: reaction.autoStart,
+        properties: reaction.properties,
+        queries: connectedQs,
         onStart: () => {
           startReaction(reaction.id);
           pushEvent(`Started reaction: ${reaction.id}`, "success");
@@ -513,9 +512,49 @@ export default function App() {
 
       {/* Inspector Panel */}
       <AnimatePresence>
-        {inspectorProps && (
-          <InspectorPanel {...inspectorProps} onClose={() => setSelected(null)} />
-        )}
+        {inspectorProps && 'isSource' in inspectorProps && inspectorProps.isSource ? (
+          <SourceInspectorPanel
+            id={inspectorProps.id}
+            kind={inspectorProps.kind}
+            status={inspectorProps.status}
+            error={inspectorProps.error}
+            autoStart={inspectorProps.autoStart}
+            properties={inspectorProps.properties}
+            queries={inspectorProps.queries}
+            onClose={() => setSelected(null)}
+            onStart={inspectorProps.onStart}
+            onStop={inspectorProps.onStop}
+            onDelete={inspectorProps.onDelete}
+          />
+        ) : inspectorProps && 'isQuery' in inspectorProps && inspectorProps.isQuery ? (
+          <QueryInspectorPanel
+            id={inspectorProps.id}
+            status={inspectorProps.status}
+            error={inspectorProps.error}
+            query={inspectorProps.query}
+            queryLanguage={inspectorProps.queryLanguage}
+            sources={inspectorProps.sources}
+            reactions={inspectorProps.reactions}
+            onClose={() => setSelected(null)}
+            onStart={inspectorProps.onStart}
+            onStop={inspectorProps.onStop}
+            onDelete={inspectorProps.onDelete}
+          />
+        ) : inspectorProps && 'isReaction' in inspectorProps && inspectorProps.isReaction ? (
+          <ReactionInspectorPanel
+            id={inspectorProps.id}
+            kind={inspectorProps.kind}
+            status={inspectorProps.status}
+            error={inspectorProps.error}
+            autoStart={inspectorProps.autoStart}
+            properties={inspectorProps.properties}
+            queries={inspectorProps.queries}
+            onClose={() => setSelected(null)}
+            onStart={inspectorProps.onStart}
+            onStop={inspectorProps.onStop}
+            onDelete={inspectorProps.onDelete}
+          />
+        ) : null}
       </AnimatePresence>
 
       {/* Type Selector Overlay */}

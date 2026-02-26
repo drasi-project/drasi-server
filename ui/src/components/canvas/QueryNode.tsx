@@ -66,7 +66,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       expanded={expanded}
       locked={!!d.locked}
       canvasLocked={!!d.canvasLocked}
-      toggleTitle={expanded ? "Collapse" : "View query"}
+      toggleTitle={expanded ? "Collapse" : "View results"}
       handles="both"
       handleClass="!bg-drasi-query"
       onStartStop={handleStartStop}
@@ -86,56 +86,13 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
         </>
       }
       expandContent={
-        <div className="mt-3 pt-3 border-t border-drasi-border space-y-2">
-          {/* Language badge */}
-          <div className="flex items-center gap-2">
-            <span
-              className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
-                         bg-drasi-query/20 text-drasi-query border border-drasi-query/30"
-            >
-              {d.queryLanguage ?? "Cypher"}
-            </span>
-            {d.sourceIds && d.sourceIds.length > 0 && (
-              <span className="text-[10px] text-drasi-text-secondary">
-                {d.sourceIds.length} source
-                {d.sourceIds.length > 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
-
-          {/* Query text */}
-          {d.query && (
-            <pre
-              className="nowheel bg-drasi-bg rounded-lg p-2 text-[10px] font-mono text-drasi-text-primary
-                         overflow-auto max-h-24 border border-drasi-border whitespace-pre-wrap break-words"
-            >
-              {d.query}
-            </pre>
-          )}
-
-          {/* Source list */}
-          {d.sourceIds && d.sourceIds.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-drasi-border">
+          {/* Query Results - Runtime only */}
+          {d.status === "Running" ? (
             <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-wider text-drasi-text-secondary font-semibold">
-                Sources
-              </div>
-              {d.sourceIds.map((sid) => (
-                <div
-                  key={sid}
-                  className="text-[10px] text-drasi-source font-mono pl-2 border-l-2 border-drasi-source/30"
-                >
-                  {sid}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Query Results Section */}
-          {d.status === "Running" && (
-            <div className="space-y-1 mt-2 pt-2 border-t border-drasi-border">
               <div className="flex items-center gap-2">
                 <div className="text-[9px] uppercase tracking-wider text-drasi-text-secondary font-semibold">
-                  Results
+                  Live Results
                 </div>
                 {loading && (
                   <Loader2 size={10} className="animate-spin text-drasi-query" />
@@ -162,7 +119,7 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
               )}
 
               {!resultsError && results.length > 0 && (
-                <div className="nowheel overflow-auto max-h-32 rounded border border-drasi-border bg-drasi-bg">
+                <div className="nowheel overflow-auto max-h-40 rounded border border-drasi-border bg-drasi-bg">
                   <table className="w-full text-[9px] font-mono">
                     <thead className="bg-drasi-surface sticky top-0">
                       <tr>
@@ -201,19 +158,14 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
               )}
 
               {!resultsError && !loading && results.length === 0 && (
-                <div className="text-[10px] text-drasi-text-secondary italic text-center py-2">
-                  No results
+                <div className="text-[10px] text-drasi-text-secondary italic text-center py-4">
+                  No results yet
                 </div>
               )}
             </div>
-          )}
-
-          {/* Show message when query is not running */}
-          {d.status !== "Running" && (
-            <div className="mt-2 pt-2 border-t border-drasi-border">
-              <div className="text-[10px] text-drasi-text-secondary italic text-center py-2">
-                Start query to see results
-              </div>
+          ) : (
+            <div className="text-[10px] text-drasi-text-secondary italic text-center py-4">
+              Start query to see live results
             </div>
           )}
         </div>
