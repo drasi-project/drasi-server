@@ -20,8 +20,7 @@
 //! dispatch mechanism.
 
 use drasi_plugin_sdk::{
-    BootstrapPluginDescriptor, ReactionPluginDescriptor,
-    SourcePluginDescriptor,
+    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -215,7 +214,8 @@ mod tests {
             "1.0.0"
         }
         fn config_schema_json(&self) -> String {
-            r#"{"MockSourceConfig":{"type":"object","properties":{"host":{"type":"string"}}}}"#.to_string()
+            r#"{"MockSourceConfig":{"type":"object","properties":{"host":{"type":"string"}}}}"#
+                .to_string()
         }
         fn config_schema_name(&self) -> &str {
             "MockSourceConfig"

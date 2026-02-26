@@ -19,7 +19,9 @@
 //! function is called once at startup to populate a [`PluginRegistry`].
 
 use crate::plugin_registry::PluginRegistry;
-use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor};
+use drasi_plugin_sdk::{
+    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
+};
 use log::info;
 use std::sync::Arc;
 

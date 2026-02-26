@@ -94,8 +94,7 @@ impl<'de> Deserialize<'de> for BootstrapProviderConfig {
                     }
                 }
 
-                let kind =
-                    provider_kind.ok_or_else(|| de::Error::missing_field("kind"))?;
+                let kind = provider_kind.ok_or_else(|| de::Error::missing_field("kind"))?;
 
                 let config = serde_json::Value::Object(remaining);
 

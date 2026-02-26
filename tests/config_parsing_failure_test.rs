@@ -48,7 +48,6 @@ fn assert_fails_with_field(yaml: &str, expected_field: &str) {
     );
 }
 
-
 /// Helper to assert that loading succeeds (fields stored in config JSON for plugin validation)
 fn assert_loads_successfully(yaml: &str) {
     let result = try_load_config(yaml);

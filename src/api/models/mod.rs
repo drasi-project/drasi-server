@@ -167,7 +167,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
                         // Reject common snake_case misspellings of known fields
                         "auto_start" => {
                             return Err(de::Error::custom(
-                                "unknown field `auto_start`, did you mean `autoStart`?"
+                                "unknown field `auto_start`, did you mean `autoStart`?",
                             ));
                         }
                         "bootstrap_provider" => {
@@ -386,7 +386,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                         // Reject common snake_case misspellings of known fields
                         "auto_start" => {
                             return Err(de::Error::custom(
-                                "unknown field `auto_start`, did you mean `autoStart`?"
+                                "unknown field `auto_start`, did you mean `autoStart`?",
                             ));
                         }
                         // Collect all other fields for the inner config
@@ -575,9 +575,6 @@ impl StateStoreConfig {
 mod tests {
     use super::*;
 
-
-
-
     #[test]
     fn test_source_deserialize_mock_minimal() {
         let json = r#"{
@@ -726,7 +723,6 @@ mod tests {
         assert_eq!(source.config["extraField"], "value");
     }
 
-
     #[test]
     fn test_source_deserialize_unknown_kind_accepted_at_deser() {
         // With generic struct approach, unknown kinds are accepted at deserialization
@@ -767,8 +763,14 @@ mod tests {
         let result: Result<SourceConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
-        assert!(err.contains("autoStart"), "Error should suggest autoStart: {err}");
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
+        assert!(
+            err.contains("autoStart"),
+            "Error should suggest autoStart: {err}"
+        );
     }
 
     #[test]
@@ -844,7 +846,9 @@ bootstrapProvider:
 "#;
 
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
-        let bp = source.bootstrap_provider().expect("Expected bootstrap provider");
+        let bp = source
+            .bootstrap_provider()
+            .expect("Expected bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // After merge_bootstrap_provider_with_source, inherited fields should be present
@@ -876,7 +880,9 @@ bootstrapProvider:
 "#;
 
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
-        let bp = source.bootstrap_provider().expect("Expected bootstrap provider");
+        let bp = source
+            .bootstrap_provider()
+            .expect("Expected bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // Overridden fields
@@ -1128,7 +1134,6 @@ intervalMs: 1000
         assert_eq!(reaction.config["extraField"], "value");
     }
 
-
     #[test]
     fn test_reaction_deserialize_unknown_kind_accepted_at_deser() {
         // With generic struct approach, unknown kinds are accepted at deserialization.
@@ -1171,8 +1176,14 @@ intervalMs: 1000
         let result: Result<ReactionConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("auto_start"), "Error should mention auto_start: {err}");
-        assert!(err.contains("autoStart"), "Error should suggest autoStart: {err}");
+        assert!(
+            err.contains("auto_start"),
+            "Error should mention auto_start: {err}"
+        );
+        assert!(
+            err.contains("autoStart"),
+            "Error should suggest autoStart: {err}"
+        );
     }
 
     #[test]
@@ -1329,7 +1340,10 @@ autoStart: true
         assert_eq!(reaction.kind(), "http");
         // Verify the env var config is preserved in the raw config
         let base_url = &reaction.config["baseUrl"];
-        assert_eq!(base_url.as_str().unwrap(), "${BASE_URL:-http://localhost:8080}");
+        assert_eq!(
+            base_url.as_str().unwrap(),
+            "${BASE_URL:-http://localhost:8080}"
+        );
     }
 
     // =========================================================================

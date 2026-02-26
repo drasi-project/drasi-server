@@ -87,10 +87,7 @@ mod tests {
         let mapper = DtoMapper::new();
         assert_eq!(mapper.resolve_string(&host).unwrap(), "localhost");
         assert_eq!(mapper.resolve_typed(&port).unwrap(), 5432);
-        assert_eq!(
-            mapper.resolve_string(&password).unwrap(),
-            "secure_password"
-        );
+        assert_eq!(mapper.resolve_string(&password).unwrap(), "secure_password");
 
         std::env::remove_var("TEST_CV_MIXED_PASSWORD");
     }

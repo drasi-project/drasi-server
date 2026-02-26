@@ -504,10 +504,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
 
 /// Prompt for generic bootstrap provider selection (for non-Postgres sources).
 fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>> {
-    let bootstrap_types = vec![
-        BootstrapType::None,
-        BootstrapType::ScriptFile,
-    ];
+    let bootstrap_types = vec![BootstrapType::None, BootstrapType::ScriptFile];
 
     let selected = Select::new(
         "Bootstrap provider (for initial data loading):",

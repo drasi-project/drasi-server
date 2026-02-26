@@ -22,7 +22,11 @@ use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
 pub struct QueryConfigMapper;
 
 impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
-    fn map(&self, dto: &QueryConfigDto, _resolver: &DtoMapper) -> Result<QueryConfig, MappingError> {
+    fn map(
+        &self,
+        dto: &QueryConfigDto,
+        _resolver: &DtoMapper,
+    ) -> Result<QueryConfig, MappingError> {
         let sources = dto
             .sources
             .iter()

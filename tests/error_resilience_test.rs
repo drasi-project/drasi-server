@@ -3,10 +3,10 @@
 //! Verifies graceful behavior when plugins receive bad config, unknown kinds
 //! are requested, or dynamic loading encounters problems.
 
+use drasi_server::api::models::BootstrapProviderConfig;
 #[cfg(feature = "builtin-plugins")]
 use drasi_server::builtin_plugins::register_builtin_plugins;
 use drasi_server::config::{ReactionConfig, SourceConfig};
-use drasi_server::api::models::BootstrapProviderConfig;
 use drasi_server::factories::{create_reaction, create_source};
 use drasi_server::plugin_registry::PluginRegistry;
 #[cfg(feature = "builtin-plugins")]
@@ -36,7 +36,10 @@ async fn test_unknown_source_kind_returns_helpful_error() {
         config: serde_json::json!({}),
     };
 
-    let err = create_source(&registry, config).await.err().expect("Expected error");
+    let err = create_source(&registry, config)
+        .await
+        .err()
+        .expect("Expected error");
     let msg = err.to_string();
     assert!(msg.contains("Unknown source kind"), "Error: {msg}");
     assert!(
@@ -61,7 +64,10 @@ async fn test_unknown_reaction_kind_returns_helpful_error() {
         config: serde_json::json!({}),
     };
 
-    let err = create_reaction(&registry, config).await.err().expect("Expected error");
+    let err = create_reaction(&registry, config)
+        .await
+        .err()
+        .expect("Expected error");
     let msg = err.to_string();
     assert!(msg.contains("Unknown reaction kind"), "Error: {msg}");
     assert!(msg.contains("email-blast"), "Error: {msg}");
@@ -86,12 +92,12 @@ async fn test_unknown_bootstrap_kind_returns_helpful_error() {
         }),
     };
 
-    let err = create_source(&registry, config).await.err().expect("Expected error");
+    let err = create_source(&registry, config)
+        .await
+        .err()
+        .expect("Expected error");
     let msg = err.to_string();
-    assert!(
-        msg.contains("Unknown bootstrap kind"),
-        "Error: {msg}"
-    );
+    assert!(msg.contains("Unknown bootstrap kind"), "Error: {msg}");
     assert!(msg.contains("imaginary-bootstrap"), "Error: {msg}");
 }
 
@@ -110,7 +116,10 @@ async fn test_empty_registry_rejects_all_sources() {
         config: serde_json::json!({}),
     };
 
-    let err = create_source(&registry, config).await.err().expect("Expected error");
+    let err = create_source(&registry, config)
+        .await
+        .err()
+        .expect("Expected error");
     assert!(err.to_string().contains("Unknown source kind"));
 }
 
@@ -125,7 +134,10 @@ async fn test_empty_registry_rejects_all_reactions() {
         config: serde_json::json!({}),
     };
 
-    let err = create_reaction(&registry, config).await.err().expect("Expected error");
+    let err = create_reaction(&registry, config)
+        .await
+        .err()
+        .expect("Expected error");
     assert!(err.to_string().contains("Unknown reaction kind"));
 }
 
@@ -189,10 +201,7 @@ async fn test_source_with_extra_unknown_fields_in_config() {
     // If it fails, the error should be descriptive (not a panic)
     if let Err(e) = &result {
         let msg = e.to_string();
-        assert!(
-            !msg.is_empty(),
-            "Error message should be descriptive"
-        );
+        assert!(!msg.is_empty(), "Error message should be descriptive");
     }
 }
 
@@ -218,11 +227,8 @@ fn test_dynamic_loading_nonexistent_dir() {
 fn test_dynamic_loading_empty_dir() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let mut registry = PluginRegistry::new();
-    let stats = drasi_server::dynamic_loading::load_plugins(
-        temp_dir.path(),
-        &mut registry,
-    )
-    .unwrap();
+    let stats =
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry).unwrap();
 
     assert_eq!(stats.plugins_loaded, 0);
 }
@@ -236,13 +242,13 @@ fn test_dynamic_loading_skips_non_library_files() {
     std::fs::write(temp_dir.path().join("data.json"), "{}").unwrap();
 
     let mut registry = PluginRegistry::new();
-    let stats = drasi_server::dynamic_loading::load_plugins(
-        temp_dir.path(),
-        &mut registry,
-    )
-    .unwrap();
+    let stats =
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry).unwrap();
 
-    assert_eq!(stats.plugins_loaded, 0, "Non-library files should be skipped");
+    assert_eq!(
+        stats.plugins_loaded, 0,
+        "Non-library files should be skipped"
+    );
 }
 
 // ==========================================================================
@@ -258,10 +264,7 @@ fn test_source_config_rejects_snake_case_auto_start() {
     "#;
 
     let result: Result<SourceConfig, _> = serde_yaml::from_str(yaml);
-    assert!(
-        result.is_err(),
-        "snake_case auto_start should be rejected"
-    );
+    assert!(result.is_err(), "snake_case auto_start should be rejected");
     let err = result.unwrap_err().to_string();
     assert!(
         err.contains("autoStart"),
@@ -279,10 +282,7 @@ fn test_reaction_config_rejects_snake_case_auto_start() {
     "#;
 
     let result: Result<ReactionConfig, _> = serde_yaml::from_str(yaml);
-    assert!(
-        result.is_err(),
-        "snake_case auto_start should be rejected"
-    );
+    assert!(result.is_err(), "snake_case auto_start should be rejected");
 }
 
 #[test]

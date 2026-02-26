@@ -18,10 +18,7 @@
 mod test_support;
 
 use drasi_lib::config::QueryLanguage;
-use drasi_server::models::{
-    ConfigValue, QueryConfigDto,
-    SourceSubscriptionConfigDto,
-};
+use drasi_server::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use std::fs;
 use tempfile::TempDir;
@@ -407,10 +404,7 @@ fn test_multiple_queries_persist_correctly() {
         .find(|q| q.id == "query-1")
         .expect("query-1 not found");
     assert!(q1.auto_start);
-    assert_eq!(
-        q1.query,
-        "MATCH (n:Node) RETURN n".to_string()
-    );
+    assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
     let q2 = loaded_config
@@ -567,10 +561,7 @@ reactions: []
         .find(|q| q.id == "first-query")
         .expect("first-query not found");
     assert!(q1.auto_start);
-    assert_eq!(
-        q1.query,
-        "MATCH (n:Node) RETURN n".to_string()
-    );
+    assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
     let q2 = config

@@ -24,7 +24,9 @@ use crate::plugin_registry::PluginRegistry;
 use anyhow::Result;
 use drasi_host_sdk::callbacks::{self, CallbackContext};
 use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
-use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor};
+use drasi_plugin_sdk::{
+    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
+};
 use log::{debug, info};
 use std::path::Path;
 use std::sync::Arc;
@@ -86,10 +88,7 @@ pub fn load_plugins(
     let mut stats = PluginLoadStats::default();
 
     for plugin in loaded {
-        let meta = plugin
-            .metadata_info
-            .as_deref()
-            .unwrap_or("no metadata");
+        let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
 
         for proxy in plugin.source_plugins {
             let kind = proxy.kind().to_string();

@@ -360,10 +360,9 @@ mod tests {
         };
         let source_config_json = serde_json::json!({});
 
-        let provider =
-            create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json)
-                .await
-                .expect("Failed to create scriptfile bootstrap provider");
+        let provider = create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json)
+            .await
+            .expect("Failed to create scriptfile bootstrap provider");
         drop(provider);
     }
 

@@ -87,7 +87,12 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     let mut plugin_registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugin_registry);
     drasi_server::register_builtin_plugins(&mut plugin_registry);
-    let v1_router = build_v1_router(registry, read_only, config_persistence, Arc::new(plugin_registry));
+    let v1_router = build_v1_router(
+        registry,
+        read_only,
+        config_persistence,
+        Arc::new(plugin_registry),
+    );
 
     let router = Router::new()
         // Health endpoint

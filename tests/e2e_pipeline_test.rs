@@ -238,8 +238,8 @@ async fn test_config_roundtrip_through_registry() {
     "#;
 
     // Parse the YAML into our config struct
-    let source_config: SourceConfig = serde_yaml::from_str(yaml_source)
-        .expect("Failed to parse source YAML");
+    let source_config: SourceConfig =
+        serde_yaml::from_str(yaml_source).expect("Failed to parse source YAML");
 
     assert_eq!(source_config.kind, "mock");
     assert_eq!(source_config.id, "yaml-source");
@@ -260,8 +260,8 @@ async fn test_config_roundtrip_through_registry() {
         autoStart: true
     "#;
 
-    let reaction_config: ReactionConfig = serde_yaml::from_str(yaml_reaction)
-        .expect("Failed to parse reaction YAML");
+    let reaction_config: ReactionConfig =
+        serde_yaml::from_str(yaml_reaction).expect("Failed to parse reaction YAML");
 
     let reaction = create_reaction(&registry, reaction_config)
         .await

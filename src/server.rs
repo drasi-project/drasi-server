@@ -37,7 +37,9 @@ use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
-use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor};
+use drasi_plugin_sdk::{
+    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
+};
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -224,7 +226,7 @@ impl DrasiServer {
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
             plugin_registry: Arc::new(plugin_registry),
-            config_persistence: None,   // Will be set up if config file is provided
+            config_persistence: None, // Will be set up if config file is provided
         }
     }
 
@@ -398,8 +400,12 @@ impl DrasiServer {
         api::inject_plugin_schemas(&mut openapi_v1, &self.plugin_registry);
 
         // Build the v1 API router
-        let v1_router =
-            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone(), self.plugin_registry.clone());
+        let v1_router = api::build_v1_router(
+            registry,
+            self.read_only.clone(),
+            config_persistence.clone(),
+            self.plugin_registry.clone(),
+        );
 
         // Build the main application router
         let app = Router::new()

@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                    d.latitude AS lat, d.longitude AS lng, d.status AS status
         "#
-            .to_string(),
+        .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             RETURN elementId(o) AS orderId, o.status AS status,
                    o.restaurant AS restaurant, o.delivery_address AS address
         "#
-            .to_string(),
+        .to_string(),
         query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
