@@ -54,7 +54,7 @@ export default function ConnectedComponentItem({
             {canStart && onStart && (
               <button
                 onClick={() => onStart(id)}
-                className="p-1 rounded hover:bg-drasi-bg text-drasi-text-secondary hover:text-green-500 transition-colors"
+                className="p-1 rounded hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running transition-colors"
                 title="Start"
               >
                 <Play size={12} />
@@ -63,7 +63,7 @@ export default function ConnectedComponentItem({
             {canStop && onStop && (
               <button
                 onClick={() => onStop(id)}
-                className="p-1 rounded hover:bg-drasi-bg text-drasi-text-secondary hover:text-amber-500 transition-colors"
+                className="p-1 rounded hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error transition-colors"
                 title="Stop"
               >
                 <Square size={12} />
