@@ -34,6 +34,37 @@ function save(instanceId: string, state: PersistedState): void {
 }
 
 /**
+ * Remove a node's persisted state from localStorage.
+ * Call this when a node is deleted.
+ */
+export function removeNodeFromPersistedState(instanceId: string, nodeId: string): void {
+  try {
+    const state = loadPersistedState(instanceId);
+    if (!state) return;
+    
+    delete state.positions[nodeId];
+    delete state.expanded[nodeId];
+    delete state.locked[nodeId];
+    
+    save(instanceId, state);
+  } catch {
+    // Silently ignore errors
+  }
+}
+
+/**
+ * Remove all persisted state for an instance.
+ * Call this when an instance is deleted.
+ */
+export function removeInstancePersistedState(instanceId: string): void {
+  try {
+    localStorage.removeItem(storageKey(instanceId));
+  } catch {
+    // Silently ignore errors
+  }
+}
+
+/**
  * Persist and restore canvas state (positions, expanded, viewport)
  * to localStorage, keyed by instance ID.
  *

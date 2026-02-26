@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import * as api from "@/api/client";
+import { removeNodeFromPersistedState } from "@/hooks/useCanvasPersistence";
 import type {
   SourceStatusResponse,
   QueryConfigResponse,
@@ -174,6 +175,10 @@ export function useSources(instanceId?: string) {
     },
     remove: async (id: string) => {
       await api.deleteSource(id, instanceId);
+      // Clean up persisted canvas state for this node
+      if (instanceId) {
+        removeNodeFromPersistedState(instanceId, id);
+      }
       // SSE will deliver the Removed event
     },
     start: async (id: string) => {
@@ -261,6 +266,10 @@ export function useQueries(instanceId?: string) {
     },
     remove: async (id: string) => {
       await api.deleteQuery(id, instanceId);
+      // Clean up persisted canvas state for this node
+      if (instanceId) {
+        removeNodeFromPersistedState(instanceId, id);
+      }
     },
     start: async (id: string) => {
       await api.startQuery(id, instanceId);
@@ -346,6 +355,10 @@ export function useReactions(instanceId?: string) {
     },
     remove: async (id: string) => {
       await api.deleteReaction(id, instanceId);
+      // Clean up persisted canvas state for this node
+      if (instanceId) {
+        removeNodeFromPersistedState(instanceId, id);
+      }
     },
     start: async (id: string) => {
       await api.startReaction(id, instanceId);
