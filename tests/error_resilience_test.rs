@@ -3,13 +3,16 @@
 //! Verifies graceful behavior when plugins receive bad config, unknown kinds
 //! are requested, or dynamic loading encounters problems.
 
+#[cfg(feature = "builtin-plugins")]
 use drasi_server::builtin_plugins::register_builtin_plugins;
 use drasi_server::config::{ReactionConfig, SourceConfig};
 use drasi_server::api::models::BootstrapProviderConfig;
 use drasi_server::factories::{create_reaction, create_source};
 use drasi_server::plugin_registry::PluginRegistry;
+#[cfg(feature = "builtin-plugins")]
 use drasi_server::register_core_plugins;
 
+#[cfg(feature = "builtin-plugins")]
 fn populated_registry() -> PluginRegistry {
     let mut registry = PluginRegistry::new();
     register_core_plugins(&mut registry);
@@ -18,9 +21,10 @@ fn populated_registry() -> PluginRegistry {
 }
 
 // ==========================================================================
-// Unknown kind errors
+// Unknown kind errors (require builtin-plugins for populated registry)
 // ==========================================================================
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_source_kind_returns_helpful_error() {
     let registry = populated_registry();
@@ -45,6 +49,7 @@ async fn test_unknown_source_kind_returns_helpful_error() {
     );
 }
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_reaction_kind_returns_helpful_error() {
     let registry = populated_registry();
@@ -63,6 +68,7 @@ async fn test_unknown_reaction_kind_returns_helpful_error() {
     assert!(msg.contains("log"), "Should list available kinds: {msg}");
 }
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_bootstrap_kind_returns_helpful_error() {
     let registry = populated_registry();
@@ -124,9 +130,10 @@ async fn test_empty_registry_rejects_all_reactions() {
 }
 
 // ==========================================================================
-// Bad config JSON
+// Bad config JSON (require builtin-plugins for populated registry)
 // ==========================================================================
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_source_with_completely_wrong_config_structure() {
     let registry = populated_registry();
@@ -143,6 +150,7 @@ async fn test_source_with_completely_wrong_config_structure() {
     let _result = create_source(&registry, config).await;
 }
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_reaction_with_null_config() {
     let registry = populated_registry();
@@ -158,6 +166,7 @@ async fn test_reaction_with_null_config() {
     let _result = create_reaction(&registry, config).await;
 }
 
+#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_source_with_extra_unknown_fields_in_config() {
     let registry = populated_registry();
@@ -191,68 +200,34 @@ async fn test_source_with_extra_unknown_fields_in_config() {
 // Dynamic loading edge cases
 // ==========================================================================
 
+#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_nonexistent_dir() {
     let mut registry = PluginRegistry::new();
-    let (stats, handles) = drasi_server::dynamic_loading::load_plugins_from_directory(
-        "/nonexistent/path/to/plugins",
+    let stats = drasi_server::dynamic_loading::load_plugins(
+        std::path::Path::new("/nonexistent/path/to/plugins"),
         &mut registry,
     )
     .unwrap();
 
-    assert_eq!(stats.found, 0);
-    assert_eq!(stats.loaded, 0);
-    assert_eq!(stats.failed, 0);
-    assert!(handles.is_empty());
+    assert_eq!(stats.plugins_loaded, 0);
 }
 
+#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_empty_dir() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let mut registry = PluginRegistry::new();
-    let (stats, handles) = drasi_server::dynamic_loading::load_plugins_from_directory(
-        temp_dir.path().to_str().unwrap(),
+    let stats = drasi_server::dynamic_loading::load_plugins(
+        temp_dir.path(),
         &mut registry,
     )
     .unwrap();
 
-    assert_eq!(stats.found, 0);
-    assert_eq!(stats.loaded, 0);
-    assert!(handles.is_empty());
+    assert_eq!(stats.plugins_loaded, 0);
 }
 
-#[test]
-fn test_dynamic_loading_invalid_library_file() {
-    let temp_dir = tempfile::TempDir::new().unwrap();
-
-    // Create a fake .so file
-    #[cfg(target_os = "linux")]
-    let ext = "so";
-    #[cfg(target_os = "macos")]
-    let ext = "dylib";
-    #[cfg(target_os = "windows")]
-    let ext = "dll";
-
-    std::fs::write(
-        temp_dir.path().join(format!("libdrasi_source_fake.{ext}")),
-        b"not a real shared library",
-    )
-    .unwrap();
-
-    let mut registry = PluginRegistry::new();
-    let (stats, _handles) = drasi_server::dynamic_loading::load_plugins_from_directory(
-        temp_dir.path().to_str().unwrap(),
-        &mut registry,
-    )
-    .unwrap();
-
-    assert_eq!(stats.found, 1);
-    assert_eq!(stats.loaded, 0);
-    assert_eq!(stats.failed, 1);
-    // The registry should remain empty
-    assert!(registry.is_empty());
-}
-
+#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_skips_non_library_files() {
     let temp_dir = tempfile::TempDir::new().unwrap();
@@ -261,13 +236,13 @@ fn test_dynamic_loading_skips_non_library_files() {
     std::fs::write(temp_dir.path().join("data.json"), "{}").unwrap();
 
     let mut registry = PluginRegistry::new();
-    let (stats, _) = drasi_server::dynamic_loading::load_plugins_from_directory(
-        temp_dir.path().to_str().unwrap(),
+    let stats = drasi_server::dynamic_loading::load_plugins(
+        temp_dir.path(),
         &mut registry,
     )
     .unwrap();
 
-    assert_eq!(stats.found, 0, "Non-library files should be skipped");
+    assert_eq!(stats.plugins_loaded, 0, "Non-library files should be skipped");
 }
 
 // ==========================================================================

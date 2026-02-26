@@ -77,14 +77,6 @@ DYNAMIC_PLUGINS := \
 # Build -p flags for all plugins
 PLUGIN_PKG_FLAGS := $(foreach p,$(DYNAMIC_PLUGINS),-p $(p))
 
-# Shared RUSTFLAGS for ALL dynamic builds (server + plugins).
-# CRITICAL: server and plugins MUST be built in a SINGLE cargo invocation
-# to ensure shared deps (serde, tokio, etc.) have identical symbol hashes.
-#   -C prefer-dynamic    → share libstd/tokio with plugins (avoid dual-runtime)
-#   --cfg ...            → enable drasi_plugin_init export in plugin crates
-#   -C link-args=...     → RUNPATH=$ORIGIN so binary finds .so in its own dir
-DYNAMIC_RUSTFLAGS := -C prefer-dynamic --cfg feature="dynamic-plugin" $(RPATH_FLAG)
-
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -100,7 +92,7 @@ help:
 	@echo "  make build-release      - Build release binary"
 	@echo "  make build-static       - Alias for build (debug)"
 	@echo ""
-	@echo "Dynamic Build (plugins as shared libraries):"
+	@echo "Dynamic Build (cdylib plugins, loaded at runtime):"
 	@echo "  make build-dynamic              - Build server + plugins (debug)"
 	@echo "  make build-dynamic-release      - Build server + plugins (release)"
 	@echo "  make build-dynamic-server       - Build only the server (debug)"
@@ -190,74 +182,86 @@ build-static:
 	cargo build
 	$(call clean_plugin_libs,target/debug)
 
-# === Dynamic Build ===
+# === Dynamic Build (cdylib plugins) ===
+#
+# Each plugin is a self-contained cdylib (.so/.dylib/.dll) with its own tokio
+# runtime, communicating with the host via #[repr(C)] vtable structs.
+# No special RUSTFLAGS, RTLD_GLOBAL, or libstd copying needed.
+#   - Don't need prefer-dynamic or RTLD_GLOBAL
+#   - Don't need libstd copying
+#   - Don't need single-invocation builds (no symbol hash coupling)
+#   - Are fully self-contained .so/.dylib/.dll files
+#
+# Plugins are built in the drasi-core workspace with the dynamic-plugin feature,
+# then copied to the server's target directory.
 
-# Build server + all plugins as shared libraries (debug)
-build-dynamic: build-dynamic-server
+# All plugin crate names that support cdylib loading
+CDYLIB_PLUGINS := $(DYNAMIC_PLUGINS)
+
+# Build -p flags for cdylib plugins
+CDYLIB_PKG_FLAGS := $(foreach p,$(CDYLIB_PLUGINS),-p $(p))
+
+# Per-package dynamic-plugin feature flags
+# Adaptive plugins (grpc-adaptive, http-adaptive) depend on their base plugins.
+# Building all in one `cargo build` causes feature unification — the base plugin's
+# dynamic-plugin feature leaks into the adaptive's cdylib, creating duplicate symbols.
+# Solution: build each plugin individually so features stay isolated.
+
+# Build server with cdylib-plugins feature + build all plugins as cdylib (debug)
+build-dynamic: build-dynamic-server build-dynamic-plugins
 	@echo ""
-	@echo "=== Dynamic build complete (debug) ==="
+	@echo "=== cdylib build complete (debug) ==="
 	@echo "Server:  target/debug/$(SERVER_BIN)"
 	@echo "Plugins: target/debug/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT)"
-	@echo "Runtime: target/debug/$(PLUGIN_LIB_PREFIX)drasi_plugin_runtime.$(PLUGIN_LIB_EXT)"
 
-# Build server + all plugins as shared libraries (release)
-build-dynamic-release: build-dynamic-server-release
+# Build server with cdylib-plugins feature + build all plugins as cdylib (release)
+build-dynamic-release: build-dynamic-server-release build-dynamic-plugins-release
 	@echo ""
-	@echo "=== Dynamic build complete (release) ==="
+	@echo "=== cdylib build complete (release) ==="
 	@echo "Server:  target/release/$(SERVER_BIN)"
 	@echo "Plugins: target/release/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT)"
-	@echo "Runtime: target/release/$(PLUGIN_LIB_PREFIX)drasi_plugin_runtime.$(PLUGIN_LIB_EXT)"
 
-# Build server + all plugins in a SINGLE cargo invocation (debug).
-# Using a single command ensures shared deps get unified feature resolution
-# and identical symbol hashes across server and all plugin shared library files.
-# The libstd copy ensures the binary can start on machines without the Rust toolchain
-# (prefer-dynamic means the binary dynamically links libstd).
+# Build server without builtin plugins, with cdylib loading support (debug)
 build-dynamic-server:
-	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
-		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps'
-ifeq ($(OS),Windows_NT)
-	@echo "Copying Rust libstd to target/debug/..."
-	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/std-*.dll; do \
-			[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
-		done
-else
-	@echo "Copying Rust libstd to target/debug/..."
-	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.$(PLUGIN_LIB_EXT); do \
-			[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
-		done
-endif
+	@echo "=== Building cdylib server (debug) ==="
+	cargo build --no-default-features --features dynamic-plugins
 
+# Build server without builtin plugins, with cdylib loading support (release)
 build-dynamic-server-release:
-	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
-		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps' --release
-ifeq ($(OS),Windows_NT)
-	@echo "Copying Rust libstd to target/release/..."
-	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/std-*.dll; do \
-			[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
-		done
-else
-	@echo "Copying Rust libstd to target/release/..."
-	@SYSROOT=$$(rustc --print sysroot) && HOST=$$(rustc -vV | grep host | cut -d' ' -f2) && \
-		for f in $${SYSROOT}/lib/rustlib/$${HOST}/lib/libstd-*.$(PLUGIN_LIB_EXT); do \
-			[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
-		done
-endif
+	@echo "=== Building cdylib server (release) ==="
+	cargo build --no-default-features --features dynamic-plugins --release
 
-# Build ONLY plugin shared libraries (without server binary).
-# Still uses the same features so deps are compatible if server is built later.
+# Build all plugins as cdylib shared libraries in drasi-core (debug).
+# Each plugin is built individually to avoid feature unification issues
+# where adaptive plugins inherit cdylib entry points from their base deps.
 build-dynamic-plugins:
-	@echo "=== Building dynamic plugins (debug) ==="
-	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
-		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps' --lib
+	@echo "=== Building cdylib plugins (debug) ==="
+	@for p in $(CDYLIB_PLUGINS); do \
+		echo "  Building $$p..."; \
+		(cd $(DRASI_CORE_DIR) && cargo build --lib -p $$p --features $$p/dynamic-plugin) || exit 1; \
+	done
+	@echo "Copying cdylib plugins to target/debug/..."
+	@mkdir -p target/debug
+	@for f in $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_source_*.$(PLUGIN_LIB_EXT) \
+	          $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_reaction_*.$(PLUGIN_LIB_EXT) \
+	          $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_bootstrap_*.$(PLUGIN_LIB_EXT); do \
+		[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
+	done || true
 
+# Build all plugins as cdylib shared libraries in drasi-core (release)
 build-dynamic-plugins-release:
-	@echo "=== Building dynamic plugins (release) ==="
-	RUSTFLAGS='$(DYNAMIC_RUSTFLAGS)' \
-		cargo build --no-default-features --features 'dynamic-plugins,all-plugin-deps' --lib --release
+	@echo "=== Building cdylib plugins (release) ==="
+	@for p in $(CDYLIB_PLUGINS); do \
+		echo "  Building $$p..."; \
+		(cd $(DRASI_CORE_DIR) && cargo build --lib -p $$p --features $$p/dynamic-plugin --release) || exit 1; \
+	done
+	@echo "Copying cdylib plugins to target/release/..."
+	@mkdir -p target/release
+	@for f in $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_source_*.$(PLUGIN_LIB_EXT) \
+	          $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_reaction_*.$(PLUGIN_LIB_EXT) \
+	          $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_bootstrap_*.$(PLUGIN_LIB_EXT); do \
+		[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
+	done || true
 
 clippy:
 	cargo clippy --all-targets --all-features

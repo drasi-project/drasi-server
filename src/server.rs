@@ -30,7 +30,6 @@ use crate::builtin_plugins::register_builtin_plugins;
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
-use crate::dynamic_loading::{load_plugins_from_directory, load_shared_runtime, LoadedPlugin, RuntimeHandle};
 use crate::factories::{create_reaction, create_source, create_state_store_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
@@ -50,12 +49,6 @@ pub struct DrasiServer {
     plugin_registry: Arc<PluginRegistry>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
-    /// Keeps loaded plugin libraries alive for the server's lifetime.
-    #[allow(dead_code)]
-    loaded_plugins: Vec<LoadedPlugin>,
-    /// Keeps the shared runtime library loaded for the server's lifetime.
-    #[allow(dead_code)]
-    runtime_handle: Option<RuntimeHandle>,
 }
 
 struct PreparedInstance {
@@ -77,20 +70,24 @@ impl DrasiServer {
         register_builtin_plugins(&mut plugin_registry);
 
         // Load dynamic plugins from the plugins directory
-        let (loaded_plugins, runtime_handle) = if plugins_dir.exists() {
-            let plugins_dir_str = plugins_dir.to_string_lossy().to_string();
-            let runtime = load_shared_runtime(&plugins_dir)
-                .map(Some)
-                .unwrap_or_else(|e| {
-                    info!("Shared runtime not loaded: {e}");
-                    None
-                });
-            let (_stats, handles) =
-                load_plugins_from_directory(&plugins_dir_str, &mut plugin_registry)?;
-            (handles, runtime)
-        } else {
-            (Vec::new(), None)
-        };
+        #[cfg(feature = "dynamic-plugins")]
+        if plugins_dir.exists() {
+            let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
+                instance_id: String::new(),
+                log_registry: drasi_lib::managers::get_or_init_global_registry(),
+                source_event_history: Arc::new(tokio::sync::RwLock::new(
+                    drasi_lib::managers::ComponentEventHistory::new(),
+                )),
+                reaction_event_history: Arc::new(tokio::sync::RwLock::new(
+                    drasi_lib::managers::ComponentEventHistory::new(),
+                )),
+            });
+            crate::dynamic_loading::load_plugins(
+                &plugins_dir,
+                &mut plugin_registry,
+                Some(callback_ctx),
+            )?;
+        }
 
         let plugin_registry = Arc::new(plugin_registry);
 
@@ -200,8 +197,6 @@ impl DrasiServer {
             read_only: Arc::new(read_only),
             plugin_registry,
             config_persistence: None, // Will be set after core is started
-            loaded_plugins,
-            runtime_handle,
         })
     }
 
@@ -230,8 +225,6 @@ impl DrasiServer {
             read_only: Arc::new(false), // Programmatic mode assumes write access
             plugin_registry: Arc::new(plugin_registry),
             config_persistence: None,   // Will be set up if config file is provided
-            loaded_plugins: Vec::new(), // No dynamic plugins in builder mode
-            runtime_handle: None,
         }
     }
 
@@ -265,8 +258,6 @@ impl DrasiServer {
             read_only: Arc::new(false),
             plugin_registry: Arc::new(plugin_registry),
             config_persistence: None,
-            loaded_plugins: Vec::new(),
-            runtime_handle: None,
         }
     }
 

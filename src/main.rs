@@ -228,9 +228,11 @@ async fn run_server(
     // Resolve the plugins directory: use CLI arg if provided, otherwise default to binary directory
     let plugins_dir = match plugins_dir {
         Some(dir) => dir,
-        None => drasi_server::dynamic_loading::default_plugin_dir()
-            .unwrap_or_else(|e| {
-                warn!("Could not determine binary directory for plugin loading: {e}");
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| {
+                warn!("Could not determine binary directory for plugin loading");
                 PathBuf::from(".")
             }),
     };

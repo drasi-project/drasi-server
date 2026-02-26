@@ -18,6 +18,7 @@ pub mod builder_result;
 #[cfg(feature = "builtin-plugins")]
 pub mod builtin_plugins;
 pub mod config;
+#[cfg(feature = "dynamic-plugins")]
 pub mod dynamic_loading;
 pub mod factories;
 pub mod instance_registry;

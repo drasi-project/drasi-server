@@ -82,8 +82,8 @@ drasi-state-store-redb = "0.1.5"
 # Plugin SDK
 drasi-plugin-sdk = "0.3.1"
 
-# Shared runtime for dynamic plugin loading
-drasi-plugin-runtime = "0.3.1"
+# Host SDK for dynamic plugin loading
+drasi-host-sdk = { version = "0.1.0", optional = true }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -109,7 +109,6 @@ inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
 openssl = { version = "0.10", features = ["vendored"] }
-libloading = "0.8"
 
 [dev-dependencies]
 # Testing utilities
@@ -166,8 +165,9 @@ all-plugin-deps = [
 # Static build: plugins compiled into the binary via register_*_factory() calls.
 builtin-plugins = ["all-plugin-deps"]
 
-# Dynamic build: plugins loaded at runtime from .so/.dylib/.dll files.
-dynamic-plugins = []
+# Dynamic build: plugins loaded at runtime from cdylib .so/.dylib/.dll files
+# via the drasi-host-sdk. Each plugin is self-contained with its own tokio runtime.
+dynamic-plugins = ["dep:drasi-host-sdk"]
 
 [lints.rust]
 warnings = "deny"

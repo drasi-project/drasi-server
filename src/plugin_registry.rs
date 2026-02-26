@@ -20,7 +20,7 @@
 //! dispatch mechanism.
 
 use drasi_plugin_sdk::{
-    BootstrapPluginDescriptor, PluginRegistration, ReactionPluginDescriptor,
+    BootstrapPluginDescriptor, ReactionPluginDescriptor,
     SourcePluginDescriptor,
 };
 use std::collections::HashMap;
@@ -83,22 +83,6 @@ impl PluginRegistry {
     pub fn register_bootstrapper(&mut self, descriptor: Arc<dyn BootstrapPluginDescriptor>) {
         let kind = descriptor.kind().to_string();
         self.bootstrappers.insert(kind, descriptor);
-    }
-
-    /// Register all descriptors from a [`PluginRegistration`].
-    ///
-    /// This is the primary way to load plugins — each plugin crate provides
-    /// a `PluginRegistration` containing its descriptors.
-    pub fn register_all(&mut self, registration: PluginRegistration) {
-        for source in registration.sources {
-            self.register_source(Arc::from(source));
-        }
-        for reaction in registration.reactions {
-            self.register_reaction(Arc::from(reaction));
-        }
-        for bootstrapper in registration.bootstrappers {
-            self.register_bootstrapper(Arc::from(bootstrapper));
-        }
     }
 
     /// Look up a source plugin descriptor by kind.
@@ -217,7 +201,6 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use drasi_lib::sources::Source;
-    use drasi_plugin_sdk::PluginRegistration;
 
     struct MockSourceDescriptor {
         kind: &'static str,
@@ -301,19 +284,6 @@ mod tests {
 
         assert_eq!(registry.reaction_kinds(), vec!["log"]);
         assert!(registry.get_reaction("log").is_some());
-    }
-
-    #[test]
-    fn test_register_all_from_registration() {
-        let registration = PluginRegistration::new()
-            .with_source(Box::new(MockSourceDescriptor { kind: "postgres" }))
-            .with_source(Box::new(MockSourceDescriptor { kind: "http" }));
-
-        let mut registry = PluginRegistry::new();
-        registry.register_all(registration);
-
-        assert_eq!(registry.source_kinds(), vec!["http", "postgres"]); // sorted
-        assert_eq!(registry.descriptor_count(), 2);
     }
 
     #[test]

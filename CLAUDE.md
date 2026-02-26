@@ -21,7 +21,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - `dynamic-plugins`: Plugins are loaded at runtime from `.so`/`.dylib`/`.dll` files in the binary's directory
 - `all-plugin-deps`: Enables all optional plugin crate dependencies without static registration (used by dynamic build)
 
-When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins in a **single** `cargo build` invocation. This is critical — separate cargo invocations cause symbol hash mismatches in shared dependencies (serde, tokio).
+When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins as cdylib shared libraries. Each plugin is a self-contained cdylib (`.so`/`.dylib`/`.dll`) with its own tokio runtime, communicating via a stable C ABI.
 
 ### Testing
 - Run all tests: `cargo test`
@@ -30,6 +30,8 @@ When building with `dynamic-plugins`, use `make build-dynamic` which builds the 
 - Run integration tests: `./tests/run_working_tests.sh`
 - Run plugin smoke tests: `make test-smoke`
 - Run with logging: `RUST_LOG=debug cargo test -- --nocapture`
+- Run dynamic-plugins tests: `cargo test --no-default-features --features dynamic-plugins --lib`
+- Run host-sdk integration tests: `cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test`
 
 ### Code Quality
 - Format code: `cargo fmt`
@@ -263,6 +265,11 @@ server.run().await?;
 - API tests: `tests/api/`
 - Protocol tests: `tests/grpc/`, `tests/http/`, `tests/postgres/`
 - End-to-end tests: Files ending with `_e2e_test.rs`
+- Host-SDK integration tests: `../drasi-core/components/host-sdk/tests/integration_test.rs`
+  - Tests load real cdylib plugins (mock source, log reaction) and exercise the full
+    dynamic loading pipeline including metadata validation, callbacks, factory invocation,
+    and lifecycle management through FFI vtables.
+  - Prerequisites: build plugins with `make build-dynamic-plugins`
 
 ### Running Tests
 - Always run `cargo test` before committing
@@ -415,9 +422,9 @@ server.run().await?;
 
 ### Important Notes
 - The core functionality is provided by the external `drasi-lib` library
-- Plugins (sources, reactions, bootstrappers) use `dylib` crate-type and export a common `drasi_plugin_init()` entry point
-- With `builtin-plugins` (default), plugins are statically linked; with `dynamic-plugins`, they are loaded from `.so`/`.dylib`/`.dll` files at runtime
-- `drasi-plugin-runtime` is the shared runtime dylib containing pinned versions of tokio, serde, tracing, etc. — loaded with `RTLD_GLOBAL` so plugins share symbols
-- Build hash verification ensures plugins were compiled with the same Rust toolchain as the server
+- Plugins (sources, reactions, bootstrappers) use `cdylib` crate-type and export `drasi_plugin_init()` / `drasi_plugin_metadata()` entry points
+- With `builtin-plugins` (default), plugins are statically linked; with `dynamic-plugins`, they are loaded as self-contained cdylib `.so`/`.dylib`/`.dll` files at runtime via `drasi-host-sdk`
+- Each cdylib plugin has its own tokio runtime and communicates with the host via `#[repr(C)]` vtable structs (stable C ABI)
+- Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
