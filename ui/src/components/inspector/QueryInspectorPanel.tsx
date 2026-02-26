@@ -2,6 +2,7 @@ import { X, AlertCircle, Database, Zap, Search, Code, GitBranch } from "lucide-r
 import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
+import ConnectedComponentItem from "./ConnectedComponentItem";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import { getTypeColor } from "@/utils/colors";
 
@@ -24,6 +25,11 @@ interface QueryInspectorPanelProps {
   onStart?: () => void;
   onStop?: () => void;
   onDelete?: () => void;
+  onNavigate?: (id: string, type: ComponentType) => void;
+  onStartSource?: (id: string) => void;
+  onStopSource?: (id: string) => void;
+  onStartReaction?: (id: string) => void;
+  onStopReaction?: (id: string) => void;
 }
 
 export default function QueryInspectorPanel({
@@ -38,8 +44,15 @@ export default function QueryInspectorPanel({
   onStart,
   onStop,
   onDelete,
+  onNavigate,
+  onStartSource,
+  onStopSource,
+  onStartReaction,
+  onStopReaction,
 }: QueryInspectorPanelProps) {
   const accentColor = getTypeColor("query");
+  const sourceColor = getTypeColor("source");
+  const reactionColor = getTypeColor("reaction");
   const showError = status === "Error" && error;
 
   return (
@@ -146,23 +159,17 @@ export default function QueryInspectorPanel({
             {sources.length > 0 ? (
               <div className="grid gap-2">
                 {sources.map((s) => (
-                  <div
+                  <ConnectedComponentItem
                     key={s.id}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-drasi-card border border-drasi-border/50 hover:border-drasi-source/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-drasi-source" />
-                      <span className="text-sm font-medium text-drasi-text-primary">
-                        {s.id}
-                      </span>
-                      {s.kind && (
-                        <span className="text-[10px] text-drasi-text-secondary px-1.5 py-0.5 rounded bg-drasi-bg">
-                          {s.kind}
-                        </span>
-                      )}
-                    </div>
-                    <StatusBadge status={s.status} />
-                  </div>
+                    id={s.id}
+                    type={s.type}
+                    status={s.status}
+                    kind={s.kind}
+                    accentColor={sourceColor}
+                    onNavigate={onNavigate}
+                    onStart={onStartSource}
+                    onStop={onStopSource}
+                  />
                 ))}
               </div>
             ) : (
@@ -185,23 +192,17 @@ export default function QueryInspectorPanel({
             {reactions.length > 0 ? (
               <div className="grid gap-2">
                 {reactions.map((r) => (
-                  <div
+                  <ConnectedComponentItem
                     key={r.id}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-drasi-card border border-drasi-border/50 hover:border-drasi-reaction/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-drasi-reaction" />
-                      <span className="text-sm font-medium text-drasi-text-primary">
-                        {r.id}
-                      </span>
-                      {r.kind && (
-                        <span className="text-[10px] text-drasi-text-secondary px-1.5 py-0.5 rounded bg-drasi-bg">
-                          {r.kind}
-                        </span>
-                      )}
-                    </div>
-                    <StatusBadge status={r.status} />
-                  </div>
+                    id={r.id}
+                    type={r.type}
+                    status={r.status}
+                    kind={r.kind}
+                    accentColor={reactionColor}
+                    onNavigate={onNavigate}
+                    onStart={onStartReaction}
+                    onStop={onStopReaction}
+                  />
                 ))}
               </div>
             ) : (

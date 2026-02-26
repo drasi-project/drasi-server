@@ -2,6 +2,7 @@ import { X, AlertCircle, Database, Globe, Radio, FlaskConical, Server, Search, G
 import { motion } from "framer-motion";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
+import ConnectedComponentItem from "./ConnectedComponentItem";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import { getTypeColor } from "@/utils/colors";
 
@@ -31,6 +32,9 @@ interface SourceInspectorPanelProps {
   onStart?: () => void;
   onStop?: () => void;
   onDelete?: () => void;
+  onNavigate?: (id: string, type: ComponentType) => void;
+  onStartQuery?: (id: string) => void;
+  onStopQuery?: (id: string) => void;
 }
 
 export default function SourceInspectorPanel({
@@ -45,8 +49,12 @@ export default function SourceInspectorPanel({
   onStart,
   onStop,
   onDelete,
+  onNavigate,
+  onStartQuery,
+  onStopQuery,
 }: SourceInspectorPanelProps) {
   const accentColor = getTypeColor("source");
+  const queryColor = getTypeColor("query");
   const showError = status === "Error" && error;
   const Icon = SOURCE_ICON_MAP[kind] || Database;
 
@@ -152,18 +160,16 @@ export default function SourceInspectorPanel({
           {queries.length > 0 ? (
             <div className="grid gap-2">
               {queries.map((q) => (
-                <div
+                <ConnectedComponentItem
                   key={q.id}
-                  className="flex items-center justify-between p-2.5 rounded-lg bg-drasi-card border border-drasi-border/50 hover:border-drasi-query/30 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-drasi-query" />
-                    <span className="text-sm font-medium text-drasi-text-primary">
-                      {q.id}
-                    </span>
-                  </div>
-                  <StatusBadge status={q.status} />
-                </div>
+                  id={q.id}
+                  type={q.type}
+                  status={q.status}
+                  accentColor={queryColor}
+                  onNavigate={onNavigate}
+                  onStart={onStartQuery}
+                  onStop={onStopQuery}
+                />
               ))}
             </div>
           ) : (

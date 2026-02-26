@@ -532,6 +532,15 @@ export default function App() {
             onStart={inspectorProps.onStart}
             onStop={inspectorProps.onStop}
             onDelete={inspectorProps.onDelete}
+            onNavigate={(id, type) => setSelected({ id, type })}
+            onStartQuery={(id) => {
+              startQuery(id);
+              pushEvent(`Started query: ${id}`, "success");
+            }}
+            onStopQuery={(id) => {
+              stopQuery(id);
+              pushEvent(`Stopped query: ${id}`, "warning");
+            }}
           />
         ) : inspectorProps && 'isQuery' in inspectorProps && inspectorProps.isQuery ? (
           <QueryInspectorPanel
@@ -546,6 +555,23 @@ export default function App() {
             onStart={inspectorProps.onStart}
             onStop={inspectorProps.onStop}
             onDelete={inspectorProps.onDelete}
+            onNavigate={(id, type) => setSelected({ id, type })}
+            onStartSource={(id) => {
+              startSource(id);
+              pushEvent(`Started source: ${id}`, "success");
+            }}
+            onStopSource={(id) => {
+              stopSource(id);
+              pushEvent(`Stopped source: ${id}`, "warning");
+            }}
+            onStartReaction={(id) => {
+              startReaction(id);
+              pushEvent(`Started reaction: ${id}`, "success");
+            }}
+            onStopReaction={(id) => {
+              stopReaction(id);
+              pushEvent(`Stopped reaction: ${id}`, "warning");
+            }}
           />
         ) : inspectorProps && 'isReaction' in inspectorProps && inspectorProps.isReaction ? (
           <ReactionInspectorPanel
@@ -560,6 +586,15 @@ export default function App() {
             onStart={inspectorProps.onStart}
             onStop={inspectorProps.onStop}
             onDelete={inspectorProps.onDelete}
+            onNavigate={(id, type) => setSelected({ id, type })}
+            onStartQuery={(id) => {
+              startQuery(id);
+              pushEvent(`Started query: ${id}`, "success");
+            }}
+            onStopQuery={(id) => {
+              stopQuery(id);
+              pushEvent(`Stopped query: ${id}`, "warning");
+            }}
           />
         ) : null}
       </AnimatePresence>
