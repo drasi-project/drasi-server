@@ -59,6 +59,9 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the web UI at /ui (default: true)
+    #[serde(default = "default_enable_ui")]
+    pub enable_ui: bool,
     /// Directory containing solution template YAML files (default: "./solutions")
     #[serde(
         default = "default_solutions_dir",
@@ -106,6 +109,7 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_ui: true,
             solutions_dir: None,
             state_store: None,
             default_priority_queue_capacity: None,
@@ -140,6 +144,10 @@ fn default_persist_config() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+fn default_enable_ui() -> bool {
+    true
 }
 
 fn default_solutions_dir() -> Option<String> {

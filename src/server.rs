@@ -39,6 +39,7 @@ use drasi_lib::DrasiLib;
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
     enable_api: bool,
+    enable_ui: bool,
     host: String,
     port: u16,
     config_file_path: Option<String>,
@@ -55,7 +56,7 @@ struct PreparedInstance {
 
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
-    pub async fn new(config_path: PathBuf, port: u16) -> Result<Self> {
+    pub async fn new(config_path: PathBuf, port: u16, enable_ui: bool) -> Result<Self> {
         let config = load_config_file(&config_path)?;
         config.validate()?;
 
@@ -159,6 +160,7 @@ impl DrasiServer {
         Ok(Self {
             instances,
             enable_api: true,
+            enable_ui,
             host: resolved_settings.host,
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
@@ -171,6 +173,7 @@ impl DrasiServer {
     pub fn from_core(
         core: DrasiLib,
         enable_api: bool,
+        enable_ui: bool,
         host: String,
         port: u16,
         config_file_path: Option<String>,
@@ -182,6 +185,7 @@ impl DrasiServer {
                 core,
             }],
             enable_api,
+            enable_ui,
             host,
             port,
             config_file_path,
@@ -194,6 +198,7 @@ impl DrasiServer {
     pub fn from_cores(
         cores: Vec<(DrasiLib, Option<String>, bool)>,
         enable_api: bool,
+        enable_ui: bool,
         host: String,
         port: u16,
         config_file_path: Option<String>,
@@ -210,6 +215,7 @@ impl DrasiServer {
         Self {
             instances,
             enable_api,
+            enable_ui,
             host,
             port,
             config_file_path,
@@ -374,19 +380,27 @@ impl DrasiServer {
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
-        // Serve the Drasi Server Admin UI if the dist directory exists
+        // Serve the Drasi Server Admin UI if enabled and the dist directory exists
         let ui_dir = std::path::Path::new("ui/dist");
-        if ui_dir.exists() {
-            info!("Drasi Server Admin UI found, serving at /ui/");
-            app = app
-                .nest_service(
-                    "/ui",
-                    ServeDir::new(ui_dir).append_index_html_on_directories(true),
-                )
-                .route(
-                    "/",
-                    get(|| async { axum::response::Redirect::temporary("/ui/") }),
+        if self.enable_ui {
+            if ui_dir.exists() {
+                info!("Drasi Server Admin UI found, serving at /ui/");
+                app = app
+                    .nest_service(
+                        "/ui",
+                        ServeDir::new(ui_dir).append_index_html_on_directories(true),
+                    )
+                    .route(
+                        "/",
+                        get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                    );
+            } else {
+                warn!(
+                    "Web UI is enabled but ui/dist directory not found. UI will not be available."
                 );
+            }
+        } else {
+            info!("Web UI is disabled by configuration");
         }
 
         let app = app.layer(CorsLayer::permissive());
@@ -395,7 +409,7 @@ impl DrasiServer {
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
-        if ui_dir.exists() {
+        if self.enable_ui && ui_dir.exists() {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 

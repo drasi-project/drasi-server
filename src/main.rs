@@ -44,6 +44,14 @@ struct Cli {
     /// Override the server port
     #[arg(short, long, global = true)]
     port: Option<u16>,
+
+    /// Enable the web UI (overrides config file)
+    #[arg(long, global = true, conflicts_with = "disable_ui")]
+    enable_ui: bool,
+
+    /// Disable the web UI (overrides config file)
+    #[arg(long, global = true, conflicts_with = "enable_ui")]
+    disable_ui: bool,
 }
 
 #[derive(Subcommand)]
@@ -94,7 +102,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Run { config, port }) => run_server(config, port).await,
+        Some(Commands::Run { config, port }) => {
+            let ui_override = if cli.enable_ui {
+                Some(true)
+            } else if cli.disable_ui {
+                Some(false)
+            } else {
+                None
+            };
+            run_server(config, port, ui_override).await
+        }
         Some(Commands::Validate {
             config,
             show_resolved,
@@ -103,13 +120,24 @@ async fn main() -> Result<()> {
         Some(Commands::Init { output, force }) => init::run_init(output, force),
         None => {
             // Default behavior: run the server (backward compatible)
-            run_server(cli.config, cli.port).await
+            let ui_override = if cli.enable_ui {
+                Some(true)
+            } else if cli.disable_ui {
+                Some(false)
+            } else {
+                None
+            };
+            run_server(cli.config, cli.port, ui_override).await
         }
     }
 }
 
 /// Run the Drasi Server
-async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<()> {
+async fn run_server(
+    config_path: PathBuf,
+    port_override: Option<u16>,
+    ui_override: Option<bool>,
+) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
     let env_file_loaded = if let Some(config_dir) = config_path.parent() {
@@ -199,10 +227,19 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
     info!("Config file: {}", config_path.display());
 
     let final_port = port_override.unwrap_or(resolved_settings.port);
+    let final_enable_ui = ui_override.unwrap_or(resolved_settings.enable_ui);
     info!("Port: {final_port}");
+    info!(
+        "Web UI: {}",
+        if final_enable_ui {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
     debug!("Server configuration: {resolved_settings:?}");
 
-    let server = DrasiServer::new(config_path, final_port).await?;
+    let server = DrasiServer::new(config_path, final_port, final_enable_ui).await?;
     server.run().await?;
 
     Ok(())

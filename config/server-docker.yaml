@@ -8,6 +8,7 @@ port: 8080
 logLevel: info
 persistConfig: true
 persistIndex: false
+enableUi: true  # Enable the web UI at /ui (default: true)
 
 sources:
   - id: vehicle-location-source

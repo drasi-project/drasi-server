@@ -291,6 +291,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: instance.persist_index,
+                enable_ui: true, // Default to enabled
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
@@ -318,6 +319,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
+                enable_ui: true,      // Default to enabled
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
