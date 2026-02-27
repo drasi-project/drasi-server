@@ -1,10 +1,14 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 #[derive(Deserialize)]
 struct CargoMetadata {
     packages: Vec<Package>,
+    target_directory: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -14,7 +18,12 @@ struct Package {
     features: std::collections::HashMap<String, Vec<String>>,
 }
 
-fn discover_dynamic_plugins() -> Vec<Package> {
+struct DiscoveryResult {
+    plugins: Vec<Package>,
+    target_directory: PathBuf,
+}
+
+fn discover_dynamic_plugins() -> DiscoveryResult {
     let output = Command::new("cargo")
         .args(["metadata", "--format-version", "1"])
         .output()
@@ -28,11 +37,16 @@ fn discover_dynamic_plugins() -> Vec<Package> {
     let metadata: CargoMetadata =
         serde_json::from_slice(&output.stdout).expect("failed to parse cargo metadata");
 
-    metadata
+    let plugins = metadata
         .packages
         .into_iter()
         .filter(|p| p.features.contains_key("dynamic-plugin"))
-        .collect()
+        .collect();
+
+    DiscoveryResult {
+        plugins,
+        target_directory: metadata.target_directory,
+    }
 }
 
 fn main() {
@@ -47,59 +61,120 @@ fn main() {
             eprintln!("Usage: cargo xtask <command>");
             eprintln!();
             eprintln!("Commands:");
-            eprintln!("  build-plugins [--release]   Build all dynamic plugins as cdylib shared libraries");
-            eprintln!("  list-plugins                List all discovered dynamic plugin crates");
+            eprintln!("  build-plugins [--release] [--jobs N]  Build all dynamic plugins as cdylib shared libraries");
+            eprintln!("  list-plugins                          List all discovered dynamic plugin crates");
             std::process::exit(1);
         }
     }
 }
 
 fn list_plugins() {
-    let plugins = discover_dynamic_plugins();
-    if plugins.is_empty() {
+    let result = discover_dynamic_plugins();
+    if result.plugins.is_empty() {
         println!("No dynamic plugins found.");
         return;
     }
-    println!("Dynamic plugins ({}):", plugins.len());
-    for p in &plugins {
+    println!("Dynamic plugins ({}):", result.plugins.len());
+    for p in &result.plugins {
         println!("  {} ({})", p.name, p.manifest_path.display());
     }
 }
 
+fn parse_jobs(args: &[String]) -> usize {
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--jobs" || arg == "-j" {
+            if let Some(n) = args.get(i + 1) {
+                return n.parse().unwrap_or_else(|_| {
+                    eprintln!("Invalid --jobs value: {}", n);
+                    std::process::exit(1);
+                });
+            }
+        }
+    }
+    thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+}
+
 fn build_plugins(args: &[String]) {
     let release = args.iter().any(|a| a == "--release");
-    let plugins = discover_dynamic_plugins();
+    let jobs = parse_jobs(args);
+    let result = discover_dynamic_plugins();
 
-    if plugins.is_empty() {
+    if result.plugins.is_empty() {
         println!("No dynamic plugins found.");
         return;
     }
 
     let mode = if release { "release" } else { "debug" };
-    println!("=== Building {} cdylib plugins ({}) ===", plugins.len(), mode);
+    let target_dir = result.target_directory;
+    println!(
+        "=== Building {} cdylib plugins ({}, {} parallel jobs) ===",
+        result.plugins.len(),
+        mode,
+        jobs
+    );
 
-    for plugin in &plugins {
-        println!("  Building {}...", plugin.name);
+    let failed = Arc::new(AtomicBool::new(false));
+    let target_dir = Arc::new(target_dir);
+    let plugins: Vec<_> = result
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.manifest_path))
+        .collect();
 
-        let mut cmd = Command::new("cargo");
-        cmd.args([
-            "build",
-            "--lib",
-            "--manifest-path",
-            plugin.manifest_path.to_str().expect("invalid manifest path"),
-            "--features",
-            "dynamic-plugin",
-        ]);
-
-        if release {
-            cmd.arg("--release");
+    // Process plugins in chunks of `jobs` size
+    for chunk in plugins.chunks(jobs) {
+        if failed.load(Ordering::Relaxed) {
+            break;
         }
 
-        let status = cmd.status().expect("failed to run cargo build");
-        if !status.success() {
-            eprintln!("Failed to build {}", plugin.name);
-            std::process::exit(1);
+        let handles: Vec<_> = chunk
+            .iter()
+            .map(|(name, manifest)| {
+                let name = name.clone();
+                let manifest = manifest.clone();
+                let failed = Arc::clone(&failed);
+                let target_dir = Arc::clone(&target_dir);
+
+                thread::spawn(move || {
+                    println!("  Building {}...", name);
+
+                    let mut cmd = Command::new("cargo");
+                    cmd.args([
+                        "build",
+                        "--lib",
+                        "--manifest-path",
+                        manifest.to_str().expect("invalid manifest path"),
+                        "--target-dir",
+                        target_dir.to_str().expect("invalid target dir"),
+                        "--features",
+                        "dynamic-plugin",
+                    ]);
+
+                    if release {
+                        cmd.arg("--release");
+                    }
+
+                    let status = cmd.status().expect("failed to run cargo build");
+                    if !status.success() {
+                        eprintln!("Failed to build {}", name);
+                        failed.store(true, Ordering::Relaxed);
+                    } else {
+                        println!("  Built {}", name);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("build thread panicked");
         }
+    }
+
+    if failed.load(Ordering::Relaxed) {
+        eprintln!("=== Plugin build failed ===");
+        std::process::exit(1);
     }
 
     println!("=== cdylib plugins built ===");
