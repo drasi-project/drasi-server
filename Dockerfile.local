@@ -47,6 +47,8 @@ WORKDIR /app
 # Copy Cargo files first for dependency caching
 COPY Cargo.toml Cargo.lock ./
 
+# Copy the drasi-core directory (local copy with latest changes)
+COPY drasi-core ./drasi-core
 
 # Copy source code
 COPY src ./src

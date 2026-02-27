@@ -26,6 +26,7 @@ const EXAMPLE_CONFIGS: &[&str] = &[
     "config/server-minimal.yaml",
     "config/server-docker.yaml",
     "config/server-with-env-vars.yaml",
+    "config/server-with-identity-providers.yaml",
     // Integration test configs
     "tests/integration/getting-started/config.yaml",
     // Solution examples
@@ -123,6 +124,35 @@ fn test_config_server_docker() {
 fn test_config_server_with_env_vars() {
     let path = "config/server-with-env-vars.yaml";
     load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+}
+
+#[test]
+fn test_config_server_with_identity_providers() {
+    let path = "config/server-with-identity-providers.yaml";
+    let config = load_config_file(path).unwrap_or_else(|e| panic!("Failed to validate {path}: {e}"));
+
+    // Verify identity providers were parsed correctly
+    assert_eq!(config.identity_providers.len(), 7, "Expected 7 identity providers");
+
+    // Verify password providers
+    assert_eq!(config.identity_providers[0].id(), "local-postgres");
+    assert_eq!(config.identity_providers[0].kind(), "password");
+    assert_eq!(config.identity_providers[1].id(), "staging-db");
+    assert_eq!(config.identity_providers[1].kind(), "password");
+    assert_eq!(config.identity_providers[2].id(), "analytics-db");
+    assert_eq!(config.identity_providers[2].kind(), "password");
+
+    // Verify Azure providers
+    assert_eq!(config.identity_providers[3].id(), "azure-postgres");
+    assert_eq!(config.identity_providers[3].kind(), "azure");
+    assert_eq!(config.identity_providers[4].id(), "azure-managed");
+    assert_eq!(config.identity_providers[4].kind(), "azure");
+
+    // Verify AWS providers
+    assert_eq!(config.identity_providers[5].id(), "aws-rds");
+    assert_eq!(config.identity_providers[5].kind(), "aws");
+    assert_eq!(config.identity_providers[6].id(), "aws-rds-role");
+    assert_eq!(config.identity_providers[6].kind(), "aws");
 }
 
 // ==================== Integration Test Configs ====================

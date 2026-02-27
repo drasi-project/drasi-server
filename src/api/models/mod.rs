@@ -49,6 +49,9 @@ pub mod config_value;
 // Bootstrap provider module
 pub mod bootstrap;
 
+// Identity provider module
+pub mod identity_provider;
+
 // Organized submodules
 pub mod observability;
 pub mod queries;
@@ -61,6 +64,7 @@ pub use bootstrap::{
     PostgresBootstrapConfigDto, ScriptFileBootstrapConfigDto,
 };
 pub use config_value::*;
+pub use identity_provider::*;
 pub use observability::*;
 pub use queries::*;
 pub use reactions::*;
@@ -488,11 +492,41 @@ pub enum ReactionConfig {
         #[serde(flatten)]
         config: ProfilerReactionConfigDto,
     },
+    /// PostgreSQL stored procedure reaction
+    #[serde(rename = "storedprocPostgres")]
+    StoredprocPostgres {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: PostgresStoredProcReactionConfigDto,
+    },
+    /// MySQL stored procedure reaction
+    #[serde(rename = "storedprocMysql")]
+    StoredprocMysql {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: MysqlStoredProcReactionConfigDto,
+    },
+    /// MSSQL stored procedure reaction
+    #[serde(rename = "storedprocMssql")]
+    StoredprocMssql {
+        id: String,
+        queries: Vec<String>,
+        auto_start: bool,
+        #[serde(flatten)]
+        config: MssqlStoredProcReactionConfigDto,
+    },
 }
 
 // Known reaction kinds for error messages
 const REACTION_KINDS: &[&str] = &[
     "log",
+    "storedprocPostgres",
+    "storedprocMysql",
+    "storedprocMssql",
     "http",
     "http-adaptive",
     "grpc",
@@ -677,6 +711,48 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                             config,
                         })
                     }
+                    "storedprocPostgres" => {
+                        let config: PostgresStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocPostgres): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocPostgres {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "storedprocMysql" => {
+                        let config: MysqlStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocMysql): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocMysql {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
+                    "storedprocMssql" => {
+                        let config: MssqlStoredProcReactionConfigDto =
+                            serde_json::from_value(remaining_value).map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in reaction '{id}' (kind=storedprocMssql): {e}"
+                                ))
+                            })?;
+                        Ok(ReactionConfig::StoredprocMssql {
+                            id,
+                            queries,
+                            auto_start,
+                            config,
+                        })
+                    }
                     unknown => Err(de::Error::unknown_variant(unknown, REACTION_KINDS)),
                 }
             }
@@ -698,6 +774,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { id, .. } => id,
             ReactionConfig::Platform { id, .. } => id,
             ReactionConfig::Profiler { id, .. } => id,
+            ReactionConfig::StoredprocPostgres { id, .. } => id,
+            ReactionConfig::StoredprocMysql { id, .. } => id,
+            ReactionConfig::StoredprocMssql { id, .. } => id,
         }
     }
 
@@ -712,6 +791,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { queries, .. } => queries,
             ReactionConfig::Platform { queries, .. } => queries,
             ReactionConfig::Profiler { queries, .. } => queries,
+            ReactionConfig::StoredprocPostgres { queries, .. } => queries,
+            ReactionConfig::StoredprocMysql { queries, .. } => queries,
+            ReactionConfig::StoredprocMssql { queries, .. } => queries,
         }
     }
 
@@ -726,6 +808,9 @@ impl ReactionConfig {
             ReactionConfig::Sse { auto_start, .. } => *auto_start,
             ReactionConfig::Platform { auto_start, .. } => *auto_start,
             ReactionConfig::Profiler { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocPostgres { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocMysql { auto_start, .. } => *auto_start,
+            ReactionConfig::StoredprocMssql { auto_start, .. } => *auto_start,
         }
     }
 }

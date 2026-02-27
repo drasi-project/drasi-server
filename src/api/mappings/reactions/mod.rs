@@ -22,6 +22,9 @@ mod log_mapper;
 mod platform_mapper;
 mod profiler_mapper;
 mod sse_mapper;
+mod storedproc_mssql_mapper;
+mod storedproc_mysql_mapper;
+mod storedproc_postgres_mapper;
 
 pub use grpc_adaptive_mapper::GrpcAdaptiveReactionConfigMapper;
 pub use grpc_mapper::GrpcReactionConfigMapper;
@@ -31,3 +34,6 @@ pub use log_mapper::LogReactionConfigMapper;
 pub use platform_mapper::PlatformReactionConfigMapper;
 pub use profiler_mapper::ProfilerReactionConfigMapper;
 pub use sse_mapper::SseReactionConfigMapper;
+pub use storedproc_mssql_mapper::MsSqlStoredProcReactionConfigMapper;
+pub use storedproc_mysql_mapper::MySqlStoredProcReactionConfigMapper;
+pub use storedproc_postgres_mapper::PostgresStoredProcReactionConfigMapper;

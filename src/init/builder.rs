@@ -73,6 +73,7 @@ pub fn build_config(
         state_store: server_settings.state_store,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
+        identity_providers: Vec::new(), // No identity providers in setup mode
         sources,
         reactions,
         queries,

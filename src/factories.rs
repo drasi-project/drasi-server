@@ -18,9 +18,11 @@
 //! types and use the existing plugin constructors to create instances.
 
 use anyhow::Result;
+use drasi_lib::identity::IdentityProvider;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::api::mappings::{
@@ -35,14 +37,131 @@ use crate::api::mappings::{
     HttpSourceConfigMapper,
     LogReactionConfigMapper,
     MockSourceConfigMapper,
+    MsSqlStoredProcReactionConfigMapper,
+    MySqlStoredProcReactionConfigMapper,
     PlatformReactionConfigMapper,
     PlatformSourceConfigMapper,
+    PostgresStoredProcReactionConfigMapper,
+    // Source mappers
     PostgresConfigMapper,
     ProfilerReactionConfigMapper,
     SseReactionConfigMapper,
 };
-use crate::api::models::BootstrapProviderConfig;
+use crate::api::models::{BootstrapProviderConfig, IdentityProviderConfig};
 use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
+
+/// Create identity provider instances from configuration.
+///
+/// This function processes identity provider configurations and creates a map
+/// of ID -> IdentityProvider instances that can be looked up by sources and reactions.
+///
+/// # Arguments
+///
+/// * `configs` - Vector of identity provider configurations
+///
+/// # Returns
+///
+/// A HashMap mapping provider IDs to boxed IdentityProvider trait objects
+pub async fn create_identity_providers(
+    configs: &[IdentityProviderConfig],
+) -> Result<HashMap<String, Box<dyn IdentityProvider>>> {
+    let mapper = DtoMapper::new();
+    let mut providers = HashMap::new();
+
+    for config in configs {
+        match config {
+            IdentityProviderConfig::Password { id, config } => {
+                use drasi_lib::identity::PasswordIdentityProvider;
+                let username = mapper.resolve_string(&config.username)?;
+                let password = mapper.resolve_string(&config.password)?;
+                let provider = PasswordIdentityProvider::new(&username, &password);
+                providers.insert(id.clone(), Box::new(provider) as Box<dyn IdentityProvider>);
+            }
+            #[cfg(feature = "azure-identity")]
+            IdentityProviderConfig::Azure { id, config } => {
+                use crate::api::models::AzureAuthenticationMode;
+                use drasi_lib::identity::AzureIdentityProvider;
+
+                let username = mapper.resolve_string(&config.username)?;
+                let scope = config
+                    .scope
+                    .as_ref()
+                    .map(|s| mapper.resolve_string(s))
+                    .transpose()?
+                    .unwrap_or_else(|| {
+                        "https://ossrdbms-aad.database.windows.net/.default".to_string()
+                    });
+
+                let provider_builder = match config.authentication_mode {
+                    AzureAuthenticationMode::WorkloadIdentity => {
+                        AzureIdentityProvider::with_workload_identity(&username)?
+                    }
+                    AzureAuthenticationMode::ManagedIdentity => {
+                        // Managed identity requires a client ID for user-assigned identities
+                        let client_id = config
+                            .client_id
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!(
+                                "client_id is required for managedIdentity authentication mode"
+                            ))?;
+                        let client_id_str = mapper.resolve_string(client_id)?;
+                        AzureIdentityProvider::with_managed_identity(&username, &client_id_str)?
+                    }
+                    AzureAuthenticationMode::DefaultCredentials => {
+                        AzureIdentityProvider::with_default_credentials(&username)?
+                    }
+                };
+
+                let provider_builder = provider_builder.with_scope(&scope);
+
+                providers.insert(id.clone(), Box::new(provider_builder) as Box<dyn IdentityProvider>);
+            }
+            #[cfg(feature = "aws-identity")]
+            IdentityProviderConfig::Aws { id, config } => {
+                use crate::api::models::AwsAuthenticationMode;
+                use drasi_lib::identity::AwsIdentityProvider;
+
+                let username = mapper.resolve_string(&config.username)?;
+                let hostname = mapper.resolve_string(&config.hostname)?;
+                let port = mapper.resolve_typed(&config.port)?;
+                let region = mapper.resolve_string(&config.region)?;
+
+                let provider = match config.authentication_mode {
+                    AwsAuthenticationMode::DefaultCredentials => {
+                        AwsIdentityProvider::with_region(&username, &hostname, port, &region).await?
+                    }
+                    AwsAuthenticationMode::AssumeRole => {
+                        let role_arn = config
+                            .role_arn
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!(
+                                "roleArn is required when authenticationMode is assumeRole"
+                            ))?;
+                        let role_arn_str = mapper.resolve_string(role_arn)?;
+
+                        let session_name = config
+                            .session_name
+                            .as_ref()
+                            .map(|s| mapper.resolve_string(s))
+                            .transpose()?;
+
+                        AwsIdentityProvider::with_assumed_role(
+                            &username,
+                            &hostname,
+                            port,
+                            &role_arn_str,
+                            session_name
+                        ).await?
+                    }
+                };
+
+                providers.insert(id.clone(), Box::new(provider) as Box<dyn IdentityProvider>);
+            }
+        }
+    }
+
+    Ok(providers)
+}
 
 /// Create a source instance from a SourceConfig.
 ///
@@ -181,11 +300,42 @@ fn create_bootstrap_provider(
     source_config: &SourceConfig,
 ) -> Result<Box<dyn drasi_lib::bootstrap::BootstrapProvider + 'static>> {
     match bootstrap_config {
-        BootstrapProviderConfig::Postgres(config) => {
-            use drasi_bootstrap_postgres::PostgresBootstrapProvider;
-            let mapper = DtoMapper::new();
-            let domain_config = map_postgres_bootstrap_config(config, &mapper)?;
-            Ok(Box::new(PostgresBootstrapProvider::new(domain_config)))
+        BootstrapProviderConfig::Postgres(_) => {
+            // Postgres bootstrap provider needs the source's postgres config
+            if let SourceConfig::Postgres { config, .. } = source_config {
+                use drasi_bootstrap_postgres::{PostgresBootstrapConfig, PostgresBootstrapProvider};
+                let mapper = DtoMapper::new();
+                let postgres_mapper = PostgresConfigMapper;
+                let source_config = postgres_mapper.map(config, &mapper)?;
+
+                // Convert PostgresSourceConfig to PostgresBootstrapConfig
+                // They have identical structures, just different types
+                let bootstrap_config = PostgresBootstrapConfig {
+                    host: source_config.host,
+                    port: source_config.port,
+                    database: source_config.database,
+                    user: source_config.user,
+                    password: source_config.password,
+                    tables: source_config.tables,
+                    slot_name: source_config.slot_name,
+                    publication_name: source_config.publication_name,
+                    ssl_mode: match source_config.ssl_mode {
+                        drasi_source_postgres::SslMode::Disable => drasi_bootstrap_postgres::SslMode::Disable,
+                        drasi_source_postgres::SslMode::Prefer => drasi_bootstrap_postgres::SslMode::Prefer,
+                        drasi_source_postgres::SslMode::Require => drasi_bootstrap_postgres::SslMode::Require,
+                    },
+                    table_keys: source_config.table_keys.into_iter().map(|tk| drasi_bootstrap_postgres::TableKeyConfig {
+                        table: tk.table,
+                        key_columns: tk.key_columns,
+                    }).collect(),
+                };
+
+                Ok(Box::new(PostgresBootstrapProvider::new(bootstrap_config)))
+            } else {
+                Err(anyhow::anyhow!(
+                    "Postgres bootstrap provider can only be used with Postgres sources"
+                ))
+            }
         }
         BootstrapProviderConfig::ScriptFile(script_config) => {
             use drasi_bootstrap_scriptfile::ScriptFileBootstrapProvider;
@@ -267,9 +417,12 @@ fn map_postgres_bootstrap_config(
 ///     config: LogReactionConfig::default(),
 /// };
 ///
-/// let reaction = create_reaction(config)?;
+/// let reaction = create_reaction(config, None).await?;
 /// ```
-pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'static>> {
+pub async fn create_reaction(
+    config: ReactionConfig,
+    identity_providers: Option<&HashMap<String, Box<dyn IdentityProvider>>>,
+) -> Result<Box<dyn Reaction + 'static>> {
     let mapper = DtoMapper::new();
 
     match config {
@@ -413,6 +566,93 @@ pub fn create_reaction(config: ReactionConfig) -> Result<Box<dyn Reaction + 'sta
                     .build()?,
             ))
         }
+        ReactionConfig::StoredprocPostgres {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_postgres::PostgresStoredProcReaction;
+            let postgres_mapper = PostgresStoredProcReactionConfigMapper;
+            let mut domain_config = postgres_mapper.map(&config, &mapper)?;
+
+            // Set identity provider if specified
+            if let Some(provider_id) = &config.identity_provider_id {
+                let providers = identity_providers
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' specified but no providers available", provider_id))?;
+                let provider = providers
+                    .get(provider_id)
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' not found", provider_id))?;
+
+                // Set the identity provider on the config directly
+                domain_config.identity_provider = Some(provider.clone());
+            }
+
+            let mut builder = PostgresStoredProcReaction::builder(&id)
+                .with_queries(queries)
+                .with_auto_start(auto_start)
+                .with_config(domain_config);
+
+            Ok(Box::new(builder.build().await?))
+        }
+        ReactionConfig::StoredprocMysql {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_mysql::MySqlStoredProcReaction;
+            let mysql_mapper = MySqlStoredProcReactionConfigMapper;
+            let mut domain_config = mysql_mapper.map(&config, &mapper)?;
+
+            // Set identity provider if specified
+            if let Some(provider_id) = &config.identity_provider_id {
+                let providers = identity_providers
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' specified but no providers available", provider_id))?;
+                let provider = providers
+                    .get(provider_id)
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' not found", provider_id))?;
+
+                // Set the identity provider on the config directly
+                domain_config.identity_provider = Some(provider.clone());
+            }
+
+            let mut builder = MySqlStoredProcReaction::builder(&id)
+                .with_queries(queries)
+                .with_auto_start(auto_start)
+                .with_config(domain_config);
+
+            Ok(Box::new(builder.build().await?))
+        }
+        ReactionConfig::StoredprocMssql {
+            id,
+            queries,
+            auto_start,
+            config,
+        } => {
+            use drasi_reaction_storedproc_mssql::MsSqlStoredProcReaction;
+            let mssql_mapper = MsSqlStoredProcReactionConfigMapper;
+            let mut domain_config = mssql_mapper.map(&config, &mapper)?;
+
+            // Set identity provider if specified
+            if let Some(provider_id) = &config.identity_provider_id {
+                let providers = identity_providers
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' specified but no providers available", provider_id))?;
+                let provider = providers
+                    .get(provider_id)
+                    .ok_or_else(|| anyhow::anyhow!("Identity provider '{}' not found", provider_id))?;
+
+                // Set the identity provider on the config directly
+                domain_config.identity_provider = Some(provider.clone());
+            }
+
+            let mut builder = MsSqlStoredProcReaction::builder(&id)
+                .with_queries(queries)
+                .with_auto_start(auto_start)
+                .with_config(domain_config);
+
+            Ok(Box::new(builder.build().await?))
+        }
     }
 }
 
@@ -553,8 +793,8 @@ mod tests {
     // Reaction Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_log_reaction() {
+    #[tokio::test]
+    async fn test_create_log_reaction() {
         let config = ReactionConfig::Log {
             id: "test-log-reaction".to_string(),
             queries: vec!["query1".to_string()],
@@ -562,14 +802,14 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(config, None).await.expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "test-log-reaction");
         assert_eq!(reaction.type_name(), "log");
         assert_eq!(reaction.query_ids(), vec!["query1".to_string()]);
     }
 
-    #[test]
-    fn test_create_log_reaction_multiple_queries() {
+    #[tokio::test]
+    async fn test_create_log_reaction_multiple_queries() {
         let config = ReactionConfig::Log {
             id: "multi-query-reaction".to_string(),
             queries: vec![
@@ -581,13 +821,13 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create log reaction");
+        let reaction = create_reaction(config, None).await.expect("Failed to create log reaction");
         assert_eq!(reaction.id(), "multi-query-reaction");
         assert_eq!(reaction.query_ids().len(), 3);
     }
 
-    #[test]
-    fn test_create_profiler_reaction() {
+    #[tokio::test]
+    async fn test_create_profiler_reaction() {
         use crate::models::ProfilerReactionConfigDto;
 
         let config = ReactionConfig::Profiler {
@@ -600,7 +840,7 @@ mod tests {
             },
         };
 
-        let reaction = create_reaction(config).expect("Failed to create profiler reaction");
+        let reaction = create_reaction(config, None).await.expect("Failed to create profiler reaction");
         assert_eq!(reaction.id(), "profiler-reaction");
         assert_eq!(reaction.type_name(), "profiler");
     }
@@ -609,8 +849,8 @@ mod tests {
     // State Store Provider Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_redb_state_store_provider() {
+    #[tokio::test]
+    async fn test_create_redb_state_store_provider() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let path = temp_dir.path().join("state.redb");
 
@@ -623,8 +863,8 @@ mod tests {
         assert!(std::sync::Arc::strong_count(&provider) >= 1);
     }
 
-    #[test]
-    fn test_create_redb_state_store_provider_creates_file() {
+    #[tokio::test]
+    async fn test_create_redb_state_store_provider_creates_file() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let path = temp_dir.path().join("test_store.redb");
 
@@ -642,8 +882,8 @@ mod tests {
     // Bootstrap Provider Factory Tests
     // ==========================================================================
 
-    #[test]
-    fn test_create_noop_bootstrap_provider() {
+    #[tokio::test]
+    async fn test_create_noop_bootstrap_provider() {
         let bootstrap_config = BootstrapProviderConfig::Noop;
         let source_config = SourceConfig::Mock {
             id: "test".to_string(),
@@ -659,8 +899,8 @@ mod tests {
         assert!(result.is_ok(), "Failed to create noop bootstrap provider");
     }
 
-    #[test]
-    fn test_create_scriptfile_bootstrap_provider() {
+    #[tokio::test]
+    async fn test_create_scriptfile_bootstrap_provider() {
         use crate::api::models::bootstrap::ScriptFileBootstrapConfigDto;
 
         let bootstrap_config = BootstrapProviderConfig::ScriptFile(ScriptFileBootstrapConfigDto {
@@ -683,8 +923,8 @@ mod tests {
         drop(provider);
     }
 
-    #[test]
-    fn test_postgres_bootstrap_provider_from_config() {
+    #[tokio::test]
+    async fn test_postgres_bootstrap_requires_postgres_source() {
         use crate::api::models::bootstrap::PostgresBootstrapConfigDto;
 
         let bootstrap_config = BootstrapProviderConfig::Postgres(PostgresBootstrapConfigDto {
@@ -719,8 +959,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_application_bootstrap_returns_error() {
+    #[tokio::test]
+    async fn test_application_bootstrap_returns_error() {
         use crate::api::models::bootstrap::ApplicationBootstrapConfigDto;
 
         let bootstrap_config =
@@ -766,8 +1006,8 @@ mod tests {
         assert_eq!(source.id(), "custom-interval");
     }
 
-    #[test]
-    fn test_reaction_with_empty_queries_list() {
+    #[tokio::test]
+    async fn test_reaction_with_empty_queries_list() {
         let config = ReactionConfig::Log {
             id: "no-queries".to_string(),
             queries: vec![],
@@ -775,7 +1015,7 @@ mod tests {
             config: LogReactionConfigDto::default(),
         };
 
-        let reaction = create_reaction(config).expect("Failed to create reaction");
+        let reaction = create_reaction(config, None).await.expect("Failed to create reaction");
         assert!(reaction.query_ids().is_empty());
     }
 }
