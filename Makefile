@@ -191,19 +191,14 @@ build-dynamic-server-release:
 	cargo build --no-default-features --features dynamic-plugins --release
 
 # Build all plugins as cdylib shared libraries (debug).
-# The dynamic-plugin-deps feature enables all optional plugin crates and activates
-# their dynamic-plugin feature, which gates the cdylib FFI entry points.
-# Plugin crates resolve via Cargo.toml dependencies (crates.io or local patch).
+# Uses cargo xtask to discover plugins via cargo metadata and build each one
+# with the dynamic-plugin feature enabled.
 build-dynamic-plugins:
-	@echo "=== Building cdylib plugins (debug) ==="
-	cargo build --features dynamic-plugin-deps
-	@echo "=== cdylib plugins built ==="
+	cargo xtask build-plugins
 
 # Build all plugins as cdylib shared libraries (release)
 build-dynamic-plugins-release:
-	@echo "=== Building cdylib plugins (release) ==="
-	cargo build --features dynamic-plugin-deps --release
-	@echo "=== cdylib plugins built ==="
+	cargo xtask build-plugins --release
 
 clippy:
 	cargo clippy --all-targets --all-features

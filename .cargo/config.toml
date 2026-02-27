@@ -18,6 +18,9 @@ rustflags = ["-C", "target-feature=-crt-static"]
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]
 
+[alias]
+xtask = "run --package xtask --"
+
 [patch.crates-io]
 drasi-plugin-sdk = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/plugin-sdk" }
 drasi-ffi-primitives = { path = "/home/danielgerlag/dev/drasi/drasi-core/components/ffi-primitives" }

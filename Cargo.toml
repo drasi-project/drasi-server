@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [workspace]
-members = ["."]
+members = [".", "xtask"]
 
 [package]
 name = "drasi-server"
@@ -168,30 +168,6 @@ builtin-plugins = ["all-plugin-deps"]
 # Dynamic build: plugins loaded at runtime from cdylib .so/.dylib/.dll files
 # via the drasi-host-sdk. Each plugin is self-contained with its own tokio runtime.
 dynamic-plugins = ["dep:drasi-host-sdk"]
-
-# Build all optional plugins as cdylib shared libraries with FFI entry points.
-# Enables all-plugin-deps + activates the dynamic-plugin feature on each plugin crate.
-dynamic-plugin-deps = [
-    "all-plugin-deps",
-    "drasi-source-mock/dynamic-plugin",
-    "drasi-source-http/dynamic-plugin",
-    "drasi-source-grpc/dynamic-plugin",
-    "drasi-source-postgres/dynamic-plugin",
-    "drasi-source-mssql/dynamic-plugin",
-    "drasi-bootstrap-postgres/dynamic-plugin",
-    "drasi-bootstrap-scriptfile/dynamic-plugin",
-    "drasi-bootstrap-mssql/dynamic-plugin",
-    "drasi-reaction-log/dynamic-plugin",
-    "drasi-reaction-http/dynamic-plugin",
-    "drasi-reaction-http-adaptive/dynamic-plugin",
-    "drasi-reaction-grpc/dynamic-plugin",
-    "drasi-reaction-grpc-adaptive/dynamic-plugin",
-    "drasi-reaction-sse/dynamic-plugin",
-    "drasi-reaction-profiler/dynamic-plugin",
-    "drasi-reaction-storedproc-postgres/dynamic-plugin",
-    "drasi-reaction-storedproc-mysql/dynamic-plugin",
-    "drasi-reaction-storedproc-mssql/dynamic-plugin",
-]
 
 [lints.rust]
 warnings = "deny"
