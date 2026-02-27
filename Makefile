@@ -47,30 +47,6 @@ else
     SERVER_BIN := drasi-server
 endif
 
-# All plugin crate names that support dynamic loading.
-# These must be listed as dependencies in Cargo.toml (even if optional) so they
-# can be built from this workspace with `cargo build -p <name>`.
-# Platform plugins are excluded — they live only in drasi-core.
-DYNAMIC_PLUGINS := \
-	drasi-source-mock \
-	drasi-source-http \
-	drasi-source-grpc \
-	drasi-source-postgres \
-	drasi-source-mssql \
-	drasi-reaction-log \
-	drasi-reaction-http \
-	drasi-reaction-http-adaptive \
-	drasi-reaction-grpc \
-	drasi-reaction-grpc-adaptive \
-	drasi-reaction-sse \
-	drasi-reaction-profiler \
-	drasi-reaction-storedproc-postgres \
-	drasi-reaction-storedproc-mysql \
-	drasi-reaction-storedproc-mssql \
-	drasi-bootstrap-postgres \
-	drasi-bootstrap-mssql \
-	drasi-bootstrap-scriptfile
-
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -190,12 +166,6 @@ build-static:
 # production, or from local paths when [patch.crates-io] is configured in
 # .cargo/config.toml for development.
 
-# Per-package dynamic-plugin feature flags
-# Adaptive plugins (grpc-adaptive, http-adaptive) depend on their base plugins.
-# Building all in one `cargo build` causes feature unification — the base plugin's
-# dynamic-plugin feature leaks into the adaptive's cdylib, creating duplicate symbols.
-# Solution: build each plugin individually so features stay isolated.
-
 # Build server with cdylib-plugins feature + build all plugins as cdylib (debug)
 build-dynamic: build-dynamic-server build-dynamic-plugins
 	@echo ""
@@ -221,24 +191,18 @@ build-dynamic-server-release:
 	cargo build --no-default-features --features dynamic-plugins --release
 
 # Build all plugins as cdylib shared libraries (debug).
-# Each plugin is built individually to avoid feature unification issues
-# where adaptive plugins inherit cdylib entry points from their base deps.
+# The dynamic-plugin-deps feature enables all optional plugin crates and activates
+# their dynamic-plugin feature, which gates the cdylib FFI entry points.
 # Plugin crates resolve via Cargo.toml dependencies (crates.io or local patch).
 build-dynamic-plugins:
 	@echo "=== Building cdylib plugins (debug) ==="
-	@for p in $(DYNAMIC_PLUGINS); do \
-		echo "  Building $$p..."; \
-		cargo build --lib -p $$p --features $$p/dynamic-plugin || exit 1; \
-	done
+	cargo build --features dynamic-plugin-deps
 	@echo "=== cdylib plugins built ==="
 
 # Build all plugins as cdylib shared libraries (release)
 build-dynamic-plugins-release:
 	@echo "=== Building cdylib plugins (release) ==="
-	@for p in $(DYNAMIC_PLUGINS); do \
-		echo "  Building $$p..."; \
-		cargo build --lib -p $$p --features $$p/dynamic-plugin --release || exit 1; \
-	done
+	cargo build --features dynamic-plugin-deps --release
 	@echo "=== cdylib plugins built ==="
 
 clippy:
