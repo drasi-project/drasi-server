@@ -225,15 +225,15 @@ async fn run_server(
     info!("Port: {final_port}");
     debug!("Server configuration: {resolved_settings:?}");
 
-    // Resolve the plugins directory: use CLI arg if provided, otherwise default to binary directory
+    // Resolve the plugins directory: use CLI arg if provided, otherwise default to ./plugins under binary directory
     let plugins_dir = match plugins_dir {
         Some(dir) => dir,
         None => std::env::current_exe()
             .ok()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
             .unwrap_or_else(|| {
                 warn!("Could not determine binary directory for plugin loading");
-                PathBuf::from(".")
+                PathBuf::from("plugins")
             }),
     };
     info!("Plugins directory: {}", plugins_dir.display());

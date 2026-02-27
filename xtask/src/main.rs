@@ -1,5 +1,6 @@
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -96,6 +97,10 @@ fn parse_jobs(args: &[String]) -> usize {
         .unwrap_or(1)
 }
 
+fn plugin_lib_name(crate_name: &str) -> String {
+    format!("lib{}", crate_name.replace('-', "_"))
+}
+
 fn build_plugins(args: &[String]) {
     let release = args.iter().any(|a| a == "--release");
     let jobs = parse_jobs(args);
@@ -108,6 +113,9 @@ fn build_plugins(args: &[String]) {
 
     let mode = if release { "release" } else { "debug" };
     let target_dir = result.target_directory;
+    let build_dir = target_dir.join(mode);
+    let plugins_dir = build_dir.join("plugins");
+
     println!(
         "=== Building {} cdylib plugins ({}, {} parallel jobs) ===",
         result.plugins.len(),
@@ -177,5 +185,60 @@ fn build_plugins(args: &[String]) {
         std::process::exit(1);
     }
 
-    println!("=== cdylib plugins built ===");
+    // Move plugin shared libraries to plugins/ subdirectory
+    fs::create_dir_all(&plugins_dir).expect("failed to create plugins directory");
+
+    let lib_ext = if cfg!(target_os = "macos") {
+        "dylib"
+    } else if cfg!(target_os = "windows") {
+        "dll"
+    } else {
+        "so"
+    };
+
+    for (name, _) in &plugins {
+        let lib_name = plugin_lib_name(name);
+        let src = build_dir.join(format!("{lib_name}.{lib_ext}"));
+        let dst = plugins_dir.join(format!("{lib_name}.{lib_ext}"));
+
+        if src.exists() {
+            fs::rename(&src, &dst).unwrap_or_else(|e| {
+                eprintln!("Failed to move {} to plugins/: {}", lib_name, e);
+            });
+        }
+
+        // Clean up .rlib and .d files from the build directory
+        clean_build_artifacts(&build_dir, &lib_name);
+    }
+
+    println!("=== cdylib plugins output to {} ===", plugins_dir.display());
+}
+
+fn clean_build_artifacts(build_dir: &Path, lib_name: &str) {
+    // Clean .rlib files
+    let rlib = build_dir.join(format!("{lib_name}.rlib"));
+    if rlib.exists() {
+        let _ = fs::remove_file(&rlib);
+    }
+
+    // Clean .d files
+    let d_file = build_dir.join(format!("{lib_name}.d"));
+    if d_file.exists() {
+        let _ = fs::remove_file(&d_file);
+    }
+
+    // Clean deps/ directory artifacts
+    let deps_dir = build_dir.join("deps");
+    if deps_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&deps_dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name();
+                let fname = fname.to_string_lossy();
+                if fname.starts_with(lib_name) && (fname.ends_with(".rlib") || fname.ends_with(".d"))
+                {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
 }
