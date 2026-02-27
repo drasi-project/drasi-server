@@ -87,6 +87,15 @@ pub struct DrasiServerConfig {
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
+    /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
+    #[serde(default = "default_plugin_registry", skip_serializing_if = "Option::is_none")]
+    pub plugin_registry: Option<String>,
+    /// Automatically download missing plugins from registry on startup
+    #[serde(default)]
+    pub auto_install_plugins: bool,
+    /// Plugin dependencies to install from OCI registry
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginDependency>,
 }
 
 impl Default for DrasiServerConfig {
@@ -106,6 +115,9 @@ impl Default for DrasiServerConfig {
             reactions: Vec::new(),
             queries: Vec::new(),
             instances: Vec::new(),
+            plugin_registry: default_plugin_registry(),
+            auto_install_plugins: false,
+            plugins: Vec::new(),
         }
     }
 }
@@ -132,6 +144,26 @@ fn default_persist_config() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+pub fn default_plugin_registry() -> Option<String> {
+    Some("ghcr.io/drasi-project".to_string())
+}
+
+/// A plugin dependency declared in the server configuration.
+///
+/// Specifies a plugin to be installed from an OCI registry.
+/// The `ref` field follows OCI image reference format with optional default registry expansion.
+///
+/// Examples:
+/// - `source/postgres` — latest compatible version from default registry
+/// - `source/postgres:0.1.8` — exact version
+/// - `ghcr.io/acme-corp/custom-source:1.0.0` — third-party registry
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct PluginDependency {
+    /// OCI image reference (e.g., "source/postgres:0.1.8")
+    #[serde(rename = "ref")]
+    pub reference: String,
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)
@@ -750,5 +782,83 @@ mod tests {
             !content.contains("stateStore:"),
             "Saved file should not contain stateStore when None"
         );
+    }
+
+    // ==================== plugin registry config tests ====================
+
+    #[test]
+    fn test_plugin_registry_defaults() {
+        let config = DrasiServerConfig::default();
+        assert_eq!(
+            config.plugin_registry,
+            Some("ghcr.io/drasi-project".to_string())
+        );
+        assert!(!config.auto_install_plugins);
+        assert!(config.plugins.is_empty());
+    }
+
+    #[test]
+    fn test_plugin_registry_deserialization() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            pluginRegistry: ghcr.io/my-org
+            autoInstallPlugins: true
+            plugins:
+              - ref: source/postgres
+              - ref: source/http:0.1.7
+              - ref: ghcr.io/acme-corp/custom-source:1.0.0
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.plugin_registry, Some("ghcr.io/my-org".to_string()));
+        assert!(config.auto_install_plugins);
+        assert_eq!(config.plugins.len(), 3);
+        assert_eq!(config.plugins[0].reference, "source/postgres");
+        assert_eq!(config.plugins[1].reference, "source/http:0.1.7");
+        assert_eq!(
+            config.plugins[2].reference,
+            "ghcr.io/acme-corp/custom-source:1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_plugin_registry_serialization_roundtrip() {
+        let config = DrasiServerConfig {
+            api_version: None,
+            plugin_registry: Some("ghcr.io/custom".to_string()),
+            auto_install_plugins: true,
+            plugins: vec![
+                PluginDependency {
+                    reference: "source/postgres:0.1.8".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(yaml.contains("pluginRegistry:"));
+        assert!(yaml.contains("autoInstallPlugins: true"));
+        assert!(yaml.contains("source/postgres:0.1.8"));
+
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(deserialized.plugin_registry, Some("ghcr.io/custom".to_string()));
+        assert!(deserialized.auto_install_plugins);
+        assert_eq!(deserialized.plugins.len(), 1);
+    }
+
+    #[test]
+    fn test_plugin_registry_omitted_in_yaml_uses_defaults() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.plugin_registry, Some("ghcr.io/drasi-project".to_string()));
+        assert!(!config.auto_install_plugins);
+        assert!(config.plugins.is_empty());
     }
 }

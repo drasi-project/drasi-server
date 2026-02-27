@@ -23,6 +23,9 @@ pub mod dynamic_loading;
 pub mod factories;
 pub mod instance_registry;
 pub mod persistence;
+#[cfg(feature = "dynamic-plugins")]
+pub mod plugin_install;
+pub mod plugin_lockfile;
 pub mod plugin_registry;
 pub mod server;
 
@@ -33,7 +36,8 @@ pub use builder_result::DrasiServerWithHandles;
 pub use builtin_plugins::register_builtin_plugins;
 pub use config::{
     load_config_file, save_config_file, ConfigError, DrasiLibInstanceConfig, DrasiServerConfig,
-    ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
+    PluginDependency, ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
+    default_plugin_registry,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use plugin_registry::PluginRegistry;

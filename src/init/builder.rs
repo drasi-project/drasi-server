@@ -20,7 +20,7 @@ use drasi_lib::config::QueryLanguage;
 use drasi_server::api::models::{
     ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
 };
-use drasi_server::DrasiServerConfig;
+use drasi_server::{DrasiServerConfig, default_plugin_registry};
 
 use super::prompts::ServerSettings;
 
@@ -78,6 +78,9 @@ pub fn build_config(
         reactions,
         queries,
         instances: vec![], // Empty = use single-instance mode
+        plugin_registry: default_plugin_registry(),
+        auto_install_plugins: false,
+        plugins: Vec::new(),
     }
 }
 

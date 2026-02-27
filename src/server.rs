@@ -71,6 +71,17 @@ impl DrasiServer {
         #[cfg(feature = "builtin-plugins")]
         register_builtin_plugins(&mut plugin_registry);
 
+        // Auto-install plugins from registry if configured
+        #[cfg(feature = "dynamic-plugins")]
+        if config.auto_install_plugins && !config.plugins.is_empty() {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(crate::plugin_install::auto_install_plugins(
+                &config,
+                &plugins_dir,
+                false,
+            ))?;
+        }
+
         // Load dynamic plugins from the plugins directory
         #[cfg(feature = "dynamic-plugins")]
         if plugins_dir.exists() {

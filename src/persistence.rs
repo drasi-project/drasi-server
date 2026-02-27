@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::api::models::{ConfigValue, QueryConfigDto};
-use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig};
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig, default_plugin_registry};
 use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -295,6 +295,9 @@ impl ConfigPersistence {
                 reactions: instance.reactions,
                 queries: instance.queries,
                 instances: Vec::new(), // Empty = single-instance format
+                plugin_registry: default_plugin_registry(),
+                auto_install_plugins: false,
+                plugins: Vec::new(),
             }
         } else {
             // Multiple instances → use multi-instance format (instances array)
@@ -321,6 +324,9 @@ impl ConfigPersistence {
                 reactions: Vec::new(),
                 queries: Vec::new(),
                 instances: instance_configs,
+                plugin_registry: default_plugin_registry(),
+                auto_install_plugins: false,
+                plugins: Vec::new(),
             }
         };
 

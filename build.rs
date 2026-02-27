@@ -17,6 +17,18 @@ fn main() {
     let sdk_version = read_dep_version("drasi-plugin-sdk").unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=DRASI_PLUGIN_SDK_VERSION={sdk_version}");
 
+    // Emit dependency versions for host version info (used by plugin auto-install)
+    let core_version = read_dep_version("drasi-core").unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=DRASI_CORE_VERSION={core_version}");
+
+    let lib_version = read_dep_version("drasi-lib").unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=DRASI_LIB_VERSION={lib_version}");
+
+    // Emit the target triple for runtime platform detection
+    if let Ok(target) = std::env::var("TARGET") {
+        println!("cargo:rustc-env=TARGET_TRIPLE={target}");
+    }
+
     // Emit the Rust sysroot native lib directory so the server can add it to
     // LD_LIBRARY_PATH at runtime when loading dylib plugins that depend on libstd.
     if let Some(sysroot_lib) = rust_sysroot_native_lib_dir() {

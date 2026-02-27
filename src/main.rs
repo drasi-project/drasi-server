@@ -102,6 +102,59 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Manage plugins from OCI registries
+    Plugin {
+        #[command(subcommand)]
+        action: PluginAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginAction {
+    /// Install a plugin from an OCI registry
+    Install {
+        /// Plugin reference (e.g., "source/postgres", "source/postgres:0.1.8",
+        /// "ghcr.io/acme-corp/custom-source:1.0.0")
+        #[arg(required_unless_present = "from_config")]
+        reference: Option<String>,
+
+        /// Install all plugins declared in the config file
+        #[arg(long)]
+        from_config: bool,
+
+        /// Override OCI registry (default: from config or ghcr.io/drasi-project)
+        #[arg(long)]
+        registry: Option<String>,
+
+        /// Override target platform (e.g., "linux/amd64")
+        #[arg(long)]
+        platform: Option<String>,
+
+        /// Use exact versions from plugins.lock (fail if lockfile is missing or outdated)
+        #[arg(long)]
+        locked: bool,
+    },
+
+    /// List installed plugins
+    List,
+
+    /// Search for available versions of a plugin in the registry
+    Search {
+        /// Plugin name or reference (e.g., "postgres", "source/postgres",
+        /// "ghcr.io/acme-corp/custom-source")
+        reference: String,
+
+        /// Override OCI registry
+        #[arg(long)]
+        registry: Option<String>,
+    },
+
+    /// Remove an installed plugin
+    Remove {
+        /// Plugin filename or kind (e.g., "libdrasi_source_postgres.so" or "source/postgres")
+        reference: String,
+    },
 }
 
 #[tokio::main]
@@ -120,6 +173,7 @@ async fn main() -> Result<()> {
         }) => validate_config(config, show_resolved),
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => init::run_init(output, force),
+        Some(Commands::Plugin { action }) => run_plugin_command(action, cli.config, cli.plugins_dir).await,
         None => {
             // Default behavior: run the server (backward compatible)
             run_server(cli.config, cli.port, cli.plugins_dir).await
@@ -419,5 +473,523 @@ fn run_doctor(check_all: bool) -> Result<()> {
     } else {
         println!("Some required dependencies are missing.");
         std::process::exit(1);
+    }
+}
+
+/// Handle plugin subcommands
+async fn run_plugin_command(
+    action: PluginAction,
+    config_path: PathBuf,
+    plugins_dir_override: Option<PathBuf>,
+) -> Result<()> {
+    let plugins_dir = match plugins_dir_override {
+        Some(dir) => dir,
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+            .unwrap_or_else(|| PathBuf::from("plugins")),
+    };
+
+    match action {
+        PluginAction::Install {
+            reference,
+            from_config,
+            registry,
+            platform: _platform,
+            locked,
+        } => {
+            if from_config {
+                plugin_install_from_config(&config_path, &plugins_dir, registry.as_deref(), locked)
+                    .await
+            } else if let Some(ref_str) = reference {
+                plugin_install_single(&ref_str, &plugins_dir, &config_path, registry.as_deref())
+                    .await
+            } else {
+                eprintln!("Error: provide a plugin reference or --from-config");
+                std::process::exit(1);
+            }
+        }
+        PluginAction::List => plugin_list(&plugins_dir),
+        PluginAction::Search {
+            reference,
+            registry,
+        } => plugin_search(&reference, &config_path, registry.as_deref()).await,
+        PluginAction::Remove { reference } => plugin_remove(&reference, &plugins_dir),
+    }
+}
+
+/// Install a single plugin from the registry.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_install_single(
+    reference: &str,
+    plugins_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    registry_override: Option<&str>,
+) -> Result<()> {
+    use drasi_host_sdk::registry::{
+        HostVersionInfo, OciRegistryClient, PluginResolver, RegistryConfig,
+    };
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+
+    let registry_url = get_plugin_registry(config_path, registry_override);
+    let auth = get_cli_registry_auth();
+    let config = RegistryConfig {
+        default_registry: registry_url.clone(),
+        auth,
+    };
+
+    let client = OciRegistryClient::new(config);
+    let host_info = cli_host_version_info();
+    let resolver = PluginResolver::new(&client, &host_info);
+
+    println!("Resolving {} from {}...", reference, registry_url);
+    println!(
+        "  Server versions: SDK {}, core {}, lib {}",
+        host_info.sdk_version, host_info.core_version, host_info.lib_version
+    );
+
+    let resolved = resolver.resolve(reference, &registry_url).await?;
+
+    println!(
+        "Installing {}:{} ({}, {})",
+        reference, resolved.version, resolved.platform, resolved.filename
+    );
+
+    std::fs::create_dir_all(plugins_dir)?;
+    client
+        .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
+        .await?;
+
+    println!("  → {}", plugins_dir.join(&resolved.filename).display());
+
+    // Update lockfile
+    let lockfile_dir = plugins_dir;
+    let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
+    lockfile.insert(
+        reference.to_string(),
+        LockedPlugin {
+            reference: resolved.reference,
+            version: resolved.version,
+            digest: resolved.digest,
+            sdk_version: resolved.sdk_version,
+            core_version: resolved.core_version,
+            lib_version: resolved.lib_version,
+            platform: resolved.platform,
+            filename: resolved.filename,
+        },
+    );
+    lockfile.write(lockfile_dir)?;
+
+    println!("Done.");
+    Ok(())
+}
+
+#[cfg(not(feature = "dynamic-plugins"))]
+async fn plugin_install_single(
+    _reference: &str,
+    _plugins_dir: &std::path::Path,
+    _config_path: &std::path::Path,
+    _registry_override: Option<&str>,
+) -> Result<()> {
+    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    eprintln!("Rebuild with: cargo build --no-default-features --features dynamic-plugins");
+    std::process::exit(1);
+}
+
+/// Install all plugins from the config file.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_install_from_config(
+    config_path: &std::path::Path,
+    plugins_dir: &std::path::Path,
+    registry_override: Option<&str>,
+    locked: bool,
+) -> Result<()> {
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+
+    let config = load_config_file(config_path)?;
+
+    if config.plugins.is_empty() {
+        println!("No plugins declared in config file.");
+        return Ok(());
+    }
+
+    let lockfile_dir = plugins_dir;
+    let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
+
+    if locked && lockfile.plugins.is_empty() {
+        eprintln!("Error: --locked flag used but no plugins.lock file found");
+        std::process::exit(1);
+    }
+
+    if locked {
+        println!(
+            "Installing {} plugin(s) from lockfile...",
+            config.plugins.len()
+        );
+
+        // In locked mode, use lockfile entries to download
+        for dep in &config.plugins {
+            let locked_entry = match lockfile.get(&dep.reference) {
+                Some(entry) => entry.clone(),
+                None => {
+                    eprintln!(
+                        "  ✗ {} — not found in plugins.lock (required by --locked)",
+                        dep.reference
+                    );
+                    continue;
+                }
+            };
+
+            let dest_path = plugins_dir.join(&locked_entry.filename);
+            if dest_path.exists() {
+                println!(
+                    "  ✓ {} v{} — already installed",
+                    dep.reference, locked_entry.version
+                );
+                continue;
+            }
+
+            // Download using locked reference
+            let registry_url = registry_override
+                .map(|s| s.to_string())
+                .or_else(|| config.plugin_registry.clone())
+                .unwrap_or_else(|| "ghcr.io/drasi-project".to_string());
+
+            let auth = get_cli_registry_auth();
+            let reg_config = drasi_host_sdk::registry::RegistryConfig {
+                default_registry: registry_url,
+                auth,
+            };
+            let client = drasi_host_sdk::registry::OciRegistryClient::new(reg_config);
+
+            println!(
+                "  ↓ {} v{} — downloading (locked)...",
+                dep.reference, locked_entry.version
+            );
+
+            std::fs::create_dir_all(plugins_dir)?;
+            match client
+                .download_plugin(
+                    &locked_entry.reference,
+                    plugins_dir,
+                    &locked_entry.filename,
+                )
+                .await
+            {
+                Ok(_path) => {
+                    println!(
+                        "  ✓ {} v{} — installed → {}",
+                        dep.reference, locked_entry.version, locked_entry.filename
+                    );
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {} — {}", dep.reference, e);
+                }
+            }
+        }
+    } else {
+        let registry_url = registry_override
+            .map(|s| s.to_string())
+            .or_else(|| config.plugin_registry.clone())
+            .unwrap_or_else(|| "ghcr.io/drasi-project".to_string());
+
+        println!(
+            "Installing {} plugin(s) from config...",
+            config.plugins.len()
+        );
+
+        let auth = get_cli_registry_auth();
+        let reg_config = drasi_host_sdk::registry::RegistryConfig {
+            default_registry: registry_url.clone(),
+            auth,
+        };
+        let client = drasi_host_sdk::registry::OciRegistryClient::new(reg_config);
+        let host_info = cli_host_version_info();
+        let resolver = drasi_host_sdk::registry::PluginResolver::new(&client, &host_info);
+
+        for dep in &config.plugins {
+            match resolver.resolve(&dep.reference, &registry_url).await {
+                Ok(resolved) => {
+                    let dest_path = plugins_dir.join(&resolved.filename);
+                    if dest_path.exists() {
+                        println!(
+                            "  ✓ {} v{} — already installed",
+                            dep.reference, resolved.version
+                        );
+                    } else {
+                        println!(
+                            "  ↓ {} v{} — downloading...",
+                            dep.reference, resolved.version
+                        );
+                        std::fs::create_dir_all(plugins_dir)?;
+                        match client
+                            .download_plugin(
+                                &resolved.reference,
+                                plugins_dir,
+                                &resolved.filename,
+                            )
+                            .await
+                        {
+                            Ok(_path) => {
+                                println!(
+                                    "  ✓ {} v{} — installed → {}",
+                                    dep.reference, resolved.version, resolved.filename
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("  ✗ {} — {}", dep.reference, e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Update lockfile entry
+                    lockfile.insert(
+                        dep.reference.clone(),
+                        LockedPlugin {
+                            reference: resolved.reference,
+                            version: resolved.version,
+                            digest: resolved.digest,
+                            sdk_version: resolved.sdk_version,
+                            core_version: resolved.core_version,
+                            lib_version: resolved.lib_version,
+                            platform: resolved.platform,
+                            filename: resolved.filename,
+                        },
+                    );
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {} — {}", dep.reference, e);
+                }
+            }
+        }
+
+        // Write updated lockfile
+        lockfile.write(lockfile_dir)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "dynamic-plugins"))]
+async fn plugin_install_from_config(
+    _config_path: &std::path::Path,
+    _plugins_dir: &std::path::Path,
+    _registry_override: Option<&str>,
+    _locked: bool,
+) -> Result<()> {
+    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    std::process::exit(1);
+}
+
+/// List installed plugins in the plugins directory.
+fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
+    use drasi_server::plugin_lockfile::PluginLockfile;
+
+    if !plugins_dir.exists() {
+        println!("No plugins directory found: {}", plugins_dir.display());
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(plugins_dir)?;
+    let mut plugins = Vec::new();
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".so") || name.ends_with(".dll") || name.ends_with(".dylib") {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            plugins.push((name, size));
+        }
+    }
+
+    if plugins.is_empty() {
+        println!("No plugins installed in {}", plugins_dir.display());
+        return Ok(());
+    }
+
+    // Load lockfile for metadata
+    let lockfile_dir = plugins_dir;
+    let lockfile = PluginLockfile::read(lockfile_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    // Build filename → (key, entry) lookup
+    let mut by_filename: std::collections::HashMap<&str, (&str, &drasi_server::plugin_lockfile::LockedPlugin)> =
+        std::collections::HashMap::new();
+    for (key, entry) in &lockfile.plugins {
+        by_filename.insert(&entry.filename, (key, entry));
+    }
+
+    plugins.sort_by(|a, b| a.0.cmp(&b.0));
+    println!("Installed plugins ({}):", plugins.len());
+    println!("  Directory: {}", plugins_dir.display());
+    println!();
+    for (name, size) in &plugins {
+        let size_mb = *size as f64 / 1_048_576.0;
+
+        if let Some((key, entry)) = by_filename.get(name.as_str()) {
+            println!("  {} v{}", key, entry.version);
+            println!("    File: {} ({:.1} MB)", name, size_mb);
+            println!("    SDK: {}  Platform: {}", entry.sdk_version, entry.platform);
+        } else {
+            println!("  {} ({:.1} MB)", name, size_mb);
+        }
+    }
+
+    Ok(())
+}
+
+/// Search for available versions of a plugin.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_search(
+    reference: &str,
+    config_path: &std::path::Path,
+    registry_override: Option<&str>,
+) -> Result<()> {
+    use drasi_host_sdk::registry::OciRegistryClient;
+    use drasi_host_sdk::registry::RegistryConfig;
+
+    let registry_url = get_plugin_registry(config_path, registry_override);
+    let auth = get_cli_registry_auth();
+    let config = RegistryConfig {
+        default_registry: registry_url.clone(),
+        auth,
+    };
+
+    let client = OciRegistryClient::new(config);
+
+    println!("Searching for {} in {}...", reference, registry_url);
+
+    let results = client.search_plugins(reference).await?;
+
+    if results.is_empty() {
+        println!("No plugins found matching '{}'.", reference);
+        return Ok(());
+    }
+
+    for result in &results {
+        println!("\n  {} ({})", result.reference, result.full_reference);
+        if result.tags.is_empty() {
+            println!("    No versions found.");
+        } else {
+            println!("    Available versions:");
+            for tag in &result.tags {
+                println!("      {}", tag);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "dynamic-plugins"))]
+async fn plugin_search(
+    _reference: &str,
+    _config_path: &std::path::Path,
+    _registry_override: Option<&str>,
+) -> Result<()> {
+    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    std::process::exit(1);
+}
+
+/// Remove an installed plugin.
+fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
+    use drasi_server::plugin_lockfile::PluginLockfile;
+
+    if !plugins_dir.exists() {
+        eprintln!("Plugins directory does not exist: {}", plugins_dir.display());
+        std::process::exit(1);
+    }
+
+    let mut removed = false;
+
+    // Try exact filename first
+    let target = plugins_dir.join(reference);
+    if target.exists() {
+        fs::remove_file(&target)?;
+        println!("Removed {}", reference);
+        removed = true;
+    }
+
+    // Try matching by type/kind pattern (e.g., "source/postgres")
+    if !removed {
+        if let Some((ptype, kind)) = reference.split_once('/') {
+            let base = format!("drasi_{}_{}", ptype, kind.replace('-', "_"));
+            let patterns = [
+                format!("lib{base}.so"),
+                format!("{base}.dll"),
+                format!("lib{base}.dylib"),
+            ];
+
+            for pattern in &patterns {
+                let path = plugins_dir.join(pattern);
+                if path.exists() {
+                    fs::remove_file(&path)?;
+                    println!("Removed {}", pattern);
+                    removed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !removed {
+        eprintln!("Plugin not found: {}", reference);
+        std::process::exit(1);
+    }
+
+    // Update lockfile: remove the entry
+    let lockfile_dir = plugins_dir;
+    if let Ok(Some(mut lockfile)) = PluginLockfile::read(lockfile_dir) {
+        if lockfile.remove(reference).is_some() {
+            let _ = lockfile.write(lockfile_dir);
+            println!("Updated plugins.lock");
+        }
+    }
+
+    Ok(())
+}
+
+/// Get plugin registry URL from config or override.
+fn get_plugin_registry(config_path: &std::path::Path, override_registry: Option<&str>) -> String {
+    if let Some(r) = override_registry {
+        return r.to_string();
+    }
+    if let Ok(config) = load_config_file(config_path) {
+        config
+            .plugin_registry
+            .unwrap_or_else(|| "ghcr.io/drasi-project".to_string())
+    } else {
+        "ghcr.io/drasi-project".to_string()
+    }
+}
+
+/// Get registry auth from environment for CLI commands.
+#[cfg(feature = "dynamic-plugins")]
+fn get_cli_registry_auth() -> drasi_host_sdk::registry::RegistryAuth {
+    let password = std::env::var("OCI_REGISTRY_PASSWORD")
+        .or_else(|_| std::env::var("GHCR_TOKEN"))
+        .ok();
+    match password {
+        Some(pwd) => {
+            let username = std::env::var("OCI_REGISTRY_USERNAME").unwrap_or_default();
+            drasi_host_sdk::registry::RegistryAuth::Basic {
+                username,
+                password: pwd,
+            }
+        }
+        None => drasi_host_sdk::registry::RegistryAuth::Anonymous,
+    }
+}
+
+/// Build host version info for CLI commands.
+#[cfg(feature = "dynamic-plugins")]
+fn cli_host_version_info() -> drasi_host_sdk::registry::HostVersionInfo {
+    drasi_host_sdk::registry::HostVersionInfo {
+        sdk_version: env!("DRASI_PLUGIN_SDK_VERSION").to_string(),
+        core_version: env!("DRASI_CORE_VERSION").to_string(),
+        lib_version: env!("DRASI_LIB_VERSION").to_string(),
+        target_triple: env!("TARGET_TRIPLE").to_string(),
     }
 }

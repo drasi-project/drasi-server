@@ -13,17 +13,78 @@ struct CargoMetadata {
     workspace_root: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Package {
     name: String,
+    version: String,
     manifest_path: PathBuf,
     features: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    license: Option<String>,
 }
 
 struct DiscoveryResult {
-    plugins: Vec<Package>,
+    plugins: Vec<PluginInfo>,
     target_directory: PathBuf,
     workspace_root: PathBuf,
+    sdk_version: String,
+    core_version: String,
+    lib_version: String,
+}
+
+struct PluginInfo {
+    package: Package,
+    plugin_type: String,
+    kind: String,
+}
+
+/// Metadata JSON written alongside each built plugin binary for OCI publishing.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PluginArtifactMetadata {
+    name: String,
+    kind: String,
+    #[serde(rename = "type")]
+    plugin_type: String,
+    version: String,
+    sdk_version: String,
+    core_version: String,
+    lib_version: String,
+    target_triple: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    license: Option<String>,
+}
+
+/// Parse plugin type and kind from crate name.
+/// e.g., "drasi-source-postgres" → ("source", "postgres")
+///       "drasi-reaction-storedproc-mssql" → ("reaction", "storedproc-mssql")
+///       "drasi-bootstrap-mssql" → ("bootstrap", "mssql")
+fn parse_plugin_type_kind(crate_name: &str) -> Option<(String, String)> {
+    let stripped = crate_name.strip_prefix("drasi-")?;
+    for prefix in &["source-", "reaction-", "bootstrap-"] {
+        if let Some(kind) = stripped.strip_prefix(prefix) {
+            let plugin_type = prefix.trim_end_matches('-');
+            return Some((plugin_type.to_string(), kind.to_string()));
+        }
+    }
+    None
+}
+
+fn host_target_triple() -> String {
+    let output = Command::new("rustc")
+        .args(["-vV"])
+        .output()
+        .expect("failed to run rustc -vV");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some(triple) = line.strip_prefix("host: ") {
+            return triple.trim().to_string();
+        }
+    }
+    panic!("could not determine host target triple from rustc -vV");
 }
 
 fn discover_dynamic_plugins() -> DiscoveryResult {
@@ -40,16 +101,47 @@ fn discover_dynamic_plugins() -> DiscoveryResult {
     let metadata: CargoMetadata =
         serde_json::from_slice(&output.stdout).expect("failed to parse cargo metadata");
 
+    // Extract version info from well-known dependency packages
+    let sdk_version = metadata
+        .packages
+        .iter()
+        .find(|p| p.name == "drasi-plugin-sdk")
+        .map(|p| p.version.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let core_version = metadata
+        .packages
+        .iter()
+        .find(|p| p.name == "drasi-core")
+        .map(|p| p.version.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let lib_version = metadata
+        .packages
+        .iter()
+        .find(|p| p.name == "drasi-lib")
+        .map(|p| p.version.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
     let plugins = metadata
         .packages
         .into_iter()
         .filter(|p| p.features.contains_key("dynamic-plugin"))
+        .filter_map(|p| {
+            let (plugin_type, kind) = parse_plugin_type_kind(&p.name)?;
+            Some(PluginInfo {
+                package: p,
+                plugin_type,
+                kind,
+            })
+        })
         .collect();
 
     DiscoveryResult {
         plugins,
         target_directory: metadata.target_directory,
         workspace_root: metadata.workspace_root,
+        sdk_version,
+        core_version,
+        lib_version,
     }
 }
 
@@ -79,8 +171,19 @@ fn list_plugins() {
         return;
     }
     println!("Dynamic plugins ({}):", result.plugins.len());
+    println!(
+        "  SDK: {}, Core: {}, Lib: {}",
+        result.sdk_version, result.core_version, result.lib_version
+    );
+    println!();
     for p in &result.plugins {
-        println!("  {} ({})", p.name, p.manifest_path.display());
+        println!(
+            "  {}/{} v{} ({})",
+            p.plugin_type,
+            p.kind,
+            p.package.version,
+            p.package.manifest_path.display()
+        );
     }
 }
 
@@ -182,6 +285,10 @@ fn build_plugins(args: &[String]) {
         None
     };
 
+    let target_triple = target
+        .clone()
+        .unwrap_or_else(host_target_triple);
+
     println!(
         "=== Building {} cdylib plugins ({}{}, {} parallel jobs) ===",
         result.plugins.len(),
@@ -197,8 +304,8 @@ fn build_plugins(args: &[String]) {
     let cross_config: Arc<Option<PathBuf>> = Arc::new(cross_config);
     let plugins: Vec<_> = result
         .plugins
-        .into_iter()
-        .map(|p| (p.name, p.manifest_path))
+        .iter()
+        .map(|p| (p.package.name.clone(), p.package.manifest_path.clone()))
         .collect();
 
     // Process plugins in chunks of `jobs` size
@@ -270,12 +377,13 @@ fn build_plugins(args: &[String]) {
         std::process::exit(1);
     }
 
-    // Move plugin shared libraries to plugins/ subdirectory
+    // Move plugin shared libraries to plugins/ subdirectory and generate metadata
     fs::create_dir_all(&plugins_dir).expect("failed to create plugins directory");
 
     let lib_ext = plugin_lib_ext(target.as_deref());
 
-    for (name, _) in &plugins {
+    for info in &result.plugins {
+        let name = &info.package.name;
         let lib_name = plugin_lib_name(name, target.as_deref());
         let src = cross_build_dir.join(format!("{lib_name}.{lib_ext}"));
         let dst = plugins_dir.join(format!("{lib_name}.{lib_ext}"));
@@ -289,6 +397,26 @@ fn build_plugins(args: &[String]) {
             });
             let _ = fs::remove_file(&src);
         }
+
+        // Generate metadata.json alongside the plugin binary
+        let metadata = PluginArtifactMetadata {
+            name: name.clone(),
+            kind: info.kind.clone(),
+            plugin_type: info.plugin_type.clone(),
+            version: info.package.version.clone(),
+            sdk_version: result.sdk_version.clone(),
+            core_version: result.core_version.clone(),
+            lib_version: result.lib_version.clone(),
+            target_triple: target_triple.clone(),
+            description: info.package.description.clone(),
+            license: info.package.license.clone(),
+        };
+        let metadata_path = plugins_dir.join(format!("{lib_name}.metadata.json"));
+        let metadata_json =
+            serde_json::to_string_pretty(&metadata).expect("failed to serialize metadata");
+        fs::write(&metadata_path, metadata_json).unwrap_or_else(|e| {
+            eprintln!("Failed to write metadata for {}: {}", name, e);
+        });
 
         // Clean up .rlib and .d files from the build directory
         clean_build_artifacts(&cross_build_dir, &lib_name);
