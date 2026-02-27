@@ -33,7 +33,8 @@ use crate::api::shared::{
 };
 use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 use crate::plugin_registry::PluginRegistry;
-use utoipa::openapi::schema::{AllOf, ObjectBuilder, OneOf, Ref, Schema};
+use std::collections::BTreeMap;
+use utoipa::openapi::schema::{AllOf, Discriminator, ObjectBuilder, OneOf, Ref, Schema};
 use utoipa::openapi::RefOr;
 
 #[derive(OpenApi)]
@@ -141,51 +142,57 @@ pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &
     let components = openapi.components.get_or_insert_with(Default::default);
     let schemas = &mut components.schemas;
 
-    let mut source_schema_names = Vec::new();
-    let mut reaction_schema_names = Vec::new();
-    let mut bootstrap_schema_names = Vec::new();
+    // Collect (kind, schema_name) pairs for discriminator mappings
+    let mut source_entries: Vec<(String, String)> = Vec::new();
+    let mut reaction_entries: Vec<(String, String)> = Vec::new();
+    let mut bootstrap_entries: Vec<(String, String)> = Vec::new();
 
     // Inject source plugin schemas
     for info in registry.source_plugin_infos() {
         inject_schemas_from_json(&info.config_schema_json, schemas);
-        source_schema_names.push(info.config_schema_name);
+        inject_kind_property(schemas, &info.config_schema_name, &info.kind);
+        source_entries.push((info.kind, info.config_schema_name));
     }
 
     // Inject reaction plugin schemas
     for info in registry.reaction_plugin_infos() {
         inject_schemas_from_json(&info.config_schema_json, schemas);
-        reaction_schema_names.push(info.config_schema_name);
+        inject_kind_property(schemas, &info.config_schema_name, &info.kind);
+        reaction_entries.push((info.kind, info.config_schema_name));
     }
 
     // Inject bootstrap plugin schemas
     for info in registry.bootstrapper_plugin_infos() {
         inject_schemas_from_json(&info.config_schema_json, schemas);
-        bootstrap_schema_names.push(info.config_schema_name);
+        inject_kind_property(schemas, &info.config_schema_name, &info.kind);
+        bootstrap_entries.push((info.kind, info.config_schema_name));
     }
 
-    // Build SourceConfig OneOf
+    // Build SourceConfig OneOf with discriminator
     if !schemas.contains_key("SourceConfig") {
         schemas.insert(
             "SourceConfig".to_string(),
             RefOr::T(Schema::OneOf(OneOf {
-                items: source_schema_names
+                items: source_entries
                     .iter()
-                    .map(|name| RefOr::Ref(Ref::from_schema_name(name)))
+                    .map(|(_, name)| RefOr::Ref(Ref::from_schema_name(name)))
                     .collect(),
+                discriminator: Some(build_discriminator("kind", &source_entries)),
                 ..Default::default()
             })),
         );
     }
 
-    // Build ReactionConfig OneOf
+    // Build ReactionConfig OneOf with discriminator
     if !schemas.contains_key("ReactionConfig") {
         schemas.insert(
             "ReactionConfig".to_string(),
             RefOr::T(Schema::OneOf(OneOf {
-                items: reaction_schema_names
+                items: reaction_entries
                     .iter()
-                    .map(|name| RefOr::Ref(Ref::from_schema_name(name)))
+                    .map(|(_, name)| RefOr::Ref(Ref::from_schema_name(name)))
                     .collect(),
+                discriminator: Some(build_discriminator("kind", &reaction_entries)),
                 ..Default::default()
             })),
         );
@@ -210,9 +217,9 @@ pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &
         );
 
         let config_one_of = OneOf {
-            items: bootstrap_schema_names
+            items: bootstrap_entries
                 .iter()
-                .map(|name| RefOr::Ref(Ref::from_schema_name(name)))
+                .map(|(_, name)| RefOr::Ref(Ref::from_schema_name(name)))
                 .collect(),
             description: Some("Provider-specific configuration (fields vary by kind)".to_string()),
             ..Default::default()
@@ -223,6 +230,7 @@ pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &
                 RefOr::T(Schema::Object(bootstrap_schema)),
                 RefOr::T(Schema::OneOf(config_one_of)),
             ],
+            discriminator: Some(build_discriminator("kind", &bootstrap_entries)),
             ..Default::default()
         };
 
@@ -306,5 +314,55 @@ fn inject_schemas_from_json(
                 schemas.insert(name, RefOr::T(Schema::Object(obj)));
             }
         }
+    }
+}
+
+/// Build an OpenAPI [`Discriminator`] for the `property_name` field, mapping
+/// each `(kind, schema_name)` pair to `#/components/schemas/{schema_name}`.
+fn build_discriminator(property_name: &str, entries: &[(String, String)]) -> Discriminator {
+    let mapping: BTreeMap<String, String> = entries
+        .iter()
+        .map(|(kind, schema_name)| {
+            (
+                kind.clone(),
+                format!("#/components/schemas/{schema_name}"),
+            )
+        })
+        .collect();
+
+    Discriminator {
+        property_name: property_name.to_string(),
+        mapping,
+    }
+}
+
+/// Inject a const `kind` property into an existing plugin schema so that the
+/// discriminator property is present in every variant.  The `kind` field is
+/// added as a string enum with a single allowed value matching the plugin kind.
+fn inject_kind_property(
+    schemas: &mut std::collections::BTreeMap<String, RefOr<Schema>>,
+    schema_name: &str,
+    kind_value: &str,
+) {
+    let Some(RefOr::T(schema)) = schemas.get_mut(schema_name) else {
+        return;
+    };
+
+    let obj = match schema {
+        Schema::Object(o) => o,
+        _ => return,
+    };
+
+    // Build a string property with a single enum value (const)
+    let kind_schema = ObjectBuilder::new()
+        .schema_type(utoipa::openapi::SchemaType::String)
+        .enum_values(Some([kind_value]))
+        .description(Some("Plugin kind discriminator"))
+        .build();
+
+    obj.properties
+        .insert("kind".to_string(), RefOr::T(Schema::Object(kind_schema)));
+    if !obj.required.contains(&"kind".to_string()) {
+        obj.required.push("kind".to_string());
     }
 }
