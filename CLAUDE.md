@@ -11,17 +11,19 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ### Build and Run
 - Build (static, all plugins built-in): `cargo build`
 - Build release: `cargo build --release`
-- Build (dynamic plugin loading): `cargo build --no-default-features --features dynamic-plugins`
+- Build (dynamic plugin loading): `make build-dynamic` or `make build-dynamic-release`
+- Build dynamic plugins only: `cargo xtask build-plugins` or `cargo xtask build-plugins --release`
+- Cross-compile (static): `make build-cross TARGET=x86_64-pc-windows-gnu`
+- Cross-compile (dynamic): `make build-dynamic-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
 - Check compilation: `cargo check`
 
 ### Feature Flags
 - `builtin-plugins` (default): All source/reaction/bootstrap plugins are statically linked into the binary
-- `dynamic-plugins`: Plugins are loaded at runtime from `.so`/`.dylib`/`.dll` files in the binary's directory
-- `all-plugin-deps`: Enables all optional plugin crate dependencies without static registration (used by dynamic build)
+- `dynamic-plugins`: Plugins are loaded at runtime from `.so`/`.dylib`/`.dll` files in a `plugins/` subdirectory next to the binary
 
-When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins as cdylib shared libraries. Each plugin is a self-contained cdylib (`.so`/`.dylib`/`.dll`) with its own tokio runtime, communicating via a stable C ABI.
+When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins as cdylib shared libraries. Plugins are discovered and built using `cargo xtask build-plugins`, which uses `cargo metadata` to find crates with a `dynamic-plugin` feature and builds each one individually. Each plugin is a self-contained cdylib (`.so`/`.dylib`/`.dll`) with its own tokio runtime, communicating via a stable C ABI. Built plugins are placed in `target/{profile}/plugins/`.
 
 ### Testing
 - Run all tests: `cargo test`

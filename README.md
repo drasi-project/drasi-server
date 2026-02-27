@@ -1186,17 +1186,57 @@ cargo clippy
 | `builtin-plugins` | ✅ | All source/reaction/bootstrap plugins are statically linked into the binary |
 | `dynamic-plugins` | | Enables loading plugins from `.so`/`.dylib`/`.dll` files at runtime |
 
-#### Dynamic Plugin Build
+### Dynamic Plugin Build
 
 To build with dynamic plugin loading instead of static linking:
 
 ```bash
-# Build the server without static plugins
-RUSTFLAGS="-C prefer-dynamic" cargo build --no-default-features --features dynamic-plugins
+# Build the server with dynamic plugin loading support
+make build-dynamic          # debug
+make build-dynamic-release  # release
 
-# Plugin shared libraries (.so/.dylib) must be placed alongside the server binary
-# When building from the same workspace, Cargo places them in target/{profile}/
+# Or build the server and plugins separately:
+make build-dynamic-server           # server only (debug)
+make build-dynamic-plugins          # plugins only (debug)
+make build-dynamic-server-release   # server only (release)
+make build-dynamic-plugins-release  # plugins only (release)
 ```
+
+Plugins are built using `cargo xtask`, which automatically discovers plugin crates via `cargo metadata` and builds each one with the `dynamic-plugin` feature enabled. Plugin shared libraries are output to a `plugins/` subdirectory alongside the server binary (e.g. `target/release/plugins/`).
+
+```bash
+# List discovered dynamic plugins
+cargo xtask list-plugins
+
+# Build plugins directly (equivalent to make build-dynamic-plugins)
+cargo xtask build-plugins
+cargo xtask build-plugins --release
+cargo xtask build-plugins --jobs 4   # limit parallelism
+```
+
+### Cross-Compilation
+
+Cross-compilation uses the [`cross`](https://github.com/cross-rs/cross) tool with Docker containers defined in `Cross.toml`:
+
+```bash
+# Static build (all plugins linked in)
+make build-cross TARGET=x86_64-pc-windows-gnu
+make build-cross-release TARGET=x86_64-pc-windows-gnu
+
+# Dynamic build (server + plugin shared libraries)
+make build-dynamic-cross TARGET=x86_64-pc-windows-gnu
+make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu
+
+# Or build plugins for a target directly
+cargo xtask build-plugins --release --target x86_64-pc-windows-gnu
+```
+
+Supported targets (see `Cross.toml`):
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-pc-windows-gnu`
 
 ## License
 

@@ -14,8 +14,10 @@
 
 # Makefile for Drasi Server
 
-.PHONY: all build build-release build-static build-dynamic build-dynamic-release \
+.PHONY: all build build-release build-static build-cross build-cross-release \
+        build-dynamic build-dynamic-release \
         build-dynamic-server build-dynamic-server-release build-dynamic-plugins build-dynamic-plugins-release \
+        build-dynamic-cross build-dynamic-cross-release \
         run run-release setup demo demo-cleanup \
         doctor validate clean clippy test test-static test-dynamic test-smoke test-smoke-static test-smoke-dynamic \
         fmt fmt-check help docker-build \
@@ -61,6 +63,8 @@ help:
 	@echo "  make build              - Build debug binary"
 	@echo "  make build-release      - Build release binary"
 	@echo "  make build-static       - Alias for build (debug)"
+	@echo "  make build-cross TARGET=<triple>         - Cross-compile (debug)"
+	@echo "  make build-cross-release TARGET=<triple> - Cross-compile (release)"
 	@echo ""
 	@echo "Dynamic Build (cdylib plugins, loaded at runtime):"
 	@echo "  make build-dynamic              - Build server + plugins (debug)"
@@ -69,6 +73,11 @@ help:
 	@echo "  make build-dynamic-server-release - Build only the server (release)"
 	@echo "  make build-dynamic-plugins      - Build only plugins (debug)"
 	@echo "  make build-dynamic-plugins-release - Build only plugins (release)"
+	@echo ""
+	@echo "Cross-Compilation (dynamic build for other targets):"
+	@echo "  make build-dynamic-cross TARGET=x86_64-pc-windows-gnu"
+	@echo "  make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu"
+	@echo "  Supported targets: see Cross.toml"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test               - Run all tests"
@@ -152,6 +161,22 @@ build-static:
 	cargo build
 	$(call clean_plugin_libs,target/debug)
 
+build-cross:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	cross build --target $(TARGET)
+
+build-cross-release:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	cross build --release --target $(TARGET)
+
 # === Dynamic Build (cdylib plugins) ===
 #
 # Each plugin is a self-contained cdylib (.so/.dylib/.dll) with its own tokio
@@ -199,6 +224,31 @@ build-dynamic-plugins:
 # Build all plugins as cdylib shared libraries (release)
 build-dynamic-plugins-release:
 	cargo xtask build-plugins --release
+
+# === Cross-Compilation (dynamic build) ===
+#
+# Usage: make build-dynamic-cross TARGET=x86_64-pc-windows-gnu
+# Uses `cross` for the server and `cargo xtask` with --target for plugins.
+
+build-dynamic-cross:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-dynamic-cross TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	@echo "=== Cross-compiling dynamic build for $(TARGET) (debug) ==="
+	cross build --no-default-features --features dynamic-plugins --target $(TARGET)
+	cargo xtask build-plugins --target $(TARGET)
+
+build-dynamic-cross-release:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	@echo "=== Cross-compiling dynamic build for $(TARGET) (release) ==="
+	cross build --no-default-features --features dynamic-plugins --target $(TARGET) --release
+	cargo xtask build-plugins --release --target $(TARGET)
 
 clippy:
 	cargo clippy --all-targets --all-features
