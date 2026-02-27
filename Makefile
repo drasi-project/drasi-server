@@ -21,9 +21,6 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test
 
-# Path to drasi-core workspace (relative to this Makefile)
-DRASI_CORE_DIR := ../drasi-core
-
 # Platform detection
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -73,9 +70,6 @@ DYNAMIC_PLUGINS := \
 	drasi-bootstrap-postgres \
 	drasi-bootstrap-mssql \
 	drasi-bootstrap-scriptfile
-
-# Build -p flags for all plugins
-PLUGIN_PKG_FLAGS := $(foreach p,$(DYNAMIC_PLUGINS),-p $(p))
 
 # Default target
 help:
@@ -192,14 +186,9 @@ build-static:
 #   - Don't need single-invocation builds (no symbol hash coupling)
 #   - Are fully self-contained .so/.dylib/.dll files
 #
-# Plugins are built in the drasi-core workspace with the dynamic-plugin feature,
-# then copied to the server's target directory.
-
-# All plugin crate names that support cdylib loading
-CDYLIB_PLUGINS := $(DYNAMIC_PLUGINS)
-
-# Build -p flags for cdylib plugins
-CDYLIB_PKG_FLAGS := $(foreach p,$(CDYLIB_PLUGINS),-p $(p))
+# Plugin crates are resolved via Cargo.toml dependencies — from crates.io in
+# production, or from local paths when [patch.crates-io] is configured in
+# .cargo/config.toml for development.
 
 # Per-package dynamic-plugin feature flags
 # Adaptive plugins (grpc-adaptive, http-adaptive) depend on their base plugins.
@@ -231,37 +220,26 @@ build-dynamic-server-release:
 	@echo "=== Building cdylib server (release) ==="
 	cargo build --no-default-features --features dynamic-plugins --release
 
-# Build all plugins as cdylib shared libraries in drasi-core (debug).
+# Build all plugins as cdylib shared libraries (debug).
 # Each plugin is built individually to avoid feature unification issues
 # where adaptive plugins inherit cdylib entry points from their base deps.
+# Plugin crates resolve via Cargo.toml dependencies (crates.io or local patch).
 build-dynamic-plugins:
 	@echo "=== Building cdylib plugins (debug) ==="
-	@for p in $(CDYLIB_PLUGINS); do \
+	@for p in $(DYNAMIC_PLUGINS); do \
 		echo "  Building $$p..."; \
-		(cd $(DRASI_CORE_DIR) && cargo build --lib -p $$p --features $$p/dynamic-plugin) || exit 1; \
+		cargo build --lib -p $$p --features $$p/dynamic-plugin || exit 1; \
 	done
-	@echo "Copying cdylib plugins to target/debug/..."
-	@mkdir -p target/debug
-	@for f in $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_source_*.$(PLUGIN_LIB_EXT) \
-	          $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_reaction_*.$(PLUGIN_LIB_EXT) \
-	          $(DRASI_CORE_DIR)/target/debug/$(PLUGIN_LIB_PREFIX)drasi_bootstrap_*.$(PLUGIN_LIB_EXT); do \
-		[ -f "$$f" ] && cp "$$f" target/debug/ && echo "  $$(basename $$f)"; \
-	done || true
+	@echo "=== cdylib plugins built ==="
 
-# Build all plugins as cdylib shared libraries in drasi-core (release)
+# Build all plugins as cdylib shared libraries (release)
 build-dynamic-plugins-release:
 	@echo "=== Building cdylib plugins (release) ==="
-	@for p in $(CDYLIB_PLUGINS); do \
+	@for p in $(DYNAMIC_PLUGINS); do \
 		echo "  Building $$p..."; \
-		(cd $(DRASI_CORE_DIR) && cargo build --lib -p $$p --features $$p/dynamic-plugin --release) || exit 1; \
+		cargo build --lib -p $$p --features $$p/dynamic-plugin --release || exit 1; \
 	done
-	@echo "Copying cdylib plugins to target/release/..."
-	@mkdir -p target/release
-	@for f in $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_source_*.$(PLUGIN_LIB_EXT) \
-	          $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_reaction_*.$(PLUGIN_LIB_EXT) \
-	          $(DRASI_CORE_DIR)/target/release/$(PLUGIN_LIB_PREFIX)drasi_bootstrap_*.$(PLUGIN_LIB_EXT); do \
-		[ -f "$$f" ] && cp "$$f" target/release/ && echo "  $$(basename $$f)"; \
-	done || true
+	@echo "=== cdylib plugins built ==="
 
 clippy:
 	cargo clippy --all-targets --all-features
@@ -329,7 +307,6 @@ doctor:
 	@echo "Required:"
 	@command -v cargo >/dev/null 2>&1 && echo "  [OK] Rust/Cargo $$(rustc --version | cut -d' ' -f2)" || echo "  [MISSING] Rust/Cargo - https://rustup.rs"
 	@command -v git >/dev/null 2>&1 && echo "  [OK] Git" || echo "  [MISSING] Git"
-	@if [ -d "$(DRASI_CORE_DIR)/lib" ]; then echo "  [OK] drasi-core found"; else echo "  [MISSING] drasi-core - expected at $(DRASI_CORE_DIR)"; fi
 	@echo ""
 	@echo "Optional (for examples):"
 	@command -v docker >/dev/null 2>&1 && echo "  [OK] Docker" || echo "  [SKIP] Docker - https://docs.docker.com/get-docker/"
