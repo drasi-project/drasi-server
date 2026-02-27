@@ -577,8 +577,9 @@ jobs:
           echo "- \`drasi-sse-cli-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-sse-cli-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-sse-cli-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-sse-cli-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-sse-cli-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Examples" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-examples.zip\`" >> $GITHUB_STEP_SUMMARY          echo "- \`drasi-sse-cli-x86_64-linux-musl\` (Linux x86_64 musl)" >> $GITHUB_STEP_SUMMARY
 
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
@@ -698,6 +699,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download drasi-server artifacts
         uses: actions/download-artifact@v4
         with:
@@ -712,11 +716,20 @@ jobs:
           pattern: drasi-sse-cli-*
           merge-multiple: false
 
+      - name: Zip examples folder
+        run: |
+          zip -r "drasi-server-examples.zip" examples/ \
+            -x 'examples/sse-cli/target/*' \
+            -x 'examples/trading/target/*'
+          echo "✓ Created drasi-server-examples.zip"
+          ls -lh "drasi-server-examples.zip"
+
       - name: Prepare release assets
         id: prepare
         run: |
           mkdir -p release-assets
           find artifacts -type f -exec cp {} release-assets/ \;
+          cp drasi-server-examples.zip release-assets/
           ls -lh release-assets/
           ASSET_COUNT=$(ls -1 release-assets/ | wc -l)
           echo "asset_count=${ASSET_COUNT}" >> $GITHUB_OUTPUT
@@ -742,6 +755,10 @@ jobs:
           ### Linux (musl)
           - ARM64 - `drasi-server-aarch64-linux-musl`
           - x86_64 - `drasi-server-x86_64-linux-musl`
+
+          ## Examples
+
+          - `drasi-server-examples.zip` — Example configurations, scripts, and projects
 
           ## SSE CLI Binaries
 
