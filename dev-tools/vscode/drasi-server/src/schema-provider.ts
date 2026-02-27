@@ -195,6 +195,8 @@ function buildUnionSchema(openapi: any) {
   if (!convertedDefinitions.StateStoreConfig) {
     convertedDefinitions.StateStoreConfig = { type: 'object', additionalProperties: true };
   }
+
+  const discriminatorMap = extractDiscriminatorMap(openapi?.components?.schemas ?? {});
   const sourceSchemaNames = findSchemaNamesBySuffix(convertedDefinitions, SOURCE_SCHEMA_SUFFIX);
   const reactionSchemaNames = findSchemaNamesBySuffix(convertedDefinitions, REACTION_SCHEMA_SUFFIX);
   const queryName = convertedDefinitions[QUERY_SCHEMA_NAME]
@@ -204,8 +206,7 @@ function buildUnionSchema(openapi: any) {
   const sourceUnion = buildKindUnion(
     convertedDefinitions,
     sourceSchemaNames,
-    SOURCE_SCHEMA_SUFFIX,
-    'Source',
+    discriminatorMap,
     getSourceCommonProperties(convertedDefinitions),
     ['id'],
     (schema, kind) => applySourceBootstrapSchema(schema, kind, convertedDefinitions),
@@ -213,8 +214,7 @@ function buildUnionSchema(openapi: any) {
   const reactionUnion = buildKindUnion(
     convertedDefinitions,
     reactionSchemaNames,
-    REACTION_SCHEMA_SUFFIX,
-    'Reaction',
+    discriminatorMap,
     getReactionCommonProperties(),
     ['id', 'queries'],
   );
@@ -317,8 +317,7 @@ function findSchemaNamesBySuffix(definitions: Record<string, any>, suffix: strin
 function buildKindUnion(
   definitions: Record<string, any>,
   names: string[],
-  suffix: string,
-  trimWord: string,
+  discriminatorMap: Map<string, string>,
   commonProperties: Record<string, any>,
   commonRequired: string[],
   transformVariant?: (schema: any, kind: string) => any,
@@ -327,10 +326,28 @@ function buildKindUnion(
     return undefined;
   }
 
-  const kinds = names.map((name) => schemaNameToKind(name, suffix, trimWord));
+  const resolveKind = (name: string, schema: any) => {
+    // 1. Discriminator mapping (authoritative)
+    const fromDiscriminator = discriminatorMap.get(name);
+    if (fromDiscriminator) {
+      return fromDiscriminator;
+    }
+    // 2. Schema's own kind enum
+    const fromSchema = schema?.properties?.kind?.enum?.[0];
+    if (fromSchema) {
+      return fromSchema;
+    }
+    // 3. Fallback: derive from class name portion after last dot
+    const lastDot = name.lastIndexOf('.');
+    const simpleName = lastDot >= 0 ? name.slice(lastDot + 1) : name;
+    return toKebabCase(simpleName);
+  };
+
+  const kinds: string[] = [];
   const variants = names.map((name) => {
     const baseSchema = definitions[name] ?? {};
-    const kind = schemaNameToKind(name, suffix, trimWord);
+    const kind = resolveKind(name, baseSchema);
+    kinds.push(kind);
     let merged = mergeSchema(baseSchema, {
       kind,
       commonProperties,
@@ -385,12 +402,22 @@ function mergeSchema(
   };
 }
 
-function schemaNameToKind(name: string, suffix: string, trimWord: string) {
-  let base = name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
-  if (trimWord && base.endsWith(trimWord)) {
-    base = base.slice(0, -trimWord.length);
+function extractDiscriminatorMap(schemas: Record<string, any>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const schema of Object.values(schemas)) {
+    const mapping = schema?.discriminator?.mapping;
+    if (!mapping || typeof mapping !== 'object') {
+      continue;
+    }
+    for (const [kind, ref] of Object.entries(mapping)) {
+      if (typeof ref !== 'string') {
+        continue;
+      }
+      const schemaName = ref.replace('#/components/schemas/', '');
+      map.set(schemaName, kind);
+    }
   }
-  return toKebabCase(base);
+  return map;
 }
 
 function getSourceCommonProperties(definitions: Record<string, any>) {
@@ -538,10 +565,8 @@ function findBootstrapConfigSchemaName(definitions: Record<string, any>, kind: s
   ];
 
   for (const name of names) {
-    const suffix = name.endsWith(BOOTSTRAP_CONFIG_SUFFIX)
-      ? BOOTSTRAP_CONFIG_SUFFIX
-      : BOOTSTRAP_CONFIG_SUFFIX_LEGACY;
-    const schemaKind = schemaNameToKind(name, suffix, '');
+    const schema = definitions[name];
+    const schemaKind = schema?.properties?.kind?.enum?.[0];
     if (schemaKind === kind) {
       return name;
     }
