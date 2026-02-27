@@ -49,6 +49,24 @@ else
     SERVER_BIN := drasi-server
 endif
 
+# Auto-discover volume mounts for cross-compilation from local [patch.crates-io] paths.
+# When developing with local path overrides in .cargo/config.toml, cross needs those
+# directories mounted into its Docker container. If no local patches exist (crates
+# come from crates.io), this produces an empty value and cross works normally.
+# NOTE: Only applied to the server's cross build (not plugin builds, since plugins
+# live in their own workspace which cross mounts automatically).
+CROSS_PATCH_VOLUMES := $(shell \
+  grep -oP 'path\s*=\s*"\K[^"]+' .cargo/config.toml 2>/dev/null | \
+  while read p; do \
+    d="$$p"; \
+    while [ "$$d" != "/" ]; do \
+      if [ -f "$$d/Cargo.toml" ] && grep -q '^\[workspace\]' "$$d/Cargo.toml" 2>/dev/null; then \
+        echo "$$d"; break; \
+      fi; \
+      d=$$(dirname "$$d"); \
+    done; \
+  done | sort -u | while read r; do printf -- '-v %s:%s ' "$$r" "$$r"; done)
+
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -167,7 +185,7 @@ build-cross:
 		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	cross build --target $(TARGET)
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --target $(TARGET)
 
 build-cross-release:
 	@if [ -z "$(TARGET)" ]; then \
@@ -175,7 +193,7 @@ build-cross-release:
 		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	cross build --release --target $(TARGET)
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --release --target $(TARGET)
 
 # === Dynamic Build (cdylib plugins) ===
 #
@@ -237,7 +255,7 @@ build-dynamic-cross:
 		exit 1; \
 	fi
 	@echo "=== Cross-compiling dynamic build for $(TARGET) (debug) ==="
-	cross build --no-default-features --features dynamic-plugins --target $(TARGET)
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --no-default-features --features dynamic-plugins --target $(TARGET)
 	cargo xtask build-plugins --target $(TARGET)
 
 build-dynamic-cross-release:
@@ -247,7 +265,7 @@ build-dynamic-cross-release:
 		exit 1; \
 	fi
 	@echo "=== Cross-compiling dynamic build for $(TARGET) (release) ==="
-	cross build --no-default-features --features dynamic-plugins --target $(TARGET) --release
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --no-default-features --features dynamic-plugins --target $(TARGET) --release
 	cargo xtask build-plugins --release --target $(TARGET)
 
 clippy:

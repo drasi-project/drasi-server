@@ -10,6 +10,7 @@ use std::thread;
 struct CargoMetadata {
     packages: Vec<Package>,
     target_directory: PathBuf,
+    workspace_root: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -22,6 +23,7 @@ struct Package {
 struct DiscoveryResult {
     plugins: Vec<Package>,
     target_directory: PathBuf,
+    workspace_root: PathBuf,
 }
 
 fn discover_dynamic_plugins() -> DiscoveryResult {
@@ -47,6 +49,7 @@ fn discover_dynamic_plugins() -> DiscoveryResult {
     DiscoveryResult {
         plugins,
         target_directory: metadata.target_directory,
+        workspace_root: metadata.workspace_root,
     }
 }
 
@@ -150,12 +153,34 @@ fn build_plugins(args: &[String]) {
 
     let mode = if release { "release" } else { "debug" };
     let target_dir = result.target_directory;
-    let build_dir = match &target {
-        Some(t) => target_dir.join(t).join(mode),
+    // When cross-compiling, use a separate target directory to avoid glibc
+    // mismatch: host-compiled build scripts cached in target/debug/build/ are
+    // linked against the host's glibc, which may be newer than the cross
+    // container's. A separate dir forces fresh compilation inside the container.
+    let cross_target_dir = match &target {
+        Some(_) => target_dir.join("cross"),
+        None => target_dir.clone(),
+    };
+    // cross_build_dir: where cross/cargo puts compiled artifacts
+    let cross_build_dir = match &target {
+        Some(t) => cross_target_dir.join(t).join(mode),
         None => target_dir.join(mode),
     };
-    let plugins_dir = build_dir.join("plugins");
+    // plugins_dir: final output location for plugin shared libraries.
+    // For cross builds, this matches the server's --target-dir (target/cross/)
+    // so plugins end up next to the server binary.
+    let plugins_dir = cross_build_dir.join("plugins");
     let build_cmd = if target.is_some() { "cross" } else { "cargo" };
+    // When cross-compiling, generate a temporary Cross.toml with absolute
+    // Dockerfile paths. Cross resolves Dockerfile paths relative to the
+    // plugin's workspace root, not the Cross.toml location. Since plugins
+    // live in a different workspace (drasi-core), relative paths won't find
+    // drasi-server's Dockerfiles.
+    let cross_config = if target.is_some() {
+        make_absolute_cross_config(&result.workspace_root, &target_dir)
+    } else {
+        None
+    };
 
     println!(
         "=== Building {} cdylib plugins ({}{}, {} parallel jobs) ===",
@@ -166,9 +191,10 @@ fn build_plugins(args: &[String]) {
     );
 
     let failed = Arc::new(AtomicBool::new(false));
-    let target_dir = Arc::new(target_dir);
+    let cross_target_dir = Arc::new(cross_target_dir);
     let target = Arc::new(target);
     let build_cmd: Arc<str> = Arc::from(build_cmd);
+    let cross_config: Arc<Option<PathBuf>> = Arc::new(cross_config);
     let plugins: Vec<_> = result
         .plugins
         .into_iter()
@@ -187,21 +213,30 @@ fn build_plugins(args: &[String]) {
                 let name = name.clone();
                 let manifest = manifest.clone();
                 let failed = Arc::clone(&failed);
-                let target_dir = Arc::clone(&target_dir);
+                let cross_target_dir = Arc::clone(&cross_target_dir);
                 let target = Arc::clone(&target);
                 let build_cmd = Arc::clone(&build_cmd);
+                let cross_config = Arc::clone(&cross_config);
 
                 thread::spawn(move || {
                     println!("  Building {}...", name);
 
                     let mut cmd = Command::new(build_cmd.as_ref());
+                    // Clear CROSS_CONTAINER_OPTS to avoid duplicate volume mounts.
+                    // Cross will automatically mount the plugin's workspace root;
+                    // extra mounts from the server build would conflict.
+                    cmd.env_remove("CROSS_CONTAINER_OPTS");
+                    // Use drasi-server's Cross.toml with absolute Dockerfile paths.
+                    if let Some(config) = cross_config.as_ref() {
+                        cmd.env("CROSS_CONFIG", config);
+                    }
                     cmd.args([
                         "build",
                         "--lib",
                         "--manifest-path",
                         manifest.to_str().expect("invalid manifest path"),
                         "--target-dir",
-                        target_dir.to_str().expect("invalid target dir"),
+                        cross_target_dir.to_str().expect("invalid target dir"),
                         "--features",
                         "dynamic-plugin",
                     ]);
@@ -242,20 +277,57 @@ fn build_plugins(args: &[String]) {
 
     for (name, _) in &plugins {
         let lib_name = plugin_lib_name(name, target.as_deref());
-        let src = build_dir.join(format!("{lib_name}.{lib_ext}"));
+        let src = cross_build_dir.join(format!("{lib_name}.{lib_ext}"));
         let dst = plugins_dir.join(format!("{lib_name}.{lib_ext}"));
 
         if src.exists() {
-            fs::rename(&src, &dst).unwrap_or_else(|e| {
-                eprintln!("Failed to move {} to plugins/: {}", lib_name, e);
+            // Use copy+remove instead of rename, since cross builds may use
+            // a separate target directory on a different filesystem.
+            fs::copy(&src, &dst).unwrap_or_else(|e| {
+                eprintln!("Failed to copy {} to plugins/: {}", lib_name, e);
+                0
             });
+            let _ = fs::remove_file(&src);
         }
 
         // Clean up .rlib and .d files from the build directory
-        clean_build_artifacts(&build_dir, &lib_name);
+        clean_build_artifacts(&cross_build_dir, &lib_name);
     }
 
     println!("=== cdylib plugins output to {} ===", plugins_dir.display());
+}
+
+/// Read drasi-server's Cross.toml and rewrite relative `dockerfile` paths to
+/// absolute paths. Returns the path to the generated temp file, or None if no
+/// Cross.toml exists.
+fn make_absolute_cross_config(workspace_root: &Path, target_dir: &Path) -> Option<PathBuf> {
+    let cross_toml = workspace_root.join("Cross.toml");
+    let content = fs::read_to_string(&cross_toml).ok()?;
+
+    let prefix = format!("{}/", workspace_root.display());
+    let rewritten: String = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("dockerfile") {
+                // Match: dockerfile = "Foo.dockerfile" (with optional whitespace)
+                if let Some(rest) = rest.trim_start().strip_prefix('=') {
+                    if let Some(rest) = rest.trim_start().strip_prefix('"') {
+                        if !rest.starts_with('/') {
+                            // Relative path — make absolute
+                            return format!("dockerfile = \"{prefix}{rest}");
+                        }
+                    }
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let out = target_dir.join("cross-plugins.toml");
+    fs::write(&out, rewritten).expect("failed to write cross-plugins.toml");
+    Some(out)
 }
 
 fn clean_build_artifacts(build_dir: &Path, lib_name: &str) {

@@ -32,10 +32,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// File patterns for discovering cdylib plugins.
+/// Includes both Unix (`lib` prefix) and Windows (no prefix) naming conventions.
 const PLUGIN_FILE_PATTERNS: &[&str] = &[
     "libdrasi_source_*",
     "libdrasi_reaction_*",
     "libdrasi_bootstrap_*",
+    "drasi_source_*",
+    "drasi_reaction_*",
+    "drasi_bootstrap_*",
 ];
 
 /// Statistics from a cdylib plugin loading operation.
