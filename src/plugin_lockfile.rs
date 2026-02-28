@@ -28,7 +28,7 @@ const LOCKFILE_NAME: &str = "plugins.lock";
 const LOCKFILE_VERSION: u32 = 1;
 
 /// The top-level lockfile structure.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginLockfile {
     /// Lockfile format version.
     pub version: u32,
@@ -115,13 +115,48 @@ impl PluginLockfile {
     }
 
     /// Insert or update a locked entry.
+    ///
+    /// If another entry with a different key but the same filename already exists,
+    /// it is removed first. This prevents duplicate entries when the same plugin
+    /// is installed from different sources (e.g., first from `file://`, then from OCI).
     pub fn insert(&mut self, reference: String, entry: LockedPlugin) {
+        // Remove any existing entry that maps to the same filename under a different key
+        let conflicting_key = self
+            .plugins
+            .iter()
+            .find(|(k, v)| v.filename == entry.filename && *k != &reference)
+            .map(|(k, _)| k.clone());
+
+        if let Some(old_key) = conflicting_key {
+            log::debug!(
+                "Replacing lockfile entry '{}' (same filename '{}')",
+                old_key,
+                entry.filename
+            );
+            self.plugins.remove(&old_key);
+        }
+
         self.plugins.insert(reference, entry);
     }
 
     /// Remove a locked entry.
     pub fn remove(&mut self, reference: &str) -> Option<LockedPlugin> {
         self.plugins.remove(reference)
+    }
+
+    /// Iterate over all locked plugin entries.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &LockedPlugin)> {
+        self.plugins.iter()
+    }
+
+    /// Get all reference keys.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.plugins.keys()
+    }
+
+    /// Check if the lockfile has no plugins.
+    pub fn is_empty(&self) -> bool {
+        self.plugins.is_empty()
     }
 }
 
@@ -204,5 +239,36 @@ mod tests {
 
         lockfile.remove("source/postgres");
         assert!(lockfile.get("source/postgres").is_none());
+    }
+
+    #[test]
+    fn test_lockfile_deduplicates_by_filename() {
+        let mut lockfile = PluginLockfile::new();
+
+        // Install from file
+        lockfile.insert(
+            "file:///path/to/libdrasi_source_postgres.so".to_string(),
+            LockedPlugin {
+                reference: "file:///path/to/libdrasi_source_postgres.so".to_string(),
+                version: "0.1.8".to_string(),
+                digest: String::new(),
+                sdk_version: "0.3.1".to_string(),
+                core_version: "0.3.3".to_string(),
+                lib_version: "0.3.8".to_string(),
+                platform: "x86_64-unknown-linux-gnu".to_string(),
+                filename: "libdrasi_source_postgres.so".to_string(),
+            },
+        );
+        assert_eq!(lockfile.plugins.len(), 1);
+
+        // Install same plugin from OCI — should replace the file entry
+        lockfile.insert("source/postgres".to_string(), sample_entry());
+        assert_eq!(lockfile.plugins.len(), 1);
+        assert!(lockfile.get("source/postgres").is_some());
+        assert!(
+            lockfile
+                .get("file:///path/to/libdrasi_source_postgres.so")
+                .is_none()
+        );
     }
 }

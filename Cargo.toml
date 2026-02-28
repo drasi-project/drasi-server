@@ -83,7 +83,7 @@ drasi-state-store-redb = "0.1.5"
 drasi-plugin-sdk = "0.3.1"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.1.0", optional = true, features = ["registry"] }
+drasi-host-sdk = { version = "0.1.0", optional = true, features = ["registry", "fetcher"] }
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }

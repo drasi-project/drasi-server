@@ -112,10 +112,11 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum PluginAction {
-    /// Install a plugin from an OCI registry
+    /// Install a plugin from an OCI registry, local file, or HTTP URL
     Install {
-        /// Plugin reference (e.g., "source/postgres", "source/postgres:0.1.8",
-        /// "ghcr.io/acme-corp/custom-source:1.0.0")
+        /// Plugin reference: OCI (e.g., "source/postgres:0.1.8"),
+        /// file (e.g., "file:///path/to/plugin.so"),
+        /// or HTTP (e.g., "https://example.com/plugin.so")
         #[arg(required_unless_present = "from_config")]
         reference: Option<String>,
 
@@ -161,6 +162,25 @@ enum PluginAction {
         /// Override OCI registry (default: from config or ghcr.io/drasi-project)
         #[arg(long)]
         registry: Option<String>,
+    },
+
+    /// Upgrade installed plugins to newer compatible versions
+    Upgrade {
+        /// Plugin reference to upgrade (e.g., "source/postgres", "source/postgres:0.2.0").
+        /// If omitted, use --all to upgrade everything.
+        reference: Option<String>,
+
+        /// Upgrade all installed plugins to their latest compatible versions
+        #[arg(long)]
+        all: bool,
+
+        /// Override OCI registry
+        #[arg(long)]
+        registry: Option<String>,
+
+        /// Show what would change without actually upgrading
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -525,12 +545,87 @@ async fn run_plugin_command(
         PluginAction::InstallAll { registry } => {
             plugin_install_all(&plugins_dir, &config_path, registry.as_deref()).await
         }
+        PluginAction::Upgrade {
+            reference,
+            all,
+            registry,
+            dry_run,
+        } => {
+            plugin_upgrade(&plugins_dir, &config_path, reference.as_deref(), all, registry.as_deref(), dry_run).await
+        }
     }
 }
 
 /// Install a single plugin from the registry.
 #[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_single(
+    reference: &str,
+    plugins_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    registry_override: Option<&str>,
+) -> Result<()> {
+    use drasi_host_sdk::fetcher::{parse_source_type, PluginSourceType};
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+
+    match parse_source_type(reference) {
+        PluginSourceType::File | PluginSourceType::Http => {
+            plugin_install_from_uri(reference, plugins_dir).await
+        }
+        PluginSourceType::Oci => {
+            plugin_install_from_oci(reference, plugins_dir, config_path, registry_override).await
+        }
+    }
+}
+
+/// Install a plugin from a file:// or http(s):// URI.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_install_from_uri(
+    reference: &str,
+    plugins_dir: &std::path::Path,
+) -> Result<()> {
+    use drasi_host_sdk::fetcher::{fetch_from_file, fetch_from_http, parse_source_type, read_plugin_metadata, PluginSourceType};
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+
+    let source_type = parse_source_type(reference);
+    println!("Fetching plugin from {}...", reference);
+
+    let fetched = match source_type {
+        PluginSourceType::File => fetch_from_file(reference, plugins_dir).await?,
+        PluginSourceType::Http => fetch_from_http(reference, plugins_dir).await?,
+        PluginSourceType::Oci => unreachable!(),
+    };
+
+    println!("  → {}", fetched.path.display());
+
+    // Read metadata from the binary to populate the lockfile
+    let metadata = read_plugin_metadata(&fetched.path).unwrap_or_default();
+
+    let mut lockfile = PluginLockfile::read(plugins_dir)?.unwrap_or_default();
+    lockfile.insert(
+        reference.to_string(),
+        LockedPlugin {
+            reference: reference.to_string(),
+            version: metadata.plugin_version.clone(),
+            digest: String::new(),
+            sdk_version: metadata.sdk_version.clone(),
+            core_version: metadata.core_version.clone(),
+            lib_version: metadata.lib_version.clone(),
+            platform: metadata.target_triple.clone(),
+            filename: fetched.filename,
+        },
+    );
+    lockfile.write(plugins_dir)?;
+
+    if !metadata.plugin_version.is_empty() {
+        println!("  Plugin version: {}", metadata.plugin_version);
+    }
+    println!("Done.");
+    Ok(())
+}
+
+/// Install a plugin from an OCI registry.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_install_from_oci(
     reference: &str,
     plugins_dir: &std::path::Path,
     config_path: &std::path::Path,
@@ -718,6 +813,21 @@ async fn plugin_install_from_config(
         let resolver = drasi_host_sdk::registry::PluginResolver::new(&client, &host_info);
 
         for dep in &config.plugins {
+            // Check if this is a file/HTTP URI or an OCI reference
+            let source_type = drasi_host_sdk::fetcher::parse_source_type(&dep.reference);
+            match source_type {
+                drasi_host_sdk::fetcher::PluginSourceType::File
+                | drasi_host_sdk::fetcher::PluginSourceType::Http => {
+                    // Use the fetcher for file/HTTP URIs
+                    println!("  ↓ {} — fetching...", dep.reference);
+                    match plugin_install_from_uri(&dep.reference, plugins_dir).await {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("  ✗ {} — {}", dep.reference, e);
+                        }
+                    }
+                }
+                drasi_host_sdk::fetcher::PluginSourceType::Oci => {
             match resolver.resolve(&dep.reference, &registry_url).await {
                 Ok(resolved) => {
                     let dest_path = plugins_dir.join(&resolved.filename);
@@ -770,6 +880,8 @@ async fn plugin_install_from_config(
                 }
                 Err(e) => {
                     eprintln!("  ✗ {} — {}", dep.reference, e);
+                }
+            }
                 }
             }
         }
@@ -1087,6 +1199,181 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Upgrade installed plugins to newer compatible versions.
+#[cfg(feature = "dynamic-plugins")]
+async fn plugin_upgrade(
+    plugins_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    reference: Option<&str>,
+    all: bool,
+    registry_override: Option<&str>,
+    dry_run: bool,
+) -> Result<()> {
+    use drasi_host_sdk::registry::{
+        OciRegistryClient, PluginResolver, RegistryConfig,
+    };
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+
+    if reference.is_none() && !all {
+        eprintln!("Error: provide a plugin reference or --all");
+        std::process::exit(1);
+    }
+
+    let lockfile = PluginLockfile::read(plugins_dir)?;
+    let lockfile = match lockfile {
+        Some(lf) if !lf.is_empty() => lf,
+        _ => {
+            eprintln!("No plugins.lock found or no plugins installed. Nothing to upgrade.");
+            eprintln!("Use 'plugin install' to install plugins first.");
+            std::process::exit(1);
+        }
+    };
+
+    let registry_url = get_plugin_registry(config_path, registry_override);
+    let auth = get_cli_registry_auth();
+    let config = RegistryConfig {
+        default_registry: registry_url.clone(),
+        auth,
+    };
+    let client = OciRegistryClient::new(config);
+    let host_info = cli_host_version_info();
+    let resolver = PluginResolver::new(&client, &host_info);
+
+    // Determine which plugins to upgrade
+    let to_check: Vec<(String, LockedPlugin)> = if all {
+        lockfile.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    } else {
+        let ref_str = reference.unwrap();
+        match lockfile.get(ref_str) {
+            Some(entry) => vec![(ref_str.to_string(), entry.clone())],
+            None => {
+                // Try to find by partial match (e.g., "source/postgres" matching a full OCI ref)
+                let matches: Vec<_> = lockfile
+                    .iter()
+                    .filter(|(k, _)| k.contains(ref_str))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                if matches.is_empty() {
+                    eprintln!("Plugin '{}' not found in lockfile.", ref_str);
+                    eprintln!("Installed plugins:");
+                    for key in lockfile.keys() {
+                        eprintln!("  {}", key);
+                    }
+                    std::process::exit(1);
+                }
+                matches
+            }
+        }
+    };
+
+    if dry_run {
+        println!("Checking for upgrades (dry run)...");
+    } else {
+        println!("Checking for upgrades...");
+    }
+
+    let mut upgraded = 0;
+    let mut up_to_date = 0;
+    let mut failed = 0;
+    let mut new_lockfile = lockfile.clone();
+
+    for (ref_key, current) in &to_check {
+        // Skip non-OCI plugins (file:// and http:// can't be auto-upgraded)
+        if ref_key.starts_with("file://") || ref_key.starts_with("http://") || ref_key.starts_with("https://") {
+            println!("  {} — skipped (non-OCI source)", ref_key);
+            continue;
+        }
+
+        // Strip any existing tag for latest-compatible resolution
+        let base_ref = ref_key.split(':').next().unwrap_or(ref_key);
+
+        match resolver.resolve(base_ref, &registry_url).await {
+            Ok(resolved) => {
+                if resolved.digest == current.digest {
+                    println!(
+                        "  {} — up to date ({})",
+                        ref_key, current.version
+                    );
+                    up_to_date += 1;
+                } else if !dry_run {
+                    println!(
+                        "  {} — upgrading {} → {}",
+                        ref_key, current.version, resolved.version
+                    );
+                    match client
+                        .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
+                        .await
+                    {
+                        Ok(_) => {
+                            new_lockfile.insert(
+                                ref_key.clone(),
+                                LockedPlugin {
+                                    reference: resolved.reference,
+                                    version: resolved.version,
+                                    digest: resolved.digest,
+                                    sdk_version: resolved.sdk_version,
+                                    core_version: resolved.core_version,
+                                    lib_version: resolved.lib_version,
+                                    platform: resolved.platform,
+                                    filename: resolved.filename,
+                                },
+                            );
+                            upgraded += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("  {} — download failed: {}", ref_key, e);
+                            failed += 1;
+                        }
+                    }
+                } else {
+                    println!(
+                        "  {} — {} → {} (available)",
+                        ref_key, current.version, resolved.version
+                    );
+                    upgraded += 1;
+                }
+            }
+            Err(e) => {
+                eprintln!("  {} — resolve failed: {}", ref_key, e);
+                failed += 1;
+            }
+        }
+    }
+
+    if !dry_run && upgraded > 0 {
+        new_lockfile.write(plugins_dir)?;
+    }
+
+    println!();
+    if dry_run {
+        println!(
+            "Dry run complete: {} upgradable, {} up to date, {} failed",
+            upgraded, up_to_date, failed
+        );
+    } else {
+        println!(
+            "Upgrade complete: {} upgraded, {} up to date, {} failed",
+            upgraded, up_to_date, failed
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "dynamic-plugins"))]
+async fn plugin_upgrade(
+    _plugins_dir: &std::path::Path,
+    _config_path: &std::path::Path,
+    _reference: Option<&str>,
+    _all: bool,
+    _registry_override: Option<&str>,
+    _dry_run: bool,
+) -> Result<()> {
+    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    eprintln!("Rebuild with: cargo build --no-default-features --features dynamic-plugins");
+    std::process::exit(1);
 }
 
 /// Get plugin registry URL from config or override.
