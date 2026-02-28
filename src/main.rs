@@ -870,12 +870,12 @@ async fn plugin_search(
 
     for result in &results {
         println!("\n  {} ({})", result.reference, result.full_reference);
-        if result.tags.is_empty() {
+        if result.versions.is_empty() {
             println!("    No versions found.");
         } else {
             println!("    Available versions:");
-            for tag in &result.tags {
-                println!("      {}", tag);
+            for v in &result.versions {
+                println!("      {}  ({})", v.version, v.platforms.join(", "));
             }
         }
     }
