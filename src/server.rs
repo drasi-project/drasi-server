@@ -87,6 +87,7 @@ impl DrasiServer {
         if plugins_dir.exists() {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
+                runtime_handle: tokio::runtime::Handle::current(),
                 log_registry: drasi_lib::managers::get_or_init_global_registry(),
                 source_event_history: Arc::new(tokio::sync::RwLock::new(
                     drasi_lib::managers::ComponentEventHistory::new(),
