@@ -17,7 +17,7 @@ sources:
 
 queries:
   - id: all-events
-    query: "MATCH (n) RETURN n"
+    query: "MATCH (g) RETURN elementId(g)"
     queryLanguage: Cypher
     sources:
       - sourceId: test-source

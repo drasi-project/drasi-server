@@ -18,6 +18,7 @@ import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
 import CloneInstanceDialog from "@/components/instances/CloneInstanceDialog";
 import SolutionDeployDialog from "@/components/solutions/SolutionDeployDialog";
+import SolutionInstanceWizard from "@/components/solutions/SolutionInstanceWizard";
 import CreateSolutionTemplateDialog from "@/components/solutions/CreateSolutionTemplateDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
@@ -65,6 +66,7 @@ export default function App() {
   const [showCreateInstance, setShowCreateInstance] = useState(false);
   const [showCloneInstance, setShowCloneInstance] = useState(false);
   const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+  const [showSolutionInstanceWizard, setShowSolutionInstanceWizard] = useState(false);
   const [createInstancePrefilledId, setCreateInstancePrefilledId] = useState<string | undefined>(undefined);
 
   // Component hooks - scoped to selected instance
@@ -491,6 +493,7 @@ export default function App() {
           selectedId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
           onCreateNew={() => setShowCreateInstance(true)}
+          onCreateFromTemplate={() => setShowSolutionInstanceWizard(true)}
           onClone={() => setShowCloneInstance(true)}
           onCreateTemplate={() => setShowCreateTemplate(true)}
         />
@@ -702,6 +705,21 @@ export default function App() {
         />
       )}
 
+      {/* Solution Instance Wizard */}
+      {showSolutionInstanceWizard && (
+        <SolutionInstanceWizard
+          onClose={() => setShowSolutionInstanceWizard(false)}
+          onSuccess={(newInstanceId) => {
+            setShowSolutionInstanceWizard(false);
+            pushEvent(`Created instance from template: ${newInstanceId}`, "success");
+            // Refresh instances list
+            refreshInstances();
+            // Switch to the new instance - hooks auto-refresh when instanceId changes
+            setSelectedInstanceId(newInstanceId);
+          }}
+        />
+      )}
+
       {/* Activity Panel */}
       <EventPanel
         events={events}
@@ -724,12 +742,8 @@ export default function App() {
             setDeployUploadedYaml(undefined);
             // Refresh instances list (in case a new one was created)
             refreshInstances();
-            // Switch to the instance that was deployed to
+            // Switch to the instance that was deployed to - hooks auto-refresh when instanceId changes
             setSelectedInstanceId(deployedToInstanceId);
-            // Refresh components for that instance
-            refreshSources();
-            refreshQueries();
-            refreshReactions();
           }}
         />
       )}

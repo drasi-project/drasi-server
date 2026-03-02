@@ -7,6 +7,7 @@ interface InstanceSelectorProps {
   selectedId?: string;
   onSelect: (id: string) => void;
   onCreateNew: () => void;
+  onCreateFromTemplate?: () => void;
   onClone?: () => void;
   onCreateTemplate?: () => void;
 }
@@ -16,6 +17,7 @@ export default function InstanceSelector({
   selectedId,
   onSelect,
   onCreateNew,
+  onCreateFromTemplate,
   onClone,
   onCreateTemplate,
 }: InstanceSelectorProps) {
@@ -90,6 +92,18 @@ export default function InstanceSelector({
                 <Plus size={12} />
                 Create Instance
               </button>
+              {onCreateFromTemplate && (
+                <button
+                  onClick={() => {
+                    onCreateFromTemplate();
+                    setOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-drasi-text-secondary hover:bg-drasi-card hover:text-drasi-text-primary transition-colors"
+                >
+                  <Package size={12} />
+                  Create from Solution Template
+                </button>
+              )}
               {hasCurrentInstance && onClone && (
                 <button
                   onClick={() => {
