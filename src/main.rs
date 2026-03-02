@@ -27,6 +27,7 @@ use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
+mod cli_styles;
 mod init;
 
 #[derive(Parser)]
@@ -532,7 +533,7 @@ async fn run_plugin_command(
                 plugin_install_single(&ref_str, &plugins_dir, &config_path, registry.as_deref())
                     .await
             } else {
-                eprintln!("Error: provide a plugin reference or --from-config");
+                println!("{}", cli_styles::error("provide a plugin reference or --from-config"));
                 std::process::exit(1);
             }
         }
@@ -587,7 +588,7 @@ async fn plugin_install_from_uri(
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     let source_type = parse_source_type(reference);
-    println!("Fetching plugin from {}...", reference);
+    let sp = cli_styles::spinner(&format!("Fetching plugin from {}", reference));
 
     let fetched = match source_type {
         PluginSourceType::File => fetch_from_file(reference, plugins_dir).await?,
@@ -595,7 +596,7 @@ async fn plugin_install_from_uri(
         PluginSourceType::Oci => unreachable!(),
     };
 
-    println!("  → {}", fetched.path.display());
+    sp.finish_and_clear();
 
     // Read metadata from the binary to populate the lockfile
     let metadata = read_plugin_metadata(&fetched.path).unwrap_or_default();
@@ -616,10 +617,19 @@ async fn plugin_install_from_uri(
     );
     lockfile.write(plugins_dir)?;
 
-    if !metadata.plugin_version.is_empty() {
-        println!("  Plugin version: {}", metadata.plugin_version);
-    }
-    println!("Done.");
+    let ver_info = if !metadata.plugin_version.is_empty() {
+        format!(" v{}", metadata.plugin_version)
+    } else {
+        String::new()
+    };
+    println!(
+        "{}",
+        cli_styles::success(&format!(
+            "Installed{} → {}",
+            ver_info,
+            cli_styles::path(&fetched.path.display().to_string())
+        ))
+    );
     Ok(())
 }
 
@@ -647,25 +657,39 @@ async fn plugin_install_from_oci(
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
-    println!("Resolving {} from {}...", reference, registry_url);
-    println!(
-        "  Server versions: SDK {}, core {}, lib {}",
-        host_info.sdk_version, host_info.core_version, host_info.lib_version
-    );
+    let sp = cli_styles::spinner(&format!("Resolving {} from {}...", reference, registry_url));
 
     let resolved = resolver.resolve(reference, &registry_url).await?;
 
+    sp.finish_and_clear();
     println!(
-        "Installing {}:{} ({}, {})",
-        reference, resolved.version, resolved.platform, resolved.filename
+        "{}",
+        cli_styles::success(&format!(
+            "Resolved {} {} ({})",
+            reference,
+            cli_styles::version(&resolved.version),
+            resolved.platform
+        ))
     );
+
+    let sp = cli_styles::spinner(&format!(
+        "Downloading {}...",
+        resolved.filename
+    ));
 
     std::fs::create_dir_all(plugins_dir)?;
     client
         .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
         .await?;
 
-    println!("  → {}", plugins_dir.join(&resolved.filename).display());
+    sp.finish_and_clear();
+    println!(
+        "{}",
+        cli_styles::success(&format!(
+            "Installed → {}",
+            cli_styles::path(&plugins_dir.join(&resolved.filename).display().to_string())
+        ))
+    );
 
     // Update lockfile
     let lockfile_dir = plugins_dir;
@@ -685,7 +709,6 @@ async fn plugin_install_from_oci(
     );
     lockfile.write(lockfile_dir)?;
 
-    println!("Done.");
     Ok(())
 }
 
@@ -696,8 +719,8 @@ async fn plugin_install_single(
     _config_path: &std::path::Path,
     _registry_override: Option<&str>,
 ) -> Result<()> {
-    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
-    eprintln!("Rebuild with: cargo build --no-default-features --features dynamic-plugins");
+    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
+    println!("{}", cli_styles::detail("Rebuild with: cargo build --no-default-features --features dynamic-plugins"));
     std::process::exit(1);
 }
 
@@ -714,7 +737,7 @@ async fn plugin_install_from_config(
     let config = load_config_file(config_path)?;
 
     if config.plugins.is_empty() {
-        println!("No plugins declared in config file.");
+        println!("{}", cli_styles::skip("No plugins declared in config file."));
         return Ok(());
     }
 
@@ -722,25 +745,32 @@ async fn plugin_install_from_config(
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
 
     if locked && lockfile.plugins.is_empty() {
-        eprintln!("Error: --locked flag used but no plugins.lock file found");
+        println!("{}", cli_styles::error("--locked flag used but no plugins.lock file found"));
         std::process::exit(1);
     }
 
-    if locked {
-        println!(
-            "Installing {} plugin(s) from lockfile...",
-            config.plugins.len()
-        );
+    let mut installed = 0;
+    let mut existing = 0;
+    let mut failed = 0;
 
-        // In locked mode, use lockfile entries to download
+    if locked {
+        cli_styles::section(&format!(
+            "Installing {} plugin(s) from lockfile",
+            config.plugins.len()
+        ));
+
         for dep in &config.plugins {
             let locked_entry = match lockfile.get(&dep.reference) {
                 Some(entry) => entry.clone(),
                 None => {
-                    eprintln!(
-                        "  ✗ {} — not found in plugins.lock (required by --locked)",
-                        dep.reference
+                    println!(
+                        "{}",
+                        cli_styles::error(&format!(
+                            "{} — not found in plugins.lock (required by --locked)",
+                            dep.reference
+                        ))
                     );
+                    failed += 1;
                     continue;
                 }
             };
@@ -748,13 +778,17 @@ async fn plugin_install_from_config(
             let dest_path = plugins_dir.join(&locked_entry.filename);
             if dest_path.exists() {
                 println!(
-                    "  ✓ {} v{} — already installed",
-                    dep.reference, locked_entry.version
+                    "{}",
+                    cli_styles::success(&format!(
+                        "{} {} — already installed",
+                        dep.reference,
+                        cli_styles::version(&locked_entry.version)
+                    ))
                 );
+                existing += 1;
                 continue;
             }
 
-            // Download using locked reference
             let registry_url = registry_override
                 .map(|s| s.to_string())
                 .or_else(|| config.plugin_registry.clone())
@@ -767,10 +801,10 @@ async fn plugin_install_from_config(
             };
             let client = drasi_host_sdk::registry::OciRegistryClient::new(reg_config);
 
-            println!(
-                "  ↓ {} v{} — downloading (locked)...",
+            let sp = cli_styles::spinner(&format!(
+                "Downloading {} {}...",
                 dep.reference, locked_entry.version
-            );
+            ));
 
             std::fs::create_dir_all(plugins_dir)?;
             match client
@@ -782,13 +816,25 @@ async fn plugin_install_from_config(
                 .await
             {
                 Ok(_path) => {
+                    sp.finish_and_clear();
                     println!(
-                        "  ✓ {} v{} — installed → {}",
-                        dep.reference, locked_entry.version, locked_entry.filename
+                        "{}",
+                        cli_styles::success(&format!(
+                            "{} {} → {}",
+                            dep.reference,
+                            cli_styles::version(&locked_entry.version),
+                            cli_styles::path(&locked_entry.filename)
+                        ))
                     );
+                    installed += 1;
                 }
                 Err(e) => {
-                    eprintln!("  ✗ {} — {}", dep.reference, e);
+                    sp.finish_and_clear();
+                    println!(
+                        "{}",
+                        cli_styles::error(&format!("{} — {}", dep.reference, e))
+                    );
+                    failed += 1;
                 }
             }
         }
@@ -798,10 +844,10 @@ async fn plugin_install_from_config(
             .or_else(|| config.plugin_registry.clone())
             .unwrap_or_else(|| "ghcr.io/drasi-project".to_string());
 
-        println!(
-            "Installing {} plugin(s) from config...",
+        cli_styles::section(&format!(
+            "Installing {} plugin(s) from config",
             config.plugins.len()
-        );
+        ));
 
         let auth = get_cli_registry_auth();
         let reg_config = drasi_host_sdk::registry::RegistryConfig {
@@ -813,83 +859,107 @@ async fn plugin_install_from_config(
         let resolver = drasi_host_sdk::registry::PluginResolver::new(&client, &host_info);
 
         for dep in &config.plugins {
-            // Check if this is a file/HTTP URI or an OCI reference
             let source_type = drasi_host_sdk::fetcher::parse_source_type(&dep.reference);
             match source_type {
                 drasi_host_sdk::fetcher::PluginSourceType::File
                 | drasi_host_sdk::fetcher::PluginSourceType::Http => {
-                    // Use the fetcher for file/HTTP URIs
-                    println!("  ↓ {} — fetching...", dep.reference);
                     match plugin_install_from_uri(&dep.reference, plugins_dir).await {
-                        Ok(()) => {}
+                        Ok(()) => { installed += 1; }
                         Err(e) => {
-                            eprintln!("  ✗ {} — {}", dep.reference, e);
+                            println!(
+                                "{}",
+                                cli_styles::error(&format!("{} — {}", dep.reference, e))
+                            );
+                            failed += 1;
                         }
                     }
                 }
                 drasi_host_sdk::fetcher::PluginSourceType::Oci => {
-            match resolver.resolve(&dep.reference, &registry_url).await {
-                Ok(resolved) => {
-                    let dest_path = plugins_dir.join(&resolved.filename);
-                    if dest_path.exists() {
-                        println!(
-                            "  ✓ {} v{} — already installed",
-                            dep.reference, resolved.version
-                        );
-                    } else {
-                        println!(
-                            "  ↓ {} v{} — downloading...",
-                            dep.reference, resolved.version
-                        );
-                        std::fs::create_dir_all(plugins_dir)?;
-                        match client
-                            .download_plugin(
-                                &resolved.reference,
-                                plugins_dir,
-                                &resolved.filename,
-                            )
-                            .await
-                        {
-                            Ok(_path) => {
+                    let sp = cli_styles::spinner(&format!("Resolving {}...", dep.reference));
+                    match resolver.resolve(&dep.reference, &registry_url).await {
+                        Ok(resolved) => {
+                            sp.finish_and_clear();
+                            let dest_path = plugins_dir.join(&resolved.filename);
+                            if dest_path.exists() {
                                 println!(
-                                    "  ✓ {} v{} — installed → {}",
-                                    dep.reference, resolved.version, resolved.filename
+                                    "{}",
+                                    cli_styles::success(&format!(
+                                        "{} {} — already installed",
+                                        dep.reference,
+                                        cli_styles::version(&resolved.version)
+                                    ))
                                 );
+                                existing += 1;
+                            } else {
+                                let sp = cli_styles::spinner(&format!(
+                                    "Downloading {} {}...",
+                                    dep.reference, resolved.version
+                                ));
+                                std::fs::create_dir_all(plugins_dir)?;
+                                match client
+                                    .download_plugin(
+                                        &resolved.reference,
+                                        plugins_dir,
+                                        &resolved.filename,
+                                    )
+                                    .await
+                                {
+                                    Ok(_path) => {
+                                        sp.finish_and_clear();
+                                        println!(
+                                            "{}",
+                                            cli_styles::success(&format!(
+                                                "{} {} → {}",
+                                                dep.reference,
+                                                cli_styles::version(&resolved.version),
+                                                cli_styles::path(&resolved.filename)
+                                            ))
+                                        );
+                                        installed += 1;
+                                    }
+                                    Err(e) => {
+                                        sp.finish_and_clear();
+                                        println!(
+                                            "{}",
+                                            cli_styles::error(&format!("{} — {}", dep.reference, e))
+                                        );
+                                        failed += 1;
+                                        continue;
+                                    }
+                                }
                             }
-                            Err(e) => {
-                                eprintln!("  ✗ {} — {}", dep.reference, e);
-                                continue;
-                            }
+
+                            lockfile.insert(
+                                dep.reference.clone(),
+                                LockedPlugin {
+                                    reference: resolved.reference,
+                                    version: resolved.version,
+                                    digest: resolved.digest,
+                                    sdk_version: resolved.sdk_version,
+                                    core_version: resolved.core_version,
+                                    lib_version: resolved.lib_version,
+                                    platform: resolved.platform,
+                                    filename: resolved.filename,
+                                },
+                            );
+                        }
+                        Err(e) => {
+                            sp.finish_and_clear();
+                            println!(
+                                "{}",
+                                cli_styles::error(&format!("{} — {}", dep.reference, e))
+                            );
+                            failed += 1;
                         }
                     }
-
-                    // Update lockfile entry
-                    lockfile.insert(
-                        dep.reference.clone(),
-                        LockedPlugin {
-                            reference: resolved.reference,
-                            version: resolved.version,
-                            digest: resolved.digest,
-                            sdk_version: resolved.sdk_version,
-                            core_version: resolved.core_version,
-                            lib_version: resolved.lib_version,
-                            platform: resolved.platform,
-                            filename: resolved.filename,
-                        },
-                    );
-                }
-                Err(e) => {
-                    eprintln!("  ✗ {} — {}", dep.reference, e);
-                }
-            }
                 }
             }
         }
 
-        // Write updated lockfile
         lockfile.write(lockfile_dir)?;
     }
 
+    cli_styles::install_summary(installed, existing, failed);
     Ok(())
 }
 
@@ -900,7 +970,7 @@ async fn plugin_install_from_config(
     _registry_override: Option<&str>,
     _locked: bool,
 ) -> Result<()> {
-    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
     std::process::exit(1);
 }
 
@@ -927,19 +997,20 @@ async fn plugin_install_all(
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
-    println!("Discovering plugins from {}...", registry_url);
+    let sp = cli_styles::spinner(&format!("Discovering plugins from {}...", registry_url));
 
     let results = client.search_plugins("*").await?;
+    sp.finish_and_clear();
 
     if results.is_empty() {
-        println!("No plugins found in the directory.");
+        println!("{}", cli_styles::skip("No plugins found in the directory."));
         return Ok(());
     }
 
-    println!(
-        "Found {} plugins, resolving compatible versions...",
+    cli_styles::section(&format!(
+        "Installing {} plugin(s) from registry",
         results.len()
-    );
+    ));
 
     std::fs::create_dir_all(plugins_dir)?;
     let lockfile_dir = plugins_dir;
@@ -950,20 +1021,26 @@ async fn plugin_install_all(
 
     for result in &results {
         let reference = &result.reference;
+        let sp = cli_styles::spinner(&format!("Resolving {}...", reference));
         match resolver.resolve(reference, &registry_url).await {
             Ok(resolved) => {
+                sp.finish_and_clear();
                 let dest_path = plugins_dir.join(&resolved.filename);
                 if dest_path.exists() {
                     println!(
-                        "  ✓ {} v{} — already installed",
-                        reference, resolved.version
+                        "{}",
+                        cli_styles::success(&format!(
+                            "{} {} — already installed",
+                            reference,
+                            cli_styles::version(&resolved.version)
+                        ))
                     );
                     skip_count += 1;
                 } else {
-                    println!(
-                        "  ↓ {} v{} — downloading...",
+                    let sp = cli_styles::spinner(&format!(
+                        "Downloading {} {}...",
                         reference, resolved.version
-                    );
+                    ));
                     match client
                         .download_plugin(
                             &resolved.reference,
@@ -973,14 +1050,24 @@ async fn plugin_install_all(
                         .await
                     {
                         Ok(_) => {
+                            sp.finish_and_clear();
                             println!(
-                                "  ✓ {} v{} — installed → {}",
-                                reference, resolved.version, resolved.filename
+                                "{}",
+                                cli_styles::success(&format!(
+                                    "{} {} → {}",
+                                    reference,
+                                    cli_styles::version(&resolved.version),
+                                    cli_styles::path(&resolved.filename)
+                                ))
                             );
                             success_count += 1;
                         }
                         Err(e) => {
-                            eprintln!("  ✗ {} — {}", reference, e);
+                            sp.finish_and_clear();
+                            println!(
+                                "{}",
+                                cli_styles::error(&format!("{} — {}", reference, e))
+                            );
                             fail_count += 1;
                             continue;
                         }
@@ -1002,18 +1089,18 @@ async fn plugin_install_all(
                 );
             }
             Err(e) => {
-                eprintln!("  ✗ {} — {}", reference, e);
+                sp.finish_and_clear();
+                println!(
+                    "{}",
+                    cli_styles::error(&format!("{} — {}", reference, e))
+                );
                 fail_count += 1;
             }
         }
     }
 
     lockfile.write(lockfile_dir)?;
-
-    println!(
-        "\nDone: {} installed, {} already present, {} failed",
-        success_count, skip_count, fail_count
-    );
+    cli_styles::install_summary(success_count, skip_count, fail_count);
 
     if fail_count > 0 {
         std::process::exit(1);
@@ -1028,7 +1115,7 @@ async fn plugin_install_all(
     _config_path: &std::path::Path,
     _registry_override: Option<&str>,
 ) -> Result<()> {
-    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
     std::process::exit(1);
 }
 
@@ -1037,7 +1124,13 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
     use drasi_server::plugin_lockfile::PluginLockfile;
 
     if !plugins_dir.exists() {
-        println!("No plugins directory found: {}", plugins_dir.display());
+        println!(
+            "{}",
+            cli_styles::skip(&format!(
+                "No plugins directory found: {}",
+                plugins_dir.display()
+            ))
+        );
         return Ok(());
     }
 
@@ -1053,7 +1146,13 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
     }
 
     if plugins.is_empty() {
-        println!("No plugins installed in {}", plugins_dir.display());
+        println!(
+            "{}",
+            cli_styles::skip(&format!(
+                "No plugins installed in {}",
+                plugins_dir.display()
+            ))
+        );
         return Ok(());
     }
 
@@ -1072,18 +1171,30 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
     }
 
     plugins.sort_by(|a, b| a.0.cmp(&b.0));
-    println!("Installed plugins ({}):", plugins.len());
-    println!("  Directory: {}", plugins_dir.display());
+
+    cli_styles::section(&format!("Installed plugins ({})", plugins.len()));
+    println!("{}", cli_styles::detail(&format!("Directory: {}", plugins_dir.display())));
     println!();
+
     for (name, size) in &plugins {
         let size_mb = *size as f64 / 1_048_576.0;
 
         if let Some((key, entry)) = by_filename.get(name.as_str()) {
-            println!("  {} v{}", key, entry.version);
-            println!("    File: {} ({:.1} MB)", name, size_mb);
-            println!("    SDK: {}  Platform: {}", entry.sdk_version, entry.platform);
+            println!(
+                "  {} {}",
+                cli_styles::heading(key),
+                cli_styles::version(&format!("v{}", entry.version))
+            );
+            println!("{}", cli_styles::detail(&format!(
+                "{} ({:.1} MB)  SDK: {}  Platform: {}",
+                name, size_mb, entry.sdk_version, entry.platform
+            )));
         } else {
-            println!("  {} ({:.1} MB)", name, size_mb);
+            println!(
+                "  {} {}",
+                cli_styles::heading(name),
+                cli_styles::detail(&format!("({:.1} MB)", size_mb))
+            );
         }
     }
 
@@ -1109,23 +1220,35 @@ async fn plugin_search(
 
     let client = OciRegistryClient::new(config);
 
-    println!("Searching for {} in {}...", reference, registry_url);
+    let sp = cli_styles::spinner(&format!("Searching for {} in {}...", reference, registry_url));
 
     let results = client.search_plugins(reference).await?;
+    sp.finish_and_clear();
 
     if results.is_empty() {
-        println!("No plugins found matching '{}'.", reference);
+        println!(
+            "{}",
+            cli_styles::skip(&format!("No plugins found matching '{}'.", reference))
+        );
         return Ok(());
     }
 
     for result in &results {
-        println!("\n  {} ({})", result.reference, result.full_reference);
+        println!(
+            "\n  {} {}",
+            cli_styles::heading(&result.reference),
+            cli_styles::detail(&result.full_reference)
+        );
         if result.versions.is_empty() {
-            println!("    No versions found.");
+            println!("{}", cli_styles::detail("No versions found."));
         } else {
-            println!("    Available versions:");
+            println!("{}", cli_styles::detail("Available versions:"));
             for v in &result.versions {
-                println!("      {}  ({})", v.version, v.platforms.join(", "));
+                println!(
+                    "    {}  {}",
+                    cli_styles::version(&v.version),
+                    cli_styles::detail(&format!("({})", v.platforms.join(", ")))
+                );
             }
         }
     }
@@ -1139,7 +1262,7 @@ async fn plugin_search(
     _config_path: &std::path::Path,
     _registry_override: Option<&str>,
 ) -> Result<()> {
-    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
+    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
     std::process::exit(1);
 }
 
@@ -1148,7 +1271,13 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     use drasi_server::plugin_lockfile::PluginLockfile;
 
     if !plugins_dir.exists() {
-        eprintln!("Plugins directory does not exist: {}", plugins_dir.display());
+        println!(
+            "{}",
+            cli_styles::error(&format!(
+                "Plugins directory does not exist: {}",
+                plugins_dir.display()
+            ))
+        );
         std::process::exit(1);
     }
 
@@ -1158,7 +1287,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     let target = plugins_dir.join(reference);
     if target.exists() {
         fs::remove_file(&target)?;
-        println!("Removed {}", reference);
+        println!("{}", cli_styles::success(&format!("Removed {}", reference)));
         removed = true;
     }
 
@@ -1176,7 +1305,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
                 let path = plugins_dir.join(pattern);
                 if path.exists() {
                     fs::remove_file(&path)?;
-                    println!("Removed {}", pattern);
+                    println!("{}", cli_styles::success(&format!("Removed {}", pattern)));
                     removed = true;
                     break;
                 }
@@ -1185,7 +1314,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     }
 
     if !removed {
-        eprintln!("Plugin not found: {}", reference);
+        println!("{}", cli_styles::error(&format!("Plugin not found: {}", reference)));
         std::process::exit(1);
     }
 
@@ -1194,7 +1323,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     if let Ok(Some(mut lockfile)) = PluginLockfile::read(lockfile_dir) {
         if lockfile.remove(reference).is_some() {
             let _ = lockfile.write(lockfile_dir);
-            println!("Updated plugins.lock");
+            println!("{}", cli_styles::detail("Updated plugins.lock"));
         }
     }
 
@@ -1217,7 +1346,7 @@ async fn plugin_upgrade(
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     if reference.is_none() && !all {
-        eprintln!("Error: provide a plugin reference or --all");
+        println!("{}", cli_styles::error("provide a plugin reference or --all"));
         std::process::exit(1);
     }
 
@@ -1225,8 +1354,11 @@ async fn plugin_upgrade(
     let lockfile = match lockfile {
         Some(lf) if !lf.is_empty() => lf,
         _ => {
-            eprintln!("No plugins.lock found or no plugins installed. Nothing to upgrade.");
-            eprintln!("Use 'plugin install' to install plugins first.");
+            println!(
+                "{}",
+                cli_styles::error("No plugins.lock found or no plugins installed.")
+            );
+            println!("{}", cli_styles::detail("Use 'plugin install' to install plugins first."));
             std::process::exit(1);
         }
     };
@@ -1249,17 +1381,19 @@ async fn plugin_upgrade(
         match lockfile.get(ref_str) {
             Some(entry) => vec![(ref_str.to_string(), entry.clone())],
             None => {
-                // Try to find by partial match (e.g., "source/postgres" matching a full OCI ref)
                 let matches: Vec<_> = lockfile
                     .iter()
                     .filter(|(k, _)| k.contains(ref_str))
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 if matches.is_empty() {
-                    eprintln!("Plugin '{}' not found in lockfile.", ref_str);
-                    eprintln!("Installed plugins:");
+                    println!(
+                        "{}",
+                        cli_styles::error(&format!("Plugin '{}' not found in lockfile.", ref_str))
+                    );
+                    println!("{}", cli_styles::detail("Installed plugins:"));
                     for key in lockfile.keys() {
-                        eprintln!("  {}", key);
+                        println!("  {}", cli_styles::heading(key));
                     }
                     std::process::exit(1);
                 }
@@ -1268,45 +1402,62 @@ async fn plugin_upgrade(
         }
     };
 
-    if dry_run {
-        println!("Checking for upgrades (dry run)...");
+    let title = if dry_run {
+        "Upgrade Check (dry run)"
     } else {
-        println!("Checking for upgrades...");
-    }
+        "Upgrade Summary"
+    };
+    cli_styles::section(title);
 
     let mut upgraded = 0;
     let mut up_to_date = 0;
+    let mut skipped = 0;
     let mut failed = 0;
     let mut new_lockfile = lockfile.clone();
 
     for (ref_key, current) in &to_check {
-        // Skip non-OCI plugins (file:// and http:// can't be auto-upgraded)
+        // Skip non-OCI plugins
         if ref_key.starts_with("file://") || ref_key.starts_with("http://") || ref_key.starts_with("https://") {
-            println!("  {} — skipped (non-OCI source)", ref_key);
+            println!("{}", cli_styles::skip(&format!("{} — non-OCI source", ref_key)));
+            skipped += 1;
             continue;
         }
 
-        // Strip any existing tag for latest-compatible resolution
         let base_ref = ref_key.split(':').next().unwrap_or(ref_key);
+        let sp = cli_styles::spinner(&format!("Checking {}...", ref_key));
 
         match resolver.resolve(base_ref, &registry_url).await {
             Ok(resolved) => {
+                sp.finish_and_clear();
                 if resolved.digest == current.digest {
                     println!(
-                        "  {} — up to date ({})",
-                        ref_key, current.version
+                        "{}",
+                        cli_styles::success(&format!(
+                            "{} — up to date ({})",
+                            ref_key,
+                            cli_styles::version(&current.version)
+                        ))
                     );
                     up_to_date += 1;
                 } else if !dry_run {
-                    println!(
-                        "  {} — upgrading {} → {}",
-                        ref_key, current.version, resolved.version
-                    );
+                    let sp = cli_styles::spinner(&format!(
+                        "Downloading {} {}...",
+                        ref_key, resolved.version
+                    ));
                     match client
                         .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
                         .await
                     {
                         Ok(_) => {
+                            sp.finish_and_clear();
+                            println!(
+                                "{}",
+                                cli_styles::success(&format!(
+                                    "{} {}",
+                                    ref_key,
+                                    cli_styles::version_upgrade(&current.version, &resolved.version)
+                                ))
+                            );
                             new_lockfile.insert(
                                 ref_key.clone(),
                                 LockedPlugin {
@@ -1323,20 +1474,32 @@ async fn plugin_upgrade(
                             upgraded += 1;
                         }
                         Err(e) => {
-                            eprintln!("  {} — download failed: {}", ref_key, e);
+                            sp.finish_and_clear();
+                            println!(
+                                "{}",
+                                cli_styles::error(&format!("{} — download failed: {}", ref_key, e))
+                            );
                             failed += 1;
                         }
                     }
                 } else {
                     println!(
-                        "  {} — {} → {} (available)",
-                        ref_key, current.version, resolved.version
+                        "{}",
+                        cli_styles::download(&format!(
+                            "{} {} (available)",
+                            ref_key,
+                            cli_styles::version_upgrade(&current.version, &resolved.version)
+                        ))
                     );
                     upgraded += 1;
                 }
             }
             Err(e) => {
-                eprintln!("  {} — resolve failed: {}", ref_key, e);
+                sp.finish_and_clear();
+                println!(
+                    "{}",
+                    cli_styles::error(&format!("{} — resolve failed: {}", ref_key, e))
+                );
                 failed += 1;
             }
         }
@@ -1346,18 +1509,7 @@ async fn plugin_upgrade(
         new_lockfile.write(plugins_dir)?;
     }
 
-    println!();
-    if dry_run {
-        println!(
-            "Dry run complete: {} upgradable, {} up to date, {} failed",
-            upgraded, up_to_date, failed
-        );
-    } else {
-        println!(
-            "Upgrade complete: {} upgraded, {} up to date, {} failed",
-            upgraded, up_to_date, failed
-        );
-    }
+    cli_styles::summary(upgraded, up_to_date, skipped, failed);
 
     Ok(())
 }
@@ -1371,8 +1523,8 @@ async fn plugin_upgrade(
     _registry_override: Option<&str>,
     _dry_run: bool,
 ) -> Result<()> {
-    eprintln!("Plugin management requires the 'dynamic-plugins' feature.");
-    eprintln!("Rebuild with: cargo build --no-default-features --features dynamic-plugins");
+    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
+    println!("{}", cli_styles::detail("Rebuild with: cargo build --no-default-features --features dynamic-plugins"));
     std::process::exit(1);
 }
 
