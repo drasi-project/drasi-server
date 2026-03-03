@@ -45,6 +45,11 @@ host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: false
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock
+  - ref: reaction/log
+  - ref: reaction/http
 
 sources:
   - kind: mock

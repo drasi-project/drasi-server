@@ -52,6 +52,12 @@ persistConfig: false
 # Use in-memory indexes for stateless deployment
 persistIndex: false
 
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock
+  - ref: reaction/log
+  - ref: reaction/sse
+
 sources:
   - kind: mock
     id: readonly-source

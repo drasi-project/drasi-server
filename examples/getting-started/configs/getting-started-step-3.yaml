@@ -10,6 +10,11 @@ port: 8080
 logLevel: info
 persistConfig: true
 persistIndex: false
+autoInstallPlugins: true
+plugins:
+- ref: source/postgres
+- ref: bootstrap/postgres
+- ref: reaction/log
 sources:
 - kind: postgres
   id: my-postgres

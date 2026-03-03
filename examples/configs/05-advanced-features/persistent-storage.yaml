@@ -51,6 +51,11 @@ stateStore:
   kind: redb
   path: "${STATE_STORE_PATH:-./data/state.redb}"
 
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock
+  - ref: reaction/log
+
 sources:
   - kind: mock
     id: persistent-source
