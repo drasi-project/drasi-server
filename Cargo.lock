@@ -1064,7 +1064,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-application"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1155,14 +1155,14 @@ version = "0.3.1"
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "drasi-core",
 ]
@@ -1195,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-garnet"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-recursion",
  "async-stream",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1227,6 +1227,7 @@ dependencies = [
  "drasi-query-ast",
  "fastmurmur3",
  "fnv",
+ "futures",
  "hashers",
  "log",
  "ordered-float",
@@ -1240,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1269,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1336,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1417,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-state-store-redb"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "drasi-lib",
@@ -1507,7 +1508,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2110,7 +2111,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2848,7 +2849,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3706,7 +3707,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4314,7 +4315,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4381,7 +4382,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5001,7 +5002,7 @@ dependencies = [
  "getrandom 0.4.1",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5929,7 +5930,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

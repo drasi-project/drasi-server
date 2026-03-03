@@ -345,8 +345,8 @@ stateStore:
   path: ./data/state.redb
 
 plugins:
-  - reference: source/postgres:0.1.8
-  - reference: reaction/sse
+  - ref: source/postgres:0.1.8
+  - ref: reaction/sse
 
 sources: []
 queries: []
@@ -371,14 +371,14 @@ pluginRegistry: ghcr.io/drasi-project
 
 plugins:
   # OCI registry plugins (resolved from pluginRegistry)
-  - reference: source/postgres:0.1.8
-  - reference: reaction/sse
+  - ref: source/postgres:0.1.8
+  - ref: reaction/sse
 
   # Local file
-  - reference: file:///opt/drasi/libdrasi_source_custom.so
+  - ref: file:///opt/drasi/libdrasi_source_custom.so
 
   # HTTP download
-  - reference: https://releases.example.com/libdrasi_reaction_custom.so
+  - ref: https://releases.example.com/libdrasi_reaction_custom.so
 
 sources: []
 queries: []

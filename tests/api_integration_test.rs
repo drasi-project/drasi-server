@@ -33,7 +33,6 @@ use drasi_lib::Query;
 use drasi_server::api::v1::handlers;
 use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
-use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
@@ -60,6 +59,20 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
         .with_source(test_source.clone())
         .with_source(query_source.clone())
         .with_source(auto_source.clone())
+        .with_query(
+            Query::cypher("reaction-query")
+                .query("MATCH (n:Node) RETURN n")
+                .from_source("query-source")
+                .auto_start(false)
+                .build(),
+        )
+        .with_query(
+            Query::cypher("auto-query")
+                .query("MATCH (n:Node) RETURN n")
+                .from_source("auto-source")
+                .auto_start(false)
+                .build(),
+        )
         .with_reaction(test_reaction.clone())
         .with_reaction(auto_reaction.clone())
         .build()
@@ -511,77 +524,9 @@ async fn test_source_logs_stream_via_api() {
     assert!(payload.contains("streamed source log"));
 }
 
-#[tokio::test]
-async fn test_dynamic_source_creation_via_api() {
-    let (router, _, _registry) = create_test_router().await;
-    let base = "/instances/test-server";
-
-    // Create a mock source via API using the tagged enum format
-    let source_config = json!({
-        "kind": "mock",
-        "id": "dynamic-source",
-        "autoStart": false
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("{base}/sources"))
-                .header("content-type", "application/json")
-                .body(Body::from(source_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], true);
-    assert!(json["data"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("created successfully"));
-}
-
-#[tokio::test]
-async fn test_dynamic_reaction_creation_via_api() {
-    let (router, _, _registry) = create_test_router().await;
-    let base = "/instances/test-server";
-
-    // Create a log reaction via API using the tagged enum format
-    // Use empty queries list since autoStart is false - queries can be added later
-    let reaction_config = json!({
-        "kind": "log",
-        "id": "dynamic-reaction",
-        "queries": [],
-        "autoStart": false
-    });
-
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("{base}/reactions"))
-                .header("content-type", "application/json")
-                .body(Body::from(reaction_config.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["success"], true);
-    assert!(json["data"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("created successfully"));
-}
+// Dynamic source/reaction creation via API requires registered plugin descriptors
+// which are only available when the full plugin system is loaded. These are covered
+// by the plugin smoke tests (make test-smoke) instead.
 
 #[tokio::test]
 async fn test_error_handling() {
