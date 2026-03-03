@@ -710,6 +710,15 @@ async fn plugin_install_from_oci(
         issuer: v.issuer,
         subject: v.subject,
     });
+    // Display signature status
+    match &sig_info {
+        Some(sig) if sig.verified => {
+            println!("  {}", cli_styles::sig_verified(&sig.issuer, &sig.subject));
+        }
+        _ => {
+            println!("  {}", cli_styles::sig_unsigned());
+        }
+    }
     lockfile.insert(
         reference.to_string(),
         LockedPlugin {
@@ -823,14 +832,19 @@ async fn plugin_install_from_config(
             {
                 Ok(_download) => {
                     sp.finish_and_clear();
+                    let sig_label = match &_download.verification {
+                        Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
+                        None => cli_styles::sig_unsigned(),
+                    };
                     println!(
-                        "{}",
+                        "{}  {}",
                         cli_styles::success(&format!(
                             "{} {} → {}",
                             dep.reference,
                             cli_styles::version(&locked_entry.version),
                             cli_styles::path(&locked_entry.filename)
-                        ))
+                        )),
+                        sig_label
                     );
                     installed += 1;
                 }
@@ -912,14 +926,19 @@ async fn plugin_install_from_config(
                                 {
                                     Ok(_download) => {
                                         sp.finish_and_clear();
+                                        let sig_label = match &_download.verification {
+                                            Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
+                                            None => cli_styles::sig_unsigned(),
+                                        };
                                         println!(
-                                            "{}",
+                                            "{}  {}",
                                             cli_styles::success(&format!(
                                                 "{} {} → {}",
                                                 dep.reference,
                                                 cli_styles::version(&resolved.version),
                                                 cli_styles::path(&resolved.filename)
-                                            ))
+                                            )),
+                                            sig_label
                                         );
                                         installed += 1;
                                     }
@@ -1048,14 +1067,19 @@ async fn plugin_install_all(
                     {
                         Ok(_download) => {
                             sp.finish_and_clear();
+                            let sig_label = match &_download.verification {
+                                Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
+                                None => cli_styles::sig_unsigned(),
+                            };
                             println!(
-                                "{}",
+                                "{}  {}",
                                 cli_styles::success(&format!(
                                     "{} {} → {}",
                                     reference,
                                     cli_styles::version(&resolved.version),
                                     cli_styles::path(&resolved.filename)
-                                ))
+                                )),
+                                sig_label
                             );
                             success_count += 1;
                         }
@@ -1185,13 +1209,12 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
             if let Some(ref built) = entry.build_timestamp {
                 detail.push_str(&format!("  Built: {}", built));
             }
-            let sig_status = match &entry.signature {
-                Some(sig) if sig.verified => "signed ✓".to_string(),
-                Some(_) => "unverified".to_string(),
-                None => "unsigned".to_string(),
+            let sig_display = match &entry.signature {
+                Some(sig) if sig.verified => cli_styles::sig_verified(&sig.issuer, &sig.subject),
+                Some(_) => cli_styles::sig_unverified(),
+                None => cli_styles::sig_unsigned(),
             };
-            detail.push_str(&format!("  Sig: {}", sig_status));
-            println!("{}", cli_styles::detail(&detail));
+            println!("{}  {}", cli_styles::detail(&detail), sig_display);
         } else {
             println!(
                 "  {} {}",
@@ -1441,13 +1464,18 @@ async fn plugin_upgrade(
                     {
                         Ok(download) => {
                             sp.finish_and_clear();
+                            let sig_label = match &download.verification {
+                                Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
+                                None => cli_styles::sig_unsigned(),
+                            };
                             println!(
-                                "{}",
+                                "{}  {}",
                                 cli_styles::success(&format!(
                                     "{} {}",
                                     ref_key,
                                     cli_styles::version_upgrade(&current.version, &resolved.version)
-                                ))
+                                )),
+                                sig_label
                             );
                             let sig_info = download.verification.map(|v| PluginSignatureInfo {
                                 verified: true,

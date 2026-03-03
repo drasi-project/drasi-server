@@ -137,6 +137,14 @@ pub async fn auto_install_plugins(
                 resolved.push(rp);
             }
             Err(e) => {
+                if config.verify_plugins {
+                    // When verification is enabled, failures are fatal
+                    bail!(
+                        "Plugin '{}' failed verification: {}",
+                        plugin_dep.reference,
+                        e
+                    );
+                }
                 warn!(
                     "Failed to install plugin '{}': {}",
                     plugin_dep.reference, e
@@ -195,11 +203,22 @@ async fn install_if_missing(
 
         let dest_path = plugins_dir.join(&resolved.filename);
         if dest_path.exists() {
+            // Verify signature even for existing plugins when verification is enabled
+            let verification = client
+                .verifier()
+                .verify_plugin(&resolved.reference, &client.auth())
+                .await
+                .with_context(|| {
+                    format!(
+                        "cosign signature verification failed for existing plugin '{}'",
+                        dep.reference
+                    )
+                })?;
             info!(
                 "  ✓ {} v{} — already installed (locked)",
                 dep.reference, resolved.version
             );
-            return Ok((resolved, None));
+            return Ok((resolved, verification));
         }
 
         // Download using the locked digest reference
@@ -230,11 +249,22 @@ async fn install_if_missing(
     // Check if binary already exists
     let dest_path = plugins_dir.join(&resolved.filename);
     if dest_path.exists() {
+        // Verify signature even for existing plugins when verification is enabled
+        let verification = client
+            .verifier()
+            .verify_plugin(&resolved.reference, &client.auth())
+            .await
+            .with_context(|| {
+                format!(
+                    "cosign signature verification failed for existing plugin '{}'",
+                    dep.reference
+                )
+            })?;
         info!(
             "  ✓ {} v{} — already installed",
             dep.reference, resolved.version
         );
-        return Ok((resolved, None));
+        return Ok((resolved, verification));
     }
 
     // Download the binary

@@ -137,6 +137,26 @@ pub fn install_summary(installed: usize, existing: usize, failed: usize) {
     println!("\n  {}", parts.join(", "));
 }
 
+/// Green "verified ✓" signature label.
+pub fn sig_verified(issuer: &str, subject: &str) -> String {
+    format!(
+        "{}  ({}, {})",
+        Style::new().green().bold().apply_to("verified ✓"),
+        Style::new().dim().apply_to(issuer),
+        Style::new().dim().apply_to(subject),
+    )
+}
+
+/// Red "unsigned" signature label (using 256-color for a softer red).
+pub fn sig_unsigned() -> String {
+    Style::new().color256(203).apply_to("unsigned ✗").to_string()
+}
+
+/// Yellow "unverified" signature label.
+pub fn sig_unverified() -> String {
+    Style::new().yellow().apply_to("unverified").to_string()
+}
+
 // ── Spinners ────────────────────────────────────────────────────
 
 /// Create a spinner with a message. Call `.finish_and_clear()` or

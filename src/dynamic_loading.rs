@@ -27,7 +27,7 @@ use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
 use drasi_plugin_sdk::{
     BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
 };
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -58,10 +58,15 @@ pub struct PluginLoadStats {
 /// When a `callback_context` is provided, plugin logs and lifecycle events
 /// are routed into DrasiLib's ComponentLogRegistry and ComponentEventHistory,
 /// making them visible through the REST API.
+///
+/// When `allowed_files` is `Some`, only plugins whose filename matches the
+/// allowlist will be loaded. This is used when `--verify-plugins` is enabled
+/// to ensure only verified plugins are loaded.
 pub fn load_plugins(
     dir: &Path,
     registry: &mut PluginRegistry,
     callback_context: Option<Arc<CallbackContext>>,
+    allowed_files: Option<&std::collections::HashSet<String>>,
 ) -> Result<PluginLoadStats> {
     if !dir.exists() {
         debug!("cdylib plugin directory does not exist: {}", dir.display());
@@ -70,9 +75,32 @@ pub fn load_plugins(
 
     info!("Loading cdylib plugins from: {}", dir.display());
 
-    let config = PluginLoaderConfig {
-        plugin_dir: dir.to_path_buf(),
-        file_patterns: PLUGIN_FILE_PATTERNS.iter().map(|s| s.to_string()).collect(),
+    let config = if let Some(allowed) = allowed_files {
+        // When an allowlist is provided, only load verified plugins.
+        // Warn about any plugin files on disk that are being skipped.
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let is_plugin = PLUGIN_FILE_PATTERNS
+                    .iter()
+                    .any(|pat| matches_glob(pat, &name));
+                if is_plugin && !allowed.contains(&name) {
+                    warn!(
+                        "Skipping unverified plugin: {} (--verify-plugins is enabled)",
+                        name
+                    );
+                }
+            }
+        }
+        PluginLoaderConfig {
+            plugin_dir: dir.to_path_buf(),
+            file_patterns: allowed.iter().cloned().collect(),
+        }
+    } else {
+        PluginLoaderConfig {
+            plugin_dir: dir.to_path_buf(),
+            file_patterns: PLUGIN_FILE_PATTERNS.iter().map(|s| s.to_string()).collect(),
+        }
     };
 
     let loader = PluginLoader::new(config);
@@ -135,4 +163,13 @@ pub fn load_plugins(
     }
 
     Ok(stats)
+}
+
+/// Simple glob pattern matching for plugin file patterns (e.g., `libdrasi_source_*`).
+fn matches_glob(pattern: &str, name: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        name.starts_with(prefix)
+    } else {
+        name == pattern
+    }
 }

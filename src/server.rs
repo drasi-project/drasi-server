@@ -71,9 +71,20 @@ impl DrasiServer {
         register_core_plugins(&mut plugin_registry);
 
         // Auto-install plugins from registry if configured
-        if config.auto_install_plugins && !config.plugins.is_empty() {
-            crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
-        }
+        let verified_files = if config.auto_install_plugins && !config.plugins.is_empty() {
+            let resolved = crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
+            if config.verify_plugins {
+                // When verification is enabled, only load plugins that were verified
+                Some(resolved.iter().map(|r| r.filename.clone()).collect::<std::collections::HashSet<_>>())
+            } else {
+                None
+            }
+        } else if config.verify_plugins {
+            // Verification enabled but no plugins configured — load nothing
+            Some(std::collections::HashSet::new())
+        } else {
+            None
+        };
 
         // Load dynamic plugins from the plugins directory
         if plugins_dir.exists() {
@@ -92,6 +103,7 @@ impl DrasiServer {
                 &plugins_dir,
                 &mut plugin_registry,
                 Some(callback_ctx),
+                verified_files.as_ref(),
             )?;
         }
 
