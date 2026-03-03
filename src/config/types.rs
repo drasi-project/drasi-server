@@ -96,6 +96,14 @@ pub struct DrasiServerConfig {
     /// Plugin dependencies to install from OCI registry
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginDependency>,
+    /// Enable cosign signature verification for downloaded plugins (default: false)
+    #[serde(default)]
+    pub verify_plugins: bool,
+    /// Trusted identities for plugin signature verification.
+    /// When `verify_plugins` is true and this is omitted, defaults to the drasi-project identity.
+    /// When provided, only listed identities are trusted (no implicit default).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trusted_identities: Vec<TrustedIdentity>,
 }
 
 impl Default for DrasiServerConfig {
@@ -118,6 +126,8 @@ impl Default for DrasiServerConfig {
             plugin_registry: default_plugin_registry(),
             auto_install_plugins: false,
             plugins: Vec::new(),
+            verify_plugins: false,
+            trusted_identities: Vec::new(),
         }
     }
 }
@@ -164,6 +174,22 @@ pub struct PluginDependency {
     /// OCI image reference (e.g., "source/postgres:0.1.8")
     #[serde(rename = "ref")]
     pub reference: String,
+}
+
+/// A trusted identity for cosign plugin signature verification.
+///
+/// When `verifyPlugins` is enabled, downloaded plugin signatures must match
+/// at least one trusted identity. Each identity specifies an OIDC issuer
+/// and a subject pattern (glob) to match against the signing certificate.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedIdentity {
+    /// OIDC issuer URL (must match exactly).
+    /// Example: "https://token.actions.githubusercontent.com"
+    pub issuer: String,
+    /// Glob pattern to match against the certificate subject/SAN.
+    /// Example: "https://github.com/drasi-project/*"
+    pub subject_pattern: String,
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)

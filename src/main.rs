@@ -56,6 +56,10 @@ struct Cli {
     /// Directory to scan for plugin shared libraries (defaults to binary directory)
     #[arg(long, global = true)]
     plugins_dir: Option<PathBuf>,
+
+    /// Enable cosign signature verification for downloaded plugins
+    #[arg(long, global = true)]
+    verify_plugins: bool,
 }
 
 #[derive(Subcommand)]
@@ -73,6 +77,10 @@ enum Commands {
         /// Directory to scan for plugin shared libraries (defaults to binary directory)
         #[arg(long)]
         plugins_dir: Option<PathBuf>,
+
+        /// Enable cosign signature verification for downloaded plugins
+        #[arg(long)]
+        verify_plugins: bool,
     },
 
     /// Validate a configuration file without starting the server
@@ -194,17 +202,18 @@ async fn main() -> Result<()> {
             config,
             port,
             plugins_dir,
-        }) => run_server(config, port, plugins_dir).await,
+            verify_plugins,
+        }) => run_server(config, port, plugins_dir, verify_plugins).await,
         Some(Commands::Validate {
             config,
             show_resolved,
         }) => validate_config(config, show_resolved),
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => init::run_init(output, force),
-        Some(Commands::Plugin { action }) => run_plugin_command(action, cli.config, cli.plugins_dir).await,
+        Some(Commands::Plugin { action }) => run_plugin_command(action, cli.config, cli.plugins_dir, cli.verify_plugins).await,
         None => {
             // Default behavior: run the server (backward compatible)
-            run_server(cli.config, cli.port, cli.plugins_dir).await
+            run_server(cli.config, cli.port, cli.plugins_dir, cli.verify_plugins).await
         }
     }
 }
@@ -214,6 +223,7 @@ async fn run_server(
     config_path: PathBuf,
     port_override: Option<u16>,
     plugins_dir: Option<PathBuf>,
+    verify_plugins: bool,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
@@ -320,7 +330,7 @@ async fn run_server(
     };
     info!("Plugins directory: {}", plugins_dir.display());
 
-    let server = DrasiServer::new(config_path, final_port, plugins_dir).await?;
+    let server = DrasiServer::new(config_path, final_port, plugins_dir, verify_plugins).await?;
     server.run().await?;
 
     Ok(())
@@ -509,7 +519,9 @@ async fn run_plugin_command(
     action: PluginAction,
     config_path: PathBuf,
     plugins_dir_override: Option<PathBuf>,
+    _verify_plugins: bool,
 ) -> Result<()> {
+    // TODO: Thread verify_plugins through CLI install/upgrade commands
     let plugins_dir = match plugins_dir_override {
         Some(dir) => dir,
         None => std::env::current_exe()
@@ -610,6 +622,9 @@ async fn plugin_install_from_uri(
             lib_version: metadata.lib_version.clone(),
             platform: metadata.target_triple.clone(),
             filename: fetched.filename,
+            git_commit: Some(metadata.git_commit.clone()).filter(|s| !s.is_empty()),
+            build_timestamp: Some(metadata.build_timestamp.clone()).filter(|s| !s.is_empty()),
+            signature: None,
         },
     );
     lockfile.write(plugins_dir)?;
@@ -640,7 +655,7 @@ async fn plugin_install_from_oci(
     use drasi_host_sdk::registry::{
         OciRegistryClient, PluginResolver, RegistryConfig,
     };
-    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
     let registry_url = get_plugin_registry(config_path, registry_override);
     let auth = get_cli_registry_auth();
@@ -674,7 +689,7 @@ async fn plugin_install_from_oci(
     ));
 
     std::fs::create_dir_all(plugins_dir)?;
-    client
+    let download = client
         .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
         .await?;
 
@@ -690,6 +705,11 @@ async fn plugin_install_from_oci(
     // Update lockfile
     let lockfile_dir = plugins_dir;
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
+    let sig_info = download.verification.map(|v| PluginSignatureInfo {
+        verified: true,
+        issuer: v.issuer,
+        subject: v.subject,
+    });
     lockfile.insert(
         reference.to_string(),
         LockedPlugin {
@@ -701,6 +721,9 @@ async fn plugin_install_from_oci(
             lib_version: resolved.lib_version,
             platform: resolved.platform,
             filename: resolved.filename,
+            git_commit: None,
+            build_timestamp: None,
+            signature: sig_info,
         },
     );
     lockfile.write(lockfile_dir)?;
@@ -798,7 +821,7 @@ async fn plugin_install_from_config(
                 )
                 .await
             {
-                Ok(_path) => {
+                Ok(_download) => {
                     sp.finish_and_clear();
                     println!(
                         "{}",
@@ -887,7 +910,7 @@ async fn plugin_install_from_config(
                                     )
                                     .await
                                 {
-                                    Ok(_path) => {
+                                    Ok(_download) => {
                                         sp.finish_and_clear();
                                         println!(
                                             "{}",
@@ -923,6 +946,9 @@ async fn plugin_install_from_config(
                                     lib_version: resolved.lib_version,
                                     platform: resolved.platform,
                                     filename: resolved.filename,
+                                    git_commit: None,
+                                    build_timestamp: None,
+            signature: None,
                                 },
                             );
                         }
@@ -1020,7 +1046,7 @@ async fn plugin_install_all(
                         )
                         .await
                     {
-                        Ok(_) => {
+                        Ok(_download) => {
                             sp.finish_and_clear();
                             println!(
                                 "{}",
@@ -1056,6 +1082,9 @@ async fn plugin_install_all(
                         lib_version: resolved.lib_version,
                         platform: resolved.platform,
                         filename: resolved.filename,
+                        git_commit: None,
+                        build_timestamp: None,
+            signature: None,
                     },
                 );
             }
@@ -1146,10 +1175,23 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
                 cli_styles::heading(key),
                 cli_styles::version(&format!("v{}", entry.version))
             );
-            println!("{}", cli_styles::detail(&format!(
+            let mut detail = format!(
                 "{} ({:.1} MB)  SDK: {}  Platform: {}",
                 name, size_mb, entry.sdk_version, entry.platform
-            )));
+            );
+            if let Some(ref commit) = entry.git_commit {
+                detail.push_str(&format!("  Commit: {}", commit));
+            }
+            if let Some(ref built) = entry.build_timestamp {
+                detail.push_str(&format!("  Built: {}", built));
+            }
+            let sig_status = match &entry.signature {
+                Some(sig) if sig.verified => "signed ✓".to_string(),
+                Some(_) => "unverified".to_string(),
+                None => "unsigned".to_string(),
+            };
+            detail.push_str(&format!("  Sig: {}", sig_status));
+            println!("{}", cli_styles::detail(&detail));
         } else {
             println!(
                 "  {} {}",
@@ -1292,7 +1334,7 @@ async fn plugin_upgrade(
     use drasi_host_sdk::registry::{
         OciRegistryClient, PluginResolver, RegistryConfig,
     };
-    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
+    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
     if reference.is_none() && !all {
         println!("{}", cli_styles::error("provide a plugin reference or --all"));
@@ -1397,7 +1439,7 @@ async fn plugin_upgrade(
                         .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
                         .await
                     {
-                        Ok(_) => {
+                        Ok(download) => {
                             sp.finish_and_clear();
                             println!(
                                 "{}",
@@ -1407,6 +1449,11 @@ async fn plugin_upgrade(
                                     cli_styles::version_upgrade(&current.version, &resolved.version)
                                 ))
                             );
+                            let sig_info = download.verification.map(|v| PluginSignatureInfo {
+                                verified: true,
+                                issuer: v.issuer,
+                                subject: v.subject,
+                            });
                             new_lockfile.insert(
                                 ref_key.clone(),
                                 LockedPlugin {
@@ -1418,6 +1465,9 @@ async fn plugin_upgrade(
                                     lib_version: resolved.lib_version,
                                     platform: resolved.platform,
                                     filename: resolved.filename,
+                                    git_commit: None,
+                                    build_timestamp: None,
+                                    signature: sig_info,
                                 },
                             );
                             upgraded += 1;

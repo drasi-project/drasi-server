@@ -14,6 +14,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
+- Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
 - Check compilation: `cargo check`
 
 ### Plugin Loading
@@ -101,6 +102,12 @@ port: 8080
 logLevel: "info"
 persistConfig: true  # Enable persistence (default)
 persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
+verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: false)
+
+# Optional trusted identities for plugin signature verification
+# trustedIdentities:
+#   - issuer: "https://accounts.google.com"
+#     subject: "builder@my-org.iam.gserviceaccount.com"
 
 # Optional state store for plugin state persistence
 # stateStore:
@@ -422,3 +429,4 @@ server.run().await?;
 - Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
+- Plugin signature verification is available via `--verify-plugins` CLI flag or `verifyPlugins: true` in config. Uses Sigstore/cosign keyless verification against the Rekor transparency log.

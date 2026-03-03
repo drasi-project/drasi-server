@@ -102,6 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         plugin_registry: None,
         auto_install_plugins: false,
         plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
     };
 
     // Save configuration to file

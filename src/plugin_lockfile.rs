@@ -56,6 +56,26 @@ pub struct LockedPlugin {
     pub platform: String,
     /// Expected binary filename (e.g., libdrasi_source_postgres.so).
     pub filename: String,
+    /// Git commit SHA the plugin was built from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_commit: Option<String>,
+    /// Build timestamp in RFC 3339 format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_timestamp: Option<String>,
+    /// Cosign signature verification result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<PluginSignatureInfo>,
+}
+
+/// Cached cosign signature verification result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginSignatureInfo {
+    /// Whether the signature was successfully verified.
+    pub verified: bool,
+    /// OIDC issuer of the signing certificate.
+    pub issuer: String,
+    /// Subject (SAN) from the signing certificate.
+    pub subject: String,
 }
 
 impl PluginLockfile {
@@ -181,6 +201,9 @@ mod tests {
             lib_version: "0.3.8".to_string(),
             platform: "linux/amd64".to_string(),
             filename: "libdrasi_source_postgres.so".to_string(),
+            git_commit: None,
+            build_timestamp: None,
+            signature: None,
         }
     }
 
@@ -200,6 +223,9 @@ mod tests {
                 lib_version: "0.3.8".to_string(),
                 platform: "linux/amd64".to_string(),
                 filename: "libdrasi_reaction_log.so".to_string(),
+                git_commit: None,
+                build_timestamp: None,
+            signature: None,
             },
         );
 
@@ -257,6 +283,9 @@ mod tests {
                 lib_version: "0.3.8".to_string(),
                 platform: "x86_64-unknown-linux-gnu".to_string(),
                 filename: "libdrasi_source_postgres.so".to_string(),
+                git_commit: None,
+                build_timestamp: None,
+            signature: None,
             },
         );
         assert_eq!(lockfile.plugins.len(), 1);

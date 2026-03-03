@@ -298,6 +298,8 @@ impl ConfigPersistence {
                 plugin_registry: default_plugin_registry(),
                 auto_install_plugins: false,
                 plugins: Vec::new(),
+                verify_plugins: false,
+                trusted_identities: Vec::new(),
             }
         } else {
             // Multiple instances → use multi-instance format (instances array)
@@ -327,6 +329,8 @@ impl ConfigPersistence {
                 plugin_registry: default_plugin_registry(),
                 auto_install_plugins: false,
                 plugins: Vec::new(),
+                verify_plugins: false,
+                trusted_identities: Vec::new(),
             }
         };
 

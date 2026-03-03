@@ -21,11 +21,11 @@
 //! Supports a lockfile (`plugins.lock`) for reproducible installs.
 
 use crate::config::{DrasiServerConfig, PluginDependency};
-use crate::plugin_lockfile::{LockedPlugin, PluginLockfile};
+use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 use anyhow::{Context, Result, bail};
 use drasi_host_sdk::registry::{
-    HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth, RegistryConfig,
-    ResolvedPlugin,
+    CosignVerifier, HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth,
+    RegistryConfig, ResolvedPlugin, TrustedIdentity, VerificationConfig, VerificationResult,
 };
 use log::{info, warn};
 use std::path::Path;
@@ -76,7 +76,13 @@ pub async fn auto_install_plugins(
         auth,
     };
 
-    let client = OciRegistryClient::new(registry_config);
+    // Build verification config from server config
+    let verification = build_verification_config(config);
+    if verification.enabled {
+        info!("Plugin signature verification enabled");
+    }
+
+    let client = OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
 
     // Build host version info from compiled-in dependency versions
     let host_info = build_host_version_info();
@@ -102,7 +108,14 @@ pub async fn auto_install_plugins(
         )
         .await
         {
-            Ok(rp) => {
+            Ok((rp, verification)) => {
+                // Convert verification result to lockfile signature info
+                let sig_info = verification.map(|v| PluginSignatureInfo {
+                    verified: true,
+                    issuer: v.issuer,
+                    subject: v.subject,
+                });
+
                 // Update lockfile with resolved info
                 let locked_entry = LockedPlugin {
                     reference: rp.reference.clone(),
@@ -113,6 +126,9 @@ pub async fn auto_install_plugins(
                     lib_version: rp.lib_version.clone(),
                     platform: rp.platform.clone(),
                     filename: rp.filename.clone(),
+                    git_commit: None,
+                    build_timestamp: None,
+                    signature: sig_info,
                 };
                 if lockfile.get(&plugin_dep.reference) != Some(&locked_entry) {
                     lockfile.insert(plugin_dep.reference.clone(), locked_entry);
@@ -145,6 +161,7 @@ pub async fn auto_install_plugins(
 }
 
 /// Install a single plugin if it's not already present.
+/// Returns the resolved plugin and optional verification result.
 async fn install_if_missing(
     client: &OciRegistryClient,
     resolver: &PluginResolver<'_>,
@@ -153,7 +170,7 @@ async fn install_if_missing(
     default_registry: &str,
     locked: bool,
     lockfile: &PluginLockfile,
-) -> Result<ResolvedPlugin> {
+) -> Result<(ResolvedPlugin, Option<VerificationResult>)> {
     // In locked mode, use the lockfile entry instead of resolving
     if locked {
         let locked_entry = lockfile
@@ -182,7 +199,7 @@ async fn install_if_missing(
                 "  ✓ {} v{} — already installed (locked)",
                 dep.reference, resolved.version
             );
-            return Ok(resolved);
+            return Ok((resolved, None));
         }
 
         // Download using the locked digest reference
@@ -191,7 +208,7 @@ async fn install_if_missing(
             dep.reference, resolved.version
         );
 
-        client
+        let download = client
             .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
             .await
             .with_context(|| format!("failed to download '{}'", dep.reference))?;
@@ -201,7 +218,7 @@ async fn install_if_missing(
             dep.reference, resolved.version, resolved.filename
         );
 
-        return Ok(resolved);
+        return Ok((resolved, download.verification));
     }
 
     // Normal mode: resolve from registry
@@ -217,7 +234,7 @@ async fn install_if_missing(
             "  ✓ {} v{} — already installed",
             dep.reference, resolved.version
         );
-        return Ok(resolved);
+        return Ok((resolved, None));
     }
 
     // Download the binary
@@ -226,7 +243,7 @@ async fn install_if_missing(
         dep.reference, resolved.version, resolved.platform
     );
 
-    client
+    let download = client
         .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
         .await
         .with_context(|| format!("failed to download '{}'", dep.reference))?;
@@ -236,7 +253,7 @@ async fn install_if_missing(
         dep.reference, resolved.version, resolved.filename
     );
 
-    Ok(resolved)
+    Ok((resolved, download.verification))
 }
 
 /// Build host version info from compiled-in dependency versions.
@@ -264,5 +281,20 @@ fn get_registry_auth() -> RegistryAuth {
             }
         }
         None => RegistryAuth::Anonymous,
+    }
+}
+
+/// Build verification config from server configuration.
+fn build_verification_config(config: &DrasiServerConfig) -> VerificationConfig {
+    VerificationConfig {
+        enabled: config.verify_plugins,
+        trusted_identities: config
+            .trusted_identities
+            .iter()
+            .map(|ti| TrustedIdentity {
+                issuer: ti.issuer.clone(),
+                subject_pattern: ti.subject_pattern.clone(),
+            })
+            .collect(),
     }
 }

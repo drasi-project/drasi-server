@@ -141,6 +141,7 @@ drasi-server [OPTIONS] [COMMAND]
 |--------|-------|---------|-------------|
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
+| `--verify-plugins` | | `false` | Enable cosign signature verification for downloaded plugins |
 | `--help` | `-h` | | Print help information |
 | `--version` | `-V` | | Print version information |
 
@@ -319,6 +320,8 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 | `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
+| `verifyPlugins` | boolean | `false` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
+| `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 
 **Example:**
@@ -332,6 +335,10 @@ logLevel: info
 persistConfig: true
 persistIndex: false
 pluginRegistry: ghcr.io/drasi-project
+verifyPlugins: true  # optional: verify plugin signatures via Sigstore (Fulcio + Rekor)
+# trustedIdentities:  # optional: restrict to specific signers
+#   - identity: "release@example.com"
+#     issuer: "https://accounts.google.com"
 
 stateStore:
   kind: redb

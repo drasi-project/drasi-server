@@ -57,9 +57,14 @@ struct PreparedInstance {
 
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
-    pub async fn new(config_path: PathBuf, port: u16, plugins_dir: PathBuf) -> Result<Self> {
-        let config = load_config_file(&config_path)?;
+    pub async fn new(config_path: PathBuf, port: u16, plugins_dir: PathBuf, verify_plugins: bool) -> Result<Self> {
+        let mut config = load_config_file(&config_path)?;
         config.validate()?;
+
+        // CLI --verify-plugins flag overrides config (true if either is set)
+        if verify_plugins {
+            config.verify_plugins = true;
+        }
 
         // Create and populate the plugin registry
         let mut plugin_registry = PluginRegistry::new();

@@ -81,6 +81,8 @@ pub fn build_config(
         plugin_registry: default_plugin_registry(),
         auto_install_plugins: false,
         plugins: Vec::new(),
+        verify_plugins: false,
+        trusted_identities: Vec::new(),
     }
 }
 
