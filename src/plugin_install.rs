@@ -76,11 +76,10 @@ pub async fn auto_install_plugins(
         auth,
     };
 
-    // Build verification config from server config
-    let verification = build_verification_config(config);
-    if verification.enabled {
-        info!("Plugin signature verification enabled");
-    }
+    // Always attempt verification during install to record signature info.
+    // The verify_plugins flag only controls whether unverified plugins are blocked at load time.
+    let mut verification = build_verification_config(config);
+    verification.enabled = true;
 
     let client = OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
 
@@ -137,14 +136,6 @@ pub async fn auto_install_plugins(
                 resolved.push(rp);
             }
             Err(e) => {
-                if config.verify_plugins {
-                    // When verification is enabled, failures are fatal
-                    bail!(
-                        "Plugin '{}' failed verification: {}",
-                        plugin_dep.reference,
-                        e
-                    );
-                }
                 warn!(
                     "Failed to install plugin '{}': {}",
                     plugin_dep.reference, e
@@ -203,17 +194,18 @@ async fn install_if_missing(
 
         let dest_path = plugins_dir.join(&resolved.filename);
         if dest_path.exists() {
-            // Verify signature even for existing plugins when verification is enabled
-            let verification = client
+            // Best-effort verification for existing plugins
+            let verification = match client
                 .verifier()
                 .verify_plugin(&resolved.reference, &client.auth())
                 .await
-                .with_context(|| {
-                    format!(
-                        "cosign signature verification failed for existing plugin '{}'",
-                        dep.reference
-                    )
-                })?;
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("Signature verification failed for '{}': {}", dep.reference, e);
+                    None
+                }
+            };
             info!(
                 "  ✓ {} v{} — already installed (locked)",
                 dep.reference, resolved.version
@@ -249,17 +241,18 @@ async fn install_if_missing(
     // Check if binary already exists
     let dest_path = plugins_dir.join(&resolved.filename);
     if dest_path.exists() {
-        // Verify signature even for existing plugins when verification is enabled
-        let verification = client
+        // Best-effort verification for existing plugins
+        let verification = match client
             .verifier()
             .verify_plugin(&resolved.reference, &client.auth())
             .await
-            .with_context(|| {
-                format!(
-                    "cosign signature verification failed for existing plugin '{}'",
-                    dep.reference
-                )
-            })?;
+        {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("Signature verification failed for '{}': {}", dep.reference, e);
+                None
+            }
+        };
         info!(
             "  ✓ {} v{} — already installed",
             dep.reference, resolved.version
@@ -297,7 +290,7 @@ fn build_host_version_info() -> HostVersionInfo {
 }
 
 /// Get registry auth from environment variables.
-fn get_registry_auth() -> RegistryAuth {
+pub(crate) fn get_registry_auth() -> RegistryAuth {
     let password = std::env::var("OCI_REGISTRY_PASSWORD")
         .or_else(|_| std::env::var("GHCR_TOKEN"))
         .ok();

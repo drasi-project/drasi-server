@@ -250,7 +250,7 @@ async fn run_server(
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
-                std::env::set_var("RUST_LOG", "info");
+                std::env::set_var("RUST_LOG", "info,oci_client=error");
             }
         }
         get_or_init_global_registry();
@@ -298,7 +298,7 @@ async fn run_server(
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
-                std::env::set_var("RUST_LOG", &resolved_settings.log_level);
+                std::env::set_var("RUST_LOG", &format!("{},oci_client=error", &resolved_settings.log_level));
             }
         }
         get_or_init_global_registry();
@@ -521,7 +521,12 @@ async fn run_plugin_command(
     plugins_dir_override: Option<PathBuf>,
     _verify_plugins: bool,
 ) -> Result<()> {
-    // TODO: Thread verify_plugins through CLI install/upgrade commands
+    // Initialize logging for CLI commands — suppress noisy oci_client warnings
+    if std::env::var("RUST_LOG").is_err() {
+        unsafe { std::env::set_var("RUST_LOG", "warn,oci_client=error"); }
+    }
+    get_or_init_global_registry();
+
     let plugins_dir = match plugins_dir_override {
         Some(dir) => dir,
         None => std::env::current_exe()
@@ -549,7 +554,7 @@ async fn run_plugin_command(
                 std::process::exit(1);
             }
         }
-        PluginAction::List => plugin_list(&plugins_dir),
+        PluginAction::List => plugin_list(&plugins_dir, &config_path),
         PluginAction::Search {
             reference,
             registry,
@@ -653,7 +658,7 @@ async fn plugin_install_from_oci(
     registry_override: Option<&str>,
 ) -> Result<()> {
     use drasi_host_sdk::registry::{
-        OciRegistryClient, PluginResolver, RegistryConfig,
+        PluginResolver, RegistryConfig,
     };
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
@@ -664,7 +669,7 @@ async fn plugin_install_from_oci(
         auth,
     };
 
-    let client = OciRegistryClient::new(config);
+    let client = cli_registry_client(config);
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
@@ -710,15 +715,9 @@ async fn plugin_install_from_oci(
         issuer: v.issuer,
         subject: v.subject,
     });
-    // Display signature status
-    match &sig_info {
-        Some(sig) if sig.verified => {
-            println!("  {}", cli_styles::sig_verified(&sig.issuer, &sig.subject));
-        }
-        _ => {
-            println!("  {}", cli_styles::sig_unsigned());
-        }
-    }
+    // Display signature status with trust check
+    let trusted = load_trusted_identities(config_path);
+    println!("  {}", cli_styles::sig_status(sig_info.as_ref(), &trusted));
     lockfile.insert(
         reference.to_string(),
         LockedPlugin {
@@ -814,7 +813,7 @@ async fn plugin_install_from_config(
                 default_registry: registry_url,
                 auth,
             };
-            let client = drasi_host_sdk::registry::OciRegistryClient::new(reg_config);
+            let client = cli_registry_client(reg_config);
 
             let sp = cli_styles::spinner(&format!(
                 "Downloading {} {}...",
@@ -832,10 +831,10 @@ async fn plugin_install_from_config(
             {
                 Ok(_download) => {
                     sp.finish_and_clear();
-                    let sig_label = match &_download.verification {
-                        Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
-                        None => cli_styles::sig_unsigned(),
-                    };
+                    let trusted = load_trusted_identities(config_path);
+                    let sig_label = cli_styles::sig_status_from_result(
+                        _download.verification.as_ref(), &trusted,
+                    );
                     println!(
                         "{}  {}",
                         cli_styles::success(&format!(
@@ -874,7 +873,7 @@ async fn plugin_install_from_config(
             default_registry: registry_url.clone(),
             auth,
         };
-        let client = drasi_host_sdk::registry::OciRegistryClient::new(reg_config);
+        let client = cli_registry_client(reg_config);
         let host_info = cli_host_version_info();
         let resolver = drasi_host_sdk::registry::PluginResolver::new(&client, &host_info);
 
@@ -926,10 +925,10 @@ async fn plugin_install_from_config(
                                 {
                                     Ok(_download) => {
                                         sp.finish_and_clear();
-                                        let sig_label = match &_download.verification {
-                                            Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
-                                            None => cli_styles::sig_unsigned(),
-                                        };
+                                        let trusted = load_trusted_identities(config_path);
+                                        let sig_label = cli_styles::sig_status_from_result(
+                                            _download.verification.as_ref(), &trusted,
+                                        );
                                         println!(
                                             "{}  {}",
                                             cli_styles::success(&format!(
@@ -998,7 +997,7 @@ async fn plugin_install_all(
     registry_override: Option<&str>,
 ) -> Result<()> {
     use drasi_host_sdk::registry::{
-        OciRegistryClient, PluginResolver, RegistryConfig,
+        PluginResolver, RegistryConfig,
     };
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
@@ -1009,7 +1008,7 @@ async fn plugin_install_all(
         auth,
     };
 
-    let client = OciRegistryClient::new(config);
+    let client = cli_registry_client(config);
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
@@ -1067,10 +1066,10 @@ async fn plugin_install_all(
                     {
                         Ok(_download) => {
                             sp.finish_and_clear();
-                            let sig_label = match &_download.verification {
-                                Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
-                                None => cli_styles::sig_unsigned(),
-                            };
+                            let trusted = load_trusted_identities(config_path);
+                            let sig_label = cli_styles::sig_status_from_result(
+                                _download.verification.as_ref(), &trusted,
+                            );
                             println!(
                                 "{}  {}",
                                 cli_styles::success(&format!(
@@ -1134,7 +1133,7 @@ async fn plugin_install_all(
 }
 
 /// List installed plugins in the plugins directory.
-fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
+fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> Result<()> {
     use drasi_server::plugin_lockfile::PluginLockfile;
 
     if !plugins_dir.exists() {
@@ -1177,6 +1176,9 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
         .flatten()
         .unwrap_or_default();
 
+    // Load trusted identities from config
+    let trusted = load_trusted_identities(config_path);
+
     // Build filename → (key, entry) lookup
     let mut by_filename: std::collections::HashMap<&str, (&str, &drasi_server::plugin_lockfile::LockedPlugin)> =
         std::collections::HashMap::new();
@@ -1209,11 +1211,7 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
             if let Some(ref built) = entry.build_timestamp {
                 detail.push_str(&format!("  Built: {}", built));
             }
-            let sig_display = match &entry.signature {
-                Some(sig) if sig.verified => cli_styles::sig_verified(&sig.issuer, &sig.subject),
-                Some(_) => cli_styles::sig_unverified(),
-                None => cli_styles::sig_unsigned(),
-            };
+            let sig_display = cli_styles::sig_status(entry.signature.as_ref(), &trusted);
             println!("{}  {}", cli_styles::detail(&detail), sig_display);
         } else {
             println!(
@@ -1233,7 +1231,6 @@ async fn plugin_search(
     config_path: &std::path::Path,
     registry_override: Option<&str>,
 ) -> Result<()> {
-    use drasi_host_sdk::registry::OciRegistryClient;
     use drasi_host_sdk::registry::RegistryConfig;
 
     let registry_url = get_plugin_registry(config_path, registry_override);
@@ -1243,7 +1240,7 @@ async fn plugin_search(
         auth,
     };
 
-    let client = OciRegistryClient::new(config);
+    let client = cli_registry_client(config);
 
     let sp = cli_styles::spinner(&format!("Searching for {} in {}...", reference, registry_url));
 
@@ -1355,7 +1352,7 @@ async fn plugin_upgrade(
     dry_run: bool,
 ) -> Result<()> {
     use drasi_host_sdk::registry::{
-        OciRegistryClient, PluginResolver, RegistryConfig,
+        PluginResolver, RegistryConfig,
     };
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
@@ -1383,7 +1380,7 @@ async fn plugin_upgrade(
         default_registry: registry_url.clone(),
         auth,
     };
-    let client = OciRegistryClient::new(config);
+    let client = cli_registry_client(config);
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
@@ -1464,10 +1461,10 @@ async fn plugin_upgrade(
                     {
                         Ok(download) => {
                             sp.finish_and_clear();
-                            let sig_label = match &download.verification {
-                                Some(v) => cli_styles::sig_verified(&v.issuer, &v.subject),
-                                None => cli_styles::sig_unsigned(),
-                            };
+                            let trusted = load_trusted_identities(config_path);
+                            let sig_label = cli_styles::sig_status_from_result(
+                                download.verification.as_ref(), &trusted,
+                            );
                             println!(
                                 "{}  {}",
                                 cli_styles::success(&format!(
@@ -1579,5 +1576,48 @@ fn cli_host_version_info() -> drasi_host_sdk::registry::HostVersionInfo {
         core_version: env!("DRASI_CORE_VERSION").to_string(),
         lib_version: env!("DRASI_LIB_VERSION").to_string(),
         target_triple: env!("TARGET_TRIPLE").to_string(),
+    }
+}
+
+/// Create an OCI registry client with best-effort signature verification.
+fn cli_registry_client(
+    config: drasi_host_sdk::registry::RegistryConfig,
+) -> drasi_host_sdk::registry::OciRegistryClient {
+    let verification = drasi_host_sdk::registry::VerificationConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    drasi_host_sdk::registry::OciRegistryClient::with_verifier(
+        config,
+        drasi_host_sdk::registry::CosignVerifier::new(verification),
+    )
+}
+
+/// Load trusted identities from the server config file.
+///
+/// Falls back to the default drasi-project identity if the config file
+/// is missing or has no `trustedIdentities` configured.
+fn load_trusted_identities(
+    config_path: &std::path::Path,
+) -> Vec<drasi_host_sdk::registry::TrustedIdentity> {
+    let config_identities = load_config_file(config_path)
+        .ok()
+        .map(|c| c.trusted_identities)
+        .unwrap_or_default();
+
+    if config_identities.is_empty() {
+        // Default to drasi-project CI identity
+        vec![drasi_host_sdk::registry::TrustedIdentity {
+            issuer: "https://token.actions.githubusercontent.com".to_string(),
+            subject_pattern: "https://github.com/drasi-project/*".to_string(),
+        }]
+    } else {
+        config_identities
+            .iter()
+            .map(|ti| drasi_host_sdk::registry::TrustedIdentity {
+                issuer: ti.issuer.clone(),
+                subject_pattern: ti.subject_pattern.clone(),
+            })
+            .collect()
     }
 }

@@ -137,11 +137,21 @@ pub fn install_summary(installed: usize, existing: usize, failed: usize) {
     println!("\n  {}", parts.join(", "));
 }
 
-/// Green "verified ✓" signature label.
+/// Green "verified ✓" signature label — signed and matches a trusted identity.
 pub fn sig_verified(issuer: &str, subject: &str) -> String {
     format!(
         "{}  ({}, {})",
         Style::new().green().bold().apply_to("verified ✓"),
+        Style::new().dim().apply_to(issuer),
+        Style::new().dim().apply_to(subject),
+    )
+}
+
+/// Yellow "signed ✓" label — signed but signer not in trusted identities.
+pub fn sig_signed_untrusted(issuer: &str, subject: &str) -> String {
+    format!(
+        "{}  ({}, {})",
+        Style::new().yellow().bold().apply_to("signed ✓"),
         Style::new().dim().apply_to(issuer),
         Style::new().dim().apply_to(subject),
     )
@@ -155,6 +165,49 @@ pub fn sig_unsigned() -> String {
 /// Yellow "unverified" signature label.
 pub fn sig_unverified() -> String {
     Style::new().yellow().apply_to("unverified").to_string()
+}
+
+/// Determine the signature display string based on lockfile info and trusted identities.
+///
+/// - Signed + matches trusted identity → green "verified ✓"
+/// - Signed + no trusted identity match → yellow "signed ✓"
+/// - Not signed → salmon "unsigned ✗"
+pub fn sig_status(
+    sig: Option<&drasi_server::plugin_lockfile::PluginSignatureInfo>,
+    trusted: &[drasi_host_sdk::registry::TrustedIdentity],
+) -> String {
+    match sig {
+        Some(s) if s.verified => {
+            let vr = drasi_host_sdk::registry::VerificationResult {
+                issuer: s.issuer.clone(),
+                subject: s.subject.clone(),
+            };
+            if drasi_host_sdk::registry::matches_trusted_identity(&vr, trusted) {
+                sig_verified(&s.issuer, &s.subject)
+            } else {
+                sig_signed_untrusted(&s.issuer, &s.subject)
+            }
+        }
+        Some(_) => sig_unverified(),
+        None => sig_unsigned(),
+    }
+}
+
+/// Determine the signature display string from a raw verification result.
+pub fn sig_status_from_result(
+    result: Option<&drasi_host_sdk::registry::VerificationResult>,
+    trusted: &[drasi_host_sdk::registry::TrustedIdentity],
+) -> String {
+    match result {
+        Some(v) => {
+            if drasi_host_sdk::registry::matches_trusted_identity(v, trusted) {
+                sig_verified(&v.issuer, &v.subject)
+            } else {
+                sig_signed_untrusted(&v.issuer, &v.subject)
+            }
+        }
+        None => sig_unsigned(),
+    }
 }
 
 // ── Spinners ────────────────────────────────────────────────────

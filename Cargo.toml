@@ -64,6 +64,7 @@ drasi-plugin-sdk = "0.3.1"
 
 # Host SDK for dynamic plugin loading
 drasi-host-sdk = { version = "0.1.0", features = ["registry", "fetcher"] }
+oci-client = "0.16"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }

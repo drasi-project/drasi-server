@@ -71,17 +71,96 @@ impl DrasiServer {
         register_core_plugins(&mut plugin_registry);
 
         // Auto-install plugins from registry if configured
-        let verified_files = if config.auto_install_plugins && !config.plugins.is_empty() {
-            let resolved = crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
-            if config.verify_plugins {
-                // When verification is enabled, only load plugins that were verified
-                Some(resolved.iter().map(|r| r.filename.clone()).collect::<std::collections::HashSet<_>>())
+        if config.auto_install_plugins && !config.plugins.is_empty() {
+            crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
+        }
+
+        // When verify_plugins is enabled, re-verify plugin signatures against the
+        // OCI registry (not the lockfile cache, which could be tampered with).
+        // Verifications run in parallel for speed.
+        let verified_files = if config.verify_plugins {
+            use drasi_host_sdk::registry::{
+                matches_trusted_identity, CosignVerifier, RegistryAuth, TrustedIdentity,
+                VerificationConfig,
+            };
+
+            let lockfile = crate::plugin_lockfile::PluginLockfile::read(&plugins_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            if lockfile.is_empty() {
+                warn!("verify_plugins enabled but no lockfile found — no plugins will be loaded");
+                Some(std::collections::HashSet::new())
             } else {
-                None
+                // Build the list of trusted identities from config,
+                // defaulting to drasi-project if none configured.
+                let trusted: Vec<TrustedIdentity> = if config.trusted_identities.is_empty() {
+                    vec![TrustedIdentity {
+                        issuer: "https://token.actions.githubusercontent.com".to_string(),
+                        subject_pattern: "https://github.com/drasi-project/*".to_string(),
+                    }]
+                } else {
+                    config
+                        .trusted_identities
+                        .iter()
+                        .map(|ti| TrustedIdentity {
+                            issuer: ti.issuer.clone(),
+                            subject_pattern: ti.subject_pattern.clone(),
+                        })
+                        .collect()
+                };
+
+                let verifier = CosignVerifier::new(VerificationConfig {
+                    enabled: true,
+                    ..Default::default()
+                });
+
+                // Convert registry auth for the verifier
+                let host_auth = crate::plugin_install::get_registry_auth();
+                let oci_auth = match &host_auth {
+                    RegistryAuth::Anonymous => oci_client::secrets::RegistryAuth::Anonymous,
+                    RegistryAuth::Basic { username, password } => {
+                        oci_client::secrets::RegistryAuth::Basic(
+                            username.clone(),
+                            password.clone(),
+                        )
+                    }
+                };
+
+                // Build batch: (oci_reference, filename) from lockfile
+                let batch: Vec<(String, String)> = lockfile
+                    .plugins
+                    .values()
+                    .map(|p| (p.reference.clone(), p.filename.clone()))
+                    .collect();
+
+                // Verify all plugins in parallel against the registry
+                let results = verifier.verify_batch(batch, &oci_auth).await;
+
+                let allowed: std::collections::HashSet<String> = results
+                    .into_iter()
+                    .filter_map(|(filename, vr)| match vr {
+                        Some(v) if matches_trusted_identity(&v, &trusted) => {
+                            info!(
+                                "✓ {} — verified (issuer={}, subject={})",
+                                filename, v.issuer, v.subject
+                            );
+                            Some(filename)
+                        }
+                        Some(v) => {
+                            warn!(
+                                "✗ {} — signed but not from a trusted identity (issuer={}, subject={})",
+                                filename, v.issuer, v.subject
+                            );
+                            None
+                        }
+                        None => None,
+                    })
+                    .collect();
+
+                Some(allowed)
             }
-        } else if config.verify_plugins {
-            // Verification enabled but no plugins configured — load nothing
-            Some(std::collections::HashSet::new())
         } else {
             None
         };
