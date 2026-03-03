@@ -143,6 +143,9 @@ fn test_empty_config_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -172,6 +175,9 @@ fn test_config_with_state_store_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -212,6 +218,9 @@ fn test_mock_source_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -248,6 +257,9 @@ fn test_http_source_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -283,6 +295,9 @@ fn test_grpc_source_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -342,6 +357,9 @@ fn test_postgres_source_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -411,6 +429,9 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -464,6 +485,9 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -509,6 +533,9 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -550,6 +577,9 @@ fn test_log_reaction_generates_valid_yaml() {
             config: json!({"routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -585,6 +615,9 @@ fn test_http_reaction_generates_valid_yaml() {
             config: json!({"baseUrl": "https://api.example.com", "token": "secret-token", "timeoutMs": 5000, "routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -621,6 +654,9 @@ fn test_sse_reaction_generates_valid_yaml() {
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -660,6 +696,9 @@ fn test_grpc_reaction_generates_valid_yaml() {
             config: json!({"endpoint": "grpc://localhost:50052", "timeoutMs": 5000, "batchSize": 100, "batchFlushTimeoutMs": 1000, "maxRetries": 3, "connectionRetryAttempts": 5, "initialConnectionTimeoutMs": 10000, "metadata": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -717,6 +756,9 @@ fn test_query_generates_valid_yaml() {
         }],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -799,6 +841,9 @@ fn test_full_config_roundtrip() {
             config: json!({"routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");

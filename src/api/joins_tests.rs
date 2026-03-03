@@ -16,7 +16,6 @@
 #[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
     use crate::api::models::query::QueryConfigDto;
-    use crate::api::models::ConfigValue;
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use axum::{Extension, Json};

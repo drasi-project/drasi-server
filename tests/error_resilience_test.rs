@@ -4,30 +4,24 @@
 //! are requested, or dynamic loading encounters problems.
 
 use drasi_server::api::models::BootstrapProviderConfig;
-#[cfg(feature = "builtin-plugins")]
-use drasi_server::builtin_plugins::register_builtin_plugins;
 use drasi_server::config::{ReactionConfig, SourceConfig};
 use drasi_server::factories::{create_reaction, create_source};
 use drasi_server::plugin_registry::PluginRegistry;
-#[cfg(feature = "builtin-plugins")]
 use drasi_server::register_core_plugins;
 
-#[cfg(feature = "builtin-plugins")]
-fn populated_registry() -> PluginRegistry {
+fn core_registry() -> PluginRegistry {
     let mut registry = PluginRegistry::new();
     register_core_plugins(&mut registry);
-    register_builtin_plugins(&mut registry);
     registry
 }
 
 // ==========================================================================
-// Unknown kind errors (require builtin-plugins for populated registry)
+// Unknown kind errors
 // ==========================================================================
 
-#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_source_kind_returns_helpful_error() {
-    let registry = populated_registry();
+    let registry = core_registry();
     let config = SourceConfig {
         kind: "nosql-fantasy".to_string(),
         id: "test".to_string(),
@@ -46,16 +40,11 @@ async fn test_unknown_source_kind_returns_helpful_error() {
         msg.contains("nosql-fantasy"),
         "Error should include the requested kind: {msg}"
     );
-    assert!(
-        msg.contains("mock"),
-        "Error should list available kinds: {msg}"
-    );
 }
 
-#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_reaction_kind_returns_helpful_error() {
-    let registry = populated_registry();
+    let registry = core_registry();
     let config = ReactionConfig {
         kind: "email-blast".to_string(),
         id: "test".to_string(),
@@ -71,28 +60,20 @@ async fn test_unknown_reaction_kind_returns_helpful_error() {
     let msg = err.to_string();
     assert!(msg.contains("Unknown reaction kind"), "Error: {msg}");
     assert!(msg.contains("email-blast"), "Error: {msg}");
-    assert!(msg.contains("log"), "Should list available kinds: {msg}");
 }
 
-#[cfg(feature = "builtin-plugins")]
 #[tokio::test]
 async fn test_unknown_bootstrap_kind_returns_helpful_error() {
-    let registry = populated_registry();
-    let config = SourceConfig {
-        kind: "mock".to_string(),
-        id: "test".to_string(),
-        auto_start: true,
-        bootstrap_provider: Some(BootstrapProviderConfig {
-            kind: "imaginary-bootstrap".to_string(),
-            config: serde_json::json!({}),
-        }),
-        config: serde_json::json!({
-            "dataType": { "type": "generic" },
-            "intervalMs": 1000
-        }),
-    };
+    use drasi_server::factories::create_bootstrap_provider;
 
-    let err = create_source(&registry, config)
+    let registry = core_registry();
+    let bootstrap_config = BootstrapProviderConfig {
+        kind: "imaginary-bootstrap".to_string(),
+        config: serde_json::json!({}),
+    };
+    let source_config_json = serde_json::json!({});
+
+    let err = create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json)
         .await
         .err()
         .expect("Expected error");
@@ -142,98 +123,32 @@ async fn test_empty_registry_rejects_all_reactions() {
 }
 
 // ==========================================================================
-// Bad config JSON (require builtin-plugins for populated registry)
-// ==========================================================================
-
-#[cfg(feature = "builtin-plugins")]
-#[tokio::test]
-async fn test_source_with_completely_wrong_config_structure() {
-    let registry = populated_registry();
-    let config = SourceConfig {
-        kind: "mock".to_string(),
-        id: "bad-config".to_string(),
-        auto_start: true,
-        bootstrap_provider: None,
-        config: serde_json::json!("this is a string, not an object"),
-    };
-
-    // This may succeed or fail depending on how the mock plugin validates config.
-    // The important thing is it doesn't panic.
-    let _result = create_source(&registry, config).await;
-}
-
-#[cfg(feature = "builtin-plugins")]
-#[tokio::test]
-async fn test_reaction_with_null_config() {
-    let registry = populated_registry();
-    let config = ReactionConfig {
-        kind: "log".to_string(),
-        id: "null-config".to_string(),
-        queries: vec![],
-        auto_start: true,
-        config: serde_json::json!(null),
-    };
-
-    // Log reaction should handle null config gracefully (no required fields)
-    let _result = create_reaction(&registry, config).await;
-}
-
-#[cfg(feature = "builtin-plugins")]
-#[tokio::test]
-async fn test_source_with_extra_unknown_fields_in_config() {
-    let registry = populated_registry();
-    let config = SourceConfig {
-        kind: "mock".to_string(),
-        id: "extra-fields".to_string(),
-        auto_start: true,
-        bootstrap_provider: None,
-        config: serde_json::json!({
-            "dataType": { "type": "generic" },
-            "intervalMs": 1000,
-            "unknownField": "should be ignored",
-            "anotherUnknown": 42
-        }),
-    };
-
-    // Plugins may accept or reject extra fields depending on their deserialization.
-    // The key assertion is that this doesn't panic or crash the server.
-    let result = create_source(&registry, config).await;
-    // If it fails, the error should be descriptive (not a panic)
-    if let Err(e) = &result {
-        let msg = e.to_string();
-        assert!(!msg.is_empty(), "Error message should be descriptive");
-    }
-}
-
-// ==========================================================================
 // Dynamic loading edge cases
 // ==========================================================================
 
-#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_nonexistent_dir() {
     let mut registry = PluginRegistry::new();
     let stats = drasi_server::dynamic_loading::load_plugins(
         std::path::Path::new("/nonexistent/path/to/plugins"),
         &mut registry,
+        None,
     )
     .unwrap();
 
     assert_eq!(stats.plugins_loaded, 0);
 }
 
-#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_empty_dir() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let mut registry = PluginRegistry::new();
     let stats =
-        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry).unwrap();
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None).unwrap();
 
     assert_eq!(stats.plugins_loaded, 0);
 }
 
-#[cfg(feature = "dynamic-plugins")]
 #[test]
 fn test_dynamic_loading_skips_non_library_files() {
     let temp_dir = tempfile::TempDir::new().unwrap();
@@ -243,7 +158,7 @@ fn test_dynamic_loading_skips_non_library_files() {
 
     let mut registry = PluginRegistry::new();
     let stats =
-        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry).unwrap();
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None).unwrap();
 
     assert_eq!(
         stats.plugins_loaded, 0,

@@ -20,10 +20,10 @@
 
 use axum::{
     extract::{Extension, Path, Query},
-    http::{header, HeaderValue, StatusCode},
+    http::StatusCode,
     response::{
         sse::{Event, Sse},
-        IntoResponse, Json,
+        Json,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
     InstanceListItem, StatusResponse,
 };
-use crate::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
+use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::ConfigValue;
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
@@ -632,7 +632,7 @@ pub async fn stream_source_logs(
     core.get_source_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let (history, mut receiver) = core
+    let (history, receiver) = core
         .subscribe_source_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -968,7 +968,7 @@ pub async fn stream_query_logs(
     core.get_query_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let (history, mut receiver) = core
+    let (history, receiver) = core
         .subscribe_query_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -1492,7 +1492,7 @@ pub async fn stream_reaction_logs(
     core.get_reaction_info(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let (history, mut receiver) = core
+    let (history, receiver) = core
         .subscribe_reaction_logs(&id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;

@@ -28,8 +28,8 @@ use std::sync::Arc;
 /// Registry of all known plugin descriptors.
 ///
 /// Plugins are registered at startup either from:
-/// - Statically-linked built-in plugins (via [`register_builtin_plugins`])
-/// - Dynamically-loaded shared libraries (future)
+/// - Dynamically-loaded shared libraries (cdylib plugins)
+/// - Core plugins (noop, application)
 /// - Programmatic registration via the builder API
 ///
 /// The registry is immutable after construction and shared across the server

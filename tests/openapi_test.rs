@@ -21,7 +21,6 @@ async fn create_test_router() -> Router {
     let config_persistence = None;
     let mut plugin_registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugin_registry);
-    drasi_server::register_builtin_plugins(&mut plugin_registry);
 
     build_v1_router(
         registry,

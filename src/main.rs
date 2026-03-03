@@ -558,7 +558,6 @@ async fn run_plugin_command(
 }
 
 /// Install a single plugin from the registry.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_single(
     reference: &str,
     plugins_dir: &std::path::Path,
@@ -566,7 +565,6 @@ async fn plugin_install_single(
     registry_override: Option<&str>,
 ) -> Result<()> {
     use drasi_host_sdk::fetcher::{parse_source_type, PluginSourceType};
-    use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     match parse_source_type(reference) {
         PluginSourceType::File | PluginSourceType::Http => {
@@ -579,7 +577,6 @@ async fn plugin_install_single(
 }
 
 /// Install a plugin from a file:// or http(s):// URI.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_from_uri(
     reference: &str,
     plugins_dir: &std::path::Path,
@@ -634,7 +631,6 @@ async fn plugin_install_from_uri(
 }
 
 /// Install a plugin from an OCI registry.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_from_oci(
     reference: &str,
     plugins_dir: &std::path::Path,
@@ -642,7 +638,7 @@ async fn plugin_install_from_oci(
     registry_override: Option<&str>,
 ) -> Result<()> {
     use drasi_host_sdk::registry::{
-        HostVersionInfo, OciRegistryClient, PluginResolver, RegistryConfig,
+        OciRegistryClient, PluginResolver, RegistryConfig,
     };
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
@@ -712,20 +708,7 @@ async fn plugin_install_from_oci(
     Ok(())
 }
 
-#[cfg(not(feature = "dynamic-plugins"))]
-async fn plugin_install_single(
-    _reference: &str,
-    _plugins_dir: &std::path::Path,
-    _config_path: &std::path::Path,
-    _registry_override: Option<&str>,
-) -> Result<()> {
-    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
-    println!("{}", cli_styles::detail("Rebuild with: cargo build --no-default-features --features dynamic-plugins"));
-    std::process::exit(1);
-}
-
 /// Install all plugins from the config file.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_from_config(
     config_path: &std::path::Path,
     plugins_dir: &std::path::Path,
@@ -963,19 +946,7 @@ async fn plugin_install_from_config(
     Ok(())
 }
 
-#[cfg(not(feature = "dynamic-plugins"))]
-async fn plugin_install_from_config(
-    _config_path: &std::path::Path,
-    _plugins_dir: &std::path::Path,
-    _registry_override: Option<&str>,
-    _locked: bool,
-) -> Result<()> {
-    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
-    std::process::exit(1);
-}
-
 /// Install all plugins from the registry's plugin directory.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_install_all(
     plugins_dir: &std::path::Path,
     config_path: &std::path::Path,
@@ -1109,16 +1080,6 @@ async fn plugin_install_all(
     Ok(())
 }
 
-#[cfg(not(feature = "dynamic-plugins"))]
-async fn plugin_install_all(
-    _plugins_dir: &std::path::Path,
-    _config_path: &std::path::Path,
-    _registry_override: Option<&str>,
-) -> Result<()> {
-    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
-    std::process::exit(1);
-}
-
 /// List installed plugins in the plugins directory.
 fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
     use drasi_server::plugin_lockfile::PluginLockfile;
@@ -1202,7 +1163,6 @@ fn plugin_list(plugins_dir: &std::path::Path) -> Result<()> {
 }
 
 /// Search for available versions of a plugin.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_search(
     reference: &str,
     config_path: &std::path::Path,
@@ -1254,16 +1214,6 @@ async fn plugin_search(
     }
 
     Ok(())
-}
-
-#[cfg(not(feature = "dynamic-plugins"))]
-async fn plugin_search(
-    _reference: &str,
-    _config_path: &std::path::Path,
-    _registry_override: Option<&str>,
-) -> Result<()> {
-    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
-    std::process::exit(1);
 }
 
 /// Remove an installed plugin.
@@ -1331,7 +1281,6 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
 }
 
 /// Upgrade installed plugins to newer compatible versions.
-#[cfg(feature = "dynamic-plugins")]
 async fn plugin_upgrade(
     plugins_dir: &std::path::Path,
     config_path: &std::path::Path,
@@ -1514,20 +1463,6 @@ async fn plugin_upgrade(
     Ok(())
 }
 
-#[cfg(not(feature = "dynamic-plugins"))]
-async fn plugin_upgrade(
-    _plugins_dir: &std::path::Path,
-    _config_path: &std::path::Path,
-    _reference: Option<&str>,
-    _all: bool,
-    _registry_override: Option<&str>,
-    _dry_run: bool,
-) -> Result<()> {
-    println!("{}", cli_styles::error("Plugin management requires the 'dynamic-plugins' feature."));
-    println!("{}", cli_styles::detail("Rebuild with: cargo build --no-default-features --features dynamic-plugins"));
-    std::process::exit(1);
-}
-
 /// Get plugin registry URL from config or override.
 fn get_plugin_registry(config_path: &std::path::Path, override_registry: Option<&str>) -> String {
     if let Some(r) = override_registry {
@@ -1543,7 +1478,6 @@ fn get_plugin_registry(config_path: &std::path::Path, override_registry: Option<
 }
 
 /// Get registry auth from environment for CLI commands.
-#[cfg(feature = "dynamic-plugins")]
 fn get_cli_registry_auth() -> drasi_host_sdk::registry::RegistryAuth {
     let password = std::env::var("OCI_REGISTRY_PASSWORD")
         .or_else(|_| std::env::var("GHCR_TOKEN"))
@@ -1561,7 +1495,6 @@ fn get_cli_registry_auth() -> drasi_host_sdk::registry::RegistryAuth {
 }
 
 /// Build host version info for CLI commands.
-#[cfg(feature = "dynamic-plugins")]
 fn cli_host_version_info() -> drasi_host_sdk::registry::HostVersionInfo {
     drasi_host_sdk::registry::HostVersionInfo {
         sdk_version: env!("DRASI_PLUGIN_SDK_VERSION").to_string(),

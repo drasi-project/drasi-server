@@ -24,7 +24,7 @@ use crate::api::models::{
     ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
     ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema, ConfigValueU64Schema,
     ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto, RedbStateStoreConfigDto,
-    SourceSubscriptionConfigDto, StateStoreConfig,
+    SourceSubscriptionConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{

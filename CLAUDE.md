@@ -9,21 +9,15 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ## Development Commands
 
 ### Build and Run
-- Build (static, all plugins built-in): `cargo build`
+- Build: `cargo build`
 - Build release: `cargo build --release`
-- Build (dynamic plugin loading): `make build-dynamic` or `make build-dynamic-release`
-- Build dynamic plugins only: `cargo xtask build-plugins` or `cargo xtask build-plugins --release`
-- Cross-compile (static): `make build-cross TARGET=x86_64-pc-windows-gnu`
-- Cross-compile (dynamic): `make build-dynamic-cross TARGET=x86_64-pc-windows-gnu`
+- Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
 - Check compilation: `cargo check`
 
-### Feature Flags
-- `builtin-plugins` (default): All source/reaction/bootstrap plugins are statically linked into the binary
-- `dynamic-plugins`: Plugins are loaded at runtime from `.so`/`.dylib`/`.dll` files in a `plugins/` subdirectory next to the binary
-
-When building with `dynamic-plugins`, use `make build-dynamic` which builds the server and all plugins as cdylib shared libraries. Plugins are discovered and built using `cargo xtask build-plugins`, which uses `cargo metadata` to find crates with a `dynamic-plugin` feature and builds each one individually. Each plugin is a self-contained cdylib (`.so`/`.dylib`/`.dll`) with its own tokio runtime, communicating via a stable C ABI. Built plugins are placed in `target/{profile}/plugins/`.
+### Plugin Loading
+Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
 ### Testing
 - Run all tests: `cargo test`
@@ -32,7 +26,6 @@ When building with `dynamic-plugins`, use `make build-dynamic` which builds the 
 - Run integration tests: `./tests/run_working_tests.sh`
 - Run plugin smoke tests: `make test-smoke`
 - Run with logging: `RUST_LOG=debug cargo test -- --nocapture`
-- Run dynamic-plugins tests: `cargo test --no-default-features --features dynamic-plugins --lib`
 - Run host-sdk integration tests: `cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test`
 
 ### Code Quality
@@ -56,7 +49,6 @@ This repository contains only the server wrapper functionality:
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 5. **Dynamic Loading** (`src/dynamic_loading.rs`) - Runtime plugin loading from shared libraries
-6. **Builtin Plugins** (`src/builtin_plugins.rs`) - Static plugin registration (gated by `builtin-plugins` feature)
 
 ### Core Components (External Dependency)
 
@@ -271,7 +263,7 @@ server.run().await?;
   - Tests load real cdylib plugins (mock source, log reaction) and exercise the full
     dynamic loading pipeline including metadata validation, callbacks, factory invocation,
     and lifecycle management through FFI vtables.
-  - Prerequisites: build plugins with `make build-dynamic-plugins`
+  - Prerequisites: build plugins in drasi-core with `make build-cdylib-plugins`
 
 ### Running Tests
 - Always run `cargo test` before committing
@@ -425,7 +417,7 @@ server.run().await?;
 ### Important Notes
 - The core functionality is provided by the external `drasi-lib` library
 - Plugins (sources, reactions, bootstrappers) use `cdylib` crate-type and export `drasi_plugin_init()` / `drasi_plugin_metadata()` entry points
-- With `builtin-plugins` (default), plugins are statically linked; with `dynamic-plugins`, they are loaded as self-contained cdylib `.so`/`.dylib`/`.dll` files at runtime via `drasi-host-sdk`
+- Plugins are loaded as self-contained cdylib `.so`/`.dylib`/`.dll` files at runtime via `drasi-host-sdk`
 - Each cdylib plugin has its own tokio runtime and communicates with the host via `#[repr(C)]` vtable structs (stable C ABI)
 - Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib

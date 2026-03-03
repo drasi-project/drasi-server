@@ -26,12 +26,10 @@ use test_support::{create_mock_reaction, create_mock_source};
 
 use axum::{
     body::{to_bytes, Body},
-    extract::Extension,
     http::{Request, StatusCode},
     Router,
 };
 use drasi_lib::Query;
-use drasi_server::api;
 use drasi_server::api::v1::handlers;
 use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
@@ -86,7 +84,6 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     // Use the production router builder
     let mut plugin_registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugin_registry);
-    drasi_server::register_builtin_plugins(&mut plugin_registry);
     let v1_router = build_v1_router(
         registry,
         read_only,
@@ -482,7 +479,7 @@ async fn test_reaction_logs_snapshot_via_api() {
 #[tokio::test]
 async fn test_source_logs_stream_via_api() {
     let (router, _core, registry) = create_test_router().await;
-    let mut response = router
+    let response = router
         .clone()
         .oneshot(
             Request::builder()

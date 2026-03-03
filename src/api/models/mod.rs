@@ -53,11 +53,6 @@ pub use queries::*;
 // Configuration Enums (Top-level aggregates)
 // =============================================================================
 
-/// Helper function for serde defaults
-fn default_true() -> bool {
-    true
-}
-
 /// Source configuration with kind discriminator.
 ///
 /// A generic struct that holds the plugin kind, common fields (id, auto_start,

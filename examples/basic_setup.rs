@@ -99,6 +99,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reactions: vec![],                     // Add reactions using ReactionConfig enum
         queries: vec![available_drivers_query, pending_orders_query],
         instances: vec![], // Empty = use legacy single-instance mode
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
     };
 
     // Save configuration to file

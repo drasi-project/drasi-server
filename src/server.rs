@@ -24,9 +24,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
-#[cfg(feature = "builtin-plugins")]
-use crate::builtin_plugins::register_builtin_plugins;
+use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
@@ -37,9 +35,7 @@ use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
-use drasi_plugin_sdk::{
-    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
-};
+use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -68,11 +64,8 @@ impl DrasiServer {
         // Create and populate the plugin registry
         let mut plugin_registry = PluginRegistry::new();
         register_core_plugins(&mut plugin_registry);
-        #[cfg(feature = "builtin-plugins")]
-        register_builtin_plugins(&mut plugin_registry);
 
         // Auto-install plugins from registry if configured
-        #[cfg(feature = "dynamic-plugins")]
         if config.auto_install_plugins && !config.plugins.is_empty() {
             let rt = tokio::runtime::Handle::current();
             rt.block_on(crate::plugin_install::auto_install_plugins(
@@ -83,7 +76,6 @@ impl DrasiServer {
         }
 
         // Load dynamic plugins from the plugins directory
-        #[cfg(feature = "dynamic-plugins")]
         if plugins_dir.exists() {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
@@ -224,8 +216,6 @@ impl DrasiServer {
     ) -> Self {
         let mut plugin_registry = PluginRegistry::new();
         register_core_plugins(&mut plugin_registry);
-        #[cfg(feature = "builtin-plugins")]
-        register_builtin_plugins(&mut plugin_registry);
         Self {
             instances: vec![PreparedInstance {
                 id_hint: None,
@@ -261,8 +251,6 @@ impl DrasiServer {
 
         let mut plugin_registry = PluginRegistry::new();
         register_core_plugins(&mut plugin_registry);
-        #[cfg(feature = "builtin-plugins")]
-        register_builtin_plugins(&mut plugin_registry);
         Self {
             instances,
             enable_api,
@@ -303,7 +291,7 @@ impl DrasiServer {
         // Take ownership of instances to avoid partial move of self
         let instances = std::mem::take(&mut self.instances);
         for instance in instances {
-            let mut core = instance.core;
+            let core = instance.core;
             let id = match instance.id_hint {
                 Some(id) => id,
                 None => core
@@ -403,7 +391,7 @@ impl DrasiServer {
 
     async fn start_api(
         &self,
-        instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
+        _instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
