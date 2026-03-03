@@ -48,7 +48,7 @@ pub fn build_config(
             bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
-                source_id: source_id,
+                source_id,
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],

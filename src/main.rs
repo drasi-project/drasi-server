@@ -302,7 +302,7 @@ async fn run_server(
             unsafe {
                 std::env::set_var(
                     "RUST_LOG",
-                    &format!("{},oci_client=error", &resolved_settings.log_level),
+                    format!("{},oci_client=error", &resolved_settings.log_level),
                 );
             }
         }
@@ -619,7 +619,7 @@ async fn plugin_install_from_uri(reference: &str, plugins_dir: &std::path::Path)
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     let source_type = parse_source_type(reference);
-    let sp = cli_styles::spinner(&format!("Fetching plugin from {}", reference));
+    let sp = cli_styles::spinner(&format!("Fetching plugin from {reference}"));
 
     let fetched = match source_type {
         PluginSourceType::File => fetch_from_file(reference, plugins_dir).await?,
@@ -688,7 +688,7 @@ async fn plugin_install_from_oci(
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
-    let sp = cli_styles::spinner(&format!("Resolving {} from {}...", reference, registry_url));
+    let sp = cli_styles::spinner(&format!("Resolving {reference} from {registry_url}..."));
 
     let resolved = resolver.resolve(reference, &registry_url).await?;
 
@@ -1031,7 +1031,7 @@ async fn plugin_install_all(
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
-    let sp = cli_styles::spinner(&format!("Discovering plugins from {}...", registry_url));
+    let sp = cli_styles::spinner(&format!("Discovering plugins from {registry_url}..."));
 
     let results = client.search_plugins("*").await?;
     sp.finish_and_clear();
@@ -1055,7 +1055,7 @@ async fn plugin_install_all(
 
     for result in &results {
         let reference = &result.reference;
-        let sp = cli_styles::spinner(&format!("Resolving {}...", reference));
+        let sp = cli_styles::spinner(&format!("Resolving {reference}..."));
         match resolver.resolve(reference, &registry_url).await {
             Ok(resolved) => {
                 sp.finish_and_clear();
@@ -1100,7 +1100,7 @@ async fn plugin_install_all(
                         }
                         Err(e) => {
                             sp.finish_and_clear();
-                            println!("{}", cli_styles::error(&format!("{} — {}", reference, e)));
+                            println!("{}", cli_styles::error(&format!("{reference} — {e}")));
                             fail_count += 1;
                             continue;
                         }
@@ -1126,7 +1126,7 @@ async fn plugin_install_all(
             }
             Err(e) => {
                 sp.finish_and_clear();
-                println!("{}", cli_styles::error(&format!("{} — {}", reference, e)));
+                println!("{}", cli_styles::error(&format!("{reference} — {e}")));
                 fail_count += 1;
             }
         }
@@ -1221,10 +1221,10 @@ fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> 
                 name, size_mb, entry.sdk_version, entry.platform
             );
             if let Some(ref commit) = entry.git_commit {
-                detail.push_str(&format!("  Commit: {}", commit));
+                detail.push_str(&format!("  Commit: {commit}"));
             }
             if let Some(ref built) = entry.build_timestamp {
-                detail.push_str(&format!("  Built: {}", built));
+                detail.push_str(&format!("  Built: {built}"));
             }
             let sig_display = cli_styles::sig_status(entry.signature.as_ref(), &trusted);
             println!("{}  {}", cli_styles::detail(&detail), sig_display);
@@ -1232,7 +1232,7 @@ fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> 
             println!(
                 "  {} {}",
                 cli_styles::heading(name),
-                cli_styles::detail(&format!("({:.1} MB)", size_mb))
+                cli_styles::detail(&format!("({size_mb:.1} MB)"))
             );
         }
     }
@@ -1258,8 +1258,7 @@ async fn plugin_search(
     let client = cli_registry_client(config);
 
     let sp = cli_styles::spinner(&format!(
-        "Searching for {} in {}...",
-        reference, registry_url
+        "Searching for {reference} in {registry_url}..."
     ));
 
     let results = client.search_plugins(reference).await?;
@@ -1268,7 +1267,7 @@ async fn plugin_search(
     if results.is_empty() {
         println!(
             "{}",
-            cli_styles::skip(&format!("No plugins found matching '{}'.", reference))
+            cli_styles::skip(&format!("No plugins found matching '{reference}'."))
         );
         return Ok(());
     }
@@ -1317,7 +1316,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     let target = plugins_dir.join(reference);
     if target.exists() {
         fs::remove_file(&target)?;
-        println!("{}", cli_styles::success(&format!("Removed {}", reference)));
+        println!("{}", cli_styles::success(&format!("Removed {reference}")));
         removed = true;
     }
 
@@ -1335,7 +1334,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
                 let path = plugins_dir.join(pattern);
                 if path.exists() {
                     fs::remove_file(&path)?;
-                    println!("{}", cli_styles::success(&format!("Removed {}", pattern)));
+                    println!("{}", cli_styles::success(&format!("Removed {pattern}")));
                     removed = true;
                     break;
                 }
@@ -1346,7 +1345,7 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     if !removed {
         println!(
             "{}",
-            cli_styles::error(&format!("Plugin not found: {}", reference))
+            cli_styles::error(&format!("Plugin not found: {reference}"))
         );
         std::process::exit(1);
     }
@@ -1416,7 +1415,7 @@ async fn plugin_upgrade(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     } else {
-        let ref_str = reference.unwrap();
+        let ref_str = reference.expect("reference must be provided when not listing all");
         match lockfile.get(ref_str) {
             Some(entry) => vec![(ref_str.to_string(), entry.clone())],
             None => {
@@ -1428,7 +1427,7 @@ async fn plugin_upgrade(
                 if matches.is_empty() {
                     println!(
                         "{}",
-                        cli_styles::error(&format!("Plugin '{}' not found in lockfile.", ref_str))
+                        cli_styles::error(&format!("Plugin '{ref_str}' not found in lockfile."))
                     );
                     println!("{}", cli_styles::detail("Installed plugins:"));
                     for key in lockfile.keys() {
@@ -1462,14 +1461,14 @@ async fn plugin_upgrade(
         {
             println!(
                 "{}",
-                cli_styles::skip(&format!("{} — non-OCI source", ref_key))
+                cli_styles::skip(&format!("{ref_key} — non-OCI source"))
             );
             skipped += 1;
             continue;
         }
 
         let base_ref = ref_key.split(':').next().unwrap_or(ref_key);
-        let sp = cli_styles::spinner(&format!("Checking {}...", ref_key));
+        let sp = cli_styles::spinner(&format!("Checking {ref_key}..."));
 
         match resolver.resolve(base_ref, &registry_url).await {
             Ok(resolved) => {
@@ -1539,7 +1538,7 @@ async fn plugin_upgrade(
                             sp.finish_and_clear();
                             println!(
                                 "{}",
-                                cli_styles::error(&format!("{} — download failed: {}", ref_key, e))
+                                cli_styles::error(&format!("{ref_key} — download failed: {e}"))
                             );
                             failed += 1;
                         }
@@ -1560,7 +1559,7 @@ async fn plugin_upgrade(
                 sp.finish_and_clear();
                 println!(
                     "{}",
-                    cli_styles::error(&format!("{} — resolve failed: {}", ref_key, e))
+                    cli_styles::error(&format!("{ref_key} — resolve failed: {e}"))
                 );
                 failed += 1;
             }

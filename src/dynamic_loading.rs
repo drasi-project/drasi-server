@@ -86,8 +86,7 @@ pub fn load_plugins(
                     .any(|pat| matches_glob(pat, &name));
                 if is_plugin && !allowed.contains(&name) {
                     warn!(
-                        "Skipping unverified plugin: {} (--verify-plugins is enabled)",
-                        name
+                        "Skipping unverified plugin: {name} (--verify-plugins is enabled)",
                     );
                 }
             }
@@ -124,21 +123,21 @@ pub fn load_plugins(
 
         for proxy in plugin.source_plugins {
             let kind = proxy.kind().to_string();
-            info!("  [cdylib] source: {} ({})", kind, meta);
+            info!("  [cdylib] source: {kind} ({meta})");
             registry.register_source(Arc::new(proxy));
             stats.source_descriptors += 1;
         }
 
         for proxy in plugin.reaction_plugins {
             let kind = proxy.kind().to_string();
-            info!("  [cdylib] reaction: {} ({})", kind, meta);
+            info!("  [cdylib] reaction: {kind} ({meta})");
             registry.register_reaction(Arc::new(proxy));
             stats.reaction_descriptors += 1;
         }
 
         for proxy in plugin.bootstrap_plugins {
             let kind = proxy.kind().to_string();
-            info!("  [cdylib] bootstrap: {} ({})", kind, meta);
+            info!("  [cdylib] bootstrap: {kind} ({meta})");
             registry.register_bootstrapper(Arc::new(proxy));
             stats.bootstrap_descriptors += 1;
         }

@@ -272,7 +272,7 @@ fn inject_schemas_from_json(
     let map: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(json_str) {
         Ok(m) => m,
         Err(e) => {
-            log::warn!("Failed to parse plugin schema JSON: {}", e);
+            log::warn!("Failed to parse plugin schema JSON: {e}");
             return;
         }
     };
