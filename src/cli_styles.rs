@@ -95,7 +95,10 @@ pub fn summary(upgraded: usize, up_to_date: usize, skipped: usize, failed: usize
         ));
     }
     if up_to_date > 0 {
-        parts.push(format!("{} up to date", Style::new().bold().apply_to(up_to_date)));
+        parts.push(format!(
+            "{} up to date",
+            Style::new().bold().apply_to(up_to_date)
+        ));
     }
     if skipped > 0 {
         parts.push(format!(
@@ -125,7 +128,10 @@ pub fn install_summary(installed: usize, existing: usize, failed: usize) {
         ));
     }
     if existing > 0 {
-        parts.push(format!("{} already installed", Style::new().bold().apply_to(existing)));
+        parts.push(format!(
+            "{} already installed",
+            Style::new().bold().apply_to(existing)
+        ));
     }
     if failed > 0 {
         parts.push(format!(
@@ -159,7 +165,10 @@ pub fn sig_signed_untrusted(issuer: &str, subject: &str) -> String {
 
 /// Red "unsigned" signature label (using 256-color for a softer red).
 pub fn sig_unsigned() -> String {
-    Style::new().color256(203).apply_to("unsigned ✗").to_string()
+    Style::new()
+        .color256(203)
+        .apply_to("unsigned ✗")
+        .to_string()
 }
 
 /// Yellow "unverified" signature label.

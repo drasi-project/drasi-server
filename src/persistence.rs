@@ -13,7 +13,10 @@
 // limitations under the License.
 
 use crate::api::models::{ConfigValue, QueryConfigDto};
-use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, SourceConfig, default_plugin_registry};
+use crate::config::{
+    default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig,
+    SourceConfig,
+};
 use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
 use indexmap::IndexMap;

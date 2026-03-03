@@ -22,7 +22,7 @@
 
 use crate::config::{DrasiServerConfig, PluginDependency};
 use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use drasi_host_sdk::registry::{
     CosignVerifier, HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth,
     RegistryConfig, ResolvedPlugin, TrustedIdentity, VerificationConfig, VerificationResult,
@@ -62,8 +62,7 @@ pub async fn auto_install_plugins(
 
     // Read existing lockfile
     let lockfile_dir = plugins_dir;
-    let mut lockfile = PluginLockfile::read(lockfile_dir)?
-        .unwrap_or_default();
+    let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
 
     if locked && lockfile.plugins.is_empty() {
         bail!("--locked flag used but no plugins.lock file found");
@@ -81,7 +80,8 @@ pub async fn auto_install_plugins(
     let mut verification = build_verification_config(config);
     verification.enabled = true;
 
-    let client = OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
+    let client =
+        OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
 
     // Build host version info from compiled-in dependency versions
     let host_info = build_host_version_info();
@@ -89,8 +89,7 @@ pub async fn auto_install_plugins(
     let resolver = PluginResolver::new(&client, &host_info);
 
     // Ensure plugins directory exists
-    std::fs::create_dir_all(plugins_dir)
-        .context("failed to create plugins directory")?;
+    std::fs::create_dir_all(plugins_dir).context("failed to create plugins directory")?;
 
     let mut resolved = Vec::new();
     let mut lockfile_updated = false;
@@ -136,10 +135,7 @@ pub async fn auto_install_plugins(
                 resolved.push(rp);
             }
             Err(e) => {
-                warn!(
-                    "Failed to install plugin '{}': {}",
-                    plugin_dep.reference, e
-                );
+                warn!("Failed to install plugin '{}': {}", plugin_dep.reference, e);
             }
         }
     }
@@ -172,14 +168,12 @@ async fn install_if_missing(
 ) -> Result<(ResolvedPlugin, Option<VerificationResult>)> {
     // In locked mode, use the lockfile entry instead of resolving
     if locked {
-        let locked_entry = lockfile
-            .get(&dep.reference)
-            .with_context(|| {
-                format!(
-                    "plugin '{}' not found in plugins.lock (required by --locked)",
-                    dep.reference
-                )
-            })?;
+        let locked_entry = lockfile.get(&dep.reference).with_context(|| {
+            format!(
+                "plugin '{}' not found in plugins.lock (required by --locked)",
+                dep.reference
+            )
+        })?;
 
         let resolved = ResolvedPlugin {
             reference: locked_entry.reference.clone(),
@@ -202,7 +196,10 @@ async fn install_if_missing(
             {
                 Ok(result) => result,
                 Err(e) => {
-                    warn!("Signature verification failed for '{}': {}", dep.reference, e);
+                    warn!(
+                        "Signature verification failed for '{}': {}",
+                        dep.reference, e
+                    );
                     None
                 }
             };
@@ -249,7 +246,10 @@ async fn install_if_missing(
         {
             Ok(result) => result,
             Err(e) => {
-                warn!("Signature verification failed for '{}': {}", dep.reference, e);
+                warn!(
+                    "Signature verification failed for '{}': {}",
+                    dep.reference, e
+                );
                 None
             }
         };

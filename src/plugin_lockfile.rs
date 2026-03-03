@@ -18,7 +18,7 @@
 //! and filenames for each plugin dependency. This enables reproducible installs
 //! and the `--locked` flag to enforce exact versions.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -115,8 +115,7 @@ impl PluginLockfile {
     /// Write the lockfile to disk.
     pub fn write(&self, dir: &Path) -> Result<()> {
         let path = dir.join(LOCKFILE_NAME);
-        let content = toml::to_string_pretty(self)
-            .context("failed to serialize lockfile")?;
+        let content = toml::to_string_pretty(self).context("failed to serialize lockfile")?;
 
         // Atomic write: temp file + rename
         let tmp_path = dir.join(".plugins.lock.tmp");
@@ -225,7 +224,7 @@ mod tests {
                 filename: "libdrasi_reaction_log.so".to_string(),
                 git_commit: None,
                 build_timestamp: None,
-            signature: None,
+                signature: None,
             },
         );
 
@@ -234,10 +233,7 @@ mod tests {
         let loaded = PluginLockfile::read(dir.path()).unwrap().unwrap();
         assert_eq!(loaded.version, 1);
         assert_eq!(loaded.plugins.len(), 2);
-        assert_eq!(
-            loaded.get("source/postgres").unwrap(),
-            &sample_entry()
-        );
+        assert_eq!(loaded.get("source/postgres").unwrap(), &sample_entry());
     }
 
     #[test]
@@ -285,7 +281,7 @@ mod tests {
                 filename: "libdrasi_source_postgres.so".to_string(),
                 git_commit: None,
                 build_timestamp: None,
-            signature: None,
+                signature: None,
             },
         );
         assert_eq!(lockfile.plugins.len(), 1);
@@ -294,10 +290,8 @@ mod tests {
         lockfile.insert("source/postgres".to_string(), sample_entry());
         assert_eq!(lockfile.plugins.len(), 1);
         assert!(lockfile.get("source/postgres").is_some());
-        assert!(
-            lockfile
-                .get("file:///path/to/libdrasi_source_postgres.so")
-                .is_none()
-        );
+        assert!(lockfile
+            .get("file:///path/to/libdrasi_source_postgres.so")
+            .is_none());
     }
 }

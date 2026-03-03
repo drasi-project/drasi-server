@@ -57,7 +57,12 @@ struct PreparedInstance {
 
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
-    pub async fn new(config_path: PathBuf, port: u16, plugins_dir: PathBuf, verify_plugins: bool) -> Result<Self> {
+    pub async fn new(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        verify_plugins: bool,
+    ) -> Result<Self> {
         let mut config = load_config_file(&config_path)?;
         config.validate()?;
 
@@ -121,10 +126,7 @@ impl DrasiServer {
                 let oci_auth = match &host_auth {
                     RegistryAuth::Anonymous => oci_client::secrets::RegistryAuth::Anonymous,
                     RegistryAuth::Basic { username, password } => {
-                        oci_client::secrets::RegistryAuth::Basic(
-                            username.clone(),
-                            password.clone(),
-                        )
+                        oci_client::secrets::RegistryAuth::Basic(username.clone(), password.clone())
                     }
                 };
 

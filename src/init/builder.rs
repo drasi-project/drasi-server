@@ -20,7 +20,7 @@ use drasi_lib::config::QueryLanguage;
 use drasi_server::api::models::{
     ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
 };
-use drasi_server::{DrasiServerConfig, default_plugin_registry};
+use drasi_server::{default_plugin_registry, DrasiServerConfig};
 
 use super::prompts::ServerSettings;
 

@@ -322,12 +322,7 @@ fn inject_schemas_from_json(
 fn build_discriminator(property_name: &str, entries: &[(String, String)]) -> Discriminator {
     let mapping: BTreeMap<String, String> = entries
         .iter()
-        .map(|(kind, schema_name)| {
-            (
-                kind.clone(),
-                format!("#/components/schemas/{schema_name}"),
-            )
-        })
+        .map(|(kind, schema_name)| (kind.clone(), format!("#/components/schemas/{schema_name}")))
         .collect();
 
     Discriminator {

@@ -145,7 +145,8 @@ fn test_dynamic_loading_empty_dir() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let mut registry = PluginRegistry::new();
     let stats =
-        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None, None).unwrap();
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None, None)
+            .unwrap();
 
     assert_eq!(stats.plugins_loaded, 0);
 }
@@ -159,7 +160,8 @@ fn test_dynamic_loading_skips_non_library_files() {
 
     let mut registry = PluginRegistry::new();
     let stats =
-        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None, None).unwrap();
+        drasi_server::dynamic_loading::load_plugins(temp_dir.path(), &mut registry, None, None)
+            .unwrap();
 
     assert_eq!(
         stats.plugins_loaded, 0,

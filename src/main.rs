@@ -210,7 +210,9 @@ async fn main() -> Result<()> {
         }) => validate_config(config, show_resolved),
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => init::run_init(output, force),
-        Some(Commands::Plugin { action }) => run_plugin_command(action, cli.config, cli.plugins_dir, cli.verify_plugins).await,
+        Some(Commands::Plugin { action }) => {
+            run_plugin_command(action, cli.config, cli.plugins_dir, cli.verify_plugins).await
+        }
         None => {
             // Default behavior: run the server (backward compatible)
             run_server(cli.config, cli.port, cli.plugins_dir, cli.verify_plugins).await
@@ -298,7 +300,10 @@ async fn run_server(
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
-                std::env::set_var("RUST_LOG", &format!("{},oci_client=error", &resolved_settings.log_level));
+                std::env::set_var(
+                    "RUST_LOG",
+                    &format!("{},oci_client=error", &resolved_settings.log_level),
+                );
             }
         }
         get_or_init_global_registry();
@@ -523,7 +528,9 @@ async fn run_plugin_command(
 ) -> Result<()> {
     // Initialize logging for CLI commands — suppress noisy oci_client warnings
     if std::env::var("RUST_LOG").is_err() {
-        unsafe { std::env::set_var("RUST_LOG", "warn,oci_client=error"); }
+        unsafe {
+            std::env::set_var("RUST_LOG", "warn,oci_client=error");
+        }
     }
     get_or_init_global_registry();
 
@@ -550,7 +557,10 @@ async fn run_plugin_command(
                 plugin_install_single(&ref_str, &plugins_dir, &config_path, registry.as_deref())
                     .await
             } else {
-                println!("{}", cli_styles::error("provide a plugin reference or --from-config"));
+                println!(
+                    "{}",
+                    cli_styles::error("provide a plugin reference or --from-config")
+                );
                 std::process::exit(1);
             }
         }
@@ -569,7 +579,15 @@ async fn run_plugin_command(
             registry,
             dry_run,
         } => {
-            plugin_upgrade(&plugins_dir, &config_path, reference.as_deref(), all, registry.as_deref(), dry_run).await
+            plugin_upgrade(
+                &plugins_dir,
+                &config_path,
+                reference.as_deref(),
+                all,
+                registry.as_deref(),
+                dry_run,
+            )
+            .await
         }
     }
 }
@@ -594,11 +612,10 @@ async fn plugin_install_single(
 }
 
 /// Install a plugin from a file:// or http(s):// URI.
-async fn plugin_install_from_uri(
-    reference: &str,
-    plugins_dir: &std::path::Path,
-) -> Result<()> {
-    use drasi_host_sdk::fetcher::{fetch_from_file, fetch_from_http, parse_source_type, read_plugin_metadata, PluginSourceType};
+async fn plugin_install_from_uri(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
+    use drasi_host_sdk::fetcher::{
+        fetch_from_file, fetch_from_http, parse_source_type, read_plugin_metadata, PluginSourceType,
+    };
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     let source_type = parse_source_type(reference);
@@ -657,9 +674,7 @@ async fn plugin_install_from_oci(
     config_path: &std::path::Path,
     registry_override: Option<&str>,
 ) -> Result<()> {
-    use drasi_host_sdk::registry::{
-        PluginResolver, RegistryConfig,
-    };
+    use drasi_host_sdk::registry::{PluginResolver, RegistryConfig};
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
     let registry_url = get_plugin_registry(config_path, registry_override);
@@ -688,10 +703,7 @@ async fn plugin_install_from_oci(
         ))
     );
 
-    let sp = cli_styles::spinner(&format!(
-        "Downloading {}...",
-        resolved.filename
-    ));
+    let sp = cli_styles::spinner(&format!("Downloading {}...", resolved.filename));
 
     std::fs::create_dir_all(plugins_dir)?;
     let download = client
@@ -751,7 +763,10 @@ async fn plugin_install_from_config(
     let config = load_config_file(config_path)?;
 
     if config.plugins.is_empty() {
-        println!("{}", cli_styles::skip("No plugins declared in config file."));
+        println!(
+            "{}",
+            cli_styles::skip("No plugins declared in config file.")
+        );
         return Ok(());
     }
 
@@ -759,7 +774,10 @@ async fn plugin_install_from_config(
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
 
     if locked && lockfile.plugins.is_empty() {
-        println!("{}", cli_styles::error("--locked flag used but no plugins.lock file found"));
+        println!(
+            "{}",
+            cli_styles::error("--locked flag used but no plugins.lock file found")
+        );
         std::process::exit(1);
     }
 
@@ -822,18 +840,15 @@ async fn plugin_install_from_config(
 
             std::fs::create_dir_all(plugins_dir)?;
             match client
-                .download_plugin(
-                    &locked_entry.reference,
-                    plugins_dir,
-                    &locked_entry.filename,
-                )
+                .download_plugin(&locked_entry.reference, plugins_dir, &locked_entry.filename)
                 .await
             {
                 Ok(_download) => {
                     sp.finish_and_clear();
                     let trusted = load_trusted_identities(config_path);
                     let sig_label = cli_styles::sig_status_from_result(
-                        _download.verification.as_ref(), &trusted,
+                        _download.verification.as_ref(),
+                        &trusted,
                     );
                     println!(
                         "{}  {}",
@@ -883,7 +898,9 @@ async fn plugin_install_from_config(
                 drasi_host_sdk::fetcher::PluginSourceType::File
                 | drasi_host_sdk::fetcher::PluginSourceType::Http => {
                     match plugin_install_from_uri(&dep.reference, plugins_dir).await {
-                        Ok(()) => { installed += 1; }
+                        Ok(()) => {
+                            installed += 1;
+                        }
                         Err(e) => {
                             println!(
                                 "{}",
@@ -927,7 +944,8 @@ async fn plugin_install_from_config(
                                         sp.finish_and_clear();
                                         let trusted = load_trusted_identities(config_path);
                                         let sig_label = cli_styles::sig_status_from_result(
-                                            _download.verification.as_ref(), &trusted,
+                                            _download.verification.as_ref(),
+                                            &trusted,
                                         );
                                         println!(
                                             "{}  {}",
@@ -945,7 +963,10 @@ async fn plugin_install_from_config(
                                         sp.finish_and_clear();
                                         println!(
                                             "{}",
-                                            cli_styles::error(&format!("{} — {}", dep.reference, e))
+                                            cli_styles::error(&format!(
+                                                "{} — {}",
+                                                dep.reference, e
+                                            ))
                                         );
                                         failed += 1;
                                         continue;
@@ -966,7 +987,7 @@ async fn plugin_install_from_config(
                                     filename: resolved.filename,
                                     git_commit: None,
                                     build_timestamp: None,
-            signature: None,
+                                    signature: None,
                                 },
                             );
                         }
@@ -996,9 +1017,7 @@ async fn plugin_install_all(
     config_path: &std::path::Path,
     registry_override: Option<&str>,
 ) -> Result<()> {
-    use drasi_host_sdk::registry::{
-        PluginResolver, RegistryConfig,
-    };
+    use drasi_host_sdk::registry::{PluginResolver, RegistryConfig};
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile};
 
     let registry_url = get_plugin_registry(config_path, registry_override);
@@ -1057,18 +1076,15 @@ async fn plugin_install_all(
                         reference, resolved.version
                     ));
                     match client
-                        .download_plugin(
-                            &resolved.reference,
-                            plugins_dir,
-                            &resolved.filename,
-                        )
+                        .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
                         .await
                     {
                         Ok(_download) => {
                             sp.finish_and_clear();
                             let trusted = load_trusted_identities(config_path);
                             let sig_label = cli_styles::sig_status_from_result(
-                                _download.verification.as_ref(), &trusted,
+                                _download.verification.as_ref(),
+                                &trusted,
                             );
                             println!(
                                 "{}  {}",
@@ -1084,10 +1100,7 @@ async fn plugin_install_all(
                         }
                         Err(e) => {
                             sp.finish_and_clear();
-                            println!(
-                                "{}",
-                                cli_styles::error(&format!("{} — {}", reference, e))
-                            );
+                            println!("{}", cli_styles::error(&format!("{} — {}", reference, e)));
                             fail_count += 1;
                             continue;
                         }
@@ -1107,16 +1120,13 @@ async fn plugin_install_all(
                         filename: resolved.filename,
                         git_commit: None,
                         build_timestamp: None,
-            signature: None,
+                        signature: None,
                     },
                 );
             }
             Err(e) => {
                 sp.finish_and_clear();
-                println!(
-                    "{}",
-                    cli_styles::error(&format!("{} — {}", reference, e))
-                );
+                println!("{}", cli_styles::error(&format!("{} — {}", reference, e)));
                 fail_count += 1;
             }
         }
@@ -1180,8 +1190,10 @@ fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> 
     let trusted = load_trusted_identities(config_path);
 
     // Build filename → (key, entry) lookup
-    let mut by_filename: std::collections::HashMap<&str, (&str, &drasi_server::plugin_lockfile::LockedPlugin)> =
-        std::collections::HashMap::new();
+    let mut by_filename: std::collections::HashMap<
+        &str,
+        (&str, &drasi_server::plugin_lockfile::LockedPlugin),
+    > = std::collections::HashMap::new();
     for (key, entry) in &lockfile.plugins {
         by_filename.insert(&entry.filename, (key, entry));
     }
@@ -1189,7 +1201,10 @@ fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> 
     plugins.sort_by(|a, b| a.0.cmp(&b.0));
 
     cli_styles::section(&format!("Installed plugins ({})", plugins.len()));
-    println!("{}", cli_styles::detail(&format!("Directory: {}", plugins_dir.display())));
+    println!(
+        "{}",
+        cli_styles::detail(&format!("Directory: {}", plugins_dir.display()))
+    );
     println!();
 
     for (name, size) in &plugins {
@@ -1242,7 +1257,10 @@ async fn plugin_search(
 
     let client = cli_registry_client(config);
 
-    let sp = cli_styles::spinner(&format!("Searching for {} in {}...", reference, registry_url));
+    let sp = cli_styles::spinner(&format!(
+        "Searching for {} in {}...",
+        reference, registry_url
+    ));
 
     let results = client.search_plugins(reference).await?;
     sp.finish_and_clear();
@@ -1326,7 +1344,10 @@ fn plugin_remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     }
 
     if !removed {
-        println!("{}", cli_styles::error(&format!("Plugin not found: {}", reference)));
+        println!(
+            "{}",
+            cli_styles::error(&format!("Plugin not found: {}", reference))
+        );
         std::process::exit(1);
     }
 
@@ -1351,13 +1372,14 @@ async fn plugin_upgrade(
     registry_override: Option<&str>,
     dry_run: bool,
 ) -> Result<()> {
-    use drasi_host_sdk::registry::{
-        PluginResolver, RegistryConfig,
-    };
+    use drasi_host_sdk::registry::{PluginResolver, RegistryConfig};
     use drasi_server::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 
     if reference.is_none() && !all {
-        println!("{}", cli_styles::error("provide a plugin reference or --all"));
+        println!(
+            "{}",
+            cli_styles::error("provide a plugin reference or --all")
+        );
         std::process::exit(1);
     }
 
@@ -1369,7 +1391,10 @@ async fn plugin_upgrade(
                 "{}",
                 cli_styles::error("No plugins.lock found or no plugins installed.")
             );
-            println!("{}", cli_styles::detail("Use 'plugin install' to install plugins first."));
+            println!(
+                "{}",
+                cli_styles::detail("Use 'plugin install' to install plugins first.")
+            );
             std::process::exit(1);
         }
     };
@@ -1386,7 +1411,10 @@ async fn plugin_upgrade(
 
     // Determine which plugins to upgrade
     let to_check: Vec<(String, LockedPlugin)> = if all {
-        lockfile.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        lockfile
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     } else {
         let ref_str = reference.unwrap();
         match lockfile.get(ref_str) {
@@ -1428,8 +1456,14 @@ async fn plugin_upgrade(
 
     for (ref_key, current) in &to_check {
         // Skip non-OCI plugins
-        if ref_key.starts_with("file://") || ref_key.starts_with("http://") || ref_key.starts_with("https://") {
-            println!("{}", cli_styles::skip(&format!("{} — non-OCI source", ref_key)));
+        if ref_key.starts_with("file://")
+            || ref_key.starts_with("http://")
+            || ref_key.starts_with("https://")
+        {
+            println!(
+                "{}",
+                cli_styles::skip(&format!("{} — non-OCI source", ref_key))
+            );
             skipped += 1;
             continue;
         }
@@ -1463,14 +1497,18 @@ async fn plugin_upgrade(
                             sp.finish_and_clear();
                             let trusted = load_trusted_identities(config_path);
                             let sig_label = cli_styles::sig_status_from_result(
-                                download.verification.as_ref(), &trusted,
+                                download.verification.as_ref(),
+                                &trusted,
                             );
                             println!(
                                 "{}  {}",
                                 cli_styles::success(&format!(
                                     "{} {}",
                                     ref_key,
-                                    cli_styles::version_upgrade(&current.version, &resolved.version)
+                                    cli_styles::version_upgrade(
+                                        &current.version,
+                                        &resolved.version
+                                    )
                                 )),
                                 sig_label
                             );

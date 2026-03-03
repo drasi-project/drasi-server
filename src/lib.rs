@@ -29,9 +29,9 @@ pub mod server;
 pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
 pub use config::{
-    load_config_file, save_config_file, ConfigError, DrasiLibInstanceConfig, DrasiServerConfig,
-    PluginDependency, ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
-    default_plugin_registry,
+    default_plugin_registry, load_config_file, save_config_file, ConfigError,
+    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig,
+    ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use plugin_registry::PluginRegistry;

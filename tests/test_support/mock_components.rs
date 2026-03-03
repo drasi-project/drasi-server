@@ -187,7 +187,10 @@ impl ReactionTrait for MockReaction {
         self.inner.status.read().await.clone()
     }
 
-    async fn enqueue_query_result(&self, _result: drasi_lib::channels::QueryResult) -> anyhow::Result<()> {
+    async fn enqueue_query_result(
+        &self,
+        _result: drasi_lib::channels::QueryResult,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }
