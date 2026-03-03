@@ -67,12 +67,7 @@ impl DrasiServer {
 
         // Auto-install plugins from registry if configured
         if config.auto_install_plugins && !config.plugins.is_empty() {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(crate::plugin_install::auto_install_plugins(
-                &config,
-                &plugins_dir,
-                false,
-            ))?;
+            crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
         }
 
         // Load dynamic plugins from the plugins directory
