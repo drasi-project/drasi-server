@@ -25,7 +25,7 @@ use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
 use anyhow::{bail, Context, Result};
 use drasi_host_sdk::registry::{
     CosignVerifier, HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth,
-    RegistryConfig, ResolvedPlugin, TrustedIdentity, VerificationConfig, VerificationResult,
+    RegistryConfig, ResolvedPlugin, SignatureStatus, TrustedIdentity, VerificationConfig,
 };
 use log::{info, warn};
 use std::path::Path;
@@ -106,13 +106,16 @@ pub async fn auto_install_plugins(
         )
         .await
         {
-            Ok((rp, verification)) => {
-                // Convert verification result to lockfile signature info
-                let sig_info = verification.map(|v| PluginSignatureInfo {
-                    verified: true,
-                    issuer: v.issuer,
-                    subject: v.subject,
-                });
+            Ok((rp, sig_status)) => {
+                // Convert verification status to lockfile signature info
+                let sig_info = match sig_status {
+                    SignatureStatus::Verified(v) => Some(PluginSignatureInfo {
+                        verified: true,
+                        issuer: v.issuer,
+                        subject: v.subject,
+                    }),
+                    _ => None,
+                };
 
                 // Update lockfile with resolved info
                 let locked_entry = LockedPlugin {
@@ -165,7 +168,7 @@ async fn install_if_missing(
     default_registry: &str,
     locked: bool,
     lockfile: &PluginLockfile,
-) -> Result<(ResolvedPlugin, Option<VerificationResult>)> {
+) -> Result<(ResolvedPlugin, SignatureStatus)> {
     // In locked mode, use the lockfile entry instead of resolving
     if locked {
         let locked_entry = lockfile.get(&dep.reference).with_context(|| {
@@ -189,20 +192,10 @@ async fn install_if_missing(
         let dest_path = plugins_dir.join(&resolved.filename);
         if dest_path.exists() {
             // Best-effort verification for existing plugins
-            let verification = match client
+            let verification = client
                 .verifier()
                 .verify_plugin(&resolved.reference, &client.auth())
-                .await
-            {
-                Ok(result) => result,
-                Err(e) => {
-                    warn!(
-                        "Signature verification failed for '{}': {}",
-                        dep.reference, e
-                    );
-                    None
-                }
-            };
+                .await;
             info!(
                 "  ✓ {} v{} — already installed (locked)",
                 dep.reference, resolved.version
@@ -239,20 +232,10 @@ async fn install_if_missing(
     let dest_path = plugins_dir.join(&resolved.filename);
     if dest_path.exists() {
         // Best-effort verification for existing plugins
-        let verification = match client
+        let verification = client
             .verifier()
             .verify_plugin(&resolved.reference, &client.auth())
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                warn!(
-                    "Signature verification failed for '{}': {}",
-                    dep.reference, e
-                );
-                None
-            }
-        };
+            .await;
         info!(
             "  ✓ {} v{} — already installed",
             dep.reference, resolved.version

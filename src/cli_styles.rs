@@ -176,6 +176,15 @@ pub fn sig_unverified() -> String {
     Style::new().yellow().apply_to("unverified").to_string()
 }
 
+/// Bright red "TAMPERED" signature label — signature exists but verification failed.
+pub fn sig_tampered(reason: &str) -> String {
+    format!(
+        "{}  ({})",
+        Style::new().red().bold().apply_to("TAMPERED ⚠"),
+        Style::new().red().dim().apply_to(reason),
+    )
+}
+
 /// Determine the signature display string based on lockfile info and trusted identities.
 ///
 /// - Signed + matches trusted identity → green "verified ✓"
@@ -202,20 +211,21 @@ pub fn sig_status(
     }
 }
 
-/// Determine the signature display string from a raw verification result.
+/// Determine the signature display string from a `SignatureStatus`.
 pub fn sig_status_from_result(
-    result: Option<&drasi_host_sdk::registry::VerificationResult>,
+    status: &drasi_host_sdk::registry::SignatureStatus,
     trusted: &[drasi_host_sdk::registry::TrustedIdentity],
 ) -> String {
-    match result {
-        Some(v) => {
+    match status {
+        drasi_host_sdk::registry::SignatureStatus::Verified(v) => {
             if drasi_host_sdk::registry::matches_trusted_identity(v, trusted) {
                 sig_verified(&v.issuer, &v.subject)
             } else {
                 sig_signed_untrusted(&v.issuer, &v.subject)
             }
         }
-        None => sig_unsigned(),
+        drasi_host_sdk::registry::SignatureStatus::Tampered(reason) => sig_tampered(reason),
+        drasi_host_sdk::registry::SignatureStatus::Unsigned => sig_unsigned(),
     }
 }
 

@@ -722,14 +722,17 @@ async fn plugin_install_from_oci(
     // Update lockfile
     let lockfile_dir = plugins_dir;
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
-    let sig_info = download.verification.map(|v| PluginSignatureInfo {
-        verified: true,
-        issuer: v.issuer,
-        subject: v.subject,
-    });
+    let sig_info = match &download.verification {
+        drasi_host_sdk::registry::SignatureStatus::Verified(v) => Some(PluginSignatureInfo {
+            verified: true,
+            issuer: v.issuer.clone(),
+            subject: v.subject.clone(),
+        }),
+        _ => None,
+    };
     // Display signature status with trust check
     let trusted = load_trusted_identities(config_path);
-    println!("  {}", cli_styles::sig_status(sig_info.as_ref(), &trusted));
+    println!("  {}", cli_styles::sig_status_from_result(&download.verification, &trusted));
     lockfile.insert(
         reference.to_string(),
         LockedPlugin {
@@ -847,7 +850,7 @@ async fn plugin_install_from_config(
                     sp.finish_and_clear();
                     let trusted = load_trusted_identities(config_path);
                     let sig_label = cli_styles::sig_status_from_result(
-                        _download.verification.as_ref(),
+                        &_download.verification,
                         &trusted,
                     );
                     println!(
@@ -944,7 +947,7 @@ async fn plugin_install_from_config(
                                         sp.finish_and_clear();
                                         let trusted = load_trusted_identities(config_path);
                                         let sig_label = cli_styles::sig_status_from_result(
-                                            _download.verification.as_ref(),
+                                            &_download.verification,
                                             &trusted,
                                         );
                                         println!(
@@ -1083,7 +1086,7 @@ async fn plugin_install_all(
                             sp.finish_and_clear();
                             let trusted = load_trusted_identities(config_path);
                             let sig_label = cli_styles::sig_status_from_result(
-                                _download.verification.as_ref(),
+                                &_download.verification,
                                 &trusted,
                             );
                             println!(
@@ -1496,7 +1499,7 @@ async fn plugin_upgrade(
                             sp.finish_and_clear();
                             let trusted = load_trusted_identities(config_path);
                             let sig_label = cli_styles::sig_status_from_result(
-                                download.verification.as_ref(),
+                                &download.verification,
                                 &trusted,
                             );
                             println!(
@@ -1511,11 +1514,14 @@ async fn plugin_upgrade(
                                 )),
                                 sig_label
                             );
-                            let sig_info = download.verification.map(|v| PluginSignatureInfo {
-                                verified: true,
-                                issuer: v.issuer,
-                                subject: v.subject,
-                            });
+                            let sig_info = match &download.verification {
+                                drasi_host_sdk::registry::SignatureStatus::Verified(v) => Some(PluginSignatureInfo {
+                                    verified: true,
+                                    issuer: v.issuer.clone(),
+                                    subject: v.subject.clone(),
+                                }),
+                                _ => None,
+                            };
                             new_lockfile.insert(
                                 ref_key.clone(),
                                 LockedPlugin {

@@ -85,8 +85,8 @@ impl DrasiServer {
         // Verifications run in parallel for speed.
         let verified_files = if config.verify_plugins {
             use drasi_host_sdk::registry::{
-                matches_trusted_identity, CosignVerifier, RegistryAuth, TrustedIdentity,
-                VerificationConfig,
+                matches_trusted_identity, CosignVerifier, RegistryAuth, SignatureStatus,
+                TrustedIdentity, VerificationConfig,
             };
 
             let lockfile = crate::plugin_lockfile::PluginLockfile::read(&plugins_dir)
@@ -142,22 +142,30 @@ impl DrasiServer {
 
                 let allowed: std::collections::HashSet<String> = results
                     .into_iter()
-                    .filter_map(|(filename, vr)| match vr {
-                        Some(v) if matches_trusted_identity(&v, &trusted) => {
+                    .filter_map(|(filename, status)| match status {
+                        SignatureStatus::Verified(v)
+                            if matches_trusted_identity(&v, &trusted) =>
+                        {
                             info!(
-                                "✓ {} — verified (issuer={}, subject={})",
-                                filename, v.issuer, v.subject
+                                "✓ {filename} — verified (issuer={}, subject={})",
+                                v.issuer, v.subject
                             );
                             Some(filename)
                         }
-                        Some(v) => {
+                        SignatureStatus::Verified(v) => {
                             warn!(
-                                "✗ {} — signed but not from a trusted identity (issuer={}, subject={})",
-                                filename, v.issuer, v.subject
+                                "✗ {filename} — signed but not from a trusted identity (issuer={}, subject={})",
+                                v.issuer, v.subject
                             );
                             None
                         }
-                        None => None,
+                        SignatureStatus::Tampered(reason) => {
+                            log::error!(
+                                "⚠ {filename} — TAMPERED: {reason}"
+                            );
+                            None
+                        }
+                        SignatureStatus::Unsigned => None,
                     })
                     .collect();
 
