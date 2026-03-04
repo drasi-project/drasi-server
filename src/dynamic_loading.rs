@@ -85,9 +85,7 @@ pub fn load_plugins(
                     .iter()
                     .any(|pat| matches_glob(pat, &name));
                 if is_plugin && !allowed.contains(&name) {
-                    warn!(
-                        "Skipping unverified plugin: {name} (--verify-plugins is enabled)",
-                    );
+                    warn!("Skipping unverified plugin: {name} (--verify-plugins is enabled)",);
                 }
             }
         }

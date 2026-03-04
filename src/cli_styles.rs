@@ -143,11 +143,11 @@ pub fn install_summary(installed: usize, existing: usize, failed: usize) {
     println!("\n  {}", parts.join(", "));
 }
 
-/// Green "verified ✓" signature label — signed and matches a trusted identity.
-pub fn sig_verified(issuer: &str, subject: &str) -> String {
+/// Green "trusted ✓" signature label — signed and matches a trusted identity.
+pub fn sig_trusted(issuer: &str, subject: &str) -> String {
     format!(
         "{}\n      Issuer:  {}\n      Subject: {}",
-        Style::new().green().bold().apply_to("verified ✓"),
+        Style::new().green().bold().apply_to("trusted ✓"),
         Style::new().dim().apply_to(issuer),
         Style::new().dim().apply_to(subject),
     )
@@ -187,7 +187,7 @@ pub fn sig_tampered(reason: &str) -> String {
 
 /// Determine the signature display string based on lockfile info and trusted identities.
 ///
-/// - Signed + matches trusted identity → green "verified ✓"
+/// - Signed + matches trusted identity → green "trusted ✓"
 /// - Signed + no trusted identity match → yellow "signed ✓"
 /// - Not signed → salmon "unsigned ✗"
 pub fn sig_status(
@@ -201,7 +201,7 @@ pub fn sig_status(
                 subject: s.subject.clone(),
             };
             if drasi_host_sdk::registry::matches_trusted_identity(&vr, trusted) {
-                sig_verified(&s.issuer, &s.subject)
+                sig_trusted(&s.issuer, &s.subject)
             } else {
                 sig_signed_untrusted(&s.issuer, &s.subject)
             }
@@ -219,7 +219,7 @@ pub fn sig_status_from_result(
     match status {
         drasi_host_sdk::registry::SignatureStatus::Verified(v) => {
             if drasi_host_sdk::registry::matches_trusted_identity(v, trusted) {
-                sig_verified(&v.issuer, &v.subject)
+                sig_trusted(&v.issuer, &v.subject)
             } else {
                 sig_signed_untrusted(&v.issuer, &v.subject)
             }

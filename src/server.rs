@@ -147,7 +147,7 @@ impl DrasiServer {
                             if matches_trusted_identity(&v, &trusted) =>
                         {
                             info!(
-                                "✓ {filename} — verified (issuer={}, subject={})",
+                                "✓ {filename} — trusted (issuer={}, subject={})",
                                 v.issuer, v.subject
                             );
                             Some(filename)
