@@ -146,7 +146,7 @@ pub fn install_summary(installed: usize, existing: usize, failed: usize) {
 /// Green "verified ✓" signature label — signed and matches a trusted identity.
 pub fn sig_verified(issuer: &str, subject: &str) -> String {
     format!(
-        "{}  ({}, {})",
+        "{}\n      Issuer:  {}\n      Subject: {}",
         Style::new().green().bold().apply_to("verified ✓"),
         Style::new().dim().apply_to(issuer),
         Style::new().dim().apply_to(subject),
@@ -156,7 +156,7 @@ pub fn sig_verified(issuer: &str, subject: &str) -> String {
 /// Yellow "signed ✓" label — signed but signer not in trusted identities.
 pub fn sig_signed_untrusted(issuer: &str, subject: &str) -> String {
     format!(
-        "{}  ({}, {})",
+        "{}\n      Issuer:  {}\n      Subject: {}",
         Style::new().yellow().bold().apply_to("signed ✓"),
         Style::new().dim().apply_to(issuer),
         Style::new().dim().apply_to(subject),

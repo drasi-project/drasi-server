@@ -1230,7 +1230,8 @@ fn plugin_list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> 
                 detail.push_str(&format!("  Built: {built}"));
             }
             let sig_display = cli_styles::sig_status(entry.signature.as_ref(), &trusted);
-            println!("{}  {}", cli_styles::detail(&detail), sig_display);
+            println!("{}", cli_styles::detail(&detail));
+            println!("    {}", sig_display);
         } else {
             println!(
                 "  {} {}",
