@@ -35,7 +35,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.3.8", features = [
+drasi-lib = { version = "0.4.0", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,23 +47,23 @@ drasi-lib = { version = "0.3.8", features = [
 
 # Core bootstrap providers (used by the application API)
 drasi-bootstrap-noop = "0.1.6"
-drasi-bootstrap-application = "0.1.7"
+drasi-bootstrap-application = "0.1.8"
 
 # Core reaction (used by the application API)
 drasi-reaction-application = "0.2.7"
 
 # Index plugins
-drasi-index-rocksdb = "0.2.2"
+drasi-index-rocksdb = "0.3.0"
 drasi-index-garnet = "0.1.4"
 
 # State store plugins
 drasi-state-store-redb = "0.1.5"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.3.1"
+drasi-plugin-sdk = "0.4.0"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.1.0", features = ["registry", "fetcher"] }
+drasi-host-sdk = { version = "0.4.0", features = ["registry", "fetcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies

@@ -1069,7 +1069,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-lib",
  "drasi-plugin-sdk",
  "log",
@@ -1113,6 +1113,47 @@ dependencies = [
 [[package]]
 name = "drasi-core"
 version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d3ad21f8a5c99696dd257e03a2d50ef0ba2c922996298c24de31ccb880d9e47"
+dependencies = [
+ "approx",
+ "async-recursion",
+ "async-stream",
+ "async-trait",
+ "caches",
+ "chrono",
+ "chrono-tz",
+ "dateparser",
+ "drasi-query-ast",
+ "drasi-query-cypher",
+ "futures",
+ "hashers",
+ "iso8601-duration",
+ "itoa",
+ "lazy_static",
+ "log",
+ "once_cell",
+ "opentelemetry",
+ "ordered-float",
+ "priority-queue",
+ "rand 0.8.5",
+ "regex",
+ "round",
+ "serde",
+ "serde_json",
+ "statistical",
+ "thiserror 1.0.69",
+ "time",
+ "time-macros",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "drasi-core"
+version = "0.4.0"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1151,31 +1192,31 @@ dependencies = [
 
 [[package]]
 name = "drasi-ffi-primitives"
-version = "0.3.1"
+version = "0.4.0"
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
- "drasi-core",
+ "drasi-core 0.4.0",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
- "drasi-core",
+ "drasi-core 0.4.0",
 ]
 
 [[package]]
 name = "drasi-host-sdk"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
  "chrono",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-ffi-primitives",
  "drasi-lib",
  "drasi-plugin-sdk",
@@ -1202,7 +1243,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bit-set",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-query-ast",
  "fnv",
  "hashers",
@@ -1219,12 +1260,12 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "bit-set",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-query-ast",
  "fastmurmur3",
  "fnv",
@@ -1242,12 +1283,12 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.3.10"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-functions-cypher",
  "drasi-functions-gql",
  "drasi-middleware",
@@ -1271,11 +1312,11 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
- "drasi-core",
+ "drasi-core 0.4.0",
  "hex",
  "jq-rs",
  "jsonpath-rust",
@@ -1288,12 +1329,12 @@ dependencies = [
 
 [[package]]
 name = "drasi-plugin-sdk"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "drasi-core",
+ "drasi-core 0.4.0",
  "drasi-ffi-primitives",
  "drasi-lib",
  "log",
@@ -1372,7 +1413,7 @@ dependencies = [
  "dotenvy",
  "drasi-bootstrap-application",
  "drasi-bootstrap-noop",
- "drasi-core",
+ "drasi-core 0.3.5",
  "drasi-host-sdk",
  "drasi-index-garnet",
  "drasi-index-rocksdb",
