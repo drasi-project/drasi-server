@@ -13,6 +13,24 @@ fn main() {
         rustc_version.trim()
     );
 
+    // If a vendor/<target>/lib directory exists, add it as a native library search path.
+    // This allows target-specific pre-built static libraries (e.g. libjq, libssl) to be
+    // found by the linker without requiring absolute paths in .cargo/config.toml.
+    if let (Ok(target), Ok(manifest_dir)) =
+        (std::env::var("TARGET"), std::env::var("CARGO_MANIFEST_DIR"))
+    {
+        let vendor_lib_dir = std::path::PathBuf::from(&manifest_dir)
+            .join("vendor")
+            .join(&target)
+            .join("lib");
+        if vendor_lib_dir.exists() {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                vendor_lib_dir.display()
+            );
+        }
+    }
+
     // Emit the plugin-sdk version by reading it from the SDK crate's Cargo.toml
     let sdk_version = read_dep_version("drasi-plugin-sdk").unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=DRASI_PLUGIN_SDK_VERSION={sdk_version}");

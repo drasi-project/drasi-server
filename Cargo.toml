@@ -50,7 +50,7 @@ drasi-bootstrap-noop = "0.1.6"
 drasi-bootstrap-application = "0.1.7"
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.2.5"
+drasi-reaction-application = "0.2.7"
 
 # Index plugins
 drasi-index-rocksdb = "0.2.2"
@@ -131,16 +131,3 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
-
-
-# Uncomment this section for local development to use path-based dependencies
-# [patch.crates-io]
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
-# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
-# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
