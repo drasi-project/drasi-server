@@ -16,7 +16,7 @@ import { StockList } from '@/components/StockList';
 import { Portfolio } from '@/components/Portfolio';
 import { Watchlist } from '@/components/Watchlist';
 import { SectorPerformance } from '@/components/SectorPerformance';
-import { PlaceholderTable } from '@/components/PlaceholderTable';
+import { Orders } from '@/components/Orders';
 import StockTicker from '@/components/StockTicker';
 import { useConnectionStatus } from '@/hooks/useDrasi';
 import clsx from 'clsx';
@@ -71,7 +71,7 @@ function App() {
             <SectorPerformance />
           </div>
           <div>
-            <PlaceholderTable title="Orders" message="Order tracking coming soon" />
+            <Orders />
           </div>
         </div>
 

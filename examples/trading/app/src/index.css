@@ -64,6 +64,11 @@ code {
   animation: flash-red 0.5s ease-in-out;
 }
 
+/* Status change animation (neutral, non-directional) */
+.status-change {
+  animation: flash-blue 0.5s ease-in-out;
+}
+
 @keyframes flash-green {
   0%, 100% { background-color: transparent; }
   50% { background-color: rgba(16, 185, 129, 0.2); }
@@ -72,6 +77,11 @@ code {
 @keyframes flash-red {
   0%, 100% { background-color: transparent; }
   50% { background-color: rgba(239, 68, 68, 0.2); }
+}
+
+@keyframes flash-blue {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(59, 130, 246, 0.25); }
 }
 
 /* Dialog animations */

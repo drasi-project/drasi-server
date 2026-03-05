@@ -236,7 +236,11 @@ export function QueryTable<T extends Record<string, any>>({
     getValue: animateOnChange 
       ? (row) => {
           const val = row[animateOnChange];
-          return typeof val === 'number' ? val : undefined;
+          // Support both numeric and string values for animation
+          if (typeof val === 'number' || typeof val === 'string') {
+            return val;
+          }
+          return undefined;
         }
       : () => undefined,
   });
@@ -344,6 +348,7 @@ export function QueryTable<T extends Record<string, any>>({
           "border-b border-trading-border/50 hover:bg-trading-border/20 transition-colors",
           animation === 'up' && 'price-up',
           animation === 'down' && 'price-down',
+          animation === 'change' && 'status-change',
           getRowClassName(row, index)
         )}
       >

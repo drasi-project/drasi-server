@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 
 export interface CodeViewerDialogProps {
@@ -38,6 +39,7 @@ type TabId = 'react' | 'cypher';
  * - Large, presentation-friendly monospace text
  * - Copy-to-clipboard functionality
  * - Dark theme matching the trading UI
+ * - Rendered via portal to prevent jumping when underlying data changes
  */
 export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   isOpen,
@@ -48,6 +50,10 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('react');
   const [copied, setCopied] = useState(false);
+
+  // Memoize the code content to prevent re-renders from changing it while dialog is open
+  const memoizedReactCode = useMemo(() => reactCode, [isOpen ? null : reactCode]);
+  const memoizedCypherQuery = useMemo(() => cypherQuery, [isOpen ? null : cypherQuery]);
 
   // Handle escape key
   const handleKeyDown = useCallback(
@@ -80,7 +86,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   }, [isOpen]);
 
   const handleCopy = async () => {
-    const textToCopy = activeTab === 'react' ? reactCode : cypherQuery;
+    const textToCopy = activeTab === 'react' ? memoizedReactCode : memoizedCypherQuery;
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
@@ -98,9 +104,10 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 
   if (!isOpen) return null;
 
-  const currentCode = activeTab === 'react' ? reactCode : cypherQuery;
+  const currentCode = activeTab === 'react' ? memoizedReactCode : memoizedCypherQuery;
 
-  return (
+  // Use portal to render outside the component tree, preventing layout jumps
+  return createPortal(
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-fade-in"
       onClick={handleOverlayClick}
@@ -182,6 +189,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
           </pre>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

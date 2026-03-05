@@ -19,11 +19,9 @@ Simple Stock Price Generator for Testing
 Sends price updates to Drasi HTTP Source using direct format
 """
 
-import json
 import random
 import time
 import requests
-import sys
 from datetime import datetime
 
 def generate_price_update(symbol, base_price, volatility=0.02):
@@ -158,7 +156,6 @@ def main():
     print("-" * 50)
     print("Starting continuous price updates (Ctrl+C to stop)...")
     
-    # Continuously generate price updates
     try:
         while True:
             # Pick a random subset of stocks to update

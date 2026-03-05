@@ -14,13 +14,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export type AnimationDirection = 'up' | 'down' | null;
+export type AnimationDirection = 'up' | 'down' | 'change' | null;
 
 export interface UseRowAnimationOptions<T> {
   /** Function to extract the unique key for each row */
   rowKey: (row: T) => string;
   /** Function to extract the value to track for changes */
-  getValue: (row: T) => number | undefined;
+  getValue: (row: T) => number | string | undefined;
   /** Duration of animation in milliseconds (default: 500) */
   animationDuration?: number;
 }
@@ -35,6 +35,9 @@ export interface UseRowAnimationResult<T> {
 /**
  * Hook for tracking value changes across rows and triggering CSS animations.
  * 
+ * For numeric values: triggers 'up' or 'down' animation based on direction
+ * For string values: triggers 'change' animation (neutral, non-directional)
+ * 
  * Usage:
  * ```tsx
  * const { animations, updateData } = useRowAnimation<Stock>({
@@ -48,7 +51,11 @@ export interface UseRowAnimationResult<T> {
  * 
  * // In render:
  * const animation = animations.get(row.symbol);
- * <tr className={clsx(animation === 'up' && 'price-up', animation === 'down' && 'price-down')}>
+ * <tr className={clsx(
+ *   animation === 'up' && 'price-up',
+ *   animation === 'down' && 'price-down',
+ *   animation === 'change' && 'status-change'
+ * )}>
  * ```
  */
 export function useRowAnimation<T>(
@@ -57,7 +64,7 @@ export function useRowAnimation<T>(
   const { rowKey, getValue, animationDuration = 500 } = options;
   
   const [animations, setAnimations] = useState<Map<string, AnimationDirection>>(new Map());
-  const prevValuesRef = useRef<Map<string, number>>(new Map());
+  const prevValuesRef = useRef<Map<string, number | string>>(new Map());
   const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // Cleanup timeouts on unmount
@@ -79,7 +86,16 @@ export function useRowAnimation<T>(
       const prevValue = prevValues.get(key);
 
       if (currentValue !== undefined && prevValue !== undefined && currentValue !== prevValue) {
-        const direction: AnimationDirection = currentValue > prevValue ? 'up' : 'down';
+        let direction: AnimationDirection;
+        
+        // For numeric values, determine up/down direction
+        if (typeof currentValue === 'number' && typeof prevValue === 'number') {
+          direction = currentValue > prevValue ? 'up' : 'down';
+        } else {
+          // For string values (like status), use neutral 'change' animation
+          direction = 'change';
+        }
+        
         newAnimations.set(key, direction);
 
         // Clear any existing timeout for this key
@@ -115,7 +131,10 @@ export function useRowAnimation<T>(
 
     // Update previous values reference
     prevValuesRef.current = new Map(
-      data.map((row) => [rowKey(row), getValue(row) ?? 0])
+      data.map((row) => {
+        const val = getValue(row);
+        return [rowKey(row), val ?? (typeof val === 'number' ? 0 : '')];
+      })
     );
   }, [rowKey, getValue, animationDuration]);
 

@@ -87,11 +87,16 @@ export class DrasiClient {
       for (const queryId of this.queries.keys()) {
         try {
           const results = await this.getQueryResults(queryId);
+          // Always store results (even empty) so loading state completes
+          initialResults[queryId] = results;
           if (results.length > 0) {
-            initialResults[queryId] = results;
             console.log(`Got ${results.length} initial results for ${queryId}`);
+          } else {
+            console.log(`No initial results for ${queryId} (empty)`);
           }
         } catch (error) {
+          // On error, still store empty array so loading completes
+          initialResults[queryId] = [];
           console.warn(`Failed to fetch initial results for ${queryId}:`, error);
         }
       }

@@ -45,6 +45,20 @@ export interface PortfolioPosition {
   purchase_date: string;
 }
 
+export interface LimitOrder {
+  id: number;
+  symbol: string;
+  name?: string;
+  sector?: string;
+  order_type: 'buy' | 'sell';
+  target_price: number;
+  quantity: number;
+  status: 'pending' | 'stale' | 'filled' | 'expired' | 'cancelled';
+  created_at: string;
+  filled_at?: string;
+  expires_at?: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -178,6 +192,76 @@ class TradingApiService {
     const data: ApiResponse<void> = await response.json();
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete position');
+    }
+  }
+
+  // ============================================================================
+  // Limit Orders API
+  // ============================================================================
+
+  /**
+   * Get all limit orders (optionally filtered by status)
+   */
+  async getOrders(status?: string): Promise<LimitOrder[]> {
+    const url = status 
+      ? `${this.baseUrl}/api/orders?status=${status}`
+      : `${this.baseUrl}/api/orders`;
+    const response = await fetch(url);
+    const data: ApiResponse<LimitOrder[]> = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch orders');
+    }
+    return data.data || [];
+  }
+
+  /**
+   * Create a new limit order
+   */
+  async createOrder(
+    symbol: string, 
+    orderType: 'buy' | 'sell', 
+    targetPrice: number, 
+    quantity: number,
+    expiresAt?: string
+  ): Promise<LimitOrder> {
+    const response = await fetch(`${this.baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, orderType, targetPrice, quantity, expiresAt })
+    });
+    const data: ApiResponse<LimitOrder> = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to create order');
+    }
+    return data.data!;
+  }
+
+  /**
+   * Update a limit order's status
+   */
+  async updateOrderStatus(id: number, status: LimitOrder['status']): Promise<LimitOrder> {
+    const response = await fetch(`${this.baseUrl}/api/orders/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const data: ApiResponse<LimitOrder> = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update order');
+    }
+    return data.data!;
+  }
+
+  /**
+   * Cancel (delete) a limit order
+   */
+  async cancelOrder(id: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/orders/${id}`, {
+      method: 'DELETE'
+    });
+    const data: ApiResponse<void> = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to cancel order');
     }
   }
 

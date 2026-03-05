@@ -77,6 +77,20 @@ export const ON_WATCHLIST: QueryJoin = {
   ]
 };
 
+/**
+ * ORDER_HAS_PRICE - Links limit orders to real-time price data
+ * Joins: limit_orders (PostgreSQL) ↔ stock_prices (HTTP feed)
+ * Join key: symbol
+ * Used to compare order target price with current market price
+ */
+export const ORDER_HAS_PRICE: QueryJoin = {
+  id: 'ORDER_HAS_PRICE',
+  keys: [
+    { label: 'limit_orders', property: 'symbol' },
+    { label: 'stock_prices', property: 'symbol' }
+  ]
+};
+
 // ============================================================================
 // QUERY DEFINITIONS
 // ============================================================================
@@ -335,6 +349,105 @@ export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
   joins: [OWNS_STOCK, HAS_PRICE]
 };
 
+/**
+ * ACTIVE ORDERS QUERY
+ * 
+ * Two-way join: limit_orders → stock_prices
+ * Shows pending and stale orders with real-time price comparison.
+ * 
+ * Demonstrates:
+ * - Multi-source join (PostgreSQL broker CDC + HTTP price feed)
+ * - Computed distance to target price
+ * - Real-time price status
+ */
+export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
+  id: 'active-orders-query',
+  description: 'Limit orders with real-time price comparison',
+  query: `
+    MATCH (o:limit_orders)-[:ORDER_HAS_PRICE]->(sp:stock_prices)
+    RETURN o.id AS id,
+           o.symbol AS symbol,
+           o.order_type AS order_type,
+           o.target_price AS target_price,
+           sp.price AS current_price,
+           o.quantity AS quantity,
+           o.status AS status,
+           o.created_at AS created_at,
+           o.expires_at AS expires_at,
+           ((o.target_price - sp.price) / sp.price * 100) AS distance_percent
+  `,
+  sources: [
+    { sourceId: 'postgres-broker', pipeline: [] },
+    { sourceId: 'price-feed', pipeline: [] }
+  ],
+  joins: [ORDER_HAS_PRICE]
+};
+
+/**
+ * STALE ORDERS QUERY (Future Function Demo)
+ * 
+ * Uses drasi.trueFor() to detect orders that have been in 'pending' state
+ * for longer than 15 seconds - indicating they may need attention.
+ * 
+ * Demonstrates:
+ * - drasi.trueFor() - detecting absence of expected change
+ * - Alert when something DIDN'T happen that should have
+ */
+export const STALE_ORDERS_QUERY: QueryDefinition = {
+  id: 'stale-orders-query',
+  description: 'Pending orders older than 15 seconds (drasi.trueFor demo)',
+  query: `
+    MATCH (o:limit_orders)
+    WHERE o.status = 'pending'
+      AND drasi.trueFor(o.status = 'pending', duration({seconds: 15}))
+    RETURN o.id AS id,
+           o.symbol AS symbol,
+           o.order_type AS order_type,
+           o.target_price AS target_price,
+           o.quantity AS quantity,
+           o.created_at AS created_at,
+           'STALE' AS alert_type,
+           'Order pending for more than 15 seconds' AS alert_message
+  `,
+  sources: [
+    { sourceId: 'postgres-broker', pipeline: [] }
+  ],
+  joins: []
+};
+
+/**
+ * EXPIRING ORDERS QUERY (Future Function Demo)
+ * 
+ * Uses drasi.trueFor() to detect when an order has been pending/stale
+ * for the full duration from created_at to expires_at (i.e., it expired).
+ * 
+ * Demonstrates:
+ * - drasi.trueFor() with computed duration - scheduled future evaluation
+ * - Detecting time-based conditions without polling
+ */
+export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
+  id: 'expiring-orders-query',
+  description: 'Orders that expired (drasi.trueFor demo)',
+  query: `
+    MATCH (o:limit_orders)
+    WHERE o.status = 'stale'
+      AND o.expires_at IS NOT NULL
+      AND drasi.trueFor(o.status = 'stale', duration({seconds: 30}))
+    RETURN o.id AS id,
+           o.symbol AS symbol,
+           o.order_type AS order_type,
+           o.target_price AS target_price,
+           o.quantity AS quantity,
+           o.expires_at AS expires_at,
+           'EXPIRED' AS alert_type,
+           'Order expired - time limit reached' AS alert_message
+  `,
+  sources: [
+    { sourceId: 'postgres-broker', pipeline: [] }
+  ],
+  joins: []
+};
+
 // ============================================================================
 // ALL QUERIES - For easy iteration
 // ============================================================================
@@ -347,7 +460,10 @@ export const ALL_QUERIES: QueryDefinition[] = [
   HIGH_VOLUME_QUERY,
   PRICE_TICKER_QUERY,
   SECTOR_PERFORMANCE_QUERY,
-  PORTFOLIO_SUMMARY_QUERY
+  PORTFOLIO_SUMMARY_QUERY,
+  ACTIVE_ORDERS_QUERY,
+  STALE_ORDERS_QUERY,
+  EXPIRING_ORDERS_QUERY
 ];
 
 // Query lookup by ID

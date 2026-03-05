@@ -389,6 +389,11 @@ export class DrasiSSEClient {
       console.log(`>>> Routing to portfolio-summary-query`);
       this.deliverToQuery('portfolio-summary-query', dataArray);
     }
+    // Check if data looks like limit order data (has order_type and target_price)
+    else if (dataArray[0]?.order_type !== undefined && dataArray[0]?.target_price !== undefined) {
+      console.log(`>>> Routing to active-orders-query`);
+      this.deliverToQuery('active-orders-query', dataArray);
+    }
     // Check if data looks like portfolio data
     // Full portfolio data has quantity, purchase_price
     // Delete events may only have id (the portfolio table's primary key)

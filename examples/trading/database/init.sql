@@ -68,34 +68,60 @@ CREATE TABLE watchlist (
     UNIQUE(user_id, symbol)
 );
 
+-- Limit Orders table for demonstrating Drasi future functions
+-- Orders flow through states: pending -> stale -> filled/expired/cancelled
+CREATE TABLE limit_orders (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) DEFAULT 'demo_user',
+    symbol VARCHAR(10) NOT NULL,
+    order_type VARCHAR(10) NOT NULL,  -- 'buy' or 'sell'
+    target_price DECIMAL(10, 2) NOT NULL,
+    quantity INTEGER NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',  -- pending, stale, filled, expired, cancelled
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    filled_at TIMESTAMP,
+    expires_at TIMESTAMP,  -- Expiration time
+    FOREIGN KEY (symbol) REFERENCES stocks(symbol) ON DELETE CASCADE
+);
+
 -- Create indexes for performance
 CREATE INDEX idx_stocks_symbol ON stocks(symbol);
 CREATE INDEX idx_stocks_sector ON stocks(sector);
 CREATE INDEX idx_portfolio_user_symbol ON portfolio(user_id, symbol);
 CREATE INDEX idx_watchlist_user_symbol ON watchlist(user_id, symbol);
+CREATE INDEX idx_limit_orders_user_status ON limit_orders(user_id, status);
+CREATE INDEX idx_limit_orders_symbol ON limit_orders(symbol);
 
 -- Set REPLICA IDENTITY to FULL for CDC (Change Data Capture)
 ALTER TABLE stocks REPLICA IDENTITY FULL;
 ALTER TABLE portfolio REPLICA IDENTITY FULL;
 ALTER TABLE watchlist REPLICA IDENTITY FULL;
+ALTER TABLE limit_orders REPLICA IDENTITY FULL;
 
 -- Ensure drasi_user owns the tables
 ALTER TABLE stocks OWNER TO drasi_user;
 ALTER TABLE portfolio OWNER TO drasi_user;
 ALTER TABLE watchlist OWNER TO drasi_user;
+ALTER TABLE limit_orders OWNER TO drasi_user;
 
 -- Grant replication privileges to drasi_user
 GRANT USAGE ON SCHEMA public TO drasi_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO drasi_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO drasi_user;
 
--- Create publication for logical replication
+-- Create publication for logical replication (stocks source)
 -- This defines which tables' changes will be streamed
 CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, watchlist;
 
--- Create replication slot for Drasi Server
+-- Create publication for broker source (limit orders)
+CREATE PUBLICATION drasi_broker_pub FOR TABLE limit_orders;
+
+-- Create replication slot for Drasi Server (stocks source)
 -- This maintains the position in the WAL stream
 SELECT pg_create_logical_replication_slot('drasi_trading_slot', 'pgoutput');
+
+-- Create replication slot for broker source
+SELECT pg_create_logical_replication_slot('drasi_broker_slot', 'pgoutput');
 
 -- Insert sample stock data
 INSERT INTO stocks (symbol, name, sector, industry, market_cap) VALUES
@@ -177,6 +203,11 @@ INSERT INTO watchlist (user_id, symbol) VALUES
     ('demo_user', 'META'),
     ('demo_user', 'AMZN'),
     ('demo_user', 'AMD');
+
+-- Insert sample filled orders (for demonstrating filled orders query)
+INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, status, filled_at) VALUES
+    ('demo_user', 'AAPL', 'buy', 172.50, 25, 'filled', CURRENT_TIMESTAMP - INTERVAL '2 hours'),
+    ('demo_user', 'MSFT', 'sell', 410.00, 15, 'filled', CURRENT_TIMESTAMP - INTERVAL '30 minutes');
 
 -- Create function to update timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

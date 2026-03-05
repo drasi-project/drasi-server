@@ -54,6 +54,32 @@ export interface PortfolioSummary {
   positionCount: number;
 }
 
+export interface LimitOrderResult {
+  id: number;
+  symbol: string;
+  orderType: string;
+  targetPrice: number;
+  currentPrice: number;
+  quantity: number;
+  status: string;
+  createdAt: string;
+  triggeredAt?: string;
+  expiresAt?: string;
+  distancePercent: number;
+}
+
+export interface OrderAlert {
+  id: number;
+  symbol: string;
+  orderType: string;
+  targetPrice: number;
+  quantity: number;
+  triggeredAt?: string;
+  expiresAt?: string;
+  alertType: 'STALE' | 'EXPIRED';
+  alertMessage: string;
+}
+
 export interface QueryResult {
   queryId: string;
   timestamp: number;

@@ -52,5 +52,24 @@ sources:
     - id
   bootstrapProvider:
     kind: postgres
+- kind: postgres
+  id: postgres-broker
+  autoStart: true
+  host: localhost
+  port: 5632
+  database: trading_demo
+  user: drasi_user
+  password: drasi_password
+  tables:
+  - limit_orders
+  slotName: drasi_broker_slot
+  publicationName: drasi_broker_pub
+  sslMode: prefer
+  tableKeys:
+  - table: limit_orders
+    keyColumns:
+    - id
+  bootstrapProvider:
+    kind: postgres
 queries: []
 reactions: []

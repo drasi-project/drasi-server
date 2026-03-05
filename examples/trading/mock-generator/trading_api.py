@@ -326,6 +326,183 @@ def delete_position(position_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============================================================================
+# Limit Orders API - CRUD for limit_orders table
+# ============================================================================
+
+@app.route('/api/orders', methods=['GET'])
+def list_orders():
+    """List all limit orders for the demo user."""
+    try:
+        status_filter = request.args.get('status')  # Optional: filter by status
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        if status_filter:
+            cur.execute('''
+                SELECT o.id, o.symbol, o.order_type, o.target_price, o.quantity,
+                       o.status, o.created_at, o.filled_at, o.expires_at,
+                       s.name, s.sector
+                FROM limit_orders o
+                JOIN stocks s ON o.symbol = s.symbol
+                WHERE o.user_id = 'demo_user' AND o.status = %s
+                ORDER BY o.created_at DESC
+            ''', (status_filter,))
+        else:
+            cur.execute('''
+                SELECT o.id, o.symbol, o.order_type, o.target_price, o.quantity,
+                       o.status, o.created_at, o.filled_at, o.expires_at,
+                       s.name, s.sector
+                FROM limit_orders o
+                JOIN stocks s ON o.symbol = s.symbol
+                WHERE o.user_id = 'demo_user'
+                ORDER BY o.created_at DESC
+            ''')
+        
+        orders = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'data': orders})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/orders', methods=['POST'])
+def create_order():
+    """Create a new limit order."""
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol')
+        order_type = data.get('orderType')  # 'buy' or 'sell'
+        target_price = data.get('targetPrice')
+        quantity = data.get('quantity')
+        expires_at_str = data.get('expiresAt')  # ISO timestamp
+        
+        if not all([symbol, order_type, target_price, quantity]):
+            return jsonify({
+                'success': False, 
+                'error': 'symbol, orderType, targetPrice, and quantity are required'
+            }), 400
+        
+        if order_type not in ['buy', 'sell']:
+            return jsonify({
+                'success': False,
+                'error': 'orderType must be "buy" or "sell"'
+            }), 400
+        
+        # Parse expiration time (required)
+        expires_at = None
+        if expires_at_str:
+            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if stock exists
+        cur.execute('SELECT symbol FROM stocks WHERE symbol = %s', (symbol,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': f'Stock {symbol} not found'}), 404
+        
+        # Insert order
+        cur.execute('''
+            INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, expires_at)
+            VALUES ('demo_user', %s, %s, %s, %s, %s)
+            RETURNING id, symbol, order_type, target_price, quantity, status, created_at, expires_at
+        ''', (symbol, order_type, target_price, quantity, expires_at))
+        
+        new_order = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'data': new_order}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/orders/<int:order_id>', methods=['PUT'])
+def update_order(order_id):
+    """Update a limit order status."""
+    try:
+        data = request.get_json()
+        status = data.get('status')
+        
+        if not status:
+            return jsonify({
+                'success': False, 
+                'error': 'status is required'
+            }), 400
+        
+        if status not in ['pending', 'stale', 'filled', 'expired', 'cancelled']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid status value. Must be: pending, stale, filled, expired, cancelled'
+            }), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Build update based on status
+        if status == 'filled':
+            cur.execute('''
+                UPDATE limit_orders 
+                SET status = %s, filled_at = CURRENT_TIMESTAMP
+                WHERE id = %s AND user_id = 'demo_user'
+                RETURNING id, symbol, order_type, target_price, quantity, status, filled_at
+            ''', (status, order_id))
+        else:
+            cur.execute('''
+                UPDATE limit_orders 
+                SET status = %s
+                WHERE id = %s AND user_id = 'demo_user'
+                RETURNING id, symbol, order_type, target_price, quantity, status
+            ''', (status, order_id))
+        
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        if not updated:
+            return jsonify({'success': False, 'error': 'Order not found'}), 404
+        
+        return jsonify({'success': True, 'data': updated})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/orders/<int:order_id>', methods=['DELETE'])
+def delete_order(order_id):
+    """Delete (cancel) a limit order."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Only allow deletion of pending/triggered orders
+        cur.execute('''
+            DELETE FROM limit_orders 
+            WHERE id = %s AND user_id = 'demo_user' AND status IN ('pending', 'triggered')
+            RETURNING id, symbol
+        ''', (order_id,))
+        
+        deleted = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        if not deleted:
+            return jsonify({
+                'success': False, 
+                'error': 'Order not found or cannot be deleted (already filled/expired)'
+            }), 404
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Order {deleted["id"]} for {deleted["symbol"]} cancelled'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================================
 # Health check
 # ============================================================================
 
