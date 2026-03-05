@@ -354,4 +354,140 @@ mod tests {
             .get("file:///path/to/libdrasi_source_postgres.so")
             .is_none());
     }
+
+    #[test]
+    fn test_compute_file_hash() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("test_plugin.so");
+        std::fs::write(&file_path, b"hello world").unwrap();
+
+        let hash = compute_file_hash(&file_path).unwrap();
+
+        // SHA-256 of "hello world"
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+    }
+
+    #[test]
+    fn test_compute_file_hash_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let result = compute_file_hash(&dir.path().join("nonexistent.so"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_file_integrity_ok() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("libdrasi_source_postgres.so");
+        std::fs::write(&file_path, b"plugin binary content").unwrap();
+
+        let hash = compute_file_hash(&file_path).unwrap();
+
+        let mut lockfile = PluginLockfile::new();
+        let mut entry = sample_entry();
+        entry.file_hash = Some(hash);
+        lockfile.insert("source/postgres".to_string(), entry);
+
+        let results = lockfile.verify_file_integrity(dir.path());
+        assert_eq!(
+            results.get("libdrasi_source_postgres.so"),
+            Some(&FileIntegrityStatus::Ok)
+        );
+    }
+
+    #[test]
+    fn test_verify_file_integrity_tampered() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("libdrasi_source_postgres.so");
+        std::fs::write(&file_path, b"original content").unwrap();
+
+        let original_hash = compute_file_hash(&file_path).unwrap();
+
+        let mut lockfile = PluginLockfile::new();
+        let mut entry = sample_entry();
+        entry.file_hash = Some(original_hash.clone());
+        lockfile.insert("source/postgres".to_string(), entry);
+
+        // Tamper with the file
+        std::fs::write(&file_path, b"tampered content").unwrap();
+
+        let results = lockfile.verify_file_integrity(dir.path());
+        match results.get("libdrasi_source_postgres.so") {
+            Some(FileIntegrityStatus::Tampered { expected, actual }) => {
+                assert_eq!(expected, &original_hash);
+                assert_ne!(expected, actual);
+            }
+            other => panic!("Expected Tampered, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_verify_file_integrity_missing() {
+        let dir = TempDir::new().unwrap();
+
+        let mut lockfile = PluginLockfile::new();
+        let mut entry = sample_entry();
+        entry.file_hash = Some("abc123".to_string());
+        lockfile.insert("source/postgres".to_string(), entry);
+
+        let results = lockfile.verify_file_integrity(dir.path());
+        assert_eq!(
+            results.get("libdrasi_source_postgres.so"),
+            Some(&FileIntegrityStatus::Missing)
+        );
+    }
+
+    #[test]
+    fn test_verify_file_integrity_no_hash() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("libdrasi_source_postgres.so");
+        std::fs::write(&file_path, b"plugin content").unwrap();
+
+        let mut lockfile = PluginLockfile::new();
+        lockfile.insert("source/postgres".to_string(), sample_entry());
+
+        let results = lockfile.verify_file_integrity(dir.path());
+        assert_eq!(
+            results.get("libdrasi_source_postgres.so"),
+            Some(&FileIntegrityStatus::NoHash)
+        );
+    }
+
+    #[test]
+    fn test_file_hash_roundtrip_in_lockfile() {
+        let dir = TempDir::new().unwrap();
+
+        let mut lockfile = PluginLockfile::new();
+        let mut entry = sample_entry();
+        entry.file_hash = Some("abcdef1234567890".to_string());
+        lockfile.insert("source/postgres".to_string(), entry);
+
+        lockfile.write(dir.path()).unwrap();
+
+        let loaded = PluginLockfile::read(dir.path()).unwrap().unwrap();
+        let loaded_entry = loaded.get("source/postgres").unwrap();
+        assert_eq!(loaded_entry.file_hash.as_deref(), Some("abcdef1234567890"));
+    }
+
+    #[test]
+    fn test_file_hash_none_not_serialized() {
+        let mut lockfile = PluginLockfile::new();
+        lockfile.insert("source/postgres".to_string(), sample_entry());
+
+        let content = toml::to_string_pretty(&lockfile).unwrap();
+        assert!(!content.contains("file_hash"));
+    }
+
+    #[test]
+    fn test_file_hash_some_is_serialized() {
+        let mut lockfile = PluginLockfile::new();
+        let mut entry = sample_entry();
+        entry.file_hash = Some("deadbeef".to_string());
+        lockfile.insert("source/postgres".to_string(), entry);
+
+        let content = toml::to_string_pretty(&lockfile).unwrap();
+        assert!(content.contains("file_hash = \"deadbeef\""));
+    }
 }

@@ -352,6 +352,7 @@ pub async fn install_from_config(
                         Ok(resolved) => {
                             sp.finish_and_clear();
                             let dest_path = plugins_dir.join(&resolved.filename);
+                            let mut sig_info = None;
                             if dest_path.exists() {
                                 println!(
                                     "{}",
@@ -393,6 +394,16 @@ pub async fn install_from_config(
                                             )),
                                             sig_label
                                         );
+                                        if let drasi_host_sdk::registry::SignatureStatus::Verified(
+                                            v,
+                                        ) = _download.verification
+                                        {
+                                            sig_info = Some(PluginSignatureInfo {
+                                                verified: true,
+                                                issuer: v.issuer,
+                                                subject: v.subject,
+                                            });
+                                        }
                                         installed += 1;
                                     }
                                     Err(e) => {
@@ -427,7 +438,7 @@ pub async fn install_from_config(
                                     .ok(),
                                     git_commit: None,
                                     build_timestamp: None,
-                                    signature: None,
+                                    signature: sig_info,
                                 },
                             );
                         }
@@ -500,6 +511,7 @@ pub async fn install_all(
             Ok(resolved) => {
                 sp.finish_and_clear();
                 let dest_path = plugins_dir.join(&resolved.filename);
+                let mut sig_info = None;
                 if dest_path.exists() {
                     println!(
                         "{}",
@@ -536,6 +548,15 @@ pub async fn install_all(
                                 )),
                                 sig_label
                             );
+                            if let drasi_host_sdk::registry::SignatureStatus::Verified(v) =
+                                _download.verification
+                            {
+                                sig_info = Some(PluginSignatureInfo {
+                                    verified: true,
+                                    issuer: v.issuer,
+                                    subject: v.subject,
+                                });
+                            }
                             success_count += 1;
                         }
                         Err(e) => {
@@ -564,7 +585,7 @@ pub async fn install_all(
                         .ok(),
                         git_commit: None,
                         build_timestamp: None,
-                        signature: None,
+                        signature: sig_info,
                     },
                 );
             }
