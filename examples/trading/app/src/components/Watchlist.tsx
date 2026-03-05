@@ -13,45 +13,49 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { QueryTable, ColumnDef, RowAction } from './QueryTable';
 import { Stock } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
+import { formatCurrency, formatPercent } from '@/utils/formatters';
 import clsx from 'clsx';
 
+// Change indicator with arrow icon
+const ChangeIndicator: React.FC<{ value: number }> = ({ value }) => (
+  <span className="inline-flex items-center gap-1">
+    {value >= 0 ? (
+      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 5l5 7H5l5-7z"/>
+      </svg>
+    ) : (
+      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 15l-5-7h10l-5 7z"/>
+      </svg>
+    )}
+    {formatPercent(value)}
+  </span>
+);
+
+// Remove icon
+const RemoveIcon: React.FC = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+// Add icon
+const AddIcon: React.FC = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+  </svg>
+);
+
 export const Watchlist: React.FC = () => {
-  const { data, loading, error, lastUpdate } = useQuery<Stock>('watchlist-query');
-  const [prevPrices, setPrevPrices] = useState<Map<string, number>>(new Map());
-  const [priceChanges, setPriceChanges] = useState<Map<string, 'up' | 'down' | null>>(new Map());
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableStocks, setAvailableStocks] = useState<ApiStock[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isRemoving, setIsRemoving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  // Track price changes for highlight effect
-  useEffect(() => {
-    if (data) {
-      const newPriceChanges = new Map<string, 'up' | 'down' | null>();
-      
-      data.forEach(stock => {
-        const prevPrice = prevPrices.get(stock.symbol);
-        if (prevPrice !== undefined && prevPrice !== stock.price) {
-          newPriceChanges.set(stock.symbol, stock.price > prevPrice ? 'up' : 'down');
-          setTimeout(() => {
-            setPriceChanges(prev => {
-              const updated = new Map(prev);
-              updated.set(stock.symbol, null);
-              return updated;
-            });
-          }, 500);
-        }
-      });
-
-      setPriceChanges(newPriceChanges);
-      setPrevPrices(new Map(data.map(s => [s.symbol, s.price])));
-    }
-  }, [data]);
 
   // Load available stocks when modal opens
   useEffect(() => {
@@ -63,12 +67,11 @@ export const Watchlist: React.FC = () => {
   const loadAvailableStocks = async () => {
     try {
       const stocks = await tradingApi.getStocks();
-      // Filter out stocks already in watchlist
-      const watchlistSymbols = new Set(data?.map(s => s.symbol) || []);
-      const available = stocks.filter(s => !watchlistSymbols.has(s.symbol));
-      setAvailableStocks(available);
-      if (available.length > 0) {
-        setSelectedSymbol(available[0].symbol);
+      // Note: We can't filter out watchlist stocks without access to current data
+      // The QueryTable handles the data internally, so we show all stocks
+      setAvailableStocks(stocks);
+      if (stocks.length > 0) {
+        setSelectedSymbol(stocks[0].symbol);
       }
     } catch (err) {
       console.error('Failed to load stocks:', err);
@@ -85,7 +88,6 @@ export const Watchlist: React.FC = () => {
       await tradingApi.addToWatchlist(selectedSymbol);
       setShowAddModal(false);
       setSelectedSymbol('');
-      // The UI will update automatically via Drasi SSE
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to add to watchlist');
     } finally {
@@ -93,12 +95,11 @@ export const Watchlist: React.FC = () => {
     }
   };
 
-  const handleRemoveFromWatchlist = async (symbol: string) => {
-    setIsRemoving(symbol);
+  const handleRemoveFromWatchlist = async (stock: Stock) => {
+    setIsRemoving(stock.symbol);
     setActionError(null);
     try {
-      await tradingApi.removeFromWatchlist(symbol);
-      // The UI will update automatically via Drasi SSE
+      await tradingApi.removeFromWatchlist(stock.symbol);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to remove from watchlist');
     } finally {
@@ -106,142 +107,77 @@ export const Watchlist: React.FC = () => {
     }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(price);
-  };
+  const columns: ColumnDef<Stock>[] = [
+    {
+      key: 'symbol',
+      label: 'Symbol',
+      className: 'font-medium',
+    },
+    {
+      key: 'name',
+      label: 'Name',
+      className: 'text-sm text-gray-300',
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      align: 'right',
+      format: (value) => formatCurrency(value),
+      className: 'font-mono',
+    },
+    {
+      key: 'changePercent',
+      label: 'Change',
+      align: 'right',
+      format: (value) => <ChangeIndicator value={value} />,
+      className: (value) => clsx(
+        'font-mono text-sm',
+        value >= 0 ? 'text-trading-green' : 'text-trading-red'
+      ),
+    },
+  ];
 
-  const formatPercent = (percent: number) => {
-    const formatted = Math.abs(percent).toFixed(2);
-    return `${percent >= 0 ? '+' : '-'}${formatted}%`;
-  };
+  const actions: RowAction<Stock>[] = [
+    {
+      icon: <RemoveIcon />,
+      label: 'Remove from watchlist',
+      onClick: handleRemoveFromWatchlist,
+      className: 'text-gray-500',
+      hoverClassName: 'hover:bg-red-900/30 hover:text-red-400',
+      loading: (row) => isRemoving === row.symbol,
+    },
+  ];
 
-  if (loading && !data) {
-    return (
-      <div className="bg-trading-card rounded-lg p-6 border border-trading-border h-[400px] flex flex-col">
-        <h2 className="text-xl font-bold mb-4">Watchlist</h2>
-        <div className="flex items-center justify-center flex-1">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-trading-blue"></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-trading-card rounded-lg p-6 border border-trading-border h-[400px]">
-        <h2 className="text-xl font-bold mb-4">Watchlist</h2>
-        <div className="text-trading-red">Error: {error}</div>
-      </div>
-    );
-  }
+  const headerActions = (
+    <button
+      onClick={() => setShowAddModal(true)}
+      className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
+      title="Add to watchlist"
+    >
+      <AddIcon />
+    </button>
+  );
 
   return (
-    <div className="bg-trading-card rounded-lg border border-trading-border h-[400px] flex flex-col">
-      <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold">Watchlist</h2>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
-            title="Add to watchlist"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-        </div>
-        {lastUpdate && (
-          <span className="text-xs text-gray-500">
-            Updated: {lastUpdate.toLocaleTimeString()}
-          </span>
-        )}
-      </div>
-
+    <>
       {actionError && (
-        <div className="mx-6 mb-2 p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
+        <div className="mb-2 p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
           {actionError}
         </div>
       )}
       
-      <div className="overflow-auto flex-1 px-6 pb-6">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-trading-card z-10">
-            <tr className="border-b border-trading-border">
-              <th className="text-left py-2 px-2 text-sm font-medium text-gray-400">Symbol</th>
-              <th className="text-left py-2 px-2 text-sm font-medium text-gray-400">Name</th>
-              <th className="text-right py-2 px-2 text-sm font-medium text-gray-400">Price</th>
-              <th className="text-right py-2 px-2 text-sm font-medium text-gray-400">Change</th>
-              <th className="w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.map((stock) => {
-              const change = priceChanges.get(stock.symbol);
-              return (
-                <tr 
-                  key={stock.symbol} 
-                  className={clsx(
-                    "border-b border-trading-border/50 hover:bg-trading-border/20 transition-colors",
-                    change === 'up' && 'price-up',
-                    change === 'down' && 'price-down'
-                  )}
-                >
-                  <td className="py-3 px-2 font-medium">{stock.symbol}</td>
-                  <td className="py-3 px-2 text-sm text-gray-300">{stock.name}</td>
-                  <td className="py-3 px-2 text-right font-mono">
-                    {formatPrice(stock.price)}
-                  </td>
-                  <td className={clsx(
-                    "py-3 px-2 text-right font-mono text-sm",
-                    stock.changePercent >= 0 ? "text-trading-green" : "text-trading-red"
-                  )}>
-                    <span className="inline-flex items-center gap-1">
-                      {stock.changePercent >= 0 ? (
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 5l5 7H5l5-7z"/>
-                        </svg>
-                      ) : (
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 15l-5-7h10l-5 7z"/>
-                        </svg>
-                      )}
-                      {formatPercent(stock.changePercent)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-2">
-                    <button
-                      onClick={() => handleRemoveFromWatchlist(stock.symbol)}
-                      disabled={isRemoving === stock.symbol}
-                      className="p-1 rounded hover:bg-red-900/30 transition-colors text-gray-500 hover:text-red-400 disabled:opacity-50"
-                      title="Remove from watchlist"
-                    >
-                      {isRemoving === stock.symbol ? (
-                        <div className="w-4 h-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent"></div>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      )}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {(!data || data.length === 0) && (
-              <tr>
-                <td colSpan={5} className="py-8 text-center text-gray-500">
-                  No stocks in watchlist. Click + to add.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <QueryTable<Stock>
+        queryId="watchlist-query"
+        title="Watchlist"
+        columns={columns}
+        rowKey={(row) => row.symbol}
+        animateOnChange="price"
+        defaultSort={{ column: 'symbol', direction: 'asc' }}
+        actions={actions}
+        actionsWidth="w-10"
+        headerActions={headerActions}
+        emptyMessage="No stocks in watchlist. Click + to add."
+      />
 
       {/* Add to Watchlist Modal */}
       {showAddModal && (
@@ -286,6 +222,6 @@ export const Watchlist: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };

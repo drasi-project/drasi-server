@@ -300,6 +300,41 @@ export const SECTOR_PERFORMANCE_QUERY: QueryDefinition = {
   joins: [HAS_PRICE]
 };
 
+/**
+ * PORTFOLIO SUMMARY QUERY
+ * 
+ * Aggregates portfolio positions into summary statistics.
+ * Computes total value, cost, profit/loss in real-time.
+ * 
+ * Demonstrates:
+ * - Aggregation across joined data
+ * - Real-time summary updates as prices change
+ * - Single-row result set
+ */
+export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
+  id: 'portfolio-summary-query',
+  description: 'Real-time portfolio summary statistics',
+  query: `
+    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+    WITH sum(sp.price * p.quantity) AS total_value,
+         sum(p.purchase_price * p.quantity) AS total_cost,
+         count(p) AS position_count
+    RETURN total_value,
+           total_cost,
+           (total_value - total_cost) AS total_profit_loss,
+           CASE WHEN total_cost > 0 
+                THEN ((total_value - total_cost) / total_cost * 100) 
+                ELSE 0 
+           END AS total_profit_loss_percent,
+           position_count
+  `,
+  sources: [
+    { sourceId: 'postgres-stocks', pipeline: [] },
+    { sourceId: 'price-feed', pipeline: [] }
+  ],
+  joins: [OWNS_STOCK, HAS_PRICE]
+};
+
 // ============================================================================
 // ALL QUERIES - For easy iteration
 // ============================================================================
@@ -311,7 +346,8 @@ export const ALL_QUERIES: QueryDefinition[] = [
   TOP_LOSERS_QUERY,
   HIGH_VOLUME_QUERY,
   PRICE_TICKER_QUERY,
-  SECTOR_PERFORMANCE_QUERY
+  SECTOR_PERFORMANCE_QUERY,
+  PORTFOLIO_SUMMARY_QUERY
 ];
 
 // Query lookup by ID

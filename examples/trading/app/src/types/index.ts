@@ -46,6 +46,14 @@ export interface SectorPerformance {
   maxPrice: number;
 }
 
+export interface PortfolioSummary {
+  totalValue: number;
+  totalCost: number;
+  totalProfitLoss: number;
+  totalProfitLossPercent: number;
+  positionCount: number;
+}
+
 export interface QueryResult {
   queryId: string;
   timestamp: number;

@@ -384,10 +384,15 @@ export class DrasiSSEClient {
     
     console.log(`>>> routeDataToSubscribers with ${dataArray.length} items, first item:`, dataArray[0]);
     
+    // Check if data looks like portfolio summary (has total_value, total_cost, position_count)
+    if (dataArray[0]?.total_value !== undefined && dataArray[0]?.total_cost !== undefined) {
+      console.log(`>>> Routing to portfolio-summary-query`);
+      this.deliverToQuery('portfolio-summary-query', dataArray);
+    }
     // Check if data looks like portfolio data
     // Full portfolio data has quantity, purchase_price
     // Delete events may only have id (the portfolio table's primary key)
-    if (dataArray[0]?.id !== undefined || 
+    else if (dataArray[0]?.id !== undefined || 
         (dataArray[0]?.quantity !== undefined && dataArray[0]?.purchase_price !== undefined)) {
       console.log(`>>> Routing to portfolio-query`);
       this.deliverToQuery('portfolio-query', dataArray);

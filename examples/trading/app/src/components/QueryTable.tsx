@@ -1,0 +1,498 @@
+// Copyright 2025 The Drasi Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useQuery } from '@/hooks/useDrasi';
+import { useRowAnimation, AnimationDirection } from '@/hooks/useRowAnimation';
+import clsx from 'clsx';
+
+/**
+ * Column definition for QueryTable
+ */
+export interface ColumnDef<T> {
+  /** Property key on the data object, or a custom string for computed columns */
+  key: keyof T | string;
+  /** Column header label */
+  label: string;
+  /** Custom formatter/renderer for cell content */
+  format?: (value: any, row: T) => React.ReactNode;
+  /** Whether this column is sortable (default: true) */
+  sortable?: boolean;
+  /** Text alignment (default: 'left') */
+  align?: 'left' | 'center' | 'right';
+  /** Additional CSS classes for cells */
+  className?: string | ((value: any, row: T) => string);
+  /** Additional CSS classes for header */
+  headerClassName?: string;
+  /** Width hint (e.g., 'w-20', 'w-32') */
+  width?: string;
+}
+
+/**
+ * Row action definition (edit, delete, etc.)
+ */
+export interface RowAction<T> {
+  /** Icon element to display */
+  icon: React.ReactNode;
+  /** Accessibility label */
+  label: string;
+  /** Click handler */
+  onClick: (row: T) => void;
+  /** Additional CSS classes */
+  className?: string;
+  /** Hover CSS classes */
+  hoverClassName?: string;
+  /** Whether action is disabled for this row */
+  disabled?: (row: T) => boolean;
+  /** Whether action is loading for this row */
+  loading?: (row: T) => boolean;
+}
+
+/**
+ * Sort configuration
+ */
+export interface SortConfig {
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+/**
+ * Props for QueryTable component
+ */
+export interface QueryTableProps<T> {
+  /** Drasi query ID to subscribe to */
+  queryId: string;
+  /** Column definitions */
+  columns: ColumnDef<T>[];
+  /** Function to extract unique key for each row */
+  rowKey: (row: T) => string;
+  
+  // Optional props
+  /** Card title */
+  title?: string;
+  /** Container className */
+  className?: string;
+  /** Table className */
+  tableClassName?: string;
+  /** Header row className */
+  headerClassName?: string;
+  /** Body row className (static or per-row function) */
+  rowClassName?: string | ((row: T, index: number) => string);
+  /** Fixed height for the card (default: 'h-[400px]') */
+  height?: string;
+  
+  // Sorting
+  /** Initial sort configuration */
+  defaultSort?: SortConfig;
+  /** Callback when sort changes */
+  onSortChange?: (sort: SortConfig) => void;
+  
+  // Actions
+  /** Row actions (edit, delete, etc.) */
+  actions?: RowAction<T>[];
+  /** Actions column width */
+  actionsWidth?: string;
+  /** Header actions slot (e.g., add button) */
+  headerActions?: React.ReactNode;
+  
+  // Animation
+  /** Field to track for row change animations */
+  animateOnChange?: keyof T;
+  
+  // Custom rendering
+  /** Custom row renderer (receives default render function) */
+  renderRow?: (
+    row: T,
+    columns: ColumnDef<T>[],
+    animation: AnimationDirection,
+    defaultRender: () => React.ReactNode
+  ) => React.ReactNode;
+  /** Message to show when table is empty */
+  emptyMessage?: string;
+  
+  // Slots
+  /** Content to render between header and table */
+  headerSlot?: React.ReactNode;
+}
+
+/**
+ * Sort indicator icon component
+ */
+const SortIndicator: React.FC<{ direction: 'asc' | 'desc' | null; active: boolean }> = ({ direction, active }) => {
+  if (!active) {
+    return (
+      <svg className="w-3 h-3 ml-1 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+      </svg>
+    );
+  }
+  
+  if (direction === 'asc') {
+    return (
+      <svg className="w-3 h-3 ml-1 text-trading-blue" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 5l5 7H5l5-7z"/>
+      </svg>
+    );
+  }
+  
+  return (
+    <svg className="w-3 h-3 ml-1 text-trading-blue" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M10 15l-5-7h10l-5 7z"/>
+    </svg>
+  );
+};
+
+/**
+ * Loading spinner component
+ */
+const LoadingSpinner: React.FC = () => (
+  <div className="flex items-center justify-center flex-1">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-trading-blue"></div>
+  </div>
+);
+
+/**
+ * Small inline loading spinner for actions
+ */
+const ActionSpinner: React.FC = () => (
+  <div className="w-4 h-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent"></div>
+);
+
+/**
+ * QueryTable - A reusable, sortable table component for Drasi query results.
+ * 
+ * Features:
+ * - Subscribes to a Drasi query and displays results as a table
+ * - Sortable columns with click-to-toggle asc/desc
+ * - Optional row actions (edit, delete, etc.)
+ * - Row animations on value changes
+ * - Customizable styling and rendering
+ * 
+ * @example
+ * ```tsx
+ * <QueryTable<Stock>
+ *   queryId="watchlist-query"
+ *   columns={[
+ *     { key: 'symbol', label: 'Symbol' },
+ *     { key: 'price', label: 'Price', format: formatCurrency, align: 'right' },
+ *   ]}
+ *   rowKey={(row) => row.symbol}
+ *   defaultSort={{ column: 'symbol', direction: 'asc' }}
+ *   animateOnChange="price"
+ * />
+ * ```
+ */
+export function QueryTable<T extends Record<string, any>>({
+  queryId,
+  columns,
+  rowKey,
+  title,
+  className,
+  tableClassName,
+  headerClassName,
+  rowClassName,
+  height = 'h-[400px]',
+  defaultSort,
+  onSortChange,
+  actions,
+  actionsWidth = 'w-20',
+  headerActions,
+  animateOnChange,
+  renderRow,
+  emptyMessage = 'No data available',
+  headerSlot,
+}: QueryTableProps<T>): React.ReactElement {
+  const { data, loading, error, lastUpdate } = useQuery<T>(queryId);
+  const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
+
+  // Animation hook
+  const { animations, updateData } = useRowAnimation<T>({
+    rowKey,
+    getValue: animateOnChange 
+      ? (row) => {
+          const val = row[animateOnChange];
+          return typeof val === 'number' ? val : undefined;
+        }
+      : () => undefined,
+  });
+
+  // Update animation tracking when data changes
+  useEffect(() => {
+    if (data && animateOnChange) {
+      updateData(data);
+    }
+  }, [data, animateOnChange, updateData]);
+
+  // Handle column header click for sorting
+  const handleHeaderClick = useCallback((column: ColumnDef<T>) => {
+    if (column.sortable === false) return;
+    
+    const columnKey = String(column.key);
+    
+    setSort((prev) => {
+      let newSort: SortConfig;
+      
+      if (prev?.column === columnKey) {
+        // Toggle direction
+        newSort = {
+          column: columnKey,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc',
+        };
+      } else {
+        // New column, default to ascending
+        newSort = { column: columnKey, direction: 'asc' };
+      }
+      
+      onSortChange?.(newSort);
+      return newSort;
+    });
+  }, [onSortChange]);
+
+  // Sort data
+  const sortedData = useMemo(() => {
+    if (!data || !sort) return data;
+    
+    return [...data].sort((a, b) => {
+      const aVal = a[sort.column as keyof T];
+      const bVal = b[sort.column as keyof T];
+      
+      // Handle null/undefined
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return sort.direction === 'asc' ? 1 : -1;
+      if (bVal == null) return sort.direction === 'asc' ? -1 : 1;
+      
+      // Compare values
+      let comparison = 0;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        comparison = aVal - bVal;
+      } else if (typeof aVal === 'string' && typeof bVal === 'string') {
+        comparison = aVal.localeCompare(bVal);
+      } else {
+        comparison = String(aVal).localeCompare(String(bVal));
+      }
+      
+      return sort.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [data, sort]);
+
+  // Get cell value
+  const getCellValue = (row: T, column: ColumnDef<T>): any => {
+    const key = column.key as keyof T;
+    return row[key];
+  };
+
+  // Render cell content
+  const renderCell = (row: T, column: ColumnDef<T>): React.ReactNode => {
+    const value = getCellValue(row, column);
+    if (column.format) {
+      return column.format(value, row);
+    }
+    if (value == null) return '-';
+    return String(value);
+  };
+
+  // Get cell className
+  const getCellClassName = (row: T, column: ColumnDef<T>): string => {
+    const value = getCellValue(row, column);
+    if (typeof column.className === 'function') {
+      return column.className(value, row);
+    }
+    return column.className || '';
+  };
+
+  // Get row className
+  const getRowClassName = (row: T, index: number): string => {
+    if (typeof rowClassName === 'function') {
+      return rowClassName(row, index);
+    }
+    return rowClassName || '';
+  };
+
+  // Render default row
+  const renderDefaultRow = (row: T, index: number, animation: AnimationDirection): React.ReactNode => {
+    const key = rowKey(row);
+    
+    return (
+      <tr
+        key={key}
+        className={clsx(
+          "border-b border-trading-border/50 hover:bg-trading-border/20 transition-colors",
+          animation === 'up' && 'price-up',
+          animation === 'down' && 'price-down',
+          getRowClassName(row, index)
+        )}
+      >
+        {columns.map((column) => (
+          <td
+            key={String(column.key)}
+            className={clsx(
+              "py-3 px-2",
+              column.align === 'right' && 'text-right',
+              column.align === 'center' && 'text-center',
+              getCellClassName(row, column)
+            )}
+          >
+            {renderCell(row, column)}
+          </td>
+        ))}
+        {actions && actions.length > 0 && (
+          <td className="py-3 px-2">
+            <div className="flex gap-1 justify-end">
+              {actions.map((action, actionIndex) => {
+                const isDisabled = action.disabled?.(row) ?? false;
+                const isLoading = action.loading?.(row) ?? false;
+                
+                return (
+                  <button
+                    key={actionIndex}
+                    onClick={() => !isDisabled && !isLoading && action.onClick(row)}
+                    disabled={isDisabled || isLoading}
+                    className={clsx(
+                      "p-1 rounded transition-colors",
+                      action.className || "text-gray-500",
+                      !isDisabled && !isLoading && (action.hoverClassName || "hover:bg-trading-border/50 hover:text-trading-blue"),
+                      (isDisabled || isLoading) && "opacity-50 cursor-not-allowed"
+                    )}
+                    title={action.label}
+                  >
+                    {isLoading ? <ActionSpinner /> : action.icon}
+                  </button>
+                );
+              })}
+            </div>
+          </td>
+        )}
+      </tr>
+    );
+  };
+
+  // Loading state
+  if (loading && !data) {
+    return (
+      <div className={clsx("bg-trading-card rounded-lg p-6 border border-trading-border flex flex-col", height, className)}>
+        {title && <h2 className="text-xl font-bold mb-4">{title}</h2>}
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className={clsx("bg-trading-card rounded-lg p-6 border border-trading-border", height, className)}>
+        {title && <h2 className="text-xl font-bold mb-4">{title}</h2>}
+        <div className="text-trading-red">Error: {error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={clsx("bg-trading-card rounded-lg border border-trading-border flex flex-col", height, className)}>
+      {/* Header */}
+      {(title || headerActions || lastUpdate) && (
+        <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {title && <h2 className="text-xl font-bold">{title}</h2>}
+            {headerActions}
+          </div>
+          {lastUpdate && (
+            <span className="text-xs text-gray-500">
+              Updated: {lastUpdate.toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Header slot (e.g., summary stats) */}
+      {headerSlot && (
+        <div className="px-6 pb-4 flex-shrink-0">
+          {headerSlot}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className={clsx("overflow-auto flex-1 px-6 pb-6", tableClassName)}>
+        <table className="w-full">
+          <thead className={clsx("sticky top-0 bg-trading-card z-10", headerClassName)}>
+            <tr className="border-b border-trading-border">
+              {columns.map((column) => {
+                const isSortable = column.sortable !== false;
+                const isActive = sort?.column === String(column.key);
+                
+                return (
+                  <th
+                    key={String(column.key)}
+                    className={clsx(
+                      "py-2 px-2 text-sm font-medium text-gray-400",
+                      column.align === 'right' && 'text-right',
+                      column.align === 'center' && 'text-center',
+                      column.align !== 'right' && column.align !== 'center' && 'text-left',
+                      column.width,
+                      column.headerClassName,
+                      isSortable && "cursor-pointer hover:text-gray-200 select-none"
+                    )}
+                    onClick={() => isSortable && handleHeaderClick(column)}
+                  >
+                    <span className={clsx(
+                      "inline-flex items-center",
+                      column.align === 'right' && 'justify-end w-full'
+                    )}>
+                      {column.label}
+                      {isSortable && (
+                        <SortIndicator 
+                          direction={isActive ? sort!.direction : null} 
+                          active={isActive} 
+                        />
+                      )}
+                    </span>
+                  </th>
+                );
+              })}
+              {actions && actions.length > 0 && (
+                <th className={actionsWidth}></th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedData?.map((row, index) => {
+              const key = rowKey(row);
+              const animation = animations.get(key) ?? null;
+              
+              if (renderRow) {
+                return renderRow(
+                  row,
+                  columns,
+                  animation,
+                  () => renderDefaultRow(row, index, animation)
+                );
+              }
+              
+              return renderDefaultRow(row, index, animation);
+            })}
+            {(!sortedData || sortedData.length === 0) && (
+              <tr>
+                <td 
+                  colSpan={columns.length + (actions?.length ? 1 : 0)} 
+                  className="py-8 text-center text-gray-500"
+                >
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
