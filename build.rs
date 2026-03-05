@@ -185,9 +185,7 @@ fn download_vendor(target: &str, vendor_dir: &std::path::Path) -> Result<(), Str
     }
 
     // Extract tarball into parent of vendor_dir (tar contains the target name as root)
-    let parent = vendor_dir
-        .parent()
-        .ok_or("vendor_dir has no parent")?;
+    let parent = vendor_dir.parent().ok_or("vendor_dir has no parent")?;
     std::fs::create_dir_all(parent).map_err(|e| format!("mkdir failed: {e}"))?;
 
     let decoder = GzDecoder::new(&blob[..]);

@@ -76,7 +76,10 @@ fn exchange_or_basic(registry: &str, repo: &str, user: &str, pass: &str) -> Resu
         }
     }
 
-    Ok(format!("Basic {}", b64_encode(format!("{user}:{pass}").as_bytes())))
+    Ok(format!(
+        "Basic {}",
+        b64_encode(format!("{user}:{pass}").as_bytes())
+    ))
 }
 
 /// Try to get credentials from the docker credential helper.
@@ -97,11 +100,7 @@ fn try_docker_credential_helper(registry: &str) -> Option<(String, String)> {
         .ok()?;
 
     use std::io::Write;
-    child
-        .stdin
-        .take()?
-        .write_all(registry.as_bytes())
-        .ok()?;
+    child.stdin.take()?.write_all(registry.as_bytes()).ok()?;
 
     let output = child.wait_with_output().ok()?;
     if !output.status.success() {
@@ -399,9 +398,7 @@ pub fn pull(image_ref: &str, target_dir: &Path) -> Result<()> {
 
     // 3. Extract tarball
     println!("  Extracting to {}...", target_dir.display());
-    let parent = target_dir
-        .parent()
-        .context("target_dir has no parent")?;
+    let parent = target_dir.parent().context("target_dir has no parent")?;
     std::fs::create_dir_all(parent)?;
 
     let decoder = GzDecoder::new(&blob[..]);
@@ -423,25 +420,29 @@ pub fn pull(image_ref: &str, target_dir: &Path) -> Result<()> {
 
 /// Get a pull-only token (doesn't require auth for public packages).
 fn get_pull_token(registry: &str, repo: &str) -> Result<String> {
-    // Try authenticated first
-    if let Ok(token) = get_auth_token(registry, repo) {
-        return Ok(token);
+    let client = reqwest::blocking::Client::new();
+
+    // For GHCR, anonymous pull tokens are obtained differently:
+    // The www-authenticate challenge from a 401 tells us where to get a token.
+    // Try the standard token endpoint first with anonymous credentials.
+    let token_url =
+        format!("https://{registry}/token?scope=repository:{repo}:pull&service=ghcr.io");
+
+    // Try anonymous token request
+    let resp = client.get(&token_url).send();
+    if let Ok(resp) = resp {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<serde_json::Value>() {
+                if let Some(token) = body.get("token").and_then(|t| t.as_str()) {
+                    return Ok(token.to_string());
+                }
+            }
+        }
     }
 
-    // Fall back to anonymous token
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .get(format!(
-            "https://{registry}/token?scope=repository:{repo}:pull&service={registry}"
-        ))
-        .send()
-        .context("anonymous token request failed")?;
-
-    if resp.status().is_success() {
-        let body: serde_json::Value = resp.json()?;
-        if let Some(token) = body.get("token").and_then(|t| t.as_str()) {
-            return Ok(token.to_string());
-        }
+    // Fall back to authenticated token
+    if let Ok(token) = get_auth_token(registry, repo) {
+        return Ok(token);
     }
 
     bail!("could not obtain pull token for {registry}/{repo}")
