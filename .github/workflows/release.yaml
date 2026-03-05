@@ -317,6 +317,10 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Pull vendored native libraries
+        shell: bash
+        run: cargo xtask vendor pull x86_64-pc-windows-msvc --tag v1
+
       - name: Build binary
         shell: bash
         run: |

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [workspace]
-members = ["."]
+members = [".", "xtask"]
 
 [package]
 name = "drasi-server"
@@ -113,7 +113,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.3.3"
+drasi-core = "0.4.0"
 
 # Integration testing with testcontainers
 testcontainers = "0.23"
@@ -122,6 +122,13 @@ redis = { version = "0.24", features = ["tokio-comp", "streams"] }
 
 [lints.rust]
 warnings = "deny"
+
+[build-dependencies]
+ureq = { version = "3", features = ["json"] }
+flate2 = "1"
+tar = "0.4"
+serde_json = "1"
+sha2 = "0.10"
 
 [lints.clippy]
 print_stdout = "warn"

@@ -1,5 +1,9 @@
 # Cargo configuration for drasi-server
 #
+# cargo xtask alias — run `cargo xtask vendor push/pull/list`
+[alias]
+xtask = "run --package xtask --"
+
 # To use local path-based dependencies for development:
 # 1. Uncomment the [patch.crates-io] section
 # 2. Run: cargo build
