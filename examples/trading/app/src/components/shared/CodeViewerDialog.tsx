@@ -27,6 +27,8 @@ export interface CodeViewerDialogProps {
   reactCode: string;
   /** Cypher query string */
   cypherQuery: string;
+  /** URL to open the Drasi Server UI for this query's instance */
+  drasiUiUrl?: string | null;
 }
 
 type TabId = 'react' | 'cypher';
@@ -47,6 +49,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   title,
   reactCode,
   cypherQuery,
+  drasiUiUrl,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('react');
   const [copied, setCopied] = useState(false);
@@ -115,7 +118,23 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
       <div className="bg-[#1e2433] border border-trading-border/50 rounded-lg w-[90vw] h-[85vh] max-w-6xl flex flex-col shadow-2xl animate-slide-up">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-trading-border/50 flex-shrink-0">
-          <h2 className="text-xl font-bold text-white">{title}</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-white">{title}</h2>
+            {drasiUiUrl && (
+              <a
+                href={drasiUiUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded bg-trading-border/30 hover:bg-trading-border/50 text-trading-blue hover:text-blue-300 transition-colors"
+                title="Open in Drasi Server UI"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Open in Drasi UI
+              </a>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="p-2 rounded hover:bg-trading-border/50 transition-colors text-gray-400 hover:text-white"
@@ -149,7 +168,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
                 : "text-gray-400 hover:text-gray-200 hover:bg-trading-border/10"
             )}
           >
-            Cypher Query
+            Query Definition
           </button>
           
           {/* Copy button */}

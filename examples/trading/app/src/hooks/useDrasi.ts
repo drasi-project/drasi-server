@@ -252,6 +252,53 @@ export function useConnectionStatus(): ConnectionStatus {
   return status;
 }
 
+/**
+ * Hook to get the Drasi Server UI URL for the current instance.
+ */
+export function useDrasiUiUrl(): string | null {
+  const { client, initialized } = useDrasiClient();
+  if (!initialized || !client) return null;
+  return client.getDrasiUiUrl();
+}
+
+/**
+ * Hook to fetch a query's full configuration from the Drasi Server.
+ * Returns the complete config object and loading state.
+ */
+export function useQueryDefinition(queryId: string): {
+  config: Record<string, any> | null;
+  loading: boolean;
+} {
+  const [config, setConfig] = useState<Record<string, any> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { client, initialized } = useDrasiClient();
+
+  useEffect(() => {
+    if (!initialized || !client) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchConfig = async () => {
+      setLoading(true);
+      const result = await client.getQueryConfig(queryId);
+      if (!cancelled) {
+        setConfig(result);
+        setLoading(false);
+      }
+    };
+
+    fetchConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryId, client, initialized]);
+
+  return { config, loading };
+}
+
 export function useQueryParameters(queryId: string) {
   const { client, initialized } = useDrasiClient();
   

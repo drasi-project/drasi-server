@@ -25,6 +25,7 @@ export class DrasiClient {
   private createdQueries: Set<string> = new Set();
   private createdReaction = false;
   private customQueries: Set<string> = new Set();
+  private instanceId: string | null = null;
 
   constructor(baseUrl?: string) {
     // Use direct URL - Drasi Server should have CORS enabled
@@ -53,6 +54,21 @@ export class DrasiClient {
       const healthResponse = await fetch(`${this.baseUrl}/health`);
       if (!healthResponse.ok) {
         throw new Error('Drasi Server is not healthy');
+      }
+
+      // Discover the instance ID (convenience routes map to the first instance)
+      try {
+        const instancesResponse = await fetch(`${this.baseUrl}/api/v1/instances`);
+        if (instancesResponse.ok) {
+          const instancesJson = await instancesResponse.json();
+          const instances = instancesJson.data ?? instancesJson;
+          if (Array.isArray(instances) && instances.length > 0) {
+            this.instanceId = instances[0].id ?? instances[0];
+            console.log(`Discovered instance ID: ${this.instanceId}`);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not discover instance ID:', err);
       }
 
       // Check if sources exist
@@ -311,6 +327,26 @@ export class DrasiClient {
   }
 
   /**
+   * Get a query's full configuration from the Drasi Server
+   */
+  async getQueryConfig(queryId: string): Promise<Record<string, any> | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/queries/${queryId}?view=full`);
+      if (!response.ok) {
+        console.warn(`Failed to fetch query config for ${queryId}: ${response.status}`);
+        return null;
+      }
+      const json = await response.json();
+      const payload = json.data ?? json;
+      const config = payload?.config ?? payload;
+      return config ?? null;
+    } catch (error) {
+      console.error(`Failed to get query config for ${queryId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get initial query results from REST API
    */
   async getQueryResults(queryId: string): Promise<any[]> {
@@ -349,6 +385,14 @@ export class DrasiClient {
    */
   onConnectionStatusChange(callback: (status: ConnectionStatus) => void): () => void {
     return this.sseClient.onConnectionStatusChange(callback);
+  }
+
+  /**
+   * Get the Drasi Server UI URL for the current instance
+   */
+  getDrasiUiUrl(): string | null {
+    if (!this.instanceId) return null;
+    return `${this.baseUrl}/ui?instance=${encodeURIComponent(this.instanceId)}`;
   }
 
   /**

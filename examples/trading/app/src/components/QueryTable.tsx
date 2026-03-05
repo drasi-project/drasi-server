@@ -13,10 +13,9 @@
 // limitations under the License.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useQuery, useQueryDefinition, useDrasiUiUrl } from '@/hooks/useDrasi';
 import { useRowAnimation, AnimationDirection } from '@/hooks/useRowAnimation';
 import { CodeViewerDialog, CodeIcon } from './shared';
-import { QUERIES_BY_ID } from '@/services/queries';
 import clsx from 'clsx';
 
 /**
@@ -176,6 +175,97 @@ const ActionSpinner: React.FC = () => (
 );
 
 /**
+ * Format a query config object into a readable, YAML-like string for display.
+ */
+function formatQueryConfig(config: Record<string, any>): string {
+  const lines: string[] = [];
+
+  const addField = (label: string, value: any) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      lines.push(`${label}: ${value}`);
+    } else if (typeof value === 'boolean' || typeof value === 'number') {
+      lines.push(`${label}: ${value}`);
+    } else {
+      lines.push(`${label}: ${JSON.stringify(value)}`);
+    }
+  };
+
+  addField('id', config.id);
+  addField('queryLanguage', config.queryLanguage);
+  addField('autoStart', config.autoStart);
+
+  // Query — display as a nicely indented block
+  if (config.query) {
+    const q = typeof config.query === 'string' ? config.query.trim() : JSON.stringify(config.query);
+    lines.push('');
+    lines.push('query: |');
+    for (const line of q.split('\n')) {
+      lines.push(`  ${line}`);
+    }
+  }
+
+  // Sources
+  if (config.sources && config.sources.length > 0) {
+    lines.push('');
+    lines.push('sources:');
+    for (const src of config.sources) {
+      const sourceId = typeof src.sourceId === 'string' ? src.sourceId : JSON.stringify(src.sourceId);
+      lines.push(`  - sourceId: ${sourceId}`);
+      if (src.pipeline?.length) {
+        lines.push(`    pipeline: [${src.pipeline.join(', ')}]`);
+      }
+      if (src.nodes?.length) {
+        lines.push(`    nodes: [${src.nodes.join(', ')}]`);
+      }
+      if (src.relations?.length) {
+        lines.push(`    relations: [${src.relations.join(', ')}]`);
+      }
+    }
+  }
+
+  // Joins
+  if (config.joins) {
+    lines.push('');
+    lines.push('joins:');
+    const joins = Array.isArray(config.joins) ? config.joins : [config.joins];
+    for (const join of joins) {
+      if (join.id) {
+        lines.push(`  - id: ${join.id}`);
+        if (join.keys && Array.isArray(join.keys)) {
+          lines.push('    keys:');
+          for (const key of join.keys) {
+            lines.push(`      - label: ${key.label}, property: ${key.property}`);
+          }
+        }
+      } else {
+        // Fallback for unknown join shapes
+        const joinStr = JSON.stringify(join, null, 2);
+        for (const line of joinStr.split('\n')) {
+          lines.push(`  ${line}`);
+        }
+      }
+    }
+  }
+
+  // Optional fields
+  addField('enableBootstrap', config.enableBootstrap);
+  addField('bootstrapBufferSize', config.bootstrapBufferSize);
+  if (config.middleware?.length) {
+    lines.push(`middleware: [${config.middleware.join(', ')}]`);
+  }
+  addField('priorityQueueCapacity', config.priorityQueueCapacity);
+  addField('dispatchBufferCapacity', config.dispatchBufferCapacity);
+  addField('dispatchMode', config.dispatchMode);
+  if (config.storageBackend) {
+    lines.push('');
+    lines.push(`storageBackend: ${JSON.stringify(config.storageBackend, null, 2)}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * QueryTable - A reusable, sortable table component for Drasi query results.
  * 
  * Features:
@@ -223,12 +313,15 @@ export function QueryTable<T extends Record<string, any>>({
   const { data, loading, error, lastUpdate } = useQuery<T>(queryId);
   const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
   const [showCodeViewer, setShowCodeViewer] = useState(false);
+  const drasiUiUrl = useDrasiUiUrl();
 
-  // Get the Cypher query from the queries registry
-  const cypherQuery = useMemo(() => {
-    const queryDef = QUERIES_BY_ID.get(queryId);
-    return queryDef?.query?.trim() || 'Query not found';
-  }, [queryId]);
+  // Fetch the full query config from the Drasi Server
+  const { config: queryConfig, loading: configLoading } = useQueryDefinition(queryId);
+  const displayConfig = useMemo(() => {
+    if (configLoading) return 'Loading query definition...';
+    if (!queryConfig) return 'Query not found';
+    return formatQueryConfig(queryConfig);
+  }, [queryConfig, configLoading]);
 
   // Animation hook
   const { animations, updateData } = useRowAnimation<T>({
@@ -449,7 +542,8 @@ export function QueryTable<T extends Record<string, any>>({
           onClose={() => setShowCodeViewer(false)}
           title={title || queryId}
           reactCode={codeSnippet}
-          cypherQuery={cypherQuery}
+          cypherQuery={displayConfig}
+          drasiUiUrl={drasiUiUrl}
         />
       )}
 
