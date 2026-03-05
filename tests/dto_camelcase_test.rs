@@ -1,107 +1,138 @@
-// Test to verify that DTO fields serialize as camelCase
+// Test to verify that DTO fields serialize as camelCase.
+//
+// These tests construct real Rust DTO types and verify that serde
+// serializes their fields using camelCase, catching regressions in
+// the `#[serde(rename_all = "camelCase")]` annotations.
 
-use serde_json::json;
+use drasi_lib::config::QueryLanguage;
+use drasi_server::api::models::observability::{
+    ComponentEventDto, ComponentStatusDto, ComponentTypeDto, LogLevelDto, LogMessageDto,
+};
+use drasi_server::api::models::queries::query::{QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[test]
-fn test_postgres_dto_serializes_camelcase() {
-    let json = json!({
-        "host": "localhost",
-        "port": 5432,
-        "database": "testdb",
-        "user": "testuser",
-        "password": "testpass",
-        "tables": [],
-        "slotName": "test_slot",
-        "publicationName": "test_pub",
-        "sslMode": "disable",
-        "tableKeys": []
-    });
+fn test_query_config_dto_serializes_camelcase() {
+    let dto = QueryConfigDto {
+        id: "test-query".to_string(),
+        auto_start: true,
+        query: "MATCH (n) RETURN n".to_string(),
+        query_language: QueryLanguage::Cypher,
+        middleware: vec![],
+        sources: vec![SourceSubscriptionConfigDto {
+            source_id: "my-source".to_string(),
+            nodes: vec![],
+            relations: vec![],
+            pipeline: vec![],
+        }],
+        enable_bootstrap: true,
+        bootstrap_buffer_size: 500,
+        joins: None,
+        priority_queue_capacity: Some(1000),
+        dispatch_buffer_capacity: None,
+        dispatch_mode: None,
+        storage_backend: None,
+    };
 
-    // Verify fields are in camelCase
-    assert!(json.get("slotName").is_some(), "slotName should exist");
-    assert!(
-        json.get("publicationName").is_some(),
-        "publicationName should exist"
-    );
-    assert!(json.get("tableKeys").is_some(), "tableKeys should exist");
-    assert!(json.get("sslMode").is_some(), "sslMode should exist");
+    let json = serde_json::to_value(&dto).unwrap();
 
-    // Verify snake_case versions don't exist
+    // camelCase fields must exist
+    assert!(json.get("autoStart").is_some(), "autoStart should exist");
     assert!(
-        json.get("slot_name").is_none(),
-        "slot_name should NOT exist"
+        json.get("queryLanguage").is_some(),
+        "queryLanguage should exist"
     );
     assert!(
-        json.get("publication_name").is_none(),
-        "publication_name should NOT exist"
+        json.get("enableBootstrap").is_some(),
+        "enableBootstrap should exist"
     );
     assert!(
-        json.get("table_keys").is_none(),
-        "table_keys should NOT exist"
+        json.get("bootstrapBufferSize").is_some(),
+        "bootstrapBufferSize should exist"
     );
-    assert!(json.get("ssl_mode").is_none(), "ssl_mode should NOT exist");
+    assert!(
+        json.get("priorityQueueCapacity").is_some(),
+        "priorityQueueCapacity should exist"
+    );
 
-    println!("✅ Postgres source config serializes as camelCase");
+    // snake_case equivalents must NOT exist
+    assert!(
+        json.get("auto_start").is_none(),
+        "auto_start should NOT exist"
+    );
+    assert!(
+        json.get("query_language").is_none(),
+        "query_language should NOT exist"
+    );
+    assert!(
+        json.get("enable_bootstrap").is_none(),
+        "enable_bootstrap should NOT exist"
+    );
+
+    // Nested source subscription DTO
+    let source = json["sources"].as_array().unwrap().first().unwrap();
+    assert!(source.get("sourceId").is_some(), "sourceId should exist");
+    assert!(
+        source.get("source_id").is_none(),
+        "source_id should NOT exist"
+    );
 }
 
 #[test]
-fn test_mock_dto_serializes_camelcase() {
-    let json = json!({
-        "dataType": {"type": "sensorReading", "sensorCount": 5},
-        "intervalMs": 1000
-    });
+fn test_component_event_dto_serializes_camelcase() {
+    let dto = ComponentEventDto {
+        component_id: "my-source".to_string(),
+        component_type: ComponentTypeDto::Source,
+        status: ComponentStatusDto::Running,
+        timestamp: chrono::Utc::now(),
+        message: Some("started".to_string()),
+    };
 
-    // Verify fields are in camelCase
-    assert!(json.get("dataType").is_some(), "dataType should exist");
-    assert!(json.get("intervalMs").is_some(), "intervalMs should exist");
+    let json = serde_json::to_value(&dto).unwrap();
 
-    // Verify snake_case versions don't exist
     assert!(
-        json.get("data_type").is_none(),
-        "data_type should NOT exist"
+        json.get("componentId").is_some(),
+        "componentId should exist"
     );
     assert!(
-        json.get("interval_ms").is_none(),
-        "interval_ms should NOT exist"
+        json.get("componentType").is_some(),
+        "componentType should exist"
     );
-
-    println!("✅ Mock source config serializes as camelCase");
+    assert!(
+        json.get("component_id").is_none(),
+        "component_id should NOT exist"
+    );
+    assert!(
+        json.get("component_type").is_none(),
+        "component_type should NOT exist"
+    );
 }
 
 #[test]
-fn test_http_source_dto_serializes_camelcase() {
-    let json = json!({
-        "host": "localhost",
-        "port": 8080,
-        "timeoutMs": 5000,
-        "adaptiveMaxBatchSize": 100,
-        "adaptiveMinBatchSize": 10,
-        "adaptiveMaxWaitMs": 500,
-        "adaptiveMinWaitMs": 10,
-        "adaptiveWindowSecs": 60,
-        "adaptiveEnabled": true
-    });
+fn test_log_message_dto_serializes_camelcase() {
+    let dto = LogMessageDto {
+        timestamp: chrono::Utc::now(),
+        level: LogLevelDto::Info,
+        message: "test".to_string(),
+        component_id: "my-source".to_string(),
+        component_type: ComponentTypeDto::Source,
+    };
 
-    // Verify fields are in camelCase
-    assert!(json.get("timeoutMs").is_some(), "timeoutMs should exist");
-    assert!(
-        json.get("adaptiveMaxBatchSize").is_some(),
-        "adaptiveMaxBatchSize should exist"
-    );
-    assert!(
-        json.get("adaptiveMinBatchSize").is_some(),
-        "adaptiveMinBatchSize should exist"
-    );
+    let json = serde_json::to_value(&dto).unwrap();
 
-    // Verify snake_case versions don't exist
     assert!(
-        json.get("timeout_ms").is_none(),
-        "timeout_ms should NOT exist"
+        json.get("componentId").is_some(),
+        "componentId should exist"
     );
     assert!(
-        json.get("adaptive_max_batch_size").is_none(),
-        "adaptive_max_batch_size should NOT exist"
+        json.get("componentType").is_some(),
+        "componentType should exist"
     );
-
-    println!("✅ HTTP source config serializes as camelCase");
+    assert!(
+        json.get("component_id").is_none(),
+        "component_id should NOT exist"
+    );
+    assert!(
+        json.get("component_type").is_none(),
+        "component_type should NOT exist"
+    );
 }

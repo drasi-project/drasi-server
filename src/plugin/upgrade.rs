@@ -125,7 +125,22 @@ pub async fn upgrade(
             continue;
         }
 
-        let base_ref = ref_key.split(':').next().unwrap_or(ref_key);
+        // Strip the tag/digest suffix to get the base image reference.
+        // OCI refs can be: registry:port/repo:tag or registry:port/repo@sha256:...
+        // We strip only after the last `/` to avoid truncating port numbers.
+        let base_ref = if let Some(at_pos) = ref_key.rfind('@') {
+            &ref_key[..at_pos]
+        } else if let Some(slash_pos) = ref_key.rfind('/') {
+            if let Some(colon_pos) = ref_key[slash_pos..].find(':') {
+                &ref_key[..slash_pos + colon_pos]
+            } else {
+                ref_key
+            }
+        } else if let Some(colon_pos) = ref_key.find(':') {
+            &ref_key[..colon_pos]
+        } else {
+            ref_key
+        };
         let sp = cli_styles::spinner(&format!("Checking {ref_key}..."));
 
         match resolver.resolve(base_ref, &registry_url).await {

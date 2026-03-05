@@ -72,10 +72,31 @@ pub fn remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
         std::process::exit(1);
     }
 
-    // Update lockfile: remove the entry
+    // Update lockfile: remove the entry by key or by matching filename
     let lockfile_dir = plugins_dir;
     if let Ok(Some(mut lockfile)) = PluginLockfile::read(lockfile_dir) {
+        let mut lockfile_changed = false;
+
+        // Try exact key match first
         if lockfile.remove(reference).is_some() {
+            lockfile_changed = true;
+        }
+
+        // Also remove any entry whose filename matches a file we just deleted,
+        // in case the plugin was installed under a different key
+        if !lockfile_changed {
+            let removed_keys: Vec<String> = lockfile
+                .iter()
+                .filter(|(_, entry)| !plugins_dir.join(&entry.filename).exists())
+                .map(|(key, _)| key.clone())
+                .collect();
+            for key in removed_keys {
+                lockfile.remove(&key);
+                lockfile_changed = true;
+            }
+        }
+
+        if lockfile_changed {
             let _ = lockfile.write(lockfile_dir);
             println!("{}", cli_styles::detail("Updated plugins.lock"));
         }

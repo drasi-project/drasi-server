@@ -9,6 +9,11 @@ const VENDOR_TAG: &str = "v1";
 const VENDORED_TARGETS: &[&str] = &["x86_64-pc-windows-msvc"];
 
 fn main() {
+    // Declare env vars and files this build script depends on so Cargo
+    // reruns it when they change.
+    println!("cargo:rerun-if-changed=Cargo.lock");
+    println!("cargo:rerun-if-env-changed=TARGET");
+
     let rustc_version = Command::new("rustc")
         .arg("--version")
         .output()
