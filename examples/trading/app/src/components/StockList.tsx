@@ -19,6 +19,52 @@ import { Stock } from '@/types';
 import { formatCurrency, formatVolume } from '@/utils/formatters';
 import clsx from 'clsx';
 
+// Code snippets for presentation display
+const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
+  queryId="top-gainers-query"
+  title="Top Gainers"
+  columns={[
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'name', label: 'Name' },
+    { key: 'price', label: 'Price', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'changePercent', label: 'Change', align: 'right',
+      format: (value) => <ChangeIndicator value={value} /> },
+  ]}
+  rowKey={(row) => row.symbol}
+  animateOnChange="price"
+/>`;
+
+const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
+  queryId="top-losers-query"
+  title="Top Losers"
+  columns={[
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'name', label: 'Name' },
+    { key: 'price', label: 'Price', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'changePercent', label: 'Change', align: 'right',
+      format: (value) => <ChangeIndicator value={value} /> },
+  ]}
+  rowKey={(row) => row.symbol}
+  animateOnChange="price"
+/>`;
+
+const VOLUME_CODE_SNIPPET = `<QueryTable<Stock>
+  queryId="high-volume-query"
+  title="High Volume"
+  columns={[
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'name', label: 'Name' },
+    { key: 'price', label: 'Price', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'volume', label: 'Volume', align: 'right',
+      format: (value) => formatVolume(value) },
+  ]}
+  rowKey={(row) => row.symbol}
+  animateOnChange="price"
+/>`;
+
 interface StockListProps {
   title: string;
   queryId: string;
@@ -66,6 +112,13 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
         },
   ];
 
+  // Get the appropriate code snippet based on query type
+  const codeSnippet = queryId === 'high-volume-query' 
+    ? VOLUME_CODE_SNIPPET 
+    : queryId === 'top-losers-query'
+    ? LOSERS_CODE_SNIPPET
+    : GAINERS_CODE_SNIPPET;
+
   return (
     <QueryTable<Stock>
       queryId={queryId}
@@ -75,6 +128,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
       animateOnChange="price"
       defaultSort={{ column: 'changePercent', direction: 'desc' }}
       emptyMessage="No stocks found"
+      codeSnippet={codeSnippet}
     />
   );
 };

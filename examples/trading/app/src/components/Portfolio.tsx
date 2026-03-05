@@ -22,6 +22,30 @@ import { PositionDialog, PositionFormData } from './PositionDialog';
 import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
+// Code snippet for presentation display
+const CODE_SNIPPET = `<QueryTable<PortfolioPosition>
+  queryId="portfolio-query"
+  title="Portfolio"
+  columns={[
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'name', label: 'Name' },
+    { key: 'quantity', label: 'Qty', align: 'right' },
+    { key: 'purchasePrice', label: 'Avg Cost', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'currentPrice', label: 'Current', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'currentValue', label: 'Value', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'profitLoss', label: 'P/L', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'profitLossPercent', label: 'P/L %', align: 'right',
+      format: (value) => <ChangeIndicator value={value} /> },
+  ]}
+  rowKey={(row) => row.symbol}
+  animateOnChange="currentPrice"
+  headerSlot={<PortfolioSummary />}
+/>`;
+
 interface DeletingPosition {
   id: number;
   symbol: string;
@@ -230,6 +254,7 @@ export const Portfolio: React.FC = () => {
         headerActions={headerActions}
         headerSlot={<PortfolioSummary />}
         emptyMessage="No positions in portfolio. Click + to add."
+        codeSnippet={CODE_SNIPPET}
       />
 
       {/* Position Dialog (Add/Edit) */}

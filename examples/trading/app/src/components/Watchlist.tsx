@@ -20,6 +20,27 @@ import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
 import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
+// Code snippet for presentation display
+const CODE_SNIPPET = `<QueryTable<Stock>
+  queryId="watchlist-query"
+  title="Watchlist"
+  columns={[
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'name', label: 'Name' },
+    { key: 'price', label: 'Price', align: 'right',
+      format: (value) => formatCurrency(value) },
+    { key: 'changePercent', label: 'Change', align: 'right',
+      format: (value) => <ChangeIndicator value={value} /> },
+  ]}
+  rowKey={(row) => row.symbol}
+  animateOnChange="price"
+  defaultSort={{ column: 'symbol', direction: 'asc' }}
+  actions={[
+    { icon: <RemoveIcon />, label: 'Remove',
+      onClick: (row) => removeFromWatchlist(row.symbol) }
+  ]}
+/>`;
+
 export const Watchlist: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableStocks, setAvailableStocks] = useState<ApiStock[]>([]);
@@ -139,6 +160,7 @@ export const Watchlist: React.FC = () => {
         actionsWidth="w-10"
         headerActions={headerActions}
         emptyMessage="No stocks in watchlist. Click + to add."
+        codeSnippet={CODE_SNIPPET}
       />
 
       {/* Add to Watchlist Dialog */}

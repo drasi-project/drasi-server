@@ -28,6 +28,7 @@ export {
   RemoveIcon,
   AddIcon,
   CloseIcon,
+  CodeIcon,
 } from './Icons';
 
 // Change indicators
@@ -43,3 +44,6 @@ export type { ConfirmDialogProps, DetailItem } from './ConfirmDialog';
 
 export { SelectDialog } from './SelectDialog';
 export type { SelectDialogProps, SelectOption } from './SelectDialog';
+
+export { CodeViewerDialog } from './CodeViewerDialog';
+export type { CodeViewerDialogProps } from './CodeViewerDialog';

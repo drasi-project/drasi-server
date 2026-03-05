@@ -15,6 +15,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@/hooks/useDrasi';
 import { useRowAnimation, AnimationDirection } from '@/hooks/useRowAnimation';
+import { CodeViewerDialog, CodeIcon } from './shared';
+import { QUERIES_BY_ID } from '@/services/queries';
 import clsx from 'clsx';
 
 /**
@@ -124,6 +126,10 @@ export interface QueryTableProps<T> {
   // Slots
   /** Content to render between header and table */
   headerSlot?: React.ReactNode;
+  
+  // Code viewer (for presentations)
+  /** React code snippet to display in code viewer dialog */
+  codeSnippet?: string;
 }
 
 /**
@@ -212,9 +218,17 @@ export function QueryTable<T extends Record<string, any>>({
   renderRow,
   emptyMessage = 'No data available',
   headerSlot,
+  codeSnippet,
 }: QueryTableProps<T>): React.ReactElement {
   const { data, loading, error, lastUpdate } = useQuery<T>(queryId);
   const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
+  const [showCodeViewer, setShowCodeViewer] = useState(false);
+
+  // Get the Cypher query from the queries registry
+  const cypherQuery = useMemo(() => {
+    const queryDef = QUERIES_BY_ID.get(queryId);
+    return queryDef?.query?.trim() || 'Query not found';
+  }, [queryId]);
 
   // Animation hook
   const { animations, updateData } = useRowAnimation<T>({
@@ -400,9 +414,18 @@ export function QueryTable<T extends Record<string, any>>({
   return (
     <div className={clsx("bg-trading-card rounded-lg border border-trading-border flex flex-col", height, className)}>
       {/* Header */}
-      {(title || headerActions || lastUpdate) && (
+      {(title || headerActions || lastUpdate || codeSnippet) && (
         <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
           <div className="flex items-center gap-3">
+            {codeSnippet && (
+              <button
+                onClick={() => setShowCodeViewer(true)}
+                className="p-1.5 rounded hover:bg-trading-border/50 transition-colors text-gray-500 hover:text-trading-blue"
+                title="View code"
+              >
+                <CodeIcon className="w-5 h-5" />
+              </button>
+            )}
             {title && <h2 className="text-xl font-bold">{title}</h2>}
             {headerActions}
           </div>
@@ -412,6 +435,17 @@ export function QueryTable<T extends Record<string, any>>({
             </span>
           )}
         </div>
+      )}
+
+      {/* Code Viewer Dialog */}
+      {codeSnippet && (
+        <CodeViewerDialog
+          isOpen={showCodeViewer}
+          onClose={() => setShowCodeViewer(false)}
+          title={title || queryId}
+          reactCode={codeSnippet}
+          cypherQuery={cypherQuery}
+        />
       )}
 
       {/* Header slot (e.g., summary stats) */}

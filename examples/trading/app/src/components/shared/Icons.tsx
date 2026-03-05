@@ -112,3 +112,17 @@ export const CloseIcon: React.FC<IconProps> = ({ className = 'w-5 h-5' }) => (
     />
   </svg>
 );
+
+/**
+ * Code/brackets icon for viewing source code.
+ */
+export const CodeIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+    />
+  </svg>
+);

@@ -19,6 +19,25 @@ import { SectorPerformance as SectorPerformanceType } from '@/types';
 import { formatCompactNumber, formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
+// Code snippet for presentation display
+const CODE_SNIPPET = `<QueryTable<SectorPerformance>
+  queryId="sector-performance-query"
+  title="Sector Performance"
+  columns={[
+    { key: 'sector', label: 'Sector' },
+    { key: 'stockCount', label: 'Stocks', align: 'right' },
+    { key: 'avgChangePercent', label: 'Avg Change', align: 'right',
+      format: (value) => <ChangeIndicator value={value} /> },
+    { key: 'totalVolume', label: 'Volume', align: 'right',
+      format: (value) => formatCompactNumber(value) },
+    { key: 'minPrice', label: 'Price Range', align: 'right',
+      format: (_, row) => \`\${formatCurrency(row.minPrice)} - \${formatCurrency(row.maxPrice)}\` },
+  ]}
+  rowKey={(row) => row.sector}
+  animateOnChange="avgChangePercent"
+  defaultSort={{ column: 'sector', direction: 'asc' }}
+/>`;
+
 const columns: ColumnDef<SectorPerformanceType>[] = [
   {
     key: 'sector',
@@ -73,6 +92,7 @@ export const SectorPerformance: React.FC = () => {
       animateOnChange="avgChangePercent"
       defaultSort={{ column: 'sector', direction: 'asc' }}
       emptyMessage="No sector data available"
+      codeSnippet={CODE_SNIPPET}
     />
   );
 };
