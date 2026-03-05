@@ -34,3 +34,6 @@ logs/
 # Cargo install metadata
 .crates.toml
 .crates2.json
+
+# Vendored native libraries (downloaded from OCI registry)
+vendor/
