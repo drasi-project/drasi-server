@@ -14,30 +14,15 @@
 
 import React from 'react';
 import { QueryTable, ColumnDef } from './QueryTable';
+import { ChangeIndicator } from './shared';
 import { Stock } from '@/types';
-import { formatCurrency, formatPercent, formatVolume } from '@/utils/formatters';
+import { formatCurrency, formatVolume } from '@/utils/formatters';
 import clsx from 'clsx';
 
 interface StockListProps {
   title: string;
   queryId: string;
 }
-
-// Change indicator with arrow icon
-const ChangeIndicator: React.FC<{ value: number }> = ({ value }) => (
-  <span className="inline-flex items-center gap-1">
-    {value >= 0 ? (
-      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 5l5 7H5l5-7z"/>
-      </svg>
-    ) : (
-      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 15l-5-7h10l-5 7z"/>
-      </svg>
-    )}
-    {formatPercent(value)}
-  </span>
-);
 
 export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
   // Different columns for high-volume query (shows volume instead of change)

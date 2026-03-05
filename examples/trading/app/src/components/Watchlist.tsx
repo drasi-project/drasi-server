@@ -14,45 +14,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { QueryTable, ColumnDef, RowAction } from './QueryTable';
+import { ChangeIndicator, RemoveIcon, AddIcon, SelectDialog } from './shared';
 import { Stock } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
-import { formatCurrency, formatPercent } from '@/utils/formatters';
+import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
-
-// Change indicator with arrow icon
-const ChangeIndicator: React.FC<{ value: number }> = ({ value }) => (
-  <span className="inline-flex items-center gap-1">
-    {value >= 0 ? (
-      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 5l5 7H5l5-7z"/>
-      </svg>
-    ) : (
-      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 15l-5-7h10l-5 7z"/>
-      </svg>
-    )}
-    {formatPercent(value)}
-  </span>
-);
-
-// Remove icon
-const RemoveIcon: React.FC = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-// Add icon
-const AddIcon: React.FC = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-  </svg>
-);
 
 export const Watchlist: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableStocks, setAvailableStocks] = useState<ApiStock[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isRemoving, setIsRemoving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -67,27 +37,19 @@ export const Watchlist: React.FC = () => {
   const loadAvailableStocks = async () => {
     try {
       const stocks = await tradingApi.getStocks();
-      // Note: We can't filter out watchlist stocks without access to current data
-      // The QueryTable handles the data internally, so we show all stocks
       setAvailableStocks(stocks);
-      if (stocks.length > 0) {
-        setSelectedSymbol(stocks[0].symbol);
-      }
     } catch (err) {
       console.error('Failed to load stocks:', err);
       setActionError('Failed to load available stocks');
     }
   };
 
-  const handleAddToWatchlist = async () => {
-    if (!selectedSymbol) return;
-    
+  const handleAddToWatchlist = async (symbol: string) => {
     setIsAdding(true);
     setActionError(null);
     try {
-      await tradingApi.addToWatchlist(selectedSymbol);
+      await tradingApi.addToWatchlist(symbol);
       setShowAddModal(false);
-      setSelectedSymbol('');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to add to watchlist');
     } finally {
@@ -179,49 +141,22 @@ export const Watchlist: React.FC = () => {
         emptyMessage="No stocks in watchlist. Click + to add."
       />
 
-      {/* Add to Watchlist Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-trading-card border border-trading-border rounded-lg p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-bold mb-4">Add to Watchlist</h3>
-            
-            {availableStocks.length === 0 ? (
-              <p className="text-gray-400 mb-4">No more stocks available to add.</p>
-            ) : (
-              <>
-                <label className="block text-sm text-gray-400 mb-2">Select Stock</label>
-                <select
-                  value={selectedSymbol}
-                  onChange={(e) => setSelectedSymbol(e.target.value)}
-                  className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-                >
-                  {availableStocks.map(stock => (
-                    <option key={stock.symbol} value={stock.symbol}>
-                      {stock.symbol} - {stock.name}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 rounded border border-trading-border hover:bg-trading-border/30 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddToWatchlist}
-                disabled={isAdding || !selectedSymbol || availableStocks.length === 0}
-                className="px-4 py-2 rounded bg-trading-blue hover:bg-trading-blue/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isAdding ? 'Adding...' : 'Add'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Add to Watchlist Dialog */}
+      <SelectDialog
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onConfirm={handleAddToWatchlist}
+        title="Add to Watchlist"
+        selectLabel="Select Stock"
+        options={availableStocks.map(stock => ({
+          value: stock.symbol,
+          label: `${stock.symbol} - ${stock.name}`
+        }))}
+        emptyMessage="No more stocks available to add."
+        confirmText="Add"
+        isLoading={isAdding}
+        loadingText="Adding..."
+      />
     </>
   );
 };

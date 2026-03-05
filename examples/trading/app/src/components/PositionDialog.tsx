@@ -14,6 +14,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Stock } from '@/services/TradingApi';
+import { BaseDialog, DialogButton } from './shared';
 
 export interface PositionFormData {
   id?: number;
@@ -197,122 +198,119 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
   const submittingLabel = isAddMode ? 'Adding...' : 'Saving...';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-trading-card border border-trading-border rounded-lg p-6 w-96 max-w-[90vw]">
-        <h3 className="text-lg font-bold mb-4">{title}</h3>
-
-        {/* Stock selector (add mode) or stock info (edit mode) */}
-        {isAddMode ? (
-          availableStocks.length === 0 ? (
-            <p className="text-gray-400 mb-4">No more stocks available to add.</p>
-          ) : (
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">Stock</label>
-              <select
-                value={symbol}
-                onChange={(e) => handleSymbolChange(e.target.value)}
-                className={`w-full bg-trading-bg border rounded p-2 text-white ${
-                  errors.symbol ? 'border-red-500' : 'border-trading-border'
-                }`}
-              >
-                {availableStocks.map(stock => (
-                  <option key={stock.symbol} value={stock.symbol}>
-                    {stock.symbol} - {stock.name}
-                  </option>
-                ))}
-              </select>
-              {errors.symbol && (
-                <p className="text-red-400 text-sm mt-1">{errors.symbol}</p>
-              )}
-            </div>
-          )
-        ) : (
-          <div className="bg-trading-bg rounded p-3 mb-4">
-            <div className="text-lg font-bold">{symbol}</div>
-            <div className="text-sm text-gray-400">{name}</div>
-          </div>
-        )}
-
-        {/* Only show form fields if stocks are available (add mode) or always (edit mode) */}
-        {(!isAddMode || availableStocks.length > 0) && (
-          <>
-            {/* Quantity */}
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">Quantity</label>
-              <input
-                type="number"
-                value={quantity}
-                onChange={(e) => handleQuantityChange(e.target.value)}
-                placeholder="e.g., 100"
-                className={`w-full bg-trading-bg border rounded p-2 text-white ${
-                  errors.quantity ? 'border-red-500' : 'border-trading-border'
-                }`}
-              />
-              {errors.quantity && (
-                <p className="text-red-400 text-sm mt-1">{errors.quantity}</p>
-              )}
-            </div>
-
-            {/* Purchase Price */}
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={purchasePrice}
-                onChange={(e) => handlePriceChange(e.target.value)}
-                placeholder="e.g., 150.00"
-                className={`w-full bg-trading-bg border rounded p-2 text-white ${
-                  errors.purchasePrice ? 'border-red-500' : 'border-trading-border'
-                }`}
-              />
-              {errors.purchasePrice && (
-                <p className="text-red-400 text-sm mt-1">{errors.purchasePrice}</p>
-              )}
-            </div>
-
-            {/* Purchase Date */}
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">Purchase Date</label>
-              <input
-                type="date"
-                value={purchaseDate}
-                onChange={(e) => handleDateChange(e.target.value)}
-                className={`w-full bg-trading-bg border rounded p-2 text-white ${
-                  errors.purchaseDate ? 'border-red-500' : 'border-trading-border'
-                }`}
-              />
-              {errors.purchaseDate && (
-                <p className="text-red-400 text-sm mt-1">{errors.purchaseDate}</p>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* Submit error */}
-        {submitError && (
-          <div className="mb-4 p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
-            {submitError}
-          </div>
-        )}
-
-        {/* Buttons */}
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 rounded border border-trading-border hover:bg-trading-border/30 transition-colors"
-          >
+    <BaseDialog
+      isOpen={isOpen}
+      onClose={onCancel}
+      title={title}
+      footer={
+        <>
+          <DialogButton onClick={onCancel} disabled={isSubmitting}>
             Cancel
-          </button>
-          <button
+          </DialogButton>
+          <DialogButton
             onClick={handleSubmit}
             disabled={isSubmitting || (isAddMode && availableStocks.length === 0)}
-            className="px-4 py-2 rounded bg-trading-blue hover:bg-trading-blue/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            variant="primary"
           >
             {isSubmitting ? submittingLabel : submitLabel}
-          </button>
+          </DialogButton>
+        </>
+      }
+    >
+      {/* Stock selector (add mode) or stock info (edit mode) */}
+      {isAddMode ? (
+        availableStocks.length === 0 ? (
+          <p className="text-gray-400 mb-4">No more stocks available to add.</p>
+        ) : (
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Stock</label>
+            <select
+              value={symbol}
+              onChange={(e) => handleSymbolChange(e.target.value)}
+              className={`w-full bg-trading-bg border rounded p-2 text-white ${
+                errors.symbol ? 'border-red-500' : 'border-trading-border'
+              }`}
+            >
+              {availableStocks.map(stock => (
+                <option key={stock.symbol} value={stock.symbol}>
+                  {stock.symbol} - {stock.name}
+                </option>
+              ))}
+            </select>
+            {errors.symbol && (
+              <p className="text-red-400 text-sm mt-1">{errors.symbol}</p>
+            )}
+          </div>
+        )
+      ) : (
+        <div className="bg-trading-bg rounded p-3 mb-4">
+          <div className="text-lg font-bold">{symbol}</div>
+          <div className="text-sm text-gray-400">{name}</div>
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* Only show form fields if stocks are available (add mode) or always (edit mode) */}
+      {(!isAddMode || availableStocks.length > 0) && (
+        <>
+          {/* Quantity */}
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => handleQuantityChange(e.target.value)}
+              placeholder="e.g., 100"
+              className={`w-full bg-trading-bg border rounded p-2 text-white ${
+                errors.quantity ? 'border-red-500' : 'border-trading-border'
+              }`}
+            />
+            {errors.quantity && (
+              <p className="text-red-400 text-sm mt-1">{errors.quantity}</p>
+            )}
+          </div>
+
+          {/* Purchase Price */}
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={purchasePrice}
+              onChange={(e) => handlePriceChange(e.target.value)}
+              placeholder="e.g., 150.00"
+              className={`w-full bg-trading-bg border rounded p-2 text-white ${
+                errors.purchasePrice ? 'border-red-500' : 'border-trading-border'
+              }`}
+            />
+            {errors.purchasePrice && (
+              <p className="text-red-400 text-sm mt-1">{errors.purchasePrice}</p>
+            )}
+          </div>
+
+          {/* Purchase Date */}
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-2">Purchase Date</label>
+            <input
+              type="date"
+              value={purchaseDate}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className={`w-full bg-trading-bg border rounded p-2 text-white ${
+                errors.purchaseDate ? 'border-red-500' : 'border-trading-border'
+              }`}
+            />
+            {errors.purchaseDate && (
+              <p className="text-red-400 text-sm mt-1">{errors.purchaseDate}</p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Submit error */}
+      {submitError && (
+        <div className="p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
+          {submitError}
+        </div>
+      )}
+    </BaseDialog>
   );
 };
