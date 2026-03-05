@@ -16,6 +16,7 @@ import { StockList } from '@/components/StockList';
 import { Portfolio } from '@/components/Portfolio';
 import { Watchlist } from '@/components/Watchlist';
 import { SectorPerformance } from '@/components/SectorPerformance';
+import { PlaceholderTable } from '@/components/PlaceholderTable';
 import StockTicker from '@/components/StockTicker';
 import { useConnectionStatus } from '@/hooks/useDrasi';
 import clsx from 'clsx';
@@ -51,7 +52,8 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* Row 1: Watchlist + Portfolio */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
           {/* Watchlist */}
           <div className="xl:col-span-1">
             <Watchlist />
@@ -61,22 +63,27 @@ function App() {
           <div className="xl:col-span-2">
             <Portfolio />
           </div>
+        </div>
 
-          {/* Sector Performance */}
-          <div className="xl:col-span-2">
+        {/* Row 2: Sector Performance + Orders (equal 50/50 width) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div>
             <SectorPerformance />
           </div>
+          <div>
+            <PlaceholderTable title="Orders" message="Order tracking coming soon" />
+          </div>
+        </div>
 
-          {/* Market Movers */}
-          <div className="lg:col-span-1">
+        {/* Row 3: Market Movers (Top Gainers, Top Losers, High Volume) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div>
             <StockList title="Top Gainers" queryId="top-gainers-query" />
           </div>
-
-          <div className="lg:col-span-1">
+          <div>
             <StockList title="Top Losers" queryId="top-losers-query" />
           </div>
-
-          <div className="lg:col-span-1">
+          <div>
             <StockList title="High Volume" queryId="high-volume-query" />
           </div>
         </div>
