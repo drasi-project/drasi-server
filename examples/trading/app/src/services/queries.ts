@@ -133,17 +133,24 @@ export const PORTFOLIO_QUERY: QueryDefinition = {
   id: 'portfolio-query',
   description: 'Portfolio positions with real-time P&L calculations',
   query: `
-    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)
-    OPTIONAL MATCH (s)-[:HAS_PRICE]->(sp:stock_prices)
-    RETURN p.symbol AS symbol,
-           s.name AS name,
+    MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+    WITH p, 
+         s.name AS name, 
+         sp.price AS current_price,
+         (sp.price * p.quantity) AS current_value,
+         (p.purchase_price * p.quantity) AS cost_basis,
+         ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
+         ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
+    RETURN p.id AS id,
+           p.symbol AS symbol,
            p.quantity AS quantity,
            p.purchase_price AS purchase_price,
-           sp.price AS current_price,
-           (sp.price * p.quantity) AS current_value,
-           (p.purchase_price * p.quantity) AS cost_basis,
-           ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
-           ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
+           name,
+           current_price,
+           current_value,
+           cost_basis,
+           profit_loss,
+           profit_loss_percent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },

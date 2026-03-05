@@ -139,11 +139,11 @@ class TradingApiService {
   /**
    * Add a new portfolio position
    */
-  async addPosition(symbol: string, quantity: number, purchasePrice: number): Promise<PortfolioPosition> {
+  async addPosition(symbol: string, quantity: number, purchasePrice: number, purchaseDate?: string): Promise<PortfolioPosition> {
     const response = await fetch(`${this.baseUrl}/api/portfolio`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, quantity, purchasePrice })
+      body: JSON.stringify({ symbol, quantity, purchasePrice, purchaseDate })
     });
     const data: ApiResponse<PortfolioPosition> = await response.json();
     if (!data.success) {
@@ -155,7 +155,7 @@ class TradingApiService {
   /**
    * Update an existing portfolio position
    */
-  async updatePosition(id: number, updates: { quantity?: number; purchasePrice?: number }): Promise<PortfolioPosition> {
+  async updatePosition(id: number, updates: { quantity?: number; purchasePrice?: number; purchaseDate?: string }): Promise<PortfolioPosition> {
     const response = await fetch(`${this.baseUrl}/api/portfolio/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

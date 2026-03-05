@@ -16,32 +16,31 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@/hooks/useDrasi';
 import { PortfolioPosition } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
+import { PositionDialog, PositionFormData } from './PositionDialog';
 import clsx from 'clsx';
 
-interface EditingPosition {
+interface DeletingPosition {
   id: number;
+  symbol: string;
+  name: string;
   quantity: number;
   purchasePrice: number;
+  purchaseDate: string;
+  currentPrice?: number;
+  currentValue?: number;
+  profitLoss?: number;
 }
 
 export const Portfolio: React.FC = () => {
   const { data, loading, error, lastUpdate } = useQuery<PortfolioPosition>('portfolio-query');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
+  const [dialogMode, setDialogMode] = useState<'add' | 'edit' | null>(null);
+  const [deletingPosition, setDeletingPosition] = useState<DeletingPosition | null>(null);
   const [availableStocks, setAvailableStocks] = useState<ApiStock[]>([]);
-  const [editingPosition, setEditingPosition] = useState<EditingPosition | null>(null);
+  const [editingPosition, setEditingPosition] = useState<PositionFormData | null>(null);
   
-  // Form state for adding position
-  const [newSymbol, setNewSymbol] = useState('');
-  const [newQuantity, setNewQuantity] = useState('');
-  const [newPrice, setNewPrice] = useState('');
-  
-  // Loading and error states
-  const [isAdding, setIsAdding] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  // Loading states
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   // Track price changes for highlight effect
   const [prevPrices, setPrevPrices] = useState<Map<string, number>>(new Map());
@@ -70,12 +69,12 @@ export const Portfolio: React.FC = () => {
     }
   }, [data]);
 
-  // Load available stocks when add modal opens
+  // Load available stocks when dialog opens in add mode
   useEffect(() => {
-    if (showAddModal) {
+    if (dialogMode === 'add') {
       loadAvailableStocks();
     }
-  }, [showAddModal]);
+  }, [dialogMode]);
 
   const loadAvailableStocks = async () => {
     try {
@@ -84,81 +83,61 @@ export const Portfolio: React.FC = () => {
       const portfolioSymbols = new Set(data?.map(p => p.symbol) || []);
       const available = stocks.filter(s => !portfolioSymbols.has(s.symbol));
       setAvailableStocks(available);
-      if (available.length > 0) {
-        setNewSymbol(available[0].symbol);
-      }
     } catch (err) {
       console.error('Failed to load stocks:', err);
-      setActionError('Failed to load available stocks');
     }
   };
 
-  const handleAddPosition = async () => {
-    if (!newSymbol || !newQuantity || !newPrice) return;
-    
-    setIsAdding(true);
-    setActionError(null);
+  const handlePositionSubmit = async (formData: PositionFormData) => {
+    setIsSubmitting(true);
     try {
-      await tradingApi.addPosition(newSymbol, parseInt(newQuantity), parseFloat(newPrice));
-      setShowAddModal(false);
-      resetAddForm();
-      // The UI will update automatically via Drasi SSE
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to add position');
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleEditPosition = async () => {
-    if (!editingPosition) return;
-    
-    setIsEditing(true);
-    setActionError(null);
-    try {
-      await tradingApi.updatePosition(editingPosition.id, {
-        quantity: editingPosition.quantity,
-        purchasePrice: editingPosition.purchasePrice
-      });
-      setShowEditModal(false);
+      if (dialogMode === 'add') {
+        await tradingApi.addPosition(formData.symbol, formData.quantity, formData.purchasePrice, formData.purchaseDate);
+      } else if (dialogMode === 'edit' && formData.id) {
+        await tradingApi.updatePosition(formData.id, {
+          quantity: formData.quantity,
+          purchasePrice: formData.purchasePrice,
+          purchaseDate: formData.purchaseDate
+        });
+      }
+      setDialogMode(null);
       setEditingPosition(null);
       // The UI will update automatically via Drasi SSE
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to update position');
     } finally {
-      setIsEditing(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeletePosition = async (id: number) => {
-    setIsDeleting(id);
-    setActionError(null);
+  const handleDeletePosition = async () => {
+    if (!deletingPosition) return;
+    
+    setIsDeleting(deletingPosition.id);
     try {
-      await tradingApi.deletePosition(id);
-      setShowDeleteConfirm(null);
+      await tradingApi.deletePosition(deletingPosition.id);
+      setDeletingPosition(null);
       // The UI will update automatically via Drasi SSE
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to delete position');
     } finally {
       setIsDeleting(null);
     }
   };
 
-  const openEditModal = (position: PortfolioPosition) => {
-    // We need to look up the portfolio ID from the API since our Drasi data doesn't include it
-    // For now, we'll use symbol as a workaround - the API will need the ID
+  const openEditDialog = (position: PortfolioPosition) => {
+    // We need to look up the portfolio ID and purchase date from the API
     tradingApi.getPortfolio().then(portfolio => {
       const found = portfolio.find(p => p.symbol === position.symbol);
       if (found) {
         setEditingPosition({
           id: found.id,
+          symbol: position.symbol,
+          name: position.name,
           quantity: position.quantity,
-          purchasePrice: position.purchasePrice || 0
+          purchasePrice: position.purchasePrice || 0,
+          purchaseDate: found.purchase_date ? found.purchase_date.split('T')[0] : new Date().toISOString().split('T')[0]
         });
-        setShowEditModal(true);
+        setDialogMode('edit');
       }
-    }).catch(() => {
-      setActionError('Failed to load position details');
+    }).catch((err) => {
+      console.error('Failed to load position details:', err);
     });
   };
 
@@ -166,17 +145,21 @@ export const Portfolio: React.FC = () => {
     tradingApi.getPortfolio().then(portfolio => {
       const found = portfolio.find(p => p.symbol === position.symbol);
       if (found) {
-        setShowDeleteConfirm(found.id);
+        setDeletingPosition({
+          id: found.id,
+          symbol: position.symbol,
+          name: position.name,
+          quantity: position.quantity,
+          purchasePrice: position.purchasePrice || 0,
+          purchaseDate: found.purchase_date ? found.purchase_date.split('T')[0] : '',
+          currentPrice: position.currentPrice,
+          currentValue: position.currentValue,
+          profitLoss: position.profitLoss
+        });
       }
-    }).catch(() => {
-      setActionError('Failed to load position details');
+    }).catch((err) => {
+      console.error('Failed to load position details:', err);
     });
-  };
-
-  const resetAddForm = () => {
-    setNewSymbol('');
-    setNewQuantity('');
-    setNewPrice('');
   };
 
   const portfolioStats = useMemo(() => {
@@ -255,7 +238,7 @@ export const Portfolio: React.FC = () => {
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold">Portfolio</h2>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => setDialogMode('add')}
             className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
             title="Add position"
           >
@@ -270,12 +253,6 @@ export const Portfolio: React.FC = () => {
           </span>
         )}
       </div>
-
-      {actionError && (
-        <div className="mx-6 mb-2 p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
-          {actionError}
-        </div>
-      )}
 
       {/* Portfolio Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 pb-4 flex-shrink-0">
@@ -375,7 +352,7 @@ export const Portfolio: React.FC = () => {
                   <td className="py-3 px-2">
                     <div className="flex gap-1 justify-end">
                       <button
-                        onClick={() => openEditModal(position)}
+                        onClick={() => openEditDialog(position)}
                         className="p-1 rounded hover:bg-trading-border/50 transition-colors text-gray-500 hover:text-trading-blue"
                         title="Edit position"
                       >
@@ -408,127 +385,80 @@ export const Portfolio: React.FC = () => {
         </table>
       </div>
 
-      {/* Add Position Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-trading-card border border-trading-border rounded-lg p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-bold mb-4">Add Position</h3>
-            
-            {availableStocks.length === 0 ? (
-              <p className="text-gray-400 mb-4">No more stocks available to add.</p>
-            ) : (
-              <>
-                <label className="block text-sm text-gray-400 mb-2">Stock</label>
-                <select
-                  value={newSymbol}
-                  onChange={(e) => setNewSymbol(e.target.value)}
-                  className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-                >
-                  {availableStocks.map(stock => (
-                    <option key={stock.symbol} value={stock.symbol}>
-                      {stock.symbol} - {stock.name}
-                    </option>
-                  ))}
-                </select>
-
-                <label className="block text-sm text-gray-400 mb-2">Quantity</label>
-                <input
-                  type="number"
-                  value={newQuantity}
-                  onChange={(e) => setNewQuantity(e.target.value)}
-                  placeholder="e.g., 100"
-                  className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-                />
-
-                <label className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={newPrice}
-                  onChange={(e) => setNewPrice(e.target.value)}
-                  placeholder="e.g., 150.00"
-                  className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-                />
-              </>
-            )}
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setShowAddModal(false); resetAddForm(); }}
-                className="px-4 py-2 rounded border border-trading-border hover:bg-trading-border/30 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddPosition}
-                disabled={isAdding || !newSymbol || !newQuantity || !newPrice || availableStocks.length === 0}
-                className="px-4 py-2 rounded bg-trading-blue hover:bg-trading-blue/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isAdding ? 'Adding...' : 'Add'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Position Modal */}
-      {showEditModal && editingPosition && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-trading-card border border-trading-border rounded-lg p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-bold mb-4">Edit Position</h3>
-            
-            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
-            <input
-              type="number"
-              value={editingPosition.quantity}
-              onChange={(e) => setEditingPosition({...editingPosition, quantity: parseInt(e.target.value) || 0})}
-              className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-            />
-
-            <label className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={editingPosition.purchasePrice}
-              onChange={(e) => setEditingPosition({...editingPosition, purchasePrice: parseFloat(e.target.value) || 0})}
-              className="w-full bg-trading-bg border border-trading-border rounded p-2 mb-4 text-white"
-            />
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setShowEditModal(false); setEditingPosition(null); }}
-                className="px-4 py-2 rounded border border-trading-border hover:bg-trading-border/30 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleEditPosition}
-                disabled={isEditing}
-                className="px-4 py-2 rounded bg-trading-blue hover:bg-trading-blue/80 transition-colors disabled:opacity-50"
-              >
-                {isEditing ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Position Dialog (Add/Edit) */}
+      <PositionDialog
+        isOpen={dialogMode !== null}
+        mode={dialogMode || 'add'}
+        position={editingPosition || undefined}
+        availableStocks={availableStocks}
+        isSubmitting={isSubmitting}
+        onSubmit={handlePositionSubmit}
+        onCancel={() => {
+          setDialogMode(null);
+          setEditingPosition(null);
+        }}
+      />
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm !== null && (
+      {deletingPosition && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-trading-card border border-trading-border rounded-lg p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-bold mb-4">Delete Position</h3>
-            <p className="text-gray-300 mb-6">Are you sure you want to delete this position? This action cannot be undone.</p>
+            <h3 className="text-lg font-bold mb-4 text-red-400">Delete Position</h3>
+            
+            {/* Position details */}
+            <div className="bg-trading-bg rounded p-4 mb-4 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Stock:</span>
+                <span className="font-bold">{deletingPosition.symbol} - {deletingPosition.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Quantity:</span>
+                <span>{deletingPosition.quantity} shares</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Purchase Price:</span>
+                <span>{formatCurrency(deletingPosition.purchasePrice)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Purchase Date:</span>
+                <span>{deletingPosition.purchaseDate || 'N/A'}</span>
+              </div>
+              {deletingPosition.currentPrice && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Current Price:</span>
+                  <span>{formatCurrency(deletingPosition.currentPrice)}</span>
+                </div>
+              )}
+              {deletingPosition.currentValue && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Current Value:</span>
+                  <span className="font-bold">{formatCurrency(deletingPosition.currentValue)}</span>
+                </div>
+              )}
+              {deletingPosition.profitLoss != null && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">P/L:</span>
+                  <span className={clsx(
+                    "font-bold",
+                    deletingPosition.profitLoss >= 0 ? "text-trading-green" : "text-trading-red"
+                  )}>
+                    {formatCurrency(deletingPosition.profitLoss)}
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            <p className="text-gray-400 text-sm mb-4">This action cannot be undone.</p>
             
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setShowDeleteConfirm(null)}
+                onClick={() => setDeletingPosition(null)}
                 className="px-4 py-2 rounded border border-trading-border hover:bg-trading-border/30 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleDeletePosition(showDeleteConfirm)}
+                onClick={handleDeletePosition}
                 disabled={isDeleting !== null}
                 className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50"
               >

@@ -63,7 +63,7 @@ export function useQuery<T = any>(queryId: string): {
   const { client, initialized } = useDrasiClient();
   const unsubscribeRef = useRef<(() => void) | null>(null);
   
-  // Keep track of data by key (symbol for stocks, etc.)
+  // Keep track of data by key (symbol for stocks, id for portfolio, etc.)
   const dataMapRef = useRef<Map<string, T>>(new Map());
 
   useEffect(() => {
@@ -77,15 +77,16 @@ export function useQuery<T = any>(queryId: string): {
     const handleResult = (result: QueryResult) => {
       console.log(`[${queryId}] Received ${result.data.length} items`);
       
-      // Special logging for portfolio query debugging
-      if (queryId === 'portfolio-query') {
-        console.log(`[${queryId}] Raw data:`, result.data);
-      }
-      
       // Transform snake_case from Drasi to camelCase and convert numeric strings
       const transformedData = result.data.map(item => {
         const transformed: any = {};
         for (const [key, value] of Object.entries(item)) {
+          // Preserve _deleted flag as-is (don't transform it)
+          if (key === '_deleted') {
+            transformed[key] = value;
+            continue;
+          }
+          
           // Convert snake_case to camelCase
           const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
           
@@ -109,20 +110,7 @@ export function useQuery<T = any>(queryId: string): {
         return transformed as T;
       });
       
-      // Debug logging for sector-performance-query
-      if (queryId === 'sector-performance-query' && transformedData.length > 0) {
-        console.log(`[${queryId}] Received ${transformedData.length} items`);
-        console.log(`[${queryId}] First item keys:`, Object.keys(transformedData[0] as object));
-        console.log(`[${queryId}] First item:`, transformedData[0]);
-      }
-      
-      // Log transformed portfolio data
-      if (queryId === 'portfolio-query' && transformedData.length > 0) {
-        console.log(`[${queryId}] Received update with ${transformedData.length} items at ${new Date().toLocaleTimeString()}`);
-        console.log(`[${queryId}] Current map size before update: ${dataMapRef.current.size}`);
-      }
-      
-      // Handle deletions first - items marked with _deleted flag
+      // Handle deletions - items marked with _deleted flag
       const deletedItems = transformedData.filter((item: any) => item._deleted);
       const regularItems = transformedData.filter((item: any) => !item._deleted);
       
@@ -135,52 +123,13 @@ export function useQuery<T = any>(queryId: string): {
         }
       });
       
-      // Portfolio query needs to accumulate data, not replace it
-      if (queryId === 'portfolio-query') {
-        // Portfolio updates come incrementally (one stock at a time)
-        // Only clear if we get a large batch (bootstrap/initial load)
-        if (regularItems.length > 5) {
-          // This looks like initial bootstrap data, replace everything
-          console.log(`[${queryId}] Received bootstrap data with ${regularItems.length} items, replacing all`);
-          dataMapRef.current.clear();
-          regularItems.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
-        } else if (regularItems.length > 0) {
-          // This is an incremental update, merge with existing data
-          console.log(`[${queryId}] Received incremental update with ${regularItems.length} items, merging`);
-          regularItems.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
+      // Add/update regular items
+      regularItems.forEach((item: any) => {
+        const key = getItemKey(item, queryId);
+        if (key) {
+          dataMapRef.current.set(key, item);
         }
-      } else {
-        // For other queries, use the accumulation logic
-        if (regularItems.length > 5) {
-          // This looks like a full dataset, replace everything
-          dataMapRef.current.clear();
-          regularItems.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
-        } else if (regularItems.length > 0) {
-          // This looks like incremental updates, merge with existing data
-          regularItems.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              // Update or add the item
-              dataMapRef.current.set(key, item);
-            }
-          });
-        }
-      }
+      });
       
       // Convert map back to array and apply query-specific filtering/sorting
       let finalData = Array.from(dataMapRef.current.values());
@@ -249,9 +198,16 @@ export function useQuery<T = any>(queryId: string): {
 
 // Helper function to get a unique key for each data item
 function getItemKey(item: any, queryId: string): string | null {
-  // Portfolio items should use symbol as key
-  if (queryId === 'portfolio-query' && item.symbol) {
-    return `portfolio-${item.symbol}`;
+  // Portfolio items should use id as the primary key
+  // This ensures delete events (which only have id) can match
+  if (queryId === 'portfolio-query') {
+    if (item.id !== undefined) {
+      return `portfolio-id-${item.id}`;
+    }
+    // Fallback to symbol for backwards compatibility
+    if (item.symbol) {
+      return `portfolio-${item.symbol}`;
+    }
   }
   // Most items have a symbol as the unique identifier
   if (item.symbol) {

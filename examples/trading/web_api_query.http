@@ -22,9 +22,9 @@
 # @query_id = top-gainers-query
 # @query_id = high-volume-query
 # @query_id = price-ticker-query
-@query_id = sector-performance-query
+# @query_id = sector-performance-query
 # @query_id = top-losers-query
-# @query_id = portfolio-query
+@query_id = portfolio-query
 
 ### GET LIST of all queries
 GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries

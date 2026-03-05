@@ -25,6 +25,7 @@ export interface Stock {
 }
 
 export interface PortfolioPosition {
+  id: number;
   symbol: string;
   name: string;
   quantity: number;

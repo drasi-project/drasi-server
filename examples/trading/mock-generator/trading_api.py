@@ -21,13 +21,24 @@ Demonstrates end-to-end data flow through Drasi:
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, date
 from flask import Flask, jsonify, request
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+class CustomJSONProvider(DefaultJSONProvider):
+    """Custom JSON provider to handle datetime serialization."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        return super().default(obj)
+
 app = Flask(__name__)
+app.json = CustomJSONProvider(app)
 CORS(app)
 
 # Database configuration from environment or defaults
@@ -193,12 +204,19 @@ def add_position():
         symbol = data.get('symbol')
         quantity = data.get('quantity')
         purchase_price = data.get('purchasePrice')
+        purchase_date_str = data.get('purchaseDate')
         
         if not all([symbol, quantity, purchase_price]):
             return jsonify({
                 'success': False, 
                 'error': 'symbol, quantity, and purchasePrice are required'
             }), 400
+        
+        # Parse purchase date or default to now
+        if purchase_date_str:
+            purchase_date = datetime.fromisoformat(purchase_date_str.replace('Z', '+00:00'))
+        else:
+            purchase_date = datetime.now()
         
         conn = get_db_connection()
         cur = conn.cursor()
@@ -215,7 +233,7 @@ def add_position():
             INSERT INTO portfolio (user_id, symbol, quantity, purchase_price, purchase_date)
             VALUES ('demo_user', %s, %s, %s, %s)
             RETURNING id, symbol, quantity, purchase_price, purchase_date
-        ''', (symbol, quantity, purchase_price, datetime.now()))
+        ''', (symbol, quantity, purchase_price, purchase_date))
         
         new_position = cur.fetchone()
         conn.commit()
@@ -233,11 +251,12 @@ def update_position(position_id):
         data = request.get_json()
         quantity = data.get('quantity')
         purchase_price = data.get('purchasePrice')
+        purchase_date_str = data.get('purchaseDate')
         
-        if quantity is None and purchase_price is None:
+        if quantity is None and purchase_price is None and purchase_date_str is None:
             return jsonify({
                 'success': False, 
-                'error': 'At least quantity or purchasePrice must be provided'
+                'error': 'At least quantity, purchasePrice, or purchaseDate must be provided'
             }), 400
         
         conn = get_db_connection()
@@ -252,6 +271,10 @@ def update_position(position_id):
         if purchase_price is not None:
             updates.append('purchase_price = %s')
             params.append(purchase_price)
+        if purchase_date_str is not None:
+            updates.append('purchase_date = %s')
+            purchase_date = datetime.fromisoformat(purchase_date_str.replace('Z', '+00:00'))
+            params.append(purchase_date)
         
         params.extend([position_id])
         
