@@ -14,23 +14,7 @@
 
 import { QueryResult, ConnectionStatus } from '@/types';
 import { DrasiSSEClient } from './grpc/SSEClient';
-
-interface QueryDefinition {
-  id: string;
-  query: string;
-  sources: Array<{ sourceId: string; pipeline: string[] }>;
-  joins?: QueryJoin[];
-}
-
-interface QueryJoin {
-  id: string;
-  keys: QueryJoinKey[];
-}
-
-interface QueryJoinKey {
-  label: string;
-  property: string;
-}
+import { QueryDefinition, ALL_QUERIES, HAS_PRICE } from './queries';
 
 export class DrasiClient {
   private baseUrl: string;
@@ -49,159 +33,10 @@ export class DrasiClient {
   }
 
   private initializeQueries() {
-    // Define synthetic joins for cross-source relationships
-    const hasPrice: QueryJoin = {
-      id: 'HAS_PRICE',
-      keys: [
-        { label: 'stocks', property: 'symbol' },
-        { label: 'stock_prices', property: 'symbol' }
-      ]
-    };
-
-    const ownsStock: QueryJoin = {
-      id: 'OWNS_STOCK',
-      keys: [
-        { label: 'portfolio', property: 'symbol' },
-        { label: 'stocks', property: 'symbol' }
-      ]
-    };
-
-    const onWatchlist: QueryJoin = {
-      id: 'ON_WATCHLIST',
-      keys: [
-        { label: 'watchlist', property: 'symbol' },
-        { label: 'stocks', property: 'symbol' }
-      ]
-    };
-
-    // Define all queries with synthetic joins
-    this.queries.set('watchlist-query', {
-      id: 'watchlist-query',
-      query: `
-        MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [onWatchlist, hasPrice]
-    });
-
-    this.queries.set('portfolio-query', {
-      id: 'portfolio-query',
-      query: `
-        MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)
-        OPTIONAL MATCH (s)-[:HAS_PRICE]->(sp:stock_prices)
-        RETURN  p.symbol AS symbol,
-                s.name AS name,
-                p.quantity AS quantity,
-                p.purchase_price AS purchase_price,
-                sp.price AS current_price,
-                (sp.price * p.quantity) AS current_value,
-                (p.purchase_price * p.quantity) AS cost_basis,
-                ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
-                ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [ownsStock, hasPrice]
-    });
-
-    this.queries.set('top-gainers-query', {
-      id: 'top-gainers-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.price > sp.previous_close
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    this.queries.set('top-losers-query', {
-      id: 'top-losers-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.price < sp.previous_close
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    this.queries.set('high-volume-query', {
-      id: 'high-volume-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.volume > 10000000
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.volume AS volume,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    // Add a simple price ticker query that only uses price-feed
-    this.queries.set('price-ticker-query', {
-      id: 'price-ticker-query',
-      query: `
-        MATCH (sp:stock_prices)
-        RETURN sp.symbol AS symbol,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [] // No joins needed - single source
-    });
-
-    // Sector performance aggregation query
-    this.queries.set('sector-performance-query', {
-      id: 'sector-performance-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        RETURN s.sector AS sector,
-               count(s) AS stock_count,
-               avg((sp.price - sp.previous_close) / sp.previous_close * 100) AS avg_change_percent,
-               sum(sp.volume) AS total_volume,
-               min(sp.price) AS min_price,
-               max(sp.price) AS max_price
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
+    // Load all queries from the queries.ts definitions
+    for (const query of ALL_QUERIES) {
+      this.queries.set(query.id, query);
+    }
   }
 
   /**
@@ -408,14 +243,6 @@ export class DrasiClient {
     whereClause: string,
     additionalFields?: string[]
   ): Promise<void> {
-    const hasPrice: QueryJoin = {
-      id: 'HAS_PRICE',
-      keys: [
-        { label: 'stocks', property: 'symbol' },
-        { label: 'stock_prices', property: 'symbol' }
-      ]
-    };
-
     const baseFields = [
       's.symbol AS symbol',
       's.name AS name',
@@ -429,6 +256,7 @@ export class DrasiClient {
 
     const queryDef: QueryDefinition = {
       id,
+      description: name,
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE ${whereClause}
@@ -439,7 +267,7 @@ export class DrasiClient {
         { sourceId: 'postgres-stocks', pipeline: [] },
         { sourceId: 'price-feed', pipeline: [] }
       ],
-      joins: [hasPrice]
+      joins: [HAS_PRICE]
     };
 
     await this.ensureQuery(queryDef);
