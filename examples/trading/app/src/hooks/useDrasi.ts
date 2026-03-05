@@ -191,15 +191,10 @@ export function useQuery<T = any>(queryId: string): {
           .sort((a: any, b: any) => (b.volume || 0) - (a.volume || 0))
           .slice(0, 10); // Top 10 by volume
       } else if (queryId === 'watchlist-query') {
-        // Keep watchlist items in a specific order
-        const watchlistSymbols = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA'];
-        finalData = finalData
-          .filter((item: any) => watchlistSymbols.includes(item.symbol))
-          .sort((a: any, b: any) => {
-            const aIndex = watchlistSymbols.indexOf(a.symbol);
-            const bIndex = watchlistSymbols.indexOf(b.symbol);
-            return aIndex - bIndex;
-          });
+        // Sort watchlist alphabetically by symbol
+        finalData = finalData.sort((a: any, b: any) => 
+          (a.symbol || '').localeCompare(b.symbol || '')
+        );
       } else if (queryId === 'portfolio-query') {
         // Portfolio data is accumulated in the map, sort by current value
         console.log(`[${queryId}] Final portfolio has ${finalData.length} items from accumulated data (map size: ${dataMapRef.current.size})`);

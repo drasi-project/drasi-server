@@ -66,12 +66,19 @@ export class DrasiClient {
       ]
     };
 
+    const onWatchlist: QueryJoin = {
+      id: 'ON_WATCHLIST',
+      keys: [
+        { label: 'watchlist', property: 'symbol' },
+        { label: 'stocks', property: 'symbol' }
+      ]
+    };
+
     // Define all queries with synthetic joins
     this.queries.set('watchlist-query', {
       id: 'watchlist-query',
       query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE s.symbol IN ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA']
+        MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         RETURN s.symbol AS symbol,
                s.name AS name,
                sp.price AS price,
@@ -82,7 +89,7 @@ export class DrasiClient {
         { sourceId: 'postgres-stocks', pipeline: [] },
         { sourceId: 'price-feed', pipeline: [] }
       ],
-      joins: [hasPrice]
+      joins: [onWatchlist, hasPrice]
     });
 
     this.queries.set('portfolio-query', {

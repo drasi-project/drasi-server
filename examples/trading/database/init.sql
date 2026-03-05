@@ -58,18 +58,31 @@ CREATE TABLE portfolio (
     FOREIGN KEY (symbol) REFERENCES stocks(symbol) ON DELETE CASCADE
 );
 
+-- Watchlist table for tracking stocks a user wants to watch
+CREATE TABLE watchlist (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) DEFAULT 'demo_user',
+    symbol VARCHAR(10) NOT NULL,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (symbol) REFERENCES stocks(symbol) ON DELETE CASCADE,
+    UNIQUE(user_id, symbol)
+);
+
 -- Create indexes for performance
 CREATE INDEX idx_stocks_symbol ON stocks(symbol);
 CREATE INDEX idx_stocks_sector ON stocks(sector);
 CREATE INDEX idx_portfolio_user_symbol ON portfolio(user_id, symbol);
+CREATE INDEX idx_watchlist_user_symbol ON watchlist(user_id, symbol);
 
 -- Set REPLICA IDENTITY to FULL for CDC (Change Data Capture)
 ALTER TABLE stocks REPLICA IDENTITY FULL;
 ALTER TABLE portfolio REPLICA IDENTITY FULL;
+ALTER TABLE watchlist REPLICA IDENTITY FULL;
 
 -- Ensure drasi_user owns the tables
 ALTER TABLE stocks OWNER TO drasi_user;
 ALTER TABLE portfolio OWNER TO drasi_user;
+ALTER TABLE watchlist OWNER TO drasi_user;
 
 -- Grant replication privileges to drasi_user
 GRANT USAGE ON SCHEMA public TO drasi_user;
@@ -78,7 +91,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO drasi_user;
 
 -- Create publication for logical replication
 -- This defines which tables' changes will be streamed
-CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio;
+CREATE PUBLICATION drasi_trading_pub FOR TABLE stocks, portfolio, watchlist;
 
 -- Create replication slot for Drasi Server
 -- This maintains the position in the WAL stream
@@ -158,6 +171,12 @@ INSERT INTO portfolio (user_id, symbol, quantity, purchase_price, purchase_date)
     ('demo_user', 'JPM', 80, 185.00, '2024-03-01 10:00:00'),
     ('demo_user', 'V', 60, 265.00, '2024-03-05 15:45:00'),
     ('demo_user', 'JNJ', 45, 150.00, '2024-03-10 12:00:00');
+
+-- Insert sample watchlist items (stocks NOT in portfolio)
+INSERT INTO watchlist (user_id, symbol) VALUES
+    ('demo_user', 'META'),
+    ('demo_user', 'AMZN'),
+    ('demo_user', 'AMD');
 
 -- Create function to update timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

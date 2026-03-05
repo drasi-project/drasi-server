@@ -36,6 +36,7 @@ sources:
   tables:
   - stocks
   - portfolio
+  - watchlist
   slotName: drasi_trading_slot
   publicationName: drasi_trading_pub
   sslMode: prefer
@@ -44,6 +45,9 @@ sources:
     keyColumns:
     - id
   - table: portfolio
+    keyColumns:
+    - id
+  - table: watchlist
     keyColumns:
     - id
   bootstrapProvider:
