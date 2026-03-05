@@ -23,6 +23,7 @@ export class DrasiClient {
   private initialized = false;
   private reactionId = 'sse-stream';
   private createdQueries: Set<string> = new Set();
+  private createdReaction = false;
   private customQueries: Set<string> = new Set();
 
   constructor(baseUrl?: string) {
@@ -152,6 +153,9 @@ export class DrasiClient {
           const error = await createResponse.text();
           throw new Error(`Failed to create reaction ${this.reactionId}: ${error}`);
         }
+
+        // Track that this session created the reaction
+        this.createdReaction = true;
 
         // Start the reaction
         await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
@@ -365,13 +369,16 @@ export class DrasiClient {
   async cleanup(): Promise<void> {
     console.log('Cleaning up Drasi Client resources...');
 
-    // IMPORTANT: Stop and delete reaction FIRST (before queries)
-    try {
-      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/stop`, { method: 'POST' });
-      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, { method: 'DELETE' });
-      console.log(`Deleted reaction: ${this.reactionId}`);
-    } catch (error) {
-      console.error(`Failed to cleanup reaction ${this.reactionId}:`, error);
+    // IMPORTANT: Stop and delete reaction FIRST (before queries) - only if we created it
+    if (this.createdReaction) {
+      try {
+        await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/stop`, { method: 'POST' });
+        await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, { method: 'DELETE' });
+        console.log(`Deleted reaction: ${this.reactionId}`);
+      } catch (error) {
+        console.error(`Failed to cleanup reaction ${this.reactionId}:`, error);
+      }
+      this.createdReaction = false;
     }
 
     // Then stop and delete all queries
