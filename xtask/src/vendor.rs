@@ -59,6 +59,8 @@ fn get_auth_token(registry: &str, repo: &str) -> Result<String> {
 
 fn exchange_or_basic(registry: &str, repo: &str, user: &str, pass: &str) -> Result<String> {
     let client = reqwest::blocking::Client::new();
+
+    // Try token exchange first (works for PATs and some OAuth tokens)
     let resp = client
         .get(format!(
             "https://{registry}/token?scope=repository:{repo}:pull,push&service={registry}"
@@ -76,10 +78,24 @@ fn exchange_or_basic(registry: &str, repo: &str, user: &str, pass: &str) -> Resu
         }
     }
 
+    // Fall back to direct Basic auth (GHCR accepts PATs directly)
     Ok(format!(
         "Basic {}",
         b64_encode(format!("{user}:{pass}").as_bytes())
     ))
+}
+
+/// Get auth for push operations. Requires write:packages permission.
+/// The `gh auth token` OAuth token (gho_*) does NOT have write:packages.
+/// Users must set GH_TOKEN to a PAT with write:packages scope, or
+/// run `cosign login ghcr.io` / `docker login ghcr.io`.
+fn get_push_auth_hint() -> &'static str {
+    "Push requires write:packages permission.\n\
+     The `gh auth token` OAuth token does NOT have this scope.\n\
+     Options:\n\
+       1. Set GH_TOKEN to a PAT (classic) with write:packages scope\n\
+       2. Run: echo $PAT | cosign login ghcr.io -u USERNAME --password-stdin\n\
+       3. Run: echo $PAT | docker login ghcr.io -u USERNAME --password-stdin"
 }
 
 /// Try to get credentials from the docker credential helper.
@@ -203,11 +219,15 @@ pub fn push(dir: &Path, target_name: &str, image_ref: &str) -> Result<String> {
         .context("failed to start blob upload")?;
 
     if !resp.status().is_success() {
-        bail!(
-            "failed to start upload: {} {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            bail!(
+                "failed to start upload: {status} {body}\n\n{}",
+                get_push_auth_hint()
+            );
+        }
+        bail!("failed to start upload: {status} {body}");
     }
 
     let upload_url = resp
@@ -479,4 +499,188 @@ pub fn cosign_verify(image_ref: &str) -> Result<()> {
         bail!("cosign verification failed for {image_ref}");
     }
     Ok(())
+}
+
+/// Verify signature and display signer identity.
+pub fn cosign_verify_show(image_ref: &str) -> Result<()> {
+    // First verify the signature
+    let output = Command::new("cosign")
+        .args([
+            "verify",
+            "--certificate-oidc-issuer-regexp",
+            ".*",
+            "--certificate-identity-regexp",
+            ".*",
+            image_ref,
+        ])
+        .output()
+        .context("failed to run cosign verify")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("No valid signature found for {image_ref}\n{stderr}");
+    }
+
+    println!("  Status:  signed ✓");
+
+    // Extract signer identity from the sigstore bundle certificate.
+    // cosign v3 stores the signing cert in the OCI referrer bundle blob;
+    // the JSON `optional` field is empty. We fetch the bundle and decode the cert.
+    if let Ok(identity) = extract_signer_identity(image_ref) {
+        println!("  Issuer:  {}", identity.issuer);
+        println!("  Subject: {}", identity.subject);
+    } else {
+        println!("  Issuer:  (could not extract)");
+        println!("  Subject: (could not extract)");
+    }
+
+    Ok(())
+}
+
+struct SignerIdentity {
+    issuer: String,
+    subject: String,
+}
+
+/// Extract the signer identity from the sigstore bundle stored as an OCI referrer.
+fn extract_signer_identity(image_ref: &str) -> Result<SignerIdentity> {
+    // Use `cosign tree` to find the signature artifact digest
+    let output = Command::new("cosign")
+        .args(["tree", image_ref])
+        .output()
+        .context("cosign tree failed")?;
+
+    let tree_output = String::from_utf8_lossy(&output.stdout);
+
+    // Parse the signature digest from tree output (line containing sha256:)
+    // Format: "   └── 🍒 sha256:..."
+    let sig_digest = tree_output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            // Find lines with a cherry emoji followed by sha256:
+            if let Some(pos) = trimmed.find("sha256:") {
+                Some(trimmed[pos..].trim().to_string())
+            } else {
+                None
+            }
+        })
+        .last()
+        .context("no signature digest found in cosign tree output")?;
+
+    // Parse image ref to get registry/repo
+    let (registry, repo, _tag) = parse_image_ref(image_ref)?;
+
+    // Fetch the bundle blob anonymously
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()?;
+
+    let token_url =
+        format!("https://{registry}/token?scope=repository:{repo}:pull&service=ghcr.io");
+    let token_resp: serde_json::Value = client.get(&token_url).send()?.json()?;
+    let token = token_resp
+        .get("token")
+        .and_then(|t| t.as_str())
+        .context("no pull token")?;
+
+    let blob_url = format!("https://{registry}/v2/{repo}/blobs/{sig_digest}");
+    let bundle: serde_json::Value = client
+        .get(&blob_url)
+        .header("Authorization", format!("Bearer {token}"))
+        .send()?
+        .json()?;
+
+    // Extract cert from bundle: verificationMaterial.certificate.rawBytes (base64 DER)
+    let cert_b64 = bundle
+        .get("verificationMaterial")
+        .and_then(|vm| vm.get("certificate"))
+        .and_then(|c| c.get("rawBytes"))
+        .and_then(|r| r.as_str())
+        .context("no certificate in bundle")?;
+
+    // Decode the cert and extract SAN (subject) and issuer using openssl
+    let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{cert_b64}\n-----END CERTIFICATE-----");
+
+    let openssl_output = Command::new("openssl")
+        .args([
+            "x509",
+            "-noout",
+            "-ext",
+            "subjectAltName",
+            "-nameopt",
+            "utf8,sep_comma_plus",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(cert_pem.as_bytes())?;
+            }
+            child.wait_with_output()
+        })
+        .context("failed to run openssl")?;
+
+    let san_text = String::from_utf8_lossy(&openssl_output.stdout);
+    // Parse "email:user@example.com" or "URI:https://..." from the SAN
+    let subject = san_text
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with("email:") {
+                Some(trimmed.trim_start_matches("email:").to_string())
+            } else if trimmed.starts_with("URI:") {
+                Some(trimmed.trim_start_matches("URI:").to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Extract OIDC issuer from certificate extension (1.3.6.1.4.1.57264.1.1)
+    // Using `-text` output since `-ext` doesn't work for custom OIDs in all openssl versions
+    let issuer_output = Command::new("openssl")
+        .args(["x509", "-noout", "-text"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(cert_pem.as_bytes())?;
+            }
+            child.wait_with_output()
+        });
+
+    let issuer = if let Ok(out) = issuer_output {
+        let text = String::from_utf8_lossy(&out.stdout);
+        let lines: Vec<&str> = text.lines().collect();
+        // Find the line with the OIDC issuer OID, then the next line has the URL
+        lines
+            .iter()
+            .enumerate()
+            .find_map(|(i, line)| {
+                if line.contains("1.3.6.1.4.1.57264.1.1") {
+                    lines.get(i + 1).and_then(|next| {
+                        let trimmed = next.trim();
+                        if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
+                            Some(trimmed.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
+
+    Ok(SignerIdentity { issuer, subject })
 }

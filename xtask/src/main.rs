@@ -52,6 +52,17 @@ enum VendorAction {
     },
     /// List available vendor targets in the local vendor/ directory
     List,
+    /// Verify cosign signature and show signer identity for a vendor package
+    Verify {
+        /// Target triple (e.g. x86_64-pc-windows-msvc)
+        target: String,
+        /// Version tag (e.g. v1)
+        #[arg(long, default_value = "latest")]
+        tag: String,
+        /// OCI registry prefix
+        #[arg(long, default_value = "ghcr.io/drasi-project")]
+        registry: String,
+    },
 }
 
 fn workspace_root() -> Result<PathBuf> {
@@ -130,6 +141,15 @@ fn main() -> Result<()> {
                         println!("  {} ({} lib files)", name.to_string_lossy(), file_count);
                     }
                 }
+            }
+            VendorAction::Verify {
+                target,
+                tag,
+                registry,
+            } => {
+                let image_ref = format!("{registry}/vendor/{target}:{tag}");
+                println!("Verifying signature for {image_ref}...");
+                vendor::cosign_verify_show(&image_ref)?;
             }
         },
     }
