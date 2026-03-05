@@ -165,12 +165,14 @@ fn download_vendor(target: &str, vendor_dir: &std::path::Path) -> Result<(), Str
         .and_then(|d| d.as_str())
         .ok_or("no digest in layer")?;
 
-    // Download blob
+    // Download blob (raise body limit — vendor tarballs are ~25MB+)
     let blob = ureq::get(&format!("{base_url}/blobs/{digest}"))
         .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| format!("blob download failed: {e}"))?
         .into_body()
+        .with_config()
+        .limit(100 * 1024 * 1024) // 100 MB
         .read_to_vec()
         .map_err(|e| format!("blob read failed: {e}"))?;
 
