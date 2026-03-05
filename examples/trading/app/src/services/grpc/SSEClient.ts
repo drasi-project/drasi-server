@@ -158,6 +158,8 @@ export class DrasiSSEClient {
     // { query_id: string, sequence: number, timestamp: string, results: [...] }
     // OR for changes:
     // { query_id: string, type: "ADD" | "UPDATE" | "DELETE", data: {...} }
+    // OR for aggregations (from attach stream):
+    // { query_id: string, results: [{ type: "aggregation", before: {...}, after: {...} }] }
     
     // Check for query_id (Drasi Server format)
     if (data.query_id) {
@@ -166,22 +168,40 @@ export class DrasiSSEClient {
       // Handle batch results (initial data or full refresh)
       if (data.results && Array.isArray(data.results)) {
         console.log(`>>> Found query_id: ${queryId} with ${data.results.length} results`);
+        console.log(`>>> Raw results[0]:`, JSON.stringify(data.results[0], null, 2));
         
         // Extract the actual data from results
         const extractedData = data.results.map((result: any) => {
+          // Handle aggregation results (have type: "aggregation" with before/after)
+          if (result.type === 'aggregation' && result.after) {
+            console.log(`>>> Extracting aggregation after:`, result.after);
+            return result.after;
+          }
+          // Handle add/update/delete results
+          if (result.type === 'add' && result.data) {
+            return result.data;
+          }
+          if (result.type === 'update' && result.after) {
+            return result.after;
+          }
           // If result has a data field, extract it
           if (result.data) {
             return result.data;
           }
           // Otherwise, the result itself is the data
+          console.log(`>>> Returning result as-is:`, JSON.stringify(result, null, 2));
           return result;
-        });
+        }).filter((item: any) => item != null);
         
-        this.handleQueryResult({
-          queryId: queryId,
-          data: extractedData,
-          timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now()
-        });
+        console.log(`>>> Extracted data[0]:`, JSON.stringify(extractedData[0], null, 2));
+        
+        if (extractedData.length > 0) {
+          this.handleQueryResult({
+            queryId: queryId,
+            data: extractedData,
+            timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now()
+          });
+        }
       }
       // Handle single change events
       else if (data.type && data.data) {
@@ -213,11 +233,25 @@ export class DrasiSSEClient {
         console.log(`>>> Found queryId: ${queryId} with ${data.results.length} results`);
         
         const extractedData = data.results.map((result: any) => {
+          // Handle aggregation results (have type: "aggregation" with before/after)
+          if (result.type === 'aggregation' && result.after) {
+            console.log(`>>> Extracting aggregation after:`, result.after);
+            return result.after;
+          }
+          // Handle ADD results
+          if (result.type === 'ADD' && result.data) {
+            return result.data;
+          }
+          // Handle UPDATE results  
+          if (result.type === 'UPDATE' && result.after) {
+            return result.after;
+          }
+          // If result has a data field, extract it
           if (result.data) {
             return result.data;
           }
           return result;
-        });
+        }).filter((item: any) => item != null);
         
         this.handleQueryResult({
           queryId: queryId,
@@ -258,8 +292,8 @@ export class DrasiSSEClient {
     if (dataArray[0]?.quantity !== undefined && dataArray[0]?.purchase_price !== undefined) {
       this.deliverToQuery('portfolio-query', dataArray);
     }
-    // Check if data looks like sector performance (has sector, avg_price)
-    else if (dataArray[0]?.sector !== undefined && dataArray[0]?.avg_price !== undefined) {
+    // Check if data looks like sector performance (has sector, stockCount or avgChangePercent)
+    else if (dataArray[0]?.sector !== undefined && (dataArray[0]?.stockCount !== undefined || dataArray[0]?.avgChangePercent !== undefined)) {
       this.deliverToQuery('sector-performance-query', dataArray);
     }
     // Default stock data (has symbol and price)

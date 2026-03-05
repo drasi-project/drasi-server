@@ -14,6 +14,7 @@
 
 import { StockList } from '@/components/StockList';
 import { Portfolio } from '@/components/Portfolio';
+import { SectorPerformance } from '@/components/SectorPerformance';
 import StockTicker from '@/components/StockTicker';
 import { useConnectionStatus } from '@/hooks/useDrasi';
 import clsx from 'clsx';
@@ -58,6 +59,11 @@ function App() {
           {/* Portfolio */}
           <div className="xl:col-span-2">
             <Portfolio />
+          </div>
+
+          {/* Sector Performance */}
+          <div className="xl:col-span-2">
+            <SectorPerformance />
           </div>
 
           {/* Market Movers */}

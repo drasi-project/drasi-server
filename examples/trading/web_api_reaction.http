@@ -18,27 +18,21 @@
 
 @hostname = localhost
 @port = 8280
-# @query_id = watchlist-query
-# @query_id = top-gainers-query
-# @query_id = high-volume-query
-# @query_id = price-ticker-query
-@query_id = sector-performance-query
-# @query_id = top-losers-query
-# @query_id = portfolio-query
+@reaction_id = sse-stream
 
-### GET LIST of all queries
-GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries
+### GET LIST of all sources
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions
 
-### GET STATE of a specific query
-GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}
+### GET STATE of a specific source
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}
 
-### GET RESULTS of a specific query
-GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/results
+### GET STATE of a specific source with view=full
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}?view=full
 
-### START a specific query
-POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/start
+### START a specific source
+POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}/start
 Content-Type: application/json
 
-### STOP a specific query
-POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/stop
+### STOP a specific source
+POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}/stop
 Content-Type: application/json

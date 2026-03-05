@@ -528,28 +528,49 @@ pub async fn get_source(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    // Get source runtime info from ComponentGraph (source of truth)
+    let info = core
+        .get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Build config from runtime info if view=full
     let config = if view.include_config() {
-        if let Some(persistence) = &config_persistence {
+        // First try persistence (for full config including all original fields)
+        let persisted_config = if let Some(persistence) = &config_persistence {
             persistence
                 .get_source_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).expect("source config serialization"))
+                .and_then(|value| serde_json::to_value(value).ok())
         } else {
             None
-        }
+        };
+
+        // Fall back to building config from SourceRuntime (ComponentGraph source of truth)
+        persisted_config.or_else(|| {
+            let mut config_map = serde_json::Map::new();
+            config_map.insert(
+                "kind".to_string(),
+                serde_json::Value::String(info.source_type.clone()),
+            );
+            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+            // Include properties from runtime
+            for (key, value) in &info.properties {
+                config_map.insert(key.clone(), value.clone());
+            }
+            Some(serde_json::Value::Object(config_map))
+        })
     } else {
         None
     };
-    match core.get_source_info(&id).await {
-        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
-            id: info.id,
-            status: info.status,
-            error_message: info.error_message,
-            links: component_links(&instance_id, "sources", &id),
-            config,
-        }))),
-        Err(_) => Err(StatusCode::NOT_FOUND),
-    }
+
+    Ok(Json(ApiResponse::success(ComponentListItem {
+        id: info.id,
+        status: info.status,
+        error_message: info.error_message,
+        links: component_links(&instance_id, "sources", &id),
+        config,
+    })))
 }
 
 /// Get source lifecycle events (snapshot).
@@ -1386,28 +1407,58 @@ pub async fn get_reaction(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    // Get reaction runtime info from ComponentGraph (source of truth)
+    let info = core
+        .get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Build config from runtime info if view=full
     let config = if view.include_config() {
-        if let Some(persistence) = &config_persistence {
+        // First try persistence (for full config including all original fields)
+        let persisted_config = if let Some(persistence) = &config_persistence {
             persistence
                 .get_reaction_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).expect("reaction config serialization"))
+                .and_then(|value| serde_json::to_value(value).ok())
         } else {
             None
-        }
+        };
+
+        // Fall back to building config from ReactionRuntime (ComponentGraph source of truth)
+        persisted_config.or_else(|| {
+            let mut config_map = serde_json::Map::new();
+            config_map.insert(
+                "kind".to_string(),
+                serde_json::Value::String(info.reaction_type.clone()),
+            );
+            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+            config_map.insert(
+                "queries".to_string(),
+                serde_json::Value::Array(
+                    info.queries
+                        .iter()
+                        .map(|q| serde_json::Value::String(q.clone()))
+                        .collect(),
+                ),
+            );
+            // Include properties from runtime
+            for (key, value) in &info.properties {
+                config_map.insert(key.clone(), value.clone());
+            }
+            Some(serde_json::Value::Object(config_map))
+        })
     } else {
         None
     };
-    match core.get_reaction_info(&id).await {
-        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
-            id: info.id,
-            status: info.status,
-            error_message: info.error_message,
-            links: component_links(&instance_id, "reactions", &id),
-            config,
-        }))),
-        Err(_) => Err(StatusCode::NOT_FOUND),
-    }
+
+    Ok(Json(ApiResponse::success(ComponentListItem {
+        id: info.id,
+        status: info.status,
+        error_message: info.error_message,
+        links: component_links(&instance_id, "reactions", &id),
+        config,
+    })))
 }
 
 /// Get reaction lifecycle events (snapshot).

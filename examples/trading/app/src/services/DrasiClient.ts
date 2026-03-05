@@ -176,6 +176,25 @@ export class DrasiClient {
       ],
       joins: [] // No joins needed - single source
     });
+
+    // Sector performance aggregation query
+    this.queries.set('sector-performance-query', {
+      id: 'sector-performance-query',
+      query: `
+        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
+        RETURN s.sector AS sector,
+               count(s) AS stock_count,
+               avg((sp.price - sp.previous_close) / sp.previous_close * 100) AS avg_change_percent,
+               sum(sp.volume) AS total_volume,
+               min(sp.price) AS min_price,
+               max(sp.price) AS max_price
+      `,
+      sources: [
+        { sourceId: 'postgres-stocks', pipeline: [] },
+        { sourceId: 'price-feed', pipeline: [] }
+      ],
+      joins: [hasPrice]
+    });
   }
 
   /**
@@ -457,7 +476,9 @@ export class DrasiClient {
         console.warn(`No results available for query ${queryId}`);
         return [];
       }
-      const data = await response.json();
+      const json = await response.json();
+      // API returns { success: true, data: [...] }
+      const data = json.data ?? json;
       return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error(`Failed to get results for query ${queryId}:`, error);

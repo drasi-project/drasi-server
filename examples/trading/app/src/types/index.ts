@@ -38,9 +38,11 @@ export interface PortfolioPosition {
 
 export interface SectorPerformance {
   sector: string;
-  avgPrice: number;
-  avgChangePercent: number;
   stockCount: number;
+  avgChangePercent: number;
+  totalVolume: number;
+  minPrice: number;
+  maxPrice: number;
 }
 
 export interface QueryResult {

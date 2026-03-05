@@ -109,6 +109,13 @@ export function useQuery<T = any>(queryId: string): {
         return transformed as T;
       });
       
+      // Debug logging for sector-performance-query
+      if (queryId === 'sector-performance-query' && transformedData.length > 0) {
+        console.log(`[${queryId}] Received ${transformedData.length} items`);
+        console.log(`[${queryId}] First item keys:`, Object.keys(transformedData[0]));
+        console.log(`[${queryId}] First item:`, transformedData[0]);
+      }
+      
       // Log transformed portfolio data
       if (queryId === 'portfolio-query' && transformedData.length > 0) {
         console.log(`[${queryId}] Received update with ${transformedData.length} items at ${new Date().toLocaleTimeString()}`);
@@ -201,6 +208,13 @@ export function useQuery<T = any>(queryId: string): {
         console.log(`[${queryId}] Portfolio symbols: ${symbols}`);
         finalData = finalData
           .sort((a: any, b: any) => (b.currentValue || 0) - (a.currentValue || 0));
+      } else if (queryId === 'sector-performance-query') {
+        // Debug log sector performance data
+        console.log(`[${queryId}] Final data has ${finalData.length} sectors (map size: ${dataMapRef.current.size})`);
+        if (finalData.length > 0) {
+          console.log(`[${queryId}] Sectors:`, finalData.map((item: any) => item.sector).join(', '));
+          console.log(`[${queryId}] Sample item:`, finalData[0]);
+        }
       }
       
       setData(finalData);
@@ -236,8 +250,13 @@ function getItemKey(item: any, queryId: string): string | null {
     return item.symbol;
   }
   // Sector performance uses sector as the key
-  if (item.sector && queryId === 'sector-performance-query') {
-    return item.sector;
+  if (queryId === 'sector-performance-query') {
+    if (item.sector) {
+      return `sector-${item.sector}`;
+    }
+    console.warn(`[${queryId}] Item missing sector field:`, item);
+    // Fallback to stringifying for sector data
+    return `sector-${JSON.stringify(item)}`;
   }
   // If no clear key, generate one from available properties
   if (item.id) {
