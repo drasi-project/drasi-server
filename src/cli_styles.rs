@@ -185,6 +185,35 @@ pub fn sig_tampered(reason: &str) -> String {
     )
 }
 
+/// Format file integrity status for display.
+pub fn integrity_status(status: &drasi_server::plugin_lockfile::FileIntegrityStatus) -> String {
+    use drasi_server::plugin_lockfile::FileIntegrityStatus;
+    match status {
+        FileIntegrityStatus::Ok => Style::new()
+            .green()
+            .apply_to("integrity: verified ✓")
+            .to_string(),
+        FileIntegrityStatus::Tampered { .. } => Style::new()
+            .red()
+            .bold()
+            .apply_to("integrity: TAMPERED ⚠")
+            .to_string(),
+        FileIntegrityStatus::NoHash => Style::new()
+            .dim()
+            .apply_to("integrity: no hash recorded")
+            .to_string(),
+        FileIntegrityStatus::Missing => Style::new()
+            .yellow()
+            .apply_to("integrity: file missing")
+            .to_string(),
+        FileIntegrityStatus::Error(e) => format!(
+            "{} ({})",
+            Style::new().yellow().apply_to("integrity: error"),
+            Style::new().dim().apply_to(e),
+        ),
+    }
+}
+
 /// Determine the signature display string based on lockfile info and trusted identities.
 ///
 /// - Signed + matches trusted identity → green "trusted ✓"

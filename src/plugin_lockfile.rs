@@ -56,6 +56,9 @@ pub struct LockedPlugin {
     pub platform: String,
     /// Expected binary filename (e.g., libdrasi_source_postgres.so).
     pub filename: String,
+    /// SHA-256 hash of the plugin binary file (hex-encoded).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_hash: Option<String>,
     /// Git commit SHA the plugin was built from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_commit: Option<String>,
@@ -177,6 +180,60 @@ impl PluginLockfile {
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
     }
+
+    /// Verify the integrity of all plugin files in the given directory.
+    ///
+    /// Returns the set of filenames that passed integrity verification.
+    /// Files with no recorded hash are considered unverified and excluded.
+    pub fn verify_file_integrity(
+        &self,
+        plugins_dir: &Path,
+    ) -> std::collections::HashMap<String, FileIntegrityStatus> {
+        let mut results = std::collections::HashMap::new();
+        for entry in self.plugins.values() {
+            let file_path = plugins_dir.join(&entry.filename);
+            let status = if !file_path.exists() {
+                FileIntegrityStatus::Missing
+            } else if let Some(expected_hash) = &entry.file_hash {
+                match compute_file_hash(&file_path) {
+                    Ok(actual_hash) if actual_hash == *expected_hash => FileIntegrityStatus::Ok,
+                    Ok(actual_hash) => FileIntegrityStatus::Tampered {
+                        expected: expected_hash.clone(),
+                        actual: actual_hash,
+                    },
+                    Err(e) => FileIntegrityStatus::Error(format!("{e}")),
+                }
+            } else {
+                FileIntegrityStatus::NoHash
+            };
+            results.insert(entry.filename.clone(), status);
+        }
+        results
+    }
+}
+
+/// Result of a file integrity check.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileIntegrityStatus {
+    /// File hash matches the lockfile.
+    Ok,
+    /// File hash does not match — the binary has been modified.
+    Tampered { expected: String, actual: String },
+    /// Plugin file is missing from disk.
+    Missing,
+    /// No hash recorded in the lockfile (legacy entry).
+    NoHash,
+    /// Error computing hash.
+    Error(String),
+}
+
+/// Compute the SHA-256 hash of a file, returned as a hex string.
+pub fn compute_file_hash(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+
+    let data = std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let hash = Sha256::digest(&data);
+    Ok(format!("{hash:x}"))
 }
 
 impl Default for PluginLockfile {
@@ -200,6 +257,7 @@ mod tests {
             lib_version: "0.3.8".to_string(),
             platform: "linux/amd64".to_string(),
             filename: "libdrasi_source_postgres.so".to_string(),
+            file_hash: None,
             git_commit: None,
             build_timestamp: None,
             signature: None,
@@ -222,6 +280,7 @@ mod tests {
                 lib_version: "0.3.8".to_string(),
                 platform: "linux/amd64".to_string(),
                 filename: "libdrasi_reaction_log.so".to_string(),
+                file_hash: None,
                 git_commit: None,
                 build_timestamp: None,
                 signature: None,
@@ -279,6 +338,7 @@ mod tests {
                 lib_version: "0.3.8".to_string(),
                 platform: "x86_64-unknown-linux-gnu".to_string(),
                 filename: "libdrasi_source_postgres.so".to_string(),
+                file_hash: None,
                 git_commit: None,
                 build_timestamp: None,
                 signature: None,

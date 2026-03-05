@@ -65,6 +65,9 @@ pub fn list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> Res
     // Load trusted identities from config
     let trusted = load_trusted_identities(config_path);
 
+    // Compute file integrity for all lockfile entries
+    let integrity = lockfile.verify_file_integrity(plugins_dir);
+
     // Build filename → (key, entry) lookup
     let mut by_filename: std::collections::HashMap<
         &str,
@@ -105,6 +108,11 @@ pub fn list(plugins_dir: &std::path::Path, config_path: &std::path::Path) -> Res
             let sig_display = cli_styles::sig_status(entry.signature.as_ref(), &trusted);
             println!("{}", cli_styles::detail(&detail));
             println!("    {sig_display}");
+
+            // Show file integrity status
+            if let Some(file_status) = integrity.get(name.as_str()) {
+                println!("    {}", cli_styles::integrity_status(file_status));
+            }
         } else {
             println!(
                 "  {} {}",

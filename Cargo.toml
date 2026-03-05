@@ -93,6 +93,7 @@ handlebars = "6"
 async-stream = "0.3.6"
 openssl = { version = "0.10", features = ["vendored"] }
 toml = "0.8"
+sha2 = "0.10"
 
 [dev-dependencies]
 # Testing utilities

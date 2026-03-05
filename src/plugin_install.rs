@@ -117,6 +117,12 @@ pub async fn auto_install_plugins(
                     _ => None,
                 };
 
+                // Compute file hash for integrity verification
+                let file_hash = {
+                    let file_path = plugins_dir.join(&rp.filename);
+                    crate::plugin_lockfile::compute_file_hash(&file_path).ok()
+                };
+
                 // Update lockfile with resolved info
                 let locked_entry = LockedPlugin {
                     reference: rp.reference.clone(),
@@ -127,6 +133,7 @@ pub async fn auto_install_plugins(
                     lib_version: rp.lib_version.clone(),
                     platform: rp.platform.clone(),
                     filename: rp.filename.clone(),
+                    file_hash,
                     git_commit: None,
                     build_timestamp: None,
                     signature: sig_info,

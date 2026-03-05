@@ -189,7 +189,11 @@ pub async fn upgrade(
                                     core_version: resolved.core_version,
                                     lib_version: resolved.lib_version,
                                     platform: resolved.platform,
-                                    filename: resolved.filename,
+                                    filename: resolved.filename.clone(),
+                                    file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                                        &plugins_dir.join(&resolved.filename),
+                                    )
+                                    .ok(),
                                     git_commit: None,
                                     build_timestamp: None,
                                     signature: sig_info,

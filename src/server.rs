@@ -15,7 +15,7 @@
 use anyhow::Result;
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -83,7 +83,7 @@ impl DrasiServer {
         // When verify_plugins is enabled, re-verify plugin signatures against the
         // OCI registry (not the lockfile cache, which could be tampered with).
         // Verifications run in parallel for speed.
-        let verified_files = if config.verify_plugins {
+        let mut verified_files = if config.verify_plugins {
             use drasi_host_sdk::registry::{
                 matches_trusted_identity, CosignVerifier, RegistryAuth, SignatureStatus,
                 TrustedIdentity, VerificationConfig,
@@ -174,6 +174,44 @@ impl DrasiServer {
         } else {
             None
         };
+
+        // Verify file integrity against lockfile hashes
+        if plugins_dir.exists() {
+            let lockfile = crate::plugin_lockfile::PluginLockfile::read(&plugins_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            if !lockfile.is_empty() {
+                use crate::plugin_lockfile::FileIntegrityStatus;
+                let integrity = lockfile.verify_file_integrity(&plugins_dir);
+                for (filename, status) in &integrity {
+                    match status {
+                        FileIntegrityStatus::Ok => {
+                            debug!("✓ {filename} — integrity verified");
+                        }
+                        FileIntegrityStatus::Tampered { expected, actual } => {
+                            log::error!(
+                                "⚠ {filename} — TAMPERED: expected hash {expected}, got {actual}"
+                            );
+                            // Remove from allowed files if signature verification is enabled
+                            if let Some(ref mut allowed) = verified_files {
+                                allowed.remove(filename);
+                            }
+                        }
+                        FileIntegrityStatus::NoHash => {
+                            debug!("{filename} — no hash in lockfile (legacy entry)");
+                        }
+                        FileIntegrityStatus::Missing => {
+                            debug!("{filename} — file not on disk");
+                        }
+                        FileIntegrityStatus::Error(e) => {
+                            warn!("{filename} — integrity check error: {e}");
+                        }
+                    }
+                }
+            }
+        }
 
         // Load dynamic plugins from the plugins directory
         if plugins_dir.exists() {

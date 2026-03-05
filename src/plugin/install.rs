@@ -74,6 +74,7 @@ pub async fn install_from_uri(reference: &str, plugins_dir: &std::path::Path) ->
             lib_version: metadata.lib_version.clone(),
             platform: metadata.target_triple.clone(),
             filename: fetched.filename,
+            file_hash: drasi_server::plugin_lockfile::compute_file_hash(&fetched.path).ok(),
             git_commit: Some(metadata.git_commit.clone()).filter(|s| !s.is_empty()),
             build_timestamp: Some(metadata.build_timestamp.clone()).filter(|s| !s.is_empty()),
             signature: None,
@@ -175,7 +176,11 @@ async fn install_from_oci(
             core_version: resolved.core_version,
             lib_version: resolved.lib_version,
             platform: resolved.platform,
-            filename: resolved.filename,
+            filename: resolved.filename.clone(),
+            file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                &plugins_dir.join(&resolved.filename),
+            )
+            .ok(),
             git_commit: None,
             build_timestamp: None,
             signature: sig_info,
@@ -415,7 +420,11 @@ pub async fn install_from_config(
                                     core_version: resolved.core_version,
                                     lib_version: resolved.lib_version,
                                     platform: resolved.platform,
-                                    filename: resolved.filename,
+                                    filename: resolved.filename.clone(),
+                                    file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                                        &plugins_dir.join(&resolved.filename),
+                                    )
+                                    .ok(),
                                     git_commit: None,
                                     build_timestamp: None,
                                     signature: None,
@@ -548,7 +557,11 @@ pub async fn install_all(
                         core_version: resolved.core_version,
                         lib_version: resolved.lib_version,
                         platform: resolved.platform,
-                        filename: resolved.filename,
+                        filename: resolved.filename.clone(),
+                        file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                            &plugins_dir.join(&resolved.filename),
+                        )
+                        .ok(),
                         git_commit: None,
                         build_timestamp: None,
                         signature: None,
