@@ -107,7 +107,7 @@ verifyPlugins: true  # Enable cosign signature verification for downloaded plugi
 # Optional trusted identities for plugin signature verification
 # trustedIdentities:
 #   - issuer: "https://accounts.google.com"
-#     subject: "builder@my-org.iam.gserviceaccount.com"
+#     subjectPattern: "builder@my-org.iam.gserviceaccount.com"
 
 # Optional state store for plugin state persistence
 # stateStore:

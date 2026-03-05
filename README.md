@@ -337,8 +337,8 @@ persistIndex: false
 pluginRegistry: ghcr.io/drasi-project
 verifyPlugins: true  # optional: verify plugin signatures via Sigstore (Fulcio + Rekor)
 # trustedIdentities:  # optional: restrict to specific signers
-#   - identity: "release@example.com"
-#     issuer: "https://accounts.google.com"
+#   - issuer: "https://accounts.google.com"
+#     subjectPattern: "release@example.com"
 
 stateStore:
   kind: redb
