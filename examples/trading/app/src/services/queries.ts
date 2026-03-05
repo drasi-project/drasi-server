@@ -122,8 +122,8 @@ export const WATCHLIST_QUERY: QueryDefinition = {
     RETURN s.symbol AS symbol,
            s.name AS name,
            sp.price AS price,
-           sp.previous_close AS previous_close,
-           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
+           sp.previous_close AS previousClose,
+           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -150,21 +150,21 @@ export const PORTFOLIO_QUERY: QueryDefinition = {
     MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
     WITH p, 
          s.name AS name, 
-         sp.price AS current_price,
-         (sp.price * p.quantity) AS current_value,
-         (p.purchase_price * p.quantity) AS cost_basis,
-         ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
-         ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
+         sp.price AS currentPrice,
+         (sp.price * p.quantity) AS currentValue,
+         (p.purchase_price * p.quantity) AS costBasis,
+         ((sp.price - p.purchase_price) * p.quantity) AS profitLoss,
+         ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profitLossPercent
     RETURN p.id AS id,
            p.symbol AS symbol,
            p.quantity AS quantity,
-           p.purchase_price AS purchase_price,
+           p.purchase_price AS purchasePrice,
            name,
-           current_price,
-           current_value,
-           cost_basis,
-           profit_loss,
-           profit_loss_percent
+           currentPrice,
+           currentValue,
+           costBasis,
+           profitLoss,
+           profitLossPercent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -192,8 +192,8 @@ export const TOP_GAINERS_QUERY: QueryDefinition = {
     RETURN s.symbol AS symbol,
            s.name AS name,
            sp.price AS price,
-           sp.previous_close AS previous_close,
-           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
+           sp.previous_close AS previousClose,
+           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -221,8 +221,8 @@ export const TOP_LOSERS_QUERY: QueryDefinition = {
     RETURN s.symbol AS symbol,
            s.name AS name,
            sp.price AS price,
-           sp.previous_close AS previous_close,
-           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
+           sp.previous_close AS previousClose,
+           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -250,7 +250,7 @@ export const HIGH_VOLUME_QUERY: QueryDefinition = {
            s.name AS name,
            sp.price AS price,
            sp.volume AS volume,
-           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
+           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -276,8 +276,8 @@ export const PRICE_TICKER_QUERY: QueryDefinition = {
     MATCH (sp:stock_prices)
     RETURN sp.symbol AS symbol,
            sp.price AS price,
-           sp.previous_close AS previous_close,
-           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
+           sp.previous_close AS previousClose,
+           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent
   `,
   sources: [
     { sourceId: 'price-feed', pipeline: [] }
@@ -301,11 +301,11 @@ export const SECTOR_PERFORMANCE_QUERY: QueryDefinition = {
   query: `
     MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
     RETURN s.sector AS sector,
-           count(s) AS stock_count,
-           avg((sp.price - sp.previous_close) / sp.previous_close * 100) AS avg_change_percent,
-           sum(sp.volume) AS total_volume,
-           min(sp.price) AS min_price,
-           max(sp.price) AS max_price
+           count(s) AS stockCount,
+           avg((sp.price - sp.previous_close) / sp.previous_close * 100) AS avgChangePercent,
+           sum(sp.volume) AS totalVolume,
+           min(sp.price) AS minPrice,
+           max(sp.price) AS maxPrice
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -330,17 +330,17 @@ export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
   description: 'Real-time portfolio summary statistics',
   query: `
     MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-    WITH sum(sp.price * p.quantity) AS total_value,
-         sum(p.purchase_price * p.quantity) AS total_cost,
-         count(p) AS position_count
-    RETURN total_value,
-           total_cost,
-           (total_value - total_cost) AS total_profit_loss,
-           CASE WHEN total_cost > 0 
-                THEN ((total_value - total_cost) / total_cost * 100) 
+    WITH sum(sp.price * p.quantity) AS totalValue,
+         sum(p.purchase_price * p.quantity) AS totalCost,
+         count(p) AS positionCount
+    RETURN totalValue,
+           totalCost,
+           (totalValue - totalCost) AS totalProfitLoss,
+           CASE WHEN totalCost > 0 
+                THEN ((totalValue - totalCost) / totalCost * 100) 
                 ELSE 0 
-           END AS total_profit_loss_percent,
-           position_count
+           END AS totalProfitLossPercent,
+           positionCount
   `,
   sources: [
     { sourceId: 'postgres-stocks', pipeline: [] },
@@ -367,14 +367,14 @@ export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
     MATCH (o:limit_orders)-[:ORDER_HAS_PRICE]->(sp:stock_prices)
     RETURN o.id AS id,
            o.symbol AS symbol,
-           o.order_type AS order_type,
-           o.target_price AS target_price,
-           sp.price AS current_price,
+           o.order_type AS orderType,
+           o.target_price AS targetPrice,
+           sp.price AS currentPrice,
            o.quantity AS quantity,
            o.status AS status,
-           o.created_at AS created_at,
-           o.expires_at AS expires_at,
-           ((o.target_price - sp.price) / sp.price * 100) AS distance_percent
+           o.created_at AS createdAt,
+           o.expires_at AS expiresAt,
+           ((o.target_price - sp.price) / sp.price * 100) AS distancePercent
   `,
   sources: [
     { sourceId: 'postgres-broker', pipeline: [] },
@@ -402,12 +402,12 @@ export const STALE_ORDERS_QUERY: QueryDefinition = {
       AND drasi.trueFor(o.status = 'pending', duration({seconds: 15}))
     RETURN o.id AS id,
            o.symbol AS symbol,
-           o.order_type AS order_type,
-           o.target_price AS target_price,
+           o.order_type AS orderType,
+           o.target_price AS targetPrice,
            o.quantity AS quantity,
-           o.created_at AS created_at,
-           'STALE' AS alert_type,
-           'Order pending for more than 15 seconds' AS alert_message
+           o.created_at AS createdAt,
+           'STALE' AS alertType,
+           'Order pending for more than 15 seconds' AS alertMessage
   `,
   sources: [
     { sourceId: 'postgres-broker', pipeline: [] }
@@ -435,12 +435,12 @@ export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
       AND drasi.trueFor(o.status = 'stale', duration({seconds: 30}))
     RETURN o.id AS id,
            o.symbol AS symbol,
-           o.order_type AS order_type,
-           o.target_price AS target_price,
+           o.order_type AS orderType,
+           o.target_price AS targetPrice,
            o.quantity AS quantity,
-           o.expires_at AS expires_at,
-           'EXPIRED' AS alert_type,
-           'Order expired - time limit reached' AS alert_message
+           o.expires_at AS expiresAt,
+           'EXPIRED' AS alertType,
+           'Order expired - time limit reached' AS alertMessage
   `,
   sources: [
     { sourceId: 'postgres-broker', pipeline: [] }

@@ -77,36 +77,23 @@ export function useQuery<T = any>(queryId: string): {
     const handleResult = (result: QueryResult) => {
       console.log(`[${queryId}] Received ${result.data.length} items`);
       
-      // Transform snake_case from Drasi to camelCase and convert numeric strings
+      // Convert numeric string values to numbers for portfolio query
       const transformedData = result.data.map(item => {
-        const transformed: any = {};
-        for (const [key, value] of Object.entries(item)) {
-          // Preserve _deleted flag as-is (don't transform it)
-          if (key === '_deleted') {
-            transformed[key] = value;
-            continue;
-          }
-          
-          // Convert snake_case to camelCase
-          const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-          
-          // For portfolio query, convert numeric string values to numbers
-          if (queryId === 'portfolio-query' && value != null && value !== '') {
-            const numericFields = [
-              'quantity', 'purchasePrice', 'currentPrice', 'currentValue', 
-              'costBasis', 'profitLoss', 'profitLossPercent', 'changePercent'
-            ];
-            
-            if (numericFields.includes(camelKey)) {
-              const parsed = parseFloat(String(value));
-              transformed[camelKey] = isNaN(parsed) ? null : parsed;
-            } else {
-              transformed[camelKey] = value;
+        const transformed: any = { ...item };
+
+        if (queryId === 'portfolio-query') {
+          const numericFields = [
+            'quantity', 'purchasePrice', 'currentPrice', 'currentValue', 
+            'costBasis', 'profitLoss', 'profitLossPercent', 'changePercent'
+          ];
+          for (const field of numericFields) {
+            if (transformed[field] != null && transformed[field] !== '') {
+              const parsed = parseFloat(String(transformed[field]));
+              transformed[field] = isNaN(parsed) ? null : parsed;
             }
-          } else {
-            transformed[camelKey] = value;
           }
         }
+
         return transformed as T;
       });
       

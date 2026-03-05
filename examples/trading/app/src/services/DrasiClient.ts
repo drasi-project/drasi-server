@@ -274,7 +274,7 @@ export class DrasiClient {
       's.sector AS sector',
       'sp.price AS price',
       'sp.volume AS volume',
-      '((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent'
+      '((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent'
     ];
 
     const allFields = [...baseFields, ...(additionalFields || [])];
