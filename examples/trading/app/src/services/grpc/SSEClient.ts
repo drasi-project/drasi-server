@@ -238,6 +238,12 @@ export class DrasiSSEClient {
             console.log(`>>> Extracting aggregation after:`, result.after);
             return result.after;
           }
+          // Handle DELETE results - extract the key for deletion
+          if (result.type === 'DELETE' && result.before) {
+            console.log(`>>> DELETE detected for:`, result.before);
+            // Mark as deletion by adding _deleted flag
+            return { ...result.before, _deleted: true };
+          }
           // Handle ADD results
           if (result.type === 'ADD' && result.data) {
             return result.data;

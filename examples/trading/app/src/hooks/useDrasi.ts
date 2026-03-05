@@ -112,7 +112,7 @@ export function useQuery<T = any>(queryId: string): {
       // Debug logging for sector-performance-query
       if (queryId === 'sector-performance-query' && transformedData.length > 0) {
         console.log(`[${queryId}] Received ${transformedData.length} items`);
-        console.log(`[${queryId}] First item keys:`, Object.keys(transformedData[0]));
+        console.log(`[${queryId}] First item keys:`, Object.keys(transformedData[0] as object));
         console.log(`[${queryId}] First item:`, transformedData[0]);
       }
       
@@ -122,24 +122,37 @@ export function useQuery<T = any>(queryId: string): {
         console.log(`[${queryId}] Current map size before update: ${dataMapRef.current.size}`);
       }
       
+      // Handle deletions first - items marked with _deleted flag
+      const deletedItems = transformedData.filter((item: any) => item._deleted);
+      const regularItems = transformedData.filter((item: any) => !item._deleted);
+      
+      // Remove deleted items from the map
+      deletedItems.forEach((item: any) => {
+        const key = getItemKey(item, queryId);
+        if (key) {
+          console.log(`[${queryId}] Deleting item with key: ${key}`);
+          dataMapRef.current.delete(key);
+        }
+      });
+      
       // Portfolio query needs to accumulate data, not replace it
       if (queryId === 'portfolio-query') {
         // Portfolio updates come incrementally (one stock at a time)
         // Only clear if we get a large batch (bootstrap/initial load)
-        if (transformedData.length > 5) {
+        if (regularItems.length > 5) {
           // This looks like initial bootstrap data, replace everything
-          console.log(`[${queryId}] Received bootstrap data with ${transformedData.length} items, replacing all`);
+          console.log(`[${queryId}] Received bootstrap data with ${regularItems.length} items, replacing all`);
           dataMapRef.current.clear();
-          transformedData.forEach(item => {
+          regularItems.forEach(item => {
             const key = getItemKey(item, queryId);
             if (key) {
               dataMapRef.current.set(key, item);
             }
           });
-        } else {
+        } else if (regularItems.length > 0) {
           // This is an incremental update, merge with existing data
-          console.log(`[${queryId}] Received incremental update with ${transformedData.length} items, merging`);
-          transformedData.forEach(item => {
+          console.log(`[${queryId}] Received incremental update with ${regularItems.length} items, merging`);
+          regularItems.forEach(item => {
             const key = getItemKey(item, queryId);
             if (key) {
               dataMapRef.current.set(key, item);
@@ -148,18 +161,18 @@ export function useQuery<T = any>(queryId: string): {
         }
       } else {
         // For other queries, use the accumulation logic
-        if (transformedData.length > 5) {
+        if (regularItems.length > 5) {
           // This looks like a full dataset, replace everything
           dataMapRef.current.clear();
-          transformedData.forEach(item => {
+          regularItems.forEach(item => {
             const key = getItemKey(item, queryId);
             if (key) {
               dataMapRef.current.set(key, item);
             }
           });
-        } else {
+        } else if (regularItems.length > 0) {
           // This looks like incremental updates, merge with existing data
-          transformedData.forEach(item => {
+          regularItems.forEach(item => {
             const key = getItemKey(item, queryId);
             if (key) {
               // Update or add the item

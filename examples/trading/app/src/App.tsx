@@ -14,6 +14,7 @@
 
 import { StockList } from '@/components/StockList';
 import { Portfolio } from '@/components/Portfolio';
+import { Watchlist } from '@/components/Watchlist';
 import { SectorPerformance } from '@/components/SectorPerformance';
 import StockTicker from '@/components/StockTicker';
 import { useConnectionStatus } from '@/hooks/useDrasi';
@@ -53,7 +54,7 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* Watchlist */}
           <div className="xl:col-span-1">
-            <StockList title="Watchlist" queryId="watchlist-query" />
+            <Watchlist />
           </div>
 
           {/* Portfolio */}
