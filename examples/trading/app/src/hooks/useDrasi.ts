@@ -196,6 +196,10 @@ function getItemKey(item: any, queryId: string): string | null {
       return `portfolio-${item.symbol}`;
     }
   }
+  // Portfolio summary is a single aggregation row — use a stable key
+  if (queryId === 'portfolio-summary-query') {
+    return 'portfolio-summary';
+  }
   // Most items have a symbol as the unique identifier
   if (item.symbol) {
     return item.symbol;
