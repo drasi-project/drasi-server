@@ -95,11 +95,12 @@ export const Watchlist: React.FC = () => {
       key: 'symbol',
       label: 'Symbol',
       className: 'font-medium',
+      width: 'w-20',
     },
     {
       key: 'name',
       label: 'Name',
-      className: 'text-sm text-gray-300',
+      className: 'text-sm text-gray-300 truncate max-w-[120px]',
     },
     {
       key: 'price',

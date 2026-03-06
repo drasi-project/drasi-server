@@ -51,7 +51,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   cypherQuery,
   drasiUiUrl,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('react');
+  const [activeTab, setActiveTab] = useState<TabId>('cypher');
   const [copied, setCopied] = useState(false);
 
   // Memoize the code content to prevent re-renders from changing it while dialog is open
@@ -83,7 +83,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setActiveTab('react');
+      setActiveTab('cypher');
       setCopied(false);
     }
   }, [isOpen]);
@@ -149,17 +149,6 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
         {/* Tabs */}
         <div className="flex border-b border-trading-border flex-shrink-0">
           <button
-            onClick={() => setActiveTab('react')}
-            className={clsx(
-              "px-6 py-3 text-sm font-medium transition-colors",
-              activeTab === 'react'
-                ? "text-trading-blue border-b-2 border-trading-blue bg-trading-border/20"
-                : "text-gray-400 hover:text-gray-200 hover:bg-trading-border/10"
-            )}
-          >
-            React Code
-          </button>
-          <button
             onClick={() => setActiveTab('cypher')}
             className={clsx(
               "px-6 py-3 text-sm font-medium transition-colors",
@@ -169,6 +158,17 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
             )}
           >
             Query Definition
+          </button>
+          <button
+            onClick={() => setActiveTab('react')}
+            className={clsx(
+              "px-6 py-3 text-sm font-medium transition-colors",
+              activeTab === 'react'
+                ? "text-trading-blue border-b-2 border-trading-blue bg-trading-border/20"
+                : "text-gray-400 hover:text-gray-200 hover:bg-trading-border/10"
+            )}
+          >
+            React Code
           </button>
           
           {/* Copy button */}

@@ -28,7 +28,7 @@ function App() {
     <div className="min-h-screen bg-trading-bg">
       {/* Header */}
       <header className="bg-trading-card border-b border-trading-border px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
+        <div className="max-w-[1400px] mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold text-white">
             Drasi Trading Demo
           </h1>
@@ -51,39 +51,39 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6">
+      <main className="max-w-[1400px] mx-auto p-6">
         {/* Row 1: Watchlist + Portfolio */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
           {/* Watchlist */}
-          <div className="xl:col-span-1">
+          <div className="xl:col-span-1 min-w-0">
             <Watchlist />
           </div>
 
           {/* Portfolio */}
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2 min-w-0">
             <Portfolio />
           </div>
         </div>
 
         {/* Row 2: Sector Performance + Orders (equal 50/50 width) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div>
+          <div className="min-w-0">
             <SectorPerformance />
           </div>
-          <div>
+          <div className="min-w-0">
             <Orders />
           </div>
         </div>
 
         {/* Row 3: Market Movers (Top Gainers, Top Losers, High Volume) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          <div>
+          <div className="min-w-0">
             <StockList title="Top Gainers" queryId="top-gainers-query" />
           </div>
-          <div>
+          <div className="min-w-0">
             <StockList title="Top Losers" queryId="top-losers-query" />
           </div>
-          <div>
+          <div className="min-w-0">
             <StockList title="High Volume" queryId="high-volume-query" />
           </div>
         </div>
@@ -91,7 +91,7 @@ function App() {
 
       {/* Footer */}
       <footer className="mt-12 border-t border-trading-border px-6 py-4 pb-16">
-        <div className="max-w-7xl mx-auto text-center text-sm text-gray-500">
+        <div className="max-w-[1400px] mx-auto text-center text-sm text-gray-500">
           <p>
             This is a demonstration of Drasi Server's continuous query capabilities.
             All data is simulated for demonstration purposes.

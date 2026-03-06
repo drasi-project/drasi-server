@@ -629,7 +629,7 @@ export function QueryTable<T extends Record<string, any>>({
       )}
 
       {/* Table */}
-      <div className={clsx("overflow-auto flex-1 px-6 pb-6", isAnimating && "text-3xl expanded-table-text", tableClassName)}>
+      <div className={clsx("overflow-y-auto overflow-x-hidden flex-1 px-6 pb-6", isAnimating && "text-3xl expanded-table-text", tableClassName)}>
         <table className="w-full">
           <thead className={clsx("sticky top-0 bg-trading-card z-10", headerClassName)}>
             <tr className="border-b border-trading-border">
