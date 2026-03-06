@@ -22,7 +22,7 @@ limitations under the License. */
   border-top: 2px solid #333;
   height: 40px;
   overflow: hidden;
-  z-index: 1000;
+  z-index: 40;
 }
 
 .ticker-container {

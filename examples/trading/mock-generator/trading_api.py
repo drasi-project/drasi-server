@@ -376,6 +376,8 @@ def create_order():
         target_price = data.get('targetPrice')
         quantity = data.get('quantity')
         expires_at_str = data.get('expiresAt')  # ISO timestamp
+        stale_duration = data.get('staleDuration')  # seconds (integer)
+        expire_duration = data.get('expireDuration')  # seconds (integer)
         
         if not all([symbol, order_type, target_price, quantity]):
             return jsonify({
@@ -406,10 +408,10 @@ def create_order():
         
         # Insert order
         cur.execute('''
-            INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, expires_at)
-            VALUES ('demo_user', %s, %s, %s, %s, %s)
-            RETURNING id, symbol, order_type, target_price, quantity, status, created_at, expires_at
-        ''', (symbol, order_type, target_price, quantity, expires_at))
+            INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, expires_at, stale_duration, expire_duration)
+            VALUES ('demo_user', %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, symbol, order_type, target_price, quantity, status, created_at, expires_at, stale_duration, expire_duration
+        ''', (symbol, order_type, target_price, quantity, expires_at, stale_duration, expire_duration))
         
         new_order = cur.fetchone()
         conn.commit()
@@ -477,10 +479,9 @@ def delete_order(order_id):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Only allow deletion of pending/triggered orders
         cur.execute('''
             DELETE FROM limit_orders 
-            WHERE id = %s AND user_id = 'demo_user' AND status IN ('pending', 'triggered')
+            WHERE id = %s AND user_id = 'demo_user'
             RETURNING id, symbol
         ''', (order_id,))
         

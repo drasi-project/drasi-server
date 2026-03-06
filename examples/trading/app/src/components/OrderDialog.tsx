@@ -22,6 +22,8 @@ export interface OrderFormData {
   targetPrice: number;
   quantity: number;
   expiresAt: string; // ISO timestamp calculated from expiresInSeconds
+  staleDuration: number; // seconds - half of expireDuration, rounded down
+  expireDuration: number; // seconds - user-entered expiry time
 }
 
 interface OrderDialogProps {
@@ -132,15 +134,18 @@ export const OrderDialog: React.FC<OrderDialogProps> = ({
     }
 
     try {
+      const expiresInSeconds = parseInt(expiresIn);
       // Calculate expiration timestamp by adding expiresIn seconds to current time
-      const expiresAt = new Date(Date.now() + parseInt(expiresIn) * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
       
       await onSubmit({
         symbol,
         orderType,
         targetPrice: parseFloat(targetPrice),
         quantity: parseInt(quantity),
-        expiresAt
+        expiresAt,
+        staleDuration: Math.floor(expiresInSeconds / 2),
+        expireDuration: expiresInSeconds,
       });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'An error occurred');

@@ -136,7 +136,9 @@ export const Orders: React.FC = () => {
         formData.orderType,
         formData.targetPrice,
         formData.quantity,
-        formData.expiresAt
+        formData.expiresAt,
+        formData.staleDuration,
+        formData.expireDuration
       );
       setDialogOpen(false);
     } finally {
@@ -249,8 +251,7 @@ export const Orders: React.FC = () => {
       onClick: openDeleteConfirm,
       className: 'text-gray-500',
       hoverClassName: 'hover:bg-red-900/30 hover:text-red-400',
-      // Only enable for pending/stale orders
-      disabled: (row: LimitOrderResult) => !['pending', 'stale'].includes(row.status),
+      disabled: () => false,
     },
   ];
 

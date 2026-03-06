@@ -81,6 +81,8 @@ CREATE TABLE limit_orders (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     filled_at TIMESTAMP,
     expires_at TIMESTAMP,  -- Expiration time
+    stale_duration INTEGER,  -- Seconds until order is considered stale (half of expire_duration)
+    expire_duration INTEGER,  -- Seconds until order expires
     FOREIGN KEY (symbol) REFERENCES stocks(symbol) ON DELETE CASCADE
 );
 
@@ -205,9 +207,9 @@ INSERT INTO watchlist (user_id, symbol) VALUES
     ('demo_user', 'AMD');
 
 -- Insert sample filled orders (for demonstrating filled orders query)
-INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, status, filled_at) VALUES
-    ('demo_user', 'AAPL', 'buy', 172.50, 25, 'filled', CURRENT_TIMESTAMP - INTERVAL '2 hours'),
-    ('demo_user', 'MSFT', 'sell', 410.00, 15, 'filled', CURRENT_TIMESTAMP - INTERVAL '30 minutes');
+INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, status, filled_at, stale_duration, expire_duration) VALUES
+    ('demo_user', 'AAPL', 'buy', 172.50, 25, 'filled', CURRENT_TIMESTAMP - INTERVAL '2 hours', 30, 60),
+    ('demo_user', 'MSFT', 'sell', 410.00, 15, 'filled', CURRENT_TIMESTAMP - INTERVAL '30 minutes', 30, 60);
 
 -- Create function to update timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

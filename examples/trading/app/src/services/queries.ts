@@ -387,28 +387,30 @@ export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
 /**
  * STALE ORDERS QUERY (Future Function Demo)
  * 
- * Uses drasi.trueFor() to detect orders that have been in 'pending' state
- * for longer than 15 seconds - indicating they may need attention.
+ * Uses drasi.trueFor() with a pre-calculated stale_duration field to detect
+ * orders that have been pending for half their lifetime.
  * 
  * Demonstrates:
- * - drasi.trueFor() - detecting absence of expected change
- * - Alert when something DIDN'T happen that should have
+ * - drasi.trueFor() with a dynamic, per-row duration
+ * - Staleness threshold derived from order expiry time
  */
 export const STALE_ORDERS_QUERY: QueryDefinition = {
   id: 'stale-orders-query',
-  description: 'Pending orders older than 15 seconds (drasi.trueFor demo)',
+  description: 'Pending orders past half their lifetime (drasi.trueFor demo)',
   query: `
     MATCH (o:limit_orders)
     WHERE o.status = 'pending'
-      AND drasi.trueFor(o.status = 'pending', duration({seconds: 15}))
+      AND o.stale_duration IS NOT NULL
+      AND drasi.trueFor(o.status = 'pending', duration({seconds: o.stale_duration}))
     RETURN o.id AS id,
            o.symbol AS symbol,
            o.order_type AS orderType,
            o.target_price AS targetPrice,
            o.quantity AS quantity,
            o.created_at AS createdAt,
+           o.expires_at AS expiresAt,
            'STALE' AS alertType,
-           'Order pending for more than 15 seconds' AS alertMessage
+           'Order pending past halfway to expiry' AS alertMessage
   `,
   sources: [
     { sourceId: 'postgres-broker', pipeline: [] }
@@ -419,12 +421,12 @@ export const STALE_ORDERS_QUERY: QueryDefinition = {
 /**
  * EXPIRING ORDERS QUERY (Future Function Demo)
  * 
- * Uses drasi.trueFor() to detect when an order has been pending/stale
- * for the full duration from created_at to expires_at (i.e., it expired).
+ * Uses drasi.trueFor() with a pre-calculated expire_duration field to detect
+ * when an order has been in 'stale' status for the remaining half of its lifetime.
  * 
  * Demonstrates:
- * - drasi.trueFor() with computed duration - scheduled future evaluation
- * - Detecting time-based conditions without polling
+ * - drasi.trueFor() with a dynamic, per-row duration
+ * - Detecting time-based expiry without polling
  */
 export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
   id: 'expiring-orders-query',
@@ -432,8 +434,9 @@ export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
   query: `
     MATCH (o:limit_orders)
     WHERE o.status = 'stale'
-      AND o.expires_at IS NOT NULL
-      AND drasi.trueFor(o.status = 'stale', duration({seconds: 30}))
+      AND o.expire_duration IS NOT NULL
+      AND o.stale_duration IS NOT NULL
+      AND drasi.trueFor(o.status = 'stale', duration({seconds: o.expire_duration - o.stale_duration}))
     RETURN o.id AS id,
            o.symbol AS symbol,
            o.order_type AS orderType,

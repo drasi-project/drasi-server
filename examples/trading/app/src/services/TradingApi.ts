@@ -222,12 +222,14 @@ class TradingApiService {
     orderType: 'buy' | 'sell', 
     targetPrice: number, 
     quantity: number,
-    expiresAt?: string
+    expiresAt?: string,
+    staleDuration?: number,
+    expireDuration?: number
   ): Promise<LimitOrder> {
     const response = await fetch(`${this.baseUrl}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, orderType, targetPrice, quantity, expiresAt })
+      body: JSON.stringify({ symbol, orderType, targetPrice, quantity, expiresAt, staleDuration, expireDuration })
     });
     const data: ApiResponse<LimitOrder> = await response.json();
     if (!data.success) {
