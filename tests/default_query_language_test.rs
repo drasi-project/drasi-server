@@ -24,8 +24,8 @@ use drasi_server::api::mappings::{ConfigMapper, DtoMapper, QueryConfigMapper};
 use drasi_server::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[test]
-fn test_default_query_language_is_cypher() {
-    // Test YAML without queryLanguage field deserializes with Cypher default
+fn test_default_query_language_is_gql() {
+    // Test YAML without queryLanguage field deserializes with GQL default
     // This tests the Serde default mechanism
     let yaml = r#"
 id: test-query
@@ -45,8 +45,8 @@ sources:
 
     assert_eq!(
         config.query_language,
-        QueryLanguage::Cypher,
-        "Default query language should be Cypher when not specified in YAML"
+        QueryLanguage::GQL,
+        "Default query language should be GQL when not specified in YAML"
     );
 }
 

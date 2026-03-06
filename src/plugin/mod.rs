@@ -108,7 +108,6 @@ pub async fn run_plugin_command(
     action: PluginAction,
     config_path: PathBuf,
     plugins_dir_override: Option<PathBuf>,
-    _verify_plugins: bool,
 ) -> Result<()> {
     // Initialize logging for CLI commands — suppress noisy oci_client warnings
     if std::env::var("RUST_LOG").is_err() {

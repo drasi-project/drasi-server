@@ -138,8 +138,7 @@ async fn main() -> Result<()> {
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => init::run_init(output, force),
         Some(Commands::Plugin { action }) => {
-            plugin::run_plugin_command(action, cli.config, cli.plugins_dir, cli.verify_plugins)
-                .await
+            plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
         }
         None => {
             // Default behavior: run the server (backward compatible)

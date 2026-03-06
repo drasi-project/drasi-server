@@ -69,7 +69,7 @@ fn default_auto_start() -> bool {
 }
 
 fn default_query_language() -> QueryLanguage {
-    QueryLanguage::default()
+    QueryLanguage::GQL
 }
 
 fn default_enable_bootstrap() -> bool {
