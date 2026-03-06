@@ -303,6 +303,53 @@ jobs:
           path: drasi-server-x86_64-windows.exe
           if-no-files-found: error
 
+  # Windows MSVC native build (uses vendored static libs for jq and OpenSSL)
+  build-windows-msvc:
+    name: Build Windows MSVC (x86_64)
+    runs-on: windows-latest
+    needs: determine-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Pull vendored native libraries
+        shell: bash
+        run: cargo xtask vendor pull x86_64-pc-windows-msvc --tag v1
+
+      - name: Build binary
+        shell: bash
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc --bin drasi-server
+
+          SRC_BINARY="target/x86_64-pc-windows-msvc/release/drasi-server.exe"
+          ARTIFACT_NAME="drasi-server-x86_64-windows-msvc.exe"
+
+          echo "=== Build output ==="
+          ls -lh "$SRC_BINARY" || true
+          file "$SRC_BINARY" || true
+
+          if [[ -f "$SRC_BINARY" ]]; then
+            cp "$SRC_BINARY" "$ARTIFACT_NAME"
+            echo "✓ Built $ARTIFACT_NAME ($(du -h "$ARTIFACT_NAME" | cut -f1))"
+          else
+            echo "Error: Built binary not found at $SRC_BINARY"
+            echo "=== release directory listing ==="
+            ls -la "target/x86_64-pc-windows-msvc/release/" || true
+            exit 1
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drasi-server-x86_64-windows-msvc
+          path: drasi-server-x86_64-windows-msvc.exe
+          if-no-files-found: error
+
   # ─── SSE CLI builds (pure Rust, no C dependencies) ───
 
   # Build all Linux SSE CLI binaries using cross
@@ -565,7 +612,8 @@ jobs:
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-windows.exe\` (Windows x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-x86_64-windows.exe\` (Windows x86_64 MinGW)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`drasi-server-x86_64-windows-msvc.exe\` (Windows x86_64 MSVC)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-aarch64-linux-musl\` (Linux ARM64 musl)" >> $GITHUB_STEP_SUMMARY
@@ -584,7 +632,7 @@ jobs:
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
     name: Test ${{ matrix.artifact_suffix }}
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-macos, build-windows, build-windows-msvc]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -606,10 +654,14 @@ jobs:
           - artifact_suffix: aarch64-linux-gnu
             runner: ubuntu-24.04-arm
             binary_name: "drasi-server-aarch64-linux-gnu"
-          # Windows x86_64
+          # Windows x86_64 (MinGW)
           - artifact_suffix: x86_64-windows
             runner: windows-latest
             binary_name: "drasi-server-x86_64-windows.exe"
+          # Windows x86_64 (MSVC)
+          - artifact_suffix: x86_64-windows-msvc
+            runner: windows-latest
+            binary_name: "drasi-server-x86_64-windows-msvc.exe"
           # Linux x86_64 (musl) — tested inside Alpine container
           - artifact_suffix: x86_64-linux-musl
             runner: ubuntu-latest
@@ -746,7 +798,8 @@ jobs:
           - x86_64 (Intel) - `drasi-server-x86_64-apple-darwin`
 
           ### Windows
-          - x86_64 - `drasi-server-x86_64-windows.exe`
+          - x86_64 (MinGW) - `drasi-server-x86_64-windows.exe`
+          - x86_64 (MSVC) - `drasi-server-x86_64-windows-msvc.exe`
 
           ### Linux (glibc)
           - ARM64 - `drasi-server-aarch64-linux-gnu`

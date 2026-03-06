@@ -3,7 +3,7 @@
   "displayName": "Drasi Server",
   "publisher": "DrasiProject",
   "description": "The Drasi Server Visual Studio Code Extension",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "icon": "resources/drasi.png",
   "repository": {
     "type": "git",

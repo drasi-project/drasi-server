@@ -14,38 +14,84 @@
 
 # Makefile for Drasi Server
 
-.PHONY: all build build-release run run-release setup demo demo-cleanup \
-        doctor validate clean clippy test fmt fmt-check help docker-build \
+.PHONY: all build build-release build-cross build-cross-release \
+        run run-release setup demo demo-cleanup \
+        doctor validate clean clippy test test-smoke \
+        fmt fmt-check help docker-build \
         submodule-update vscode-test
+
+# Platform detection
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    PLUGIN_LIB_EXT := dylib
+    PLUGIN_LIB_PREFIX := lib
+else ifeq ($(OS),Windows_NT)
+    PLUGIN_LIB_EXT := dll
+    PLUGIN_LIB_PREFIX :=
+else
+    # Linux and other Unix
+    PLUGIN_LIB_EXT := so
+    PLUGIN_LIB_PREFIX := lib
+endif
+
+# Binary name
+ifeq ($(OS),Windows_NT)
+    SERVER_BIN := drasi-server.exe
+else
+    SERVER_BIN := drasi-server
+endif
+
+# Auto-discover volume mounts for cross-compilation from local [patch.crates-io] paths.
+# When developing with local path overrides in .cargo/config.toml, cross needs those
+# directories mounted into its Docker container. If no local patches exist (crates
+# come from crates.io), this produces an empty value and cross works normally.
+CROSS_PATCH_VOLUMES := $(shell \
+  grep -oP 'path\s*=\s*"\K[^"]+' .cargo/config.toml 2>/dev/null | \
+  while read p; do \
+    d="$$p"; \
+    while [ "$$d" != "/" ]; do \
+      if [ -f "$$d/Cargo.toml" ] && grep -q '^\[workspace\]' "$$d/Cargo.toml" 2>/dev/null; then \
+        echo "$$d"; break; \
+      fi; \
+      d=$$(dirname "$$d"); \
+    done; \
+  done | sort -u | while read r; do printf -- '-v %s:%s ' "$$r" "$$r"; done)
 
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
 	@echo ""
 	@echo "Getting Started:"
-	@echo "  make setup         - Check dependencies and create default config"
-	@echo "  make run           - Build (debug) and run the server"
-	@echo "  make run-release   - Build (release) and run the server"
-	@echo "  make demo          - Run the getting-started example"
+	@echo "  make setup              - Check dependencies and create default config"
+	@echo "  make run                - Build (debug) and run the server"
+	@echo "  make run-release        - Build (release) and run the server"
+	@echo "  make demo               - Run the getting-started example"
 	@echo ""
-	@echo "Development:"
-	@echo "  make build         - Build debug binary"
-	@echo "  make build-release - Build release binary"
-	@echo "  make test          - Run all tests"
-	@echo "  make vscode-test   - Run VSCode extension tests"
-	@echo "  make clippy        - Run linter"
-	@echo "  make fmt           - Format code"
-	@echo "  make fmt-check     - Check formatting"
+	@echo "Build:"
+	@echo "  make build              - Build debug binary"
+	@echo "  make build-release      - Build release binary"
+	@echo "  make build-cross TARGET=<triple>         - Cross-compile (debug)"
+	@echo "  make build-cross-release TARGET=<triple> - Cross-compile (release)"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test               - Run all tests"
+	@echo "  make test-smoke         - Plugin smoke test"
+	@echo "  make vscode-test        - Run VSCode extension tests"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make clippy             - Run linter"
+	@echo "  make fmt                - Format code"
+	@echo "  make fmt-check          - Check formatting"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-build  - Build Docker image (IMAGE_PREFIX, DOCKER_TAG_VERSION)"
+	@echo "  make docker-build       - Build Docker image (IMAGE_PREFIX, DOCKER_TAG_VERSION)"
 	@echo ""
 	@echo "Utilities:"
-	@echo "  make doctor            - Check system dependencies"
-	@echo "  make validate          - Validate config file (CONFIG=path)"
-	@echo "  make clean             - Clean build artifacts"
-	@echo "  make demo-cleanup      - Stop demo containers"
-	@echo "  make submodule-update  - Initialize/update git submodules"
+	@echo "  make doctor             - Check system dependencies"
+	@echo "  make validate           - Validate config file (CONFIG=path)"
+	@echo "  make clean              - Clean build artifacts"
+	@echo "  make demo-cleanup       - Stop demo containers"
+	@echo "  make submodule-update   - Initialize/update git submodules"
 	@echo ""
 
 # === Getting Started ===
@@ -82,7 +128,7 @@ run-config:
 run-release:
 	cargo run --release
 
-# === Development ===
+# === Build ===
 
 build:
 	cargo build
@@ -90,8 +136,24 @@ build:
 build-release:
 	cargo build --release
 
+build-cross:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --target $(TARGET)
+
+build-cross-release:
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Error: TARGET is required"; \
+		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
+		exit 1; \
+	fi
+	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --release --target $(TARGET)
+
 clippy:
-	cargo clippy --all-targets --all-features
+	cargo clippy --all-targets
 
 fmt:
 	cargo fmt
@@ -100,7 +162,12 @@ fmt-check:
 	cargo fmt -- --check
 
 test:
-	cargo test --all-features
+	cargo test
+
+# Plugin smoke tests: start server and create every plugin kind, verify no crash
+test-smoke:
+	@echo "=== Plugin smoke test ==="
+	./tests/plugin_smoke_test.sh
 
 vscode-test:
 	cd dev-tools/vscode/drasi-server && npm test
@@ -130,7 +197,6 @@ doctor:
 	@echo "Required:"
 	@command -v cargo >/dev/null 2>&1 && echo "  [OK] Rust/Cargo $$(rustc --version | cut -d' ' -f2)" || echo "  [MISSING] Rust/Cargo - https://rustup.rs"
 	@command -v git >/dev/null 2>&1 && echo "  [OK] Git" || echo "  [MISSING] Git"
-	@if [ -d "drasi-core/lib" ]; then echo "  [OK] Submodules initialized"; else echo "  [MISSING] Submodules - run: git submodule update --init --recursive"; fi
 	@echo ""
 	@echo "Optional (for examples):"
 	@command -v docker >/dev/null 2>&1 && echo "  [OK] Docker" || echo "  [SKIP] Docker - https://docs.docker.com/get-docker/"

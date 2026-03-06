@@ -27,12 +27,21 @@ use drasi_server::api::mappings::{map_server_settings, DtoMapper};
 use drasi_server::api::models::ConfigValue;
 use drasi_server::{load_config_file, save_config_file, DrasiServer, DrasiServerConfig};
 
+mod cli_styles;
 mod init;
+mod plugin;
 
 #[derive(Parser)]
 #[command(name = "drasi-server")]
 #[command(about = "Standalone Drasi server for data change processing")]
-#[command(version)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(long_version = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\nrustc: ",
+    env!("DRASI_RUSTC_VERSION"),
+    "\nplugin-sdk: ",
+    env!("DRASI_PLUGIN_SDK_VERSION"),
+))]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -44,6 +53,14 @@ struct Cli {
     /// Override the server port
     #[arg(short, long, global = true)]
     port: Option<u16>,
+
+    /// Directory to scan for plugin shared libraries (defaults to binary directory)
+    #[arg(long, global = true)]
+    plugins_dir: Option<PathBuf>,
+
+    /// Enable cosign signature verification for downloaded plugins
+    #[arg(long, global = true)]
+    verify_plugins: bool,
 }
 
 #[derive(Subcommand)]
@@ -57,6 +74,14 @@ enum Commands {
         /// Override the server port
         #[arg(short, long)]
         port: Option<u16>,
+
+        /// Directory to scan for plugin shared libraries (defaults to binary directory)
+        #[arg(long)]
+        plugins_dir: Option<PathBuf>,
+
+        /// Enable cosign signature verification for downloaded plugins
+        #[arg(long)]
+        verify_plugins: bool,
     },
 
     /// Validate a configuration file without starting the server
@@ -87,6 +112,12 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Manage plugins from OCI registries
+    Plugin {
+        #[command(subcommand)]
+        action: plugin::PluginAction,
+    },
 }
 
 #[tokio::main]
@@ -94,22 +125,35 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Run { config, port }) => run_server(config, port).await,
+        Some(Commands::Run {
+            config,
+            port,
+            plugins_dir,
+            verify_plugins,
+        }) => run_server(config, port, plugins_dir, verify_plugins).await,
         Some(Commands::Validate {
             config,
             show_resolved,
         }) => validate_config(config, show_resolved),
         Some(Commands::Doctor { all }) => run_doctor(all),
         Some(Commands::Init { output, force }) => init::run_init(output, force),
+        Some(Commands::Plugin { action }) => {
+            plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
+        }
         None => {
             // Default behavior: run the server (backward compatible)
-            run_server(cli.config, cli.port).await
+            run_server(cli.config, cli.port, cli.plugins_dir, cli.verify_plugins).await
         }
     }
 }
 
 /// Run the Drasi Server
-async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<()> {
+async fn run_server(
+    config_path: PathBuf,
+    port_override: Option<u16>,
+    plugins_dir: Option<PathBuf>,
+    verify_plugins: bool,
+) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
     let env_file_loaded = if let Some(config_dir) = config_path.parent() {
@@ -135,7 +179,7 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
-                std::env::set_var("RUST_LOG", "info");
+                std::env::set_var("RUST_LOG", "info,oci_client=error");
             }
         }
         get_or_init_global_registry();
@@ -183,7 +227,10 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
         if std::env::var("RUST_LOG").is_err() {
             // SAFETY: set_var is called early in main() before any other threads are spawned
             unsafe {
-                std::env::set_var("RUST_LOG", &resolved_settings.log_level);
+                std::env::set_var(
+                    "RUST_LOG",
+                    format!("{},oci_client=error", &resolved_settings.log_level),
+                );
             }
         }
         get_or_init_global_registry();
@@ -202,7 +249,20 @@ async fn run_server(config_path: PathBuf, port_override: Option<u16>) -> Result<
     info!("Port: {final_port}");
     debug!("Server configuration: {resolved_settings:?}");
 
-    let server = DrasiServer::new(config_path, final_port).await?;
+    // Resolve the plugins directory: use CLI arg if provided, otherwise default to ./plugins under binary directory
+    let plugins_dir = match plugins_dir {
+        Some(dir) => dir,
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+            .unwrap_or_else(|| {
+                warn!("Could not determine binary directory for plugin loading");
+                PathBuf::from("plugins")
+            }),
+    };
+    info!("Plugins directory: {}", plugins_dir.display());
+
+    let server = DrasiServer::new(config_path, final_port, plugins_dir, verify_plugins).await?;
     server.run().await?;
 
     Ok(())

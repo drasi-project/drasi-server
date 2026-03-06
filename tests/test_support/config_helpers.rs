@@ -18,35 +18,28 @@
 //! for use in tests.
 
 use drasi_lib::Query;
-use drasi_server::models::sources::mock::DataTypeDto;
-use drasi_server::models::{LogReactionConfigDto, MockSourceConfigDto};
 use drasi_server::{QueryConfig, ReactionConfig, SourceConfig, StateStoreConfig};
 use tempfile::TempDir;
 
 /// Create a mock source config for testing
 pub fn mock_source(id: impl Into<String>) -> SourceConfig {
-    SourceConfig::Mock {
+    SourceConfig {
+        kind: "mock".to_string(),
         id: id.into(),
         auto_start: true,
         bootstrap_provider: None,
-        config: default_mock_config(),
-    }
-}
-
-fn default_mock_config() -> MockSourceConfigDto {
-    MockSourceConfigDto {
-        data_type: DataTypeDto::Generic,
-        interval_ms: drasi_server::models::ConfigValue::Static(5000),
+        config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
     }
 }
 
 /// Create a mock source config with auto_start disabled
 pub fn mock_source_manual(id: impl Into<String>) -> SourceConfig {
-    SourceConfig::Mock {
+    SourceConfig {
+        kind: "mock".to_string(),
         id: id.into(),
         auto_start: false,
         bootstrap_provider: None,
-        config: default_mock_config(),
+        config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
     }
 }
 
@@ -67,21 +60,23 @@ pub fn test_query(
 
 /// Create a log reaction config for testing
 pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
-    ReactionConfig::Log {
+    ReactionConfig {
+        kind: "log".to_string(),
         id: id.into(),
         queries,
         auto_start: true,
-        config: LogReactionConfigDto::default(),
+        config: serde_json::json!({"routes": {}}),
     }
 }
 
 /// Create a log reaction config with auto_start disabled
 pub fn log_reaction_manual(id: impl Into<String>, queries: Vec<String>) -> ReactionConfig {
-    ReactionConfig::Log {
+    ReactionConfig {
+        kind: "log".to_string(),
         id: id.into(),
         queries,
         auto_start: false,
-        config: LogReactionConfigDto::default(),
+        config: serde_json::json!({"routes": {}}),
     }
 }
 

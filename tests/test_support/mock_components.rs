@@ -186,6 +186,13 @@ impl ReactionTrait for MockReaction {
     async fn status(&self) -> ComponentStatus {
         self.inner.status.read().await.clone()
     }
+
+    async fn enqueue_query_result(
+        &self,
+        _result: drasi_lib::channels::QueryResult,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Create a mock source for testing

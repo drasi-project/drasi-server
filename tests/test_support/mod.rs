@@ -14,11 +14,17 @@
 
 //! Test support utilities for integration tests
 
+#[allow(dead_code)]
 pub mod config_helpers;
+#[allow(dead_code)]
 pub mod mock_components;
+#[allow(dead_code)]
 pub mod redis_helpers;
 
 // Re-export commonly used helpers
+#[allow(unused_imports)]
 pub use config_helpers::*;
+#[allow(unused_imports)]
 pub use mock_components::*;
+#[allow(unused_imports)]
 pub use redis_helpers::*;

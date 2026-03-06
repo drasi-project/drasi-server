@@ -6,7 +6,6 @@ use drasi_lib::{
     DrasiLib, Query, QueryConfig,
 };
 use drasi_server::api::models::query::{QueryConfigDto, SourceSubscriptionConfigDto};
-use drasi_server::api::models::ConfigValue;
 use drasi_server::api::shared::handlers::create_query;
 use std::sync::Arc;
 
@@ -38,14 +37,14 @@ fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
     QueryConfigDto {
         id: config.id,
         auto_start: config.auto_start,
-        query: ConfigValue::Static(config.query),
-        query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+        query: config.query,
+        query_language: config.query_language,
         middleware: vec![], // Simplified for testing
         sources: config
             .sources
             .iter()
             .map(|s| SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static(s.source_id.clone()),
+                source_id: s.source_id.clone(),
                 nodes: s.nodes.clone(),
                 relations: s.relations.clone(),
                 pipeline: s.pipeline.clone(),

@@ -166,7 +166,7 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiLib instance
     pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
-        let mut builders = self.core_builders;
+        let builders = self.core_builders;
         let primary = builders
             .into_iter()
             .next()

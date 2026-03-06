@@ -17,20 +17,14 @@
 
 mod test_support;
 
-use drasi_server::models::sources::mock::DataTypeDto;
-use drasi_server::models::{
-    ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto,
-    SourceSubscriptionConfigDto,
-};
+use drasi_lib::config::QueryLanguage;
+use drasi_server::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
 use drasi_server::{load_config_file, DrasiServerConfig, ReactionConfig, SourceConfig};
 use std::fs;
 use tempfile::TempDir;
 
-fn default_mock_config() -> MockSourceConfigDto {
-    MockSourceConfigDto {
-        data_type: DataTypeDto::Generic,
-        interval_ms: ConfigValue::Static(5000),
-    }
+fn default_mock_config() -> serde_json::Value {
+    serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000})
 }
 
 #[tokio::test]
@@ -97,13 +91,15 @@ async fn test_persistence_saves_complete_configuration() {
     let config_path = temp_dir.path().join("test-config.yaml");
 
     // Create sources using enum variants
-    let source1 = SourceConfig::Mock {
+    let source1 = SourceConfig {
+        kind: "mock".to_string(),
         id: "test-source-1".to_string(),
         auto_start: true,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
-    let source2 = SourceConfig::Mock {
+    let source2 = SourceConfig {
+        kind: "mock".to_string(),
         id: "test-source-2".to_string(),
         auto_start: false,
         bootstrap_provider: None,
@@ -114,11 +110,11 @@ async fn test_persistence_saves_complete_configuration() {
     let query = QueryConfigDto {
         id: "test-query-1".to_string(),
         auto_start: true,
-        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (n) RETURN n".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("test-source-1".to_string()),
+            source_id: "test-source-1".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -133,11 +129,12 @@ async fn test_persistence_saves_complete_configuration() {
     };
 
     // Create reaction using enum variant
-    let reaction = ReactionConfig::Log {
+    let reaction = ReactionConfig {
+        kind: "log".to_string(),
         id: "test-reaction-1".to_string(),
         queries: vec!["test-query-1".to_string()],
         auto_start: true,
-        config: LogReactionConfigDto::default(),
+        config: serde_json::json!({"routes": {}}),
     };
 
     // Create config with all components
@@ -185,12 +182,12 @@ async fn test_persistence_saves_complete_configuration() {
     assert_eq!(loaded_config.queries[0].id, "test-query-1");
     assert_eq!(
         loaded_config.queries[0].query,
-        ConfigValue::Static("MATCH (n) RETURN n".to_string())
+        "MATCH (n) RETURN n".to_string()
     );
     assert_eq!(loaded_config.queries[0].sources.len(), 1);
     assert_eq!(
         loaded_config.queries[0].sources[0].source_id,
-        ConfigValue::Static("test-source-1".to_string())
+        "test-source-1".to_string()
     );
 
     // Verify reactions
@@ -221,7 +218,8 @@ async fn test_persistence_atomic_write() {
         .expect("Failed to save initial config");
 
     // Create updated config with a new source
-    let new_source = SourceConfig::Mock {
+    let new_source = SourceConfig {
+        kind: "mock".to_string(),
         id: "new-source".to_string(),
         auto_start: true,
         bootstrap_provider: None,
@@ -336,11 +334,11 @@ fn test_multiple_queries_persist_correctly() {
     let query1 = QueryConfigDto {
         id: "query-1".to_string(),
         auto_start: true,
-        query: ConfigValue::Static("MATCH (n:Node) RETURN n".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (n:Node) RETURN n".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("source-1".to_string()),
+            source_id: "source-1".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -357,11 +355,11 @@ fn test_multiple_queries_persist_correctly() {
     let query2 = QueryConfigDto {
         id: "query-2".to_string(),
         auto_start: false,
-        query: ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("source-1".to_string()),
+            source_id: "source-1".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -406,10 +404,7 @@ fn test_multiple_queries_persist_correctly() {
         .find(|q| q.id == "query-1")
         .expect("query-1 not found");
     assert!(q1.auto_start);
-    assert_eq!(
-        q1.query,
-        ConfigValue::Static("MATCH (n:Node) RETURN n".to_string())
-    );
+    assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
     let q2 = loaded_config
@@ -420,7 +415,7 @@ fn test_multiple_queries_persist_correctly() {
     assert!(!q2.auto_start);
     assert_eq!(
         q2.query,
-        ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string())
+        "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string()
     );
 }
 
@@ -433,11 +428,11 @@ fn test_adding_query_preserves_existing_queries() {
     let query1 = QueryConfigDto {
         id: "existing-query".to_string(),
         auto_start: true,
-        query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (n) RETURN n".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("source-1".to_string()),
+            source_id: "source-1".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -472,11 +467,11 @@ fn test_adding_query_preserves_existing_queries() {
     let query2 = QueryConfigDto {
         id: "new-query".to_string(),
         auto_start: false,
-        query: ConfigValue::Static("MATCH (s:Sensor) RETURN s".to_string()),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        query: "MATCH (s:Sensor) RETURN s".to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("source-1".to_string()),
+            source_id: "source-1".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -566,10 +561,7 @@ reactions: []
         .find(|q| q.id == "first-query")
         .expect("first-query not found");
     assert!(q1.auto_start);
-    assert_eq!(
-        q1.query,
-        ConfigValue::Static("MATCH (n:Node) RETURN n".to_string())
-    );
+    assert_eq!(q1.query, "MATCH (n:Node) RETURN n".to_string());
 
     // Verify second query
     let q2 = config
@@ -580,7 +572,7 @@ reactions: []
     assert!(!q2.auto_start);
     assert_eq!(
         q2.query,
-        ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 50 RETURN s".to_string())
+        "MATCH (s:Sensor) WHERE s.temp > 50 RETURN s".to_string()
     );
 
     // Save and reload to ensure round-trip works

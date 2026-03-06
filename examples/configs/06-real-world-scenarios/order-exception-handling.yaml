@@ -40,6 +40,14 @@ port: 8080
 logLevel: info
 persistConfig: false
 
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: reaction/log
+  - ref: reaction/http
+  - ref: reaction/sse
+
 sources:
   # PostgreSQL CDC for orders database
   - kind: postgres

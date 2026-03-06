@@ -55,6 +55,12 @@ persistConfig: false
 defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-15000}"
 defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-2000}"
 
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock
+  - ref: reaction/log
+  - ref: reaction/profiler
+
 sources:
   # High-volume source for testing capacity
   - kind: mock

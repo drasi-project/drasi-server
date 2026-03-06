@@ -15,7 +15,7 @@
 use anyhow::Result;
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
-use crate::api::mappings::{map_server_settings, ConfigMapper, DtoMapper, QueryConfigMapper};
+use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
@@ -32,8 +32,10 @@ use crate::factories::{create_reaction, create_source, create_state_store_provid
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_registry::PluginRegistry;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
+use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -42,6 +44,7 @@ pub struct DrasiServer {
     port: u16,
     config_file_path: Option<String>,
     read_only: Arc<bool>,
+    plugin_registry: Arc<PluginRegistry>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
 }
@@ -54,9 +57,184 @@ struct PreparedInstance {
 
 impl DrasiServer {
     /// Create a new DrasiServer from a configuration file
-    pub async fn new(config_path: PathBuf, port: u16) -> Result<Self> {
-        let config = load_config_file(&config_path)?;
+    pub async fn new(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        verify_plugins: bool,
+    ) -> Result<Self> {
+        let mut config = load_config_file(&config_path)?;
         config.validate()?;
+
+        // CLI --verify-plugins flag overrides config (true if either is set)
+        if verify_plugins {
+            config.verify_plugins = true;
+        }
+
+        // Create and populate the plugin registry
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
+
+        // Auto-install plugins from registry if configured
+        if config.auto_install_plugins && !config.plugins.is_empty() {
+            crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
+        }
+
+        // When verify_plugins is enabled, re-verify plugin signatures against the
+        // OCI registry (not the lockfile cache, which could be tampered with).
+        // Verifications run in parallel for speed.
+        let mut verified_files = if config.verify_plugins {
+            use drasi_host_sdk::registry::{
+                matches_trusted_identity, CosignVerifier, RegistryAuth, SignatureStatus,
+                TrustedIdentity, VerificationConfig,
+            };
+
+            let lockfile = crate::plugin_lockfile::PluginLockfile::read(&plugins_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            if lockfile.is_empty() {
+                warn!("verify_plugins enabled but no lockfile found — no plugins will be loaded");
+                Some(std::collections::HashSet::new())
+            } else {
+                // Build the list of trusted identities from config,
+                // defaulting to drasi-project if none configured.
+                let trusted: Vec<TrustedIdentity> = if config.trusted_identities.is_empty() {
+                    vec![TrustedIdentity {
+                        issuer: "https://token.actions.githubusercontent.com".to_string(),
+                        subject_pattern: "https://github.com/drasi-project/*".to_string(),
+                    }]
+                } else {
+                    config
+                        .trusted_identities
+                        .iter()
+                        .map(|ti| TrustedIdentity {
+                            issuer: ti.issuer.clone(),
+                            subject_pattern: ti.subject_pattern.clone(),
+                        })
+                        .collect()
+                };
+
+                let verifier = CosignVerifier::new(VerificationConfig {
+                    enabled: true,
+                    ..Default::default()
+                });
+
+                // Convert registry auth for the verifier
+                let host_auth = crate::plugin_install::get_registry_auth();
+                let oci_auth = match &host_auth {
+                    RegistryAuth::Anonymous => oci_client::secrets::RegistryAuth::Anonymous,
+                    RegistryAuth::Basic { username, password } => {
+                        oci_client::secrets::RegistryAuth::Basic(username.clone(), password.clone())
+                    }
+                };
+
+                // Build batch: (oci_reference, filename) from lockfile
+                let batch: Vec<(String, String)> = lockfile
+                    .plugins
+                    .values()
+                    .map(|p| (p.reference.clone(), p.filename.clone()))
+                    .collect();
+
+                // Verify all plugins in parallel against the registry
+                let results = verifier.verify_batch(batch, &oci_auth).await;
+
+                let allowed: std::collections::HashSet<String> = results
+                    .into_iter()
+                    .filter_map(|(filename, status)| match status {
+                        SignatureStatus::Verified(v)
+                            if matches_trusted_identity(&v, &trusted) =>
+                        {
+                            info!(
+                                "✓ {filename} — trusted (issuer={}, subject={})",
+                                v.issuer, v.subject
+                            );
+                            Some(filename)
+                        }
+                        SignatureStatus::Verified(v) => {
+                            warn!(
+                                "✗ {filename} — signed but not from a trusted identity (issuer={}, subject={})",
+                                v.issuer, v.subject
+                            );
+                            None
+                        }
+                        SignatureStatus::Tampered(reason) => {
+                            log::error!(
+                                "⚠ {filename} — TAMPERED: {reason}"
+                            );
+                            None
+                        }
+                        SignatureStatus::Unsigned => None,
+                    })
+                    .collect();
+
+                Some(allowed)
+            }
+        } else {
+            None
+        };
+
+        // Verify file integrity against lockfile hashes
+        if plugins_dir.exists() {
+            let lockfile = crate::plugin_lockfile::PluginLockfile::read(&plugins_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            if !lockfile.is_empty() {
+                use crate::plugin_lockfile::FileIntegrityStatus;
+                let integrity = lockfile.verify_file_integrity(&plugins_dir);
+                for (filename, status) in &integrity {
+                    match status {
+                        FileIntegrityStatus::Ok => {
+                            debug!("✓ {filename} — integrity verified");
+                        }
+                        FileIntegrityStatus::Tampered { expected, actual } => {
+                            log::error!(
+                                "⚠ {filename} — TAMPERED: expected hash {expected}, got {actual}"
+                            );
+                            // Remove from allowed files if signature verification is enabled
+                            if let Some(ref mut allowed) = verified_files {
+                                allowed.remove(filename);
+                            }
+                        }
+                        FileIntegrityStatus::NoHash => {
+                            debug!("{filename} — no hash in lockfile (legacy entry)");
+                        }
+                        FileIntegrityStatus::Missing => {
+                            debug!("{filename} — file not on disk");
+                        }
+                        FileIntegrityStatus::Error(e) => {
+                            warn!("{filename} — integrity check error: {e}");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Load dynamic plugins from the plugins directory
+        if plugins_dir.exists() {
+            let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
+                instance_id: String::new(),
+                runtime_handle: tokio::runtime::Handle::current(),
+                log_registry: drasi_lib::managers::get_or_init_global_registry(),
+                source_event_history: Arc::new(tokio::sync::RwLock::new(
+                    drasi_lib::managers::ComponentEventHistory::new(),
+                )),
+                reaction_event_history: Arc::new(tokio::sync::RwLock::new(
+                    drasi_lib::managers::ComponentEventHistory::new(),
+                )),
+            });
+            crate::dynamic_loading::load_plugins(
+                &plugins_dir,
+                &mut plugin_registry,
+                Some(callback_ctx),
+                verified_files.as_ref(),
+            )?;
+        }
+
+        let plugin_registry = Arc::new(plugin_registry);
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
@@ -127,7 +305,7 @@ impl DrasiServer {
                 instance.id
             );
             for source_config in instance.sources.clone() {
-                let source = create_source(source_config).await?;
+                let source = create_source(&plugin_registry, source_config).await?;
                 builder = builder.with_source(source);
             }
 
@@ -138,7 +316,7 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
-                let reaction = create_reaction(reaction_config)?;
+                let reaction = create_reaction(&plugin_registry, reaction_config).await?;
                 builder = builder.with_reaction(reaction);
             }
 
@@ -162,6 +340,7 @@ impl DrasiServer {
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
+            plugin_registry,
             config_persistence: None, // Will be set after core is started
         })
     }
@@ -174,6 +353,8 @@ impl DrasiServer {
         port: u16,
         config_file_path: Option<String>,
     ) -> Self {
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
         Self {
             instances: vec![PreparedInstance {
                 id_hint: None,
@@ -185,7 +366,8 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
-            config_persistence: None,   // Will be set up if config file is provided
+            plugin_registry: Arc::new(plugin_registry),
+            config_persistence: None, // Will be set up if config file is provided
         }
     }
 
@@ -206,6 +388,8 @@ impl DrasiServer {
             })
             .collect();
 
+        let mut plugin_registry = PluginRegistry::new();
+        register_core_plugins(&mut plugin_registry);
         Self {
             instances,
             enable_api,
@@ -213,6 +397,7 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false),
+            plugin_registry: Arc::new(plugin_registry),
             config_persistence: None,
         }
     }
@@ -226,6 +411,9 @@ impl DrasiServer {
     #[allow(clippy::print_stdout)]
     pub async fn run(mut self) -> Result<()> {
         println!("Starting Drasi Server");
+        println!("  Version: {}", env!("CARGO_PKG_VERSION"));
+        println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
+        println!("  Plugin SDK: {}", env!("DRASI_PLUGIN_SDK_VERSION"));
         if let Some(config_file) = &self.config_file_path {
             println!("  Config file: {config_file}");
         }
@@ -242,7 +430,7 @@ impl DrasiServer {
         // Take ownership of instances to avoid partial move of self
         let instances = std::mem::take(&mut self.instances);
         for instance in instances {
-            let mut core = instance.core;
+            let core = instance.core;
             let id = match instance.id_hint {
                 Some(id) => id,
                 None => core
@@ -342,16 +530,21 @@ impl DrasiServer {
 
     async fn start_api(
         &self,
-        instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
+        _instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
     ) -> Result<()> {
         // Create OpenAPI documentation for v1
-        let openapi_v1 = api::ApiDocV1::openapi();
+        let mut openapi_v1 = api::ApiDocV1::openapi();
+        api::inject_plugin_schemas(&mut openapi_v1, &self.plugin_registry);
 
         // Build the v1 API router
-        let v1_router =
-            api::build_v1_router(registry, self.read_only.clone(), config_persistence.clone());
+        let v1_router = api::build_v1_router(
+            registry,
+            self.read_only.clone(),
+            config_persistence.clone(),
+            self.plugin_registry.clone(),
+        );
 
         // Build the main application router
         let app = Router::new()
@@ -438,4 +631,23 @@ impl DrasiServer {
 
         Ok((source_configs, reaction_configs, query_configs))
     }
+}
+
+/// Register plugins that are always available regardless of feature flags.
+pub fn register_core_plugins(registry: &mut PluginRegistry) {
+    use std::sync::Arc;
+
+    info!("Loading core plugins (static)...");
+
+    let desc = drasi_bootstrap_noop::descriptor::NoOpBootstrapDescriptor;
+    info!("  [static/core] bootstrap: {}", desc.kind());
+    registry.register_bootstrapper(Arc::new(desc));
+
+    let desc = drasi_bootstrap_application::descriptor::ApplicationBootstrapDescriptor;
+    info!("  [static/core] bootstrap: {}", desc.kind());
+    registry.register_bootstrapper(Arc::new(desc));
+
+    let desc = drasi_reaction_application::descriptor::ApplicationReactionDescriptor;
+    info!("  [static/core] reaction: {}", desc.kind());
+    registry.register_reaction(Arc::new(desc));
 }

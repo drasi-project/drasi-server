@@ -69,6 +69,14 @@ cat README.md
 2. **Experiment:** `playground/` - Interactive exploration via web UI
 3. **Master:** `trading/` - Study production patterns
 
+## Plugin Signature Verification
+
+You can enable cosign signature verification for downloaded plugins by adding `--verify-plugins`:
+
+```bash
+cargo run -- --verify-plugins --config examples/getting-started/server-config.yaml
+```
+
 ## Common Patterns
 
 All examples demonstrate:

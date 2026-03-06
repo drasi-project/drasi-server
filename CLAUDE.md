@@ -11,16 +11,23 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ### Build and Run
 - Build: `cargo build`
 - Build release: `cargo build --release`
+- Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
+- Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
 - Check compilation: `cargo check`
+
+### Plugin Loading
+Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
 ### Testing
 - Run all tests: `cargo test`
 - Run unit tests only: `cargo test --lib`
 - Run specific test: `cargo test test_name`
 - Run integration tests: `./tests/run_working_tests.sh`
+- Run plugin smoke tests: `make test-smoke`
 - Run with logging: `RUST_LOG=debug cargo test -- --nocapture`
+- Run host-sdk integration tests: `cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test`
 
 ### Code Quality
 - Format code: `cargo fmt`
@@ -42,6 +49,7 @@ This repository contains only the server wrapper functionality:
    - `mappings/` - DTO to domain model conversions
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
+5. **Dynamic Loading** (`src/dynamic_loading.rs`) - Runtime plugin loading from shared libraries
 
 ### Core Components (External Dependency)
 
@@ -94,6 +102,12 @@ port: 8080
 logLevel: "info"
 persistConfig: true  # Enable persistence (default)
 persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
+verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: false)
+
+# Optional trusted identities for plugin signature verification
+# trustedIdentities:
+#   - issuer: "https://accounts.google.com"
+#     subjectPattern: "builder@my-org.iam.gserviceaccount.com"
 
 # Optional state store for plugin state persistence
 # stateStore:
@@ -252,6 +266,11 @@ server.run().await?;
 - API tests: `tests/api/`
 - Protocol tests: `tests/grpc/`, `tests/http/`, `tests/postgres/`
 - End-to-end tests: Files ending with `_e2e_test.rs`
+- Host-SDK integration tests: `../drasi-core/components/host-sdk/tests/integration_test.rs`
+  - Tests load real cdylib plugins (mock source, log reaction) and exercise the full
+    dynamic loading pipeline including metadata validation, callbacks, factory invocation,
+    and lifecycle management through FFI vtables.
+  - Prerequisites: build plugins in drasi-core with `make build-cdylib-plugins`
 
 ### Running Tests
 - Always run `cargo test` before committing
@@ -404,7 +423,10 @@ server.run().await?;
 
 ### Important Notes
 - The core functionality is provided by the external `drasi-lib` library
-- Sources and reactions are plugins that must be provided as instances (no YAML configuration)
-- Queries can be created via the builder pattern
+- Plugins (sources, reactions, bootstrappers) use `cdylib` crate-type and export `drasi_plugin_init()` / `drasi_plugin_metadata()` entry points
+- Plugins are loaded as self-contained cdylib `.so`/`.dylib`/`.dll` files at runtime via `drasi-host-sdk`
+- Each cdylib plugin has its own tokio runtime and communicates with the host via `#[repr(C)]` vtable structs (stable C ABI)
+- Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
+- Plugin signature verification is available via `--verify-plugins` CLI flag or `verifyPlugins: true` in config. Uses Sigstore/cosign keyless verification against the Rekor transparency log.

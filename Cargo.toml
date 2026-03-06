@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+[workspace]
+members = [".", "xtask"]
+
 [package]
 name = "drasi-server"
 version = "0.1.0"
@@ -32,7 +35,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.3.8", features = [
+drasi-lib = { version = "0.4.0", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -42,40 +45,26 @@ drasi-lib = { version = "0.3.8", features = [
   "middleware-unwind",
 ] }
 
-# Source plugins
-drasi-source-mock = "0.1.7"
-drasi-source-http = "0.1.7"
-drasi-source-grpc = "0.1.7"
-drasi-source-postgres = "0.1.8"
-drasi-source-platform = "0.1.7"
-
-# Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.8"
-drasi-bootstrap-scriptfile = "0.1.7"
-drasi-bootstrap-platform = "0.1.7"
+# Core bootstrap providers (used by the application API)
 drasi-bootstrap-noop = "0.1.6"
-drasi-bootstrap-application = "0.1.7"
+drasi-bootstrap-application = "0.1.8"
 
-# Reaction plugins
-drasi-reaction-log = "0.1.7"
-drasi-reaction-http = "0.1.8"
-drasi-reaction-http-adaptive = "0.2.5"
-drasi-reaction-grpc = "0.2.5"
-drasi-reaction-grpc-adaptive = "0.1.6"
-drasi-reaction-sse = "0.2.6"
-drasi-reaction-platform = "0.2.6"
-drasi-reaction-profiler = "0.2.5"
-drasi-reaction-storedproc-postgres = "0.2.5"
-drasi-reaction-storedproc-mysql = "0.2.5"
-drasi-reaction-storedproc-mssql = "0.2.5"
-drasi-reaction-application = "0.2.5"
+# Core reaction (used by the application API)
+drasi-reaction-application = "0.2.7"
 
 # Index plugins
-drasi-index-rocksdb = "0.2.2"
+drasi-index-rocksdb = "0.3.0"
 drasi-index-garnet = "0.1.4"
 
 # State store plugins
 drasi-state-store-redb = "0.1.5"
+
+# Plugin SDK
+drasi-plugin-sdk = "0.4.0"
+
+# Host SDK for dynamic plugin loading
+drasi-host-sdk = { version = "0.4.0", features = ["registry", "fetcher"] }
+oci-client = "0.16"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -91,6 +80,8 @@ log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.5", features = ["cors"] }
 clap = { version = "4.0", features = ["derive"] }
+console = "0.15"
+indicatif = "0.17"
 utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1.0", features = ["v4"] }
@@ -101,6 +92,8 @@ inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
 openssl = { version = "0.10", features = ["vendored"] }
+toml = "0.8"
+sha2 = "0.10"
 
 [dev-dependencies]
 # Testing utilities
@@ -112,6 +105,7 @@ tokio-test = "0.4"
 assert_matches = "1.5"
 serial_test = "3.0"
 pretty_assertions = "1.4"
+semver = "1.0"
 test-case = "3.3"
 wiremock = "0.5"
 
@@ -120,7 +114,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.3.3"
+drasi-core = "0.4.0"
 
 # Integration testing with testcontainers
 testcontainers = "0.23"
@@ -129,7 +123,13 @@ redis = { version = "0.24", features = ["tokio-comp", "streams"] }
 
 [lints.rust]
 warnings = "deny"
-unused = "allow"
+
+[build-dependencies]
+ureq = { version = "3", features = ["json"] }
+flate2 = "1"
+tar = "0.4"
+serde_json = "1"
+sha2 = "0.10"
 
 [lints.clippy]
 print_stdout = "warn"
@@ -139,28 +139,3 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
-
-
-# Uncomment this section for local development to use path-based dependencies
-# [patch.crates-io]
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-source-mock = { path = "../drasi-core/components/sources/mock" }
-# drasi-source-http = { path = "../drasi-core/components/sources/http" }
-# drasi-source-grpc = { path = "../drasi-core/components/sources/grpc" }
-# drasi-source-postgres = { path = "../drasi-core/components/sources/postgres" }
-# drasi-source-platform = { path = "../drasi-core/components/sources/platform" }
-# drasi-bootstrap-postgres = { path = "../drasi-core/components/bootstrappers/postgres" }
-# drasi-bootstrap-scriptfile = { path = "../drasi-core/components/bootstrappers/scriptfile" }
-# drasi-bootstrap-platform = { path = "../drasi-core/components/bootstrappers/platform" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-reaction-log = { path = "../drasi-core/components/reactions/log" }
-# drasi-reaction-http = { path = "../drasi-core/components/reactions/http" }
-# drasi-reaction-http-adaptive = { path = "../drasi-core/components/reactions/http-adaptive" }
-# drasi-reaction-grpc = { path = "../drasi-core/components/reactions/grpc" }
-# drasi-reaction-grpc-adaptive = { path = "../drasi-core/components/reactions/grpc-adaptive" }
-# drasi-reaction-sse = { path = "../drasi-core/components/reactions/sse" }
-# drasi-reaction-platform = { path = "../drasi-core/components/reactions/platform" }
-# drasi-reaction-profiler = { path = "../drasi-core/components/reactions/profiler" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }

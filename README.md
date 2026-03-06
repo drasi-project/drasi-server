@@ -141,6 +141,7 @@ drasi-server [OPTIONS] [COMMAND]
 |--------|-------|---------|-------------|
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
+| `--verify-plugins` | | `false` | Enable cosign signature verification for downloaded plugins |
 | `--help` | `-h` | | Print help information |
 | `--version` | `-V` | | Print version information |
 
@@ -198,6 +199,119 @@ drasi-server doctor --all  # Include optional dependencies
 **Options:**
 - `--all`: Check for optional dependencies (Docker, etc.)
 
+#### `plugin`
+
+Manage dynamic plugins — install, upgrade, list, search, and remove plugin shared libraries.
+
+> **Note:** Plugin management requires the `dynamic-plugins` feature. Build with `cargo build --no-default-features --features dynamic-plugins`.
+
+##### `plugin install`
+
+Install a plugin from an OCI registry, local file, or HTTP URL.
+
+```bash
+# From OCI registry (default)
+drasi-server plugin install source/postgres:0.1.8
+drasi-server plugin install source/postgres              # latest compatible version
+drasi-server plugin install ghcr.io/acme/custom-source:1.0.0
+
+# From OCI registry using wildcard patterns (quote to prevent shell expansion)
+drasi-server plugin install "source/*"
+drasi-server plugin install "*/postgres"
+
+# From local file
+drasi-server plugin install file:///opt/drasi/libdrasi_source_custom.so
+
+# From HTTP URL
+drasi-server plugin install https://releases.example.com/libdrasi_source_custom.so
+
+# Install all plugins declared in the config file
+drasi-server plugin install --from-config
+
+# Install using exact versions from lockfile
+drasi-server plugin install --from-config --locked
+```
+
+**Options:**
+- `--from-config`: Install all plugins declared in the config file's `plugins` section
+- `--registry <URL>`: Override OCI registry (default: from config or `ghcr.io/drasi-project`)
+- `--platform <PLATFORM>`: Override target platform (e.g., `linux/amd64`)
+- `--locked`: Use exact versions from `plugins.lock` (fails if lockfile is missing or outdated)
+
+> **Tip:** Wildcard patterns apply to OCI references only. File/HTTP installs must use exact URIs.
+
+##### `plugin upgrade`
+
+Upgrade installed plugins to newer compatible versions from the OCI registry.
+
+```bash
+# Upgrade a specific plugin
+drasi-server plugin upgrade source/postgres
+
+# Upgrade to a specific version
+drasi-server plugin upgrade source/postgres:0.2.0
+
+# Upgrade all installed plugins
+drasi-server plugin upgrade --all
+
+# Preview what would change without downloading
+drasi-server plugin upgrade --all --dry-run
+```
+
+**Options:**
+- `--all`: Upgrade all installed plugins
+- `--registry <URL>`: Override OCI registry
+- `--dry-run`: Show what would change without actually upgrading
+
+**Output:**
+```
+Checking for upgrades...
+  source/postgres — upgrading 0.1.8 → 0.2.0
+  reaction/log — up to date (0.1.7)
+  file:///opt/custom.so — skipped (non-OCI source)
+
+Upgrade complete: 1 upgraded, 1 up to date, 0 failed
+```
+
+##### `plugin list`
+
+List installed plugins in the plugins directory.
+
+```bash
+drasi-server plugin list
+```
+
+##### `plugin search`
+
+Search for available versions of a plugin in the registry.
+
+```bash
+drasi-server plugin search source/postgres
+drasi-server plugin search reaction/sse --registry ghcr.io/my-org
+```
+
+##### `plugin remove`
+
+Remove one or more installed plugins.
+
+```bash
+drasi-server plugin remove source/postgres
+drasi-server plugin remove libdrasi_source_postgres.so
+
+# Remove with wildcard patterns (quote to prevent shell expansion)
+drasi-server plugin remove "source/*"
+drasi-server plugin remove "*/postgres"
+```
+
+##### `plugin install-all`
+
+Install all available plugins from the registry's plugin directory.
+
+```bash
+drasi-server plugin install-all
+drasi-server plugin install-all --registry ghcr.io/my-org
+```
+
 ## Configuration Reference
 
 Drasi Server uses YAML configuration files. All configuration values support environment variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
@@ -215,6 +329,10 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `stateStore` | object | (none) | State store provider for plugin state persistence |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
+| `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
+| `verifyPlugins` | boolean | `false` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
+| `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
+| `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 
 **Example:**
 
@@ -226,14 +344,67 @@ port: 8080
 logLevel: info
 persistConfig: true
 persistIndex: false
+pluginRegistry: ghcr.io/drasi-project
+verifyPlugins: true  # optional: verify plugin signatures via Sigstore (Fulcio + Rekor)
+# trustedIdentities:  # optional: restrict to specific signers
+#   - issuer: "https://accounts.google.com"
+#     subjectPattern: "release@example.com"
 
 stateStore:
   kind: redb
   path: ./data/state.redb
 
+plugins:
+  - ref: source/postgres:0.1.8
+  - ref: reaction/sse
+
 sources: []
 queries: []
 reactions: []
+```
+
+### Plugins Configuration
+
+The `plugins` section declares plugin dependencies that can be installed with `drasi-server plugin install --from-config`. Each entry specifies a plugin reference that supports three URI formats:
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| OCI reference | `source/postgres:0.1.8` | Pull from OCI registry (default) |
+| File URI | `file:///opt/drasi/libdrasi_source_custom.so` | Copy from local filesystem |
+| HTTP URL | `https://releases.example.com/plugin.so` | Download via HTTP |
+
+**Example:**
+
+```yaml
+apiVersion: drasi.io/v1
+pluginRegistry: ghcr.io/drasi-project
+
+plugins:
+  # OCI registry plugins (resolved from pluginRegistry)
+  - ref: source/postgres:0.1.8
+  - ref: reaction/sse
+
+  # Local file
+  - ref: file:///opt/drasi/libdrasi_source_custom.so
+
+  # HTTP download
+  - ref: https://releases.example.com/libdrasi_reaction_custom.so
+
+sources: []
+queries: []
+reactions: []
+```
+
+Install all declared plugins:
+
+```bash
+drasi-server plugin install --from-config
+```
+
+A `plugins.lock` file is created in the plugins directory after installation, pinning exact versions and digests for reproducible builds. Use `--locked` to enforce lockfile versions:
+
+```bash
+drasi-server plugin install --from-config --locked
 ```
 
 ### State Store Configuration
@@ -1168,7 +1339,7 @@ RUST_LOG=drasi_server=trace cargo run
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Build
+# Build (default: all plugins statically linked)
 cargo build --release
 
 # Run tests
@@ -1178,6 +1349,65 @@ cargo test
 cargo fmt
 cargo clippy
 ```
+
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `builtin-plugins` | ✅ | All source/reaction/bootstrap plugins are statically linked into the binary |
+| `dynamic-plugins` | | Enables loading plugins from `.so`/`.dylib`/`.dll` files at runtime |
+
+### Dynamic Plugin Build
+
+To build with dynamic plugin loading instead of static linking:
+
+```bash
+# Build the server with dynamic plugin loading support
+make build-dynamic          # debug
+make build-dynamic-release  # release
+
+# Or build the server and plugins separately:
+make build-dynamic-server           # server only (debug)
+make build-dynamic-plugins          # plugins only (debug)
+make build-dynamic-server-release   # server only (release)
+make build-dynamic-plugins-release  # plugins only (release)
+```
+
+Plugins are built using `cargo xtask`, which automatically discovers plugin crates via `cargo metadata` and builds each one with the `dynamic-plugin` feature enabled. Plugin shared libraries are output to a `plugins/` subdirectory alongside the server binary (e.g. `target/release/plugins/`).
+
+```bash
+# List discovered dynamic plugins
+cargo xtask list-plugins
+
+# Build plugins directly (equivalent to make build-dynamic-plugins)
+cargo xtask build-plugins
+cargo xtask build-plugins --release
+cargo xtask build-plugins --jobs 4   # limit parallelism
+```
+
+### Cross-Compilation
+
+Cross-compilation uses the [`cross`](https://github.com/cross-rs/cross) tool with Docker containers defined in `Cross.toml`:
+
+```bash
+# Static build (all plugins linked in)
+make build-cross TARGET=x86_64-pc-windows-gnu
+make build-cross-release TARGET=x86_64-pc-windows-gnu
+
+# Dynamic build (server + plugin shared libraries)
+make build-dynamic-cross TARGET=x86_64-pc-windows-gnu
+make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu
+
+# Or build plugins for a target directly
+cargo xtask build-plugins --release --target x86_64-pc-windows-gnu
+```
+
+Supported targets (see `Cross.toml`):
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-pc-windows-gnu`
 
 ## License
 
