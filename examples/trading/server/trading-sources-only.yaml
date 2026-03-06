@@ -25,6 +25,10 @@ sources:
   host: 0.0.0.0
   port: 9100
   timeoutMs: 10000
+  bootstrapProvider:
+    kind: scriptfile
+    filePaths:
+      - ./examples/trading/mock-generator/initial-prices.jsonl
 - kind: postgres
   id: postgres-stocks
   autoStart: true
