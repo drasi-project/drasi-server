@@ -16,9 +16,7 @@
 
 pub mod config_helpers;
 pub mod mock_components;
-pub mod redis_helpers;
 
 // Re-export commonly used helpers
 pub use config_helpers::*;
 pub use mock_components::*;
-pub use redis_helpers::*;
