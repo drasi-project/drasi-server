@@ -215,6 +215,10 @@ drasi-server plugin install source/postgres:0.1.8
 drasi-server plugin install source/postgres              # latest compatible version
 drasi-server plugin install ghcr.io/acme/custom-source:1.0.0
 
+# From OCI registry using wildcard patterns (quote to prevent shell expansion)
+drasi-server plugin install "source/*"
+drasi-server plugin install "*/postgres"
+
 # From local file
 drasi-server plugin install file:///opt/drasi/libdrasi_source_custom.so
 
@@ -233,6 +237,8 @@ drasi-server plugin install --from-config --locked
 - `--registry <URL>`: Override OCI registry (default: from config or `ghcr.io/drasi-project`)
 - `--platform <PLATFORM>`: Override target platform (e.g., `linux/amd64`)
 - `--locked`: Use exact versions from `plugins.lock` (fails if lockfile is missing or outdated)
+
+> **Tip:** Wildcard patterns apply to OCI references only. File/HTTP installs must use exact URIs.
 
 ##### `plugin upgrade`
 
@@ -286,11 +292,15 @@ drasi-server plugin search reaction/sse --registry ghcr.io/my-org
 
 ##### `plugin remove`
 
-Remove an installed plugin.
+Remove one or more installed plugins.
 
 ```bash
 drasi-server plugin remove source/postgres
 drasi-server plugin remove libdrasi_source_postgres.so
+
+# Remove with wildcard patterns (quote to prevent shell expansion)
+drasi-server plugin remove "source/*"
+drasi-server plugin remove "*/postgres"
 ```
 
 ##### `plugin install-all`

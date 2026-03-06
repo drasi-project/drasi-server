@@ -32,6 +32,7 @@ pub enum PluginAction {
     /// Install a plugin from an OCI registry, local file, or HTTP URL
     Install {
         /// Plugin reference: OCI (e.g., "source/postgres:0.1.8"),
+        /// OCI wildcard pattern (e.g., "source/*" or "*/postgres"),
         /// file (e.g., "file:///path/to/plugin.so"),
         /// or HTTP (e.g., "https://example.com/plugin.so")
         #[arg(required_unless_present = "from_config")]
@@ -70,7 +71,8 @@ pub enum PluginAction {
 
     /// Remove an installed plugin
     Remove {
-        /// Plugin filename or kind (e.g., "libdrasi_source_postgres.so" or "source/postgres")
+        /// Plugin filename, kind, or wildcard pattern
+        /// (e.g., "libdrasi_source_postgres.so", "source/postgres", "source/*", "*/postgres")
         reference: String,
     },
 

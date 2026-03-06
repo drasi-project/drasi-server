@@ -37,9 +37,74 @@ pub async fn install_single(
             install_from_uri(reference, plugins_dir).await
         }
         PluginSourceType::Oci => {
-            install_from_oci(reference, plugins_dir, config_path, registry_override).await
+            if is_wildcard_pattern(reference) {
+                install_from_oci_pattern(reference, plugins_dir, config_path, registry_override)
+                    .await
+            } else {
+                install_from_oci(reference, plugins_dir, config_path, registry_override).await
+            }
         }
     }
+}
+
+fn is_wildcard_pattern(reference: &str) -> bool {
+    reference.contains('*') || reference.contains('?') || reference.contains('[')
+}
+
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    let p = pattern.as_bytes();
+    let t = text.as_bytes();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let (mut star_pi, mut star_ti) = (None::<usize>, 0usize);
+
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == b'*' {
+            star_pi = Some(pi);
+            pi += 1;
+            star_ti = ti;
+        } else if let Some(sp) = star_pi {
+            pi = sp + 1;
+            star_ti += 1;
+            ti = star_ti;
+        } else {
+            return false;
+        }
+    }
+
+    while pi < p.len() && p[pi] == b'*' {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
+fn wildcard_matches_plugin<'a, I>(
+    pattern: &str,
+    reference: &str,
+    full_reference: &str,
+    versions: I,
+) -> bool
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    if wildcard_match(pattern, reference) || wildcard_match(pattern, full_reference) {
+        return true;
+    }
+
+    for version in versions {
+        if wildcard_match(pattern, version) {
+            return true;
+        }
+        let tagged_ref = format!("{reference}:{version}");
+        let tagged_full_ref = format!("{full_reference}:{version}");
+        if wildcard_match(pattern, &tagged_ref) || wildcard_match(pattern, &tagged_full_ref) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Install a plugin from a file:// or http(s):// URI.
@@ -421,26 +486,27 @@ pub async fn install_from_config(
                                 }
                             }
 
-                            lockfile.insert(
-                                dep.reference.clone(),
-                                LockedPlugin {
-                                    reference: resolved.reference,
-                                    version: resolved.version,
-                                    digest: resolved.digest,
-                                    sdk_version: resolved.sdk_version,
-                                    core_version: resolved.core_version,
-                                    lib_version: resolved.lib_version,
-                                    platform: resolved.platform,
-                                    filename: resolved.filename.clone(),
-                                    file_hash: drasi_server::plugin_lockfile::compute_file_hash(
-                                        &plugins_dir.join(&resolved.filename),
-                                    )
-                                    .ok(),
-                                    git_commit: None,
-                                    build_timestamp: None,
-                                    signature: sig_info,
-                                },
-                            );
+                            let locked_entry = LockedPlugin {
+                                reference: resolved.reference,
+                                version: resolved.version,
+                                digest: resolved.digest,
+                                sdk_version: resolved.sdk_version,
+                                core_version: resolved.core_version,
+                                lib_version: resolved.lib_version,
+                                platform: resolved.platform,
+                                filename: resolved.filename.clone(),
+                                file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                                    &plugins_dir.join(&resolved.filename),
+                                )
+                                .ok(),
+                                git_commit: None,
+                                build_timestamp: None,
+                                signature: sig_info,
+                            };
+                            if lockfile.get(&dep.reference) != Some(&locked_entry) {
+                                lockfile.insert(dep.reference.clone(), locked_entry);
+                                lockfile.write(lockfile_dir)?;
+                            }
                         }
                         Err(e) => {
                             sp.finish_and_clear();
@@ -454,8 +520,6 @@ pub async fn install_from_config(
                 }
             }
         }
-
-        lockfile.write(lockfile_dir)?;
     }
 
     cli_styles::install_summary(installed, existing, failed);
@@ -464,6 +528,16 @@ pub async fn install_from_config(
 
 /// Install all plugins from the registry's plugin directory.
 pub async fn install_all(
+    plugins_dir: &std::path::Path,
+    config_path: &std::path::Path,
+    registry_override: Option<&str>,
+) -> Result<()> {
+    install_from_oci_pattern("*", plugins_dir, config_path, registry_override).await
+}
+
+/// Install all plugins matching an OCI wildcard pattern.
+async fn install_from_oci_pattern(
+    pattern: &str,
     plugins_dir: &std::path::Path,
     config_path: &std::path::Path,
     registry_override: Option<&str>,
@@ -482,20 +556,55 @@ pub async fn install_all(
     let host_info = cli_host_version_info();
     let resolver = PluginResolver::new(&client, &host_info);
 
-    let sp = cli_styles::spinner(&format!("Discovering plugins from {registry_url}..."));
+    let spinner_msg = if pattern == "*" {
+        format!("Discovering plugins from {registry_url}...")
+    } else {
+        format!("Searching plugins matching '{pattern}' in {registry_url}...")
+    };
+    let sp = cli_styles::spinner(&spinner_msg);
 
-    let results = client.search_plugins("*").await?;
+    let all_results = client.search_plugins("*").await?;
+    let results = if pattern == "*" {
+        all_results
+    } else {
+        all_results
+            .into_iter()
+            .filter(|r| {
+                wildcard_matches_plugin(
+                    pattern,
+                    &r.reference,
+                    &r.full_reference,
+                    r.versions.iter().map(|v| v.version.as_str()),
+                )
+            })
+            .collect()
+    };
     sp.finish_and_clear();
 
     if results.is_empty() {
-        println!("{}", cli_styles::skip("No plugins found in the directory."));
+        if pattern == "*" {
+            println!("{}", cli_styles::skip("No plugins found in the directory."));
+        } else {
+            println!(
+                "{}",
+                cli_styles::skip(&format!("No plugins found matching '{pattern}'."))
+            );
+        }
         return Ok(());
     }
 
-    cli_styles::section(&format!(
-        "Installing {} plugin(s) from registry",
-        results.len()
-    ));
+    if pattern == "*" {
+        cli_styles::section(&format!(
+            "Installing {} plugin(s) from registry",
+            results.len()
+        ));
+    } else {
+        cli_styles::section(&format!(
+            "Installing {} plugin(s) matching '{}'",
+            results.len(),
+            pattern
+        ));
+    }
 
     std::fs::create_dir_all(plugins_dir)?;
     let lockfile_dir = plugins_dir;
@@ -506,6 +615,24 @@ pub async fn install_all(
 
     for result in &results {
         let reference = &result.reference;
+
+        // Fast-path: if lockfile already has this plugin and the file exists,
+        // skip resolve/download entirely.
+        if let Some(existing_entry) = lockfile.get(reference) {
+            if plugins_dir.join(&existing_entry.filename).exists() {
+                println!(
+                    "{}",
+                    cli_styles::success(&format!(
+                        "{} {} — already installed",
+                        reference,
+                        cli_styles::version(&existing_entry.version)
+                    ))
+                );
+                skip_count += 1;
+                continue;
+            }
+        }
+
         let sp = cli_styles::spinner(&format!("Resolving {reference}..."));
         match resolver.resolve(reference, &registry_url).await {
             Ok(resolved) => {
@@ -568,26 +695,27 @@ pub async fn install_all(
                     }
                 }
 
-                lockfile.insert(
-                    reference.clone(),
-                    LockedPlugin {
-                        reference: resolved.reference,
-                        version: resolved.version,
-                        digest: resolved.digest,
-                        sdk_version: resolved.sdk_version,
-                        core_version: resolved.core_version,
-                        lib_version: resolved.lib_version,
-                        platform: resolved.platform,
-                        filename: resolved.filename.clone(),
-                        file_hash: drasi_server::plugin_lockfile::compute_file_hash(
-                            &plugins_dir.join(&resolved.filename),
-                        )
-                        .ok(),
-                        git_commit: None,
-                        build_timestamp: None,
-                        signature: sig_info,
-                    },
-                );
+                let locked_entry = LockedPlugin {
+                    reference: resolved.reference,
+                    version: resolved.version,
+                    digest: resolved.digest,
+                    sdk_version: resolved.sdk_version,
+                    core_version: resolved.core_version,
+                    lib_version: resolved.lib_version,
+                    platform: resolved.platform,
+                    filename: resolved.filename.clone(),
+                    file_hash: drasi_server::plugin_lockfile::compute_file_hash(
+                        &plugins_dir.join(&resolved.filename),
+                    )
+                    .ok(),
+                    git_commit: None,
+                    build_timestamp: None,
+                    signature: sig_info,
+                };
+                if lockfile.get(reference) != Some(&locked_entry) {
+                    lockfile.insert(reference.clone(), locked_entry);
+                    lockfile.write(lockfile_dir)?;
+                }
             }
             Err(e) => {
                 sp.finish_and_clear();
@@ -597,7 +725,6 @@ pub async fn install_all(
         }
     }
 
-    lockfile.write(lockfile_dir)?;
     cli_styles::install_summary(success_count, skip_count, fail_count);
 
     if fail_count > 0 {
@@ -605,4 +732,56 @@ pub async fn install_all(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_wildcard_pattern, wildcard_match, wildcard_matches_plugin};
+
+    #[test]
+    fn test_is_wildcard_pattern() {
+        assert!(is_wildcard_pattern("source/*"));
+        assert!(is_wildcard_pattern("*/postgres"));
+        assert!(is_wildcard_pattern("source/postgres?"));
+        assert!(!is_wildcard_pattern("source/postgres"));
+        assert!(!is_wildcard_pattern("file:///tmp/plugin.so"));
+    }
+
+    #[test]
+    fn test_wildcard_match() {
+        assert!(wildcard_match("*/postgres", "source/postgres"));
+        assert!(wildcard_match("*/postgres", "bootstrap/postgres"));
+        assert!(wildcard_match("source/*", "source/postgres"));
+        assert!(!wildcard_match("source/*", "reaction/log"));
+        assert!(wildcard_match("source/postgre?", "source/postgres"));
+    }
+
+    #[test]
+    fn test_wildcard_matches_plugin() {
+        let versions = vec!["0.1.9", "0.1.10"];
+        assert!(wildcard_matches_plugin(
+            "source/*",
+            "source/postgres",
+            "ghcr.io/drasi-project/source/postgres",
+            versions.iter().copied(),
+        ));
+        assert!(wildcard_matches_plugin(
+            "*/postgres",
+            "source/postgres",
+            "ghcr.io/drasi-project/source/postgres",
+            versions.iter().copied(),
+        ));
+        assert!(wildcard_matches_plugin(
+            "source/postgres:0.1.10",
+            "source/postgres",
+            "ghcr.io/drasi-project/source/postgres",
+            versions.iter().copied(),
+        ));
+        assert!(!wildcard_matches_plugin(
+            "reaction/*",
+            "source/postgres",
+            "ghcr.io/drasi-project/source/postgres",
+            versions.iter().copied(),
+        ));
+    }
 }
