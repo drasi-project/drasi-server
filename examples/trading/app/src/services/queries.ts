@@ -151,14 +151,15 @@ export const PORTFOLIO_QUERY: QueryDefinition = {
     WITH p, 
          s.name AS name, 
          sp.price AS currentPrice,
+         toFloat(p.purchase_price) AS avgCost,
          (sp.price * p.quantity) AS currentValue,
-         (p.purchase_price * p.quantity) AS costBasis,
-         ((sp.price - p.purchase_price) * p.quantity) AS profitLoss,
-         ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profitLossPercent
+         (toFloat(p.purchase_price) * p.quantity) AS costBasis,
+         ((sp.price - toFloat(p.purchase_price)) * p.quantity) AS profitLoss,
+         ((sp.price - toFloat(p.purchase_price)) / toFloat(p.purchase_price) * 100) AS profitLossPercent
     RETURN p.id AS id,
            p.symbol AS symbol,
            p.quantity AS quantity,
-           p.purchase_price AS purchasePrice,
+           avgCost AS purchasePrice,
            name,
            currentPrice,
            currentValue,
@@ -331,7 +332,7 @@ export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
   query: `
     MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
     WITH sum(sp.price * p.quantity) AS totalValue,
-         sum(p.purchase_price * p.quantity) AS totalCost,
+         sum(toFloat(p.purchase_price) * p.quantity) AS totalCost,
          count(p) AS positionCount
     RETURN totalValue,
            totalCost,
@@ -374,7 +375,7 @@ export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
            o.status AS status,
            o.created_at AS createdAt,
            o.expires_at AS expiresAt,
-           ((o.target_price - sp.price) / sp.price * 100) AS distancePercent
+           ((toFloat(o.target_price) - sp.price) / sp.price * 100) AS distancePercent
   `,
   sources: [
     { sourceId: 'postgres-broker', pipeline: [] },
