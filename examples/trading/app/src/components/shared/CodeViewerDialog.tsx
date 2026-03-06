@@ -112,7 +112,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   // Use portal to render outside the component tree, preventing layout jumps
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fade-in"
       onClick={handleOverlayClick}
     >
       <div className="bg-[#1e2433] border border-trading-border/50 rounded-lg w-[90vw] h-[85vh] max-w-6xl flex flex-col shadow-2xl animate-slide-up">
@@ -203,7 +203,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 
         {/* Code content */}
         <div className="flex-1 overflow-auto p-6 bg-[#0d1117]">
-          <pre className="text-lg leading-relaxed font-mono whitespace-pre-wrap text-gray-200">
+          <pre className="text-2xl leading-relaxed font-mono whitespace-pre-wrap text-gray-200">
             <code>{currentCode}</code>
           </pre>
         </div>

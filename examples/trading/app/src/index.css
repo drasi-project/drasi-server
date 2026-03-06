@@ -108,3 +108,12 @@ code {
 .animate-slide-up {
   animation: slide-up 0.25s ease-out;
 }
+
+/* Force all text in expanded tables to inherit the container font size */
+.expanded-table-text {
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.expanded-table-text * {
+  font-size: inherit !important;
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}

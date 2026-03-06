@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryDefinition, useDrasiUiUrl } from '@/hooks/useDrasi';
 import { useRowAnimation, AnimationDirection } from '@/hooks/useRowAnimation';
-import { CodeViewerDialog, CodeIcon } from './shared';
+import { CodeViewerDialog, CodeIcon, ExpandIcon, CollapseIcon } from './shared';
 import clsx from 'clsx';
 
 /**
@@ -310,10 +311,48 @@ export function QueryTable<T extends Record<string, any>>({
   headerSlot,
   codeSnippet,
 }: QueryTableProps<T>): React.ReactElement {
-  const { data, loading, error, lastUpdate } = useQuery<T>(queryId);
+  const { data, loading, error } = useQuery<T>(queryId);
   const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
   const [showCodeViewer, setShowCodeViewer] = useState(false);
   const drasiUiUrl = useDrasiUiUrl();
+
+  // Expand/collapse state
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [expandRect, setExpandRect] = useState<DOMRect | null>(null);
+  const [animating, setAnimating] = useState(false);
+
+  const handleExpand = useCallback(() => {
+    if (containerRef.current) {
+      setExpandRect(containerRef.current.getBoundingClientRect());
+      setExpanded(true);
+      // Start at original rect, then animate to fullscreen on next frame
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setAnimating(true));
+      });
+      document.body.style.overflow = 'hidden';
+    }
+  }, []);
+
+  const handleCollapse = useCallback(() => {
+    setAnimating(false);
+    // Wait for the transition to finish before unmounting
+    setTimeout(() => {
+      setExpanded(false);
+      setExpandRect(null);
+      document.body.style.overflow = '';
+    }, 350);
+  }, []);
+
+  // Escape key to collapse
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCollapse();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [expanded, handleCollapse]);
 
   // Fetch the full query config from the Drasi Server
   const { config: queryConfig, loading: configLoading } = useQueryDefinition(queryId);
@@ -489,6 +528,32 @@ export function QueryTable<T extends Record<string, any>>({
     );
   };
 
+  // Compute expanded portal styles for FLIP animation
+  const expandedStyle = useMemo((): React.CSSProperties | undefined => {
+    if (!expandRect) return undefined;
+    if (animating) {
+      const pad = 32;
+      return {
+        position: 'fixed',
+        top: pad,
+        left: pad,
+        width: `calc(100vw - ${pad * 2}px)`,
+        height: `calc(100vh - ${pad * 2}px)`,
+        transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+        zIndex: 60,
+      };
+    }
+    return {
+      position: 'fixed',
+      top: expandRect.top,
+      left: expandRect.left,
+      width: expandRect.width,
+      height: expandRect.height,
+      transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+      zIndex: 60,
+    };
+  }, [expandRect, animating]);
+
   // Loading state
   if (loading && !data) {
     return (
@@ -509,12 +574,39 @@ export function QueryTable<T extends Record<string, any>>({
     );
   }
 
-  return (
-    <div className={clsx("bg-trading-card rounded-lg border border-trading-border flex flex-col", height, className)}>
+  // Expand button shown in normal view
+  const expandButton = (
+    <button
+      onClick={handleExpand}
+      className="p-1.5 rounded hover:bg-trading-border/50 transition-colors text-gray-500 hover:text-trading-blue"
+      title="Expand table"
+    >
+      <ExpandIcon className="w-5 h-5" />
+    </button>
+  );
+
+  // Collapse button shown in expanded view
+  const collapseButton = (
+    <button
+      onClick={handleCollapse}
+      className="p-1.5 rounded hover:bg-trading-border/50 transition-colors text-gray-500 hover:text-trading-blue"
+      title="Collapse table"
+    >
+      <CollapseIcon className="w-5 h-5" />
+    </button>
+  );
+
+  // Renders the full table card content (shared between normal and expanded views)
+  const renderTableCard = (isExpanded: boolean, isAnimating: boolean) => (
+    <>
       {/* Header */}
-      {(title || headerActions || lastUpdate || codeSnippet) && (
+      {(title || headerActions || codeSnippet) && (
         <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
           <div className="flex items-center gap-3">
+            {title && <h2 className={clsx("font-bold transition-all duration-300", isAnimating ? "text-5xl" : "text-xl")}>{title}</h2>}
+            {headerActions}
+          </div>
+          <div className="flex items-center gap-1">
             {codeSnippet && (
               <button
                 onClick={() => setShowCodeViewer(true)}
@@ -524,38 +616,20 @@ export function QueryTable<T extends Record<string, any>>({
                 <CodeIcon className="w-5 h-5" />
               </button>
             )}
-            {title && <h2 className="text-xl font-bold">{title}</h2>}
-            {headerActions}
+            {isExpanded ? collapseButton : expandButton}
           </div>
-          {lastUpdate && (
-            <span className="text-xs text-gray-500">
-              Updated: {lastUpdate.toLocaleTimeString()}
-            </span>
-          )}
         </div>
-      )}
-
-      {/* Code Viewer Dialog */}
-      {codeSnippet && (
-        <CodeViewerDialog
-          isOpen={showCodeViewer}
-          onClose={() => setShowCodeViewer(false)}
-          title={title || queryId}
-          reactCode={codeSnippet}
-          cypherQuery={displayConfig}
-          drasiUiUrl={drasiUiUrl}
-        />
       )}
 
       {/* Header slot (e.g., summary stats) */}
       {headerSlot && (
-        <div className="px-6 pb-4 flex-shrink-0">
+        <div className={clsx("px-6 pb-4 flex-shrink-0", isAnimating && "text-3xl expanded-table-text")}>
           {headerSlot}
         </div>
       )}
 
       {/* Table */}
-      <div className={clsx("overflow-auto flex-1 px-6 pb-6", tableClassName)}>
+      <div className={clsx("overflow-auto flex-1 px-6 pb-6", isAnimating && "text-3xl expanded-table-text", tableClassName)}>
         <table className="w-full">
           <thead className={clsx("sticky top-0 bg-trading-card z-10", headerClassName)}>
             <tr className="border-b border-trading-border">
@@ -567,7 +641,8 @@ export function QueryTable<T extends Record<string, any>>({
                   <th
                     key={String(column.key)}
                     className={clsx(
-                      "py-2 px-2 text-sm font-medium text-gray-400",
+                      "py-2 px-2 font-medium text-gray-400",
+                      isAnimating ? "text-2xl" : "text-sm",
                       column.align === 'right' && 'text-right',
                       column.align === 'center' && 'text-center',
                       column.align !== 'right' && column.align !== 'center' && 'text-left',
@@ -626,6 +701,58 @@ export function QueryTable<T extends Record<string, any>>({
           </tbody>
         </table>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Code Viewer Dialog - rendered at top level for proper z-index */}
+      {codeSnippet && (
+        <CodeViewerDialog
+          isOpen={showCodeViewer}
+          onClose={() => setShowCodeViewer(false)}
+          title={title || queryId}
+          reactCode={codeSnippet}
+          cypherQuery={displayConfig}
+          drasiUiUrl={drasiUiUrl}
+        />
+      )}
+
+      {/* Normal in-place card */}
+      <div
+        ref={containerRef}
+        className={clsx(
+          "bg-trading-card rounded-lg border border-trading-border flex flex-col",
+          height,
+          className,
+          expanded && "invisible"
+        )}
+      >
+        {renderTableCard(false, false)}
+      </div>
+
+      {/* Expanded portal overlay */}
+      {expanded && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50"
+            style={{
+              backgroundColor: animating ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
+              transition: 'background-color 0.35s ease',
+            }}
+            onClick={handleCollapse}
+          />
+          {/* Expanded card */}
+          <div
+            className="bg-trading-card rounded-lg border border-trading-border flex flex-col"
+            style={expandedStyle}
+          >
+            {renderTableCard(true, animating)}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
   );
 }

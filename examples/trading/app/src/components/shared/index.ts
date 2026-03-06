@@ -29,6 +29,8 @@ export {
   AddIcon,
   CloseIcon,
   CodeIcon,
+  ExpandIcon,
+  CollapseIcon,
 } from './Icons';
 
 // Change indicators
