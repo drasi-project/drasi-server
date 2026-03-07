@@ -5,8 +5,7 @@ import {
   useUpdateNodeInternals,
 } from "@xyflow/react";
 import { Maximize2, Minimize2, Pin, Play, Square } from "lucide-react";
-import { motion } from "framer-motion";
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, type ReactNode } from "react";
 import { getStatusGlowClass } from "@/utils/colors";
 import type { ComponentStatus } from "@/utils/colors";
 import { useCanvasLocked } from "./CanvasLockedContext";
@@ -155,23 +154,21 @@ export default function NodeShell({
     [onStartStop],
   );
 
-  // Toolbar buttons component to avoid duplication
-  const toolbarButtons = (
+  // Toolbar buttons — memoized to avoid JSX re-creation every render
+  const toolbarButtons = useMemo(() => (
     <>
       {/* Start/Stop button */}
       {onStartStop && (
-        <motion.button
+        <button
           onClick={handleStartStop}
           disabled={isTransitioning}
-          className={`nodrag p-1.5 rounded-md transition-colors ${
+          className={`nodrag p-1.5 rounded-md transition-all duration-150 ${
             isTransitioning
               ? "opacity-50 cursor-not-allowed"
               : isRunning
-                ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error"
-                : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running"
+                ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error hover:scale-110 active:scale-90"
+                : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running hover:scale-110 active:scale-90"
           }`}
-          whileHover={isTransitioning ? {} : { scale: 1.1 }}
-          whileTap={isTransitioning ? {} : { scale: 0.9 }}
           title={isRunning ? "Stop" : "Start"}
         >
           {isRunning ? (
@@ -179,20 +176,18 @@ export default function NodeShell({
           ) : (
             <Play size={14} fill="currentColor" />
           )}
-        </motion.button>
+        </button>
       )}
 
       {/* Expand button - always visible, disabled when not expandable or canvas locked */}
-      <motion.button
+      <button
         onClick={canToggle && !isLocked ? handleToggle : undefined}
         disabled={!canToggle || isLocked}
-        className={`nodrag p-1.5 rounded-md transition-colors ${
+        className={`nodrag p-1.5 rounded-md transition-all duration-150 ${
           canToggle && !isLocked
-            ? "hover:bg-drasi-text-secondary/10"
+            ? "hover:bg-drasi-text-secondary/10 hover:scale-110 active:scale-90"
             : "opacity-30 cursor-not-allowed"
         }`}
-        whileHover={canToggle && !isLocked ? { scale: 1.1 } : {}}
-        whileTap={canToggle && !isLocked ? { scale: 0.9 } : {}}
         title={canvasLocked ? "Canvas is locked" : (!canToggle ? "Cannot expand" : (toggleTitle ?? (expanded ? "Collapse" : "Expand")))}
       >
         {expanded ? (
@@ -200,36 +195,31 @@ export default function NodeShell({
         ) : (
           <Maximize2 size={14} className={canToggle && !isLocked ? accentClass : "text-drasi-text-secondary"} />
         )}
-      </motion.button>
+      </button>
 
       {/* Pin button - always visible, disabled when canvas is locked */}
-      <motion.button
+      <button
         onClick={!canvasLocked ? handleLockToggle : undefined}
         disabled={canvasLocked}
-        className={`nodrag p-1.5 rounded-md transition-colors ${
+        className={`nodrag p-1.5 rounded-md transition-all duration-150 ${
           canvasLocked
             ? "opacity-30 cursor-not-allowed"
-            : "hover:bg-drasi-text-secondary/10"
+            : "hover:bg-drasi-text-secondary/10 hover:scale-110 active:scale-90"
         }`}
-        whileHover={!canvasLocked ? { scale: 1.1 } : {}}
-        whileTap={!canvasLocked ? { scale: 0.9 } : {}}
         title={canvasLocked ? "Canvas is locked" : (locked ? "Unpin node" : "Pin node")}
       >
         <Pin 
           size={14} 
           className={locked ? "text-drasi-warning" : "text-drasi-text-secondary/50 -rotate-45"} 
         />
-      </motion.button>
+      </button>
     </>
-  );
+  ), [onStartStop, handleStartStop, isTransitioning, isRunning, canToggle, isLocked, handleToggle, canvasLocked, expanded, toggleTitle, accentClass, handleLockToggle, locked]);
 
   return (
-    <motion.div
+    <div
       className={`${cardClass} ${glowClass} relative`}
-      style={{ minHeight }}
-      initial={{ width: targetWidth }}
-      animate={{ width: targetWidth }}
-      transition={{ type: "tween", duration: 0.4, ease: "easeInOut" }}
+      style={{ width: targetWidth, minHeight, transition: "width 0.4s ease-in-out" }}
     >
       {/* Top-right toolbar (shown when expanded) */}
       <div 
@@ -281,6 +271,6 @@ export default function NodeShell({
           className={`!border-drasi-card !w-3 !h-3 ${handleClass}`}
         />
       )}
-    </motion.div>
+    </div>
   );
 }

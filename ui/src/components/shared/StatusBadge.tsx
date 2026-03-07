@@ -20,7 +20,7 @@ export default function StatusBadge({ status, size = "sm", error }: StatusBadgeP
         <span className="relative flex">
           {isAnimated && (
             <span
-              className={`absolute inline-flex ${dotSize} rounded-full opacity-50 animate-ping`}
+              className={`absolute inline-flex ${dotSize} rounded-full opacity-75 animate-pulse`}
               style={{ backgroundColor: color }}
             />
           )}

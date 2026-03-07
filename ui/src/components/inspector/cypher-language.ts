@@ -213,6 +213,7 @@ function createTokensProvider(
           /[a-zA-Z_]\w*(?=\s*\()/,
           {
             cases: {
+              "@keywords": "keyword",
               "@builtinFunctions": "support.function",
               "@default": "identifier",
             },

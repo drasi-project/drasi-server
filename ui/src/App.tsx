@@ -305,8 +305,8 @@ export default function App() {
     [createInstanceApi, pushEvent],
   );
 
-  // Build inspector props for selected component
-  const getInspectorProps = () => {
+  // Build inspector props for selected component (memoized to avoid rebuilding every render)
+  const inspectorProps = useMemo(() => {
     if (!selected) return null;
 
     if (selected.type === "source") {
@@ -429,9 +429,7 @@ export default function App() {
     }
 
     return null;
-  };
-
-  const inspectorProps = getInspectorProps();
+  }, [selected, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]);
 
   const isEmpty =
     sources.length === 0 && queries.length === 0 && reactions.length === 0;
