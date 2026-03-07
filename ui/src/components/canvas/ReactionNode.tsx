@@ -30,7 +30,6 @@ interface ReactionNodeData {
   status: string;
   expanded?: boolean;
   locked?: boolean;
-  canvasLocked?: boolean;
   queryIds?: string[];
   properties?: Record<string, unknown>;
   error?: string;
@@ -65,7 +64,6 @@ export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
       canToggle={false}
       toggleTitle={expanded ? "Collapse" : "View activity"}
       locked={!!d.locked}
-      canvasLocked={!!d.canvasLocked}
       handles="target"
       handleClass="!bg-drasi-reaction"
       onStartStop={handleStartStop}

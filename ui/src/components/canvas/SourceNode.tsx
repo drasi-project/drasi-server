@@ -27,7 +27,6 @@ interface SourceNodeData {
   status: string;
   expanded?: boolean;
   locked?: boolean;
-  canvasLocked?: boolean;
   properties?: Record<string, unknown>;
   instanceId?: string;
   error?: string;
@@ -62,7 +61,6 @@ export default memo(function SourceNode({ data, id: nodeId }: NodeProps) {
       canToggle={canPush}
       toggleTitle={expanded ? "Collapse" : "Push data"}
       locked={!!d.locked}
-      canvasLocked={!!d.canvasLocked}
       handles="source"
       handleClass="!bg-drasi-source"
       onStartStop={handleStartStop}

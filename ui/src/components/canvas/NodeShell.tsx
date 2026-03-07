@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { useCallback, useRef, type ReactNode } from "react";
 import { getStatusGlowClass } from "@/utils/colors";
 import type { ComponentStatus } from "@/utils/colors";
+import { useCanvasLocked } from "./CanvasLockedContext";
 
 export interface NodeShellProps {
   /** React Flow node id */
@@ -43,8 +44,6 @@ export interface NodeShellProps {
   expandContent?: ReactNode;
   /** Whether this node is individually locked */
   locked?: boolean;
-  /** Whether the entire canvas is locked */
-  canvasLocked?: boolean;
   /** Callback when start/stop is clicked */
   onStartStop?: () => void;
 }
@@ -66,9 +65,9 @@ export default function NodeShell({
   children,
   expandContent,
   locked = false,
-  canvasLocked = false,
   onStartStop,
 }: NodeShellProps) {
+  const canvasLocked = useCanvasLocked();
   const glowClass = getStatusGlowClass(status);
   const isLocked = locked || canvasLocked;
   const isRunning = status === "Running";

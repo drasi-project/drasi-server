@@ -1,5 +1,6 @@
-import { memo } from "react";
-import { type NodeProps } from "@xyflow/react";import { Search, Loader2, Radio, WifiOff } from "lucide-react";
+import { memo, useMemo } from "react";
+import { type NodeProps } from "@xyflow/react";
+import { Search, Loader2, Radio, WifiOff } from "lucide-react";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
 import { useQueryResults } from "@/hooks/useQueryResults";
@@ -14,11 +15,22 @@ interface QueryNodeData {
   sourceIds?: string[];
   expanded?: boolean;
   locked?: boolean;
-  canvasLocked?: boolean;
   error?: string;
   instanceId?: string;
   [key: string]: unknown;
 }
+
+function formatValue(val: unknown): string {
+  if (val === null || val === undefined) return "null";
+  if (typeof val === "object") {
+    const str = JSON.stringify(val);
+    return str.length > 50 ? str.slice(0, 47) + "..." : str;
+  }
+  const str = String(val);
+  return str.length > 50 ? str.slice(0, 47) + "..." : str;
+}
+
+const MAX_DISPLAY_ROWS = 50;
 
 export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as QueryNodeData;
@@ -37,19 +49,14 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
     d.instanceId,
   );
 
-  // Format a result row for display (truncate long values)
-  const formatValue = (val: unknown): string => {
-    if (val === null || val === undefined) return "null";
-    if (typeof val === "object") {
-      const str = JSON.stringify(val);
-      return str.length > 50 ? str.slice(0, 47) + "..." : str;
-    }
-    const str = String(val);
-    return str.length > 50 ? str.slice(0, 47) + "..." : str;
-  };
-
-  // Get column headers from first result
-  const columns = results.length > 0 ? Object.keys(results[0]) : [];
+  const columns = useMemo(
+    () => (results.length > 0 ? Object.keys(results[0]) : []),
+    [results],
+  );
+  const displayRows = useMemo(
+    () => results.slice(0, MAX_DISPLAY_ROWS),
+    [results],
+  );
 
   const handleStartStop = () => {
     if (d.status === "Running") {
@@ -70,7 +77,6 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
       status={d.status as ComponentStatus}
       expanded={expanded}
       locked={!!d.locked}
-      canvasLocked={!!d.canvasLocked}
       toggleTitle={expanded ? "Collapse" : "View results"}
       handles="both"
       handleClass="!bg-drasi-query"
@@ -139,7 +145,7 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {results.slice(0, 50).map((row, i) => (
+                      {displayRows.map((row, i) => (
                         <tr key={i} className="hover:bg-drasi-surface/50">
                           {columns.map((col) => (
                             <td
@@ -154,9 +160,9 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
                       ))}
                     </tbody>
                   </table>
-                  {results.length > 50 && (
+                  {results.length > MAX_DISPLAY_ROWS && (
                     <div className="text-center py-1 text-[9px] text-drasi-text-secondary bg-drasi-surface border-t border-drasi-border">
-                      +{results.length - 50} more rows
+                      +{results.length - MAX_DISPLAY_ROWS} more rows
                     </div>
                   )}
                 </div>

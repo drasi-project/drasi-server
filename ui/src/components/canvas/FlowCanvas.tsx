@@ -20,6 +20,7 @@ import SourceNode from "./SourceNode";
 import QueryNode from "./QueryNode";
 import ReactionNode from "./ReactionNode";
 import AnimatedEdge from "./AnimatedEdge";
+import { CanvasLockedContext } from "./CanvasLockedContext";
 import { buildFlowGraph, type PipelineData } from "@/utils/graph";
 import { THEME } from "@/utils/colors";
 import { useAutoLayout } from "@/hooks/useAutoLayout";
@@ -172,25 +173,23 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
               ...n.data,
               expanded: existing.data.expanded,
               locked: existing.data.locked,
-              canvasLocked: canvasLocked,
             },
           };
         }
-        return { ...n, data: { ...n.data, canvasLocked } };
+        return n;
       }),
     );
     onEdgesChange(
       newEdges.map((e) => ({ type: "add" as const, item: e })),
     );
-  }, [data, setNodes, onEdgesChange, canvasLocked]);
+  }, [data, setNodes, onEdgesChange]);
 
-  // Propagate canvasLocked to all nodes when it changes
+  // Update draggable state when canvas lock changes (without mutating node data)
   useEffect(() => {
     setNodes((prev) =>
       prev.map((n) => ({
         ...n,
         draggable: canvasLocked ? false : !n.data?.locked,
-        data: { ...n.data, canvasLocked },
       })),
     );
   }, [canvasLocked, setNodes]);
@@ -350,6 +349,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
   }, [deleteSelectedNodes]);
 
   return (
+    <CanvasLockedContext.Provider value={canvasLocked}>
     <div className="w-full h-full" style={{ minHeight: "100%" }}>
       <svg width="0" height="0">
         <defs>
@@ -464,5 +464,6 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         </div>
       )}
     </div>
+    </CanvasLockedContext.Provider>
   );
 }

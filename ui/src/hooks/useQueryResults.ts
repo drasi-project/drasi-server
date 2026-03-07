@@ -52,6 +52,8 @@ export function useQueryResults(
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  // Map from stableKey → index for O(1) lookups during stream updates
+  const indexRef = useRef<Map<string, number>>(new Map());
 
   // Apply streaming updates to the results set
   const applyStreamUpdate = useCallback((payload: StreamPayload) => {
@@ -59,16 +61,18 @@ export function useQueryResults(
 
     setResults((prev) => {
       const updated = [...prev];
+      const index = new Map(indexRef.current);
 
       for (const entry of payload.results!) {
         switch (entry.type) {
           case "ADD": {
             if (entry.data) {
               const targetKey = stableKey(entry.data);
-              const idx = updated.findIndex((r) => stableKey(r) === targetKey);
-              if (idx >= 0) {
+              const idx = index.get(targetKey);
+              if (idx !== undefined && idx < updated.length) {
                 updated[idx] = entry.data;
               } else {
+                index.set(targetKey, updated.length);
                 updated.push(entry.data);
               }
             }
@@ -77,9 +81,15 @@ export function useQueryResults(
           case "DELETE": {
             if (entry.data) {
               const targetKey = stableKey(entry.data);
-              const idx = updated.findIndex((r) => stableKey(r) === targetKey);
-              if (idx >= 0) {
+              const idx = index.get(targetKey);
+              if (idx !== undefined && idx < updated.length) {
+                // Remove and rebuild index for shifted elements
                 updated.splice(idx, 1);
+                index.delete(targetKey);
+                // Re-index entries after the removed one
+                for (const [k, v] of index) {
+                  if (v > idx) index.set(k, v - 1);
+                }
               }
             }
             break;
@@ -88,24 +98,28 @@ export function useQueryResults(
           case "aggregation": {
             if (entry.before) {
               const beforeKey = stableKey(entry.before);
-              const idx = updated.findIndex((r) => stableKey(r) === beforeKey);
-              if (idx >= 0 && entry.after) {
+              const idx = index.get(beforeKey);
+              if (idx !== undefined && idx < updated.length && entry.after) {
                 updated[idx] = entry.after;
+                index.delete(beforeKey);
+                index.set(stableKey(entry.after), idx);
               } else if (entry.after) {
                 const afterKey = stableKey(entry.after);
-                const afterIdx = updated.findIndex((r) => stableKey(r) === afterKey);
-                if (afterIdx >= 0) {
+                const afterIdx = index.get(afterKey);
+                if (afterIdx !== undefined && afterIdx < updated.length) {
                   updated[afterIdx] = entry.after;
                 } else {
+                  index.set(afterKey, updated.length);
                   updated.push(entry.after);
                 }
               }
             } else if (entry.after) {
               const afterKey = stableKey(entry.after);
-              const afterIdx = updated.findIndex((r) => stableKey(r) === afterKey);
-              if (afterIdx >= 0) {
+              const afterIdx = index.get(afterKey);
+              if (afterIdx !== undefined && afterIdx < updated.length) {
                 updated[afterIdx] = entry.after;
               } else {
+                index.set(afterKey, updated.length);
                 updated.push(entry.after);
               }
             }
@@ -116,6 +130,7 @@ export function useQueryResults(
         }
       }
 
+      indexRef.current = index;
       return updated;
     });
   }, []);
@@ -123,6 +138,7 @@ export function useQueryResults(
   useEffect(() => {
     if (!queryId) {
       setResults([]);
+      indexRef.current = new Map();
       setLoading(false);
       setError(null);
       setStreaming(false);
@@ -151,16 +167,17 @@ export function useQueryResults(
       .getQueryResults(queryId, instanceId)
       .then((data) => {
         if (abortController.signal.aborted) return;
-        // Deduplicate
-        const seen = new Set<string>();
+        // Deduplicate and build index
+        const seen = new Map<string, number>();
         const deduped: QueryResultRow[] = [];
         for (const row of data) {
           const key = stableKey(row);
           if (!seen.has(key)) {
-            seen.add(key);
+            seen.set(key, deduped.length);
             deduped.push(row);
           }
         }
+        indexRef.current = seen;
         setResults(deduped);
         setLoading(false);
 
