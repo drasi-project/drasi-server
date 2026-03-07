@@ -22,7 +22,7 @@ Demonstrates end-to-end data flow through Drasi:
 
 import os
 from datetime import datetime, date
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 import psycopg2
@@ -502,6 +502,15 @@ def delete_order(order_id):
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================================
+# Broker Panel UI
+# ============================================================================
+
+@app.route('/broker')
+def broker_ui():
+    """Serve the Broker Panel UI."""
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'broker.html')
 
 # ============================================================================
 # Health check

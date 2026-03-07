@@ -206,10 +206,12 @@ INSERT INTO watchlist (user_id, symbol) VALUES
     ('demo_user', 'AMZN'),
     ('demo_user', 'AMD');
 
--- Insert sample filled orders (for demonstrating filled orders query)
+-- Insert sample filled and expired orders (for demonstrating orders queries)
 INSERT INTO limit_orders (user_id, symbol, order_type, target_price, quantity, status, filled_at, stale_duration, expire_duration) VALUES
     ('demo_user', 'AAPL', 'buy', 172.50, 25, 'filled', CURRENT_TIMESTAMP - INTERVAL '2 hours', 30, 60),
-    ('demo_user', 'MSFT', 'sell', 410.00, 15, 'filled', CURRENT_TIMESTAMP - INTERVAL '30 minutes', 30, 60);
+    ('demo_user', 'MSFT', 'sell', 410.00, 15, 'filled', CURRENT_TIMESTAMP - INTERVAL '30 minutes', 30, 60),
+    ('demo_user', 'TSLA', 'buy', 200.00, 20, 'expired', NULL, 30, 60),
+    ('demo_user', 'AMD', 'sell', 180.00, 50, 'expired', NULL, 30, 60);
 
 -- Create function to update timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

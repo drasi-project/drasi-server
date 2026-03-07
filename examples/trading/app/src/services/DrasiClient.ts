@@ -416,45 +416,12 @@ export class DrasiClient {
    * Clean up all created resources
    */
   async cleanup(): Promise<void> {
-    console.log('Cleaning up Drasi Client resources...');
-
-    // IMPORTANT: Stop and delete reaction FIRST (before queries) - only if we created it
-    if (this.createdReaction) {
-      try {
-        await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, { method: 'DELETE' });
-        console.log(`Deleted reaction: ${this.reactionId}`);
-      } catch (error) {
-        console.error(`Failed to cleanup reaction ${this.reactionId}:`, error);
-      }
-      this.createdReaction = false;
-    }
-
-    // Then stop and delete all queries
-    for (const queryId of this.createdQueries) {
-      try {
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
-        console.log(`Deleted query: ${queryId}`);
-      } catch (error) {
-        console.error(`Failed to cleanup query ${queryId}:`, error);
-      }
-    }
-
-    // Stop and delete custom queries
-    for (const queryId of this.customQueries) {
-      try {
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
-        console.log(`Deleted custom query: ${queryId}`);
-      } catch (error) {
-        console.error(`Failed to cleanup custom query ${queryId}:`, error);
-      }
-    }
+    console.log('Drasi Client closing — leaving queries and reactions in place');
 
     // Clear tracking sets
     this.createdQueries.clear();
     this.customQueries.clear();
+    this.createdReaction = false;
   }
 
   /**
