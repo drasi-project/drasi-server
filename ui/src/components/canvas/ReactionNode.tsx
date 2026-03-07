@@ -1,5 +1,5 @@
-import { type NodeProps } from "@xyflow/react";
-import {
+import { memo } from "react";
+import { type NodeProps } from "@xyflow/react";import {
   Zap,
   Globe,
   Radio,
@@ -38,7 +38,7 @@ interface ReactionNodeData {
   [key: string]: unknown;
 }
 
-export default function ReactionNode({ data, id: nodeId }: NodeProps) {
+export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as ReactionNodeData;
   const Icon = ICON_MAP[d.kind] || Zap;
   const expanded = !!d.expanded;
@@ -108,4 +108,4 @@ export default function ReactionNode({ data, id: nodeId }: NodeProps) {
       }
     />
   );
-}
+})

@@ -1,5 +1,5 @@
-import { type NodeProps } from "@xyflow/react";
-import {
+import { memo } from "react";
+import { type NodeProps } from "@xyflow/react";import {
   Database,
   Globe,
   Radio,
@@ -34,7 +34,7 @@ interface SourceNodeData {
   [key: string]: unknown;
 }
 
-export default function SourceNode({ data, id: nodeId }: NodeProps) {
+export default memo(function SourceNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as SourceNodeData;
   const Icon = ICON_MAP[d.kind] || Database;
   const canPush = PUSHABLE_KINDS.has(d.kind) && d.status === "Running";
@@ -94,4 +94,4 @@ export default function SourceNode({ data, id: nodeId }: NodeProps) {
       }
     />
   );
-}
+})

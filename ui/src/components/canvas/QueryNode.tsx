@@ -1,5 +1,5 @@
-import { type NodeProps } from "@xyflow/react";
-import { Search, Loader2, Radio, WifiOff } from "lucide-react";
+import { memo } from "react";
+import { type NodeProps } from "@xyflow/react";import { Search, Loader2, Radio, WifiOff } from "lucide-react";
 import NodeShell from "./NodeShell";
 import type { ComponentStatus } from "@/utils/colors";
 import { useQueryResults } from "@/hooks/useQueryResults";
@@ -20,7 +20,7 @@ interface QueryNodeData {
   [key: string]: unknown;
 }
 
-export default function QueryNode({ data, id: nodeId }: NodeProps) {
+export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
   const d = data as unknown as QueryNodeData;
   const expanded = !!d.expanded;
   
@@ -177,4 +177,4 @@ export default function QueryNode({ data, id: nodeId }: NodeProps) {
       }
     />
   );
-}
+})

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import AppLayout from "@/layouts/AppLayout";
 import FlowCanvas from "@/components/canvas/FlowCanvas";
@@ -124,8 +124,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Build pipeline data for the canvas
-  const pipelineData: PipelineData = {
+  // Build pipeline data for the canvas (memoized to avoid cascade re-renders)
+  const pipelineData: PipelineData = useMemo(() => ({
     sources: sources.map((s) => ({
       id: s.id,
       kind: s.kind,
@@ -153,7 +153,7 @@ export default function App() {
       error: r.error,
       instanceId: selectedInstanceId,
     })),
-  };
+  }), [sources, queries, reactions, selectedInstanceId]);
 
   // Generate a unique ID - fallback for browsers without crypto.randomUUID
   const generateId = useCallback(() => {
