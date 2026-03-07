@@ -1,41 +1,11 @@
 import { X, AlertCircle, Database, Zap, Search, Code, GitBranch } from "lucide-react";
 import { motion } from "framer-motion";
-import { useMemo } from "react";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import ConnectedComponentItem from "./ConnectedComponentItem";
+import QueryCodeViewer from "./QueryCodeViewer";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import { getTypeColor } from "@/utils/colors";
-
-/**
- * Format a query string by normalizing indentation.
- * Removes common leading whitespace from all lines while preserving relative indentation.
- */
-function formatQuery(query: string): string {
-  const lines = query.split('\n');
-  
-  // Remove empty leading/trailing lines
-  while (lines.length > 0 && lines[0].trim() === '') lines.shift();
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
-  
-  if (lines.length === 0) return '';
-  
-  // Find minimum indentation (ignoring empty lines)
-  const nonEmptyLines = lines.filter(line => line.trim() !== '');
-  const minIndent = nonEmptyLines.reduce((min, line) => {
-    const match = line.match(/^(\s*)/);
-    const indent = match ? match[1].length : 0;
-    return Math.min(min, indent);
-  }, Infinity);
-  
-  // Remove common indentation from all lines
-  const normalized = lines.map(line => {
-    if (line.trim() === '') return '';
-    return line.slice(minIndent);
-  });
-  
-  return normalized.join('\n');
-}
 
 interface ConnectedComponent {
   id: string;
@@ -85,9 +55,6 @@ export default function QueryInspectorPanel({
   const sourceColor = getTypeColor("source");
   const reactionColor = getTypeColor("reaction");
   const showError = status === "Error" && error;
-  
-  // Format query with normalized indentation
-  const formattedQuery = useMemo(() => formatQuery(query), [query]);
 
   return (
     <motion.div
@@ -256,11 +223,7 @@ export default function QueryInspectorPanel({
             Query Definition
           </h3>
         </div>
-        <div className="bg-drasi-bg rounded-xl border border-drasi-border overflow-x-auto overflow-y-auto max-h-96">
-          <pre className="p-4 text-sm font-mono text-drasi-text-primary leading-relaxed whitespace-pre min-w-max">
-            {formattedQuery}
-          </pre>
-        </div>
+        <QueryCodeViewer query={query} queryLanguage={queryLanguage} />
       </div>
     </motion.div>
   );
