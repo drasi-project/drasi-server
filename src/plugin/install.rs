@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_wildcard_matches_plugin() {
-        let versions = vec!["0.1.9", "0.1.10"];
+        let versions = ["0.1.9", "0.1.10"];
         assert!(wildcard_matches_plugin(
             "source/*",
             "source/postgres",

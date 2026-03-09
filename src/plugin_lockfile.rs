@@ -419,7 +419,7 @@ mod tests {
                 assert_eq!(expected, &original_hash);
                 assert_ne!(expected, actual);
             }
-            other => panic!("Expected Tampered, got {:?}", other),
+            other => panic!("Expected Tampered, got {other:?}"),
         }
     }
 

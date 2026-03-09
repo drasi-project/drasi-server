@@ -54,7 +54,7 @@ fn assert_loads_successfully(yaml: &str) {
     assert!(
         result.is_ok(),
         "Config should load successfully (unknown/snake_case source/reaction fields stored in config JSON), but got error: {}",
-        result.unwrap_err()
+        result.as_ref().err().map_or_else(String::new, |e| e.to_string())
     );
 }
 
