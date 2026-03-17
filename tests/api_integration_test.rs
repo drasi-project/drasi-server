@@ -35,7 +35,7 @@ use drasi_server::instance_registry::InstanceRegistry;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 use tower::ServiceExt;
 
 /// Helper to create a test router with all dependencies
@@ -48,6 +48,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
     let test_source = create_mock_source("test-source");
     let query_source = create_mock_source("query-source");
     let auto_source = create_mock_source("auto-source");
+    let log_source = create_mock_source("log-source");
 
     // Create mock reaction instances
     let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
@@ -59,6 +60,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
         .with_source(test_source.clone())
         .with_source(query_source.clone())
         .with_source(auto_source.clone())
+        .with_source(log_source.clone())
         .with_query(
             Query::cypher("reaction-query")
                 .query("MATCH (n:Node) RETURN n")
@@ -110,7 +112,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
         .merge(v1_router);
 
     let registry2 = TestComponentRegistry {
-        source: test_source,
+        log_source,
         reaction: test_reaction,
     };
 
@@ -118,7 +120,7 @@ async fn create_test_router() -> (Router, Arc<drasi_lib::DrasiLib>, TestComponen
 }
 
 struct TestComponentRegistry {
-    source: test_support::mock_components::MockSource,
+    log_source: test_support::mock_components::MockSource,
     reaction: test_support::mock_components::MockReaction,
 }
 
@@ -406,29 +408,39 @@ async fn test_reaction_lifecycle_via_api() {
 #[tokio::test]
 async fn test_source_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
-    registry.source.emit_log("source log entry").await;
 
-    // Poll the log buffer until the entry arrives (async log pipeline)
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let (history, _) = _core
-            .subscribe_source_logs("test-source")
-            .await
-            .expect("subscribe_source_logs failed");
-        if history.iter().any(|e| e.message == "source log entry") {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "Timed out waiting for source log entry to appear in log buffer"
-        );
-        sleep(Duration::from_millis(10)).await;
+    // Use log-source (not test-source) to avoid races with the lifecycle test
+    // which deletes test-source and clears its log history in the global registry.
+    let (history, mut rx) = _core
+        .subscribe_source_logs("log-source")
+        .await
+        .expect("subscribe_source_logs failed");
+
+    registry.log_source.emit_log("source log entry").await;
+
+    // If the entry isn't already in the history snapshot, wait for it on the receiver
+    if !history.iter().any(|e| e.message == "source log entry") {
+        let deadline = Duration::from_secs(5);
+        timeout(deadline, async {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) if msg.message == "source log entry" => return,
+                    Ok(_) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        panic!("Log broadcast channel closed unexpectedly")
+                    }
+                }
+            }
+        })
+        .await
+        .expect("Timed out waiting for source log entry");
     }
 
     let response = router
         .oneshot(
             Request::builder()
-                .uri("/instances/test-server/sources/test-source/logs")
+                .uri("/instances/test-server/sources/log-source/logs")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -449,23 +461,32 @@ async fn test_source_logs_snapshot_via_api() {
 #[tokio::test]
 async fn test_reaction_logs_snapshot_via_api() {
     let (router, _core, registry) = create_test_router().await;
+
+    // Subscribe first to get the broadcast receiver, then emit the log.
+    let (history, mut rx) = _core
+        .subscribe_reaction_logs("test-reaction")
+        .await
+        .expect("subscribe_reaction_logs failed");
+
     registry.reaction.emit_log("reaction log entry").await;
 
-    // Poll the log buffer until the entry arrives (async log pipeline)
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let (history, _) = _core
-            .subscribe_reaction_logs("test-reaction")
-            .await
-            .expect("subscribe_reaction_logs failed");
-        if history.iter().any(|e| e.message == "reaction log entry") {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "Timed out waiting for reaction log entry to appear in log buffer"
-        );
-        sleep(Duration::from_millis(10)).await;
+    // If the entry isn't already in the history snapshot, wait for it on the receiver
+    if !history.iter().any(|e| e.message == "reaction log entry") {
+        let deadline = Duration::from_secs(5);
+        timeout(deadline, async {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) if msg.message == "reaction log entry" => return,
+                    Ok(_) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        panic!("Log broadcast channel closed unexpectedly")
+                    }
+                }
+            }
+        })
+        .await
+        .expect("Timed out waiting for reaction log entry");
     }
 
     let response = router
@@ -496,7 +517,7 @@ async fn test_source_logs_stream_via_api() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/instances/test-server/sources/test-source/logs/stream")
+                .uri("/instances/test-server/sources/log-source/logs/stream")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -504,7 +525,7 @@ async fn test_source_logs_stream_via_api() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    registry.source.emit_log("streamed source log").await;
+    registry.log_source.emit_log("streamed source log").await;
 
     let body = response.into_body();
     let mut stream = body.into_data_stream();

@@ -1102,9 +1102,9 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-application"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45c304c8b9a822951876d8f0e2652779da8d31b32784bcc21a6ce92bea88d4b0"
+checksum = "709b24c21bfa1d12b5f3471218a6a552a2719e76329cbfcc73c71fb7b623db1a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1128,9 +1128,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f87b1aca60b88a82d438af60967da471633bdc28364b5c8db6f5d774782812cc"
+checksum = "4d425e0ee62d503eadca2889264090ff199de8b78f260e7603df5fb53007ff0c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1154,9 +1154,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44febc02713cd393b8126f07392bfa82a7517242f03670d65f600c2c2bba24c5"
+checksum = "c4feff045ec8b83ff894a47a9d7d2fc16d87fe29fb4441c5ed4600029bb97c44"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1195,33 +1195,33 @@ dependencies = [
 
 [[package]]
 name = "drasi-ffi-primitives"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2ed26a8b9f4c6430ab1b45d08301ec4415143f56be9e1ce1762e08c109b72f1"
+checksum = "8b29893ec89908408b5e9fbbd1afef40f8fb9df5458a69b3e14365de2d249343"
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898715ec8aae180c4847bcab185606728e9f6ea1777993b4592edf3b07df681d"
+checksum = "9ea7d7758f46c7a1cfd81f7d8cff5654fe63ce3b48d8476675dfa7727f2556f2"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6d4a5d1427efda06b36679dd707333e736e195f80263d654b5f55f0035ae27b"
+checksum = "bee829d78d904b9b70d47fa169a3e671847e892f6eaaeebb545e9f108cfcafc7"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-host-sdk"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57203ffd78b7b9a5820980f076598d539c1ff0eae61eca31614f0b1d39e1838e"
+checksum = "43f79821a37c48019bf625c93520b4a9331f28c15a95c9601398f36cd2baa5a8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1248,9 +1248,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-garnet"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e4d1ac7cafe326892fbe845a5c4a6efd682af92863352e756b21265b7f167c8"
+checksum = "a465fb11706e6c1a1ea45656892d5c7b34609ecbe9c6f004dcf690a991e4572a"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -1273,9 +1273,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ce4bb6ff741a331b1914da345f0616a84b000b3e8a83cc4776c8ad270f4ab62"
+checksum = "a06c218fdd47063a58d36afd77faeef1aa2b14ceabed20e797e391fa5bab99ed"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1298,9 +1298,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5c6de5473cee5022c8f63a54fa5d67a968b5aad4d3e52a893601eb1594f3135"
+checksum = "d1048fbf0e2a1a44ba20f3b3523b3fbfbf779a0edf6ca71adc5d2e9511303cbe"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1329,9 +1329,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69525a5a4435eb694776156eb99659ccc8ed11340c0b1a22402d781a4b43e8a4"
+checksum = "1125ccb89592a587fab8de3baad4d7b42514530584da458667ffd3b2b530e4f5"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1348,9 +1348,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-plugin-sdk"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ac0ce3e846eecea6d9e6f5ea89eadf99762c6b660c7ac2be55356e1b7a329a"
+checksum = "67aad8d45d82dbc41e7223bfe2aad105cfb055717aaf920a9081b5055084ca7f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1406,9 +1406,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "649f807ee7a4d6fa73bd24fe11e31a2d111751105ea09232e3fd43f44ba26c7f"
+checksum = "a4cf256a47ce55f5478af11d1e5c0a6960688265ce94b196c76e572d2f0f1894"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1493,9 +1493,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-state-store-redb"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202103f850182aae32e84ce8328742fc011e2976bd9fe1b7d22cd1127c0d78fd"
+checksum = "e92ec063bc27a490d5eb38e3feaf6c255b2da617497039dfaf954c5ce84f47eb"
 dependencies = [
  "async-trait",
  "drasi-lib",
