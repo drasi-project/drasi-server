@@ -16,8 +16,10 @@
 
 use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_core::models::SourceMiddlewareConfig;
 use drasi_lib::channels::DispatchMode;
 use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
+use std::sync::Arc;
 
 pub struct QueryConfigMapper;
 
@@ -33,8 +35,15 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(map_source_subscription)
             .collect::<Result<Vec<_>, _>>()?;
 
-        // Middleware is empty for now (optional field, defaults to empty vec)
-        let middleware = Vec::new();
+        let middleware = dto
+            .middleware
+            .iter()
+            .map(|m| SourceMiddlewareConfig {
+                kind: Arc::from(m.kind.as_str()),
+                name: Arc::from(m.name.as_str()),
+                config: m.config.clone(),
+            })
+            .collect();
 
         // Parse dispatch mode if provided
         let dispatch_mode = dto

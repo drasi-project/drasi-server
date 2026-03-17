@@ -14,10 +14,49 @@
 
 //! Error types and error handling utilities shared across API versions.
 
+use axum::async_trait;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::FromRequest;
 use axum::http::StatusCode;
 use drasi_lib::DrasiError;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 use utoipa::ToSchema;
+
+/// A custom JSON extractor that returns detailed error messages on deserialization failure.
+///
+/// Drop-in replacement for `axum::Json<T>` that converts `JsonRejection` errors
+/// into structured `ErrorResponse` bodies with the serde error details included.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct JsonBody<T>(pub T);
+
+#[async_trait]
+impl<T, S> FromRequest<S> for JsonBody<T>
+where
+    axum::Json<T>: FromRequest<S, Rejection = JsonRejection>,
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, axum::Json<ErrorResponse>);
+
+    async fn from_request(
+        req: axum::http::Request<axum::body::Body>,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        match axum::Json::<T>::from_request(req, state).await {
+            Ok(axum::Json(value)) => Ok(JsonBody(value)),
+            Err(rejection) => {
+                let message = rejection.body_text();
+
+                log::debug!("JSON extraction failed: {message}");
+
+                Err((
+                    rejection.status(),
+                    axum::Json(ErrorResponse::new(error_codes::INVALID_REQUEST, message)),
+                ))
+            }
+        }
+    }
+}
 
 /// Error codes for API responses
 pub mod error_codes {
