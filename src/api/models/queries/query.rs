@@ -17,6 +17,7 @@
 use drasi_lib::config::QueryLanguage;
 use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 
 /// Query configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
@@ -30,7 +31,8 @@ pub struct QueryConfigDto {
     #[serde(default = "default_query_language")]
     pub query_language: QueryLanguage,
     #[serde(default)]
-    pub middleware: Vec<String>,
+    #[schema(value_type = Vec<SourceMiddlewareConfig>)]
+    pub middleware: Vec<SourceMiddlewareConfigDto>,
     #[serde(default)]
     #[schema(value_type = Vec<SourceSubscriptionConfig>)]
     pub sources: Vec<SourceSubscriptionConfigDto>,
@@ -64,6 +66,17 @@ pub struct SourceSubscriptionConfigDto {
     pub pipeline: Vec<String>,
 }
 
+/// Source middleware configuration DTO with camelCase serialization
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SourceMiddlewareConfig)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceMiddlewareConfigDto {
+    pub kind: String,
+    pub name: String,
+    #[serde(default)]
+    pub config: Map<String, serde_json::Value>,
+}
+
 fn default_auto_start() -> bool {
     false
 }
@@ -90,7 +103,11 @@ impl From<QueryConfig> for QueryConfigDto {
             middleware: config
                 .middleware
                 .into_iter()
-                .map(|m| m.name.to_string())
+                .map(|m| SourceMiddlewareConfigDto {
+                    kind: m.kind.to_string(),
+                    name: m.name.to_string(),
+                    config: m.config,
+                })
                 .collect(),
             sources: config
                 .sources

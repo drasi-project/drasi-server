@@ -24,7 +24,7 @@ use crate::api::models::{
     ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
     ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema, ConfigValueU64Schema,
     ConfigValueUsizeSchema, LogLevelDto, LogMessageDto, QueryConfigDto, RedbStateStoreConfigDto,
-    SourceSubscriptionConfigDto,
+    SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
 use crate::api::shared::{
@@ -100,6 +100,7 @@ use utoipa::openapi::RefOr;
             DrasiLibInstanceConfig,
             QueryConfigDto,
             SourceSubscriptionConfigDto,
+            SourceMiddlewareConfigDto,
             RedbStateStoreConfigDto,
             ConfigValueStringSchema,
             ConfigValueU16Schema,
