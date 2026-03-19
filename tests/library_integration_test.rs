@@ -19,6 +19,7 @@
 
 mod test_support;
 
+use drasi_lib::channels::ComponentStatus;
 use drasi_server::DrasiServerBuilder;
 use std::sync::Arc;
 use test_support::mock_components::{create_mock_reaction, create_mock_source};
@@ -95,9 +96,16 @@ async fn test_source_lifecycle_operations() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Source is already running (auto-started on first startup)
-    // Wait briefly for startup to complete
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Wait for source to reach Running before lifecycle operations
+    let graph = server.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "lifecycle_source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("lifecycle_source should reach Running");
 
     // Server should still be running
     assert!(server.is_running().await);
@@ -107,6 +115,16 @@ async fn test_source_lifecycle_operations() {
         .stop_source("lifecycle_source")
         .await
         .expect("Failed to stop source");
+
+    // Wait for source to reach Stopped before removal
+    drasi_lib::wait_for_status(
+        &graph,
+        "lifecycle_source",
+        &[ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("lifecycle_source should reach Stopped");
 
     // Remove the source
     server

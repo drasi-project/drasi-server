@@ -71,6 +71,8 @@ pub fn build_config(
         log_level: ConfigValue::Static(server_settings.log_level),
         persist_config: true,
         persist_index: server_settings.persist_index,
+        enable_ui: true,     // Enable web UI by default
+        solutions_dir: None, // Use default
         state_store: server_settings.state_store,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults

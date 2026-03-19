@@ -20,6 +20,7 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -40,6 +41,7 @@ use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
     enable_api: bool,
+    enable_ui: bool,
     host: String,
     port: u16,
     config_file_path: Option<String>,
@@ -62,6 +64,7 @@ impl DrasiServer {
         port: u16,
         plugins_dir: PathBuf,
         verify_plugins: bool,
+        enable_ui: bool,
     ) -> Result<Self> {
         let mut config = load_config_file(&config_path)?;
         config.validate()?;
@@ -336,6 +339,7 @@ impl DrasiServer {
         Ok(Self {
             instances,
             enable_api: true,
+            enable_ui,
             host: resolved_settings.host,
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
@@ -349,6 +353,7 @@ impl DrasiServer {
     pub fn from_core(
         core: DrasiLib,
         enable_api: bool,
+        enable_ui: bool,
         host: String,
         port: u16,
         config_file_path: Option<String>,
@@ -362,6 +367,7 @@ impl DrasiServer {
                 core,
             }],
             enable_api,
+            enable_ui,
             host,
             port,
             config_file_path,
@@ -375,6 +381,7 @@ impl DrasiServer {
     pub fn from_cores(
         cores: Vec<(DrasiLib, Option<String>, bool)>,
         enable_api: bool,
+        enable_ui: bool,
         host: String,
         port: u16,
         config_file_path: Option<String>,
@@ -393,6 +400,7 @@ impl DrasiServer {
         Self {
             instances,
             enable_api,
+            enable_ui,
             host,
             port,
             config_file_path,
@@ -458,11 +466,13 @@ impl DrasiServer {
         // Create the instance registry from the map
         let registry = InstanceRegistry::from_map((*instances).clone());
 
-        // Initialize persistence if config file is provided and persistence is enabled
-        let config_persistence = if let Some(config_file) = &self.config_file_path {
+        // Initialize persistence and extract solutions_dir if config file is provided
+        let (config_persistence, solutions_dir) = if let Some(config_file) = &self.config_file_path
+        {
             if !*self.read_only {
                 // Need to reload config to check persist_config flag and get initial configs
                 let config = load_config_file(PathBuf::from(config_file))?;
+                let solutions_dir = config.solutions_dir.clone();
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
                 let persistence_enabled = resolved_settings.persist_config;
@@ -482,23 +492,24 @@ impl DrasiServer {
                         resolved_settings.log_level,
                         true, // persist_config = true
                         persist_settings.clone(),
+                        config.solutions_dir.clone(),
                         initial_source_configs,
                         initial_reaction_configs,
                         initial_query_configs,
                     ));
                     info!("Configuration persistence enabled");
-                    Some(persistence)
+                    (Some(persistence), solutions_dir)
                 } else {
                     info!("Configuration persistence disabled (persist_config: false)");
-                    None
+                    (None, solutions_dir)
                 }
             } else {
                 info!("Configuration persistence disabled (read-only mode)");
-                None
+                (None, None)
             }
         } else {
             info!("No config file provided - persistence disabled");
-            None
+            (None, None)
         };
 
         // Start web API if enabled
@@ -507,6 +518,7 @@ impl DrasiServer {
                 instances.clone(),
                 registry.clone(),
                 config_persistence.clone(),
+                solutions_dir,
             )
             .await?;
             info!(
@@ -533,6 +545,7 @@ impl DrasiServer {
         _instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
+        solutions_dir: Option<String>,
     ) -> Result<()> {
         // Create OpenAPI documentation for v1
         let mut openapi_v1 = api::ApiDocV1::openapi();
@@ -544,10 +557,11 @@ impl DrasiServer {
             self.read_only.clone(),
             config_persistence.clone(),
             self.plugin_registry.clone(),
+            solutions_dir,
         );
 
         // Build the main application router
-        let app = Router::new()
+        let mut app = Router::new()
             // Health check at root level (operational endpoint, not versioned)
             .route("/health", get(api::health_check))
             // API versions endpoint
@@ -555,13 +569,40 @@ impl DrasiServer {
             // Nest v1 API under /api/v1
             .nest("/api/v1", v1_router)
             // Swagger UI and OpenAPI spec for v1
-            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()))
-            .layer(CorsLayer::permissive());
+            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
+
+        // Serve the Drasi Server Admin UI if enabled and the dist directory exists
+        let ui_dir = std::path::Path::new("ui/dist");
+        if self.enable_ui {
+            if ui_dir.exists() {
+                info!("Drasi Server Admin UI found, serving at /ui/");
+                app = app
+                    .nest_service(
+                        "/ui",
+                        ServeDir::new(ui_dir).append_index_html_on_directories(true),
+                    )
+                    .route(
+                        "/",
+                        get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                    );
+            } else {
+                warn!(
+                    "Web UI is enabled but ui/dist directory not found. UI will not be available."
+                );
+            }
+        } else {
+            info!("Web UI is disabled by configuration");
+        }
+
+        let app = app.layer(CorsLayer::permissive());
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
+        if self.enable_ui && ui_dir.exists() {
+            info!("Drasi Server Admin UI at http://{addr}/ui/");
+        }
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 

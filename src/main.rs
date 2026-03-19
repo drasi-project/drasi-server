@@ -61,6 +61,14 @@ struct Cli {
     /// Enable cosign signature verification for downloaded plugins
     #[arg(long, global = true)]
     verify_plugins: bool,
+
+    /// Enable the web UI (overrides config file)
+    #[arg(long, global = true, conflicts_with = "disable_ui")]
+    enable_ui: bool,
+
+    /// Disable the web UI (overrides config file)
+    #[arg(long, global = true, conflicts_with = "enable_ui")]
+    disable_ui: bool,
 }
 
 #[derive(Subcommand)]
@@ -130,7 +138,16 @@ async fn main() -> Result<()> {
             port,
             plugins_dir,
             verify_plugins,
-        }) => run_server(config, port, plugins_dir, verify_plugins).await,
+        }) => {
+            let ui_override = if cli.enable_ui {
+                Some(true)
+            } else if cli.disable_ui {
+                Some(false)
+            } else {
+                None
+            };
+            run_server(config, port, plugins_dir, verify_plugins, ui_override).await
+        }
         Some(Commands::Validate {
             config,
             show_resolved,
@@ -142,7 +159,21 @@ async fn main() -> Result<()> {
         }
         None => {
             // Default behavior: run the server (backward compatible)
-            run_server(cli.config, cli.port, cli.plugins_dir, cli.verify_plugins).await
+            let ui_override = if cli.enable_ui {
+                Some(true)
+            } else if cli.disable_ui {
+                Some(false)
+            } else {
+                None
+            };
+            run_server(
+                cli.config,
+                cli.port,
+                cli.plugins_dir,
+                cli.verify_plugins,
+                ui_override,
+            )
+            .await
         }
     }
 }
@@ -153,6 +184,7 @@ async fn run_server(
     port_override: Option<u16>,
     plugins_dir: Option<PathBuf>,
     verify_plugins: bool,
+    ui_override: Option<bool>,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
@@ -246,7 +278,16 @@ async fn run_server(
     info!("Config file: {}", config_path.display());
 
     let final_port = port_override.unwrap_or(resolved_settings.port);
+    let final_enable_ui = ui_override.unwrap_or(resolved_settings.enable_ui);
     info!("Port: {final_port}");
+    info!(
+        "Web UI: {}",
+        if final_enable_ui {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
     debug!("Server configuration: {resolved_settings:?}");
 
     // Resolve the plugins directory: use CLI arg if provided, otherwise default to ./plugins under binary directory
@@ -262,7 +303,14 @@ async fn run_server(
     };
     info!("Plugins directory: {}", plugins_dir.display());
 
-    let server = DrasiServer::new(config_path, final_port, plugins_dir, verify_plugins).await?;
+    let server = DrasiServer::new(
+        config_path,
+        final_port,
+        plugins_dir,
+        verify_plugins,
+        final_enable_ui,
+    )
+    .await?;
     server.run().await?;
 
     Ok(())

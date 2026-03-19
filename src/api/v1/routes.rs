@@ -37,6 +37,7 @@ pub fn build_v1_router(
     read_only: Arc<bool>,
     config_persistence: Option<Arc<ConfigPersistence>>,
     plugin_registry: Arc<PluginRegistry>,
+    solutions_dir: Option<String>,
 ) -> Router {
     // Instance management routes
     let instance_routes = Router::new()
@@ -49,14 +50,21 @@ pub fn build_v1_router(
     // Convenience routes for the default (first) instance
     let default_routes = build_default_instance_router();
 
+    // Catalog routes (global, not instance-specific)
+    let catalog_routes = Router::new()
+        .route("/catalog/solutions", get(handlers::list_solutions))
+        .route("/catalog/solutions/:id", get(handlers::get_solution));
+
     Router::new()
         .merge(instance_routes)
+        .merge(catalog_routes)
         .nest("/instances/:instanceId", instance_resource_routes)
         .merge(default_routes)
         .layer(Extension(registry))
         .layer(Extension(read_only))
         .layer(Extension(config_persistence))
         .layer(Extension(plugin_registry))
+        .layer(Extension(solutions_dir))
 }
 
 /// Build routes for dynamic instance resources.
@@ -115,6 +123,17 @@ fn build_dynamic_instance_router() -> Router {
         .route("/reactions/:id", delete(handlers::delete_reaction))
         .route("/reactions/:id/start", post(handlers::start_reaction))
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
+        // Global component events SSE stream
+        .route("/events", get(handlers::stream_all_component_events))
+        // Source data push proxy (avoids browser CORS issues)
+        .route("/sources/:id/push", post(handlers::push_source_data))
+        // Solution deployment to this instance
+        .route("/solutions", post(handlers::deploy_solution))
+        // Create solution template from this instance's components
+        .route(
+            "/catalog/solutions",
+            post(handlers::create_solution_template),
+        )
 }
 
 /// Build convenience routes that operate on the default (first) instance.
@@ -196,4 +215,14 @@ fn build_default_instance_router() -> Router {
             post(handlers::start_reaction_default),
         )
         .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
+        // Global component events SSE stream (default instance)
+        .route(
+            "/events",
+            get(handlers::stream_all_component_events_default),
+        )
+        // Source data push proxy (default instance)
+        .route(
+            "/sources/:id/push",
+            post(handlers::push_source_data_default),
+        )
 }

@@ -18,28 +18,27 @@
 
 @hostname = localhost
 @port = 8280
-# @query_id = all-stocks
 # @query_id = watchlist-query
-# @query_id = portfolio-query
-@query_id = stock-prices
 # @query_id = top-gainers-query
-# @query_id = top-losers-query
 # @query_id = high-volume-query
+# @query_id = price-ticker-query
 # @query_id = sector-performance-query
+# @query_id = top-losers-query
+@query_id = portfolio-query
 
 ### GET LIST of all queries
-GET http://{{hostname}}:{{port}}/api/v1/queries
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries
 
 ### GET STATE of a specific query
-GET http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}
 
 ### GET RESULTS of a specific query
-GET http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/results
+GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/results
 
 ### START a specific query
-POST http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/start
+POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/start
 Content-Type: application/json
 
 ### STOP a specific query
-POST http://{{hostname}}:{{port}}/api/v1/queries/{{query_id}}/stop
+POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/queries/{{query_id}}/stop
 Content-Type: application/json

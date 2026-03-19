@@ -20,7 +20,7 @@
 mod test_support;
 
 use anyhow::Result;
-use drasi_lib::Query;
+use drasi_lib::{channels::ComponentStatus, Query};
 use drasi_server::DrasiLib;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -61,29 +61,44 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Start the server
     core.start().await?;
+    let graph = core.component_graph();
 
-    // Let it run for 2 seconds (should get ~4 counter updates)
-    sleep(Duration::from_secs(2)).await;
+    // Wait for source to be running
+    drasi_lib::wait_for_status(
+        &graph,
+        "counter-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
-    // Check initial result count (we can't directly access it in this test, but we know it's running)
     assert!(core.is_running().await);
 
     // Stop the server
     core.stop().await?;
     assert!(!core.is_running().await);
 
-    // Wait a bit
-    sleep(Duration::from_millis(500)).await;
+    // Wait for source to be stopped before restart
+    drasi_lib::wait_for_status(
+        &graph,
+        "counter-source",
+        &[ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
     // Start the server again
     core.start().await?;
     assert!(core.is_running().await);
 
     // Wait for components to start
-    sleep(Duration::from_millis(500)).await;
-
-    // Let it run for another 2 seconds
-    sleep(Duration::from_secs(2)).await;
+    drasi_lib::wait_for_status(
+        &graph,
+        "counter-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
     // Verify source and query are still running
     // Note: With the new API, we don't have direct access to component status checks
@@ -144,16 +159,35 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 
     // Start server
     core.start().await?;
+    let graph = core.component_graph();
 
-    // Let it run briefly
-    sleep(Duration::from_millis(500)).await;
+    // Wait for sources to reach Running
+    drasi_lib::wait_for_status(
+        &graph,
+        "sensors-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
+    drasi_lib::wait_for_status(
+        &graph,
+        "alert-handler",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
     // Verify core is running with all components
     assert!(core.is_running().await);
 
+    // Remove dependent queries before removing the source
+    // (ComponentGraph now validates dependency integrity)
+    core.remove_reaction("alert-handler", true).await?;
+    core.remove_query("sensor-alerts").await?;
+    core.remove_query("combined-view").await?;
+
     // Test removing a source at runtime using the new API
     core.remove_source("sensors-source", true).await?;
-    sleep(Duration::from_millis(100)).await;
 
     // Core should still be running (other components continue)
     assert!(core.is_running().await);
@@ -193,15 +227,42 @@ async fn test_component_failure_recovery() -> Result<()> {
 
     // Start server - all components should start even with the "bad" query
     core.start().await?;
-    sleep(Duration::from_millis(200)).await;
+    let graph = core.component_graph();
+
+    // Wait for source to reach Running
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
     // Core should be running
     assert!(core.is_running().await);
 
     // Stop and restart to verify recovery
     core.stop().await?;
+
+    // Wait for source to reach Stopped before restart
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
+
     core.start().await?;
-    sleep(Duration::from_millis(200)).await;
+
+    // Wait for source to reach Running after restart
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
 
     // Core should recover and be running
     assert!(core.is_running().await);

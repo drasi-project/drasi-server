@@ -92,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,                  // Use in-memory indexes (default)
+        enable_ui: true,                       // Enable web UI (default)
         state_store: None,                     // Use in-memory state store (default)
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
@@ -104,6 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         plugins: vec![],
         verify_plugins: false,
         trusted_identities: vec![],
+        solutions_dir: None, // Use default solutions directory
     };
 
     // Save configuration to file

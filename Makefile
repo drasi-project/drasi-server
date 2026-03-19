@@ -18,7 +18,8 @@
         run run-release setup demo demo-cleanup \
         doctor validate clean clippy test test-smoke \
         fmt fmt-check help docker-build \
-        submodule-update vscode-test
+        submodule-update vscode-test dev-build clean-dev-build \
+        build-ui clean-ui build-test-plugins
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -68,10 +69,15 @@ help:
 	@echo "  make demo               - Run the getting-started example"
 	@echo ""
 	@echo "Build:"
-	@echo "  make build              - Build debug binary"
-	@echo "  make build-release      - Build release binary"
+	@echo "  make build              - Build debug binary and UI"
+	@echo "  make build-release      - Build release binary and UI"
+	@echo "  make build-ui           - Build only the web UI"
 	@echo "  make build-cross TARGET=<triple>         - Cross-compile (debug)"
 	@echo "  make build-cross-release TARGET=<triple> - Cross-compile (release)"
+	@echo ""
+	@echo "Development:"
+	@echo "  make dev-build          - Format, lint, and test"
+	@echo "  make clean-dev-build    - Clean, format, lint, and test"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test               - Run all tests"
@@ -90,6 +96,7 @@ help:
 	@echo "  make doctor             - Check system dependencies"
 	@echo "  make validate           - Validate config file (CONFIG=path)"
 	@echo "  make clean              - Clean build artifacts"
+	@echo "  make clean-ui           - Clean UI build artifacts"
 	@echo "  make demo-cleanup       - Stop demo containers"
 	@echo "  make submodule-update   - Initialize/update git submodules"
 	@echo ""
@@ -113,11 +120,11 @@ setup: doctor
 	@echo "Setup complete! Run 'make run' to start the server."
 
 # Build and run (debug mode)
-run:
+run: build-ui
 	cargo run
 
 # Build and run with custom config
-run-config:
+run-config: build-ui
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Usage: make run-config CONFIG=path/to/config.yaml"; \
 		exit 1; \
@@ -125,15 +132,25 @@ run-config:
 	cargo run -- --config $(CONFIG)
 
 # Build and run (release mode)
-run-release:
+run-release: build-ui
 	cargo run --release
 
 # === Build ===
 
-build:
+# Build the web UI (requires Node.js/npm)
+build-ui:
+	@if command -v npm >/dev/null 2>&1; then \
+		echo "Building web UI..."; \
+		cd ui && npm install --prefer-offline && npm run build; \
+		echo "UI built successfully at ui/dist/"; \
+	else \
+		echo "Warning: npm not found, skipping UI build. Install Node.js to build the UI."; \
+	fi
+
+build: build-ui
 	cargo build
 
-build-release:
+build-release: build-ui
 	cargo build --release
 
 build-cross:
@@ -169,6 +186,25 @@ test-smoke:
 	@echo "=== Plugin smoke test ==="
 	./tests/plugin_smoke_test.sh
 
+# Build cdylib test plugins (mock source, log reaction, scriptfile bootstrap)
+# needed by solution deployment tests.
+# Plugins are built from ../drasi-core and output to ../drasi-core/target/debug/.
+build-test-plugins:
+	@echo "=== Building cdylib test plugins from drasi-core ==="
+	cd ../drasi-core && cargo build --lib -p drasi-source-mock --features drasi-source-mock/dynamic-plugin
+	cd ../drasi-core && cargo build --lib -p drasi-reaction-log --features drasi-reaction-log/dynamic-plugin
+	cd ../drasi-core && cargo build --lib -p drasi-bootstrap-scriptfile --features drasi-bootstrap-scriptfile/dynamic-plugin
+	@echo "=== Test plugins built ==="
+
+dev-run:
+	cargo run -- --config config/server.yaml
+
+dev-build: fmt clippy test
+	@echo "Dev build complete!"
+
+clean-dev-build: clean fmt clippy test
+	@echo "Clean dev build complete!"
+
 vscode-test:
 	cd dev-tools/vscode/drasi-server && npm test
 
@@ -197,6 +233,9 @@ doctor:
 	@echo "Required:"
 	@command -v cargo >/dev/null 2>&1 && echo "  [OK] Rust/Cargo $$(rustc --version | cut -d' ' -f2)" || echo "  [MISSING] Rust/Cargo - https://rustup.rs"
 	@command -v git >/dev/null 2>&1 && echo "  [OK] Git" || echo "  [MISSING] Git"
+	@command -v node >/dev/null 2>&1 && echo "  [OK] Node.js $$(node --version)" || echo "  [MISSING] Node.js - https://nodejs.org (required to build the web UI)"
+	@command -v npm >/dev/null 2>&1 && echo "  [OK] npm $$(npm --version)" || echo "  [MISSING] npm (required to build the web UI)"
+	@if [ -d "drasi-core/lib" ]; then echo "  [OK] Submodules initialized"; else echo "  [MISSING] Submodules - run: git submodule update --init --recursive"; fi
 	@echo ""
 	@echo "Optional (for examples):"
 	@command -v docker >/dev/null 2>&1 && echo "  [OK] Docker" || echo "  [SKIP] Docker - https://docs.docker.com/get-docker/"
@@ -235,8 +274,12 @@ demo-cleanup:
 	fi
 
 # Clean build artifacts
-clean:
+clean: clean-ui
 	cargo clean
+
+# Clean UI build artifacts
+clean-ui:
+	rm -rf ui/dist ui/node_modules
 
 # Initialize and update git submodules
 submodule-update:

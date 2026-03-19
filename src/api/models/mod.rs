@@ -42,6 +42,7 @@ pub mod bootstrap;
 // Organized submodules
 pub mod observability;
 pub mod queries;
+pub mod solution;
 
 // Re-export all DTO types for convenient access
 pub use bootstrap::BootstrapProviderConfig;
@@ -219,6 +220,11 @@ impl SourceConfig {
     /// Check if auto_start is enabled
     pub fn auto_start(&self) -> bool {
         self.auto_start
+    }
+
+    /// Set the auto_start flag
+    pub fn set_auto_start(&mut self, value: bool) {
+        self.auto_start = value;
     }
 
     /// Get the bootstrap provider configuration if any
@@ -433,6 +439,11 @@ impl ReactionConfig {
     /// Get the reaction kind
     pub fn kind(&self) -> &str {
         &self.kind
+    }
+
+    /// Set the auto_start flag
+    pub fn set_auto_start(&mut self, value: bool) {
+        self.auto_start = value;
     }
 }
 

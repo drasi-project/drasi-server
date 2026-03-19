@@ -14,7 +14,10 @@
 
 //! DTO to domain model mapping service with value resolution.
 
-use super::resolver::{EnvironmentVariableResolver, ResolverError, SecretResolver, ValueResolver};
+use super::resolver::{
+    EnvironmentVariableResolver, OverridingEnvResolver, ResolverError, SecretResolver,
+    ValueResolver,
+};
 use crate::api::models::ConfigValue;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -62,6 +65,23 @@ impl DtoMapper {
         Self { resolvers }
     }
 
+    /// Create a mapper with override values for environment variables.
+    ///
+    /// When resolving `${VAR:-default}` values, the mapper checks overrides first,
+    /// then falls back to environment variables, then to defaults.
+    ///
+    /// This is used by Solution Templates to inject user-provided variable values.
+    pub fn with_overrides(overrides: HashMap<String, String>) -> Self {
+        let mut resolvers: HashMap<&'static str, Box<dyn ValueResolver>> = HashMap::new();
+        resolvers.insert(
+            "EnvironmentVariable",
+            Box::new(OverridingEnvResolver::new(overrides)),
+        );
+        resolvers.insert("Secret", Box::new(SecretResolver));
+
+        Self { resolvers }
+    }
+
     /// Resolve a ConfigValue<String> to its actual string value
     pub fn resolve_string(&self, value: &ConfigValue<String>) -> Result<String, ResolverError> {
         match value {
@@ -102,12 +122,15 @@ impl DtoMapper {
             }
 
             ConfigValue::EnvironmentVariable { name, default } => {
-                // Get string value from env var or default
-                let string_val = std::env::var(name).or_else(|_| {
-                    default
-                        .clone()
-                        .ok_or_else(|| ResolverError::EnvVarNotFound(name.clone()))
+                // Use the registered resolver to get string value (supports overrides)
+                let string_value = ConfigValue::EnvironmentVariable {
+                    name: name.clone(),
+                    default: default.as_ref().map(|d| d.to_string()),
+                };
+                let resolver = self.resolvers.get("EnvironmentVariable").ok_or_else(|| {
+                    ResolverError::NoResolverFound("EnvironmentVariable".to_string())
                 })?;
+                let string_val = resolver.resolve_to_string(&string_value)?;
 
                 // Parse to target type
                 string_val.parse::<T>().map_err(|e| {
@@ -255,5 +278,77 @@ mod tests {
 
         let result = mapper.resolve_optional(&value).unwrap();
         assert_eq!(result, None);
+    }
+
+    // DtoMapper::with_overrides tests
+
+    #[test]
+    fn test_with_overrides_resolve_string() {
+        let mut overrides = HashMap::new();
+        overrides.insert("MY_VAR".to_string(), "override_value".to_string());
+
+        let mapper = DtoMapper::with_overrides(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "MY_VAR".to_string(),
+            default: Some("default".to_string()),
+        };
+
+        let result = mapper.resolve_string(&value).unwrap();
+        assert_eq!(result, "override_value");
+    }
+
+    #[test]
+    fn test_with_overrides_resolve_typed_u16() {
+        let mut overrides = HashMap::new();
+        overrides.insert("PORT".to_string(), "9999".to_string());
+
+        let mapper = DtoMapper::with_overrides(overrides);
+        let value: ConfigValue<u16> = ConfigValue::EnvironmentVariable {
+            name: "PORT".to_string(),
+            default: Some("8080".to_string()),
+        };
+
+        let result = mapper.resolve_typed(&value).unwrap();
+        assert_eq!(result, 9999u16);
+    }
+
+    #[test]
+    fn test_with_overrides_resolve_optional() {
+        let mut overrides = HashMap::new();
+        overrides.insert("OPT_VAR".to_string(), "optional_override".to_string());
+
+        let mapper = DtoMapper::with_overrides(overrides);
+        let value = Some(ConfigValue::EnvironmentVariable {
+            name: "OPT_VAR".to_string(),
+            default: None,
+        });
+
+        let result = mapper.resolve_optional(&value).unwrap();
+        assert_eq!(result, Some("optional_override".to_string()));
+    }
+
+    #[test]
+    fn test_with_overrides_fallback_to_default() {
+        let overrides = HashMap::new(); // No overrides
+
+        let mapper = DtoMapper::with_overrides(overrides);
+        let value = ConfigValue::EnvironmentVariable {
+            name: "NONEXISTENT_VAR_MAPPER_TEST".to_string(),
+            default: Some("fallback_default".to_string()),
+        };
+
+        let result = mapper.resolve_string(&value).unwrap();
+        assert_eq!(result, "fallback_default");
+    }
+
+    #[test]
+    fn test_with_overrides_static_unchanged() {
+        let overrides = HashMap::new();
+
+        let mapper = DtoMapper::with_overrides(overrides);
+        let value = ConfigValue::Static("static_value".to_string());
+
+        let result = mapper.resolve_string(&value).unwrap();
+        assert_eq!(result, "static_value");
     }
 }

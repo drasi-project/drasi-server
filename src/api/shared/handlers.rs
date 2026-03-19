@@ -531,28 +531,49 @@ pub async fn get_source(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    // Get source runtime info from ComponentGraph (source of truth)
+    let info = core
+        .get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Build config from runtime info if view=full
     let config = if view.include_config() {
-        if let Some(persistence) = &config_persistence {
+        // First try persistence (for full config including all original fields)
+        let persisted_config = if let Some(persistence) = &config_persistence {
             persistence
                 .get_source_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).expect("source config serialization"))
+                .and_then(|value| serde_json::to_value(value).ok())
         } else {
             None
-        }
+        };
+
+        // Fall back to building config from SourceRuntime (ComponentGraph source of truth)
+        persisted_config.or_else(|| {
+            let mut config_map = serde_json::Map::new();
+            config_map.insert(
+                "kind".to_string(),
+                serde_json::Value::String(info.source_type.clone()),
+            );
+            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+            // Include properties from runtime
+            for (key, value) in &info.properties {
+                config_map.insert(key.clone(), value.clone());
+            }
+            Some(serde_json::Value::Object(config_map))
+        })
     } else {
         None
     };
-    match core.get_source_info(&id).await {
-        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
-            id: info.id,
-            status: info.status,
-            error_message: info.error_message,
-            links: component_links(&instance_id, "sources", &id),
-            config,
-        }))),
-        Err(_) => Err(StatusCode::NOT_FOUND),
-    }
+
+    Ok(Json(ApiResponse::success(ComponentListItem {
+        id: info.id,
+        status: info.status,
+        error_message: info.error_message,
+        links: component_links(&instance_id, "sources", &id),
+        config,
+    })))
 }
 
 /// Get source lifecycle events (snapshot).
@@ -1391,28 +1412,58 @@ pub async fn get_reaction(
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+    // Get reaction runtime info from ComponentGraph (source of truth)
+    let info = core
+        .get_reaction_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Build config from runtime info if view=full
     let config = if view.include_config() {
-        if let Some(persistence) = &config_persistence {
+        // First try persistence (for full config including all original fields)
+        let persisted_config = if let Some(persistence) = &config_persistence {
             persistence
                 .get_reaction_config(&instance_id, &id)
                 .await
-                .map(|value| serde_json::to_value(value).expect("reaction config serialization"))
+                .and_then(|value| serde_json::to_value(value).ok())
         } else {
             None
-        }
+        };
+
+        // Fall back to building config from ReactionRuntime (ComponentGraph source of truth)
+        persisted_config.or_else(|| {
+            let mut config_map = serde_json::Map::new();
+            config_map.insert(
+                "kind".to_string(),
+                serde_json::Value::String(info.reaction_type.clone()),
+            );
+            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+            config_map.insert(
+                "queries".to_string(),
+                serde_json::Value::Array(
+                    info.queries
+                        .iter()
+                        .map(|q| serde_json::Value::String(q.clone()))
+                        .collect(),
+                ),
+            );
+            // Include properties from runtime
+            for (key, value) in &info.properties {
+                config_map.insert(key.clone(), value.clone());
+            }
+            Some(serde_json::Value::Object(config_map))
+        })
     } else {
         None
     };
-    match core.get_reaction_info(&id).await {
-        Ok(info) => Ok(Json(ApiResponse::success(ComponentListItem {
-            id: info.id,
-            status: info.status,
-            error_message: info.error_message,
-            links: component_links(&instance_id, "reactions", &id),
-            config,
-        }))),
-        Err(_) => Err(StatusCode::NOT_FOUND),
-    }
+
+    Ok(Json(ApiResponse::success(ComponentListItem {
+        id: info.id,
+        status: info.status,
+        error_message: info.error_message,
+        links: component_links(&instance_id, "reactions", &id),
+        config,
+    })))
 }
 
 /// Get reaction lifecycle events (snapshot).
@@ -1581,6 +1632,87 @@ pub async fn stop_reaction(
             } else {
                 Ok(Json(ApiResponse::error(error_msg)))
             }
+        }
+    }
+}
+
+/// Stream ALL component events for an instance as SSE.
+///
+/// This endpoint subscribes to the global component event broadcast channel
+/// and streams every component lifecycle change (status transitions, additions,
+/// removals) as SSE events. Used by the UI to reactively update without polling.
+pub async fn stream_all_component_events(
+    Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let receiver = core.subscribe_all_component_events();
+
+    let live_stream = stream::unfold(receiver, |mut receiver| async move {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => return Some((ComponentEventDto::from(event), receiver)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+    .filter_map(sse_event_async);
+
+    Sse::new(live_stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("heartbeat"),
+    )
+}
+
+/// Proxy data push to an HTTP/gRPC source's listening port.
+///
+/// The browser cannot directly POST to a source's port due to CORS restrictions.
+/// This handler reads the source's configured host/port and forwards the request.
+pub async fn push_source_data(
+    Extension(core): Extension<Arc<DrasiLib>>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let info = core
+        .get_source_info(&id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let props = info.properties;
+    let host = props
+        .get("host")
+        .and_then(|v| v.as_str())
+        .unwrap_or("127.0.0.1");
+    let port = props.get("port").and_then(|v| v.as_u64()).unwrap_or(8081);
+    let endpoint = props.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+
+    let base = if endpoint.is_empty() {
+        String::new()
+    } else {
+        format!("/{}", endpoint.trim_start_matches('/'))
+    };
+    // Use 127.0.0.1 for 0.0.0.0 since we're on the same host
+    let effective_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
+    let url = format!("http://{effective_host}:{port}{base}/sources/{id}/events");
+
+    let client = reqwest::Client::new();
+    match client.post(&url).json(&body).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let resp_body: serde_json::Value = resp
+                .json()
+                .await
+                .unwrap_or(serde_json::Value::String("ok".to_string()));
+            Ok(Json(ApiResponse::success(resp_body)))
+        }
+        Ok(resp) => {
+            let status_code = resp.status().as_u16();
+            let msg = resp.text().await.unwrap_or_default();
+            log::warn!("Source proxy got {status_code} from {url}: {msg}");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+        Err(err) => {
+            log::warn!("Source proxy failed for {url}: {err}");
+            Err(StatusCode::BAD_GATEWAY)
         }
     }
 }

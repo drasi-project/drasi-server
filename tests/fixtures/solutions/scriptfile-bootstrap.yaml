@@ -1,0 +1,39 @@
+# Scriptfile Bootstrap Solution
+# Tests scriptfile bootstrap provider for initial data loading
+
+name: Scriptfile Bootstrap Pipeline
+description: Pipeline that loads initial data from JSONL files
+version: "1.0.0"
+author: Test Suite
+
+sources:
+  - kind: mock
+    id: bootstrap-source
+    autoStart: true
+    dataType:
+      type: generic
+    intervalMs: 1000
+    bootstrapProvider:
+      kind: scriptfile
+      filePaths:
+        - ${DATA_FILE_PATH:-./test-data/bootstrap.jsonl}
+
+queries:
+  - id: bootstrapped-query
+    query: |
+      MATCH (n:BootstrapNode)
+      RETURN n.id AS nodeId, n.name AS nodeName, n.value AS nodeValue
+    queryLanguage: Cypher
+    sources:
+      - sourceId: bootstrap-source
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: bootstrap-logger
+    queries:
+      - bootstrapped-query
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[BOOTSTRAP] Node {{after.nodeId}}: {{after.nodeName}} = {{after.nodeValue}}"

@@ -1654,3 +1654,157 @@ pub async fn stop_reaction_default(
     let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::stop_reaction(Extension(core), Path(id)).await
 }
+
+// ============================================================================
+// Global Component Events (SSE)
+// ============================================================================
+
+/// Stream all component events for an instance as SSE
+pub async fn stream_all_component_events(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(shared::stream_all_component_events(Extension(core)).await)
+}
+
+/// Stream all component events for the default instance as SSE
+pub async fn stream_all_component_events_default(
+    Extension(registry): Extension<InstanceRegistry>,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    StatusCode,
+> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    Ok(shared::stream_all_component_events(Extension(core)).await)
+}
+
+/// Push data to a source's listening port (proxy to avoid CORS)
+pub async fn push_source_data(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let core = registry
+        .get(&instance_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    shared::push_source_data(Extension(core), Path(id), Json(body)).await
+}
+
+/// Push data to a source's listening port (default instance)
+pub async fn push_source_data_default(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    let (_, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
+    shared::push_source_data(Extension(core), Path(id), Json(body)).await
+}
+
+// ==================== Solution Template Handlers ====================
+
+use crate::api::models::solution::{
+    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, SolutionDeployRequest,
+    SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
+};
+use crate::api::shared::solutions;
+
+/// List all available solution templates
+#[utoipa::path(
+    get,
+    path = "/api/v1/catalog/solutions",
+    responses(
+        (status = 200, description = "List of solution templates", body = ApiResponse<Vec<SolutionTemplateSummary>>),
+    ),
+    tag = "Catalog"
+)]
+pub async fn list_solutions(
+    Extension(solutions_dir): Extension<Option<String>>,
+) -> Json<ApiResponse<Vec<SolutionTemplateSummary>>> {
+    solutions::list_solutions(solutions_dir).await
+}
+
+/// Get detailed information about a solution template
+#[utoipa::path(
+    get,
+    path = "/api/v1/catalog/solutions/{id}",
+    params(
+        ("id" = String, Path, description = "Solution template ID (filename without extension)")
+    ),
+    responses(
+        (status = 200, description = "Solution template details", body = ApiResponse<SolutionTemplateDetail>),
+        (status = 404, description = "Solution template not found"),
+    ),
+    tag = "Catalog"
+)]
+pub async fn get_solution(
+    Extension(solutions_dir): Extension<Option<String>>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<SolutionTemplateDetail>> {
+    solutions::get_solution(solutions_dir, &id).await
+}
+
+/// Create a new solution template from components in an instance
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/catalog/solutions",
+    params(
+        ("instanceId" = String, Path, description = "Source instance ID")
+    ),
+    request_body = CreateSolutionTemplateRequest,
+    responses(
+        (status = 200, description = "Creation result", body = ApiResponse<CreateSolutionTemplateResponse>),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Instance not found"),
+    ),
+    tag = "Catalog"
+)]
+pub async fn create_solution_template(
+    Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(solutions_dir): Extension<Option<String>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Json(request): Json<CreateSolutionTemplateRequest>,
+) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
+    solutions::create_solution_template(persistence, solutions_dir, &instance_id, request).await
+}
+
+/// Deploy a solution template to an instance
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/solutions",
+    params(
+        ("instanceId" = String, Path, description = "Target instance ID")
+    ),
+    request_body = SolutionDeployRequest,
+    responses(
+        (status = 200, description = "Deployment result", body = ApiResponse<SolutionDeployResponse>),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Instance or template not found"),
+    ),
+    tag = "Solutions"
+)]
+pub async fn deploy_solution(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(solutions_dir): Extension<Option<String>>,
+    Extension(plugin_registry): Extension<Arc<crate::plugin_registry::PluginRegistry>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Json(request): Json<SolutionDeployRequest>,
+) -> Json<ApiResponse<SolutionDeployResponse>> {
+    solutions::deploy_solution(
+        registry,
+        persistence,
+        solutions_dir,
+        &plugin_registry,
+        &instance_id,
+        request,
+    )
+    .await
+}

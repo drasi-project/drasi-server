@@ -77,7 +77,7 @@ impl SourceTrait for BootstrapMockSource {
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
+        *self.status.read().await
     }
 
     async fn subscribe(

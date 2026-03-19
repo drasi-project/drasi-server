@@ -25,6 +25,8 @@ pub enum ComponentTypeDto {
     Source,
     Query,
     Reaction,
+    BootstrapProvider,
+    IdentityProvider,
 }
 
 impl From<ComponentType> for ComponentTypeDto {
@@ -33,6 +35,8 @@ impl From<ComponentType> for ComponentTypeDto {
             ComponentType::Source => Self::Source,
             ComponentType::Query => Self::Query,
             ComponentType::Reaction => Self::Reaction,
+            ComponentType::BootstrapProvider => Self::BootstrapProvider,
+            ComponentType::IdentityProvider => Self::IdentityProvider,
         }
     }
 }

@@ -23,6 +23,8 @@ plugins:
 - ref: source/http
 - ref: source/postgres
 - ref: bootstrap/postgres
+- ref: bootstrap/scriptfile
+- ref: reaction/sse
 sources:
 - kind: http
   id: price-feed
@@ -30,6 +32,10 @@ sources:
   host: 0.0.0.0
   port: 9100
   timeoutMs: 10000
+  bootstrapProvider:
+    kind: scriptfile
+    filePaths:
+      - ./examples/trading/mock-generator/initial-prices.jsonl
 - kind: postgres
   id: postgres-stocks
   autoStart: true
@@ -41,6 +47,7 @@ sources:
   tables:
   - stocks
   - portfolio
+  - watchlist
   slotName: drasi_trading_slot
   publicationName: drasi_trading_pub
   sslMode: prefer
@@ -49,6 +56,28 @@ sources:
     keyColumns:
     - id
   - table: portfolio
+    keyColumns:
+    - id
+  - table: watchlist
+    keyColumns:
+    - id
+  bootstrapProvider:
+    kind: postgres
+- kind: postgres
+  id: postgres-broker
+  autoStart: true
+  host: localhost
+  port: 5632
+  database: trading_demo
+  user: drasi_user
+  password: drasi_password
+  tables:
+  - limit_orders
+  slotName: drasi_broker_slot
+  publicationName: drasi_broker_pub
+  sslMode: prefer
+  tableKeys:
+  - table: limit_orders
     keyColumns:
     - id
   bootstrapProvider:

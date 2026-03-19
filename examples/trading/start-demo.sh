@@ -209,16 +209,25 @@ wait_for_service "http://localhost:5273" "React application"
 
 # Step 5: Install Python dependencies
 echo ""
-echo "Step 4: Setting up price generator..."
+echo "Step 4: Setting up price generator and trading API..."
 cd "$SCRIPT_DIR/mock-generator"
-if ! python3 -c "import requests" 2>/dev/null; then
+if ! python3 -c "import requests, flask, psycopg2" 2>/dev/null; then
     echo "Installing Python dependencies..."
-    pip3 install requests
+    pip3 install -r requirements.txt
 else
     echo "Python dependencies already installed"
 fi
 
-# Step 6: Start price generator
+# Step 6: Start trading API
+echo "Starting Trading API server..."
+python3 trading_api.py > "$LOG_DIR/trading-api.log" 2>&1 &
+API_PID=$!
+echo "Trading API started with PID: $API_PID"
+
+# Wait for Trading API to be ready
+wait_for_service "http://localhost:9200/health" "Trading API"
+
+# Step 7: Start price generator
 echo "Starting simple price generator..."
 python3 simple_price_generator.py > "$LOG_DIR/price-generator.log" 2>&1 &
 GENERATOR_PID=$!
@@ -232,18 +241,23 @@ echo "======================================"
 echo ""
 echo "Access the demo at:"
 echo "  • Trading UI: http://localhost:5273"
+echo "  • Broker Panel: http://localhost:9200/broker"
+echo "  • Drasi Server UI: http://localhost:8280/ui?instance=trading-server"
 echo "  • Drasi API: http://localhost:8280"
+echo "  • Trading API: http://localhost:9200"
 echo "  • HTTP Source: http://localhost:9100"
 echo "  • SSE Stream: http://localhost:8281/events"
 echo ""
 echo "Process PIDs:"
 echo "  • Drasi Server: $DRASI_PID"
 echo "  • React App: $REACT_PID"
+echo "  • Trading API: $API_PID"
 echo "  • Price Generator: $GENERATOR_PID"
 echo ""
 echo "Logs are available at:"
 echo "  • Drasi Server: $LOG_DIR/drasi-server.log"
 echo "  • React App: $LOG_DIR/react-app.log"
+echo "  • Trading API: $LOG_DIR/trading-api.log"
 echo "  • Price Generator: $LOG_DIR/price-generator.log"
 echo ""
 echo "To stop the demo, run: ./stop-demo.sh"
@@ -252,10 +266,11 @@ echo ""
 # Save PIDs for stop script
 echo "$DRASI_PID" > /tmp/drasi-demo-server.pid
 echo "$REACT_PID" > /tmp/drasi-demo-react.pid
+echo "$API_PID" > /tmp/drasi-demo-api.pid
 echo "$GENERATOR_PID" > /tmp/drasi-demo-generator.pid
 
 # Keep script running and forward signals
-trap "echo 'Stopping demo...'; kill $DRASI_PID $REACT_PID $GENERATOR_PID 2>/dev/null; cd $SCRIPT_DIR/database && docker-compose down; exit" INT TERM
+trap "echo 'Stopping demo...'; kill $DRASI_PID $REACT_PID $API_PID $GENERATOR_PID 2>/dev/null; cd $SCRIPT_DIR/database && docker-compose down; exit" INT TERM
 
 echo "Press Ctrl+C to stop all services"
 wait

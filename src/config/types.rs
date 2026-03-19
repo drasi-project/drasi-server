@@ -58,6 +58,15 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the web UI at /ui (default: true)
+    #[serde(default = "default_enable_ui")]
+    pub enable_ui: bool,
+    /// Directory containing solution template YAML files (default: "./solutions")
+    #[serde(
+        default = "default_solutions_dir",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub solutions_dir: Option<String>,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -119,6 +128,8 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_ui: true,
+            solutions_dir: None,
             state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
@@ -193,6 +204,14 @@ pub struct TrustedIdentity {
     /// Glob pattern to match against the certificate subject/SAN.
     /// Example: "https://github.com/drasi-project/*"
     pub subject_pattern: String,
+}
+
+fn default_enable_ui() -> bool {
+    true
+}
+
+fn default_solutions_dir() -> Option<String> {
+    None
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)

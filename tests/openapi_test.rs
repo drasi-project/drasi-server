@@ -21,12 +21,14 @@ async fn create_test_router() -> Router {
     let config_persistence = None;
     let mut plugin_registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut plugin_registry);
+    let solutions_dir = None;
 
     build_v1_router(
         registry,
         read_only,
         config_persistence,
         Arc::new(plugin_registry),
+        solutions_dir,
     )
 }
 

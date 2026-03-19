@@ -137,7 +137,7 @@ fn test_component_status_serialization() {
     ];
 
     for status in statuses {
-        let json = serde_json::to_value(&status).unwrap();
+        let json = serde_json::to_value(status).unwrap();
         match status {
             ComponentStatus::Starting => assert_eq!(json, "Starting"),
             ComponentStatus::Running => assert_eq!(json, "Running"),

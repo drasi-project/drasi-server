@@ -24,7 +24,7 @@ mod test_support;
 
 use test_support::{create_mock_reaction, create_mock_source};
 
-use drasi_lib::{DrasiLib, Query};
+use drasi_lib::{channels::ComponentStatus, DrasiLib, Query};
 use std::sync::Arc;
 
 #[tokio::test]
@@ -154,19 +154,44 @@ async fn test_restart_with_components() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Let components start
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for source to reach Running
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "restart-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("restart-source should reach Running");
 
     // Stop server
     core.stop().await.expect("Failed to stop");
     assert!(!core.is_running().await);
 
+    // Wait for source to reach Stopped before restarting
+    drasi_lib::wait_for_status(
+        &graph,
+        "restart-source",
+        &[ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("restart-source should reach Stopped");
+
     // Restart server
     core.start().await.expect("Failed to restart");
     assert!(core.is_running().await);
 
-    // Let components restart
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for source to reach Running after restart
+    drasi_lib::wait_for_status(
+        &graph,
+        "restart-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("restart-source should reach Running after restart");
 
     // Server should still be running after restart
     assert!(core.is_running().await);

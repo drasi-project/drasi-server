@@ -81,7 +81,7 @@ serde_yaml = "0.9"
 anyhow = "1.0"
 log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
 clap = { version = "4.0", features = ["derive"] }
 console = "0.15"
 indicatif = "0.17"
@@ -94,9 +94,11 @@ dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
+regex = "1"
 openssl = { version = "0.10", features = ["vendored"] }
 toml = "0.8"
 sha2 = "0.10"
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 # Testing utilities
@@ -142,3 +144,17 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
+
+# Local development: use path-based dependencies
+[patch.crates-io]
+drasi-core = { path = "../drasi-core/core" }
+drasi-lib = { path = "../drasi-core/lib" }
+drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
+drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
+drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }

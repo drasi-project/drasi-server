@@ -15,6 +15,8 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
 - Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
+- Run with UI disabled: `cargo run -- --disable-ui`
+- Run with UI enabled (override config): `cargo run -- --enable-ui`
 - Check compilation: `cargo check`
 
 ### Plugin Loading
@@ -103,6 +105,7 @@ logLevel: "info"
 persistConfig: true  # Enable persistence (default)
 persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
 verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: false)
+enableUi: true       # Enable the web UI at /ui (default: true)
 
 # Optional trusted identities for plugin signature verification
 # trustedIdentities:
