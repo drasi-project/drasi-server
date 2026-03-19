@@ -32,7 +32,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.3.8", features = [
+drasi-lib = { version = "0.4.0", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -43,39 +43,39 @@ drasi-lib = { version = "0.3.8", features = [
 ] }
 
 # Source plugins
-drasi-source-mock = "0.1.7"
-drasi-source-http = "0.1.7"
-drasi-source-grpc = "0.1.7"
-drasi-source-postgres = "0.1.8"
-drasi-source-platform = "0.1.7"
+drasi-source-mock = "0.1.10"
+drasi-source-http = "0.1.10"
+drasi-source-grpc = "0.1.10"
+drasi-source-postgres = "0.1.11"
+drasi-source-platform = "0.1.10"
 
 # Bootstrap provider plugins
-drasi-bootstrap-postgres = "0.1.8"
-drasi-bootstrap-scriptfile = "0.1.7"
-drasi-bootstrap-platform = "0.1.7"
-drasi-bootstrap-noop = "0.1.6"
-drasi-bootstrap-application = "0.1.7"
+drasi-bootstrap-postgres = "0.1.11"
+drasi-bootstrap-scriptfile = "0.1.9"
+drasi-bootstrap-platform = "0.1.9"
+drasi-bootstrap-noop = "0.1.8"
+drasi-bootstrap-application = "0.1.9"
 
 # Reaction plugins
-drasi-reaction-log = "0.1.7"
-drasi-reaction-http = "0.1.8"
-drasi-reaction-http-adaptive = "0.2.5"
-drasi-reaction-grpc = "0.2.5"
-drasi-reaction-grpc-adaptive = "0.1.6"
-drasi-reaction-sse = "0.2.6"
-drasi-reaction-platform = "0.2.6"
-drasi-reaction-profiler = "0.2.5"
-drasi-reaction-storedproc-postgres = "0.2.5"
-drasi-reaction-storedproc-mysql = "0.2.5"
-drasi-reaction-storedproc-mssql = "0.2.5"
-drasi-reaction-application = "0.2.5"
+drasi-reaction-log = "0.1.9"
+drasi-reaction-http = "0.1.10"
+drasi-reaction-http-adaptive = "0.2.7"
+drasi-reaction-grpc = "0.2.7"
+drasi-reaction-grpc-adaptive = "0.1.8"
+drasi-reaction-sse = "0.2.8"
+drasi-reaction-platform = "0.2.8"
+drasi-reaction-profiler = "0.2.7"
+drasi-reaction-storedproc-postgres = "0.2.7"
+drasi-reaction-storedproc-mysql = "0.2.7"
+drasi-reaction-storedproc-mssql = "0.2.7"
+drasi-reaction-application = "0.2.8"
 
 # Index plugins
-drasi-index-rocksdb = "0.2.2"
-drasi-index-garnet = "0.1.4"
+drasi-index-rocksdb = "0.3.0"
+drasi-index-garnet = "0.1.6"
 
 # State store plugins
-drasi-state-store-redb = "0.1.5"
+drasi-state-store-redb = "0.1.6"
 
 # Server-specific dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -122,7 +122,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.3.3"
+drasi-core = "0.4.0"
 
 # Integration testing with testcontainers
 testcontainers = "0.23"

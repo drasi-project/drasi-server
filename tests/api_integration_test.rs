@@ -60,9 +60,24 @@ async fn create_test_router_with_id(
     let query_source = create_mock_source("query-source");
     let auto_source = create_mock_source("auto-source");
 
+    // Create mock source for reaction queries
+    let reaction_source = create_mock_source("reaction-source");
+
     // Create mock reaction instances
     let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
     let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
+
+    // Create queries referenced by the reactions (auto_start: false so they don't need to run)
+    let reaction_query = Query::cypher("reaction-query")
+        .query("MATCH (n:Node) RETURN n")
+        .from_source("reaction-source")
+        .auto_start(false)
+        .build();
+    let auto_query = Query::cypher("auto-query")
+        .query("MATCH (n:Node) RETURN n")
+        .from_source("reaction-source")
+        .auto_start(false)
+        .build();
 
     // Create a minimal DrasiLib using the builder with mock instances
     let core = DrasiLib::builder()
@@ -70,6 +85,9 @@ async fn create_test_router_with_id(
         .with_source(test_source.clone())
         .with_source(query_source.clone())
         .with_source(auto_source.clone())
+        .with_source(reaction_source)
+        .with_query(reaction_query)
+        .with_query(auto_query)
         .with_reaction(test_reaction.clone())
         .with_reaction(auto_reaction.clone())
         .build()

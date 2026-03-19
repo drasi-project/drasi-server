@@ -21,7 +21,7 @@
 //! - Creating mock HTTP servers for HTTP source/reaction testing
 
 use axum::Router;
-use drasi_lib::DrasiLib;
+use drasi_lib::{DrasiLib, Query};
 use drasi_server::api::v1::handlers;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
@@ -204,12 +204,22 @@ pub async fn create_test_router_with_solutions(
 
     // Create mock components
     let test_source = create_mock_source("test-source");
+    let reaction_source = create_mock_source("reaction-source");
     let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+
+    // Create query referenced by the reaction (auto_start: false so it doesn't need to run)
+    let test_query = Query::cypher("test-query")
+        .query("MATCH (n:Node) RETURN n")
+        .from_source("reaction-source")
+        .auto_start(false)
+        .build();
 
     // Build DrasiLib
     let core = DrasiLib::builder()
         .with_id(instance_id)
         .with_source(test_source.clone())
+        .with_source(reaction_source)
+        .with_query(test_query)
         .with_reaction(test_reaction.clone())
         .build()
         .await
@@ -253,16 +263,27 @@ pub async fn create_multi_instance_test_router(
     for instance_id in instance_ids {
         // Create mock components with unique IDs per instance
         let source_id = format!("{instance_id}-source");
+        let reaction_source_id = format!("{instance_id}-reaction-source");
         let reaction_id = format!("{instance_id}-reaction");
         let query_id = format!("{instance_id}-query");
 
         let test_source = create_mock_source(&source_id);
-        let test_reaction = create_mock_reaction(&reaction_id, vec![query_id]);
+        let reaction_source = create_mock_source(&reaction_source_id);
+        let test_reaction = create_mock_reaction(&reaction_id, vec![query_id.clone()]);
+
+        // Create query referenced by the reaction (auto_start: false so it doesn't need to run)
+        let reaction_query = Query::cypher(&query_id)
+            .query("MATCH (n:Node) RETURN n")
+            .from_source(&reaction_source_id)
+            .auto_start(false)
+            .build();
 
         // Build DrasiLib
         let core = DrasiLib::builder()
             .with_id(instance_id)
             .with_source(test_source.clone())
+            .with_source(reaction_source)
+            .with_query(reaction_query)
             .with_reaction(test_reaction.clone())
             .build()
             .await

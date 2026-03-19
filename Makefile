@@ -16,7 +16,8 @@
 
 .PHONY: all build build-release run run-release setup demo demo-cleanup \
         doctor validate clean clippy test fmt fmt-check help docker-build \
-        submodule-update vscode-test dev-build clean-dev-build
+        submodule-update vscode-test dev-build clean-dev-build \
+        build-ui clean-ui
 
 # Default target
 help:
@@ -29,8 +30,9 @@ help:
 	@echo "  make demo          - Run the getting-started example"
 	@echo ""
 	@echo "Development:"
-	@echo "  make build           - Build debug binary"
-	@echo "  make build-release   - Build release binary"
+	@echo "  make build           - Build debug binary and UI"
+	@echo "  make build-release   - Build release binary and UI"
+	@echo "  make build-ui        - Build only the web UI"
 	@echo "  make dev-build       - Format, lint, and test"
 	@echo "  make clean-dev-build - Clean, format, lint, and test"
 	@echo "  make test            - Run all tests"
@@ -46,6 +48,7 @@ help:
 	@echo "  make doctor            - Check system dependencies"
 	@echo "  make validate          - Validate config file (CONFIG=path)"
 	@echo "  make clean             - Clean build artifacts"
+	@echo "  make clean-ui          - Clean UI build artifacts"
 	@echo "  make demo-cleanup      - Stop demo containers"
 	@echo "  make submodule-update  - Initialize/update git submodules"
 	@echo ""
@@ -69,11 +72,11 @@ setup: doctor
 	@echo "Setup complete! Run 'make run' to start the server."
 
 # Build and run (debug mode)
-run:
+run: build-ui
 	cargo run
 
 # Build and run with custom config
-run-config:
+run-config: build-ui
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Usage: make run-config CONFIG=path/to/config.yaml"; \
 		exit 1; \
@@ -81,15 +84,25 @@ run-config:
 	cargo run -- --config $(CONFIG)
 
 # Build and run (release mode)
-run-release:
+run-release: build-ui
 	cargo run --release
 
 # === Development ===
 
-build:
+# Build the web UI (requires Node.js/npm)
+build-ui:
+	@if command -v npm >/dev/null 2>&1; then \
+		echo "Building web UI..."; \
+		cd ui && npm install --prefer-offline && npm run build; \
+		echo "UI built successfully at ui/dist/"; \
+	else \
+		echo "Warning: npm not found, skipping UI build. Install Node.js to build the UI."; \
+	fi
+
+build: build-ui
 	cargo build
 
-build-release:
+build-release: build-ui
 	cargo build --release
 
 clippy:
@@ -141,6 +154,8 @@ doctor:
 	@echo "Required:"
 	@command -v cargo >/dev/null 2>&1 && echo "  [OK] Rust/Cargo $$(rustc --version | cut -d' ' -f2)" || echo "  [MISSING] Rust/Cargo - https://rustup.rs"
 	@command -v git >/dev/null 2>&1 && echo "  [OK] Git" || echo "  [MISSING] Git"
+	@command -v node >/dev/null 2>&1 && echo "  [OK] Node.js $$(node --version)" || echo "  [MISSING] Node.js - https://nodejs.org (required to build the web UI)"
+	@command -v npm >/dev/null 2>&1 && echo "  [OK] npm $$(npm --version)" || echo "  [MISSING] npm (required to build the web UI)"
 	@if [ -d "drasi-core/lib" ]; then echo "  [OK] Submodules initialized"; else echo "  [MISSING] Submodules - run: git submodule update --init --recursive"; fi
 	@echo ""
 	@echo "Optional (for examples):"
@@ -180,8 +195,12 @@ demo-cleanup:
 	fi
 
 # Clean build artifacts
-clean:
+clean: clean-ui
 	cargo clean
+
+# Clean UI build artifacts
+clean-ui:
+	rm -rf ui/dist ui/node_modules
 
 # Initialize and update git submodules
 submodule-update:

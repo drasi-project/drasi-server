@@ -25,6 +25,8 @@ pub enum ComponentTypeDto {
     Source,
     Query,
     Reaction,
+    BootstrapProvider,
+    IdentityProvider,
 }
 
 impl From<ComponentType> for ComponentTypeDto {
@@ -33,6 +35,8 @@ impl From<ComponentType> for ComponentTypeDto {
             ComponentType::Source => Self::Source,
             ComponentType::Query => Self::Query,
             ComponentType::Reaction => Self::Reaction,
+            ComponentType::BootstrapProvider => Self::BootstrapProvider,
+            ComponentType::IdentityProvider => Self::IdentityProvider,
         }
     }
 }
@@ -47,8 +51,6 @@ pub enum ComponentStatusDto {
     Stopped,
     Error,
     Reconfiguring,
-    Added,
-    Removed,
 }
 
 impl From<ComponentStatus> for ComponentStatusDto {
@@ -60,8 +62,6 @@ impl From<ComponentStatus> for ComponentStatusDto {
             ComponentStatus::Stopped => Self::Stopped,
             ComponentStatus::Error => Self::Error,
             ComponentStatus::Reconfiguring => Self::Reconfiguring,
-            ComponentStatus::Added => Self::Added,
-            ComponentStatus::Removed => Self::Removed,
         }
     }
 }
