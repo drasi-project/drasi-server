@@ -71,6 +71,8 @@ pub fn build_v1_router(
 /// These routes use :instanceId path parameter - handlers look up instance from registry.
 fn build_dynamic_instance_router() -> Router {
     Router::new()
+        // Instance snapshot
+        .route("/snapshot", get(handlers::get_instance_snapshot))
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))
@@ -129,6 +131,8 @@ fn build_dynamic_instance_router() -> Router {
         .route("/sources/:id/push", post(handlers::push_source_data))
         // Solution deployment to this instance
         .route("/solutions", post(handlers::deploy_solution))
+        // Clone another instance's configuration into this instance
+        .route("/clone", post(handlers::clone_instance))
         // Create solution template from this instance's components
         .route(
             "/catalog/solutions",

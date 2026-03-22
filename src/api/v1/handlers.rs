@@ -147,6 +147,37 @@ pub async fn create_instance(
     .await
 }
 
+/// Get a configuration snapshot of an instance
+///
+/// Returns an atomic point-in-time snapshot of all components (sources, queries,
+/// reactions) with their configuration properties and dependency edges.
+/// Data is read directly from the ComponentGraph — the single source of truth.
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/snapshot",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
+    responses(
+        (status = 200, description = "Configuration snapshot"),
+        (status = 404, description = "Instance not found"),
+    ),
+    tag = "Instances"
+)]
+pub async fn get_instance_snapshot(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<Json<ApiResponse<drasi_lib::ConfigurationSnapshot>>, (StatusCode, String)> {
+    let core = get_instance(&registry, &instance_id).await?;
+    match core.snapshot_configuration().await {
+        Ok(snapshot) => Ok(Json(ApiResponse::success(snapshot))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to capture snapshot: {e}"),
+        )),
+    }
+}
+
 /// List all sources
 #[utoipa::path(
     get,
@@ -1767,12 +1798,24 @@ pub async fn get_solution(
     tag = "Catalog"
 )]
 pub async fn create_solution_template(
+    Extension(registry): Extension<InstanceRegistry>,
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(solutions_dir): Extension<Option<String>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<CreateSolutionTemplateRequest>,
 ) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
-    solutions::create_solution_template(persistence, solutions_dir, &instance_id, request).await
+    let core = match registry.get(&instance_id).await {
+        Some(c) => c,
+        None => {
+            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
+                success: false,
+                template_id: None,
+                error: Some(format!("Instance '{instance_id}' not found")),
+            }));
+        }
+    };
+    solutions::create_solution_template(core, persistence, solutions_dir, &instance_id, request)
+        .await
 }
 
 /// Deploy a solution template to an instance
@@ -1805,6 +1848,44 @@ pub async fn deploy_solution(
         &plugin_registry,
         &instance_id,
         request,
+    )
+    .await
+}
+
+/// Clone another instance's configuration into this instance
+///
+/// Takes an atomic snapshot of the source instance and recreates all
+/// components (sources, queries, reactions) in the target instance.
+/// All cloned components are created in the stopped state.
+/// On failure, already-created components are rolled back.
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/clone",
+    params(
+        ("instanceId" = String, Path, description = "Target instance ID to clone into")
+    ),
+    request_body(content = inline(shared::CloneInstanceRequest)),
+    responses(
+        (status = 200, description = "Clone result", body = ApiResponse<shared::CloneInstanceResponse>),
+        (status = 404, description = "Source or target instance not found"),
+    ),
+    tag = "Instances"
+)]
+pub async fn clone_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+    Json(request): Json<shared::CloneInstanceRequest>,
+) -> Json<ApiResponse<shared::CloneInstanceResponse>> {
+    shared::clone_instance(
+        registry,
+        read_only,
+        plugin_registry,
+        config_persistence,
+        &instance_id,
+        &request.source_instance_id,
     )
     .await
 }

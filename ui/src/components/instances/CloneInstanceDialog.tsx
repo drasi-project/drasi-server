@@ -34,11 +34,6 @@ export default function CloneInstanceDialog({
   const [progress, setProgress] = useState<CloneProgress>({ phase: "", current: 0, total: 0 });
   const [cloneError, setCloneError] = useState<string | null>(null);
 
-  const totalComponents = 
-    sourceComponentCounts.sources + 
-    sourceComponentCounts.queries + 
-    sourceComponentCounts.reactions;
-
   const handleClone = async () => {
     if (!newId.trim()) {
       setError("Required");
@@ -46,78 +41,17 @@ export default function CloneInstanceDialog({
     }
 
     setCloneState("cloning");
-    setProgress({ phase: "Creating instance", current: 0, total: totalComponents + 1 });
+    setProgress({ phase: "Creating instance", current: 1, total: 2 });
 
     try {
-      // Step 1: Create the new instance
+      // Step 1: Create the new empty instance
       await api.createInstance({ id: newId.trim() });
-      setProgress({ phase: "Cloning sources", current: 1, total: totalComponents + 1 });
 
-      // Step 2: Fetch and clone all sources
-      const sources = await api.listSources(sourceInstanceId);
-      for (let i = 0; i < sources.length; i++) {
-        const src = sources[i];
-        setProgress({ 
-          phase: `Cloning source: ${src.id}`, 
-          current: 1 + i + 1, 
-          total: totalComponents + 1 
-        });
-        
-        // Get full source config
-        const fullSource = await api.getSource(src.id, sourceInstanceId);
-        
-        // Create in new instance with autoStart: false
-        await api.createSource({
-          kind: fullSource.kind,
-          id: fullSource.id,
-          autoStart: false,
-          ...fullSource.properties,
-        }, newId);
-      }
-
-      // Step 3: Fetch and clone all queries
-      const queries = await api.listQueries(sourceInstanceId);
-      const queriesOffset = 1 + sources.length;
-      for (let i = 0; i < queries.length; i++) {
-        const q = queries[i];
-        setProgress({ 
-          phase: `Cloning query: ${q.id}`, 
-          current: queriesOffset + i + 1, 
-          total: totalComponents + 1 
-        });
-        
-        // Create query in new instance - sources is array of QuerySourceSubscription
-        await api.createQuery({
-          id: q.id,
-          query: q.query ?? "",
-          queryLanguage: q.queryLanguage ?? "Cypher",
-          sources: q.sources ?? [],
-          autoStart: false,
-        }, newId);
-      }
-
-      // Step 4: Fetch and clone all reactions
-      const reactions = await api.listReactions(sourceInstanceId);
-      const reactionsOffset = queriesOffset + queries.length;
-      for (let i = 0; i < reactions.length; i++) {
-        const r = reactions[i];
-        setProgress({ 
-          phase: `Cloning reaction: ${r.id}`, 
-          current: reactionsOffset + i + 1, 
-          total: totalComponents + 1 
-        });
-        
-        // Get full reaction config
-        const fullReaction = await api.getReaction(r.id, sourceInstanceId);
-        
-        // Create in new instance with autoStart: false
-        await api.createReaction({
-          kind: fullReaction.kind,
-          id: fullReaction.id,
-          queries: fullReaction.queries ?? [],
-          autoStart: false,
-          ...fullReaction.properties,
-        }, newId);
+      // Step 2: Clone all components via server-side endpoint
+      setProgress({ phase: "Cloning components", current: 2, total: 2 });
+      const result = await api.cloneInstance(newId.trim(), sourceInstanceId);
+      if (!result.success) {
+        throw new Error(result.errors.join(", "));
       }
 
       setCloneState("success");

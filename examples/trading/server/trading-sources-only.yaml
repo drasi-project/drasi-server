@@ -18,13 +18,6 @@ host: 0.0.0.0
 port: 8280
 logLevel: info
 persistConfig: false
-autoInstallPlugins: true
-plugins:
-- ref: source/http
-- ref: source/postgres
-- ref: bootstrap/postgres
-- ref: bootstrap/scriptfile
-- ref: reaction/sse
 sources:
 - kind: http
   id: price-feed

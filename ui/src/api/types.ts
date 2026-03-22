@@ -297,6 +297,15 @@ export interface SolutionDeployResponse {
   errors: SolutionDeployError[];
 }
 
+// Clone instance types
+export interface CloneInstanceResult {
+  success: boolean;
+  sourcesCreated: string[];
+  queriesCreated: string[];
+  reactionsCreated: string[];
+  errors: string[];
+}
+
 // Create Solution Template types
 export interface CreateSolutionTemplateRequest {
   id: string;

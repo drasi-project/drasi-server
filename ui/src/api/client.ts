@@ -9,6 +9,7 @@ import type {
   CreateReactionRequest,
   InstanceInfo,
   CreateInstanceRequest,
+  CloneInstanceResult,
 } from "./types";
 import {
   normalizeSource,
@@ -41,6 +42,15 @@ export async function listInstances(): Promise<InstanceInfo[]> {
 
 export async function createInstance(req: CreateInstanceRequest): Promise<void> {
   await api.post("/instances", req);
+}
+
+export async function cloneInstance(
+  targetInstanceId: string,
+  sourceInstanceId: string,
+): Promise<CloneInstanceResult> {
+  return unwrap(
+    await api.post(`/instances/${targetInstanceId}/clone`, { sourceInstanceId }),
+  );
 }
 
 // Sources — fetch full view for each source to get kind/config

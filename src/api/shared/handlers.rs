@@ -36,12 +36,15 @@ use super::responses::{
 };
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::ConfigValue;
-use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
+use crate::api::models::{
+    BootstrapProviderConfig, ComponentEventDto, LogMessageDto, QueryConfigDto,
+};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction, create_source};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
+use drasi_lib::ConfigurationSnapshot;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, DrasiLib};
 use drasi_reaction_application::subscription::SubscriptionOptions;
 use drasi_reaction_application::ApplicationReaction;
@@ -356,7 +359,7 @@ pub async fn create_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -393,10 +396,6 @@ pub async fn create_source_handler(
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
-            if let Some(persistence) = &config_persistence {
-                persistence.register_source(&instance_id, config).await;
-            }
-
             if auto_start {
                 if let Err(e) = core.start_source(&source_id).await {
                     log::warn!("Failed to auto-start source '{source_id}': {e}");
@@ -426,7 +425,7 @@ pub async fn upsert_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -472,13 +471,6 @@ pub async fn upsert_source_handler(
 
         log::info!("Source '{source_id}' updated successfully");
 
-        if let Some(persistence) = &config_persistence {
-            persistence
-                .unregister_source(&instance_id, &source_id)
-                .await;
-            persistence.register_source(&instance_id, config).await;
-        }
-
         persist_after_operation(&config_persistence, "upserting source").await;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
@@ -499,10 +491,6 @@ pub async fn upsert_source_handler(
     match core.add_source(source).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
-
-            if let Some(persistence) = &config_persistence {
-                persistence.register_source(&instance_id, config).await;
-            }
 
             if auto_start {
                 if let Err(e) = core.start_source(&source_id).await {
@@ -526,7 +514,7 @@ pub async fn upsert_source_handler(
 /// Get source status by ID
 pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(_config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
@@ -539,30 +527,17 @@ pub async fn get_source(
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
-        // First try persistence (for full config including all original fields)
-        let persisted_config = if let Some(persistence) = &config_persistence {
-            persistence
-                .get_source_config(&instance_id, &id)
-                .await
-                .and_then(|value| serde_json::to_value(value).ok())
-        } else {
-            None
-        };
-
-        // Fall back to building config from SourceRuntime (ComponentGraph source of truth)
-        persisted_config.or_else(|| {
-            let mut config_map = serde_json::Map::new();
-            config_map.insert(
-                "kind".to_string(),
-                serde_json::Value::String(info.source_type.clone()),
-            );
-            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
-            // Include properties from runtime
-            for (key, value) in &info.properties {
-                config_map.insert(key.clone(), value.clone());
-            }
-            Some(serde_json::Value::Object(config_map))
-        })
+        let mut config_map = serde_json::Map::new();
+        config_map.insert(
+            "kind".to_string(),
+            serde_json::Value::String(info.source_type.clone()),
+        );
+        config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+        // Include properties from runtime
+        for (key, value) in &info.properties {
+            config_map.insert(key.clone(), value.clone());
+        }
+        Some(serde_json::Value::Object(config_map))
     } else {
         None
     };
@@ -678,7 +653,7 @@ pub async fn delete_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -689,10 +664,6 @@ pub async fn delete_source(
 
     match core.remove_source(&id, true).await {
         Ok(_) => {
-            if let Some(persistence) = &config_persistence {
-                persistence.unregister_source(&instance_id, &id).await;
-            }
-
             persist_after_operation(&config_persistence, "deleting source").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -783,7 +754,7 @@ pub async fn create_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Json(config_dto): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -846,11 +817,6 @@ pub async fn create_query(
         Ok(_) => {
             log::info!("Query '{query_id}' created successfully");
 
-            // Register the QueryConfigDto for persistence
-            if let Some(persistence) = &config_persistence {
-                persistence.register_query(&instance_id, config_dto).await;
-            }
-
             persist_after_operation(&config_persistence, "creating query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -873,7 +839,7 @@ pub async fn create_query(
 /// Get query by ID
 pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(_config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
@@ -881,12 +847,7 @@ pub async fn get_query(
     match core.get_query_config(&id).await {
         Ok(query_config) => {
             let config = if view.include_config() {
-                let stored = if let Some(persistence) = &config_persistence {
-                    persistence.get_query_config(&instance_id, &id).await
-                } else {
-                    None
-                };
-                let dto = stored.unwrap_or_else(|| QueryConfigDto::from(query_config.clone()));
+                let dto = QueryConfigDto::from(query_config.clone());
                 Some(serde_json::to_value(dto).expect("query config serialization"))
             } else {
                 None
@@ -1014,7 +975,7 @@ pub async fn delete_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1025,11 +986,6 @@ pub async fn delete_query(
 
     match core.remove_query(&id).await {
         Ok(_) => {
-            // Unregister the query from persistence
-            if let Some(persistence) = &config_persistence {
-                persistence.unregister_query(&instance_id, &id).await;
-            }
-
             persist_after_operation(&config_persistence, "deleting query").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -1237,7 +1193,7 @@ pub async fn create_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1274,10 +1230,6 @@ pub async fn create_reaction_handler(
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
-            if let Some(persistence) = &config_persistence {
-                persistence.register_reaction(&instance_id, config).await;
-            }
-
             if auto_start {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
                     log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
@@ -1307,7 +1259,7 @@ pub async fn upsert_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1353,13 +1305,6 @@ pub async fn upsert_reaction_handler(
 
         log::info!("Reaction '{reaction_id}' updated successfully");
 
-        if let Some(persistence) = &config_persistence {
-            persistence
-                .unregister_reaction(&instance_id, &reaction_id)
-                .await;
-            persistence.register_reaction(&instance_id, config).await;
-        }
-
         persist_after_operation(&config_persistence, "upserting reaction").await;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
@@ -1380,10 +1325,6 @@ pub async fn upsert_reaction_handler(
     match core.add_reaction(reaction).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
-
-            if let Some(persistence) = &config_persistence {
-                persistence.register_reaction(&instance_id, config).await;
-            }
 
             if auto_start {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
@@ -1407,7 +1348,7 @@ pub async fn upsert_reaction_handler(
 /// Get reaction status by ID
 pub async fn get_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
-    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(_config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
@@ -1420,39 +1361,26 @@ pub async fn get_reaction(
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
-        // First try persistence (for full config including all original fields)
-        let persisted_config = if let Some(persistence) = &config_persistence {
-            persistence
-                .get_reaction_config(&instance_id, &id)
-                .await
-                .and_then(|value| serde_json::to_value(value).ok())
-        } else {
-            None
-        };
-
-        // Fall back to building config from ReactionRuntime (ComponentGraph source of truth)
-        persisted_config.or_else(|| {
-            let mut config_map = serde_json::Map::new();
-            config_map.insert(
-                "kind".to_string(),
-                serde_json::Value::String(info.reaction_type.clone()),
-            );
-            config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
-            config_map.insert(
-                "queries".to_string(),
-                serde_json::Value::Array(
-                    info.queries
-                        .iter()
-                        .map(|q| serde_json::Value::String(q.clone()))
-                        .collect(),
-                ),
-            );
-            // Include properties from runtime
-            for (key, value) in &info.properties {
-                config_map.insert(key.clone(), value.clone());
-            }
-            Some(serde_json::Value::Object(config_map))
-        })
+        let mut config_map = serde_json::Map::new();
+        config_map.insert(
+            "kind".to_string(),
+            serde_json::Value::String(info.reaction_type.clone()),
+        );
+        config_map.insert("id".to_string(), serde_json::Value::String(info.id.clone()));
+        config_map.insert(
+            "queries".to_string(),
+            serde_json::Value::Array(
+                info.queries
+                    .iter()
+                    .map(|q| serde_json::Value::String(q.clone()))
+                    .collect(),
+            ),
+        );
+        // Include properties from runtime
+        for (key, value) in &info.properties {
+            config_map.insert(key.clone(), value.clone());
+        }
+        Some(serde_json::Value::Object(config_map))
     } else {
         None
     };
@@ -1568,7 +1496,7 @@ pub async fn delete_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(instance_id): Extension<String>,
+    Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1579,10 +1507,6 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
-            if let Some(persistence) = &config_persistence {
-                persistence.unregister_reaction(&instance_id, &id).await;
-            }
-
             persist_after_operation(&config_persistence, "deleting reaction").await;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -1713,6 +1637,251 @@ pub async fn push_source_data(
         Err(err) => {
             log::warn!("Source proxy failed for {url}: {err}");
             Err(StatusCode::BAD_GATEWAY)
+        }
+    }
+}
+
+// =============================================================================
+// Instance Clone
+// =============================================================================
+
+/// Request body for cloning an instance's configuration into another instance.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = CloneInstanceRequest)]
+pub struct CloneInstanceRequest {
+    /// ID of the instance whose configuration will be copied
+    pub source_instance_id: String,
+}
+
+/// Response body for a clone operation.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = CloneInstanceResponse)]
+pub struct CloneInstanceResponse {
+    /// Whether the clone completed without errors
+    pub success: bool,
+    /// IDs of sources created in the target instance
+    pub sources_created: Vec<String>,
+    /// IDs of queries created in the target instance
+    pub queries_created: Vec<String>,
+    /// IDs of reactions created in the target instance
+    pub reactions_created: Vec<String>,
+    /// Any errors encountered during the clone
+    pub errors: Vec<String>,
+}
+
+/// Clone an instance's configuration into an existing target instance.
+///
+/// Takes an atomic snapshot of the source instance and recreates all
+/// components (sources, queries, reactions) in the target instance.
+/// All cloned components are created in the stopped state.
+/// On failure, already-created components are rolled back.
+pub async fn clone_instance(
+    registry: InstanceRegistry,
+    read_only: Arc<bool>,
+    plugin_registry: Arc<PluginRegistry>,
+    config_persistence: Option<Arc<ConfigPersistence>>,
+    target_instance_id: &str,
+    source_instance_id: &str,
+) -> Json<ApiResponse<CloneInstanceResponse>> {
+    if *read_only {
+        return Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot clone instances.".to_string(),
+        ));
+    }
+
+    // Get source instance and take snapshot
+    let source_core = match registry.get(source_instance_id).await {
+        Some(core) => core,
+        None => {
+            return Json(ApiResponse::error(format!(
+                "Source instance '{source_instance_id}' not found"
+            )));
+        }
+    };
+
+    let snapshot: ConfigurationSnapshot = match source_core.snapshot_configuration().await {
+        Ok(s) => s,
+        Err(e) => {
+            return Json(ApiResponse::error(format!(
+                "Failed to capture snapshot of source instance: {e}"
+            )));
+        }
+    };
+
+    // Get target instance (must already exist)
+    let target_core = match registry.get(target_instance_id).await {
+        Some(core) => core,
+        None => {
+            return Json(ApiResponse::error(format!(
+                "Target instance '{target_instance_id}' not found"
+            )));
+        }
+    };
+
+    let mut sources_created: Vec<String> = Vec::new();
+    let mut queries_created: Vec<String> = Vec::new();
+    let mut reactions_created: Vec<String> = Vec::new();
+
+    // Phase 1: Create sources
+    for src_snap in &snapshot.sources {
+        // Skip internal sources
+        if src_snap.id.starts_with("__") {
+            continue;
+        }
+
+        let properties_json = serde_json::to_value(&src_snap.properties)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        let bootstrap_provider = src_snap.bootstrap_provider.as_ref().map(|bp| {
+            let bp_config_json = serde_json::to_value(&bp.properties)
+                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+            BootstrapProviderConfig {
+                kind: bp.kind.clone(),
+                config: bp_config_json,
+            }
+        });
+
+        let source_config = SourceConfig {
+            kind: src_snap.source_type.clone(),
+            id: src_snap.id.clone(),
+            auto_start: false,
+            bootstrap_provider,
+            config: properties_json,
+        };
+
+        let source = match create_source(&plugin_registry, source_config).await {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
+                rollback_sources(&target_core, &sources_created).await;
+                return Json(ApiResponse::error(format!(
+                    "Failed to create source '{}': {e}",
+                    src_snap.id
+                )));
+            }
+        };
+
+        if let Err(e) = target_core.add_source(source).await {
+            log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
+            rollback_sources(&target_core, &sources_created).await;
+            return Json(ApiResponse::error(format!(
+                "Failed to add source '{}': {e}",
+                src_snap.id
+            )));
+        }
+
+        sources_created.push(src_snap.id.clone());
+    }
+
+    // Phase 2: Create queries
+    for q_snap in &snapshot.queries {
+        if q_snap.id.starts_with("__") {
+            continue;
+        }
+
+        let mut query_config = q_snap.config.clone();
+        query_config.auto_start = false;
+
+        if let Err(e) = target_core.add_query(query_config).await {
+            log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
+            rollback_queries(&target_core, &queries_created).await;
+            rollback_sources(&target_core, &sources_created).await;
+            return Json(ApiResponse::error(format!(
+                "Failed to add query '{}': {e}",
+                q_snap.id
+            )));
+        }
+
+        queries_created.push(q_snap.id.clone());
+    }
+
+    // Phase 3: Create reactions
+    for rx_snap in &snapshot.reactions {
+        if rx_snap.id.starts_with("__") {
+            continue;
+        }
+
+        let properties_json = serde_json::to_value(&rx_snap.properties)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        let reaction_config = ReactionConfig {
+            kind: rx_snap.reaction_type.clone(),
+            id: rx_snap.id.clone(),
+            queries: rx_snap.queries.clone(),
+            auto_start: false,
+            config: properties_json,
+        };
+
+        let reaction = match create_reaction(&plugin_registry, reaction_config).await {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
+                rollback_reactions(&target_core, &reactions_created).await;
+                rollback_queries(&target_core, &queries_created).await;
+                rollback_sources(&target_core, &sources_created).await;
+                return Json(ApiResponse::error(format!(
+                    "Failed to create reaction '{}': {e}",
+                    rx_snap.id
+                )));
+            }
+        };
+
+        if let Err(e) = target_core.add_reaction(reaction).await {
+            log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
+            rollback_reactions(&target_core, &reactions_created).await;
+            rollback_queries(&target_core, &queries_created).await;
+            rollback_sources(&target_core, &sources_created).await;
+            return Json(ApiResponse::error(format!(
+                "Failed to add reaction '{}': {e}",
+                rx_snap.id
+            )));
+        }
+
+        reactions_created.push(rx_snap.id.clone());
+    }
+
+    persist_after_operation(&config_persistence, "cloning instance").await;
+
+    log::info!(
+        "Clone complete: {} sources, {} queries, {} reactions cloned from '{}' to '{}'",
+        sources_created.len(),
+        queries_created.len(),
+        reactions_created.len(),
+        source_instance_id,
+        target_instance_id,
+    );
+
+    Json(ApiResponse::success(CloneInstanceResponse {
+        success: true,
+        sources_created,
+        queries_created,
+        reactions_created,
+        errors: Vec::new(),
+    }))
+}
+
+async fn rollback_sources(core: &Arc<DrasiLib>, sources: &[String]) {
+    for source_id in sources {
+        if let Err(e) = core.remove_source(source_id, false).await {
+            log::warn!("Clone rollback: failed to remove source '{source_id}': {e}");
+        }
+    }
+}
+
+async fn rollback_queries(core: &Arc<DrasiLib>, queries: &[String]) {
+    for query_id in queries {
+        if let Err(e) = core.remove_query(query_id).await {
+            log::warn!("Clone rollback: failed to remove query '{query_id}': {e}");
+        }
+    }
+}
+
+async fn rollback_reactions(core: &Arc<DrasiLib>, reactions: &[String]) {
+    for reaction_id in reactions {
+        if let Err(e) = core.remove_reaction(reaction_id, false).await {
+            log::warn!("Clone rollback: failed to remove reaction '{reaction_id}': {e}");
         }
     }
 }

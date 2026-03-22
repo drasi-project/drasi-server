@@ -502,6 +502,8 @@ All component routes support instance-specific access:
 /api/v1/instances/{instanceId}/sources
 /api/v1/instances/{instanceId}/queries
 /api/v1/instances/{instanceId}/reactions
+/api/v1/instances/{instanceId}/snapshot   # GET - configuration snapshot
+/api/v1/instances/{instanceId}/clone      # POST - clone from another instance
 ```
 
 The convenience routes (`/api/v1/sources`, etc.) operate on the first/default instance.

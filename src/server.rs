@@ -478,11 +478,6 @@ impl DrasiServer {
                 let persistence_enabled = resolved_settings.persist_config;
 
                 if persistence_enabled {
-                    // Extract source, reaction, and query configs from the loaded config
-                    let resolved_instances = config.resolved_instances(&mapper)?;
-                    let (initial_source_configs, initial_reaction_configs, initial_query_configs) =
-                        Self::extract_component_configs(&config, &resolved_instances)?;
-
                     // Persistence is enabled - create ConfigPersistence instance
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
@@ -493,9 +488,6 @@ impl DrasiServer {
                         true, // persist_config = true
                         persist_settings.clone(),
                         config.solutions_dir.clone(),
-                        initial_source_configs,
-                        initial_reaction_configs,
-                        initial_query_configs,
                     ));
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
@@ -618,6 +610,7 @@ impl DrasiServer {
     /// Extract source, reaction, and query configs from resolved instances for persistence initialization.
     /// The `config` parameter provides the original `QueryConfigDto` entries (before resolution)
     /// since the persistence layer stores queries as DTOs, not resolved `QueryConfig` domain objects.
+    #[allow(dead_code)]
     fn extract_component_configs(
         config: &DrasiServerConfig,
         resolved_instances: &[ResolvedInstanceConfig],

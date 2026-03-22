@@ -32,6 +32,7 @@ use crate::api::models::{
     SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
+use crate::api::shared::handlers::{CloneInstanceRequest, CloneInstanceResponse};
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
     HealthResponse, InstanceLinks, InstanceListItem, StatusResponse,
@@ -49,6 +50,7 @@ use utoipa::openapi::RefOr;
         super::handlers::health_check,
         super::handlers::list_instances,
         super::handlers::create_instance,
+        super::handlers::get_instance_snapshot,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
         super::handlers::upsert_source_handler,
@@ -87,6 +89,7 @@ use utoipa::openapi::RefOr;
         super::handlers::get_solution,
         super::handlers::create_solution_template,
         super::handlers::deploy_solution,
+        super::handlers::clone_instance,
     ),
     components(
         schemas(
@@ -97,6 +100,8 @@ use utoipa::openapi::RefOr;
             InstanceListItem,
             InstanceLinks,
             CreateInstanceRequest,
+            CloneInstanceRequest,
+            CloneInstanceResponse,
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,

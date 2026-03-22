@@ -22,6 +22,12 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
+**Important: `[patch.crates-io]` does NOT affect plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime — they must be built separately. When developing with local drasi-core changes, always use `make build-local-plugins` to rebuild plugins from local source. Registry-downloaded plugins (`autoInstallPlugins: true`) will NOT be ABI-compatible with local drasi-core changes.
+
+- Build all plugins from local drasi-core (release): `make build-local-plugins`
+- Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
+- Build test-only plugins (mock, log, scriptfile): `make build-test-plugins`
+
 ### Testing
 - Run all tests: `cargo test`
 - Run unit tests only: `cargo test --lib`
@@ -185,6 +191,8 @@ The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-ins
 
 ### Configuration Persistence
 
+Persistence uses a snapshot-based approach: when saving, `ConfigPersistence::save()` calls `snapshot_configuration()` on each DrasiLib instance via the ComponentGraph. The ComponentGraph is the single source of truth — there are no shadow caches or separate registration steps. Mutations flow through the ComponentGraph, and the persisted YAML is reconstructed from the current graph state at save time.
+
 DrasiServer separates two independent concepts:
 
 1. **Persistence** - Whether API changes are saved to the config file
@@ -209,7 +217,7 @@ DrasiServer separates two independent concepts:
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
 **Behavior:**
-- When persistence enabled: all API mutations (create/delete queries) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
+- When persistence enabled: `save()` snapshots component state from the ComponentGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
 - When persistence disabled: API mutations work but changes are lost on restart
 - When read-only: all create/delete operations via API are rejected
 
@@ -294,6 +302,8 @@ The server exposes a versioned REST API on port 8080 by default. All API endpoin
 ### Instance Management
 
 - `GET /api/v1/instances` - List all DrasiLib instances
+- `GET /api/v1/instances/{instanceId}/snapshot` - Get configuration snapshot of an instance
+- `POST /api/v1/instances/{instanceId}/clone` - Clone components from another instance
 
 ### Component Management (Instance-Specific)
 

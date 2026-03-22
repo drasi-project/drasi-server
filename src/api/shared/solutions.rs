@@ -34,6 +34,13 @@ use crate::plugin_registry::PluginRegistry;
 /// The default solutions directory
 pub const DEFAULT_SOLUTIONS_DIR: &str = "./solutions";
 
+/// Plugin dependency reference in a solution template
+#[derive(Debug, serde::Deserialize)]
+struct SolutionPluginRef {
+    #[serde(rename = "ref")]
+    reference: String,
+}
+
 /// Internal structure for parsing solution template files
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +56,8 @@ struct SolutionTemplateFile {
     license: Option<String>,
     #[serde(default)]
     default_instance_id: Option<String>,
+    #[serde(default)]
+    plugins: Vec<SolutionPluginRef>,
     #[serde(default)]
     sources: Vec<serde_yaml::Value>,
     #[serde(default)]
@@ -265,9 +274,10 @@ pub async fn get_solution(
 ///
 /// The template is written as a YAML file to the solutions directory.
 pub async fn create_solution_template(
-    persistence: Option<Arc<ConfigPersistence>>,
+    core: Arc<drasi_lib::DrasiLib>,
+    _persistence: Option<Arc<ConfigPersistence>>,
     solutions_dir: Option<String>,
-    instance_id: &str,
+    _instance_id: &str,
     request: CreateSolutionTemplateRequest,
 ) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
     // Validate the request
@@ -279,14 +289,14 @@ pub async fn create_solution_template(
         }));
     }
 
-    // Need persistence to get component configs
-    let persistence = match persistence {
-        Some(p) => p,
-        None => {
+    // Get current configuration snapshot from the DrasiLib instance
+    let snapshot = match core.snapshot_configuration().await {
+        Ok(s) => s,
+        Err(e) => {
             return Json(ApiResponse::success(CreateSolutionTemplateResponse {
                 success: false,
                 template_id: None,
-                error: Some("Config persistence not available".to_string()),
+                error: Some(format!("Failed to capture configuration snapshot: {e}")),
             }));
         }
     };
@@ -296,10 +306,30 @@ pub async fn create_solution_template(
     let mut queries: Vec<serde_yaml::Value> = Vec::new();
     let mut reactions: Vec<serde_yaml::Value> = Vec::new();
 
-    // Collect sources
+    // Collect sources from snapshot, converting to DTO for camelCase serialization
     for source_id in &request.source_ids {
-        if let Some(source_config) = persistence.get_source_config(instance_id, source_id).await {
-            if let Ok(yaml_value) = serde_yaml::to_value(&source_config) {
+        if let Some(source_snap) = snapshot.sources.iter().find(|s| &s.id == source_id) {
+            let properties_json = serde_json::to_value(&source_snap.properties)
+                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+            let bootstrap_provider = source_snap.bootstrap_provider.as_ref().map(|bp| {
+                let bp_config_json = serde_json::to_value(&bp.properties)
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                crate::api::models::BootstrapProviderConfig {
+                    kind: bp.kind.clone(),
+                    config: bp_config_json,
+                }
+            });
+
+            let source_dto = SourceConfig {
+                kind: source_snap.source_type.clone(),
+                id: source_snap.id.clone(),
+                auto_start: source_snap.auto_start,
+                bootstrap_provider,
+                config: properties_json,
+            };
+
+            if let Ok(yaml_value) = serde_yaml::to_value(&source_dto) {
                 sources.push(yaml_value);
             }
         } else {
@@ -311,10 +341,11 @@ pub async fn create_solution_template(
         }
     }
 
-    // Collect queries
+    // Collect queries from snapshot, converting to DTO for camelCase serialization
     for query_id in &request.query_ids {
-        if let Some(query_config) = persistence.get_query_config(instance_id, query_id).await {
-            if let Ok(yaml_value) = serde_yaml::to_value(&query_config) {
+        if let Some(query_snap) = snapshot.queries.iter().find(|q| &q.id == query_id) {
+            let query_dto = QueryConfigDto::from(query_snap.config.clone());
+            if let Ok(yaml_value) = serde_yaml::to_value(&query_dto) {
                 queries.push(yaml_value);
             }
         } else {
@@ -326,13 +357,21 @@ pub async fn create_solution_template(
         }
     }
 
-    // Collect reactions
+    // Collect reactions from snapshot, converting to DTO for camelCase serialization
     for reaction_id in &request.reaction_ids {
-        if let Some(reaction_config) = persistence
-            .get_reaction_config(instance_id, reaction_id)
-            .await
-        {
-            if let Ok(yaml_value) = serde_yaml::to_value(&reaction_config) {
+        if let Some(reaction_snap) = snapshot.reactions.iter().find(|r| &r.id == reaction_id) {
+            let properties_json = serde_json::to_value(&reaction_snap.properties)
+                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+            let reaction_dto = ReactionConfig {
+                kind: reaction_snap.reaction_type.clone(),
+                id: reaction_snap.id.clone(),
+                queries: reaction_snap.queries.clone(),
+                auto_start: reaction_snap.auto_start,
+                config: properties_json,
+            };
+
+            if let Ok(yaml_value) = serde_yaml::to_value(&reaction_dto) {
                 reactions.push(yaml_value);
             }
         } else {
@@ -376,6 +415,50 @@ pub async fn create_solution_template(
         template_map.insert(
             serde_yaml::Value::String("license".to_string()),
             serde_yaml::Value::String(lic.clone()),
+        );
+    }
+
+    // Collect required plugin references from the selected components
+    let mut plugin_refs: Vec<String> = Vec::new();
+    for source_id in &request.source_ids {
+        if let Some(s) = snapshot.sources.iter().find(|s| &s.id == source_id) {
+            let ref_str = format!("source/{}", s.source_type);
+            if !plugin_refs.contains(&ref_str) {
+                plugin_refs.push(ref_str);
+            }
+            if let Some(bp) = &s.bootstrap_provider {
+                let bp_ref = format!("bootstrap/{}", bp.kind);
+                if !plugin_refs.contains(&bp_ref) {
+                    plugin_refs.push(bp_ref);
+                }
+            }
+        }
+    }
+    for reaction_id in &request.reaction_ids {
+        if let Some(r) = snapshot.reactions.iter().find(|r| &r.id == reaction_id) {
+            let ref_str = format!("reaction/{}", r.reaction_type);
+            if !plugin_refs.contains(&ref_str) {
+                plugin_refs.push(ref_str);
+            }
+        }
+    }
+
+    // Add plugins section
+    if !plugin_refs.is_empty() {
+        let plugins_yaml: Vec<serde_yaml::Value> = plugin_refs
+            .iter()
+            .map(|r| {
+                let mut m = serde_yaml::Mapping::new();
+                m.insert(
+                    serde_yaml::Value::String("ref".to_string()),
+                    serde_yaml::Value::String(r.clone()),
+                );
+                serde_yaml::Value::Mapping(m)
+            })
+            .collect();
+        template_map.insert(
+            serde_yaml::Value::String("plugins".to_string()),
+            serde_yaml::Value::Sequence(plugins_yaml),
         );
     }
 
@@ -549,11 +632,49 @@ pub async fn deploy_solution(
         }
     };
 
+    // ===== PHASE 0: PLUGIN VALIDATION =====
+    // Verify all required plugins declared in the template are registered.
+    let mut validation_errors: Vec<SolutionDeployError> = Vec::new();
+
+    for plugin_ref in &template.plugins {
+        let parts: Vec<&str> = plugin_ref.reference.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            validation_errors.push(SolutionDeployError::validation(format!(
+                "Invalid plugin reference '{}': expected 'type/kind' (e.g., 'source/http')",
+                plugin_ref.reference
+            )));
+            continue;
+        }
+        let (plugin_type, plugin_kind) = (parts[0], parts[1]);
+        let available = match plugin_type {
+            "source" => plugin_registry.get_source(plugin_kind).is_some(),
+            "reaction" => plugin_registry.get_reaction(plugin_kind).is_some(),
+            "bootstrap" => plugin_registry.get_bootstrapper(plugin_kind).is_some(),
+            _ => {
+                validation_errors.push(SolutionDeployError::validation(format!(
+                    "Unknown plugin type '{}' in reference '{}'",
+                    plugin_type, plugin_ref.reference
+                )));
+                continue;
+            }
+        };
+        if !available {
+            validation_errors.push(SolutionDeployError::validation(format!(
+                "Required plugin '{}' is not registered. Install it or add it to the server config plugins list.",
+                plugin_ref.reference
+            )));
+        }
+    }
+
+    if !validation_errors.is_empty() {
+        return Json(ApiResponse::success(SolutionDeployResponse::failed(
+            validation_errors,
+        )));
+    }
+
     // ===== PHASE 1: VALIDATION =====
     // Parse and validate ALL component configs BEFORE creating anything.
     // Collect all validation errors so users can fix them all at once.
-
-    let mut validation_errors: Vec<SolutionDeployError> = Vec::new();
 
     // Validated configs - these will be used in creation phase if validation passes
     let mut validated_sources: Vec<(SourceConfig, bool)> = Vec::new(); // (config, should_start)
@@ -730,13 +851,6 @@ pub async fn deploy_solution(
             )));
         }
 
-        // Register for persistence
-        if let Some(p) = &persistence {
-            // Re-enable autoStart for persistence so config reflects intent
-            source_config.set_auto_start(should_start);
-            p.register_source(instance_id, source_config).await;
-        }
-
         created_sources.push(source_id.clone());
         if should_start {
             sources_to_start.push(source_id);
@@ -782,13 +896,6 @@ pub async fn deploy_solution(
             )));
         }
 
-        // Register for persistence
-        if let Some(p) = &persistence {
-            // Re-enable autoStart for persistence
-            query_dto.auto_start = should_start;
-            p.register_query(instance_id, query_dto).await;
-        }
-
         created_queries.push(query_id.clone());
         if should_start {
             queries_to_start.push(query_id);
@@ -831,13 +938,6 @@ pub async fn deploy_solution(
             return Json(ApiResponse::success(SolutionDeployResponse::failed(
                 creation_errors,
             )));
-        }
-
-        // Register for persistence
-        if let Some(p) = &persistence {
-            // Re-enable autoStart for persistence
-            reaction_config.set_auto_start(should_start);
-            p.register_reaction(instance_id, reaction_config).await;
         }
 
         created_reactions.push(reaction_id.clone());
