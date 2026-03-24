@@ -263,6 +263,37 @@ impl DrasiServer {
 
         let mut instances = Vec::new();
 
+        // Check upfront that all required plugins are available before creating
+        // any components. This reports ALL missing plugins at once rather than
+        // failing one at a time during source/reaction creation.
+        {
+            use crate::config::plugin_validation::{
+                check_plugin_availability, extract_plugin_requirements,
+            };
+            let requirements = extract_plugin_requirements(&config);
+            let (_found, missing) = check_plugin_availability(&requirements, &plugin_registry);
+            if !missing.is_empty() {
+                let mut msg = String::from("Missing plugins required by configuration:\n");
+                for mp in &missing {
+                    msg.push_str(&format!(
+                        "  - {}/{} (referenced by {})\n",
+                        mp.requirement.category, mp.requirement.kind, mp.requirement.referenced_by
+                    ));
+                    if !mp.available_kinds.is_empty() {
+                        msg.push_str(&format!(
+                            "    available {} kinds: {}\n",
+                            mp.requirement.category,
+                            mp.available_kinds.join(", ")
+                        ));
+                    }
+                }
+                msg.push_str(
+                    "Install the missing plugins or correct the 'kind' values in your config.",
+                );
+                return Err(anyhow::anyhow!("{msg}"));
+            }
+        }
+
         for instance in resolved_instances {
             let mut builder = DrasiLib::builder().with_id(&instance.id);
 

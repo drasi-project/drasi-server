@@ -95,6 +95,7 @@ inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
 regex = "1"
+jsonschema = "0.28"
 openssl = { version = "0.10", features = ["vendored"] }
 toml = "0.8"
 sha2 = "0.10"

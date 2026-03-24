@@ -17,6 +17,8 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
 - Run with UI disabled: `cargo run -- --disable-ui`
 - Run with UI enabled (override config): `cargo run -- --enable-ui`
+- Validate config (structure only): `cargo run -- validate --config config/server.yaml`
+- Validate config (with plugins): `cargo run -- validate --config config/server.yaml --plugins-dir ./plugins`
 - Check compilation: `cargo check`
 
 ### Plugin Loading
