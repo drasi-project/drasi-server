@@ -73,7 +73,8 @@ export default memo(function QueryNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-query"
       collapsedWidth={180}
       expandedWidth={420}
-      collapsedMinHeight={72}
+      collapsedHeight={92}
+      expandedHeight={280}
       status={d.status as ComponentStatus}
       expanded={expanded}
       locked={!!d.locked}

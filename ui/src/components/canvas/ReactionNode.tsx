@@ -58,7 +58,8 @@ export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
       accentClass="text-drasi-reaction"
       collapsedWidth={180}
       expandedWidth={300}
-      collapsedMinHeight={72}
+      collapsedHeight={92}
+      expandedHeight={180}
       status={d.status as ComponentStatus}
       expanded={expanded}
       canToggle={false}

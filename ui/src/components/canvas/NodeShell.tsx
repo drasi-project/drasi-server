@@ -2,10 +2,9 @@ import {
   Handle,
   Position,
   useReactFlow,
-  useUpdateNodeInternals,
 } from "@xyflow/react";
 import { Maximize2, Minimize2, Pin, Play, Square } from "lucide-react";
-import { useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { getStatusGlowClass } from "@/utils/colors";
 import type { ComponentStatus } from "@/utils/colors";
 import { useCanvasLocked } from "./CanvasLockedContext";
@@ -21,8 +20,10 @@ export interface NodeShellProps {
   collapsedWidth: number;
   /** Width in px when expanded */
   expandedWidth: number;
-  /** Minimum height in px when collapsed (ensures uniform sizing) */
-  collapsedMinHeight?: number;
+  /** Height in px when collapsed */
+  collapsedHeight?: number;
+  /** Height in px when expanded */
+  expandedHeight?: number;
   /** Component status for glow styling */
   status: ComponentStatus;
   /** Whether the node is currently expanded */
@@ -53,7 +54,8 @@ export default function NodeShell({
   accentClass,
   collapsedWidth,
   expandedWidth,
-  collapsedMinHeight,
+  collapsedHeight = 92,
+  expandedHeight,
   status,
   expanded,
   canToggle = true,
@@ -72,58 +74,20 @@ export default function NodeShell({
   const isRunning = status === "Running";
   const isTransitioning = status === "Starting" || status === "Stopping" || status === "Reconfiguring";
   const { setNodes } = useReactFlow();
-  const updateNodeInternals = useUpdateNodeInternals();
-  const expandContentRef = useRef<HTMLDivElement>(null);
 
   const handleToggle = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       if (isLocked) return;
-      // Measure the expand content's natural height before toggling.
-      // Use the grid wrapper (parent of the overflow-hidden ref) to capture
-      // the full height contribution including CSS margins, padding, and borders
-      // that scrollHeight on the inner overflow-hidden div may miss.
-      let expandContentHeight = 0;
-      const inner = expandContentRef.current;
-      if (inner) {
-        const gridWrapper = inner.parentElement;
-        if (gridWrapper) {
-          const savedRows = gridWrapper.style.gridTemplateRows;
-          const savedTransition = gridWrapper.style.transition;
-          gridWrapper.style.transition = 'none';
-          gridWrapper.style.gridTemplateRows = '1fr';
-          expandContentHeight = inner.getBoundingClientRect().height;
-          gridWrapper.style.gridTemplateRows = savedRows;
-          gridWrapper.style.transition = savedTransition;
-        } else {
-          expandContentHeight = inner.scrollHeight;
-        }
-      }
-      const willExpand = !expanded;
-      console.log(`[TOGGLE] nodeId=${nodeId} willExpand=${willExpand} expandContentHeight=${expandContentHeight} scrollHeight=${inner?.scrollHeight}`);
       setNodes((nodes) =>
         nodes.map((n) =>
           n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  expanded: !n.data?.expanded,
-                  expandContentHeight,
-                },
-              }
+            ? { ...n, data: { ...n.data, expanded: !n.data?.expanded } }
             : n,
         ),
       );
-      setTimeout(() => {
-        updateNodeInternals(nodeId);
-        const nodeEl = document.querySelector(`[data-id="${nodeId}"]`);
-        if (nodeEl) {
-          console.log(`[POST-TRANSITION] nodeId=${nodeId} domHeight=${nodeEl.getBoundingClientRect().height} at t=${performance.now().toFixed(0)}`);
-        }
-      }, 420);
     },
-    [nodeId, setNodes, updateNodeInternals, isLocked],
+    [nodeId, setNodes, isLocked],
   );
 
   const handleLockToggle = useCallback(
@@ -146,7 +110,7 @@ export default function NodeShell({
   );
 
   const targetWidth = expanded ? expandedWidth : collapsedWidth;
-  const minHeight = !expanded && collapsedMinHeight ? collapsedMinHeight : undefined;
+  const targetHeight = expanded && expandedHeight ? expandedHeight : collapsedHeight;
 
   const handleStartStop = useCallback(
     (e: React.MouseEvent) => {
@@ -221,7 +185,7 @@ export default function NodeShell({
   return (
     <div
       className={`${cardClass} ${glowClass} relative`}
-      style={{ width: targetWidth, minHeight, transition: "width 0.4s ease-in-out" }}
+      style={{ width: targetWidth, height: targetHeight, transition: "width 0.4s ease-in-out, height 0.4s ease-in-out" }}
     >
       {/* Top-right toolbar (shown when expanded) */}
       <div 
@@ -247,7 +211,7 @@ export default function NodeShell({
             transitionTimingFunction: "ease-in-out",
           }}
         >
-          <div ref={expandContentRef} className="overflow-hidden">{expandContent}</div>
+          <div className="overflow-hidden">{expandContent}</div>
         </div>
       )}
 

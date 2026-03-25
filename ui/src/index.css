@@ -28,9 +28,9 @@
   --drasi-card-shadow: 0 0 0 0 transparent;
 }
 
-/* Render edges above nodes so connections are never hidden by expanded nodes */
+/* Render edges below nodes */
 .react-flow__edges {
-  z-index: 1 !important;
+  z-index: 0 !important;
 }
 
 /* Smooth position transitions for displaced nodes (not during drag) */
