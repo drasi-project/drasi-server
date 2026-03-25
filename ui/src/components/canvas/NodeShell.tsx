@@ -79,9 +79,28 @@ export default function NodeShell({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       if (isLocked) return;
-      // Measure the expand content's natural height before toggling so
-      // useAutoLayout can predict the target height immediately.
-      const expandContentHeight = expandContentRef.current?.scrollHeight ?? 0;
+      // Measure the expand content's natural height before toggling.
+      // Use the grid wrapper (parent of the overflow-hidden ref) to capture
+      // the full height contribution including CSS margins, padding, and borders
+      // that scrollHeight on the inner overflow-hidden div may miss.
+      let expandContentHeight = 0;
+      const inner = expandContentRef.current;
+      if (inner) {
+        const gridWrapper = inner.parentElement;
+        if (gridWrapper) {
+          const savedRows = gridWrapper.style.gridTemplateRows;
+          const savedTransition = gridWrapper.style.transition;
+          gridWrapper.style.transition = 'none';
+          gridWrapper.style.gridTemplateRows = '1fr';
+          expandContentHeight = inner.getBoundingClientRect().height;
+          gridWrapper.style.gridTemplateRows = savedRows;
+          gridWrapper.style.transition = savedTransition;
+        } else {
+          expandContentHeight = inner.scrollHeight;
+        }
+      }
+      const willExpand = !expanded;
+      console.log(`[TOGGLE] nodeId=${nodeId} willExpand=${willExpand} expandContentHeight=${expandContentHeight} scrollHeight=${inner?.scrollHeight}`);
       setNodes((nodes) =>
         nodes.map((n) =>
           n.id === nodeId
@@ -96,7 +115,13 @@ export default function NodeShell({
             : n,
         ),
       );
-      setTimeout(() => updateNodeInternals(nodeId), 405);
+      setTimeout(() => {
+        updateNodeInternals(nodeId);
+        const nodeEl = document.querySelector(`[data-id="${nodeId}"]`);
+        if (nodeEl) {
+          console.log(`[POST-TRANSITION] nodeId=${nodeId} domHeight=${nodeEl.getBoundingClientRect().height} at t=${performance.now().toFixed(0)}`);
+        }
+      }, 420);
     },
     [nodeId, setNodes, updateNodeInternals, isLocked],
   );

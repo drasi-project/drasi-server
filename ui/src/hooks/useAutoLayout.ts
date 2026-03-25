@@ -50,17 +50,15 @@ function getEffectiveHeight(
   // grid-template-rows transition so neighbours get ONE displacement
   // that the CSS transform transition can animate smoothly.
   if (wasExpanded !== undefined && isExpanded !== wasExpanded) {
-    const contentH = Number(node.data?.expandContentHeight ?? 0);
-    if (contentH > 0) {
-      const target = isExpanded
-        ? measured + contentH
-        : Math.max(0, measured - contentH);
-      heightTargets.set(node.id, target);
-      // Hold the lock for slightly longer than the 405ms CSS transition
-      // so intermediate measurements don't cause incremental chasing.
-      lockUntil.set(node.id, performance.now() + 450);
-      return target;
-    }
+    // Lock at the CURRENT measured height for the duration of the CSS
+    // grid-template-rows transition.  This suppresses all intermediate
+    // deltas.  After the lock expires the real measured height is used,
+    // producing one correct displacement.
+    console.log(`[EFFECTIVE_H] TOGGLE DETECTED node=${node.id} isExpanded=${isExpanded} measured=${measured}`);
+    heightTargets.set(node.id, measured);
+    lockUntil.set(node.id, performance.now() + 450);
+    console.log(`[EFFECTIVE_H] LOCKED node=${node.id} target=${measured} (freeze at current)`);
+    return measured;
   }
 
   const locked = heightTargets.get(node.id);
@@ -75,9 +73,7 @@ function getEffectiveHeight(
       return locked;
     }
 
-    // Transition window elapsed.  Release the lock and return the real
-    // measured height.  Any delta between locked and measured will produce
-    // a single displacement that the CSS transform transition animates.
+    console.log(`[EFFECTIVE_H] LOCK EXPIRED node=${node.id} locked=${locked} measured=${measured} delta=${measured - locked}`);
     heightTargets.delete(node.id);
     lockUntil.delete(node.id);
     return measured;
@@ -188,9 +184,16 @@ export function useAutoLayout() {
     prevRecalcTick.current = recalcTick;
 
     if (!dimFingerprint) return;
-    // Re-run if fingerprint changed OR tick changed (forced re-eval after lock expiry)
-    if (dimFingerprint === prevFingerprint.current && !tickChanged) return;
+    const fingerprintChanged = dimFingerprint !== prevFingerprint.current;
+    if (!fingerprintChanged && !tickChanged) return;
     prevFingerprint.current = dimFingerprint;
+
+    // If only the tick changed (lock expired) but the fingerprint is
+    // stable, silently update prevDims to the real measured heights
+    // WITHOUT generating any visible displacement.  This corrects the
+    // internal bookkeeping so future interactions use accurate data,
+    // but the user never sees a second animation phase.
+    console.log(`[LAYOUT] entry fingerprintChanged=${fingerprintChanged} tickChanged=${tickChanged}`);
 
     const { nodeLookup } = store.getState();
     const nodes = getNodes();
@@ -236,6 +239,7 @@ export function useAutoLayout() {
       const deltaH = Math.round(curr.height) - Math.round(prev.height);
 
       if (Math.abs(deltaW) > 1 || Math.abs(deltaH) > 1) {
+        console.log(`[LAYOUT] SHIFT node=${node.id} prevW=${prev.width} currW=${curr.width} deltaW=${deltaW} prevH=${Math.round(prev.height)} currH=${Math.round(curr.height)} deltaH=${deltaH}`);
         shifts.push({
           id: node.id,
           x: node.position.x,
@@ -338,6 +342,7 @@ export function useAutoLayout() {
 
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return n;
 
+        console.log(`[DISPLACE] node=${n.id} dx=${dx} dy=${dy} from=(${n.position.x},${n.position.y}) to=(${n.position.x+dx},${n.position.y+dy})`);
         return {
           ...n,
           position: { x: n.position.x + dx, y: n.position.y + dy },
