@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useStore, useStoreApi, useReactFlow, type Node } from "@xyflow/react";
 
 const NODE_MARGIN = 20;
@@ -39,13 +39,16 @@ function getEffectiveHeight(
   nodeLookup: Map<string, { measured?: { height?: number } }>,
   prevExpandedMap: Map<string, boolean>,
   heightTargets: Map<string, number>,
+  lockUntil: Map<string, number>,
 ): number {
   const measured = getMeasuredHeight(nodeLookup, node.id);
   const isExpanded = !!node.data?.expanded;
   const wasExpanded = prevExpandedMap.get(node.id);
 
   // Expanded state just changed — compute & lock NEW target height.
-  // Must check BEFORE the lock so that collapse overwrites the expand lock.
+  // The lock suppresses intermediate measurements during the CSS
+  // grid-template-rows transition so neighbours get ONE displacement
+  // that the CSS transform transition can animate smoothly.
   if (wasExpanded !== undefined && isExpanded !== wasExpanded) {
     const contentH = Number(node.data?.expandContentHeight ?? 0);
     if (contentH > 0) {
@@ -53,15 +56,31 @@ function getEffectiveHeight(
         ? measured + contentH
         : Math.max(0, measured - contentH);
       heightTargets.set(node.id, target);
+      // Hold the lock for slightly longer than the 405ms CSS transition
+      // so intermediate measurements don't cause incremental chasing.
+      lockUntil.set(node.id, performance.now() + 450);
       return target;
     }
   }
 
-  // Still transitioning — keep using locked target to prevent
-  // small measurement fluctuations from restarting CSS transitions.
   const locked = heightTargets.get(node.id);
   if (locked !== undefined) {
-    return locked;
+    const deadline = lockUntil.get(node.id) ?? 0;
+    const now = performance.now();
+
+    // Still within the CSS transition window — hold the lock regardless
+    // of measured height.  This prevents the 20+ small incremental
+    // DISPLACE cycles that cancel out the CSS transform animation.
+    if (now < deadline) {
+      return locked;
+    }
+
+    // Transition window elapsed.  Release the lock and return the real
+    // measured height.  Any delta between locked and measured will produce
+    // a single displacement that the CSS transform transition animates.
+    heightTargets.delete(node.id);
+    lockUntil.delete(node.id);
+    return measured;
   }
 
   return measured;
@@ -159,9 +178,18 @@ export function useAutoLayout() {
   const prevDims = useRef<Map<string, Dimensions>>(new Map());
   const prevExpanded = useRef<Map<string, boolean>>(new Map());
   const heightTargets = useRef<Map<string, number>>(new Map());
+  const lockUntil = useRef<Map<string, number>>(new Map());
+  const pendingRecalcTimers = useRef<Set<string>>(new Set());
+  const [recalcTick, setRecalcTick] = useState(0);
+  const prevRecalcTick = useRef(0);
 
   useLayoutEffect(() => {
-    if (!dimFingerprint || dimFingerprint === prevFingerprint.current) return;
+    const tickChanged = recalcTick !== prevRecalcTick.current;
+    prevRecalcTick.current = recalcTick;
+
+    if (!dimFingerprint) return;
+    // Re-run if fingerprint changed OR tick changed (forced re-eval after lock expiry)
+    if (dimFingerprint === prevFingerprint.current && !tickChanged) return;
     prevFingerprint.current = dimFingerprint;
 
     const { nodeLookup } = store.getState();
@@ -177,6 +205,7 @@ export function useAutoLayout() {
           nodeLookup,
           prevExpanded.current,
           heightTargets.current,
+          lockUntil.current,
         ),
       });
     }
@@ -206,12 +235,7 @@ export function useAutoLayout() {
       const deltaW = curr.width - prev.width;
       const deltaH = Math.round(curr.height) - Math.round(prev.height);
 
-      // Skip height-based shifts for nodes whose vertical displacement was
-      // already applied in handleToggle (same setNodes call as expansion).
-      const skipHeight = !!node.data?.heightShiftApplied;
-      const effectiveDeltaH = skipHeight ? 0 : deltaH;
-
-      if (Math.abs(deltaW) > 1 || Math.abs(effectiveDeltaH) > 1) {
+      if (Math.abs(deltaW) > 1 || Math.abs(deltaH) > 1) {
         shifts.push({
           id: node.id,
           x: node.position.x,
@@ -219,7 +243,7 @@ export function useAutoLayout() {
           width: curr.width,
           height: curr.height,
           deltaW,
-          deltaH: effectiveDeltaH,
+          deltaH,
         });
       }
     }
@@ -241,8 +265,8 @@ export function useAutoLayout() {
       if (expandedChanged.size > 0) {
         setNodes((prev) =>
           prev.map((n) =>
-            expandedChanged.has(n.id) && (n.data?.expandContentHeight != null || n.data?.heightShiftApplied)
-              ? { ...n, data: { ...n.data, expandContentHeight: undefined, heightShiftApplied: undefined } }
+            expandedChanged.has(n.id) && n.data?.expandContentHeight != null
+              ? { ...n, data: { ...n.data, expandContentHeight: undefined } }
               : n,
           ),
         );
@@ -253,30 +277,63 @@ export function useAutoLayout() {
     const shiftIds = new Set(shifts.map((s) => s.id));
 
     setNodes((prev) => {
-      // Apply spec displacement rules using bottom-right boundary.
+      // Apply displacement rules using full bounding-box relationships.
+      //
+      // N = expanding node (shift), C = other node (n)
+      //   N: (x1,y1)-(x2,y2)  where x2 = pre-expansion right edge
+      //   C: (a1,b1)-(a2,b2)
+      //   dx = shift.deltaW, dy = shift.deltaH
+      //
+      // Rules:
+      //   C fully above N  (b2 <= y1)       → stationary
+      //   C fully left of N (a2 <= x1)      → stationary
+      //   C fully right of N (a1 >= x2)     → shift right by dx
+      //   C below N + horizontal overlap    → shift down by dy
       const displaced = prev.map((n) => {
         let dx = 0;
         let dy = 0;
 
+        const cDims = currentDims.get(n.id);
+        const cWidth = cDims?.width ?? 180;
+        const cHeight = cDims?.height ?? 80;
+
         for (const shift of shifts) {
           if (n.id === shift.id) continue;
 
-          // Use pre-expansion right edge to determine which nodes were
-          // "to the right" before this resize. This prevents the expanding
-          // node from growing PAST a neighbor and switching it to rule 2.
+          // N's pre-expansion bounding box
           const prevWidth = shift.width - shift.deltaW;
-          const prevX2 = shift.x + prevWidth;
-          const a = n.position.x;
-          const b = n.position.y;
+          const prevHeight = shift.height - shift.deltaH;
+          const x1 = shift.x;
+          const y1 = shift.y;
+          const x2 = shift.x + prevWidth;
+          const y2 = shift.y + prevHeight;
 
-          if (a >= prevX2) {
-            // Rule 1: node was to the right of the old right edge → shift horizontally
+          // C's bounding box
+          const a1 = n.position.x + dx;
+          const b1 = n.position.y + dy;
+          const a2 = a1 + cWidth;
+          const b2 = b1 + cHeight;
+
+          // C fully above N → stationary
+          if (b2 <= y1) continue;
+
+          // C fully left of N → stationary
+          if (a2 <= x1) continue;
+
+          // C fully right of N → shift right by dx
+          if (a1 >= x2) {
             dx += shift.deltaW;
-          } else if (b >= shift.y) {
-            // Rule 2: node is within horizontal span and at/below top → shift vertically
+            continue;
+          }
+
+          // C below N's bottom edge AND horizontally overlapping → shift down by dy
+          const horizontalOverlap =
+            (a1 < x1 && a2 > x2) ||    // C spans wider than N
+            (a1 >= x1 && a1 <= x2) ||   // C's left edge within N
+            (a2 >= x1 && a2 <= x2);     // C's right edge within N
+          if (b1 >= y2 && horizontalOverlap) {
             dy += shift.deltaH;
           }
-          // Rule 3: otherwise stationary
         }
 
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return n;
@@ -324,16 +381,29 @@ export function useAutoLayout() {
         obstacles.push({ ...rect, x: clamped.x, y: clamped.y });
       }
 
-      // Clear expandContentHeight and heightShiftApplied from nodes that just toggled.
+      // Clear expandContentHeight from nodes that just toggled.
       const final = result.map((n) =>
-        expandedChanged.has(n.id) && (n.data?.expandContentHeight != null || n.data?.heightShiftApplied)
-          ? { ...n, data: { ...n.data, expandContentHeight: undefined, heightShiftApplied: undefined } }
+        expandedChanged.has(n.id) && n.data?.expandContentHeight != null
+          ? { ...n, data: { ...n.data, expandContentHeight: undefined } }
           : n,
       );
 
       return final;
     });
-  }, [dimFingerprint, store, getNodes, setNodes]);
+
+    // Schedule forced re-evaluation after any active locks expire so that
+    // the catch-up displacement fires even if the fingerprint has stabilised.
+    for (const [nodeId, deadline] of lockUntil.current) {
+      if (!pendingRecalcTimers.current.has(nodeId)) {
+        const delay = Math.max(0, deadline - performance.now()) + 20;
+        pendingRecalcTimers.current.add(nodeId);
+        setTimeout(() => {
+          pendingRecalcTimers.current.delete(nodeId);
+          setRecalcTick((c) => c + 1);
+        }, delay);
+      }
+    }
+  }, [dimFingerprint, recalcTick, store, getNodes, setNodes]);
 
   /**
    * Synchronously clamp a dragged node's proposed position against all

@@ -79,49 +79,26 @@ export default function NodeShell({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       if (isLocked) return;
-      // Measure the expand content's natural height before toggling so we
-      // can apply vertical displacement in the SAME state update — ensuring
-      // both the expansion and neighbour movement start in the same paint frame.
+      // Measure the expand content's natural height before toggling so
+      // useAutoLayout can predict the target height immediately.
       const expandContentHeight = expandContentRef.current?.scrollHeight ?? 0;
-      setNodes((nodes) => {
-        const self = nodes.find((n) => n.id === nodeId);
-        if (!self) return nodes;
-
-        const willExpand = !self.data?.expanded;
-        const deltaH = willExpand ? expandContentHeight : -expandContentHeight;
-        // Pre-toggle width determines the right-edge boundary
-        const preWidth = willExpand ? collapsedWidth : expandedWidth;
-        const rightEdge = self.position.x + preWidth;
-
-        return nodes.map((n) => {
-          if (n.id === nodeId) {
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                expanded: willExpand,
-                expandContentHeight,
-                heightShiftApplied: true,
-              },
-            };
-          }
-
-          // Apply vertical displacement to nodes below & within horizontal span
-          const a = n.position.x;
-          const b = n.position.y;
-          if (Math.abs(deltaH) > 1 && a < rightEdge && b >= self.position.y) {
-            return {
-              ...n,
-              position: { ...n.position, y: n.position.y + deltaH },
-            };
-          }
-
-          return n;
-        });
-      });
+      setNodes((nodes) =>
+        nodes.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  expanded: !n.data?.expanded,
+                  expandContentHeight,
+                },
+              }
+            : n,
+        ),
+      );
       setTimeout(() => updateNodeInternals(nodeId), 405);
     },
-    [nodeId, setNodes, updateNodeInternals, isLocked, collapsedWidth, expandedWidth],
+    [nodeId, setNodes, updateNodeInternals, isLocked],
   );
 
   const handleLockToggle = useCallback(
