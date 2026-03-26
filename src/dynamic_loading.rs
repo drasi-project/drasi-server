@@ -24,11 +24,12 @@ use crate::plugin_registry::PluginRegistry;
 use anyhow::Result;
 use drasi_host_sdk::callbacks::{self, CallbackContext};
 use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
+use drasi_host_sdk::plugin_types::{PluginCategory, PluginKindEntry};
 use drasi_plugin_sdk::{
     BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
 };
 use log::{debug, info, warn};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// File patterns for discovering cdylib plugins.
@@ -50,6 +51,21 @@ pub struct PluginLoadStats {
     pub source_descriptors: usize,
     pub reaction_descriptors: usize,
     pub bootstrap_descriptors: usize,
+    /// Per-plugin information for orchestrator registration.
+    pub loaded_plugins: Vec<StartupPluginRecord>,
+}
+
+/// Information about a single plugin loaded at startup.
+///
+/// Used by the orchestrator to create PluginInfo records.
+#[derive(Debug, Clone)]
+pub struct StartupPluginRecord {
+    pub plugin_id: String,
+    pub file_path: PathBuf,
+    pub kinds: Vec<PluginKindEntry>,
+    pub generation: u64,
+    pub plugin_version: String,
+    pub sdk_version: String,
 }
 
 /// Load cdylib plugins from a directory and register their descriptors.
@@ -115,30 +131,107 @@ pub fn load_plugins(
     )?;
 
     let mut stats = PluginLoadStats::default();
+    let mut generation: u64 = 0;
 
     for mut plugin in loaded {
         let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
 
+        // Parse version info from metadata string (format: "sdk=X core=Y plugin=Z target=...")
+        let plugin_version = meta
+            .split_whitespace()
+            .find(|s| s.starts_with("plugin="))
+            .and_then(|s| s.strip_prefix("plugin="))
+            .unwrap_or("")
+            .to_string();
+        let sdk_version = meta
+            .split_whitespace()
+            .find(|s| s.starts_with("sdk="))
+            .and_then(|s| s.strip_prefix("sdk="))
+            .unwrap_or("")
+            .to_string();
+
+        let mut plugin_kinds = Vec::new();
+
+        // Derive a plugin_id from the first descriptor kind.
+        // This mirrors how the lifecycle manager groups descriptors by plugin.
+        let mut plugin_id_parts: Vec<String> = Vec::new();
+
         for proxy in std::mem::take(&mut plugin.source_plugins) {
             let kind = proxy.kind().to_string();
+            if plugin_id_parts.is_empty() {
+                plugin_id_parts.push(format!("source/{kind}"));
+            }
             info!("  [cdylib] source: {kind} ({meta})");
-            registry.register_source(Arc::new(proxy));
+            plugin_kinds.push(PluginKindEntry {
+                category: PluginCategory::Source,
+                kind: kind.clone(),
+                config_version: proxy.config_version().to_string(),
+                config_schema_name: proxy.config_schema_name().to_string(),
+            });
+            generation += 1;
+            registry.register_source_with_metadata(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                generation,
+            );
             stats.source_descriptors += 1;
         }
 
         for proxy in std::mem::take(&mut plugin.reaction_plugins) {
             let kind = proxy.kind().to_string();
+            if plugin_id_parts.is_empty() {
+                plugin_id_parts.push(format!("reaction/{kind}"));
+            }
             info!("  [cdylib] reaction: {kind} ({meta})");
-            registry.register_reaction(Arc::new(proxy));
+            plugin_kinds.push(PluginKindEntry {
+                category: PluginCategory::Reaction,
+                kind: kind.clone(),
+                config_version: proxy.config_version().to_string(),
+                config_schema_name: proxy.config_schema_name().to_string(),
+            });
+            generation += 1;
+            registry.register_reaction_with_metadata(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                generation,
+            );
             stats.reaction_descriptors += 1;
         }
 
         for proxy in std::mem::take(&mut plugin.bootstrap_plugins) {
             let kind = proxy.kind().to_string();
+            if plugin_id_parts.is_empty() {
+                plugin_id_parts.push(format!("bootstrap/{kind}"));
+            }
             info!("  [cdylib] bootstrap: {kind} ({meta})");
-            registry.register_bootstrapper(Arc::new(proxy));
+            plugin_kinds.push(PluginKindEntry {
+                category: PluginCategory::Bootstrap,
+                kind: kind.clone(),
+                config_version: proxy.config_version().to_string(),
+                config_schema_name: proxy.config_schema_name().to_string(),
+            });
+            generation += 1;
+            registry.register_bootstrapper_with_metadata(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                generation,
+            );
             stats.bootstrap_descriptors += 1;
         }
+
+        let derived_plugin_id = plugin_id_parts
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| "unknown".to_string());
+
+        stats.loaded_plugins.push(StartupPluginRecord {
+            plugin_id: derived_plugin_id,
+            file_path: dir.to_path_buf(),
+            kinds: plugin_kinds,
+            generation,
+            plugin_version,
+            sdk_version,
+        });
 
         stats.plugins_loaded += 1;
     }

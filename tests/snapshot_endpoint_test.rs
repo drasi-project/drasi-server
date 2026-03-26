@@ -49,7 +49,7 @@ async fn build_snapshot_test_router(
         registry,
         Arc::new(false),
         None,
-        Arc::new(plugin_registry),
+        Arc::new(tokio::sync::RwLock::new(plugin_registry)),
         None,
     );
 

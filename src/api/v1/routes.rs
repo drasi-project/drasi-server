@@ -23,6 +23,7 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use super::handlers;
 use crate::instance_registry::InstanceRegistry;
@@ -36,7 +37,7 @@ pub fn build_v1_router(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
     config_persistence: Option<Arc<ConfigPersistence>>,
-    plugin_registry: Arc<PluginRegistry>,
+    plugin_registry: Arc<RwLock<PluginRegistry>>,
     solutions_dir: Option<String>,
 ) -> Router {
     // Instance management routes

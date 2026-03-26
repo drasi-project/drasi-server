@@ -85,6 +85,9 @@ pub fn build_config(
         plugins: Vec::new(),
         verify_plugins: false,
         trusted_identities: Vec::new(),
+        hot_reload_plugins: server_settings.hot_reload_plugins,
+        hot_reload_debounce_ms: 2000,
+        hot_reload_mode: server_settings.hot_reload_mode,
     }
 }
 
@@ -125,6 +128,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         }
     }
 
@@ -267,6 +272,8 @@ mod tests {
             log_level: "debug".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let sources = vec![mock_source_config("data-source")];
         let reactions = vec![log_reaction_config("my-log")];
@@ -330,6 +337,8 @@ mod tests {
             log_level: "warn".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -454,6 +463,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -471,6 +482,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -488,6 +501,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -507,6 +522,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -526,6 +543,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -555,6 +574,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -584,6 +605,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
         let sources = vec![mock_source_config("test-source")];
         let reactions = vec![log_reaction_config("test-reaction")];
@@ -594,5 +617,32 @@ mod tests {
         assert_eq!(config.sources.len(), 1);
         assert_eq!(config.reactions.len(), 1);
         assert_eq!(config.queries.len(), 1);
+    }
+
+    // ==================== hot_reload tests ====================
+
+    #[test]
+    fn test_build_config_hot_reload_defaults() {
+        let settings = test_server_settings();
+        let config = build_config(settings, vec![], vec![]);
+        assert!(!config.hot_reload_plugins);
+        assert_eq!(config.hot_reload_mode, "upgrade");
+        assert_eq!(config.hot_reload_debounce_ms, 2000);
+    }
+
+    #[test]
+    fn test_build_config_hot_reload_enabled() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+            state_store: None,
+            hot_reload_plugins: true,
+            hot_reload_mode: "side-by-side".to_string(),
+        };
+        let config = build_config(settings, vec![], vec![]);
+        assert!(config.hot_reload_plugins);
+        assert_eq!(config.hot_reload_mode, "side-by-side");
     }
 }

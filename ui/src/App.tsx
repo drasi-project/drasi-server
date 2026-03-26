@@ -13,6 +13,7 @@ import SourceForm from "@/components/create/SourceForms";
 import QueryForm from "@/components/create/QueryForm";
 import ReactionForm from "@/components/create/ReactionForms";
 import EventPanel, { type EventEntry } from "@/components/events/EventPanel";
+import PluginManagementPanel from "@/components/plugins/PluginManagementPanel";
 import InstanceSelector from "@/components/instances/InstanceSelector";
 import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
@@ -103,6 +104,7 @@ export default function App() {
   const [createStep, setCreateStep] = useState<CreateStep>(null);
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [connected, setConnected] = useState(false);
 
   // Solution deploy state
@@ -482,6 +484,7 @@ export default function App() {
       onAddComponent={() => setCreateStep("component")}
       connected={connected}
       onToggleActivity={() => setActivityOpen((p) => !p)}
+      onTogglePlugins={() => setPluginsOpen((p) => !p)}
       eventCount={events.length}
       theme={theme}
       onToggleTheme={toggleTheme}
@@ -716,6 +719,11 @@ export default function App() {
             setSelectedInstanceId(newInstanceId);
           }}
         />
+      )}
+
+      {/* Plugin Management Panel */}
+      {pluginsOpen && (
+        <PluginManagementPanel onClose={() => setPluginsOpen(false)} />
       )}
 
       {/* Activity Panel */}

@@ -16,8 +16,10 @@ import {
   Loader2,
   Layers,
   Sparkles,
+  Puzzle,
 } from "lucide-react";
 import * as api from "@/api/client";
+import { usePluginKinds } from "@/hooks/usePluginKinds";
 import type { SolutionTemplateSummary } from "@/api/types";
 
 export type SelectableType =
@@ -153,6 +155,32 @@ const REACTION_KINDS: TypeOption[] = [
   },
 ];
 
+// Map well-known kind names to icons
+const KIND_ICONS: Record<string, React.ElementType> = {
+  postgres: Database,
+  http: Globe,
+  grpc: Radio,
+  mock: FlaskConical,
+  platform: Server,
+  log: FileText,
+  sse: Rss,
+  profiler: Gauge,
+};
+
+function pluginKindsToOptions(
+  kinds: Array<{ kind: string }>,
+  color: string,
+  idSuffix?: string,
+): TypeOption[] {
+  return kinds.map((k) => ({
+    id: (idSuffix ? `${k.kind}-${idSuffix}` : k.kind) as SelectableType,
+    label: k.kind.charAt(0).toUpperCase() + k.kind.slice(1),
+    description: "Plugin",
+    icon: KIND_ICONS[k.kind] ?? Puzzle,
+    color,
+  }));
+}
+
 type Tab = "components" | "catalog";
 
 interface TypeSelectorProps {
@@ -174,6 +202,19 @@ export default function TypeSelector({
   const [templates, setTemplates] = useState<SolutionTemplateSummary[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
+
+  // Fetch dynamic plugin kinds with hardcoded fallback
+  const { kinds: pluginKinds } = usePluginKinds();
+
+  const sourceOptions: TypeOption[] =
+    pluginKinds && pluginKinds.sources.length > 0
+      ? pluginKindsToOptions(pluginKinds.sources, "#22c55e")
+      : SOURCE_KINDS;
+
+  const reactionOptions: TypeOption[] =
+    pluginKinds && pluginKinds.reactions.length > 0
+      ? pluginKindsToOptions(pluginKinds.reactions, "#8b5cf6")
+      : REACTION_KINDS;
 
   // Load solution templates when switching to catalog tab
   useEffect(() => {
@@ -200,7 +241,7 @@ export default function TypeSelector({
 
   // For source/reaction kind selection, show the simple grid
   if (level !== "component") {
-    const options = level === "source-kind" ? SOURCE_KINDS : REACTION_KINDS;
+    const options = level === "source-kind" ? sourceOptions : reactionOptions;
     const title = level === "source-kind" ? "Select Source Type" : "Select Reaction Type";
 
     return (

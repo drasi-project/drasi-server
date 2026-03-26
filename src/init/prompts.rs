@@ -14,12 +14,14 @@
 
 //! Interactive prompt functions for configuration initialization.
 
+use std::path::Path;
+
 use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
-use drasi_server::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
-
 use drasi_server::api::models::StateStoreConfig;
+use drasi_server::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
+use drasi_server::plugin_operations::PluginOperations;
 
 /// Server settings collected from user prompts.
 pub struct ServerSettings {
@@ -28,6 +30,89 @@ pub struct ServerSettings {
     pub log_level: String,
     pub persist_index: bool,
     pub state_store: Option<StateStoreConfig>,
+    pub hot_reload_plugins: bool,
+    pub hot_reload_mode: String,
+}
+
+/// A plugin discovered by scanning the plugins directory.
+#[derive(Debug, Clone)]
+pub struct DiscoveredPlugin {
+    pub kind: String,
+    pub version: String,
+    pub filename: String,
+}
+
+impl std::fmt::Display for DiscoveredPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} (v{}, from {})",
+            self.kind, self.version, self.filename
+        )
+    }
+}
+
+/// Plugins discovered by scanning the local plugins directory, grouped by category.
+#[derive(Debug, Clone, Default)]
+pub struct DiscoveredPlugins {
+    pub sources: Vec<DiscoveredPlugin>,
+    pub reactions: Vec<DiscoveredPlugin>,
+    pub bootstrappers: Vec<DiscoveredPlugin>,
+}
+
+impl DiscoveredPlugins {
+    /// Returns true if no plugins were discovered.
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty() && self.reactions.is_empty() && self.bootstrappers.is_empty()
+    }
+}
+
+/// Discover available plugins by scanning a local plugins directory.
+///
+/// Uses `PluginOperations::scan_local_plugins()` which reads plugin metadata
+/// (calling `drasi_plugin_metadata()` only, no `drasi_plugin_init()`)
+/// and groups them by category based on their `plugin_id` prefix
+/// (e.g. `"source/postgres"`, `"reaction/log"`).
+pub fn discover_available_plugins(plugins_dir: &Path) -> DiscoveredPlugins {
+    let ops = PluginOperations::new(
+        plugins_dir.to_path_buf(),
+        "ghcr.io/drasi-project".to_string(),
+    );
+    let summaries = match ops.scan_local_plugins() {
+        Ok(s) => s,
+        Err(_) => return DiscoveredPlugins::default(),
+    };
+
+    let mut result = DiscoveredPlugins::default();
+    for summary in summaries {
+        let filename = summary
+            .file_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // plugin_id is "type/kind", e.g. "source/postgres", "reaction/log"
+        let parts: Vec<&str> = summary.plugin_id.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+        let (category, kind) = (parts[0], parts[1]);
+
+        let plugin = DiscoveredPlugin {
+            kind: kind.to_string(),
+            version: summary.version.clone(),
+            filename,
+        };
+
+        match category {
+            "source" => result.sources.push(plugin),
+            "reaction" => result.reactions.push(plugin),
+            "bootstrap" => result.bootstrappers.push(plugin),
+            _ => {}
+        }
+    }
+
+    result
 }
 
 /// Source type selection options.
@@ -137,6 +222,24 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
     // Prompt for state store configuration
     let state_store = prompt_state_store()?;
 
+    // Prompt for hot-reload settings
+    let hot_reload_plugins = Confirm::new("Enable hot-reload for plugins?")
+        .with_default(false)
+        .with_help_message("Automatically detect and reload plugins when files change on disk")
+        .prompt()?;
+
+    let hot_reload_mode = if hot_reload_plugins {
+        let modes = vec!["upgrade", "side-by-side"];
+        Select::new("Hot-reload mode:", modes)
+            .with_help_message(
+                "upgrade: replace existing plugin in-place; side-by-side: run old and new simultaneously",
+            )
+            .prompt()?
+            .to_string()
+    } else {
+        "upgrade".to_string()
+    };
+
     println!();
 
     Ok(ServerSettings {
@@ -145,6 +248,8 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         log_level,
         persist_index,
         state_store,
+        hot_reload_plugins,
+        hot_reload_mode,
     })
 }
 
@@ -703,6 +808,420 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
     })
 }
 
+// ── Dynamic plugin discovery prompts ──
+
+/// Known source kinds that have dedicated prompt functions.
+#[cfg(test)]
+const KNOWN_SOURCE_KINDS: &[&str] = &["postgres", "http", "grpc", "mock"];
+
+/// Known reaction kinds that have dedicated prompt functions.
+#[cfg(test)]
+const KNOWN_REACTION_KINDS: &[&str] = &["log", "http", "sse", "grpc"];
+
+/// A wrapper for displaying plugin choices in `MultiSelect` prompts.
+#[derive(Debug, Clone)]
+struct PluginChoice {
+    kind: String,
+    label: String,
+}
+
+impl std::fmt::Display for PluginChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label)
+    }
+}
+
+/// Prompt for source selection using dynamically discovered plugins.
+///
+/// If discovered plugins are available, they are presented as options.
+/// Otherwise, falls back to the hardcoded `SourceType` enum list.
+pub fn prompt_sources_dynamic(discovered: &DiscoveredPlugins) -> Result<Vec<SourceConfig>> {
+    println!("Data Sources");
+    println!("------------");
+    println!("Select one or more data sources for your configuration.");
+    println!();
+
+    if discovered.sources.is_empty() {
+        println!("(No source plugins found in plugins directory — using built-in list)");
+        println!();
+        return prompt_sources();
+    }
+
+    let items: Vec<PluginChoice> = discovered
+        .sources
+        .iter()
+        .map(|p| PluginChoice {
+            kind: p.kind.clone(),
+            label: p.to_string(),
+        })
+        .collect();
+
+    let selected = MultiSelect::new("Select sources (space to select, enter to confirm):", items)
+        .with_help_message("Use arrow keys to navigate, space to select/deselect")
+        .prompt()?;
+
+    if selected.is_empty() {
+        println!("No sources selected. You can add sources later by editing the config file.");
+        println!();
+        return Ok(Vec::new());
+    }
+
+    let mut sources = Vec::new();
+    for choice in &selected {
+        println!();
+        let source = prompt_source_by_kind(&choice.kind)?;
+        sources.push(source);
+    }
+
+    println!();
+    Ok(sources)
+}
+
+/// Prompt for details of a source by its kind string.
+///
+/// If the kind matches a known built-in source, uses the dedicated prompt.
+/// Otherwise, uses a generic JSON config prompt.
+fn prompt_source_by_kind(kind: &str) -> Result<SourceConfig> {
+    match kind {
+        "postgres" => prompt_postgres_source(),
+        "http" => prompt_http_source(),
+        "grpc" => prompt_grpc_source(),
+        "mock" => prompt_mock_source(),
+        _ => prompt_generic_source(kind),
+    }
+}
+
+/// Generic prompt for a source plugin with no dedicated prompt function.
+///
+/// NOTE: During `drasi init`, plugins are discovered via metadata-only scanning
+/// (`drasi_plugin_metadata`), which does NOT call `drasi_plugin_init()`. This means
+/// plugin descriptors (and their `config_schema_json()`) are not available for
+/// unknown plugin kinds at init time. When schemas ARE available (e.g., when
+/// running against a server with fully loaded plugins), callers can use
+/// [`prompts_from_schema`] to generate field-by-field prompts instead.
+fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
+    println!("Configuring {kind} Source");
+    println!("{}", "-".repeat(25 + kind.len()));
+
+    let id = Text::new("Source ID:")
+        .with_default(&format!("{kind}-source"))
+        .prompt()?;
+
+    let config_json = Text::new("Configuration (JSON):")
+        .with_default("{}")
+        .with_help_message("Enter plugin-specific config as a JSON object, or leave as {}")
+        .prompt()?;
+
+    let config: serde_json::Value =
+        serde_json::from_str(&config_json).unwrap_or_else(|_| serde_json::json!({}));
+
+    let bootstrap_provider = prompt_bootstrap_provider_generic()?;
+
+    Ok(SourceConfig {
+        kind: kind.to_string(),
+        id,
+        auto_start: true,
+        bootstrap_provider,
+        config,
+    })
+}
+
+/// Prompt for reaction selection using dynamically discovered plugins.
+///
+/// If discovered plugins are available, they are presented as options.
+/// Otherwise, falls back to the hardcoded `ReactionType` enum list.
+pub fn prompt_reactions_dynamic(
+    discovered: &DiscoveredPlugins,
+    sources: &[SourceConfig],
+) -> Result<Vec<ReactionConfig>> {
+    println!("Reactions");
+    println!("---------");
+    println!("Select how you want to receive query results.");
+    println!();
+
+    if discovered.reactions.is_empty() {
+        println!("(No reaction plugins found in plugins directory — using built-in list)");
+        println!();
+        return prompt_reactions(sources);
+    }
+
+    let items: Vec<PluginChoice> = discovered
+        .reactions
+        .iter()
+        .map(|p| PluginChoice {
+            kind: p.kind.clone(),
+            label: p.to_string(),
+        })
+        .collect();
+
+    let selected = MultiSelect::new(
+        "Select reactions (space to select, enter to confirm):",
+        items,
+    )
+    .with_help_message("Use arrow keys to navigate, space to select/deselect")
+    .prompt()?;
+
+    if selected.is_empty() {
+        println!("No reactions selected. You can add reactions later by editing the config file.");
+        println!();
+        return Ok(Vec::new());
+    }
+
+    let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
+
+    let mut reactions = Vec::new();
+    for choice in &selected {
+        println!();
+        let reaction = prompt_reaction_by_kind(&choice.kind, &source_ids)?;
+        reactions.push(reaction);
+    }
+
+    println!();
+    Ok(reactions)
+}
+
+/// Prompt for details of a reaction by its kind string.
+///
+/// If the kind matches a known built-in reaction, uses the dedicated prompt.
+/// Otherwise, uses a generic JSON config prompt.
+fn prompt_reaction_by_kind(kind: &str, _source_ids: &[String]) -> Result<ReactionConfig> {
+    match kind {
+        "log" => prompt_log_reaction(),
+        "http" => prompt_http_reaction(),
+        "sse" => prompt_sse_reaction(),
+        "grpc" => prompt_grpc_reaction(),
+        _ => prompt_generic_reaction(kind),
+    }
+}
+
+/// Generic prompt for a reaction plugin with no dedicated prompt function.
+///
+/// See [`prompt_generic_source`] for why schema-driven prompts are not used here:
+/// metadata-only scanning at init time does not load plugin descriptors. When schemas
+/// are available, use [`prompts_from_schema`] for field-by-field prompts.
+fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
+    println!("Configuring {kind} Reaction");
+    println!("{}", "-".repeat(25 + kind.len()));
+
+    let id = Text::new("Reaction ID:")
+        .with_default(&format!("{kind}-reaction"))
+        .prompt()?;
+
+    let config_json = Text::new("Configuration (JSON):")
+        .with_default("{}")
+        .with_help_message("Enter plugin-specific config as a JSON object, or leave as {}")
+        .prompt()?;
+
+    let config: serde_json::Value =
+        serde_json::from_str(&config_json).unwrap_or_else(|_| serde_json::json!({}));
+
+    Ok(ReactionConfig {
+        kind: kind.to_string(),
+        id,
+        queries: vec!["my-query".to_string()],
+        auto_start: true,
+        config,
+    })
+}
+
+/// Generate field-by-field prompts from an OpenAPI-style JSON schema.
+///
+/// Used when plugin descriptors are available (e.g., when plugins are fully loaded
+/// via `drasi_plugin_init()` and their `config_schema_json()` is accessible). During
+/// `drasi init` with metadata-only scanning, schemas are typically not available — see
+/// [`prompt_generic_source`] and [`prompt_generic_reaction`] for the fallback approach.
+///
+/// The schema is expected to follow OpenAPI / JSON Schema conventions with `properties`,
+/// `required`, `type`, `description`, `default`, `enum`, and `format` fields.
+#[allow(dead_code)]
+pub fn prompts_from_schema(schema_json: &str) -> Result<serde_json::Value> {
+    let schema: serde_json::Value = serde_json::from_str(schema_json)?;
+    let properties = schema.get("properties").and_then(|p| p.as_object());
+    let required: std::collections::HashSet<&str> = schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut config = serde_json::Map::new();
+
+    if let Some(props) = properties {
+        for (name, prop) in props {
+            let description = prop
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+            let is_required = required.contains(name.as_str());
+            let type_str = prop
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("string");
+            let default_val = prop.get("default");
+
+            let label = if description.is_empty() {
+                format!("{name}{}", if is_required { " *" } else { "" })
+            } else {
+                format!(
+                    "{name} ({description}){}",
+                    if is_required { " *" } else { "" }
+                )
+            };
+
+            match type_str {
+                "boolean" => {
+                    let default = default_val.and_then(|v| v.as_bool()).unwrap_or(false);
+                    let val = Confirm::new(&label).with_default(default).prompt()?;
+                    config.insert(name.clone(), serde_json::Value::Bool(val));
+                }
+                "integer" | "number" => {
+                    let default_str = default_val.map(|v| v.to_string()).unwrap_or_default();
+                    let mut prompt = Text::new(&label);
+                    if !default_str.is_empty() {
+                        prompt = prompt.with_default(&default_str);
+                    }
+                    if !is_required && default_str.is_empty() {
+                        prompt = prompt.with_default("");
+                    }
+                    let val = prompt.prompt()?;
+                    if !val.is_empty() {
+                        if let Ok(n) = val.parse::<i64>() {
+                            config.insert(name.clone(), serde_json::Value::Number(n.into()));
+                        } else if let Ok(n) = val.parse::<f64>() {
+                            if let Some(n) = serde_json::Number::from_f64(n) {
+                                config.insert(name.clone(), serde_json::Value::Number(n));
+                            }
+                        } else if is_required {
+                            anyhow::bail!("Invalid number for required field '{name}': '{val}'");
+                        }
+                    } else if is_required {
+                        anyhow::bail!("Required field '{name}' cannot be empty");
+                    }
+                }
+                _ => {
+                    // String type (including password, enum)
+                    if let Some(enum_values) = prop.get("enum").and_then(|e| e.as_array()) {
+                        let options: Vec<String> = enum_values
+                            .iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect();
+                        if !options.is_empty() {
+                            let val = Select::new(&label, options).prompt()?;
+                            config.insert(name.clone(), serde_json::Value::String(val));
+                            continue;
+                        }
+                    }
+
+                    let is_password =
+                        prop.get("format").and_then(|f| f.as_str()) == Some("password");
+                    if is_password {
+                        let val = Password::new(&label).prompt()?;
+                        if !val.is_empty() {
+                            config.insert(name.clone(), serde_json::Value::String(val));
+                        } else if is_required {
+                            anyhow::bail!("Required field '{name}' cannot be empty");
+                        }
+                    } else {
+                        let default_str = default_val.and_then(|v| v.as_str()).unwrap_or("");
+                        let mut prompt = Text::new(&label);
+                        if !default_str.is_empty() {
+                            prompt = prompt.with_default(default_str);
+                        }
+                        let val = prompt.prompt()?;
+                        if !val.is_empty() || is_required {
+                            config.insert(name.clone(), serde_json::Value::String(val));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(config))
+}
+
+// ---------------------------------------------------------------------------
+// Registry download helpers for init wizard
+// ---------------------------------------------------------------------------
+
+/// A plugin available in a remote OCI registry.
+#[derive(Debug, Clone)]
+pub struct RegistryPlugin {
+    /// Short plugin reference (e.g., "source/postgres").
+    pub reference: String,
+    /// Full OCI reference (e.g., "ghcr.io/drasi-project/source/postgres").
+    #[allow(dead_code)]
+    pub full_reference: String,
+    /// Available versions with their platforms.
+    pub versions: Vec<(String, Vec<String>)>,
+}
+
+impl std::fmt::Display for RegistryPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let latest = self
+            .versions
+            .first()
+            .map(|(v, _)| v.as_str())
+            .unwrap_or("unknown");
+        write!(f, "{} (latest: {})", self.reference, latest)
+    }
+}
+
+/// Search a remote OCI registry for available plugins.
+pub async fn search_registry_plugins(registry_url: &str) -> Result<Vec<RegistryPlugin>> {
+    use drasi_host_sdk::registry::RegistryConfig;
+
+    let config = RegistryConfig {
+        default_registry: registry_url.to_string(),
+        auth: PluginOperations::registry_auth(),
+    };
+    let client = PluginOperations::build_registry_client(config);
+
+    let results = client.search_plugins("*").await?;
+
+    Ok(results
+        .into_iter()
+        .map(|r| RegistryPlugin {
+            reference: r.reference,
+            full_reference: r.full_reference,
+            versions: r
+                .versions
+                .into_iter()
+                .map(|v| (v.version, v.platforms))
+                .collect(),
+        })
+        .collect())
+}
+
+/// Present a multi-select prompt for registry plugins.
+pub fn prompt_registry_plugin_selection(available: &[RegistryPlugin]) -> Result<Vec<String>> {
+    let options: Vec<String> = available.iter().map(|p| p.to_string()).collect();
+
+    let selected = MultiSelect::new("Select plugins to download:", options).prompt()?;
+
+    // Map display strings back to references
+    Ok(selected
+        .iter()
+        .filter_map(|display| {
+            available
+                .iter()
+                .find(|p| p.to_string() == *display)
+                .map(|p| p.reference.clone())
+        })
+        .collect())
+}
+
+/// Download a single plugin from the registry into the plugins directory.
+pub async fn install_registry_plugin(
+    reference: &str,
+    plugins_dir: &Path,
+    registry_url: &str,
+) -> Result<()> {
+    let ops = PluginOperations::new(plugins_dir.to_path_buf(), registry_url.to_string());
+    ops.install_from_registry(reference, Some(registry_url))
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,6 +1236,8 @@ mod tests {
             log_level: "debug".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
 
         assert_eq!(settings.host, "127.0.0.1");
@@ -724,6 +1245,8 @@ mod tests {
         assert_eq!(settings.log_level, "debug");
         assert!(settings.persist_index);
         assert!(settings.state_store.is_none());
+        assert!(!settings.hot_reload_plugins);
+        assert_eq!(settings.hot_reload_mode, "upgrade");
     }
 
     #[test]
@@ -734,6 +1257,8 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
 
         assert_eq!(settings.host, "0.0.0.0");
@@ -751,10 +1276,28 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: Some(StateStoreConfig::redb("./data/state.redb")),
+            hot_reload_plugins: false,
+            hot_reload_mode: "upgrade".to_string(),
         };
 
         assert!(settings.state_store.is_some());
         assert_eq!(settings.state_store.as_ref().unwrap().kind(), "redb");
+    }
+
+    #[test]
+    fn test_server_settings_with_hot_reload() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+            state_store: None,
+            hot_reload_plugins: true,
+            hot_reload_mode: "side-by-side".to_string(),
+        };
+
+        assert!(settings.hot_reload_plugins);
+        assert_eq!(settings.hot_reload_mode, "side-by-side");
     }
 
     // ==================== SourceType enum tests ====================
@@ -1027,5 +1570,87 @@ mod tests {
     fn test_state_store_type_displays_are_descriptive() {
         assert!(StateStoreType::None.to_string().len() > 10);
         assert!(StateStoreType::Redb.to_string().len() > 10);
+    }
+
+    // ==================== DiscoveredPlugin / DiscoveredPlugins tests ====================
+
+    #[test]
+    fn test_discovered_plugin_display() {
+        let plugin = DiscoveredPlugin {
+            kind: "postgres".to_string(),
+            version: "0.4.2".to_string(),
+            filename: "libdrasi_source_postgres.dylib".to_string(),
+        };
+        let display = plugin.to_string();
+        assert!(display.contains("postgres"));
+        assert!(display.contains("0.4.2"));
+        assert!(display.contains("libdrasi_source_postgres.dylib"));
+    }
+
+    #[test]
+    fn test_discovered_plugins_is_empty() {
+        let empty = DiscoveredPlugins::default();
+        assert!(empty.is_empty());
+
+        let with_source = DiscoveredPlugins {
+            sources: vec![DiscoveredPlugin {
+                kind: "mock".to_string(),
+                version: "1.0".to_string(),
+                filename: "libdrasi_source_mock.dylib".to_string(),
+            }],
+            reactions: vec![],
+            bootstrappers: vec![],
+        };
+        assert!(!with_source.is_empty());
+    }
+
+    #[test]
+    fn test_discovered_plugins_grouping() {
+        let plugins = DiscoveredPlugins {
+            sources: vec![
+                DiscoveredPlugin {
+                    kind: "postgres".to_string(),
+                    version: "1.0".to_string(),
+                    filename: "libdrasi_source_postgres.so".to_string(),
+                },
+                DiscoveredPlugin {
+                    kind: "http".to_string(),
+                    version: "1.0".to_string(),
+                    filename: "libdrasi_source_http.so".to_string(),
+                },
+            ],
+            reactions: vec![DiscoveredPlugin {
+                kind: "log".to_string(),
+                version: "1.0".to_string(),
+                filename: "libdrasi_reaction_log.so".to_string(),
+            }],
+            bootstrappers: vec![],
+        };
+        assert_eq!(plugins.sources.len(), 2);
+        assert_eq!(plugins.reactions.len(), 1);
+        assert!(plugins.bootstrappers.is_empty());
+    }
+
+    #[test]
+    fn test_discover_available_plugins_nonexistent_dir() {
+        use std::path::PathBuf;
+        let result = discover_available_plugins(&PathBuf::from("/nonexistent/path/to/plugins"));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_known_source_kinds_list() {
+        assert!(KNOWN_SOURCE_KINDS.contains(&"postgres"));
+        assert!(KNOWN_SOURCE_KINDS.contains(&"http"));
+        assert!(KNOWN_SOURCE_KINDS.contains(&"grpc"));
+        assert!(KNOWN_SOURCE_KINDS.contains(&"mock"));
+    }
+
+    #[test]
+    fn test_known_reaction_kinds_list() {
+        assert!(KNOWN_REACTION_KINDS.contains(&"log"));
+        assert!(KNOWN_REACTION_KINDS.contains(&"http"));
+        assert!(KNOWN_REACTION_KINDS.contains(&"sse"));
+        assert!(KNOWN_REACTION_KINDS.contains(&"grpc"));
     }
 }

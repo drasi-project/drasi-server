@@ -19,6 +19,7 @@ use log::{debug, error, info, warn};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
@@ -29,11 +30,16 @@ use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
 };
-use crate::factories::{create_reaction, create_source, create_state_store_provider};
+use crate::factories::{
+    create_reaction, create_source, create_state_store_provider, get_reaction_plugin_metadata,
+    get_source_plugin_metadata,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
+use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
+use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
@@ -46,7 +52,8 @@ pub struct DrasiServer {
     port: u16,
     config_file_path: Option<String>,
     read_only: Arc<bool>,
-    plugin_registry: Arc<PluginRegistry>,
+    plugin_registry: Arc<RwLock<PluginRegistry>>,
+    plugin_orchestrator: Arc<PluginOrchestrator>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
 }
@@ -125,7 +132,7 @@ impl DrasiServer {
                 });
 
                 // Convert registry auth for the verifier
-                let host_auth = crate::plugin_install::get_registry_auth();
+                let host_auth = crate::plugin_operations::PluginOperations::registry_auth();
                 let oci_auth = match &host_auth {
                     RegistryAuth::Anonymous => oci_client::secrets::RegistryAuth::Anonymous,
                     RegistryAuth::Basic { username, password } => {
@@ -217,6 +224,7 @@ impl DrasiServer {
         }
 
         // Load dynamic plugins from the plugins directory
+        let mut startup_plugin_records = Vec::new();
         if plugins_dir.exists() {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
@@ -229,15 +237,99 @@ impl DrasiServer {
                     drasi_lib::managers::ComponentEventHistory::new(),
                 )),
             });
-            crate::dynamic_loading::load_plugins(
+            let load_stats = crate::dynamic_loading::load_plugins(
                 &plugins_dir,
                 &mut plugin_registry,
                 Some(callback_ctx),
                 verified_files.as_ref(),
             )?;
+            startup_plugin_records = load_stats.loaded_plugins;
         }
 
-        let plugin_registry = Arc::new(plugin_registry);
+        let plugin_registry = Arc::new(RwLock::new(plugin_registry));
+
+        // Create the plugin lifecycle and orchestration layers
+        let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
+        let plugin_orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
+            lifecycle,
+            plugins_dir.clone(),
+        ));
+
+        // Register startup-loaded plugins in the orchestrator
+        plugin_orchestrator
+            .record_startup_plugins(&startup_plugin_records)
+            .await;
+
+        // Start plugin hot-reload watcher if configured
+        if config.hot_reload_plugins {
+            use drasi_host_sdk::watcher::{PluginWatcher, PluginWatcherConfig};
+
+            let watcher_config = PluginWatcherConfig {
+                plugins_dir: plugins_dir.clone(),
+                debounce: std::time::Duration::from_millis(config.hot_reload_debounce_ms),
+            };
+            let mut watcher = PluginWatcher::new(watcher_config);
+            let mut rx = watcher.subscribe();
+            let reload_mode = config.hot_reload_mode.clone();
+            let orchestrator_for_watcher = plugin_orchestrator.clone();
+
+            // Start the filesystem watcher
+            if let Err(e) = watcher.start() {
+                warn!("Failed to start notify-based plugin watcher: {e}. Falling back to polling.");
+                if let Err(e) = watcher.start_polling() {
+                    warn!("Failed to start polling plugin watcher: {e}");
+                }
+            }
+
+            // Spawn a task that receives file events and applies the configured policy
+            let _watcher_handle = tokio::spawn(async move {
+                // Keep the watcher alive for the duration of this task
+                let _watcher = watcher;
+                loop {
+                    match rx.recv().await {
+                        Ok(event) => {
+                            use drasi_host_sdk::plugin_types::PluginFileEvent;
+                            match event {
+                                PluginFileEvent::Added(path) | PluginFileEvent::Changed(path) => {
+                                    info!("Plugin file change detected: {}", path.display());
+                                    if reload_mode == "side-by-side" {
+                                        info!("Side-by-side mode: skipping automatic upgrade");
+                                    } else {
+                                        // Upgrade mode: load/replace
+                                        match orchestrator_for_watcher
+                                            .load_plugin(&path, None)
+                                            .await
+                                        {
+                                            Ok(info) => info!(
+                                                "Hot-reloaded plugin: {} ({})",
+                                                info.id, info.status
+                                            ),
+                                            Err(e) => warn!(
+                                                "Failed to hot-reload plugin {}: {e}",
+                                                path.display()
+                                            ),
+                                        }
+                                    }
+                                }
+                                PluginFileEvent::Removed(path) => {
+                                    info!("Plugin file removed: {}", path.display());
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Plugin watcher lagged, missed {n} events");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
+                }
+            });
+            info!(
+                "Plugin hot-reload enabled (mode: {}, debounce: {}ms)",
+                config.hot_reload_mode, config.hot_reload_debounce_ms
+            );
+        }
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
@@ -271,7 +363,8 @@ impl DrasiServer {
                 check_plugin_availability, extract_plugin_requirements,
             };
             let requirements = extract_plugin_requirements(&config);
-            let (_found, missing) = check_plugin_availability(&requirements, &plugin_registry);
+            let reg = plugin_registry.read().await;
+            let (_found, missing) = check_plugin_availability(&requirements, &reg);
             if !missing.is_empty() {
                 let mut msg = String::from("Missing plugins required by configuration:\n");
                 for mp in &missing {
@@ -338,9 +431,13 @@ impl DrasiServer {
                 instance.sources.len(),
                 instance.id
             );
-            for source_config in instance.sources.clone() {
-                let source = create_source(&plugin_registry, source_config).await?;
-                builder = builder.with_source(source);
+            {
+                let reg = plugin_registry.read().await;
+                for source_config in instance.sources.clone() {
+                    let plugin_meta = get_source_plugin_metadata(&reg, &source_config.kind);
+                    let source = create_source(&reg, source_config).await?;
+                    builder = builder.with_source_metadata(source, plugin_meta);
+                }
             }
 
             // Add queries from config (already resolved in config/types.rs)
@@ -349,9 +446,13 @@ impl DrasiServer {
             }
 
             // Create and add reactions from config
-            for reaction_config in instance.reactions.clone() {
-                let reaction = create_reaction(&plugin_registry, reaction_config).await?;
-                builder = builder.with_reaction(reaction);
+            {
+                let reg = plugin_registry.read().await;
+                for reaction_config in instance.reactions.clone() {
+                    let plugin_meta = get_reaction_plugin_metadata(&reg, &reaction_config.kind);
+                    let reaction = create_reaction(&reg, reaction_config).await?;
+                    builder = builder.with_reaction_metadata(reaction, plugin_meta);
+                }
             }
 
             // Build and initialize the core
@@ -376,6 +477,7 @@ impl DrasiServer {
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
             plugin_registry,
+            plugin_orchestrator,
             config_persistence: None, // Will be set after core is started
         })
     }
@@ -391,6 +493,9 @@ impl DrasiServer {
     ) -> Self {
         let mut plugin_registry = PluginRegistry::new();
         register_core_plugins(&mut plugin_registry);
+        let plugin_registry = Arc::new(RwLock::new(plugin_registry));
+        let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
+        let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
         Self {
             instances: vec![PreparedInstance {
                 id_hint: None,
@@ -403,7 +508,8 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false), // Programmatic mode assumes write access
-            plugin_registry: Arc::new(plugin_registry),
+            plugin_registry,
+            plugin_orchestrator,
             config_persistence: None, // Will be set up if config file is provided
         }
     }
@@ -428,6 +534,9 @@ impl DrasiServer {
 
         let mut plugin_registry = PluginRegistry::new();
         register_core_plugins(&mut plugin_registry);
+        let plugin_registry = Arc::new(RwLock::new(plugin_registry));
+        let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
+        let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
         Self {
             instances,
             enable_api,
@@ -436,7 +545,8 @@ impl DrasiServer {
             port,
             config_file_path,
             read_only: Arc::new(false),
-            plugin_registry: Arc::new(plugin_registry),
+            plugin_registry,
+            plugin_orchestrator,
             config_persistence: None,
         }
     }
@@ -570,18 +680,53 @@ impl DrasiServer {
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
     ) -> Result<()> {
-        // Create OpenAPI documentation for v1
+        // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
-        api::inject_plugin_schemas(&mut openapi_v1, &self.plugin_registry);
+        let registry_version = {
+            let reg = self.plugin_registry.read().await;
+            api::inject_plugin_schemas(&mut openapi_v1, &reg);
+            reg.version()
+        };
+
+        let _openapi_cache = Arc::new(api::v1::OpenApiCache::new(
+            openapi_v1.clone(),
+            self.plugin_registry.clone(),
+            registry_version,
+        ));
 
         // Build the v1 API router
         let v1_router = api::build_v1_router(
-            registry,
+            registry.clone(),
             self.read_only.clone(),
             config_persistence.clone(),
             self.plugin_registry.clone(),
             solutions_dir,
         );
+
+        // Build the plugin management sub-router
+        let plugin_ops = {
+            let default_registry = if let Some(config_file) = &self.config_file_path {
+                crate::plugin_operations::PluginOperations::resolve_registry(
+                    std::path::Path::new(config_file),
+                    None,
+                )
+            } else {
+                "ghcr.io/drasi-project".to_string()
+            };
+            let plugins_dir = self
+                .plugin_orchestrator
+                .plugins_dir()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("plugins"));
+            Arc::new(crate::plugin_operations::PluginOperations::new(
+                plugins_dir,
+                default_registry,
+            ))
+        };
+        let plugin_router = api::v1::plugin_routes()
+            .layer(axum::extract::Extension(self.plugin_orchestrator.clone()))
+            .layer(axum::extract::Extension(registry.clone()))
+            .layer(axum::extract::Extension(plugin_ops));
 
         // Build the main application router
         let mut app = Router::new()
@@ -591,6 +736,8 @@ impl DrasiServer {
             .route("/api/versions", get(api::list_api_versions))
             // Nest v1 API under /api/v1
             .nest("/api/v1", v1_router)
+            // Nest plugin management API under /api/v1/plugins
+            .nest("/api/v1/plugins", plugin_router)
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 

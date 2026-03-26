@@ -229,6 +229,9 @@ impl ConfigPersistence {
                 plugins: Vec::new(),
                 verify_plugins: false,
                 trusted_identities: Vec::new(),
+                hot_reload_plugins: false,
+                hot_reload_debounce_ms: 2000,
+                hot_reload_mode: "upgrade".to_string(),
             }
         } else {
             // Multiple instances → use multi-instance format (instances array)
@@ -262,6 +265,9 @@ impl ConfigPersistence {
                 plugins: Vec::new(),
                 verify_plugins: false,
                 trusted_identities: Vec::new(),
+                hot_reload_plugins: false,
+                hot_reload_debounce_ms: 2000,
+                hot_reload_mode: "upgrade".to_string(),
             }
         };
 

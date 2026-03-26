@@ -22,10 +22,11 @@
 
 use crate::config::{DrasiServerConfig, PluginDependency};
 use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
+use crate::plugin_operations::PluginOperations;
 use anyhow::{bail, Context, Result};
 use drasi_host_sdk::registry::{
-    CosignVerifier, HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth,
-    RegistryConfig, ResolvedPlugin, SignatureStatus, TrustedIdentity, VerificationConfig,
+    CosignVerifier, OciRegistryClient, PluginResolver, RegistryConfig, ResolvedPlugin,
+    SignatureStatus,
 };
 use log::{info, warn};
 use std::path::Path;
@@ -69,7 +70,7 @@ pub async fn auto_install_plugins(
     }
 
     // Build registry config with auth from environment
-    let auth = get_registry_auth();
+    let auth = PluginOperations::registry_auth();
     let registry_config = RegistryConfig {
         default_registry: registry_url.to_string(),
         auth,
@@ -77,14 +78,14 @@ pub async fn auto_install_plugins(
 
     // Always attempt verification during install to record signature info.
     // The verify_plugins flag only controls whether unverified plugins are blocked at load time.
-    let mut verification = build_verification_config(config);
+    let mut verification = PluginOperations::verification_config(config);
     verification.enabled = true;
 
     let client =
         OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
 
     // Build host version info from compiled-in dependency versions
-    let host_info = build_host_version_info();
+    let host_info = PluginOperations::host_version_info();
 
     let resolver = PluginResolver::new(&client, &host_info);
 
@@ -267,47 +268,4 @@ async fn install_if_missing(
     );
 
     Ok((resolved, download.verification))
-}
-
-/// Build host version info from compiled-in dependency versions.
-fn build_host_version_info() -> HostVersionInfo {
-    HostVersionInfo {
-        sdk_version: env!("DRASI_PLUGIN_SDK_VERSION").to_string(),
-        core_version: env!("DRASI_CORE_VERSION").to_string(),
-        lib_version: env!("DRASI_LIB_VERSION").to_string(),
-        target_triple: env!("TARGET_TRIPLE").to_string(),
-    }
-}
-
-/// Get registry auth from environment variables.
-pub(crate) fn get_registry_auth() -> RegistryAuth {
-    let password = std::env::var("OCI_REGISTRY_PASSWORD")
-        .or_else(|_| std::env::var("GHCR_TOKEN"))
-        .ok();
-
-    match password {
-        Some(pwd) => {
-            let username = std::env::var("OCI_REGISTRY_USERNAME").unwrap_or_default();
-            RegistryAuth::Basic {
-                username,
-                password: pwd,
-            }
-        }
-        None => RegistryAuth::Anonymous,
-    }
-}
-
-/// Build verification config from server configuration.
-fn build_verification_config(config: &DrasiServerConfig) -> VerificationConfig {
-    VerificationConfig {
-        enabled: config.verify_plugins,
-        trusted_identities: config
-            .trusted_identities
-            .iter()
-            .map(|ti| TrustedIdentity {
-                issuer: ti.issuer.clone(),
-                subject_pattern: ti.subject_pattern.clone(),
-            })
-            .collect(),
-    }
 }

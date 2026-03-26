@@ -281,7 +281,7 @@ pub async fn create_test_router_with_solutions(
         registry,
         read_only,
         config_persistence,
-        Arc::new(plugin_registry),
+        Arc::new(tokio::sync::RwLock::new(plugin_registry)),
         solutions_dir,
     );
 
@@ -358,7 +358,7 @@ pub async fn create_multi_instance_test_router(
         registry,
         read_only,
         config_persistence,
-        Arc::new(plugin_registry),
+        Arc::new(tokio::sync::RwLock::new(plugin_registry)),
         solutions_dir,
     );
 

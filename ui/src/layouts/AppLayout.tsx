@@ -1,4 +1,4 @@
-import { Plus, Activity, Sun, Moon } from "lucide-react";
+import { Plus, Activity, Sun, Moon, Package } from "lucide-react";
 import DrasiLogo from "@/components/DrasiLogo";
 
 interface AppLayoutProps {
@@ -7,6 +7,7 @@ interface AppLayoutProps {
   connected?: boolean;
   instanceSlot?: React.ReactNode;
   onToggleActivity?: () => void;
+  onTogglePlugins?: () => void;
   eventCount?: number;
   theme?: "light" | "dark";
   onToggleTheme?: () => void;
@@ -18,6 +19,7 @@ export default function AppLayout({
   connected = false,
   instanceSlot,
   onToggleActivity,
+  onTogglePlugins,
   eventCount = 0,
   theme = "dark",
   onToggleTheme,
@@ -55,6 +57,17 @@ export default function AppLayout({
             >
               <Plus size={14} />
               <span>Add</span>
+            </button>
+          )}
+
+          {/* Plugins toggle */}
+          {onTogglePlugins && (
+            <button
+              onClick={onTogglePlugins}
+              className="p-1.5 rounded-lg text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-card transition-colors"
+              title="Plugin management"
+            >
+              <Package size={16} />
             </button>
           )}
 

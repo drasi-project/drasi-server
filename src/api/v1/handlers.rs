@@ -26,6 +26,7 @@ use axum::{
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
 use crate::api::shared::error::JsonBody;
@@ -231,7 +232,7 @@ pub async fn create_source_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -284,7 +285,7 @@ pub async fn upsert_source_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -932,7 +933,7 @@ pub async fn create_reaction_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -984,7 +985,7 @@ pub async fn upsert_reaction_handler(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path): Path<ResourcePath>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1253,7 +1254,7 @@ pub async fn create_source_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
@@ -1273,7 +1274,7 @@ pub async fn upsert_source_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1552,7 +1553,7 @@ pub async fn create_reaction_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
@@ -1572,7 +1573,7 @@ pub async fn upsert_reaction_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
@@ -1837,15 +1838,16 @@ pub async fn deploy_solution(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(solutions_dir): Extension<Option<String>>,
-    Extension(plugin_registry): Extension<Arc<crate::plugin_registry::PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<crate::plugin_registry::PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<SolutionDeployRequest>,
 ) -> Json<ApiResponse<SolutionDeployResponse>> {
+    let reg = plugin_registry.read().await;
     solutions::deploy_solution(
         registry,
         persistence,
         solutions_dir,
-        &plugin_registry,
+        &reg,
         &instance_id,
         request,
     )
@@ -1874,7 +1876,7 @@ pub async fn deploy_solution(
 pub async fn clone_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<shared::CloneInstanceRequest>,

@@ -389,3 +389,50 @@ fn inject_kind_property(
         obj.required.push("kind".to_string());
     }
 }
+
+/// Cache for the generated OpenAPI spec, tied to the plugin registry version.
+///
+/// When plugins are loaded, upgraded, or retired at runtime, the registry version
+/// increments. This cache detects staleness and regenerates the spec on demand.
+pub struct OpenApiCache {
+    cached_spec: tokio::sync::RwLock<(u64, utoipa::openapi::OpenApi)>,
+    plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
+}
+
+impl OpenApiCache {
+    /// Create a new cache with an initial spec.
+    pub fn new(
+        initial_spec: utoipa::openapi::OpenApi,
+        plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
+        initial_version: u64,
+    ) -> Self {
+        Self {
+            cached_spec: tokio::sync::RwLock::new((initial_version, initial_spec)),
+            plugin_registry,
+        }
+    }
+
+    /// Get the current OpenAPI spec, regenerating if the registry has been mutated.
+    pub async fn get_spec(&self) -> utoipa::openapi::OpenApi {
+        let reg = self.plugin_registry.read().await;
+        let current_version = reg.version();
+        drop(reg);
+
+        let cached = self.cached_spec.read().await;
+        if cached.0 == current_version {
+            return cached.1.clone();
+        }
+        drop(cached);
+
+        // Registry has changed — regenerate
+        let mut spec = ApiDocV1::openapi();
+        {
+            let reg = self.plugin_registry.read().await;
+            inject_plugin_schemas(&mut spec, &reg);
+        }
+
+        let mut cached = self.cached_spec.write().await;
+        *cached = (current_version, spec.clone());
+        spec
+    }
+}

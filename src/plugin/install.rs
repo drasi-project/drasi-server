@@ -22,6 +22,7 @@ use super::{
     load_trusted_identities,
 };
 use crate::cli_styles;
+use drasi_server::plugin_operations::{is_wildcard_pattern, wildcard_match};
 
 /// Install a single plugin from the registry.
 pub async fn install_single(
@@ -45,39 +46,6 @@ pub async fn install_single(
             }
         }
     }
-}
-
-fn is_wildcard_pattern(reference: &str) -> bool {
-    reference.contains('*') || reference.contains('?') || reference.contains('[')
-}
-
-fn wildcard_match(pattern: &str, text: &str) -> bool {
-    let p = pattern.as_bytes();
-    let t = text.as_bytes();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let (mut star_pi, mut star_ti) = (None::<usize>, 0usize);
-
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == b'*' {
-            star_pi = Some(pi);
-            pi += 1;
-            star_ti = ti;
-        } else if let Some(sp) = star_pi {
-            pi = sp + 1;
-            star_ti += 1;
-            ti = star_ti;
-        } else {
-            return false;
-        }
-    }
-
-    while pi < p.len() && p[pi] == b'*' {
-        pi += 1;
-    }
-    pi == p.len()
 }
 
 fn wildcard_matches_plugin<'a, I>(
@@ -736,7 +704,8 @@ async fn install_from_oci_pattern(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_wildcard_pattern, wildcard_match, wildcard_matches_plugin};
+    use super::wildcard_matches_plugin;
+    use drasi_server::plugin_operations::{is_wildcard_pattern, wildcard_match};
 
     #[test]
     fn test_is_wildcard_pattern() {

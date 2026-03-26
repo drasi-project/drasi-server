@@ -161,7 +161,9 @@ async fn main() -> Result<()> {
             validate_config(config, show_resolved, effective_plugins_dir)
         }
         Some(Commands::Doctor { all }) => run_doctor(all),
-        Some(Commands::Init { output, force }) => init::run_init(output, force),
+        Some(Commands::Init { output, force }) => {
+            init::run_init(output, force, cli.plugins_dir).await
+        }
         Some(Commands::Plugin { action }) => {
             plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
         }

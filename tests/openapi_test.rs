@@ -27,7 +27,7 @@ async fn create_test_router() -> Router {
         registry,
         read_only,
         config_persistence,
-        Arc::new(plugin_registry),
+        Arc::new(tokio::sync::RwLock::new(plugin_registry)),
         solutions_dir,
     )
 }

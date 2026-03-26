@@ -21,6 +21,7 @@ use anyhow::Result;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
@@ -116,6 +117,52 @@ pub fn create_state_store_provider(
             Ok(Arc::new(provider))
         }
     }
+}
+
+/// Get plugin metadata for a source kind from the registry.
+///
+/// Returns a HashMap with `pluginId`, `pluginVersion`, and `pluginGeneration`
+/// if the kind is backed by a registered plugin. Core (statically-linked)
+/// plugins return an empty map.
+pub fn get_source_plugin_metadata(
+    registry: &PluginRegistry,
+    kind: &str,
+) -> HashMap<String, String> {
+    let mut meta = HashMap::new();
+    if let Some(reg) = registry.get_source_registration(kind) {
+        if !reg.plugin_id.is_empty() {
+            meta.insert("pluginId".to_string(), reg.plugin_id.clone());
+            meta.insert(
+                "pluginVersion".to_string(),
+                reg.descriptor.config_version().to_string(),
+            );
+            meta.insert("pluginGeneration".to_string(), reg.generation.to_string());
+        }
+    }
+    meta
+}
+
+/// Get plugin metadata for a reaction kind from the registry.
+///
+/// Returns a HashMap with `pluginId`, `pluginVersion`, and `pluginGeneration`
+/// if the kind is backed by a registered plugin. Core (statically-linked)
+/// plugins return an empty map.
+pub fn get_reaction_plugin_metadata(
+    registry: &PluginRegistry,
+    kind: &str,
+) -> HashMap<String, String> {
+    let mut meta = HashMap::new();
+    if let Some(reg) = registry.get_reaction_registration(kind) {
+        if !reg.plugin_id.is_empty() {
+            meta.insert("pluginId".to_string(), reg.plugin_id.clone());
+            meta.insert(
+                "pluginVersion".to_string(),
+                reg.descriptor.config_version().to_string(),
+            );
+            meta.insert("pluginGeneration".to_string(), reg.generation.to_string());
+        }
+    }
+    meta
 }
 
 #[cfg(test)]

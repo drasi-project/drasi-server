@@ -116,6 +116,15 @@ pub struct DrasiServerConfig {
     /// When provided, only listed identities are trusted (no implicit default).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trusted_identities: Vec<TrustedIdentity>,
+    /// Enable filesystem watching for plugin changes (default: false, OFF by default for stability)
+    #[serde(default)]
+    pub hot_reload_plugins: bool,
+    /// Debounce window for filesystem events in milliseconds (default: 2000)
+    #[serde(default = "default_hot_reload_debounce_ms")]
+    pub hot_reload_debounce_ms: u64,
+    /// Hot-reload mode: "upgrade" (drain-then-retire) or "side-by-side" (default: "upgrade")
+    #[serde(default = "default_hot_reload_mode")]
+    pub hot_reload_mode: String,
 }
 
 impl Default for DrasiServerConfig {
@@ -142,6 +151,9 @@ impl Default for DrasiServerConfig {
             plugins: Vec::new(),
             verify_plugins: false,
             trusted_identities: Vec::new(),
+            hot_reload_plugins: false,
+            hot_reload_debounce_ms: 2000,
+            hot_reload_mode: "upgrade".to_string(),
         }
     }
 }
@@ -168,6 +180,14 @@ fn default_persist_config() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+fn default_hot_reload_debounce_ms() -> u64 {
+    2000
+}
+
+fn default_hot_reload_mode() -> String {
+    "upgrade".to_string()
 }
 
 pub fn default_plugin_registry() -> Option<String> {

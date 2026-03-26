@@ -29,6 +29,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
@@ -40,7 +41,9 @@ use crate::api::models::{
     BootstrapProviderConfig, ComponentEventDto, LogMessageDto, QueryConfigDto,
 };
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
-use crate::factories::{create_reaction, create_source};
+use crate::factories::{
+    create_reaction, create_source, get_reaction_plugin_metadata, get_source_plugin_metadata,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -360,7 +363,7 @@ pub async fn create_source_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -382,7 +385,7 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let source = match create_source(&plugin_registry, config.clone()).await {
+    let source = match create_source(&*plugin_registry.read().await, config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -392,7 +395,9 @@ pub async fn create_source_handler(
         }
     };
 
-    match core.add_source(source).await {
+    let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
+
+    match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
@@ -426,7 +431,7 @@ pub async fn upsert_source_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -453,7 +458,7 @@ pub async fn upsert_source_handler(
 
     if exists {
         // Create a new source instance and use update_source to replace in place
-        let new_source = match create_source(&plugin_registry, config.clone()).await {
+        let new_source = match create_source(&*plugin_registry.read().await, config.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to create source instance for update: {e}");
@@ -478,7 +483,7 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let source = match create_source(&plugin_registry, config.clone()).await {
+    let source = match create_source(&*plugin_registry.read().await, config.clone()).await {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to create source instance: {e}");
@@ -488,7 +493,9 @@ pub async fn upsert_source_handler(
         }
     };
 
-    match core.add_source(source).await {
+    let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
+
+    match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
@@ -1194,7 +1201,7 @@ pub async fn create_reaction_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1216,7 +1223,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let reaction = match create_reaction(&plugin_registry, config.clone()).await {
+    let reaction = match create_reaction(&*plugin_registry.read().await, config.clone()).await {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");
@@ -1226,7 +1233,9 @@ pub async fn create_reaction_handler(
         }
     };
 
-    match core.add_reaction(reaction).await {
+    let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
+
+    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
@@ -1260,7 +1269,7 @@ pub async fn upsert_reaction_handler(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
-    Extension(plugin_registry): Extension<Arc<PluginRegistry>>,
+    Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1287,15 +1296,16 @@ pub async fn upsert_reaction_handler(
 
     if exists {
         // Create a new reaction instance and use update_reaction to replace in place
-        let new_reaction = match create_reaction(&plugin_registry, config.clone()).await {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Failed to create reaction instance for update: {e}");
-                return Ok(Json(ApiResponse::error(format!(
-                    "Failed to create reaction for update: {e}"
-                ))));
-            }
-        };
+        let new_reaction =
+            match create_reaction(&*plugin_registry.read().await, config.clone()).await {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("Failed to create reaction instance for update: {e}");
+                    return Ok(Json(ApiResponse::error(format!(
+                        "Failed to create reaction for update: {e}"
+                    ))));
+                }
+            };
         if let Err(e) = core.update_reaction(&reaction_id, new_reaction).await {
             log::error!("Failed to update reaction '{reaction_id}': {e}");
             return Ok(Json(ApiResponse::error(format!(
@@ -1312,7 +1322,7 @@ pub async fn upsert_reaction_handler(
         })));
     }
 
-    let reaction = match create_reaction(&plugin_registry, config.clone()).await {
+    let reaction = match create_reaction(&*plugin_registry.read().await, config.clone()).await {
         Ok(r) => r,
         Err(e) => {
             log::error!("Failed to create reaction instance: {e}");
@@ -1322,7 +1332,9 @@ pub async fn upsert_reaction_handler(
         }
     };
 
-    match core.add_reaction(reaction).await {
+    let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
+
+    match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
@@ -1680,7 +1692,7 @@ pub struct CloneInstanceResponse {
 pub async fn clone_instance(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
-    plugin_registry: Arc<PluginRegistry>,
+    plugin_registry: Arc<RwLock<PluginRegistry>>,
     config_persistence: Option<Arc<ConfigPersistence>>,
     target_instance_id: &str,
     source_instance_id: &str,
@@ -1751,19 +1763,26 @@ pub async fn clone_instance(
             config: properties_json,
         };
 
-        let source = match create_source(&plugin_registry, source_config).await {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
-                rollback_sources(&target_core, &sources_created).await;
-                return Json(ApiResponse::error(format!(
-                    "Failed to create source '{}': {e}",
-                    src_snap.id
-                )));
-            }
-        };
+        let source =
+            match create_source(&*plugin_registry.read().await, source_config.clone()).await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
+                    rollback_sources(&target_core, &sources_created).await;
+                    return Json(ApiResponse::error(format!(
+                        "Failed to create source '{}': {e}",
+                        src_snap.id
+                    )));
+                }
+            };
 
-        if let Err(e) = target_core.add_source(source).await {
+        let plugin_meta =
+            get_source_plugin_metadata(&*plugin_registry.read().await, &source_config.kind);
+
+        if let Err(e) = target_core
+            .add_source_with_metadata(source, plugin_meta)
+            .await
+        {
             log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
             rollback_sources(&target_core, &sources_created).await;
             return Json(ApiResponse::error(format!(
@@ -1814,21 +1833,28 @@ pub async fn clone_instance(
             config: properties_json,
         };
 
-        let reaction = match create_reaction(&plugin_registry, reaction_config).await {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
-                rollback_reactions(&target_core, &reactions_created).await;
-                rollback_queries(&target_core, &queries_created).await;
-                rollback_sources(&target_core, &sources_created).await;
-                return Json(ApiResponse::error(format!(
-                    "Failed to create reaction '{}': {e}",
-                    rx_snap.id
-                )));
-            }
-        };
+        let reaction =
+            match create_reaction(&*plugin_registry.read().await, reaction_config.clone()).await {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
+                    rollback_reactions(&target_core, &reactions_created).await;
+                    rollback_queries(&target_core, &queries_created).await;
+                    rollback_sources(&target_core, &sources_created).await;
+                    return Json(ApiResponse::error(format!(
+                        "Failed to create reaction '{}': {e}",
+                        rx_snap.id
+                    )));
+                }
+            };
 
-        if let Err(e) = target_core.add_reaction(reaction).await {
+        let plugin_meta =
+            get_reaction_plugin_metadata(&*plugin_registry.read().await, &reaction_config.kind);
+
+        if let Err(e) = target_core
+            .add_reaction_with_metadata(reaction, plugin_meta)
+            .await
+        {
             log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
             rollback_reactions(&target_core, &reactions_created).await;
             rollback_queries(&target_core, &queries_created).await;
