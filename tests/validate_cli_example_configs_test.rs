@@ -171,7 +171,13 @@ fn run_validate_raw(config_content: &str) -> (bool, String) {
     std::fs::write(&config_path, config_content).expect("write temp config");
 
     let output = Command::new(get_binary_path())
-        .args(["validate", "--config", config_path.to_str().unwrap()])
+        .args([
+            "validate",
+            "--config",
+            config_path
+                .to_str()
+                .expect("config path should be valid UTF-8"),
+        ])
         .output()
         .expect("Failed to execute validate command");
 
