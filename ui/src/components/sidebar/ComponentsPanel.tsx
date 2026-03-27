@@ -10,6 +10,7 @@ import {
   FileText,
   Zap,
   Puzzle,
+  Code,
 } from "lucide-react";
 import { usePluginKinds } from "@/hooks/usePluginKinds";
 
@@ -31,114 +32,42 @@ interface CatalogEntry {
   color: string;
 }
 
-// Well-known icons for specific kinds
-const KIND_ICONS: Record<string, React.ElementType> = {
-  postgres: Database,
-  http: Globe,
-  grpc: Radio,
-  mock: FlaskConical,
-  log: FileText,
-  sse: Rss,
+// Well-known icons and descriptions for specific kinds
+const KIND_META: Record<string, { icon: React.ElementType; label: string; description: string }> = {
+  // Sources
+  "source/postgres": { icon: Database, label: "PostgreSQL", description: "PostgreSQL CDC source" },
+  "source/http": { icon: Globe, label: "HTTP", description: "HTTP endpoint source" },
+  "source/grpc": { icon: Radio, label: "gRPC", description: "gRPC streaming source" },
+  "source/mock": { icon: FlaskConical, label: "Mock", description: "Mock data for testing" },
+  // Reactions
+  "reaction/log": { icon: FileText, label: "Log", description: "Console log output" },
+  "reaction/http": { icon: Globe, label: "HTTP", description: "HTTP webhook reaction" },
+  "reaction/sse": { icon: Rss, label: "SSE", description: "Server-Sent Events stream" },
+  "reaction/grpc": { icon: Radio, label: "gRPC", description: "gRPC streaming reaction" },
 };
 
-// Built-in source entries
-const BUILTIN_SOURCES: CatalogEntry[] = [
-  {
-    componentType: "source",
-    kind: "postgres",
-    label: "PostgreSQL",
-    description: "PostgreSQL CDC source",
-    icon: Database,
-    color: "#22c55e",
-  },
-  {
-    componentType: "source",
-    kind: "http",
-    label: "HTTP",
-    description: "HTTP endpoint source",
-    icon: Globe,
-    color: "#22c55e",
-  },
-  {
-    componentType: "source",
-    kind: "grpc",
-    label: "gRPC",
-    description: "gRPC streaming source",
-    icon: Radio,
-    color: "#22c55e",
-  },
-  {
-    componentType: "source",
-    kind: "mock",
-    label: "Mock",
-    description: "Mock data for testing",
-    icon: FlaskConical,
-    color: "#22c55e",
-  },
-];
-
-// Built-in query entry
-const BUILTIN_QUERIES: CatalogEntry[] = [
+// Queries are always available (they're built into drasi-lib, not plugins)
+const QUERY_ENTRIES: CatalogEntry[] = [
   {
     componentType: "query",
-    kind: "query",
-    label: "Cypher Query",
-    description: "Continuous Cypher query",
+    kind: "cypher",
+    label: "openCypher Query",
+    description: "Continuous openCypher query",
+    icon: Code,
+    color: "#3b82f6",
+  },
+  {
+    componentType: "query",
+    kind: "gql",
+    label: "GQL Query",
+    description: "Continuous GQL query",
     icon: Search,
     color: "#3b82f6",
   },
 ];
 
-// Built-in reaction entries
-const BUILTIN_REACTIONS: CatalogEntry[] = [
-  {
-    componentType: "reaction",
-    kind: "log",
-    label: "Log",
-    description: "Console log output",
-    icon: FileText,
-    color: "#8b5cf6",
-  },
-  {
-    componentType: "reaction",
-    kind: "http",
-    label: "HTTP",
-    description: "HTTP webhook reaction",
-    icon: Globe,
-    color: "#8b5cf6",
-  },
-  {
-    componentType: "reaction",
-    kind: "sse",
-    label: "SSE",
-    description: "Server-Sent Events stream",
-    icon: Rss,
-    color: "#8b5cf6",
-  },
-  {
-    componentType: "reaction",
-    kind: "grpc",
-    label: "gRPC",
-    description: "gRPC streaming reaction",
-    icon: Radio,
-    color: "#8b5cf6",
-  },
-];
-
-// Descriptions for well-known source/reaction kinds
-const SOURCE_DESCRIPTIONS: Record<string, string> = {
-  postgres: "PostgreSQL CDC source",
-  http: "HTTP endpoint source",
-  grpc: "gRPC streaming source",
-  mock: "Mock data for testing",
-};
-
-const REACTION_DESCRIPTIONS: Record<string, string> = {
-  log: "Console log output",
-  http: "HTTP webhook reaction",
-  grpc: "gRPC streaming reaction",
-  sse: "Server-Sent Events stream",
-};
+const SOURCE_COLOR = "#22c55e";
+const REACTION_COLOR = "#8b5cf6";
 
 interface ComponentsPanelProps {
   onStartCreate: (componentType: "source" | "query" | "reaction", kind?: string) => void;
@@ -149,42 +78,37 @@ export default function ComponentsPanel({ onStartCreate }: ComponentsPanelProps)
   const [filter, setFilter] = useState<CatalogFilter>("all");
   const { kinds: pluginKinds } = usePluginKinds();
 
-  // Build catalog entries: merge built-ins with plugin-provided kinds
+  // Build catalog entries entirely from installed plugins + built-in queries
   const entries = useMemo(() => {
-    const builtinSourceKinds = new Set(BUILTIN_SOURCES.map((s) => s.kind));
-    const builtinReactionKinds = new Set(BUILTIN_REACTIONS.map((r) => r.kind));
-
-    const sources = [...BUILTIN_SOURCES];
-    const reactions = [...BUILTIN_REACTIONS];
+    const sources: CatalogEntry[] = [];
+    const reactions: CatalogEntry[] = [];
 
     if (pluginKinds) {
       for (const pk of pluginKinds.sources) {
-        if (!builtinSourceKinds.has(pk.kind)) {
-          sources.push({
-            componentType: "source",
-            kind: pk.kind,
-            label: pk.kind.charAt(0).toUpperCase() + pk.kind.slice(1),
-            description: SOURCE_DESCRIPTIONS[pk.kind] ?? `Plugin-provided source`,
-            icon: KIND_ICONS[pk.kind] ?? Puzzle,
-            color: "#22c55e",
-          });
-        }
+        const meta = KIND_META[`source/${pk.kind}`];
+        sources.push({
+          componentType: "source",
+          kind: pk.kind,
+          label: meta?.label ?? pk.kind.charAt(0).toUpperCase() + pk.kind.slice(1),
+          description: meta?.description ?? "Plugin-provided source",
+          icon: meta?.icon ?? Puzzle,
+          color: SOURCE_COLOR,
+        });
       }
       for (const pk of pluginKinds.reactions) {
-        if (!builtinReactionKinds.has(pk.kind)) {
-          reactions.push({
-            componentType: "reaction",
-            kind: pk.kind,
-            label: pk.kind.charAt(0).toUpperCase() + pk.kind.slice(1),
-            description: REACTION_DESCRIPTIONS[pk.kind] ?? `Plugin-provided reaction`,
-            icon: KIND_ICONS[pk.kind] ?? Puzzle,
-            color: "#8b5cf6",
-          });
-        }
+        const meta = KIND_META[`reaction/${pk.kind}`];
+        reactions.push({
+          componentType: "reaction",
+          kind: pk.kind,
+          label: meta?.label ?? pk.kind.charAt(0).toUpperCase() + pk.kind.slice(1),
+          description: meta?.description ?? "Plugin-provided reaction",
+          icon: meta?.icon ?? Puzzle,
+          color: REACTION_COLOR,
+        });
       }
     }
 
-    return [...sources, ...BUILTIN_QUERIES, ...reactions];
+    return [...sources, ...QUERY_ENTRIES, ...reactions];
   }, [pluginKinds]);
 
   // Filter and search
