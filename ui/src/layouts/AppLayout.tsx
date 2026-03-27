@@ -1,26 +1,18 @@
-import { Plus, Activity, Sun, Moon, Package } from "lucide-react";
+import { Sun, Moon } from "lucide-react";
 import DrasiLogo from "@/components/DrasiLogo";
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  onAddComponent?: () => void;
   connected?: boolean;
   instanceSlot?: React.ReactNode;
-  onToggleActivity?: () => void;
-  onTogglePlugins?: () => void;
-  eventCount?: number;
   theme?: "light" | "dark";
   onToggleTheme?: () => void;
 }
 
 export default function AppLayout({
   children,
-  onAddComponent,
   connected = false,
   instanceSlot,
-  onToggleActivity,
-  onTogglePlugins,
-  eventCount = 0,
   theme = "dark",
   onToggleTheme,
 }: AppLayoutProps) {
@@ -48,42 +40,6 @@ export default function AppLayout({
               {connected ? "Live" : "Disconnected"}
             </span>
           </div>
-
-          {/* Add button */}
-          {onAddComponent && (
-            <button
-              onClick={onAddComponent}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-drasi-card border border-drasi-border text-sm text-drasi-text-primary hover:bg-drasi-surface hover:border-drasi-text-secondary transition-all"
-            >
-              <Plus size={14} />
-              <span>Add</span>
-            </button>
-          )}
-
-          {/* Plugins toggle */}
-          {onTogglePlugins && (
-            <button
-              onClick={onTogglePlugins}
-              className="p-1.5 rounded-lg text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-card transition-colors"
-              title="Plugin management"
-            >
-              <Package size={16} />
-            </button>
-          )}
-
-          {/* Activity toggle */}
-          <button
-            onClick={onToggleActivity}
-            className="relative p-1.5 rounded-lg text-drasi-text-secondary hover:text-drasi-text-primary hover:bg-drasi-card transition-colors"
-            title="Toggle activity panel"
-          >
-            <Activity size={16} />
-            {eventCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-drasi-running text-[8px] font-bold text-drasi-bg flex items-center justify-center">
-                {eventCount > 9 ? "9+" : eventCount}
-              </span>
-            )}
-          </button>
 
           {/* Theme toggle */}
           <button

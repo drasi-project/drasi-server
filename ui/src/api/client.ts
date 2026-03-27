@@ -321,6 +321,10 @@ export async function deploySolution(
   return unwrap(await api.post(`/instances/${instanceId}/solutions`, req));
 }
 
+export async function deleteSolution(id: string): Promise<void> {
+  await api.delete(`/catalog/solutions/${id}`);
+}
+
 export async function createSolutionTemplate(
   instanceId: string,
   req: CreateSolutionTemplateRequest,

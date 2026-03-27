@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import AppLayout from "@/layouts/AppLayout";
 import FlowCanvas from "@/components/canvas/FlowCanvas";
-import SourceInspectorPanel from "@/components/inspector/SourceInspectorPanel";
-import QueryInspectorPanel from "@/components/inspector/QueryInspectorPanel";
-import ReactionInspectorPanel from "@/components/inspector/ReactionInspectorPanel";
 import TypeSelector, {
   type SelectableType,
 } from "@/components/create/TypeSelector";
@@ -12,8 +9,16 @@ import CreatePanel from "@/components/create/CreatePanel";
 import SourceForm from "@/components/create/SourceForms";
 import QueryForm from "@/components/create/QueryForm";
 import ReactionForm from "@/components/create/ReactionForms";
-import EventPanel, { type EventEntry } from "@/components/events/EventPanel";
-import PluginManagementPanel from "@/components/plugins/PluginManagementPanel";
+import type { EventEntry } from "@/components/events/EventPanel";
+import LeftPanel from "@/components/sidebar/LeftPanel";
+import IconRail, { type SidebarTab } from "@/components/sidebar/IconRail";
+import CurrentComponentPanel from "@/components/sidebar/CurrentComponentPanel";
+import type { InspectorData } from "@/components/sidebar/CurrentComponentPanel";
+import ComponentsPanel from "@/components/sidebar/ComponentsPanel";
+import SolutionTemplatesPanel from "@/components/sidebar/SolutionTemplatesPanel";
+import PluginsPanel from "@/components/sidebar/PluginsPanel";
+import InstancesPanel from "@/components/sidebar/InstancesPanel";
+import LogsPanel from "@/components/sidebar/LogsPanel";
 import InstanceSelector from "@/components/instances/InstanceSelector";
 import InstancePickerDialog from "@/components/instances/InstancePickerDialog";
 import CreateInstanceDialog from "@/components/instances/CreateInstanceDialog";
@@ -103,9 +108,39 @@ export default function App() {
   const [selected, setSelected] = useState<SelectedComponent | null>(null);
   const [createStep, setCreateStep] = useState<CreateStep>(null);
   const [events, setEvents] = useState<EventEntry[]>([]);
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [connected, setConnected] = useState(false);
+
+  // Sidebar state
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab | null>(() => {
+    try {
+      return (localStorage.getItem("drasi-sidebar-tab") as SidebarTab) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    try {
+      return localStorage.getItem("drasi-sidebar-pinned") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  // Persist sidebar state
+  useEffect(() => {
+    try {
+      if (sidebarTab) {
+        localStorage.setItem("drasi-sidebar-tab", sidebarTab);
+      } else {
+        localStorage.removeItem("drasi-sidebar-tab");
+      }
+    } catch { /* ignore */ }
+  }, [sidebarTab]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("drasi-sidebar-pinned", String(sidebarPinned));
+    } catch { /* ignore */ }
+  }, [sidebarPinned]);
 
   // Solution deploy state
   const [deployTemplateId, setDeployTemplateId] = useState<string | undefined>(undefined);
@@ -431,7 +466,14 @@ export default function App() {
     }
 
     return null;
-  }, [selected, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]);
+  }, [selected, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]) as InspectorData | null;
+
+  // Auto-switch to component tab when user selects a NEW component on the canvas
+  useEffect(() => {
+    if (selected) {
+      setSidebarTab("component");
+    }
+  }, [selected?.id, selected?.type]);
 
   const isEmpty =
     sources.length === 0 && queries.length === 0 && reactions.length === 0;
@@ -481,11 +523,7 @@ export default function App() {
 
   return (
     <AppLayout
-      onAddComponent={() => setCreateStep("component")}
       connected={connected}
-      onToggleActivity={() => setActivityOpen((p) => !p)}
-      onTogglePlugins={() => setPluginsOpen((p) => !p)}
-      eventCount={events.length}
       theme={theme}
       onToggleTheme={toggleTheme}
       instanceSlot={
@@ -493,115 +531,143 @@ export default function App() {
           instances={instances}
           selectedId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
-          onCreateNew={() => setShowCreateInstance(true)}
-          onCreateFromTemplate={() => setShowSolutionInstanceWizard(true)}
-          onClone={() => setShowCloneInstance(true)}
-          onCreateTemplate={() => setShowCreateTemplate(true)}
         />
       }
     >
-      {/* Flow Canvas */}
-      {isEmpty ? (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
-          <p className="text-lg font-semibold text-drasi-text-primary">
-            No components yet
-          </p>
-          <p className="text-sm max-w-md text-center">
-            Click <strong>Add</strong> above to create your first Source, Query,
-            or Reaction — or start the server with a config file.
-          </p>
-          <button
-            onClick={() => setCreateStep("component")}
-            className="action-btn-primary mt-2"
-          >
-            + Add
-          </button>
+      <div className="flex h-full">
+        {/* Icon rail — always visible, fixed width */}
+        <div className="flex-shrink-0">
+          <IconRail
+            activeTab={sidebarTab}
+            onTabClick={(tab) => {
+              if (sidebarTab === tab) {
+                if (!sidebarPinned) setSidebarTab(null);
+              } else {
+                setSidebarTab(tab);
+              }
+            }}
+            badges={events.length > 0 ? { logs: events.length } : {}}
+            componentSelected={selected !== null}
+          />
         </div>
-      ) : (
-        <FlowCanvas data={pipelineData} instanceId={selectedInstanceId} onNodeClick={handleNodeClick} onPaneClick={handlePaneClick} />
-      )}
 
-      {/* Inspector Panel */}
-      <AnimatePresence>
-        {inspectorProps && 'isSource' in inspectorProps && inspectorProps.isSource ? (
-          <SourceInspectorPanel
-            id={inspectorProps.id}
-            kind={inspectorProps.kind}
-            status={inspectorProps.status}
-            error={inspectorProps.error}
-            autoStart={inspectorProps.autoStart}
-            properties={inspectorProps.properties}
-            queries={inspectorProps.queries}
-            onClose={() => setSelected(null)}
-            onStart={inspectorProps.onStart}
-            onStop={inspectorProps.onStop}
-            onDelete={inspectorProps.onDelete}
-            onNavigate={(id, type) => setSelected({ id, type })}
-            onStartQuery={(id) => {
-              startQuery(id);
-              pushEvent(`Started query: ${id}`, "success");
-            }}
-            onStopQuery={(id) => {
-              stopQuery(id);
-              pushEvent(`Stopped query: ${id}`, "warning");
-            }}
-          />
-        ) : inspectorProps && 'isQuery' in inspectorProps && inspectorProps.isQuery ? (
-          <QueryInspectorPanel
-            id={inspectorProps.id}
-            status={inspectorProps.status}
-            error={inspectorProps.error}
-            query={inspectorProps.query}
-            queryLanguage={inspectorProps.queryLanguage}
-            sources={inspectorProps.sources}
-            reactions={inspectorProps.reactions}
-            onClose={() => setSelected(null)}
-            onStart={inspectorProps.onStart}
-            onStop={inspectorProps.onStop}
-            onDelete={inspectorProps.onDelete}
-            onNavigate={(id, type) => setSelected({ id, type })}
-            onStartSource={(id) => {
-              startSource(id);
-              pushEvent(`Started source: ${id}`, "success");
-            }}
-            onStopSource={(id) => {
-              stopSource(id);
-              pushEvent(`Stopped source: ${id}`, "warning");
-            }}
-            onStartReaction={(id) => {
-              startReaction(id);
-              pushEvent(`Started reaction: ${id}`, "success");
-            }}
-            onStopReaction={(id) => {
-              stopReaction(id);
-              pushEvent(`Stopped reaction: ${id}`, "warning");
-            }}
-          />
-        ) : inspectorProps && 'isReaction' in inspectorProps && inspectorProps.isReaction ? (
-          <ReactionInspectorPanel
-            id={inspectorProps.id}
-            kind={inspectorProps.kind}
-            status={inspectorProps.status}
-            error={inspectorProps.error}
-            autoStart={inspectorProps.autoStart}
-            properties={inspectorProps.properties}
-            queries={inspectorProps.queries}
-            onClose={() => setSelected(null)}
-            onStart={inspectorProps.onStart}
-            onStop={inspectorProps.onStop}
-            onDelete={inspectorProps.onDelete}
-            onNavigate={(id, type) => setSelected({ id, type })}
-            onStartQuery={(id) => {
-              startQuery(id);
-              pushEvent(`Started query: ${id}`, "success");
-            }}
-            onStopQuery={(id) => {
-              stopQuery(id);
-              pushEvent(`Stopped query: ${id}`, "warning");
-            }}
-          />
-        ) : null}
-      </AnimatePresence>
+        {/* Sidebar content panel — slides in/out from left */}
+        <AnimatePresence>
+          {sidebarTab && (
+            <motion.div
+              key="sidebar-content"
+              initial={{ width: 0 }}
+              animate={{ width: 320 }}
+              exit={{ width: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="flex-shrink-0 border-r border-[var(--drasi-border)] overflow-hidden"
+            >
+              <div style={{ width: 320 }} className="h-full">
+                <LeftPanel
+                  activeTab={sidebarTab}
+                  pinned={sidebarPinned}
+                  onTogglePin={() => setSidebarPinned((p) => !p)}
+                >
+                {sidebarTab === "component" && (
+              <CurrentComponentPanel
+                data={inspectorProps}
+                onNavigate={(id, type) => setSelected({ id, type })}
+                onStartSource={(id) => {
+                  startSource(id);
+                  pushEvent(`Started source: ${id}`, "success");
+                }}
+                onStopSource={(id) => {
+                  stopSource(id);
+                  pushEvent(`Stopped source: ${id}`, "warning");
+                }}
+                onStartQuery={(id) => {
+                  startQuery(id);
+                  pushEvent(`Started query: ${id}`, "success");
+                }}
+                onStopQuery={(id) => {
+                  stopQuery(id);
+                  pushEvent(`Stopped query: ${id}`, "warning");
+                }}
+                onStartReaction={(id) => {
+                  startReaction(id);
+                  pushEvent(`Started reaction: ${id}`, "success");
+                }}
+                onStopReaction={(id) => {
+                  stopReaction(id);
+                  pushEvent(`Stopped reaction: ${id}`, "warning");
+                }}
+              />
+            )}
+            {sidebarTab === "catalog" && (
+              <ComponentsPanel
+                onStartCreate={(componentType, kind) => {
+                  if (componentType === "query") {
+                    startDraft("query", "query");
+                  } else if (kind) {
+                    startDraft(componentType, kind);
+                  } else {
+                    // No kind specified — open the kind selector
+                    setCreateStep(
+                      componentType === "source" ? "source-kind" : "reaction-kind",
+                    );
+                  }
+                }}
+              />
+            )}
+            {sidebarTab === "solutions" && (
+              <SolutionTemplatesPanel
+                instanceId={selectedInstanceId ?? ""}
+                sources={sources}
+                queries={queries}
+                reactions={reactions}
+                onDeployTemplate={(templateId) => setDeployTemplateId(templateId)}
+                onUploadYaml={(yaml) => setDeployUploadedYaml(yaml)}
+                onCreateTemplate={() => setShowCreateTemplate(true)}
+              />
+            )}
+            {sidebarTab === "plugins" && <PluginsPanel />}
+            {sidebarTab === "instances" && (
+              <InstancesPanel
+                instances={instances}
+                selectedId={selectedInstanceId}
+                onSelect={setSelectedInstanceId}
+                onCreateNew={() => setShowCreateInstance(true)}
+                onCreateFromTemplate={() => setShowSolutionInstanceWizard(true)}
+                onClone={() => setShowCloneInstance(true)}
+                onCreateTemplate={() => setShowCreateTemplate(true)}
+              />
+            )}
+            {sidebarTab === "logs" && (
+              <LogsPanel events={events} onClear={() => setEvents([])} />
+            )}
+                </LeftPanel>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main canvas area — fills remaining space */}
+        <div className="flex-1 min-w-0">
+          {isEmpty ? (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
+              <p className="text-lg font-semibold text-drasi-text-primary">
+                No components yet
+              </p>
+              <p className="text-sm max-w-md text-center">
+                Open the <strong>Components</strong> tab in the sidebar to
+                create your first Source, Query, or Reaction.
+              </p>
+            </div>
+          ) : (
+            <FlowCanvas
+              data={pipelineData}
+              instanceId={selectedInstanceId}
+              onNodeClick={handleNodeClick}
+              onPaneClick={handlePaneClick}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Type Selector Overlay */}
       {createStep && (
@@ -712,27 +778,15 @@ export default function App() {
           onClose={() => setShowSolutionInstanceWizard(false)}
           onSuccess={(newInstanceId) => {
             setShowSolutionInstanceWizard(false);
-            pushEvent(`Created instance from template: ${newInstanceId}`, "success");
-            // Refresh instances list
+            pushEvent(
+              `Created instance from template: ${newInstanceId}`,
+              "success",
+            );
             refreshInstances();
-            // Switch to the new instance - hooks auto-refresh when instanceId changes
             setSelectedInstanceId(newInstanceId);
           }}
         />
       )}
-
-      {/* Plugin Management Panel */}
-      {pluginsOpen && (
-        <PluginManagementPanel onClose={() => setPluginsOpen(false)} />
-      )}
-
-      {/* Activity Panel */}
-      <EventPanel
-        events={events}
-        open={activityOpen}
-        onClose={() => setActivityOpen(false)}
-        onClear={() => setEvents([])}
-      />
 
       {/* Solution Deploy Dialog */}
       {(deployTemplateId || deployUploadedYaml) && (
@@ -746,9 +800,7 @@ export default function App() {
           onSuccess={(deployedToInstanceId) => {
             setDeployTemplateId(undefined);
             setDeployUploadedYaml(undefined);
-            // Refresh instances list (in case a new one was created)
             refreshInstances();
-            // Switch to the instance that was deployed to - hooks auto-refresh when instanceId changes
             setSelectedInstanceId(deployedToInstanceId);
           }}
         />

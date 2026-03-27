@@ -17,7 +17,7 @@ export default function ConnectedComponentItem({
   id,
   type,
   status,
-  kind,
+  kind: _kind,
   accentColor,
   onNavigate,
   onStart,
@@ -28,53 +28,48 @@ export default function ConnectedComponentItem({
   const isTransitioning = status === "Starting" || status === "Stopping";
 
   return (
-    <div className="flex items-center justify-between p-2.5 rounded-lg bg-drasi-card border border-drasi-border/50 hover:border-opacity-50 transition-colors"
+    <div className="flex items-center justify-between p-2 rounded-lg bg-drasi-card border border-drasi-border/50 hover:border-opacity-50 transition-colors gap-1"
          style={{ borderColor: `${accentColor}30` }}>
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <div 
-          className="w-2 h-2 rounded-full shrink-0" 
+          className="w-1.5 h-1.5 rounded-full shrink-0" 
           style={{ backgroundColor: accentColor }} 
         />
         <button
           onClick={() => onNavigate?.(id, type)}
-          className="text-sm font-medium text-drasi-text-primary hover:underline truncate text-left"
+          className="text-xs font-medium text-drasi-text-primary hover:underline truncate text-left"
           title={`Open ${id} in inspector`}
         >
           {id}
         </button>
-        {kind && (
-          <span className="text-[10px] text-drasi-text-secondary px-1.5 py-0.5 rounded bg-drasi-bg shrink-0">
-            {kind}
-          </span>
-        )}
       </div>
-      <div className="flex items-center gap-2 shrink-0 ml-2">
+      <div className="flex items-center gap-1 shrink-0">
         {(onStart || onStop) && (
-          <div className="flex items-center gap-1">
+          <>
             {canStart && onStart && (
               <button
                 onClick={() => onStart(id)}
-                className="p-1 rounded hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running transition-colors"
+                className="p-0.5 rounded hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running transition-colors"
                 title="Start"
               >
-                <Play size={12} />
+                <Play size={10} />
               </button>
             )}
             {canStop && onStop && (
               <button
                 onClick={() => onStop(id)}
-                className="p-1 rounded hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error transition-colors"
+                className="p-0.5 rounded hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error transition-colors"
                 title="Stop"
               >
-                <Square size={12} />
+                <Square size={10} />
               </button>
             )}
             {isTransitioning && (
-              <div className="w-5 h-5 flex items-center justify-center">
-                <div className="w-3 h-3 border-2 border-drasi-text-secondary border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 flex items-center justify-center">
+                <div className="w-2.5 h-2.5 border-2 border-drasi-text-secondary border-t-transparent rounded-full animate-spin" />
               </div>
             )}
-          </div>
+          </>
         )}
         <StatusBadge status={status} />
       </div>

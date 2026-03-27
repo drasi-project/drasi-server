@@ -6,7 +6,7 @@ interface InstanceSelectorProps {
   instances: InstanceInfo[];
   selectedId?: string;
   onSelect: (id: string) => void;
-  onCreateNew: () => void;
+  onCreateNew?: () => void;
   onCreateFromTemplate?: () => void;
   onClone?: () => void;
   onCreateTemplate?: () => void;
@@ -82,6 +82,7 @@ export default function InstanceSelector({
               ))}
             </div>
             <div className="p-1 border-t border-drasi-border space-y-0.5">
+              {onCreateNew && (
               <button
                 onClick={() => {
                   onCreateNew();
@@ -92,6 +93,7 @@ export default function InstanceSelector({
                 <Plus size={12} />
                 Create Instance
               </button>
+              )}
               {onCreateFromTemplate && (
                 <button
                   onClick={() => {
