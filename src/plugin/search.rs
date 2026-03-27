@@ -14,55 +14,95 @@
 
 use anyhow::Result;
 
-use drasi_host_sdk::registry::RegistryConfig;
+use drasi_host_sdk::registry::{PluginSourceKind, RegistryConfig};
 
 use super::{cli_registry_client, get_cli_registry_auth, get_plugin_registry};
 use crate::cli_styles;
 
 /// Search for available versions of a plugin.
+///
+/// Supports both OCI registries and local directories as the plugin source.
 pub async fn search(
     reference: &str,
     config_path: &std::path::Path,
     registry_override: Option<&str>,
 ) -> Result<()> {
     let registry_url = get_plugin_registry(config_path, registry_override);
-    let auth = get_cli_registry_auth();
-    let config = RegistryConfig {
-        default_registry: registry_url.clone(),
-        auth,
-    };
 
-    let client = cli_registry_client(config);
+    match PluginSourceKind::parse(&registry_url) {
+        PluginSourceKind::LocalDir(dir) => {
+            let sp = cli_styles::spinner(&format!(
+                "Searching for {reference} in {}...",
+                dir.display()
+            ));
 
-    let sp = cli_styles::spinner(&format!("Searching for {reference} in {registry_url}..."));
+            let local = drasi_host_sdk::registry::LocalDirRegistry::new(&dir);
+            let results = local.search(reference)?;
+            sp.finish_and_clear();
 
-    let results = client.search_plugins(reference).await?;
-    sp.finish_and_clear();
-
-    if results.is_empty() {
-        println!(
-            "{}",
-            cli_styles::skip(&format!("No plugins found matching '{reference}'."))
-        );
-        return Ok(());
-    }
-
-    for result in &results {
-        println!(
-            "\n  {} {}",
-            cli_styles::heading(&result.reference),
-            cli_styles::detail(&result.full_reference)
-        );
-        if result.versions.is_empty() {
-            println!("{}", cli_styles::detail("No versions found."));
-        } else {
-            println!("{}", cli_styles::detail("Available versions:"));
-            for v in &result.versions {
+            if results.is_empty() {
                 println!(
-                    "    {}  {}",
-                    cli_styles::version(&v.version),
-                    cli_styles::detail(&format!("({})", v.platforms.join(", ")))
+                    "{}",
+                    cli_styles::skip(&format!("No plugins found matching '{reference}'."))
                 );
+                return Ok(());
+            }
+
+            for result in &results {
+                let version_label = if result.version.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    result.version.clone()
+                };
+                println!(
+                    "\n  {} {}",
+                    cli_styles::heading(&result.reference),
+                    cli_styles::detail(&format!("(local: {})", result.filename))
+                );
+                println!("    {}", cli_styles::version(&format!("v{version_label}")));
+            }
+        }
+        PluginSourceKind::Oci(_) => {
+            let auth = get_cli_registry_auth();
+            let config = RegistryConfig {
+                default_registry: registry_url.clone(),
+                auth,
+            };
+
+            let client = cli_registry_client(config);
+
+            let sp =
+                cli_styles::spinner(&format!("Searching for {reference} in {registry_url}..."));
+
+            let results = client.search_plugins(reference).await?;
+            sp.finish_and_clear();
+
+            if results.is_empty() {
+                println!(
+                    "{}",
+                    cli_styles::skip(&format!("No plugins found matching '{reference}'."))
+                );
+                return Ok(());
+            }
+
+            for result in &results {
+                println!(
+                    "\n  {} {}",
+                    cli_styles::heading(&result.reference),
+                    cli_styles::detail(&result.full_reference)
+                );
+                if result.versions.is_empty() {
+                    println!("{}", cli_styles::detail("No versions found."));
+                } else {
+                    println!("{}", cli_styles::detail("Available versions:"));
+                    for v in &result.versions {
+                        println!(
+                            "    {}  {}",
+                            cli_styles::version(&v.version),
+                            cli_styles::detail(&format!("({})", v.platforms.join(", ")))
+                        );
+                    }
+                }
             }
         }
     }

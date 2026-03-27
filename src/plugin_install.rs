@@ -45,6 +45,8 @@ pub async fn auto_install_plugins(
     plugins_dir: &Path,
     locked: bool,
 ) -> Result<Vec<ResolvedPlugin>> {
+    use drasi_host_sdk::registry::PluginSourceKind;
+
     if !config.auto_install_plugins || config.plugins.is_empty() {
         return Ok(Vec::new());
     }
@@ -60,6 +62,11 @@ pub async fn auto_install_plugins(
         registry_url,
         if locked { " (locked)" } else { "" }
     );
+
+    // Check if the registry is a local directory
+    if let PluginSourceKind::LocalDir(dir) = PluginSourceKind::parse(registry_url) {
+        return auto_install_from_local_dir(config, plugins_dir, &dir).await;
+    }
 
     // Read existing lockfile
     let lockfile_dir = plugins_dir;
@@ -268,4 +275,104 @@ async fn install_if_missing(
     );
 
     Ok((resolved, download.verification))
+}
+
+/// Auto-install plugins from a local directory.
+///
+/// For each plugin in `config.plugins`, resolves and copies from the local dir.
+async fn auto_install_from_local_dir(
+    config: &DrasiServerConfig,
+    plugins_dir: &Path,
+    dir: &Path,
+) -> Result<Vec<ResolvedPlugin>> {
+    use drasi_host_sdk::registry::LocalDirRegistry;
+
+    let local = LocalDirRegistry::new(dir);
+
+    std::fs::create_dir_all(plugins_dir).context("failed to create plugins directory")?;
+
+    let lockfile_dir = plugins_dir;
+    let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
+    let mut lockfile_updated = false;
+    let mut resolved = Vec::new();
+
+    for plugin_dep in &config.plugins {
+        match local.resolve(&plugin_dep.reference) {
+            Ok(info) => {
+                let dest_path = plugins_dir.join(&info.filename);
+                if dest_path.exists() {
+                    info!("  ✓ {} — already installed (local)", plugin_dep.reference);
+                } else {
+                    info!(
+                        "  ← {} — copying from {}...",
+                        plugin_dep.reference,
+                        dir.display()
+                    );
+                    local.install(&info, plugins_dir).with_context(|| {
+                        format!(
+                            "failed to install '{}' from local dir",
+                            plugin_dep.reference
+                        )
+                    })?;
+                    info!(
+                        "  ✓ {} — installed → {}",
+                        plugin_dep.reference, info.filename
+                    );
+                }
+
+                let locked_entry = LockedPlugin {
+                    reference: format!("file://{}", info.file_path.display()),
+                    version: info.version.clone(),
+                    digest: String::new(),
+                    sdk_version: info.sdk_version.clone(),
+                    core_version: String::new(),
+                    lib_version: String::new(),
+                    platform: env!("TARGET_TRIPLE").to_string(),
+                    filename: info.filename.clone(),
+                    file_hash: crate::plugin_lockfile::compute_file_hash(
+                        &plugins_dir.join(&info.filename),
+                    )
+                    .ok(),
+                    git_commit: None,
+                    build_timestamp: None,
+                    signature: None,
+                };
+                if lockfile.get(&plugin_dep.reference) != Some(&locked_entry) {
+                    lockfile.insert(plugin_dep.reference.clone(), locked_entry);
+                    lockfile_updated = true;
+                }
+
+                // Build a ResolvedPlugin for compatibility with callers
+                resolved.push(ResolvedPlugin {
+                    reference: format!("file://{}", info.file_path.display()),
+                    version: info.version,
+                    sdk_version: info.sdk_version,
+                    core_version: String::new(),
+                    lib_version: String::new(),
+                    platform: env!("TARGET_TRIPLE").to_string(),
+                    digest: String::new(),
+                    filename: info.filename,
+                });
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to install plugin '{}' from local dir: {}",
+                    plugin_dep.reference, e
+                );
+            }
+        }
+    }
+
+    if lockfile_updated {
+        lockfile.write(lockfile_dir)?;
+    }
+
+    if !resolved.is_empty() {
+        info!(
+            "Plugin auto-install from local dir complete: {} plugin(s) ready",
+            resolved.len()
+        );
+    }
+
+    Ok(resolved)
 }

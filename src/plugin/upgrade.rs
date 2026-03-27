@@ -112,10 +112,11 @@ pub async fn upgrade(
     let mut new_lockfile = lockfile.clone();
 
     for (ref_key, current) in &to_check {
-        // Skip non-OCI plugins
+        // Skip non-OCI plugins (installed from file:// or http:// sources)
         if ref_key.starts_with("file://")
             || ref_key.starts_with("http://")
             || ref_key.starts_with("https://")
+            || current.reference.starts_with("file://")
         {
             println!(
                 "{}",

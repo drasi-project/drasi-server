@@ -25,7 +25,6 @@ mod builder;
 mod prompts;
 
 use anyhow::Result;
-use inquire::{Confirm, Text};
 use std::fs;
 use std::path::PathBuf;
 
@@ -40,13 +39,14 @@ fn default_plugins_dir() -> Option<PathBuf> {
 ///
 /// This function guides the user through selecting:
 /// 1. Server settings (host, port, log level, hot-reload)
-/// 2. Data sources (discovered plugins or built-in list)
-/// 3. Bootstrap providers for each source
-/// 4. Reactions (discovered plugins or built-in list)
+/// 2. Data sources via select-or-install pattern
+/// 3. Configuration + bootstrap provider for each source
+/// 4. Reactions via select-or-install pattern
+/// 5. Configuration for each reaction
 ///
 /// When a `plugins_dir` is provided (or defaulted), the wizard scans for
-/// locally installed plugins and presents them as selection options. If no
-/// plugins are found, the wizard falls back to the hardcoded built-in list.
+/// locally installed plugins and presents them as selection options. Users
+/// can also install additional plugins from a registry at each step.
 ///
 /// The resulting configuration is written to the specified output file.
 pub async fn run_init(
@@ -71,82 +71,51 @@ pub async fn run_init(
     println!("This wizard will help you create a configuration file.");
     println!();
 
-    // Discover available plugins
     let effective_plugins_dir = plugins_dir.or_else(default_plugins_dir);
-    let mut discovered = if let Some(dir) = &effective_plugins_dir {
-        let d = prompts::discover_available_plugins(dir);
-        if !d.is_empty() {
-            println!(
-                "Discovered {} source(s), {} reaction(s), {} bootstrapper(s) in {}",
-                d.sources.len(),
-                d.reactions.len(),
-                d.bootstrappers.len(),
-                dir.display()
-            );
-            println!();
-        }
-        d
-    } else {
-        prompts::DiscoveredPlugins::default()
-    };
-
-    // Offer to download additional plugins from registry
-    if let Some(dir) = &effective_plugins_dir {
-        loop {
-            let download_more = Confirm::new("Download additional plugins from a registry?")
-                .with_default(false)
-                .prompt()?;
-
-            if !download_more {
-                break;
-            }
-
-            let registry_url = Text::new("Registry URL:")
-                .with_default("ghcr.io/drasi-project")
-                .prompt()?;
-
-            println!("Searching {registry_url}...");
-            let available = prompts::search_registry_plugins(&registry_url).await?;
-
-            if available.is_empty() {
-                println!("No plugins found in registry.");
-                continue;
-            }
-
-            let selected = prompts::prompt_registry_plugin_selection(&available)?;
-
-            if selected.is_empty() {
-                continue;
-            }
-
-            for plugin_ref in &selected {
-                println!("Installing {plugin_ref}...");
-                match prompts::install_registry_plugin(plugin_ref, dir, &registry_url).await {
-                    Ok(()) => println!("  \u{2713} Installed {plugin_ref}"),
-                    Err(e) => println!("  \u{2717} Failed to install {plugin_ref}: {e}"),
-                }
-            }
-
-            // Re-discover local plugins after downloads
-            discovered = prompts::discover_available_plugins(dir);
-            println!();
-            println!(
-                "Now have {} source(s), {} reaction(s), {} bootstrapper(s)",
-                discovered.sources.len(),
-                discovered.reactions.len(),
-                discovered.bootstrappers.len()
-            );
-        }
-    }
 
     // Step 1: Server settings
     let server_settings = prompts::prompt_server_settings()?;
 
-    // Step 2: Select and configure sources (dynamic or fallback)
-    let sources = prompts::prompt_sources_dynamic(&discovered)?;
+    // Step 2: Source selection
+    println!();
+    println!("Data Sources");
+    println!("------------");
+    let source_kinds =
+        prompts::select_or_install_plugins("source", effective_plugins_dir.as_deref()).await?;
 
-    // Step 3: Select and configure reactions (dynamic or fallback)
-    let reactions = prompts::prompt_reactions_dynamic(&discovered, &sources)?;
+    // Step 3: Configure each source + bootstrap
+    let mut sources = Vec::new();
+    for kind in &source_kinds {
+        println!();
+        let mut source = prompts::prompt_source_by_kind(kind)?;
+
+        // Bootstrap for this source
+        println!();
+        println!("Bootstrap provider for source '{}':", source.id());
+        let bootstrap_kinds =
+            prompts::select_or_install_plugins("bootstrap", effective_plugins_dir.as_deref())
+                .await?;
+        if let Some(boot_kind) = bootstrap_kinds.first() {
+            source = prompts::attach_bootstrap_to_source(source, boot_kind)?;
+        }
+        sources.push(source);
+    }
+
+    // Step 4: Reaction selection
+    println!();
+    println!("Reactions");
+    println!("---------");
+    let reaction_kinds =
+        prompts::select_or_install_plugins("reaction", effective_plugins_dir.as_deref()).await?;
+
+    // Step 5: Configure each reaction
+    let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
+    let mut reactions = Vec::new();
+    for kind in &reaction_kinds {
+        println!();
+        let reaction = prompts::prompt_reaction_by_kind(kind, &source_ids)?;
+        reactions.push(reaction);
+    }
 
     // Build the configuration
     let config = builder::build_config(server_settings, sources, reactions);

@@ -28,7 +28,8 @@ use drasi_host_sdk::loader::{
 };
 use drasi_host_sdk::lockfile::{compute_file_hash, PluginLockfile};
 use drasi_host_sdk::registry::{
-    HostVersionInfo, RegistryAuth, RegistryConfig, TrustedIdentity, VerificationConfig,
+    HostVersionInfo, LocalDirRegistry, PluginSourceKind, RegistryAuth, RegistryConfig,
+    TrustedIdentity, VerificationConfig,
 };
 
 use crate::config::DrasiServerConfig;
@@ -328,25 +329,125 @@ impl PluginOperations {
         }
     }
 
-    /// Download a plugin from an OCI registry and return the local file path.
+    /// Download a plugin from an OCI registry or copy from a local directory,
+    /// and return the local file path.
     ///
-    /// This resolves the reference, downloads the binary, updates the lockfile,
-    /// and returns the path to the downloaded file ready for loading.
+    /// When the registry value is a local path, the plugin is copied directly.
+    /// When it's an OCI URL, the existing resolve/download flow is used.
     pub async fn install_from_registry(
         &self,
         reference: &str,
         registry_override: Option<&str>,
     ) -> Result<std::path::PathBuf> {
+        let registry_value = registry_override
+            .map(String::from)
+            .unwrap_or_else(|| self.default_registry.clone());
+
+        match PluginSourceKind::parse(&registry_value) {
+            PluginSourceKind::LocalDir(dir) => self.install_from_local_dir(reference, &dir).await,
+            PluginSourceKind::Oci(_) => self.install_from_oci(reference, &registry_value).await,
+        }
+    }
+
+    /// Search for plugins in the configured registry (OCI or local directory).
+    ///
+    /// Returns a unified list of search results regardless of source kind.
+    pub async fn search_registry(
+        &self,
+        query: &str,
+        registry_override: Option<&str>,
+    ) -> Result<Vec<PluginSearchResultUnified>> {
+        let registry_value = registry_override
+            .map(String::from)
+            .unwrap_or_else(|| self.default_registry.clone());
+
+        match PluginSourceKind::parse(&registry_value) {
+            PluginSourceKind::LocalDir(dir) => {
+                let local = LocalDirRegistry::new(&dir);
+                let results = local.search(query)?;
+                Ok(results
+                    .into_iter()
+                    .map(|r| PluginSearchResultUnified {
+                        reference: r.reference,
+                        full_reference: format!("file://{}", r.file_path.display()),
+                        version: r.version,
+                        filename: r.filename,
+                        source: "local".to_string(),
+                    })
+                    .collect())
+            }
+            PluginSourceKind::Oci(_) => {
+                let config = RegistryConfig {
+                    default_registry: registry_value.clone(),
+                    auth: Self::registry_auth(),
+                };
+                let client = Self::build_registry_client(config);
+                let results = client.search_plugins(query).await?;
+                Ok(results
+                    .into_iter()
+                    .map(|r| PluginSearchResultUnified {
+                        reference: r.reference.clone(),
+                        full_reference: r.full_reference,
+                        version: r
+                            .versions
+                            .first()
+                            .map(|v| v.version.clone())
+                            .unwrap_or_default(),
+                        filename: String::new(),
+                        source: "oci".to_string(),
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    /// Install a plugin from a local directory.
+    async fn install_from_local_dir(
+        &self,
+        reference: &str,
+        dir: &Path,
+    ) -> Result<std::path::PathBuf> {
+        let local = LocalDirRegistry::new(dir);
+        let resolved = local.resolve(reference)?;
+        let dest = local.install(&resolved, &self.plugins_dir)?;
+
+        // Update lockfile
+        let mut lockfile = PluginLockfile::read(&self.plugins_dir)?.unwrap_or_default();
+        lockfile.insert(
+            reference.to_string(),
+            drasi_host_sdk::lockfile::LockedPlugin {
+                reference: format!("file://{}", resolved.file_path.display()),
+                version: resolved.version,
+                digest: String::new(),
+                sdk_version: resolved.sdk_version,
+                core_version: String::new(),
+                lib_version: String::new(),
+                platform: env!("TARGET_TRIPLE").to_string(),
+                filename: resolved.filename,
+                file_hash: compute_file_hash(&dest).ok(),
+                git_commit: None,
+                build_timestamp: None,
+                signature: None,
+            },
+        );
+        lockfile.write(&self.plugins_dir)?;
+
+        log::info!("Plugin installed from local dir: {}", dest.display());
+        Ok(dest)
+    }
+
+    /// Install a plugin from an OCI registry (internal implementation).
+    async fn install_from_oci(
+        &self,
+        reference: &str,
+        registry_url: &str,
+    ) -> Result<std::path::PathBuf> {
         use drasi_host_sdk::registry::{
             CosignVerifier, OciRegistryClient, PluginResolver, SignatureStatus,
         };
 
-        let registry_url = registry_override
-            .map(String::from)
-            .unwrap_or_else(|| self.default_registry.clone());
-
         let config = RegistryConfig {
-            default_registry: registry_url.clone(),
+            default_registry: registry_url.to_string(),
             auth: Self::registry_auth(),
         };
 
@@ -360,7 +461,7 @@ impl PluginOperations {
         let resolver = PluginResolver::new(&client, &host_info);
 
         log::info!("Resolving plugin '{reference}' from '{registry_url}'...",);
-        let resolved = resolver.resolve(reference, &registry_url).await?;
+        let resolved = resolver.resolve(reference, registry_url).await?;
 
         log::info!(
             "Downloading {} (version {}, platform {})...",
@@ -407,6 +508,21 @@ impl PluginOperations {
         log::info!("Plugin installed: {}", plugin_path.display());
         Ok(plugin_path)
     }
+}
+
+/// A unified plugin search result that works for both local and OCI sources.
+#[derive(Debug, Clone)]
+pub struct PluginSearchResultUnified {
+    /// Short plugin reference (e.g., "source/postgres").
+    pub reference: String,
+    /// Full reference (OCI URL or file:// path).
+    pub full_reference: String,
+    /// Latest version (from metadata or OCI tags).
+    pub version: String,
+    /// Filename of the binary (populated for local sources).
+    pub filename: String,
+    /// Source kind: "local" or "oci".
+    pub source: String,
 }
 
 /// Simple wildcard pattern matching supporting `*` and `?`.

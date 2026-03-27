@@ -62,6 +62,7 @@ pub struct DiscoveredPlugins {
 
 impl DiscoveredPlugins {
     /// Returns true if no plugins were discovered.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.sources.is_empty() && self.reactions.is_empty() && self.bootstrappers.is_empty()
     }
@@ -117,6 +118,7 @@ pub fn discover_available_plugins(plugins_dir: &Path) -> DiscoveredPlugins {
 
 /// Source type selection options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SourceType {
     Postgres,
     Http,
@@ -157,6 +159,7 @@ impl std::fmt::Display for BootstrapType {
 
 /// Reaction type selection options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ReactionType {
     Log,
     Http,
@@ -278,6 +281,7 @@ fn prompt_state_store() -> Result<Option<StateStoreConfig>> {
 }
 
 /// Prompt for source selection and configuration.
+#[allow(dead_code)]
 pub fn prompt_sources() -> Result<Vec<SourceConfig>> {
     println!("Data Sources");
     println!("------------");
@@ -317,6 +321,7 @@ pub fn prompt_sources() -> Result<Vec<SourceConfig>> {
 }
 
 /// Prompt for details of a specific source type.
+#[allow(dead_code)]
 fn prompt_source_details(source_type: SourceType) -> Result<SourceConfig> {
     match source_type {
         SourceType::Postgres => prompt_postgres_source(),
@@ -641,6 +646,7 @@ fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
 }
 
 /// Prompt for reaction selection and configuration.
+#[allow(dead_code)]
 pub fn prompt_reactions(sources: &[SourceConfig]) -> Result<Vec<ReactionConfig>> {
     println!("Reactions");
     println!("---------");
@@ -683,6 +689,7 @@ pub fn prompt_reactions(sources: &[SourceConfig]) -> Result<Vec<ReactionConfig>>
 }
 
 /// Prompt for details of a specific reaction type.
+#[allow(dead_code)]
 fn prompt_reaction_details(
     reaction_type: ReactionType,
     _source_ids: &[String],
@@ -820,9 +827,9 @@ const KNOWN_REACTION_KINDS: &[&str] = &["log", "http", "sse", "grpc"];
 
 /// A wrapper for displaying plugin choices in `MultiSelect` prompts.
 #[derive(Debug, Clone)]
-struct PluginChoice {
-    kind: String,
-    label: String,
+pub struct PluginChoice {
+    pub kind: String,
+    pub label: String,
 }
 
 impl std::fmt::Display for PluginChoice {
@@ -831,57 +838,115 @@ impl std::fmt::Display for PluginChoice {
     }
 }
 
-/// Prompt for source selection using dynamically discovered plugins.
+/// Unified select-or-install pattern for sources, bootstrappers, and reactions.
 ///
-/// If discovered plugins are available, they are presented as options.
-/// Otherwise, falls back to the hardcoded `SourceType` enum list.
-pub fn prompt_sources_dynamic(discovered: &DiscoveredPlugins) -> Result<Vec<SourceConfig>> {
-    println!("Data Sources");
-    println!("------------");
-    println!("Select one or more data sources for your configuration.");
-    println!();
+/// Shows locally installed plugins for the category with an "Install from registry"
+/// option. If install is selected, searches the registry (filtered by category),
+/// downloads selections, re-scans, and loops back.
+pub async fn select_or_install_plugins(
+    category: &str,
+    plugins_dir: Option<&Path>,
+) -> Result<Vec<String>> {
+    let install_label = format!("\u{2B07} Install a {category} from a registry");
 
-    if discovered.sources.is_empty() {
-        println!("(No source plugins found in plugins directory — using built-in list)");
-        println!();
-        return prompt_sources();
+    loop {
+        // Scan local plugins
+        let discovered = plugins_dir
+            .map(discover_available_plugins)
+            .unwrap_or_default();
+
+        let local_plugins = match category {
+            "source" => &discovered.sources,
+            "reaction" => &discovered.reactions,
+            "bootstrap" => &discovered.bootstrappers,
+            _ => return Ok(Vec::new()),
+        };
+
+        if local_plugins.is_empty() {
+            println!("No {category} plugins installed locally.");
+        }
+
+        // Build selection list
+        let mut items: Vec<PluginChoice> = local_plugins
+            .iter()
+            .map(|p| PluginChoice {
+                kind: p.kind.clone(),
+                label: p.to_string(),
+            })
+            .collect();
+
+        items.push(PluginChoice {
+            kind: "__install__".to_string(),
+            label: install_label.clone(),
+        });
+
+        let prompt_msg = format!("Select {category}s (space to select, enter to confirm):");
+        let selected = MultiSelect::new(&prompt_msg, items)
+            .with_help_message("Use arrow keys to navigate, space to select/deselect")
+            .prompt()?;
+
+        let wants_install = selected.iter().any(|s| s.kind == "__install__");
+        let actual_selections: Vec<String> = selected
+            .iter()
+            .filter(|s| s.kind != "__install__")
+            .map(|s| s.kind.clone())
+            .collect();
+
+        if wants_install {
+            if let Some(dir) = plugins_dir {
+                let registry_url =
+                    Text::new("Plugin source (registry URL or local directory path):")
+                        .with_default("ghcr.io/drasi-project")
+                        .prompt()?;
+
+                println!("Searching {registry_url}...");
+                let all_available = search_registry_plugins(&registry_url).await?;
+
+                // Filter to this category only
+                let category_prefix = format!("{category}/");
+                let filtered: Vec<&RegistryPlugin> = all_available
+                    .iter()
+                    .filter(|p| p.reference.starts_with(&category_prefix))
+                    .collect();
+
+                if filtered.is_empty() {
+                    println!("No {category} plugins found.");
+                } else {
+                    let options: Vec<String> = filtered.iter().map(|p| p.to_string()).collect();
+                    let to_download =
+                        MultiSelect::new(&format!("Select {category}s to install:"), options)
+                            .prompt()?;
+
+                    for display in &to_download {
+                        if let Some(plugin) = filtered.iter().find(|p| p.to_string() == *display) {
+                            println!("Installing {}...", plugin.reference);
+                            match install_registry_plugin(&plugin.reference, dir, &registry_url)
+                                .await
+                            {
+                                Ok(()) => println!("  \u{2713} Installed {}", plugin.reference),
+                                Err(e) => println!("  \u{2717} Failed: {e}"),
+                            }
+                        }
+                    }
+                }
+                println!();
+                continue; // Loop back to show updated list
+            }
+        }
+
+        // User made selection or selected nothing
+        if actual_selections.is_empty() && !wants_install {
+            println!("No {category}s selected. You can add them later by editing the config file.");
+        }
+        return Ok(actual_selections);
     }
-
-    let items: Vec<PluginChoice> = discovered
-        .sources
-        .iter()
-        .map(|p| PluginChoice {
-            kind: p.kind.clone(),
-            label: p.to_string(),
-        })
-        .collect();
-
-    let selected = MultiSelect::new("Select sources (space to select, enter to confirm):", items)
-        .with_help_message("Use arrow keys to navigate, space to select/deselect")
-        .prompt()?;
-
-    if selected.is_empty() {
-        println!("No sources selected. You can add sources later by editing the config file.");
-        println!();
-        return Ok(Vec::new());
-    }
-
-    let mut sources = Vec::new();
-    for choice in &selected {
-        println!();
-        let source = prompt_source_by_kind(&choice.kind)?;
-        sources.push(source);
-    }
-
-    println!();
-    Ok(sources)
 }
 
 /// Prompt for details of a source by its kind string.
 ///
 /// If the kind matches a known built-in source, uses the dedicated prompt.
 /// Otherwise, uses a generic JSON config prompt.
-fn prompt_source_by_kind(kind: &str) -> Result<SourceConfig> {
+pub fn prompt_source_by_kind(kind: &str) -> Result<SourceConfig> {
     match kind {
         "postgres" => prompt_postgres_source(),
         "http" => prompt_http_source(),
@@ -926,65 +991,66 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
     })
 }
 
-/// Prompt for reaction selection using dynamically discovered plugins.
-///
-/// If discovered plugins are available, they are presented as options.
-/// Otherwise, falls back to the hardcoded `ReactionType` enum list.
-pub fn prompt_reactions_dynamic(
-    discovered: &DiscoveredPlugins,
-    sources: &[SourceConfig],
-) -> Result<Vec<ReactionConfig>> {
-    println!("Reactions");
-    println!("---------");
-    println!("Select how you want to receive query results.");
-    println!();
+/// Attach a bootstrap provider to a source config by kind.
+pub fn attach_bootstrap_to_source(
+    mut source: SourceConfig,
+    bootstrap_kind: &str,
+) -> Result<SourceConfig> {
+    let bootstrap = match bootstrap_kind {
+        "postgres" => {
+            // Reuse postgres bootstrap with generic config
+            let host = Text::new("Bootstrap DB host:")
+                .with_default("localhost")
+                .prompt()?;
+            let port_str = Text::new("Bootstrap DB port:")
+                .with_default("5432")
+                .prompt()?;
+            let port: u16 = port_str.parse().unwrap_or(5432);
+            let database = Text::new("Bootstrap DB name:")
+                .with_default("postgres")
+                .prompt()?;
+            let user = Text::new("Bootstrap DB user:")
+                .with_default("postgres")
+                .prompt()?;
+            let password = Password::new("Bootstrap DB password:")
+                .without_confirmation()
+                .prompt()?;
 
-    if discovered.reactions.is_empty() {
-        println!("(No reaction plugins found in plugins directory — using built-in list)");
-        println!();
-        return prompt_reactions(sources);
-    }
-
-    let items: Vec<PluginChoice> = discovered
-        .reactions
-        .iter()
-        .map(|p| PluginChoice {
-            kind: p.kind.clone(),
-            label: p.to_string(),
-        })
-        .collect();
-
-    let selected = MultiSelect::new(
-        "Select reactions (space to select, enter to confirm):",
-        items,
-    )
-    .with_help_message("Use arrow keys to navigate, space to select/deselect")
-    .prompt()?;
-
-    if selected.is_empty() {
-        println!("No reactions selected. You can add reactions later by editing the config file.");
-        println!();
-        return Ok(Vec::new());
-    }
-
-    let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
-
-    let mut reactions = Vec::new();
-    for choice in &selected {
-        println!();
-        let reaction = prompt_reaction_by_kind(&choice.kind, &source_ids)?;
-        reactions.push(reaction);
-    }
-
-    println!();
-    Ok(reactions)
+            Some(BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                config: serde_json::json!({
+                    "host": host,
+                    "port": port,
+                    "database": database,
+                    "user": user,
+                    "password": password,
+                    "sslMode": "prefer"
+                }),
+            })
+        }
+        "scriptfile" => prompt_scriptfile_bootstrap()?,
+        _ => {
+            // Generic bootstrap config
+            let config_json = Text::new(&format!("{bootstrap_kind} bootstrap config (JSON):"))
+                .with_default("{}")
+                .prompt()?;
+            let config =
+                serde_json::from_str(&config_json).unwrap_or_else(|_| serde_json::json!({}));
+            Some(BootstrapProviderConfig {
+                kind: bootstrap_kind.to_string(),
+                config,
+            })
+        }
+    };
+    source.bootstrap_provider = bootstrap;
+    Ok(source)
 }
 
 /// Prompt for details of a reaction by its kind string.
 ///
 /// If the kind matches a known built-in reaction, uses the dedicated prompt.
 /// Otherwise, uses a generic JSON config prompt.
-fn prompt_reaction_by_kind(kind: &str, _source_ids: &[String]) -> Result<ReactionConfig> {
+pub fn prompt_reaction_by_kind(kind: &str, _source_ids: &[String]) -> Result<ReactionConfig> {
     match kind {
         "log" => prompt_log_reaction(),
         "http" => prompt_http_reaction(),
@@ -1166,33 +1232,57 @@ impl std::fmt::Display for RegistryPlugin {
     }
 }
 
-/// Search a remote OCI registry for available plugins.
+/// Search a remote OCI registry or local directory for available plugins.
 pub async fn search_registry_plugins(registry_url: &str) -> Result<Vec<RegistryPlugin>> {
-    use drasi_host_sdk::registry::RegistryConfig;
+    use drasi_host_sdk::registry::{PluginSourceKind, RegistryConfig};
 
-    let config = RegistryConfig {
-        default_registry: registry_url.to_string(),
-        auth: PluginOperations::registry_auth(),
-    };
-    let client = PluginOperations::build_registry_client(config);
-
-    let results = client.search_plugins("*").await?;
-
-    Ok(results
-        .into_iter()
-        .map(|r| RegistryPlugin {
-            reference: r.reference,
-            full_reference: r.full_reference,
-            versions: r
-                .versions
+    match PluginSourceKind::parse(registry_url) {
+        PluginSourceKind::LocalDir(dir) => {
+            let local = drasi_host_sdk::registry::LocalDirRegistry::new(&dir);
+            let results = local.search("*")?;
+            Ok(results
                 .into_iter()
-                .map(|v| (v.version, v.platforms))
-                .collect(),
-        })
-        .collect())
+                .map(|r| {
+                    let version_str = if r.version.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        r.version
+                    };
+                    RegistryPlugin {
+                        reference: r.reference,
+                        full_reference: format!("file://{}", r.file_path.display()),
+                        versions: vec![(version_str, vec![env!("TARGET_TRIPLE").to_string()])],
+                    }
+                })
+                .collect())
+        }
+        PluginSourceKind::Oci(_) => {
+            let config = RegistryConfig {
+                default_registry: registry_url.to_string(),
+                auth: PluginOperations::registry_auth(),
+            };
+            let client = PluginOperations::build_registry_client(config);
+
+            let results = client.search_plugins("*").await?;
+
+            Ok(results
+                .into_iter()
+                .map(|r| RegistryPlugin {
+                    reference: r.reference,
+                    full_reference: r.full_reference,
+                    versions: r
+                        .versions
+                        .into_iter()
+                        .map(|v| (v.version, v.platforms))
+                        .collect(),
+                })
+                .collect())
+        }
+    }
 }
 
 /// Present a multi-select prompt for registry plugins.
+#[allow(dead_code)]
 pub fn prompt_registry_plugin_selection(available: &[RegistryPlugin]) -> Result<Vec<String>> {
     let options: Vec<String> = available.iter().map(|p| p.to_string()).collect();
 
