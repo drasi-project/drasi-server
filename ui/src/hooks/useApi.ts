@@ -31,15 +31,27 @@ function isInternal(id: string): boolean {
 
 type Listener = (event: ComponentEvent) => void;
 
+export type ConnectionState = "connected" | "connecting" | "disconnected";
+type ConnectionListener = (state: ConnectionState) => void;
+
 interface SharedES {
   es: EventSource;
   listeners: Set<Listener>;
+  connectionListeners: Set<ConnectionListener>;
+  connectionState: ConnectionState;
 }
 
 const sharedSources = new Map<string, SharedES>();
 
 function getSharedKey(instanceId?: string): string {
   return instanceId ?? "__default__";
+}
+
+function notifyConnectionState(shared: SharedES, state: ConnectionState) {
+  shared.connectionState = state;
+  for (const listener of shared.connectionListeners) {
+    listener(state);
+  }
 }
 
 /**
@@ -60,10 +72,18 @@ function subscribeComponentEvents(
       : `/api/v1/events`;
 
     const es = new EventSource(path);
-    shared = { es, listeners: new Set() };
+    shared = { es, listeners: new Set(), connectionListeners: new Set(), connectionState: "connecting" };
     const ref = shared;
 
+    es.onopen = () => {
+      notifyConnectionState(ref, "connected");
+    };
+
     es.onmessage = (msg) => {
+      // Any message (including heartbeats) confirms we're connected
+      if (ref.connectionState !== "connected") {
+        notifyConnectionState(ref, "connected");
+      }
       try {
         const event: ComponentEvent = JSON.parse(msg.data);
         for (const listener of ref.listeners) {
@@ -75,7 +95,9 @@ function subscribeComponentEvents(
     };
 
     es.onerror = () => {
-      // EventSource auto-reconnects; nothing to do here
+      // EventSource auto-reconnects; readyState tells us which state we're in
+      const state = es.readyState === EventSource.CONNECTING ? "connecting" : "disconnected";
+      notifyConnectionState(ref, state);
     };
 
     sharedSources.set(key, shared);
@@ -87,7 +109,72 @@ function subscribeComponentEvents(
     const s = sharedSources.get(key);
     if (!s) return;
     s.listeners.delete(onEvent);
-    if (s.listeners.size === 0) {
+    if (s.listeners.size === 0 && s.connectionListeners.size === 0) {
+      s.es.close();
+      sharedSources.delete(key);
+    }
+  };
+}
+
+/**
+ * Subscribe to SSE connection state changes.
+ * Returns the current state immediately via callback, then notifies on changes.
+ * Returns a cleanup function to unsubscribe.
+ */
+export function subscribeConnectionState(
+  onState: ConnectionListener,
+  instanceId?: string,
+): () => void {
+  const key = getSharedKey(instanceId);
+
+  let shared = sharedSources.get(key);
+  if (!shared) {
+    // Create the EventSource if it doesn't exist yet
+    // (subscribeComponentEvents creates it, but connection monitoring may start first)
+    const path = instanceId
+      ? `/api/v1/instances/${instanceId}/events`
+      : `/api/v1/events`;
+
+    const es = new EventSource(path);
+    shared = { es, listeners: new Set(), connectionListeners: new Set(), connectionState: "connecting" };
+    const ref = shared;
+
+    es.onopen = () => {
+      notifyConnectionState(ref, "connected");
+    };
+
+    es.onmessage = (msg) => {
+      if (ref.connectionState !== "connected") {
+        notifyConnectionState(ref, "connected");
+      }
+      try {
+        const event: ComponentEvent = JSON.parse(msg.data);
+        for (const listener of ref.listeners) {
+          listener(event);
+        }
+      } catch {
+        // Skip heartbeats and malformed events
+      }
+    };
+
+    es.onerror = () => {
+      const state = es.readyState === EventSource.CONNECTING ? "connecting" : "disconnected";
+      notifyConnectionState(ref, state);
+    };
+
+    sharedSources.set(key, shared);
+  }
+
+  shared.connectionListeners.add(onState);
+
+  // Immediately notify current state
+  onState(shared.connectionState);
+
+  return () => {
+    const s = sharedSources.get(key);
+    if (!s) return;
+    s.connectionListeners.delete(onState);
+    if (s.listeners.size === 0 && s.connectionListeners.size === 0) {
       s.es.close();
       sharedSources.delete(key);
     }

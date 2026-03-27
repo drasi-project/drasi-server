@@ -28,6 +28,7 @@ import SolutionInstanceWizard from "@/components/solutions/SolutionInstanceWizar
 import CreateSolutionTemplateDialog from "@/components/solutions/CreateSolutionTemplateDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
+import { useConnectionState } from "@/hooks/useConnectionState";
 import { useDraft } from "@/hooks/useDraft";
 import { useTheme } from "@/hooks/useTheme";
 import type { PipelineData } from "@/utils/graph";
@@ -108,7 +109,9 @@ export default function App() {
   const [selected, setSelected] = useState<SelectedComponent | null>(null);
   const [createStep, setCreateStep] = useState<CreateStep>(null);
   const [events, setEvents] = useState<EventEntry[]>([]);
-  const [connected, setConnected] = useState(false);
+
+  // Connection state — reactive via SSE, no polling
+  const connectionState = useConnectionState(selectedInstanceId ?? undefined);
 
   // Sidebar state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab | null>(() => {
@@ -145,21 +148,6 @@ export default function App() {
   // Solution deploy state
   const [deployTemplateId, setDeployTemplateId] = useState<string | undefined>(undefined);
   const [deployUploadedYaml, setDeployUploadedYaml] = useState<string | undefined>(undefined);
-
-  // Check server connectivity
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await fetch("/health");
-        setConnected(res.ok);
-      } catch {
-        setConnected(false);
-      }
-    };
-    check();
-    const interval = setInterval(check, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Build pipeline data for the canvas (memoized to avoid cascade re-renders)
   const pipelineData: PipelineData = useMemo(() => ({
@@ -526,7 +514,7 @@ export default function App() {
 
   return (
     <AppLayout
-      connected={connected}
+      connectionState={connectionState}
       theme={theme}
       onToggleTheme={toggleTheme}
       instanceSlot={

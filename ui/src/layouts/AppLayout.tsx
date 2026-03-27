@@ -1,9 +1,10 @@
 import { Sun, Moon } from "lucide-react";
 import DrasiLogo from "@/components/DrasiLogo";
+import type { ConnectionState } from "@/hooks/useApi";
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  connected?: boolean;
+  connectionState?: ConnectionState;
   instanceSlot?: React.ReactNode;
   theme?: "light" | "dark";
   onToggleTheme?: () => void;
@@ -11,11 +12,17 @@ interface AppLayoutProps {
 
 export default function AppLayout({
   children,
-  connected = false,
+  connectionState = "disconnected",
   instanceSlot,
   theme = "dark",
   onToggleTheme,
 }: AppLayoutProps) {
+  const connectionDisplay = {
+    connected: { dot: "bg-drasi-running animate-pulse-glow", label: "Live" },
+    connecting: { dot: "bg-amber-400 animate-pulse", label: "Connecting..." },
+    disconnected: { dot: "bg-drasi-error", label: "Disconnected" },
+  }[connectionState];
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-drasi-bg">
       {/* Top Bar */}
@@ -31,13 +38,11 @@ export default function AppLayout({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Connection status */}
+          {/* Connection status — driven by SSE connection, no polling */}
           <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2 h-2 rounded-full ${connected ? "bg-drasi-running animate-pulse-glow" : "bg-drasi-error"}`}
-            />
+            <span className={`w-2 h-2 rounded-full ${connectionDisplay.dot}`} />
             <span className="text-xs text-drasi-text-secondary">
-              {connected ? "Live" : "Disconnected"}
+              {connectionDisplay.label}
             </span>
           </div>
 
