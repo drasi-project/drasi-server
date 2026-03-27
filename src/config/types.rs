@@ -82,20 +82,6 @@ pub struct DrasiServerConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
-    /// Source configurations (parsed into plugin instances)
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub sources: Vec<SourceConfig>,
-    /// Query configurations
-    #[serde(default)]
-    pub queries: Vec<QueryConfigDto>,
-    /// Reaction configurations (parsed into plugin instances)
-    #[serde(default)]
-    #[schema(value_type = Vec<serde_json::Value>)]
-    pub reactions: Vec<ReactionConfig>,
-    /// Optional list of DrasiLib instances when running in multi-tenant mode
-    #[serde(default)]
-    pub instances: Vec<DrasiLibInstanceConfig>,
     /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
     #[serde(
         default = "default_plugin_registry",
@@ -125,6 +111,20 @@ pub struct DrasiServerConfig {
     /// Hot-reload mode: "upgrade" (drain-then-retire) or "side-by-side" (default: "upgrade")
     #[serde(default = "default_hot_reload_mode")]
     pub hot_reload_mode: String,
+    /// Source configurations (parsed into plugin instances)
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub sources: Vec<SourceConfig>,
+    /// Query configurations
+    #[serde(default)]
+    pub queries: Vec<QueryConfigDto>,
+    /// Reaction configurations (parsed into plugin instances)
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub reactions: Vec<ReactionConfig>,
+    /// Optional list of DrasiLib instances when running in multi-tenant mode
+    #[serde(default)]
+    pub instances: Vec<DrasiLibInstanceConfig>,
 }
 
 impl Default for DrasiServerConfig {
@@ -142,10 +142,6 @@ impl Default for DrasiServerConfig {
             state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
-            sources: Vec::new(),
-            reactions: Vec::new(),
-            queries: Vec::new(),
-            instances: Vec::new(),
             plugin_registry: default_plugin_registry(),
             auto_install_plugins: false,
             plugins: Vec::new(),
@@ -154,6 +150,10 @@ impl Default for DrasiServerConfig {
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,
             hot_reload_mode: "upgrade".to_string(),
+            sources: Vec::new(),
+            queries: Vec::new(),
+            reactions: Vec::new(),
+            instances: Vec::new(),
         }
     }
 }

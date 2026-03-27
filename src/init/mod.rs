@@ -80,8 +80,12 @@ pub async fn run_init(
     println!();
     println!("Data Sources");
     println!("------------");
-    let source_kinds =
-        prompts::select_or_install_plugins("source", effective_plugins_dir.as_deref()).await?;
+    let source_kinds = prompts::select_or_install_plugins(
+        "source",
+        effective_plugins_dir.as_deref(),
+        server_settings.plugin_registry.as_str(),
+    )
+    .await?;
 
     // Step 3: Configure each source + bootstrap
     let mut sources = Vec::new();
@@ -92,9 +96,12 @@ pub async fn run_init(
         // Bootstrap for this source
         println!();
         println!("Bootstrap provider for source '{}':", source.id());
-        let bootstrap_kinds =
-            prompts::select_or_install_plugins("bootstrap", effective_plugins_dir.as_deref())
-                .await?;
+        let bootstrap_kinds = prompts::select_or_install_plugins(
+            "bootstrap",
+            effective_plugins_dir.as_deref(),
+            server_settings.plugin_registry.as_str(),
+        )
+        .await?;
         if let Some(boot_kind) = bootstrap_kinds.first() {
             source = prompts::attach_bootstrap_to_source(source, boot_kind)?;
         }
@@ -105,8 +112,12 @@ pub async fn run_init(
     println!();
     println!("Reactions");
     println!("---------");
-    let reaction_kinds =
-        prompts::select_or_install_plugins("reaction", effective_plugins_dir.as_deref()).await?;
+    let reaction_kinds = prompts::select_or_install_plugins(
+        "reaction",
+        effective_plugins_dir.as_deref(),
+        server_settings.plugin_registry.as_str(),
+    )
+    .await?;
 
     // Step 5: Configure each reaction
     let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();

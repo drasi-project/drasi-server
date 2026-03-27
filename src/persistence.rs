@@ -220,10 +220,6 @@ impl ConfigPersistence {
                 state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
-                sources: instance.sources,
-                reactions: instance.reactions,
-                queries: instance.queries,
-                instances: Vec::new(), // Empty = single-instance format
                 plugin_registry: default_plugin_registry(),
                 auto_install_plugins: false,
                 plugins: Vec::new(),
@@ -232,6 +228,10 @@ impl ConfigPersistence {
                 hot_reload_plugins: false,
                 hot_reload_debounce_ms: 2000,
                 hot_reload_mode: "upgrade".to_string(),
+                sources: instance.sources,
+                queries: instance.queries,
+                reactions: instance.reactions,
+                instances: Vec::new(), // Empty = single-instance format
             }
         } else {
             // Multiple instances → use multi-instance format (instances array)
@@ -256,10 +256,6 @@ impl ConfigPersistence {
                 state_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
-                sources: Vec::new(),
-                reactions: Vec::new(),
-                queries: Vec::new(),
-                instances: instance_configs,
                 plugin_registry: default_plugin_registry(),
                 auto_install_plugins: false,
                 plugins: Vec::new(),
@@ -268,6 +264,10 @@ impl ConfigPersistence {
                 hot_reload_plugins: false,
                 hot_reload_debounce_ms: 2000,
                 hot_reload_mode: "upgrade".to_string(),
+                sources: Vec::new(),
+                queries: Vec::new(),
+                reactions: Vec::new(),
+                instances: instance_configs,
             }
         };
 

@@ -23,6 +23,14 @@ use drasi_server::api::models::StateStoreConfig;
 use drasi_server::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
 use drasi_server::plugin_operations::PluginOperations;
 
+/// Print a dim-colored description line before a prompt, with a blank line separator.
+fn hint(description: &str) {
+    use console::Style;
+    let dim = Style::new().dim();
+    println!();
+    println!("  {}", dim.apply_to(description));
+}
+
 /// Server settings collected from user prompts.
 pub struct ServerSettings {
     pub host: String,
@@ -32,6 +40,9 @@ pub struct ServerSettings {
     pub state_store: Option<StateStoreConfig>,
     pub hot_reload_plugins: bool,
     pub hot_reload_mode: String,
+    pub plugin_registry: String,
+    pub auto_install_plugins: bool,
+    pub verify_plugins: bool,
 }
 
 /// A plugin discovered by scanning the plugins directory.
@@ -199,46 +210,52 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
     println!("Server Settings");
     println!("---------------");
 
-    let host = Text::new("Server host:")
-        .with_default("0.0.0.0")
-        .with_help_message("IP address to bind to (0.0.0.0 for all interfaces)")
-        .prompt()?;
+    hint("IP address to bind to (0.0.0.0 for all interfaces)");
+    let host = Text::new("Server host:").with_default("0.0.0.0").prompt()?;
 
-    let port_str = Text::new("Server port:")
-        .with_default("8080")
-        .with_help_message("Port for the REST API")
-        .prompt()?;
+    hint("Port for the REST API");
+    let port_str = Text::new("Server port:").with_default("8080").prompt()?;
 
     let port: u16 = port_str.parse().unwrap_or(8080);
 
+    hint("Logging verbosity");
     let log_levels = vec!["info", "debug", "warn", "error", "trace"];
-    let log_level = Select::new("Log level:", log_levels)
-        .with_help_message("Logging verbosity")
-        .prompt()?
-        .to_string();
+    let log_level = Select::new("Log level:", log_levels).prompt()?.to_string();
 
+    hint("Persists query index data to disk. Use for production workloads.");
     let persist_index = Confirm::new("Enable persistent indexing (RocksDB)?")
         .with_default(false)
-        .with_help_message("Persists query index data to disk. Use for production workloads.")
         .prompt()?;
 
     // Prompt for state store configuration
     let state_store = prompt_state_store()?;
 
+    // Prompt for plugin settings
+    hint("Default registry for downloading plugins");
+    let plugin_registry = Text::new("Plugin registry (OCI URL or local path):")
+        .with_default("ghcr.io/drasi-project")
+        .prompt()?;
+
+    hint("Verify cosign signatures on downloaded plugins for supply-chain security");
+    let verify_plugins = Confirm::new("Enable plugin signature verification (cosign)?")
+        .with_default(false)
+        .prompt()?;
+
+    hint("Automatically download missing plugins when the server starts");
+    let auto_install_plugins = Confirm::new("Auto-install plugins from registry on startup?")
+        .with_default(false)
+        .prompt()?;
+
     // Prompt for hot-reload settings
+    hint("Automatically detect and reload plugins when files change on disk");
     let hot_reload_plugins = Confirm::new("Enable hot-reload for plugins?")
         .with_default(false)
-        .with_help_message("Automatically detect and reload plugins when files change on disk")
         .prompt()?;
 
     let hot_reload_mode = if hot_reload_plugins {
+        hint("upgrade: replace existing plugin in-place; side-by-side: run old and new simultaneously");
         let modes = vec!["upgrade", "side-by-side"];
-        Select::new("Hot-reload mode:", modes)
-            .with_help_message(
-                "upgrade: replace existing plugin in-place; side-by-side: run old and new simultaneously",
-            )
-            .prompt()?
-            .to_string()
+        Select::new("Hot-reload mode:", modes).prompt()?.to_string()
     } else {
         "upgrade".to_string()
     };
@@ -253,6 +270,9 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         state_store,
         hot_reload_plugins,
         hot_reload_mode,
+        plugin_registry,
+        auto_install_plugins,
+        verify_plugins,
     })
 }
 
@@ -260,19 +280,19 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
 fn prompt_state_store() -> Result<Option<StateStoreConfig>> {
     let state_store_types = vec![StateStoreType::None, StateStoreType::Redb];
 
+    hint("Allows plugins to persist runtime state that survives restarts");
     let selected = Select::new(
         "State store (for plugin state persistence):",
         state_store_types,
     )
-    .with_help_message("Allows plugins to persist runtime state that survives restarts")
     .prompt()?;
 
     match selected {
         StateStoreType::None => Ok(None),
         StateStoreType::Redb => {
+            hint("Path to REDB database file for state persistence");
             let path = Text::new("State store file path:")
                 .with_default("./data/state.redb")
-                .with_help_message("Path to REDB database file for state persistence")
                 .prompt()?;
 
             Ok(Some(StateStoreConfig::redb(path)))
@@ -340,32 +360,32 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         .with_default("postgres-source")
         .prompt()?;
 
+    hint("Use ${DB_HOST} for environment variable");
     let host = Text::new("Database host:")
         .with_default("localhost")
-        .with_help_message("Use ${DB_HOST} for environment variable")
         .prompt()?;
 
     let port_str = Text::new("Database port:").with_default("5432").prompt()?;
     let port: u16 = port_str.parse().unwrap_or(5432);
 
+    hint("Use ${DB_NAME} for environment variable");
     let database = Text::new("Database name:")
         .with_default("postgres")
-        .with_help_message("Use ${DB_NAME} for environment variable")
         .prompt()?;
 
+    hint("Use ${DB_USER} for environment variable");
     let user = Text::new("Database user:")
         .with_default("postgres")
-        .with_help_message("Use ${DB_USER} for environment variable")
         .prompt()?;
 
+    hint("Use ${DB_PASSWORD} for environment variable, or leave empty");
     let password = Password::new("Database password:")
-        .with_help_message("Use ${DB_PASSWORD} for environment variable, or leave empty")
         .without_confirmation()
         .prompt()?;
 
+    hint("e.g., users,orders,products");
     let tables_str = Text::new("Tables to monitor (comma-separated):")
         .with_default("my_table")
-        .with_help_message("e.g., users,orders,products")
         .prompt()?;
 
     let tables: Vec<String> = tables_str
@@ -416,11 +436,11 @@ fn prompt_bootstrap_provider_for_postgres(
         BootstrapType::None,
     ];
 
+    hint("Load existing data when starting");
     let selected = Select::new(
         "Bootstrap provider (for initial data loading):",
         bootstrap_types,
     )
-    .with_help_message("Load existing data when starting")
     .prompt()?;
 
     match selected {
@@ -446,9 +466,9 @@ fn prompt_bootstrap_provider_for_postgres(
 /// Prompt for table keys configuration.
 /// Table keys are needed for tables that don't have a primary key defined.
 fn prompt_table_keys(tables: &[String]) -> Result<Vec<serde_json::Value>> {
+    hint("Required for tables lacking a primary key constraint");
     let configure_keys = Confirm::new("Configure table keys for tables without primary keys?")
         .with_default(false)
-        .with_help_message("Required for tables lacking a primary key constraint")
         .prompt()?;
 
     if !configure_keys {
@@ -480,9 +500,9 @@ fn prompt_table_keys(tables: &[String]) -> Result<Vec<serde_json::Value>> {
     };
 
     for table in tables_needing_keys {
-        let key_columns_str = Text::new(&format!("Key columns for '{table}' (comma-separated):"))
-            .with_help_message("e.g., id or user_id,timestamp")
-            .prompt()?;
+        hint("e.g., id or user_id,timestamp");
+        let key_columns_str =
+            Text::new(&format!("Key columns for '{table}' (comma-separated):")).prompt()?;
 
         let key_columns: Vec<String> = key_columns_str
             .split(',')
@@ -512,10 +532,8 @@ fn prompt_http_source() -> Result<SourceConfig> {
 
     let host = Text::new("Listen host:").with_default("0.0.0.0").prompt()?;
 
-    let port_str = Text::new("Listen port:")
-        .with_default("9000")
-        .with_help_message("Port to receive HTTP events on")
-        .prompt()?;
+    hint("Port to receive HTTP events on");
+    let port_str = Text::new("Listen port:").with_default("9000").prompt()?;
     let port: u16 = port_str.parse().unwrap_or(9000);
 
     // Ask about bootstrap provider
@@ -545,10 +563,8 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
 
     let host = Text::new("Listen host:").with_default("0.0.0.0").prompt()?;
 
-    let port_str = Text::new("Listen port:")
-        .with_default("50051")
-        .with_help_message("Port to receive gRPC streams on")
-        .prompt()?;
+    hint("Port to receive gRPC streams on");
+    let port_str = Text::new("Listen port:").with_default("50051").prompt()?;
     let port: u16 = port_str.parse().unwrap_or(50051);
 
     // Ask about bootstrap provider
@@ -577,16 +593,15 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         .prompt()?;
 
     let data_type_options = vec!["generic", "sensorReading", "counter"];
-    let data_type_selection = Select::new("Data type to generate:", data_type_options)
-        .with_help_message("Type of synthetic data to generate")
-        .prompt()?;
+    hint("Type of synthetic data to generate");
+    let data_type_selection = Select::new("Data type to generate:", data_type_options).prompt()?;
 
     let data_type = match data_type_selection {
         "counter" => serde_json::json!({"type": "counter"}),
         "sensorReading" => {
+            hint("How many unique sensors to simulate (1-100)");
             let sensor_count_str = Text::new("Number of sensors to simulate:")
                 .with_default("5")
-                .with_help_message("How many unique sensors to simulate (1-100)")
                 .prompt()?;
             let sensor_count: u32 = sensor_count_str.parse().unwrap_or(5).clamp(1, 100);
             serde_json::json!({"type": "sensorReading", "sensorCount": sensor_count})
@@ -594,9 +609,9 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         _ => serde_json::json!({"type": "generic"}),
     };
 
+    hint("How often to generate test data (in milliseconds)");
     let interval_str = Text::new("Data generation interval (milliseconds):")
         .with_default("5000")
-        .with_help_message("How often to generate test data (in milliseconds)")
         .prompt()?;
     let interval_ms: u64 = interval_str.parse().unwrap_or(5000);
 
@@ -616,11 +631,11 @@ fn prompt_mock_source() -> Result<SourceConfig> {
 fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>> {
     let bootstrap_types = vec![BootstrapType::None, BootstrapType::ScriptFile];
 
+    hint("Load existing data when starting");
     let selected = Select::new(
         "Bootstrap provider (for initial data loading):",
         bootstrap_types,
     )
-    .with_help_message("Load existing data when starting")
     .prompt()?;
 
     match selected {
@@ -632,9 +647,9 @@ fn prompt_bootstrap_provider_generic() -> Result<Option<BootstrapProviderConfig>
 
 /// Prompt for ScriptFile bootstrap configuration.
 fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
+    hint("Path to JSONL file with initial data");
     let file_path = Text::new("Bootstrap file path:")
         .with_default("data/bootstrap.jsonl")
-        .with_help_message("Path to JSONL file with initial data")
         .prompt()?;
 
     Ok(Some(BootstrapProviderConfig {
@@ -731,9 +746,9 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
         .with_default("http-reaction")
         .prompt()?;
 
+    hint("URL to POST query results to");
     let base_url = Text::new("Webhook base URL:")
         .with_default("http://localhost:9000")
-        .with_help_message("URL to POST query results to")
         .prompt()?;
 
     Ok(ReactionConfig {
@@ -762,9 +777,9 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
         .with_default("0.0.0.0")
         .prompt()?;
 
+    hint("Port for SSE endpoint");
     let port_str = Text::new("SSE server port:")
         .with_default("8081")
-        .with_help_message("Port for SSE endpoint")
         .prompt()?;
     let port: u16 = port_str.parse().unwrap_or(8081);
 
@@ -792,9 +807,9 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
         .with_default("grpc-reaction")
         .prompt()?;
 
+    hint("Endpoint for gRPC streaming");
     let endpoint = Text::new("gRPC endpoint URL:")
         .with_default("grpc://localhost:50052")
-        .with_help_message("Endpoint for gRPC streaming")
         .prompt()?;
 
     Ok(ReactionConfig {
@@ -846,6 +861,7 @@ impl std::fmt::Display for PluginChoice {
 pub async fn select_or_install_plugins(
     category: &str,
     plugins_dir: Option<&Path>,
+    default_registry: &str,
 ) -> Result<Vec<String>> {
     let install_label = format!("\u{2B07} Install a {category} from a registry");
 
@@ -896,7 +912,7 @@ pub async fn select_or_install_plugins(
             if let Some(dir) = plugins_dir {
                 let registry_url =
                     Text::new("Plugin source (registry URL or local directory path):")
-                        .with_default("ghcr.io/drasi-project")
+                        .with_default(default_registry)
                         .prompt()?;
 
                 println!("Searching {registry_url}...");
@@ -972,9 +988,9 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
         .with_default(&format!("{kind}-source"))
         .prompt()?;
 
+    hint("Enter plugin-specific config as a JSON object, or leave as {}");
     let config_json = Text::new("Configuration (JSON):")
         .with_default("{}")
-        .with_help_message("Enter plugin-specific config as a JSON object, or leave as {}")
         .prompt()?;
 
     let config: serde_json::Value =
@@ -1073,9 +1089,9 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
         .with_default(&format!("{kind}-reaction"))
         .prompt()?;
 
+    hint("Enter plugin-specific config as a JSON object, or leave as {}");
     let config_json = Text::new("Configuration (JSON):")
         .with_default("{}")
-        .with_help_message("Enter plugin-specific config as a JSON object, or leave as {}")
         .prompt()?;
 
     let config: serde_json::Value =
@@ -1328,6 +1344,9 @@ mod tests {
             state_store: None,
             hot_reload_plugins: false,
             hot_reload_mode: "upgrade".to_string(),
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
 
         assert_eq!(settings.host, "127.0.0.1");
@@ -1337,6 +1356,9 @@ mod tests {
         assert!(settings.state_store.is_none());
         assert!(!settings.hot_reload_plugins);
         assert_eq!(settings.hot_reload_mode, "upgrade");
+        assert_eq!(settings.plugin_registry, "ghcr.io/drasi-project");
+        assert!(!settings.auto_install_plugins);
+        assert!(!settings.verify_plugins);
     }
 
     #[test]
@@ -1349,6 +1371,9 @@ mod tests {
             state_store: None,
             hot_reload_plugins: false,
             hot_reload_mode: "upgrade".to_string(),
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
 
         assert_eq!(settings.host, "0.0.0.0");
@@ -1368,6 +1393,9 @@ mod tests {
             state_store: Some(StateStoreConfig::redb("./data/state.redb")),
             hot_reload_plugins: false,
             hot_reload_mode: "upgrade".to_string(),
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
 
         assert!(settings.state_store.is_some());
@@ -1384,6 +1412,9 @@ mod tests {
             state_store: None,
             hot_reload_plugins: true,
             hot_reload_mode: "side-by-side".to_string(),
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
 
         assert!(settings.hot_reload_plugins);
