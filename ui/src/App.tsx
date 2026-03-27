@@ -222,7 +222,10 @@ export default function App() {
 
   const handlePaneClick = useCallback(() => {
     setSelected(null);
-  }, []);
+    if (!sidebarPinned) {
+      setSidebarTab(null);
+    }
+  }, [sidebarPinned]);
 
   // TypeSelector flow: component → kind → open CreatePanel with draft
   const handleCreateSelect = useCallback(
