@@ -1,3 +1,4 @@
+import React from "react";
 import {
   AlertCircle,
   Database,
@@ -14,6 +15,7 @@ import {
   Code,
   Info,
 } from "lucide-react";
+import Editor from "@monaco-editor/react";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ActionButtons from "@/components/shared/ActionButtons";
 import ConnectedComponentItem from "@/components/inspector/ConnectedComponentItem";
@@ -569,43 +571,65 @@ function ConfigSection({
   autoStart?: boolean;
   properties?: Record<string, unknown>;
 }) {
+  const yamlContent = React.useMemo(() => {
+    const config: Record<string, unknown> = {};
+    if (autoStart !== undefined) config.autoStart = autoStart;
+    if (properties) {
+      for (const [k, v] of Object.entries(properties)) {
+        config[k] = v;
+      }
+    }
+    try {
+      // Use js-yaml if available, otherwise JSON
+      return Object.keys(config).length > 0
+        ? Object.entries(config)
+            .map(([k, v]) => {
+              if (typeof v === "object" && v !== null) {
+                return `${k}: ${JSON.stringify(v, null, 2).replace(/\n/g, "\n  ")}`;
+              }
+              return `${k}: ${JSON.stringify(v)}`;
+            })
+            .join("\n")
+        : "# No configuration";
+    } catch {
+      return "# No configuration";
+    }
+  }, [autoStart, properties]);
+
   return (
     <div className="p-3">
       <h3 className="text-[10px] font-semibold text-[var(--drasi-text-secondary)] uppercase tracking-wider mb-2">
         Configuration
       </h3>
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--drasi-card)] border border-[var(--drasi-border)]/50">
-          <span className="text-xs text-[var(--drasi-text-secondary)]">
-            Auto Start
-          </span>
-          <span className="text-xs font-medium text-[var(--drasi-text-primary)]">
-            {autoStart ? "Yes" : "No"}
-          </span>
-        </div>
-        {properties &&
-          Object.entries(properties).map(([key, value]) => {
-            const strVal =
-              typeof value === "object"
-                ? JSON.stringify(value)
-                : String(value);
-            return (
-              <div
-                key={key}
-                className="p-2 rounded-lg bg-[var(--drasi-card)] border border-[var(--drasi-border)]/50 min-w-0 overflow-hidden"
-              >
-                <div className="text-[10px] text-[var(--drasi-text-secondary)] mb-0.5 truncate">
-                  {key}
-                </div>
-                <div
-                  className="text-xs font-medium text-[var(--drasi-text-primary)] font-mono break-all line-clamp-2"
-                  title={strVal}
-                >
-                  {strVal}
-                </div>
-              </div>
-            );
-          })}
+      <div className="rounded-lg border border-[var(--drasi-border)]/50 overflow-hidden">
+        <Editor
+          height={Math.min(Math.max(yamlContent.split("\n").length * 18 + 16, 60), 300) + "px"}
+          language="yaml"
+          value={yamlContent}
+          theme={document.documentElement.classList.contains("dark") ? "vs-dark" : "vs"}
+          options={{
+            readOnly: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            lineNumbers: "off",
+            fontSize: 11,
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace",
+            tabSize: 2,
+            automaticLayout: true,
+            padding: { top: 6, bottom: 6 },
+            renderLineHighlight: "none",
+            overviewRulerLanes: 0,
+            overviewRulerBorder: false,
+            scrollbar: {
+              vertical: "auto",
+              horizontal: "auto",
+              verticalScrollbarSize: 4,
+              horizontalScrollbarSize: 4,
+            },
+            folding: true,
+            wordWrap: "on",
+          }}
+        />
       </div>
     </div>
   );

@@ -9,46 +9,9 @@ export interface DraftState {
   saving: boolean;
 }
 
-const SOURCE_DEFAULTS: Record<string, Record<string, unknown>> = {
-  mock: { autoStart: true, intervalMs: 1000 },
-  http: { autoStart: true, host: "0.0.0.0", port: 9000, timeoutMs: 10000 },
-  grpc: { autoStart: true, host: "0.0.0.0", port: 50051, timeoutMs: 5000 },
-  postgres: {
-    autoStart: true,
-    host: "localhost",
-    port: 5432,
-    sslMode: "prefer",
-  },
-  platform: { autoStart: true },
-};
-
-const REACTION_DEFAULTS: Record<string, Record<string, unknown>> = {
-  log: { autoStart: true },
-  http: { autoStart: true, timeoutMs: 5000 },
-  "http-adaptive": {
-    autoStart: true,
-    timeoutMs: 5000,
-    adaptiveMinBatchSize: 10,
-    adaptiveMaxBatchSize: 100,
-    adaptiveBatchTimeoutMs: 1000,
-  },
-  grpc: { autoStart: true, timeoutMs: 5000 },
-  "grpc-adaptive": {
-    autoStart: true,
-    timeoutMs: 5000,
-    adaptiveMinBatchSize: 10,
-    adaptiveMaxBatchSize: 100,
-  },
-  sse: {
-    autoStart: true,
-    host: "0.0.0.0",
-    port: 8081,
-    ssePath: "/events",
-    heartbeatIntervalMs: 30000,
-  },
-  platform: { autoStart: true },
-  profiler: { autoStart: true },
-};
+// Defaults are now provided by the plugin schema. Only autoStart is set here.
+const SOURCE_DEFAULTS: Record<string, Record<string, unknown>> = {};
+const REACTION_DEFAULTS: Record<string, Record<string, unknown>> = {};
 
 const QUERY_DEFAULTS: Record<string, unknown> = {
   autoStart: true,
@@ -58,22 +21,9 @@ const QUERY_DEFAULTS: Record<string, unknown> = {
   enableBootstrap: true,
 };
 
+// All sources and reactions just need "id"; reactions also need "queries".
+// Schema validation handles field-level requirements.
 const REQUIRED_FIELDS: Record<string, string[]> = {
-  // Sources
-  mock: ["id"],
-  http: ["id"],
-  grpc: ["id"],
-  postgres: ["id", "host", "port", "database", "user", "password"],
-  platform: ["id"],
-  // Reactions
-  log: ["id", "queries"],
-  "http-reaction": ["id", "queries", "baseUrl"],
-  "http-adaptive": ["id", "queries", "baseUrl"],
-  "grpc-reaction": ["id", "queries", "endpoint"],
-  "grpc-adaptive": ["id", "queries", "endpoint"],
-  sse: ["id", "queries"],
-  "platform-reaction": ["id", "queries"],
-  profiler: ["id", "queries"],
   // Queries
   query: ["id", "query", "sources"],
 };
@@ -82,8 +32,8 @@ function getDefaults(
   componentType: "source" | "query" | "reaction",
   kind: string,
 ): Record<string, unknown> {
-  if (componentType === "source") return SOURCE_DEFAULTS[kind] ?? {};
-  if (componentType === "reaction") return REACTION_DEFAULTS[kind] ?? {};
+  if (componentType === "source") return SOURCE_DEFAULTS[kind] ?? { autoStart: true };
+  if (componentType === "reaction") return REACTION_DEFAULTS[kind] ?? { autoStart: true };
   return { ...QUERY_DEFAULTS };
 }
 

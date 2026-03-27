@@ -32,7 +32,114 @@ use tokio_stream::StreamExt;
 use crate::instance_registry::InstanceRegistry;
 use crate::plugin_orchestrator::PluginOrchestrator;
 
-/// GET /api/v1/plugins — List all loaded plugins with their status.
+// ---- Plugin API DTO types (for OpenAPI schema generation) ----
+
+/// Response for GET /api/v1/plugins
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PluginListResponse {
+    pub plugins: Vec<PluginInfoDto>,
+}
+
+/// Plugin information DTO for OpenAPI documentation.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInfoDto {
+    pub id: String,
+    pub status: String,
+    pub plugin_version: String,
+    pub sdk_version: String,
+    pub file_path: String,
+    pub loaded_at: String,
+    pub library_generation: u64,
+    pub dependent_count: usize,
+    pub kinds: Vec<PluginKindDto>,
+}
+
+/// A single kind provided by a plugin.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginKindDto {
+    pub category: String,
+    pub kind: String,
+    pub config_version: String,
+}
+
+/// Available plugin kinds grouped by category.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PluginKindsResponse {
+    pub sources: Vec<PluginKindInfoDto>,
+    pub reactions: Vec<PluginKindInfoDto>,
+    pub bootstrappers: Vec<PluginKindInfoDto>,
+}
+
+/// Information about a specific plugin kind.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginKindInfoDto {
+    pub kind: String,
+    pub config_version: String,
+    pub config_schema_json: String,
+    pub config_schema_name: String,
+    pub plugin_id: String,
+}
+
+/// Response for GET /api/v1/plugins/{pluginId}/dependents
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDependentsResponse {
+    pub plugin_id: String,
+    pub dependent_count: usize,
+    pub dependents: Vec<PluginDependentDto>,
+}
+
+/// A component that depends on a plugin.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDependentDto {
+    pub instance_id: String,
+    pub component_id: String,
+    pub component_type: String,
+    pub kind: String,
+    pub running: bool,
+}
+
+/// Result of a plugin upgrade operation.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUpgradeResponse {
+    pub plugin_id: String,
+    pub old_version: String,
+    pub new_version: String,
+    pub migrated: Vec<String>,
+    pub failed: Vec<serde_json::Value>,
+}
+
+/// Result of a plugin promote operation.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPromoteResponse {
+    pub id: String,
+    pub promoted_kinds: Vec<String>,
+}
+
+/// Result of a plugin retire operation.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct PluginRetireResponse {
+    pub id: String,
+    pub status: String,
+    #[serde(rename = "descriptorsRemoved")]
+    pub descriptors_removed: usize,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins",
+    tag = "Plugins",
+    responses(
+        (status = 200, description = "Plugin list", body = PluginListResponse)
+    )
+)]
+/// List all loaded plugins with their status, kinds, and metadata.
 pub async fn list_plugins(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
 ) -> impl IntoResponse {
@@ -43,7 +150,19 @@ pub async fn list_plugins(
     )
 }
 
-/// GET /api/v1/plugins/:id — Get details for a specific plugin.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/{pluginId}",
+    tag = "Plugins",
+    params(
+        ("pluginId" = String, Path, description = "Plugin identifier")
+    ),
+    responses(
+        (status = 200, description = "Plugin details", body = PluginInfoDto),
+        (status = 404, description = "Plugin not found")
+    )
+)]
+/// Get details for a specific loaded plugin.
 pub async fn get_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path(plugin_id): Path<String>,
@@ -60,7 +179,20 @@ pub async fn get_plugin(
     }
 }
 
-/// POST /api/v1/plugins/:id/retire — Retire a plugin.
+#[utoipa::path(
+    post,
+    path = "/api/v1/plugins/{pluginId}/retire",
+    tag = "Plugins",
+    params(
+        ("pluginId" = String, Path, description = "Plugin identifier"),
+        ("force" = Option<bool>, Query, description = "Force retire even with active dependents")
+    ),
+    responses(
+        (status = 200, description = "Plugin retired", body = PluginRetireResponse),
+        (status = 500, description = "Retire failed")
+    )
+)]
+/// Retire a loaded plugin, removing its descriptors from the registry.
 pub async fn retire_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path(plugin_id): Path<String>,
@@ -87,7 +219,15 @@ pub async fn retire_plugin(
     }
 }
 
-/// GET /api/v1/plugins/kinds — List all available kinds from the registry.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/kinds",
+    tag = "Plugins",
+    responses(
+        (status = 200, description = "Available kinds", body = PluginKindsResponse)
+    )
+)]
+/// List all available source, reaction, and bootstrapper kinds from the plugin registry.
 pub async fn list_kinds(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
 ) -> impl IntoResponse {
@@ -108,10 +248,19 @@ pub async fn list_kinds(
     )
 }
 
-/// POST /api/v1/plugins/load — Load a plugin from disk by filename.
-///
-/// Request body: `{ "filename": "libdrasi_source_postgres.dylib" }`
-/// Response: 200 with the PluginInfo on success.
+#[utoipa::path(
+    post,
+    path = "/api/v1/plugins/load",
+    tag = "Plugins",
+    request_body = LoadPluginRequest,
+    responses(
+        (status = 200, description = "Plugin loaded", body = PluginInfoDto),
+        (status = 400, description = "Invalid path"),
+        (status = 404, description = "File not found"),
+        (status = 500, description = "Load failed")
+    )
+)]
+/// Load a plugin shared library from the plugins directory by filename.
 pub async fn load_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Json(body): Json<LoadPluginRequest>,
@@ -178,10 +327,17 @@ pub async fn load_plugin(
     }
 }
 
-/// POST /api/v1/plugins/install — Download and load a plugin from a remote repository.
-///
-/// Request body: `{ "ref": "source/postgres", "registry": "ghcr.io/drasi-project" }`
-/// Response: 201 with the PluginInfo on success.
+#[utoipa::path(
+    post,
+    path = "/api/v1/plugins/install",
+    tag = "Plugins",
+    request_body = InstallPluginRequest,
+    responses(
+        (status = 201, description = "Plugin installed and loaded", body = PluginInfoDto),
+        (status = 500, description = "Install or load failed")
+    )
+)]
+/// Download and load a plugin from an OCI registry.
 pub async fn install_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Extension(plugin_ops): Extension<Arc<crate::plugin_operations::PluginOperations>>,
@@ -217,14 +373,23 @@ pub async fn install_plugin(
     }
 }
 
-/// POST /api/v1/plugins/:id/upgrade — Upgrade a plugin (drain-then-replace).
-///
-/// Accepts an optional JSON body with a `filename` field pointing to the new plugin
-/// file in the plugins directory. If no filename is provided, attempts to find a
-/// newer version in the plugins directory matching the plugin's kinds.
-///
-/// Uses `PluginOrchestrator::upgrade_plugin` to perform the drain-then-replace protocol:
-/// load new plugin → find affected components → stop/remove/recreate → retire old plugin.
+#[utoipa::path(
+    post,
+    path = "/api/v1/plugins/{pluginId}/upgrade",
+    tag = "Plugins",
+    params(
+        ("pluginId" = String, Path, description = "Plugin identifier to upgrade")
+    ),
+    request_body = UpgradePluginRequest,
+    responses(
+        (status = 200, description = "Upgrade successful", body = PluginUpgradeResponse),
+        (status = 207, description = "Upgrade partially failed"),
+        (status = 400, description = "Missing filename"),
+        (status = 404, description = "Plugin file not found"),
+        (status = 500, description = "Upgrade failed")
+    )
+)]
+/// Upgrade a plugin via drain-then-replace.
 pub async fn upgrade_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Extension(instances): Extension<InstanceRegistry>,
@@ -304,11 +469,19 @@ pub async fn upgrade_plugin(
     }
 }
 
-/// POST /api/v1/plugins/:id/promote — Promote a side-by-side version to incumbent.
-///
-/// The plugin_id must be a versioned key (e.g., "postgres@0.4.2"). The endpoint
-/// promotes the versioned descriptor to the unversioned key, making it the default
-/// for new component creation.
+#[utoipa::path(
+    post,
+    path = "/api/v1/plugins/{pluginId}/promote",
+    tag = "Plugins",
+    params(
+        ("pluginId" = String, Path, description = "Versioned plugin identifier to promote")
+    ),
+    responses(
+        (status = 200, description = "Plugin promoted", body = PluginPromoteResponse),
+        (status = 400, description = "Promotion failed")
+    )
+)]
+/// Promote a versioned plugin to be the incumbent for its kinds.
 pub async fn promote_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path(plugin_id): Path<String>,
@@ -331,11 +504,19 @@ pub async fn promote_plugin(
     }
 }
 
-/// GET /api/v1/plugins/:id/dependents — List components that depend on this plugin.
-///
-/// Scans all instances' component graphs for sources and reactions whose metadata
-/// contains a `pluginId` matching the requested plugin. Returns the list of
-/// dependent components with their instance, type, kind, and running status.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/{pluginId}/dependents",
+    tag = "Plugins",
+    params(
+        ("pluginId" = String, Path, description = "Plugin identifier")
+    ),
+    responses(
+        (status = 200, description = "Dependent components", body = PluginDependentsResponse),
+        (status = 404, description = "Plugin not found")
+    )
+)]
+/// List all source and reaction components that depend on this plugin.
 pub async fn list_dependents(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Extension(instances): Extension<InstanceRegistry>,
@@ -411,9 +592,21 @@ pub async fn list_dependents(
     )
 }
 
-/// GET /api/v1/plugins/kinds/:category/:kind/schema — Return the config schema for a kind.
-///
-/// Looks up the kind in the registry and returns its config_schema_json.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/kinds/{category}/{kind}/schema",
+    tag = "Plugins",
+    params(
+        ("category" = String, Path, description = "Plugin category (source, reaction, bootstrap)"),
+        ("kind" = String, Path, description = "Plugin kind name")
+    ),
+    responses(
+        (status = 200, description = "Config schema"),
+        (status = 400, description = "Invalid category"),
+        (status = 404, description = "Kind not found")
+    )
+)]
+/// Return the JSON Schema for the configuration of a specific plugin kind.
 pub async fn get_kind_schema(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path((category, kind)): Path<(String, String)>,
@@ -477,11 +670,15 @@ pub async fn get_kind_schema(
     }
 }
 
-/// GET /api/v1/plugins/events — Stream plugin events via Server-Sent Events.
-///
-/// Subscribes to the orchestrator's broadcast channel and forwards
-/// `PluginEvent`s as SSE events. The stream stays open until the client
-/// disconnects.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/events",
+    tag = "Plugins",
+    responses(
+        (status = 200, description = "SSE event stream", content_type = "text/event-stream")
+    )
+)]
+/// Stream plugin lifecycle events via Server-Sent Events.
 pub async fn plugin_event_stream(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -606,19 +803,19 @@ fn plugin_event_to_sse(event: &drasi_host_sdk::plugin_types::PluginEvent) -> (St
 }
 
 /// Query parameters for the retire endpoint.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct RetireParams {
     pub force: Option<bool>,
 }
 
 /// Request body for POST /api/v1/plugins/load.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct LoadPluginRequest {
     pub filename: String,
 }
 
 /// Request body for POST /api/v1/plugins/install.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct InstallPluginRequest {
     /// Plugin reference, e.g. "source/postgres".
     #[serde(rename = "ref")]
@@ -628,7 +825,7 @@ pub struct InstallPluginRequest {
 }
 
 /// Request body for POST /api/v1/plugins/:id/upgrade.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpgradePluginRequest {
     /// Filename of the new plugin file in the plugins directory.
     pub filename: Option<String>,
@@ -636,22 +833,26 @@ pub struct UpgradePluginRequest {
 
 /// Build the plugin API router.
 pub fn plugin_routes() -> axum::Router {
+    // Schema subrouter — needs to be separate to avoid {plugin_id} conflict
+    let kinds_router = axum::Router::new()
+        .route("/", axum::routing::get(list_kinds))
+        .route(
+            "/:category/:kind/schema",
+            axum::routing::get(get_kind_schema),
+        );
+
     axum::Router::new()
         .route("/", axum::routing::get(list_plugins))
-        .route("/kinds", axum::routing::get(list_kinds))
-        .route(
-            "/kinds/{category}/{kind}/schema",
-            axum::routing::get(get_kind_schema),
-        )
+        .nest("/kinds", kinds_router)
         .route("/load", axum::routing::post(load_plugin))
         .route("/install", axum::routing::post(install_plugin))
         .route("/events", axum::routing::get(plugin_event_stream))
-        .route("/{plugin_id}", axum::routing::get(get_plugin))
-        .route("/{plugin_id}/retire", axum::routing::post(retire_plugin))
-        .route("/{plugin_id}/upgrade", axum::routing::post(upgrade_plugin))
-        .route("/{plugin_id}/promote", axum::routing::post(promote_plugin))
+        .route("/:plugin_id", axum::routing::get(get_plugin))
+        .route("/:plugin_id/retire", axum::routing::post(retire_plugin))
+        .route("/:plugin_id/upgrade", axum::routing::post(upgrade_plugin))
+        .route("/:plugin_id/promote", axum::routing::post(promote_plugin))
         .route(
-            "/{plugin_id}/dependents",
+            "/:plugin_id/dependents",
             axum::routing::get(list_dependents),
         )
 }

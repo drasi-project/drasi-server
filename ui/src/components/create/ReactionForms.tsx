@@ -1,6 +1,5 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import FormField from "./FormField";
+import ConfigEditor from "./ConfigEditor";
 
 interface ReactionFormProps {
   kind: string;
@@ -61,150 +60,49 @@ function QueryMultiSelect({
   );
 }
 
-function AdvancedToggle({
-  open,
-  onToggle,
-}: {
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex items-center gap-1 text-xs text-drasi-text-secondary hover:text-drasi-text-primary transition-colors mt-2"
-    >
-      {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-      Advanced
-    </button>
-  );
-}
-
-function LogReactionForm({ fields, errors, onChange, availableQueries }: ReactionFormProps) {
+export default function ReactionForm({
+  kind,
+  fields,
+  errors,
+  onChange,
+  availableQueries,
+}: ReactionFormProps) {
   return (
     <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder="my-log-reaction" />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
+      <FormField
+        label="Reaction ID"
+        field="id"
+        value={fields.id}
+        onChange={onChange}
+        error={errors.id}
+        required
+        placeholder={`my-${kind}-reaction`}
+      />
+      <QueryMultiSelect
+        selected={(fields.queries as string[]) ?? []}
+        available={availableQueries}
+        onChange={onChange}
+        error={errors.queries}
+      />
+      <ConfigEditor
+        category="reaction"
+        kind={kind}
+        formData={fields}
+        onChange={(data) => {
+          for (const [key, val] of Object.entries(data)) {
+            if (key !== "id" && key !== "autoStart" && key !== "queries") {
+              onChange(key, val);
+            }
+          }
+        }}
+      />
+      <FormField
+        label="Auto Start"
+        field="autoStart"
+        value={fields.autoStart}
+        onChange={onChange}
+        type="toggle"
+      />
     </>
   );
-}
-
-function HttpReactionForm({ kind, fields, errors, onChange, availableQueries }: ReactionFormProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const isAdaptive = kind === "http-adaptive";
-
-  return (
-    <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder={isAdaptive ? "my-http-adaptive" : "my-http-reaction"} />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Base URL" field="baseUrl" value={fields.baseUrl} onChange={onChange} error={errors.baseUrl} required placeholder="http://webhook.example.com" />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
-      <AdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(!showAdvanced)} />
-      {showAdvanced && (
-        <>
-          <FormField label="Bearer Token" field="token" value={fields.token} onChange={onChange} type="password" placeholder="Optional bearer token" />
-          <FormField label="Timeout (ms)" field="timeoutMs" value={fields.timeoutMs} onChange={onChange} type="number" placeholder="5000" />
-          {isAdaptive && (
-            <>
-              <FormField label="Min Batch Size" field="adaptiveMinBatchSize" value={fields.adaptiveMinBatchSize} onChange={onChange} type="number" />
-              <FormField label="Max Batch Size" field="adaptiveMaxBatchSize" value={fields.adaptiveMaxBatchSize} onChange={onChange} type="number" />
-              <FormField label="Batch Timeout (ms)" field="adaptiveBatchTimeoutMs" value={fields.adaptiveBatchTimeoutMs} onChange={onChange} type="number" />
-            </>
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
-function SseReactionForm({ fields, errors, onChange, availableQueries }: ReactionFormProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  return (
-    <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder="my-sse-reaction" />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
-      <AdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(!showAdvanced)} />
-      {showAdvanced && (
-        <>
-          <FormField label="Host" field="host" value={fields.host} onChange={onChange} placeholder="0.0.0.0" />
-          <FormField label="Port" field="port" value={fields.port} onChange={onChange} type="number" placeholder="8081" />
-          <FormField label="SSE Path" field="ssePath" value={fields.ssePath} onChange={onChange} placeholder="/events" />
-          <FormField label="Heartbeat Interval (ms)" field="heartbeatIntervalMs" value={fields.heartbeatIntervalMs} onChange={onChange} type="number" placeholder="30000" />
-        </>
-      )}
-    </>
-  );
-}
-
-function GrpcReactionForm({ kind, fields, errors, onChange, availableQueries }: ReactionFormProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const isAdaptive = kind === "grpc-adaptive";
-
-  return (
-    <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder={isAdaptive ? "my-grpc-adaptive" : "my-grpc-reaction"} />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Endpoint" field="endpoint" value={fields.endpoint} onChange={onChange} error={errors.endpoint} required placeholder="grpc://localhost:50052" />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
-      <AdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(!showAdvanced)} />
-      {showAdvanced && (
-        <>
-          <FormField label="Timeout (ms)" field="timeoutMs" value={fields.timeoutMs} onChange={onChange} type="number" placeholder="5000" />
-          {isAdaptive && (
-            <>
-              <FormField label="Min Batch Size" field="adaptiveMinBatchSize" value={fields.adaptiveMinBatchSize} onChange={onChange} type="number" />
-              <FormField label="Max Batch Size" field="adaptiveMaxBatchSize" value={fields.adaptiveMaxBatchSize} onChange={onChange} type="number" />
-            </>
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
-function ProfilerReactionForm({ fields, errors, onChange, availableQueries }: ReactionFormProps) {
-  return (
-    <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder="my-profiler" />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
-    </>
-  );
-}
-
-function PlatformReactionForm({ fields, errors, onChange, availableQueries }: ReactionFormProps) {
-  return (
-    <>
-      <FormField label="Reaction ID" field="id" value={fields.id} onChange={onChange} error={errors.id} required placeholder="my-platform-reaction" />
-      <QueryMultiSelect selected={(fields.queries as string[]) ?? []} available={availableQueries} onChange={onChange} error={errors.queries} />
-      <FormField label="Auto Start" field="autoStart" value={fields.autoStart} onChange={onChange} type="toggle" />
-    </>
-  );
-}
-
-export default function ReactionForm(props: ReactionFormProps) {
-  switch (props.kind) {
-    case "log":
-      return <LogReactionForm {...props} />;
-    case "http-reaction":
-    case "http":
-    case "http-adaptive":
-      return <HttpReactionForm {...props} />;
-    case "sse":
-      return <SseReactionForm {...props} />;
-    case "grpc-reaction":
-    case "grpc":
-    case "grpc-adaptive":
-      return <GrpcReactionForm {...props} />;
-    case "profiler":
-      return <ProfilerReactionForm {...props} />;
-    case "platform-reaction":
-    case "platform":
-      return <PlatformReactionForm {...props} />;
-    default:
-      return <p className="text-drasi-text-secondary">Unknown reaction kind: {props.kind}</p>;
-  }
 }

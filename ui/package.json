@@ -11,10 +11,15 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@rjsf/core": "^6.4.1",
+    "@rjsf/utils": "^6.4.1",
+    "@rjsf/validator-ajv8": "^6.4.1",
     "@xyflow/react": "^12.6.0",
     "axios": "^1.7.9",
     "framer-motion": "^12.4.7",
+    "js-yaml": "^4.1.1",
     "lucide-react": "^0.474.0",
+    "monaco-yaml": "^5.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
@@ -23,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",

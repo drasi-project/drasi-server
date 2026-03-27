@@ -1692,6 +1692,18 @@ pub async fn stop_reaction_default(
 // ============================================================================
 
 /// Stream all component events for an instance as SSE
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/events",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
+    responses(
+        (status = 200, description = "SSE stream of all component events", content_type = "text/event-stream"),
+        (status = 404, description = "Instance not found"),
+    ),
+    tag = "Instances"
+)]
 pub async fn stream_all_component_events(
     Extension(registry): Extension<InstanceRegistry>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
@@ -1718,6 +1730,20 @@ pub async fn stream_all_component_events_default(
 }
 
 /// Push data to a source's listening port (proxy to avoid CORS)
+#[utoipa::path(
+    post,
+    path = "/api/v1/instances/{instanceId}/sources/{id}/push",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID"),
+        ("id" = String, Path, description = "Source ID")
+    ),
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "Data pushed successfully"),
+        (status = 404, description = "Instance or source not found"),
+    ),
+    tag = "Sources"
+)]
 pub async fn push_source_data(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,

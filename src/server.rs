@@ -688,6 +688,9 @@ impl DrasiServer {
             reg.version()
         };
 
+        // Keep the OpenAPI cache alive for future hot-reload support.
+        // Currently the spec is generated once at startup; the cache will
+        // auto-regenerate when the plugin registry version changes.
         let _openapi_cache = Arc::new(api::v1::OpenApiCache::new(
             openapi_v1.clone(),
             self.plugin_registry.clone(),
