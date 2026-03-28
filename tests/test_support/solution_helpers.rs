@@ -43,15 +43,15 @@ pub struct TestInstanceComponents {
 
 /// Create a PluginRegistry with core plugins and cdylib test plugins loaded.
 ///
-/// Loads mock source and log reaction plugins from ../drasi-core/target/debug/.
-/// Run `make build-test-plugins` before running tests that use this function.
+/// Loads mock source and log reaction plugins from target/debug/plugins/.
+/// Run `make build-local-test-plugins` before running tests that use this function.
 fn create_test_plugin_registry() -> PluginRegistry {
     let mut registry = PluginRegistry::new();
     drasi_server::register_core_plugins(&mut registry);
 
-    // Load cdylib test plugins from drasi-core's build output
+    // Load cdylib test plugins from local target/debug/plugins/
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let plugin_dir = manifest_dir.join("../drasi-core/target/debug");
+    let plugin_dir = manifest_dir.join("target/debug/plugins");
     if plugin_dir.exists() {
         let stats =
             drasi_server::dynamic_loading::load_plugins(&plugin_dir, &mut registry, None, None);
@@ -59,7 +59,7 @@ fn create_test_plugin_registry() -> PluginRegistry {
             Ok(s) => {
                 if s.plugins_loaded == 0 {
                     eprintln!(
-                        "WARNING: No cdylib plugins found in {}. Run `make build-test-plugins` first.",
+                        "WARNING: No cdylib plugins found in {}. Run `make build-local-test-plugins` first.",
                         plugin_dir.display()
                     );
                 }
@@ -70,7 +70,7 @@ fn create_test_plugin_registry() -> PluginRegistry {
         }
     } else {
         eprintln!(
-            "WARNING: Plugin directory not found: {}. Run `make build-test-plugins` first.",
+            "WARNING: Plugin directory not found: {}. Run `make build-local-test-plugins` first.",
             plugin_dir.display()
         );
     }

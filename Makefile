@@ -19,7 +19,7 @@
         doctor validate clean clippy test test-smoke \
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
-        build-ui clean-ui build-test-plugins \
+        build-ui clean-ui build-local-test-plugins \
         build-local-plugins build-local-plugins-debug
 
 # Platform detection
@@ -88,7 +88,7 @@ help:
 	@echo "Plugins (local development with ../drasi-core):"
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
-	@echo "  make build-test-plugins        - Build test-only plugins (mock, log, scriptfile)"
+	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make clippy             - Run linter"
@@ -194,13 +194,19 @@ test-smoke:
 
 # Build cdylib test plugins (mock source, log reaction, scriptfile bootstrap)
 # needed by solution deployment tests.
-# Plugins are built from ../drasi-core and output to ../drasi-core/target/debug/.
-build-test-plugins:
+# Plugins are built from ../drasi-core and copied to target/debug/plugins/.
+build-local-test-plugins:
 	@echo "=== Building cdylib test plugins from drasi-core ==="
 	cd ../drasi-core && cargo build --lib -p drasi-source-mock --features drasi-source-mock/dynamic-plugin
 	cd ../drasi-core && cargo build --lib -p drasi-reaction-log --features drasi-reaction-log/dynamic-plugin
 	cd ../drasi-core && cargo build --lib -p drasi-bootstrap-scriptfile --features drasi-bootstrap-scriptfile/dynamic-plugin
-	@echo "=== Test plugins built ==="
+	@mkdir -p target/debug/plugins
+	@echo "Copying test plugins to target/debug/plugins/..."
+	@cp ../drasi-core/target/debug/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/ 2>/dev/null && \
+		echo "Test plugins copied successfully:" && \
+		ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) || \
+		echo "Warning: No test plugin files found to copy"
+	@echo "=== Test plugins ready in target/debug/plugins/ ==="
 
 # Build ALL cdylib plugins from local ../drasi-core (release mode) and copy to target/release/plugins/.
 # Use this when developing with [patch.crates-io] pointing to local drasi-core, so plugins match
