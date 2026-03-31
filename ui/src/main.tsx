@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./monaco-setup"; // Must be before any Monaco component
 import App from "./App.tsx";
 import "./index.css";
 

@@ -25,6 +25,24 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// Reject API responses where the server returns HTTP 200 but success=false.
+// Many Drasi Server handlers return { success: false, error: "..." } with status 200,
+// which axios considers a successful response. This interceptor turns them into
+// thrown errors so callers' catch blocks work as expected.
+api.interceptors.response.use((response) => {
+  const body = response.data;
+  if (
+    body &&
+    typeof body === "object" &&
+    "success" in body &&
+    body.success === false
+  ) {
+    const message = body.error || "Operation failed";
+    return Promise.reject(new Error(message));
+  }
+  return response;
+});
+
 // Server wraps responses in { success, data, error } envelope
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function unwrap<T>(response: { data: any }): T {

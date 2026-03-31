@@ -29,6 +29,7 @@ import CreateSolutionTemplateDialog from "@/components/solutions/CreateSolutionT
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
 import { useInstances } from "@/hooks/useInstances";
 import { useConnectionState } from "@/hooks/useConnectionState";
+import { useComponentEventLog } from "@/hooks/useComponentEventLog";
 import { useDraft } from "@/hooks/useDraft";
 import { useTheme } from "@/hooks/useTheme";
 import type { PipelineData } from "@/utils/graph";
@@ -79,7 +80,6 @@ export default function App() {
   // Component hooks - scoped to selected instance
   const {
     sources,
-    refresh: refreshSources,
     create: createSourceApi,
     start: startSource,
     stop: stopSource,
@@ -87,7 +87,6 @@ export default function App() {
   } = useSources(selectedInstanceId);
   const {
     queries,
-    refresh: refreshQueries,
     create: createQueryApi,
     start: startQuery,
     stop: stopQuery,
@@ -95,7 +94,6 @@ export default function App() {
   } = useQueries(selectedInstanceId);
   const {
     reactions,
-    refresh: refreshReactions,
     create: createReactionApi,
     start: startReaction,
     stop: stopReaction,
@@ -112,6 +110,23 @@ export default function App() {
 
   // Connection state — reactive via SSE, no polling
   const connectionState = useConnectionState(selectedInstanceId ?? undefined);
+
+  // SSE ComponentGraph event log for the Logs panel
+  const { entries: sseEvents, clear: clearSseEvents } = useComponentEventLog(selectedInstanceId ?? undefined);
+
+  // Merge SSE events and user-action events (errors, success messages) into a
+  // single sorted stream for the Logs panel. Both arrays are already in reverse
+  // chronological order; we merge and re-sort to interleave correctly.
+  const mergedEvents = useMemo(() => {
+    return [...events, ...sseEvents].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }, [events, sseEvents]);
+
+  const clearAllEvents = useCallback(() => {
+    setEvents([]);
+    clearSseEvents();
+  }, [clearSseEvents]);
 
   // Sidebar state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab | null>(() => {
@@ -286,10 +301,7 @@ export default function App() {
         pushEvent(`Created reaction: ${req.id}`, "success");
       }
       discard();
-      // Refresh all to show the new component on canvas
-      refreshSources();
-      refreshQueries();
-      refreshReactions();
+      // SSE "Added" events will update the canvas reactively
     } catch (err) {
       pushEvent(
         `Failed to create: ${err instanceof Error ? err.message : "Unknown error"}`,
@@ -307,9 +319,6 @@ export default function App() {
     createReactionApi,
     discard,
     pushEvent,
-    refreshSources,
-    refreshQueries,
-    refreshReactions,
   ]);
 
   // Create instance handler
@@ -357,18 +366,27 @@ export default function App() {
         autoStart: source.autoStart,
         properties: source.properties,
         queries: connectedQueries,
-        onStart: () => {
-          startSource(source.id);
-          pushEvent(`Started source: ${source.id}`, "success");
+        onStart: async () => {
+          try {
+            await startSource(source.id);
+          } catch (err) {
+            pushEvent(`Failed to start source '${source.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onStop: () => {
-          stopSource(source.id);
-          pushEvent(`Stopped source: ${source.id}`, "warning");
+        onStop: async () => {
+          try {
+            await stopSource(source.id);
+          } catch (err) {
+            pushEvent(`Failed to stop source '${source.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onDelete: () => {
-          removeSource(source.id);
-          pushEvent(`Deleted source: ${source.id}`, "error");
-          setSelected(null);
+        onDelete: async () => {
+          try {
+            await removeSource(source.id);
+            setSelected(null);
+          } catch (err) {
+            pushEvent(`Failed to delete source '${source.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
       };
     }
@@ -403,18 +421,27 @@ export default function App() {
         queryLanguage: query.queryLanguage ?? "Cypher",
         sources: connectedSources,
         reactions: connectedReactions,
-        onStart: () => {
-          startQuery(query.id);
-          pushEvent(`Started query: ${query.id}`, "success");
+        onStart: async () => {
+          try {
+            await startQuery(query.id);
+          } catch (err) {
+            pushEvent(`Failed to start query '${query.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onStop: () => {
-          stopQuery(query.id);
-          pushEvent(`Stopped query: ${query.id}`, "warning");
+        onStop: async () => {
+          try {
+            await stopQuery(query.id);
+          } catch (err) {
+            pushEvent(`Failed to stop query '${query.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onDelete: () => {
-          removeQuery(query.id);
-          pushEvent(`Deleted query: ${query.id}`, "error");
-          setSelected(null);
+        onDelete: async () => {
+          try {
+            await removeQuery(query.id);
+            setSelected(null);
+          } catch (err) {
+            pushEvent(`Failed to delete query '${query.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
       };
     }
@@ -440,18 +467,27 @@ export default function App() {
         autoStart: reaction.autoStart,
         properties: reaction.properties,
         queries: connectedQs,
-        onStart: () => {
-          startReaction(reaction.id);
-          pushEvent(`Started reaction: ${reaction.id}`, "success");
+        onStart: async () => {
+          try {
+            await startReaction(reaction.id);
+          } catch (err) {
+            pushEvent(`Failed to start reaction '${reaction.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onStop: () => {
-          stopReaction(reaction.id);
-          pushEvent(`Stopped reaction: ${reaction.id}`, "warning");
+        onStop: async () => {
+          try {
+            await stopReaction(reaction.id);
+          } catch (err) {
+            pushEvent(`Failed to stop reaction '${reaction.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
-        onDelete: () => {
-          removeReaction(reaction.id);
-          pushEvent(`Deleted reaction: ${reaction.id}`, "error");
-          setSelected(null);
+        onDelete: async () => {
+          try {
+            await removeReaction(reaction.id);
+            setSelected(null);
+          } catch (err) {
+            pushEvent(`Failed to delete reaction '${reaction.id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+          }
         },
       };
     }
@@ -537,7 +573,7 @@ export default function App() {
                 setSidebarTab(tab);
               }
             }}
-            badges={events.length > 0 ? { logs: events.length } : {}}
+            badges={mergedEvents.length > 0 ? { logs: mergedEvents.length } : {}}
             componentSelected={selected !== null}
           />
         </div>
@@ -563,29 +599,47 @@ export default function App() {
               <CurrentComponentPanel
                 data={inspectorProps}
                 onNavigate={(id, type) => setSelected({ id, type })}
-                onStartSource={(id) => {
-                  startSource(id);
-                  pushEvent(`Started source: ${id}`, "success");
+                onStartSource={async (id) => {
+                  try {
+                    await startSource(id);
+                  } catch (err) {
+                    pushEvent(`Failed to start source '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
-                onStopSource={(id) => {
-                  stopSource(id);
-                  pushEvent(`Stopped source: ${id}`, "warning");
+                onStopSource={async (id) => {
+                  try {
+                    await stopSource(id);
+                  } catch (err) {
+                    pushEvent(`Failed to stop source '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
-                onStartQuery={(id) => {
-                  startQuery(id);
-                  pushEvent(`Started query: ${id}`, "success");
+                onStartQuery={async (id) => {
+                  try {
+                    await startQuery(id);
+                  } catch (err) {
+                    pushEvent(`Failed to start query '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
-                onStopQuery={(id) => {
-                  stopQuery(id);
-                  pushEvent(`Stopped query: ${id}`, "warning");
+                onStopQuery={async (id) => {
+                  try {
+                    await stopQuery(id);
+                  } catch (err) {
+                    pushEvent(`Failed to stop query '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
-                onStartReaction={(id) => {
-                  startReaction(id);
-                  pushEvent(`Started reaction: ${id}`, "success");
+                onStartReaction={async (id) => {
+                  try {
+                    await startReaction(id);
+                  } catch (err) {
+                    pushEvent(`Failed to start reaction '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
-                onStopReaction={(id) => {
-                  stopReaction(id);
-                  pushEvent(`Stopped reaction: ${id}`, "warning");
+                onStopReaction={async (id) => {
+                  try {
+                    await stopReaction(id);
+                  } catch (err) {
+                    pushEvent(`Failed to stop reaction '${id}': ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+                  }
                 }}
               />
             )}
@@ -629,7 +683,7 @@ export default function App() {
               />
             )}
             {sidebarTab === "logs" && (
-              <LogsPanel events={events} onClear={() => setEvents([])} />
+              <LogsPanel events={mergedEvents} onClear={clearAllEvents} />
             )}
                 </LeftPanel>
               </div>

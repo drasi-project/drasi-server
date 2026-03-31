@@ -59,7 +59,7 @@ function notifyConnectionState(shared: SharedES, state: ConnectionState) {
  * Multiple subscribers share the same underlying EventSource connection.
  * Returns a cleanup function to unsubscribe.
  */
-function subscribeComponentEvents(
+export function subscribeComponentEvents(
   onEvent: Listener,
   instanceId?: string,
 ): () => void {
