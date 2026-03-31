@@ -56,7 +56,7 @@ export default function InstancesPanel({
           </div>
         ) : (
           <div className="space-y-2 mt-1">
-            {instances.map((inst) => {
+            {[...instances].sort((a, b) => a.id.localeCompare(b.id)).map((inst) => {
               const isActive = inst.id === selectedId;
               return (
                 <div

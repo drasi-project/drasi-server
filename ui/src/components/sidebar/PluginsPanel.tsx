@@ -81,7 +81,7 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
           ),
       );
     }
-    return result;
+    return result.sort((a, b) => a.id.localeCompare(b.id));
   }, [plugins, filter, searchText]);
 
   // Expose refresh button for PanelHeader actions

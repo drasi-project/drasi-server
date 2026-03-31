@@ -126,7 +126,7 @@ export default function ComponentsPanel({ onStartCreate }: ComponentsPanelProps)
           e.kind.toLowerCase().includes(q),
       );
     }
-    return result;
+    return result.sort((a, b) => a.label.localeCompare(b.label));
   }, [entries, filter, searchText]);
 
   return (

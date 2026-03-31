@@ -61,7 +61,7 @@ export default function SolutionTemplatesPanel({
   }, []);
 
   const filtered = useMemo(() => {
-    if (!searchText.trim()) return templates;
+    if (!searchText.trim()) return [...templates].sort((a, b) => a.name.localeCompare(b.name));
     const q = searchText.toLowerCase();
     return templates.filter(
       (t) =>
@@ -69,7 +69,7 @@ export default function SolutionTemplatesPanel({
         (t.description ?? "").toLowerCase().includes(q) ||
         t.id.toLowerCase().includes(q) ||
         (t.author ?? "").toLowerCase().includes(q),
-    );
+    ).sort((a, b) => a.name.localeCompare(b.name));
   }, [templates, searchText]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
