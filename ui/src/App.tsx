@@ -243,7 +243,7 @@ export default function App() {
       }
       if (type === "query") {
         // Query has no sub-kinds — open form directly
-        startDraft("query", "query");
+        startDraft("query", "cypher");
         setCreateStep(null);
         return;
       }
@@ -647,7 +647,7 @@ export default function App() {
               <ComponentsPanel
                 onStartCreate={(componentType, kind) => {
                   if (componentType === "query") {
-                    startDraft("query", "query");
+                    startDraft("query", kind ?? "cypher");
                   } else if (kind) {
                     startDraft(componentType, kind);
                   } else {

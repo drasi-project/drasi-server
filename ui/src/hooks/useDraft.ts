@@ -34,7 +34,10 @@ function getDefaults(
 ): Record<string, unknown> {
   if (componentType === "source") return SOURCE_DEFAULTS[kind] ?? { autoStart: true };
   if (componentType === "reaction") return REACTION_DEFAULTS[kind] ?? { autoStart: true };
-  return { ...QUERY_DEFAULTS };
+  return {
+    ...QUERY_DEFAULTS,
+    queryLanguage: kind === "gql" ? "GQL" : "Cypher",
+  };
 }
 
 function validate(
