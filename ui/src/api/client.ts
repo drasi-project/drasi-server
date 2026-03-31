@@ -349,3 +349,24 @@ export async function createSolutionTemplate(
 ): Promise<CreateSolutionTemplateResponse> {
   return unwrap(await api.post(`/instances/${instanceId}/catalog/solutions`, req));
 }
+
+// Plugins
+
+import type { RegistryPlugin } from "./types";
+
+export async function searchRegistry(
+  query = "*",
+  registry?: string,
+): Promise<RegistryPlugin[]> {
+  const params = new URLSearchParams({ q: query });
+  if (registry) params.set("registry", registry);
+  const resp = await api.get(`/plugins/registry/search?${params}`);
+  return resp.data as RegistryPlugin[];
+}
+
+export async function installPlugin(
+  pluginRef: string,
+  registry?: string,
+): Promise<void> {
+  await api.post("/plugins/install", { ref: pluginRef, registry });
+}

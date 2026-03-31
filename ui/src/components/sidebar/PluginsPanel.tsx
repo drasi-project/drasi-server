@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import { Package, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { Package, Loader2, RefreshCw, Search, X, Download } from "lucide-react";
+import InstallPluginDialog from "@/components/plugins/InstallPluginDialog";
 
 interface PluginKindInfo {
   category: string;
@@ -39,6 +40,7 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState<PluginFilter>("all");
+  const [showInstall, setShowInstall] = useState(false);
 
   const fetchPlugins = () => {
     setLoading(true);
@@ -88,6 +90,7 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
   void onRefreshAction;
 
   return (
+    <>
     <div className="flex flex-col h-full">
       {/* Search */}
       <div className="px-3 pt-3 pb-2 flex-shrink-0">
@@ -119,6 +122,13 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
             title="Refresh"
           >
             <RefreshCw size={14} />
+          </button>
+          <button
+            onClick={() => setShowInstall(true)}
+            className="p-1.5 rounded-lg hover:bg-[var(--drasi-card)] text-[var(--drasi-text-secondary)] hover:text-[var(--drasi-text-primary)] transition-colors flex-shrink-0"
+            title="Install plugins"
+          >
+            <Download size={14} />
           </button>
         </div>
       </div>
@@ -184,6 +194,15 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
         )}
       </div>
     </div>
+    {showInstall && (
+      <InstallPluginDialog
+        onClose={() => setShowInstall(false)}
+        onInstalled={() => {
+          fetchPlugins();
+        }}
+      />
+    )}
+    </>
   );
 }
 

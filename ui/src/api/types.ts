@@ -324,3 +324,18 @@ export interface CreateSolutionTemplateResponse {
   templateId?: string;
   error?: string;
 }
+
+// Plugin registry types
+
+export interface RegistryPlugin {
+  reference: string;
+  fullReference: string;
+  version: string;
+  filename: string;
+  source: "local" | "oci";
+}
+
+export interface InstallPluginRequest {
+  ref: string;
+  registry?: string;
+}

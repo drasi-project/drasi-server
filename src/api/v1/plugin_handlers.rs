@@ -831,6 +831,84 @@ pub struct UpgradePluginRequest {
     pub filename: Option<String>,
 }
 
+/// Query parameters for GET /api/v1/plugins/registry/search.
+#[derive(Debug, serde::Deserialize)]
+pub struct SearchRegistryParams {
+    /// Search query (default: "*" for all available plugins).
+    #[serde(default = "default_search_query")]
+    pub q: String,
+    /// Optional registry override (OCI URL or local directory path).
+    pub registry: Option<String>,
+}
+
+fn default_search_query() -> String {
+    "*".to_string()
+}
+
+/// A plugin available in the registry (not yet installed).
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryPluginDto {
+    /// Short plugin reference, e.g. "source/postgres".
+    pub reference: String,
+    /// Full reference (OCI URL or file:// path).
+    pub full_reference: String,
+    /// Latest available version.
+    pub version: String,
+    /// Filename (populated for local sources).
+    pub filename: String,
+    /// Source kind: "local" or "oci".
+    pub source: String,
+}
+
+/// Search a plugin registry for available plugins.
+///
+/// Queries the configured (or overridden) plugin registry and returns
+/// a list of available plugins that match the search query.
+#[utoipa::path(
+    get,
+    path = "/api/v1/plugins/registry/search",
+    tag = "Plugins",
+    params(
+        ("q" = Option<String>, Query, description = "Search query (default: * for all)"),
+        ("registry" = Option<String>, Query, description = "Registry override (OCI URL or local path)")
+    ),
+    responses(
+        (status = 200, description = "Search results", body = Vec<RegistryPluginDto>),
+        (status = 500, description = "Search failed")
+    )
+)]
+pub async fn search_registry(
+    Extension(plugin_ops): Extension<Arc<crate::plugin_operations::PluginOperations>>,
+    axum::extract::Query(params): axum::extract::Query<SearchRegistryParams>,
+) -> impl IntoResponse {
+    match plugin_ops
+        .search_registry(&params.q, params.registry.as_deref())
+        .await
+    {
+        Ok(results) => {
+            let dtos: Vec<RegistryPluginDto> = results
+                .into_iter()
+                .map(|r| RegistryPluginDto {
+                    reference: r.reference,
+                    full_reference: r.full_reference,
+                    version: r.version,
+                    filename: r.filename,
+                    source: r.source,
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!(dtos)))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "SearchFailed",
+                "message": format!("{e}")
+            })),
+        ),
+    }
+}
+
 /// Build the plugin API router.
 pub fn plugin_routes() -> axum::Router {
     // Schema subrouter — needs to be separate to avoid {plugin_id} conflict
@@ -846,6 +924,7 @@ pub fn plugin_routes() -> axum::Router {
         .nest("/kinds", kinds_router)
         .route("/load", axum::routing::post(load_plugin))
         .route("/install", axum::routing::post(install_plugin))
+        .route("/registry/search", axum::routing::get(search_registry))
         .route("/events", axum::routing::get(plugin_event_stream))
         .route("/:plugin_id", axum::routing::get(get_plugin))
         .route("/:plugin_id/retire", axum::routing::post(retire_plugin))
