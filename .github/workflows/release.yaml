@@ -210,7 +210,7 @@ jobs:
             export JQ_LIB_DIR="$X86_PREFIX/lib"
             export ONIG_LIB_DIR="$X86_PREFIX/lib"
             export PKG_CONFIG_PATH="$X86_PREFIX/lib/pkgconfig"
-            export CFLAGS="-arch x86_64"
+            export CFLAGS_x86_64_apple_darwin="-arch x86_64"
           else
             export JQ_LIB_DIR="$(brew --prefix jq)/lib"
             export ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
