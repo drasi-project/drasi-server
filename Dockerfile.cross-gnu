@@ -29,3 +29,6 @@ ENV ONIG_LIB_DIR=/usr/local/jq/lib
 ENV JQ_INCLUDE_DIR=/usr/local/jq/include
 ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
+
+# Force aws-lc-sys to use CMake builder (avoids GCC memcmp bug in ubuntu:20.04's gcc)
+ENV AWS_LC_SYS_CMAKE_BUILDER=1

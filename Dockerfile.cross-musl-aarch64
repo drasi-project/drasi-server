@@ -35,6 +35,9 @@ ENV CFLAGS_aarch64_unknown_linux_musl="-I/usr/local/musl-jq/include"
 ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
 
+# Force aws-lc-sys to use CMake builder (avoids GCC memcmp bug in ubuntu:20.04's gcc)
+ENV AWS_LC_SYS_CMAKE_BUILDER=1
+
 # Create a linker wrapper that appends necessary libraries at the end
 RUN printf '#!/bin/sh\nexec aarch64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \
     > /usr/local/bin/musl-gcc-wrapper \

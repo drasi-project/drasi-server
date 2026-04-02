@@ -23,6 +23,9 @@ ENV CFLAGS_x86_64_unknown_linux_musl="-I/usr/local/musl-jq/include"
 ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
 
+# Force aws-lc-sys to use CMake builder (avoids GCC memcmp bug)
+ENV AWS_LC_SYS_CMAKE_BUILDER=1
+
 # Create a linker wrapper that appends necessary libraries at the end
 # to resolve symbol ordering issues with musl cross-compilation
 RUN printf '#!/bin/sh\nexec x86_64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \
