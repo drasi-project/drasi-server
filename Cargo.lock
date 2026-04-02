@@ -1465,6 +1465,7 @@ dependencies = [
  "pretty_assertions",
  "redis 0.24.0",
  "rstest",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -5712,7 +5713,6 @@ checksum = "fdc97a28575b85cfedf2a7e7d3cc64b3e11bd8ac766666318003abbacc7a21fc"
 dependencies = [
  "base64 0.22.1",
  "cookie_store",
- "flate2",
  "log",
  "percent-encoding",
  "rustls",
