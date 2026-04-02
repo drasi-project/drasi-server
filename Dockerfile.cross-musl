@@ -2,7 +2,7 @@ FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5
 
 # Install build dependencies for vendored OpenSSL, protobuf, and jq
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    perl make autoconf automake libtool \
+    perl make cmake autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
