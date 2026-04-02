@@ -14,6 +14,7 @@
 
 [workspace]
 members = [".", "xtask"]
+exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
