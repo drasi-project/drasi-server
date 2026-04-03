@@ -116,24 +116,24 @@ pub fn load_plugins(
 
     let mut stats = PluginLoadStats::default();
 
-    for plugin in loaded {
+    for mut plugin in loaded {
         let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
 
-        for proxy in plugin.source_plugins {
+        for proxy in std::mem::take(&mut plugin.source_plugins) {
             let kind = proxy.kind().to_string();
             info!("  [cdylib] source: {kind} ({meta})");
             registry.register_source(Arc::new(proxy));
             stats.source_descriptors += 1;
         }
 
-        for proxy in plugin.reaction_plugins {
+        for proxy in std::mem::take(&mut plugin.reaction_plugins) {
             let kind = proxy.kind().to_string();
             info!("  [cdylib] reaction: {kind} ({meta})");
             registry.register_reaction(Arc::new(proxy));
             stats.reaction_descriptors += 1;
         }
 
-        for proxy in plugin.bootstrap_plugins {
+        for proxy in std::mem::take(&mut plugin.bootstrap_plugins) {
             let kind = proxy.kind().to_string();
             info!("  [cdylib] bootstrap: {kind} ({meta})");
             registry.register_bootstrapper(Arc::new(proxy));

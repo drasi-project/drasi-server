@@ -28,6 +28,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
+use crate::api::shared::error::JsonBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, ComponentListItem, HealthResponse, InstanceListItem,
@@ -135,7 +136,7 @@ pub async fn create_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(request): Json<shared::CreateInstanceRequest>,
+    JsonBody(request): JsonBody<shared::CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     shared::create_instance(
         Extension(registry),
@@ -542,7 +543,7 @@ pub async fn create_query(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    Json(config): Json<QueryConfigDto>,
+    JsonBody(config): JsonBody<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let core = registry
         .get(&instance_id)
@@ -1368,7 +1369,7 @@ pub async fn create_query_default(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(config): Json<QueryConfigDto>,
+    JsonBody(config): JsonBody<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     let (instance_id, core) = registry.get_default().await.ok_or(StatusCode::NOT_FOUND)?;
     shared::create_query(
