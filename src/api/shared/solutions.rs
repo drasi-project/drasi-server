@@ -16,7 +16,16 @@
 
 use axum::Json;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+/// Regex for resolving `${VAR}` and `${VAR:-default}` variable references in YAML.
+///
+/// - Group 1: variable name
+/// - Group 2: default value (optional, after `:-`)
+static VAR_RESOLVE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+        .expect("VAR_RESOLVE_RE is a valid regex — verified by test_var_resolve_regex_compiles")
+});
 
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::solution::{
@@ -1021,12 +1030,8 @@ fn resolve_yaml_variables(
     yaml: &str,
     variables: &std::collections::HashMap<String, String>,
 ) -> String {
-    use regex::Regex;
-
-    let re = Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
-        .expect("Invalid regex pattern for variable resolution");
-
-    re.replace_all(yaml, |caps: &regex::Captures| {
+    VAR_RESOLVE_RE
+        .replace_all(yaml, |caps: &regex::Captures| {
         let var_name = caps
             .get(1)
             .expect("Regex group 1 (variable name) must exist")
@@ -1077,6 +1082,14 @@ mod tests {
     use super::*;
     use crate::api::models::solution::DeployPhase;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_var_resolve_regex_compiles() {
+        // Verify the LazyLock regex compiles successfully
+        assert!(VAR_RESOLVE_RE.is_match("${FOO}"));
+        assert!(VAR_RESOLVE_RE.is_match("${FOO:-bar}"));
+        assert!(!VAR_RESOLVE_RE.is_match("plain text"));
+    }
 
     fn create_test_template(dir: &Path, name: &str, content: &str) {
         let path = dir.join(format!("{name}.yaml"));

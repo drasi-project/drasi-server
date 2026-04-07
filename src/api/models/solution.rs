@@ -19,7 +19,18 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use utoipa::ToSchema;
+
+/// Regex for extracting `${VAR}` and `${VAR:-default}` variable references from YAML.
+///
+/// - Group 1: variable name
+/// - Group 2: `:-` separator (if present)
+/// - Group 3: default value (optional, supports escaped `\}`)
+static VAR_EXTRACT_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:-)((?:[^}]|\\\})*))?\}")
+        .expect("VAR_EXTRACT_RE is a valid regex — verified by test_var_extract_regex_compiles")
+});
 
 /// Metadata for a solution template.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -366,14 +377,7 @@ pub enum DeployPhase {
 /// assert_eq!(host_var.description, Some("Database host address".to_string()));
 /// ```
 pub fn extract_variables(yaml: &str) -> Vec<SolutionVariable> {
-    use regex::Regex;
     use std::collections::HashMap;
-
-    // Match ${VAR} or ${VAR:-default}
-    // Group 1: variable name
-    // Group 3: default value (optional, after :-)
-    let var_re = Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:-)((?:[^}]|\\\})*))?\}")
-        .expect("Invalid regex pattern for variable extraction");
 
     // Track variables: name -> (default, required, description, used_by)
     let mut var_map: HashMap<String, (Option<String>, bool, Option<String>, Vec<String>)> =
@@ -405,7 +409,7 @@ pub fn extract_variables(yaml: &str) -> Vec<SolutionVariable> {
         }
 
         // Extract variables from this line
-        for caps in var_re.captures_iter(line) {
+        for caps in VAR_EXTRACT_RE.captures_iter(line) {
             let name = caps
                 .get(1)
                 .expect("Regex group 1 (variable name) must exist")
@@ -495,6 +499,14 @@ fn extract_line_comment(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_var_extract_regex_compiles() {
+        // Verify the LazyLock regex compiles successfully
+        assert!(VAR_EXTRACT_RE.is_match("${FOO}"));
+        assert!(VAR_EXTRACT_RE.is_match("${FOO:-bar}"));
+        assert!(!VAR_EXTRACT_RE.is_match("plain text"));
+    }
 
     #[test]
     fn test_extract_variables_simple() {
