@@ -111,6 +111,13 @@ pub struct DrasiServerConfig {
     /// Hot-reload mode: "upgrade" (drain-then-retire) or "side-by-side" (default: "upgrade")
     #[serde(default = "default_hot_reload_mode")]
     pub hot_reload_mode: String,
+    /// Allowed CORS origins for the REST API.
+    ///
+    /// When empty (default), all origins are permitted (`CorsLayer::permissive()`).
+    /// When set, only the listed origins are allowed.
+    /// Example: `["http://localhost:3000", "https://dashboard.example.com"]`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_allowed_origins: Vec<String>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
@@ -150,6 +157,7 @@ impl Default for DrasiServerConfig {
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,
             hot_reload_mode: "upgrade".to_string(),
+            cors_allowed_origins: Vec::new(),
             sources: Vec::new(),
             queries: Vec::new(),
             reactions: Vec::new(),
@@ -583,6 +591,49 @@ mod tests {
             config.persist_config,
             "persist_config should default to true"
         );
+    }
+
+    // ==================== cors_allowed_origins tests ====================
+
+    #[test]
+    fn test_cors_allowed_origins_defaults_to_empty() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            config.cors_allowed_origins.is_empty(),
+            "cors_allowed_origins should default to empty (permissive)"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_parsed_from_yaml() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            corsAllowedOrigins:
+              - "http://localhost:3000"
+              - "https://dashboard.example.com"
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.cors_allowed_origins.len(), 2);
+        assert_eq!(config.cors_allowed_origins[0], "http://localhost:3000");
+        assert_eq!(
+            config.cors_allowed_origins[1],
+            "https://dashboard.example.com"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_omitted_is_empty() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.cors_allowed_origins.is_empty());
     }
 
     // ==================== DrasiServerConfig validation tests ====================

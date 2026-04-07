@@ -143,6 +143,12 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 # defaultDispatchBufferCapacity: 1000
 # defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-1000}"
 
+# CORS allowed origins (default: empty = all origins permitted)
+# When set, only listed origins are allowed for cross-origin requests.
+# corsAllowedOrigins:
+#   - "http://localhost:3000"
+#   - "https://dashboard.example.com"
+
 # Sources (parsed into plugin instances)
 sources:
   - kind: mock

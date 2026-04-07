@@ -54,6 +54,7 @@ pub struct DrasiServer {
     read_only: Arc<bool>,
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     plugin_orchestrator: Arc<PluginOrchestrator>,
+    cors_allowed_origins: Vec<String>,
     #[allow(dead_code)]
     config_persistence: Option<Arc<ConfigPersistence>>,
 }
@@ -478,6 +479,7 @@ impl DrasiServer {
             read_only: Arc::new(read_only),
             plugin_registry,
             plugin_orchestrator,
+            cors_allowed_origins: config.cors_allowed_origins.clone(),
             config_persistence: None, // Will be set after core is started
         })
     }
@@ -510,6 +512,7 @@ impl DrasiServer {
             read_only: Arc::new(false), // Programmatic mode assumes write access
             plugin_registry,
             plugin_orchestrator,
+            cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             config_persistence: None, // Will be set up if config file is provided
         }
     }
@@ -547,6 +550,7 @@ impl DrasiServer {
             read_only: Arc::new(false),
             plugin_registry,
             plugin_orchestrator,
+            cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             config_persistence: None,
         }
     }
@@ -768,7 +772,22 @@ impl DrasiServer {
             info!("Web UI is disabled by configuration");
         }
 
-        let app = app.layer(CorsLayer::permissive());
+        let cors_layer = if self.cors_allowed_origins.is_empty() {
+            CorsLayer::permissive()
+        } else {
+            use tower_http::cors::AllowOrigin;
+            let origins: Vec<axum::http::HeaderValue> = self
+                .cors_allowed_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(origins))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        };
+
+        let app = app.layer(cors_layer);
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");

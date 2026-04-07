@@ -42,6 +42,7 @@ struct PreservedServerSettings {
     hot_reload_plugins: bool,
     hot_reload_debounce_ms: u64,
     hot_reload_mode: String,
+    cors_allowed_origins: Vec<String>,
 }
 
 /// Snapshot-based persistence for DrasiServerConfig.
@@ -105,6 +106,7 @@ impl ConfigPersistence {
                 hot_reload_plugins: original_config.hot_reload_plugins,
                 hot_reload_debounce_ms: original_config.hot_reload_debounce_ms,
                 hot_reload_mode: original_config.hot_reload_mode.clone(),
+                cors_allowed_origins: original_config.cors_allowed_origins.clone(),
             },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
         }
@@ -264,6 +266,7 @@ impl ConfigPersistence {
                 hot_reload_plugins: self.preserved.hot_reload_plugins,
                 hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
                 hot_reload_mode: self.preserved.hot_reload_mode.clone(),
+                cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
                 sources: instance.sources,
                 queries: instance.queries,
                 reactions: instance.reactions,
@@ -300,6 +303,7 @@ impl ConfigPersistence {
                 hot_reload_plugins: self.preserved.hot_reload_plugins,
                 hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
                 hot_reload_mode: self.preserved.hot_reload_mode.clone(),
+                cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
                 sources: Vec::new(),
                 queries: Vec::new(),
                 reactions: Vec::new(),
@@ -980,6 +984,8 @@ mod tests {
         original_config.hot_reload_plugins = true;
         original_config.hot_reload_debounce_ms = 500;
         original_config.hot_reload_mode = "side-by-side".to_string();
+        original_config.cors_allowed_origins =
+            vec!["http://localhost:3000".to_string(), "https://dashboard.example.com".to_string()];
 
         let p = make_persistence_with_config(
             core,
@@ -1011,5 +1017,11 @@ mod tests {
         assert!(parsed.hot_reload_plugins);
         assert_eq!(parsed.hot_reload_debounce_ms, 500);
         assert_eq!(parsed.hot_reload_mode, "side-by-side");
+        assert_eq!(parsed.cors_allowed_origins.len(), 2);
+        assert_eq!(parsed.cors_allowed_origins[0], "http://localhost:3000");
+        assert_eq!(
+            parsed.cors_allowed_origins[1],
+            "https://dashboard.example.com"
+        );
     }
 }
