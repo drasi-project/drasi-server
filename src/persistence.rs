@@ -15,8 +15,8 @@
 use crate::api::models::bootstrap::BootstrapProviderConfig;
 use crate::api::models::{ConfigValue, QueryConfigDto};
 use crate::config::{
-    default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig,
-    SourceConfig,
+    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
+    TrustedIdentity,
 };
 use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
@@ -25,6 +25,24 @@ use log::{debug, error, info};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Server-level settings preserved from the original config file.
+///
+/// These fields are not part of any DrasiLib instance — they are server-wide
+/// settings that `save()` must round-trip faithfully to avoid erasing user
+/// configuration on the first persist operation.
+#[derive(Clone)]
+struct PreservedServerSettings {
+    enable_ui: bool,
+    plugin_registry: Option<String>,
+    auto_install_plugins: bool,
+    plugins: Vec<PluginDependency>,
+    verify_plugins: bool,
+    trusted_identities: Vec<TrustedIdentity>,
+    hot_reload_plugins: bool,
+    hot_reload_debounce_ms: u64,
+    hot_reload_mode: String,
+}
 
 /// Snapshot-based persistence for DrasiServerConfig.
 ///
@@ -44,12 +62,18 @@ pub struct ConfigPersistence {
     persist_config: bool,
     persist_settings: IndexMap<String, bool>,
     solutions_dir: Option<String>,
+    /// Server-level settings preserved from the original config file.
+    preserved: PreservedServerSettings,
     /// Instance configs for dynamic instances
     instance_configs: Arc<RwLock<IndexMap<String, DrasiLibInstanceConfig>>>,
 }
 
 impl ConfigPersistence {
-    /// Create a new ConfigPersistence instance
+    /// Create a new ConfigPersistence instance.
+    ///
+    /// The `original_config` parameter captures server-level settings (plugin
+    /// registry, hot-reload, verification, etc.) so they are preserved across
+    /// save operations rather than being reset to hard-coded defaults.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config_file_path: PathBuf,
@@ -60,6 +84,7 @@ impl ConfigPersistence {
         persist_config: bool,
         persist_settings: IndexMap<String, bool>,
         solutions_dir: Option<String>,
+        original_config: &DrasiServerConfig,
     ) -> Self {
         Self {
             config_file_path,
@@ -70,6 +95,17 @@ impl ConfigPersistence {
             persist_config,
             persist_settings,
             solutions_dir,
+            preserved: PreservedServerSettings {
+                enable_ui: original_config.enable_ui,
+                plugin_registry: original_config.plugin_registry.clone(),
+                auto_install_plugins: original_config.auto_install_plugins,
+                plugins: original_config.plugins.clone(),
+                verify_plugins: original_config.verify_plugins,
+                trusted_identities: original_config.trusted_identities.clone(),
+                hot_reload_plugins: original_config.hot_reload_plugins,
+                hot_reload_debounce_ms: original_config.hot_reload_debounce_ms,
+                hot_reload_mode: original_config.hot_reload_mode.clone(),
+            },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
         }
     }
@@ -215,19 +251,19 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: instance.persist_index,
-                enable_ui: true, // Default to enabled
+                enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
-                plugin_registry: default_plugin_registry(),
-                auto_install_plugins: false,
-                plugins: Vec::new(),
-                verify_plugins: false,
-                trusted_identities: Vec::new(),
-                hot_reload_plugins: false,
-                hot_reload_debounce_ms: 2000,
-                hot_reload_mode: "upgrade".to_string(),
+                plugin_registry: self.preserved.plugin_registry.clone(),
+                auto_install_plugins: self.preserved.auto_install_plugins,
+                plugins: self.preserved.plugins.clone(),
+                verify_plugins: self.preserved.verify_plugins,
+                trusted_identities: self.preserved.trusted_identities.clone(),
+                hot_reload_plugins: self.preserved.hot_reload_plugins,
+                hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
+                hot_reload_mode: self.preserved.hot_reload_mode.clone(),
                 sources: instance.sources,
                 queries: instance.queries,
                 reactions: instance.reactions,
@@ -251,19 +287,19 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
-                enable_ui: true,      // Default to enabled
+                enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
-                plugin_registry: default_plugin_registry(),
-                auto_install_plugins: false,
-                plugins: Vec::new(),
-                verify_plugins: false,
-                trusted_identities: Vec::new(),
-                hot_reload_plugins: false,
-                hot_reload_debounce_ms: 2000,
-                hot_reload_mode: "upgrade".to_string(),
+                plugin_registry: self.preserved.plugin_registry.clone(),
+                auto_install_plugins: self.preserved.auto_install_plugins,
+                plugins: self.preserved.plugins.clone(),
+                verify_plugins: self.preserved.verify_plugins,
+                trusted_identities: self.preserved.trusted_identities.clone(),
+                hot_reload_plugins: self.preserved.hot_reload_plugins,
+                hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
+                hot_reload_mode: self.preserved.hot_reload_mode.clone(),
                 sources: Vec::new(),
                 queries: Vec::new(),
                 reactions: Vec::new(),
@@ -502,6 +538,18 @@ mod tests {
         path: std::path::PathBuf,
         persist: bool,
     ) -> ConfigPersistence {
+        let default_config = DrasiServerConfig::default();
+        make_persistence_with_config(core, instance_id, path, persist, &default_config)
+    }
+
+    /// Create a ConfigPersistence with custom server-level settings.
+    fn make_persistence_with_config(
+        core: Arc<DrasiLib>,
+        instance_id: &str,
+        path: std::path::PathBuf,
+        persist: bool,
+        original_config: &DrasiServerConfig,
+    ) -> ConfigPersistence {
         let mut map = IndexMap::new();
         map.insert(instance_id.to_string(), core);
         let registry = InstanceRegistry::from_map(map);
@@ -514,6 +562,7 @@ mod tests {
             persist,
             IndexMap::new(),
             None,
+            original_config,
         )
     }
 
@@ -906,5 +955,61 @@ mod tests {
         assert_eq!(parsed.reactions[0].id, "rx1");
         assert_eq!(parsed.reactions[0].kind, "log");
         assert_eq!(parsed.reactions[0].queries, vec!["q1".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_save_preserves_server_level_settings() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+
+        let core = build_core("settings-inst", vec![], vec![], vec![]).await;
+
+        // Create a config with non-default server-level settings
+        let mut original_config = DrasiServerConfig::default();
+        original_config.enable_ui = false;
+        original_config.plugin_registry = Some("my-registry.io/plugins".to_string());
+        original_config.auto_install_plugins = true;
+        original_config.plugins = vec![PluginDependency {
+            reference: "source/postgres:0.5.0".to_string(),
+        }];
+        original_config.verify_plugins = true;
+        original_config.trusted_identities = vec![TrustedIdentity {
+            issuer: "https://accounts.google.com".to_string(),
+            subject_pattern: "builder@my-org.iam.gserviceaccount.com".to_string(),
+        }];
+        original_config.hot_reload_plugins = true;
+        original_config.hot_reload_debounce_ms = 500;
+        original_config.hot_reload_mode = "side-by-side".to_string();
+
+        let p = make_persistence_with_config(
+            core,
+            "settings-inst",
+            cfg_path.clone(),
+            true,
+            &original_config,
+        );
+        p.save().await.unwrap();
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
+
+        // All server-level settings should be preserved, not reset to defaults
+        assert!(!parsed.enable_ui);
+        assert_eq!(
+            parsed.plugin_registry,
+            Some("my-registry.io/plugins".to_string())
+        );
+        assert!(parsed.auto_install_plugins);
+        assert_eq!(parsed.plugins.len(), 1);
+        assert_eq!(parsed.plugins[0].reference, "source/postgres:0.5.0");
+        assert!(parsed.verify_plugins);
+        assert_eq!(parsed.trusted_identities.len(), 1);
+        assert_eq!(
+            parsed.trusted_identities[0].issuer,
+            "https://accounts.google.com"
+        );
+        assert!(parsed.hot_reload_plugins);
+        assert_eq!(parsed.hot_reload_debounce_ms, 500);
+        assert_eq!(parsed.hot_reload_mode, "side-by-side");
     }
 }

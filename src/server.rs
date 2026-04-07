@@ -629,6 +629,7 @@ impl DrasiServer {
                         true, // persist_config = true
                         persist_settings.clone(),
                         config.solutions_dir.clone(),
+                        &config,
                     ));
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
