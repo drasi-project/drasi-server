@@ -29,6 +29,7 @@ use futures_util::stream::Stream;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
+use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::instance_registry::InstanceRegistry;
 use crate::plugin_orchestrator::PluginOrchestrator;
 
@@ -169,13 +170,11 @@ pub async fn get_plugin(
 ) -> impl IntoResponse {
     match orchestrator.get_plugin_info(&plugin_id).await {
         Some(info) => (StatusCode::OK, Json(serde_json::json!(info))),
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": "PluginNotFound",
-                "message": format!("Plugin '{}' is not loaded", plugin_id)
-            })),
-        ),
+        None => ErrorResponse::new(
+            error_codes::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin_id}' is not loaded"),
+        )
+        .into_json_response(),
     }
 }
 
@@ -209,13 +208,11 @@ pub async fn retire_plugin(
                 "descriptorsRemoved": removed,
             })),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": "RetireFailed",
-                "message": format!("{e}"),
-            })),
-        ),
+        Err(e) => ErrorResponse::new(
+            error_codes::PLUGIN_RETIRE_FAILED,
+            format!("{e}"),
+        )
+        .into_json_response(),
     }
 }
 
@@ -268,13 +265,11 @@ pub async fn load_plugin(
     let plugins_dir = match orchestrator.plugins_dir() {
         Some(dir) => dir.to_path_buf(),
         None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "NoPluginsDirectory",
-                    "message": "Server was not started with a plugins directory"
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::PLUGIN_NO_DIRECTORY,
+                "Server was not started with a plugins directory",
+            )
+            .into_json_response();
         }
     };
 
@@ -284,46 +279,37 @@ pub async fn load_plugin(
     let canonical_dir = match plugins_dir.canonicalize() {
         Ok(d) => d,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "InternalError",
-                    "message": format!("Cannot resolve plugins directory: {e}")
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Cannot resolve plugins directory: {e}"),
+            )
+            .into_json_response();
         }
     };
     let canonical_path = match path.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "FileNotFound",
-                    "message": format!("Plugin file '{}' not found in plugins directory", body.filename)
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::PLUGIN_FILE_NOT_FOUND,
+                format!(
+                    "Plugin file '{}' not found in plugins directory",
+                    body.filename
+                ),
+            )
+            .into_json_response();
         }
     };
     if !canonical_path.starts_with(&canonical_dir) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "InvalidPath",
-                "message": "Filename must refer to a file within the plugins directory"
-            })),
-        );
+        return ErrorResponse::new(
+            error_codes::PLUGIN_INVALID_PATH,
+            "Filename must refer to a file within the plugins directory",
+        )
+        .into_json_response();
     }
 
     match orchestrator.load_plugin(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": "LoadFailed",
-                "message": format!("{e}")
-            })),
-        ),
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response(),
     }
 }
 
@@ -350,26 +336,15 @@ pub async fn install_plugin(
     {
         Ok(path) => path,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "InstallFailed",
-                    "message": format!("{e}")
-                })),
-            );
+            return ErrorResponse::new(error_codes::PLUGIN_INSTALL_FAILED, format!("{e}"))
+                .into_json_response();
         }
     };
 
     // Load the downloaded plugin
     match orchestrator.load_plugin(&plugin_path, None).await {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": "LoadFailed",
-                "message": format!("{e}")
-            })),
-        ),
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response(),
     }
 }
 
@@ -400,13 +375,11 @@ pub async fn upgrade_plugin(
     let plugins_dir = match orchestrator.plugins_dir() {
         Some(dir) => dir.to_path_buf(),
         None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": "NoPluginsDirectory",
-                    "message": "Server was not started with a plugins directory"
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::PLUGIN_NO_DIRECTORY,
+                "Server was not started with a plugins directory",
+            )
+            .into_json_response();
         }
     };
 
@@ -415,24 +388,20 @@ pub async fn upgrade_plugin(
         Some(f) => {
             let path = plugins_dir.join(&f);
             if !path.exists() {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "error": "FileNotFound",
-                        "message": format!("Plugin file '{}' not found in plugins directory", f)
-                    })),
-                );
+                return ErrorResponse::new(
+                    error_codes::PLUGIN_FILE_NOT_FOUND,
+                    format!("Plugin file '{f}' not found in plugins directory"),
+                )
+                .into_json_response();
             }
             path
         }
         None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "MissingFilename",
-                    "message": "Request body must include a 'filename' field pointing to the new plugin file"
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Request body must include a 'filename' field pointing to the new plugin file",
+            )
+            .into_json_response();
         }
     };
 
@@ -459,13 +428,9 @@ pub async fn upgrade_plugin(
                 })),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": "UpgradeFailed",
-                "message": format!("{e}")
-            })),
-        ),
+        Err(e) => {
+            ErrorResponse::new(error_codes::PLUGIN_UPGRADE_FAILED, format!("{e}")).into_json_response()
+        }
     }
 }
 
@@ -494,13 +459,9 @@ pub async fn promote_plugin(
                 "promotedKinds": promoted_kinds,
             })),
         ),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "PromoteFailed",
-                "message": format!("{e}")
-            })),
-        ),
+        Err(e) => {
+            ErrorResponse::new(error_codes::PLUGIN_PROMOTE_FAILED, format!("{e}")).into_json_response()
+        }
     }
 }
 
@@ -526,13 +487,11 @@ pub async fn list_dependents(
     let plugin_info = match orchestrator.get_plugin_info(&plugin_id).await {
         Some(info) => info,
         None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({
-                    "error": "PluginNotFound",
-                    "message": format!("Plugin '{}' is not loaded", plugin_id)
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::PLUGIN_NOT_FOUND,
+                format!("Plugin '{plugin_id}' is not loaded"),
+            )
+            .into_json_response();
         }
     };
 
@@ -619,16 +578,13 @@ pub async fn get_kind_schema(
         "reaction" | "reactions" => reg.reaction_plugin_infos(),
         "bootstrap" | "bootstrappers" => reg.bootstrapper_plugin_infos(),
         _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": "InvalidCategory",
-                    "message": format!(
-                        "Unknown category '{}'. Valid categories: source, reaction, bootstrap",
-                        category
-                    )
-                })),
-            );
+            return ErrorResponse::new(
+                error_codes::PLUGIN_INVALID_CATEGORY,
+                format!(
+                    "Unknown category '{category}'. Valid categories: source, reaction, bootstrap"
+                ),
+            )
+            .into_json_response();
         }
     };
 
@@ -660,13 +616,11 @@ pub async fn get_kind_schema(
                 )
             }
         }
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": "KindNotFound",
-                "message": format!("Kind '{}' not found in category '{}'", kind, category)
-            })),
-        ),
+        None => ErrorResponse::new(
+            error_codes::PLUGIN_KIND_NOT_FOUND,
+            format!("Kind '{kind}' not found in category '{category}'"),
+        )
+        .into_json_response(),
     }
 }
 
@@ -899,13 +853,9 @@ pub async fn search_registry(
                 .collect();
             (StatusCode::OK, Json(serde_json::json!(dtos)))
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": "SearchFailed",
-                "message": format!("{e}")
-            })),
-        ),
+        Err(e) => {
+            ErrorResponse::new(error_codes::PLUGIN_SEARCH_FAILED, format!("{e}")).into_json_response()
+        },
     }
 }
 

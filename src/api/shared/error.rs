@@ -83,6 +83,19 @@ pub mod error_codes {
     pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+
+    pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
+    pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
+    pub const PLUGIN_INSTALL_FAILED: &str = "PLUGIN_INSTALL_FAILED";
+    pub const PLUGIN_RETIRE_FAILED: &str = "PLUGIN_RETIRE_FAILED";
+    pub const PLUGIN_UPGRADE_FAILED: &str = "PLUGIN_UPGRADE_FAILED";
+    pub const PLUGIN_PROMOTE_FAILED: &str = "PLUGIN_PROMOTE_FAILED";
+    pub const PLUGIN_SEARCH_FAILED: &str = "PLUGIN_SEARCH_FAILED";
+    pub const PLUGIN_FILE_NOT_FOUND: &str = "PLUGIN_FILE_NOT_FOUND";
+    pub const PLUGIN_INVALID_PATH: &str = "PLUGIN_INVALID_PATH";
+    pub const PLUGIN_NO_DIRECTORY: &str = "PLUGIN_NO_DIRECTORY";
+    pub const PLUGIN_KIND_NOT_FOUND: &str = "PLUGIN_KIND_NOT_FOUND";
+    pub const PLUGIN_INVALID_CATEGORY: &str = "PLUGIN_INVALID_CATEGORY";
 }
 
 /// API error response structure
@@ -132,6 +145,28 @@ impl ErrorResponse {
         let status = status_from_code(&self.code);
         (status, axum::Json(self))
     }
+
+    /// Convert to an explicit HTTP status code.
+    ///
+    /// Use this when the status code cannot be derived from the error code
+    /// (e.g., 207 Multi-Status for partial failures).
+    pub fn with_explicit_status(self, status: StatusCode) -> (StatusCode, axum::Json<Self>) {
+        (status, axum::Json(self))
+    }
+
+    /// Convert to a (StatusCode, Json<Value>) tuple for use in handlers that
+    /// return `impl IntoResponse` with `serde_json::Value` success bodies.
+    pub fn into_json_response(self) -> (StatusCode, axum::Json<serde_json::Value>) {
+        let status = status_from_code(&self.code);
+        let mut body = serde_json::json!({
+            "code": self.code,
+            "message": self.message,
+        });
+        if let Some(details) = &self.details {
+            body["details"] = serde_json::to_value(details).unwrap_or_default();
+        }
+        (status, axum::Json(body))
+    }
 }
 
 /// Convert an error code to an HTTP status code
@@ -139,11 +174,16 @@ fn status_from_code(code: &str) -> StatusCode {
     match code {
         error_codes::SOURCE_NOT_FOUND
         | error_codes::QUERY_NOT_FOUND
-        | error_codes::REACTION_NOT_FOUND => StatusCode::NOT_FOUND,
+        | error_codes::REACTION_NOT_FOUND
+        | error_codes::PLUGIN_NOT_FOUND
+        | error_codes::PLUGIN_FILE_NOT_FOUND
+        | error_codes::PLUGIN_KIND_NOT_FOUND => StatusCode::NOT_FOUND,
 
         error_codes::CONFIG_READ_ONLY | error_codes::DUPLICATE_RESOURCE => StatusCode::CONFLICT,
 
-        error_codes::INVALID_REQUEST => StatusCode::BAD_REQUEST,
+        error_codes::INVALID_REQUEST
+        | error_codes::PLUGIN_INVALID_PATH
+        | error_codes::PLUGIN_INVALID_CATEGORY => StatusCode::BAD_REQUEST,
 
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
@@ -245,6 +285,37 @@ mod tests {
     }
 
     #[test]
+    fn test_into_json_response() {
+        let (status, body) =
+            ErrorResponse::new(error_codes::PLUGIN_NOT_FOUND, "Plugin 'x' is not loaded")
+                .into_json_response();
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let json = body.0;
+        assert_eq!(json["code"], "PLUGIN_NOT_FOUND");
+        assert_eq!(json["message"], "Plugin 'x' is not loaded");
+    }
+
+    #[test]
+    fn test_into_json_response_with_details() {
+        let details = ErrorDetail {
+            component_type: Some("plugin".to_string()),
+            component_id: Some("source/mock".to_string()),
+            technical_details: None,
+        };
+
+        let (status, body) =
+            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, "load error")
+                .with_details(details)
+                .into_json_response();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        let json = body.0;
+        assert_eq!(json["code"], "PLUGIN_LOAD_FAILED");
+        assert!(json["details"]["component_type"].as_str().is_some());
+    }
+
+    #[test]
     fn test_error_response_serialization() {
         let response = ErrorResponse::new("TEST_CODE", "Test message");
         let json = serde_json::to_string(&response).expect("Failed to serialize");
@@ -291,6 +362,18 @@ mod tests {
             status_from_code(error_codes::REACTION_NOT_FOUND),
             StatusCode::NOT_FOUND
         );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_FILE_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_KIND_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[test]
@@ -309,6 +392,14 @@ mod tests {
     fn test_status_from_code_bad_request() {
         assert_eq!(
             status_from_code(error_codes::INVALID_REQUEST),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_INVALID_PATH),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_INVALID_CATEGORY),
             StatusCode::BAD_REQUEST
         );
     }
@@ -525,6 +616,18 @@ mod tests {
             error_codes::DUPLICATE_RESOURCE,
             error_codes::INVALID_REQUEST,
             error_codes::INTERNAL_ERROR,
+            error_codes::PLUGIN_NOT_FOUND,
+            error_codes::PLUGIN_LOAD_FAILED,
+            error_codes::PLUGIN_INSTALL_FAILED,
+            error_codes::PLUGIN_RETIRE_FAILED,
+            error_codes::PLUGIN_UPGRADE_FAILED,
+            error_codes::PLUGIN_PROMOTE_FAILED,
+            error_codes::PLUGIN_SEARCH_FAILED,
+            error_codes::PLUGIN_FILE_NOT_FOUND,
+            error_codes::PLUGIN_INVALID_PATH,
+            error_codes::PLUGIN_NO_DIRECTORY,
+            error_codes::PLUGIN_KIND_NOT_FOUND,
+            error_codes::PLUGIN_INVALID_CATEGORY,
         ];
 
         let mut unique: std::collections::HashSet<&str> = std::collections::HashSet::new();
