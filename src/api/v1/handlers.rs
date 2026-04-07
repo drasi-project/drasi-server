@@ -289,6 +289,7 @@ pub async fn upsert_source_handler(
         Extension(config_persistence),
         Extension(path.instance_id),
         Extension(plugin_registry),
+        Path(path.id),
         Json(config_json),
     )
     .await
@@ -989,6 +990,7 @@ pub async fn upsert_reaction_handler(
         Extension(config_persistence),
         Extension(path.instance_id),
         Extension(plugin_registry),
+        Path(path.id),
         Json(config_json),
     )
     .await

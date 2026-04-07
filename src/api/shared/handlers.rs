@@ -432,6 +432,7 @@ pub async fn upsert_source_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
+    Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -449,6 +450,13 @@ pub async fn upsert_source_handler(
             ))));
         }
     };
+
+    if config.id() != path_id {
+        return Ok(Json(ApiResponse::error(format!(
+            "Path id '{path_id}' does not match body id '{}'",
+            config.id()
+        ))));
+    }
 
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
@@ -1270,6 +1278,7 @@ pub async fn upsert_reaction_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
+    Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
     if *read_only {
@@ -1287,6 +1296,13 @@ pub async fn upsert_reaction_handler(
             ))));
         }
     };
+
+    if config.id() != path_id {
+        return Ok(Json(ApiResponse::error(format!(
+            "Path id '{path_id}' does not match body id '{}'",
+            config.id()
+        ))));
+    }
 
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
