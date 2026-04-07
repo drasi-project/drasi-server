@@ -154,7 +154,7 @@ reactions:
 /// 2. Query returns all SensorReading nodes
 /// 3. HTTP reaction sends change events to wiremock
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, http reaction) — run `make build-local-test-plugins` first"]
 async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
     // Start wiremock to capture HTTP reaction output
     let mock_server = MockServer::start().await;
@@ -279,7 +279,7 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
 ///
 /// This test validates that all 3 sensors make it through when there's no filter
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, http reaction) — run `make build-local-test-plugins` first"]
 async fn test_e2e_all_bootstrap_data_reaches_reaction() {
     let mock_server = MockServer::start().await;
 
@@ -359,7 +359,7 @@ async fn test_e2e_all_bootstrap_data_reaches_reaction() {
 ///
 /// Uses MockSource Counter type to generate predictable data
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, http reaction) — run `make build-local-test-plugins` first"]
 async fn test_e2e_validates_output_field_values() {
     let mock_server = MockServer::start().await;
 
@@ -485,7 +485,7 @@ reactions:
 ///
 /// Bootstrap data that doesn't match the query filter should result in no output
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, http reaction) — run `make build-local-test-plugins` first"]
 async fn test_e2e_no_results_when_filter_matches_nothing() {
     // All sensors have temp < 50, but query filters for > 80
     let bootstrap_data = vec![
@@ -558,7 +558,7 @@ async fn test_e2e_no_results_when_filter_matches_nothing() {
 
 /// Test: Multiple sensor readings are received by HTTP reaction
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, http reaction) — run `make build-local-test-plugins` first"]
 async fn test_e2e_handles_multiple_bootstrap_nodes() {
     let mock_server = MockServer::start().await;
 

@@ -47,7 +47,7 @@ fn load_iot_template() -> String {
 
 /// Test that the IoT template can be deployed successfully
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, log reaction) — run `make build-local-test-plugins` first"]
 async fn test_iot_template_deploys_successfully() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -125,7 +125,7 @@ async fn test_iot_template_deploys_successfully() {
 /// - Before: TEMP_THRESHOLD default was 75, MockSource generates 20-30, no matches
 /// - After: TEMP_THRESHOLD default is 25, MockSource generates 20-30, matches occur
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, log reaction) — run `make build-local-test-plugins` first"]
 async fn test_iot_template_produces_query_results() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -221,7 +221,7 @@ reactions:
 /// Test that demonstrates the original bug:
 /// With threshold 75, no results are produced because MockSource generates 20-30
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, log reaction) — run `make build-local-test-plugins` first"]
 async fn test_iot_template_no_results_with_high_threshold() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -310,7 +310,7 @@ reactions:
 
 /// Test deployment with custom variable override
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, log reaction) — run `make build-local-test-plugins` first"]
 async fn test_iot_template_with_custom_threshold() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -392,7 +392,7 @@ reactions:
 
 /// Test that ALL sensor readings pass through with no filter
 #[tokio::test]
-#[ignore = "requires mock source plugin (cdylib) — not available with dynamic plugin loading"]
+#[ignore = "requires cdylib plugins (mock source, log reaction) — run `make build-local-test-plugins` first"]
 async fn test_mock_source_generates_sensor_readings() {
     let temp_dir = TempDir::new().unwrap();
 

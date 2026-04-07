@@ -16,7 +16,7 @@
 
 .PHONY: all build build-release build-cross build-cross-release \
         run run-release setup demo demo-cleanup \
-        doctor validate clean clippy test test-smoke \
+        doctor validate clean clippy test test-all test-smoke \
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins \
@@ -81,7 +81,8 @@ help:
 	@echo "  make clean-dev-build    - Clean, format, lint, and test"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test               - Run all tests"
+	@echo "  make test               - Run unit and integration tests (skips plugin-dependent tests)"
+	@echo "  make test-all           - Build test plugins and run ALL tests (including ignored/E2E)"
 	@echo "  make test-smoke         - Plugin smoke test"
 	@echo "  make vscode-test        - Run VSCode extension tests"
 	@echo ""
@@ -187,18 +188,32 @@ fmt-check:
 test:
 	cargo test
 
+# Run ALL tests: build test plugins, run cargo tests (including #[ignore]),
+# plugin smoke tests, and VSCode extension tests.
+test-all: build-local-test-plugins
+	@echo "=== Building server binary ==="
+	cargo build
+	@echo "=== Running all cargo tests (including ignored/E2E) ==="
+	cargo test --tests -- --include-ignored
+	@echo "=== Running doctests ==="
+	cargo test --doc
+	@echo "=== Running plugin smoke tests ==="
+	./tests/plugin_smoke_test.sh --skip-build
+	@echo "=== All tests passed ==="
+
 # Plugin smoke tests: start server and create every plugin kind, verify no crash
 test-smoke:
 	@echo "=== Plugin smoke test ==="
 	./tests/plugin_smoke_test.sh
 
-# Build cdylib test plugins (mock source, log reaction, scriptfile bootstrap)
-# needed by solution deployment tests.
+# Build cdylib test plugins (mock source, log reaction, http reaction, scriptfile bootstrap)
+# needed by solution deployment and E2E tests.
 # Plugins are built from ../drasi-core and copied to target/debug/plugins/.
 build-local-test-plugins:
 	@echo "=== Building cdylib test plugins from drasi-core ==="
 	cd ../drasi-core && cargo build --lib -p drasi-source-mock --features drasi-source-mock/dynamic-plugin
 	cd ../drasi-core && cargo build --lib -p drasi-reaction-log --features drasi-reaction-log/dynamic-plugin
+	cd ../drasi-core && cargo build --lib -p drasi-reaction-http --features drasi-reaction-http/dynamic-plugin
 	cd ../drasi-core && cargo build --lib -p drasi-bootstrap-scriptfile --features drasi-bootstrap-scriptfile/dynamic-plugin
 	@mkdir -p target/debug/plugins
 	@echo "Copying test plugins to target/debug/plugins/..."
