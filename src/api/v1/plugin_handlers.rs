@@ -387,14 +387,35 @@ pub async fn upgrade_plugin(
     let new_path = match filename {
         Some(f) => {
             let path = plugins_dir.join(&f);
-            if !path.exists() {
+            // Security: prevent path traversal — canonicalize and verify containment
+            let canonical_dir = match plugins_dir.canonicalize() {
+                Ok(d) => d,
+                Err(e) => {
+                    return ErrorResponse::new(
+                        error_codes::INTERNAL_ERROR,
+                        format!("Cannot resolve plugins directory: {e}"),
+                    )
+                    .into_json_response();
+                }
+            };
+            let canonical_path = match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => {
+                    return ErrorResponse::new(
+                        error_codes::PLUGIN_FILE_NOT_FOUND,
+                        format!("Plugin file '{f}' not found in plugins directory"),
+                    )
+                    .into_json_response();
+                }
+            };
+            if !canonical_path.starts_with(&canonical_dir) {
                 return ErrorResponse::new(
-                    error_codes::PLUGIN_FILE_NOT_FOUND,
-                    format!("Plugin file '{f}' not found in plugins directory"),
+                    error_codes::PLUGIN_INVALID_PATH,
+                    "Filename must refer to a file within the plugins directory",
                 )
                 .into_json_response();
             }
-            path
+            canonical_path
         }
         None => {
             return ErrorResponse::new(
