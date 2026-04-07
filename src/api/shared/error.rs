@@ -13,11 +13,27 @@
 // limitations under the License.
 
 //! Error types and error handling utilities shared across API versions.
+//!
+//! ## Error Handling Architecture
+//!
+//! Drasi Server uses a three-layer error pattern aligned with drasi-lib:
+//!
+//! - **Layer 1 (HTTP handlers):** Return `ErrorResponse` which implements
+//!   `IntoResponse` — automatically sets the HTTP status code and serializes
+//!   a structured `{code, message, details?}` JSON body.
+//!
+//! - **Layer 2 (Server services):** Use `anyhow::Result` with `.context()`
+//!   for rich error chains. These are converted to `ErrorResponse` at the
+//!   handler boundary via `From<anyhow::Error>`.
+//!
+//! - **Layer 3 (drasi-lib):** Returns `DrasiError` which is converted to
+//!   `ErrorResponse` via `From<DrasiError>` with proper status code mapping.
 
 use axum::async_trait;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::FromRequest;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use drasi_lib::DrasiError;
 use serde::{de::DeserializeOwned, Serialize};
 use utoipa::ToSchema;
@@ -169,6 +185,28 @@ impl ErrorResponse {
     }
 }
 
+/// `ErrorResponse` implements `IntoResponse` so handlers can return
+/// `Result<Json<T>, ErrorResponse>` — the error branch automatically
+/// sets the HTTP status code from the error code and serializes the
+/// structured JSON body.
+impl IntoResponse for ErrorResponse {
+    fn into_response(self) -> axum::response::Response {
+        let status = status_from_code(&self.code);
+        (status, axum::Json(self)).into_response()
+    }
+}
+
+/// Convert `anyhow::Error` to `ErrorResponse` for service-layer errors.
+///
+/// This bridges Layer 2 (internal `anyhow::Result` with `.context()`) to
+/// Layer 1 (HTTP error responses). All anyhow errors map to `INTERNAL_ERROR`
+/// with 500 status.
+impl From<anyhow::Error> for ErrorResponse {
+    fn from(err: anyhow::Error) -> Self {
+        ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
+    }
+}
+
 /// Convert an error code to an HTTP status code
 fn status_from_code(code: &str) -> StatusCode {
     match code {
@@ -313,6 +351,45 @@ mod tests {
         let json = body.0;
         assert_eq!(json["code"], "PLUGIN_LOAD_FAILED");
         assert!(json["details"]["component_type"].as_str().is_some());
+    }
+
+    #[test]
+    fn test_error_response_into_response() {
+        use axum::body::to_bytes;
+
+        let error = ErrorResponse::new(error_codes::SOURCE_NOT_FOUND, "Source 'x' not found");
+        let response = error.into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        // Verify the body is valid JSON with the expected structure
+        let body = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(to_bytes(response.into_body(), usize::MAX))
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["code"], "SOURCE_NOT_FOUND");
+        assert_eq!(json["message"], "Source 'x' not found");
+    }
+
+    #[test]
+    fn test_from_anyhow_error() {
+        let anyhow_err = anyhow::anyhow!("something broke internally");
+        let error_response: ErrorResponse = anyhow_err.into();
+
+        assert_eq!(error_response.code, error_codes::INTERNAL_ERROR);
+        assert_eq!(error_response.message, "something broke internally");
+    }
+
+    #[test]
+    fn test_from_drasi_error() {
+        let drasi_err = DrasiError::ComponentNotFound {
+            component_type: "source".to_string(),
+            component_id: "my-source".to_string(),
+        };
+        let error_response: ErrorResponse = drasi_err.into();
+
+        assert_eq!(error_response.code, error_codes::SOURCE_NOT_FOUND);
+        assert!(error_response.message.contains("my-source"));
     }
 
     #[test]

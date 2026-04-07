@@ -378,9 +378,46 @@ Plugin endpoints are server-wide (not per-instance) since plugins are shared acr
 ## Important Patterns
 
 ### Error Handling
-- Use `anyhow::Result` for functions that can fail
-- Custom `DrasiError` type for domain-specific errors
-- Proper error propagation with `?` operator
+
+Drasi Server uses a three-layer error pattern aligned with drasi-lib:
+
+**Layer 1 — HTTP handlers → `ErrorResponse`:**
+All API error responses use `ErrorResponse` from `src/api/shared/error.rs`, which implements
+`IntoResponse` to automatically set the HTTP status code and serialize a structured
+`{code, message, details?}` JSON body. Handlers return `Result<Json<ApiResponse<T>>, ErrorResponse>`.
+
+```rust
+// Good: handler returns ErrorResponse on failure
+Err(ErrorResponse::new(error_codes::SOURCE_NOT_FOUND, "Source 'x' not found"))
+
+// Good: convert DrasiError to ErrorResponse automatically
+Err(ErrorResponse::from(drasi_error))
+
+// Bad: DO NOT return bare StatusCode without body
+Err(StatusCode::NOT_FOUND)  // ← No error body!
+
+// Bad: DO NOT return 200 OK with error in body
+Ok(Json(ApiResponse::error("something failed")))  // ← Wrong status code!
+```
+
+**Layer 2 — Server services → `anyhow::Result`:**
+Internal modules (server.rs, persistence.rs, factories.rs, plugin_orchestrator.rs, config/)
+use `anyhow::Result` with `.context()` for rich error chains. These convert to `ErrorResponse`
+at the handler boundary via `From<anyhow::Error>`.
+
+**Layer 3 — drasi-lib → `DrasiError`:**
+Calls to `DrasiLib` return `DrasiError` which converts to `ErrorResponse` via `From<DrasiError>`
+with proper status code mapping (ComponentNotFound → 404, AlreadyExists → 409, etc.).
+
+**Error codes** are defined in `src/api/shared/error.rs::error_codes` module. Use existing codes
+or add new ones — never use ad-hoc string error codes.
+
+**Rules for contributors:**
+- Never return bare `Err(StatusCode::...)` from handlers — always use `ErrorResponse`
+- Never return `Ok(Json(ApiResponse::error(...)))` — errors must have proper HTTP status codes
+- Use `ErrorResponse::from(drasi_error)` to convert DrasiLib errors
+- Use `anyhow::Result` with `.context()` in internal/service modules
+- Add new error codes to `error_codes` module when needed
 
 ### Async/Await
 - All I/O operations are async using Tokio

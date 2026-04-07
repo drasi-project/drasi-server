@@ -31,6 +31,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use super::error::{error_codes, ErrorResponse};
 use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, ComponentListItem, HealthResponse,
     InstanceListItem, StatusResponse,
@@ -241,7 +242,7 @@ pub async fn create_instance(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Json(request): Json<CreateInstanceRequest>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create instances.".to_string(),
@@ -254,7 +255,7 @@ pub async fn create_instance(
     // Check if instance already exists
     if registry.contains(&instance_id).await {
         log::info!("Instance '{instance_id}' already exists");
-        return Err(StatusCode::CONFLICT);
+        return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
     }
 
     // Create a new DrasiLib instance with optional configuration
@@ -365,7 +366,7 @@ pub async fn create_source_handler(
     Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create sources.".to_string(),
@@ -417,7 +418,7 @@ pub async fn create_source_handler(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
                 log::info!("Source '{source_id}' already exists - use PUT for upsert");
-                return Err(StatusCode::CONFLICT);
+                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
             }
             log::error!("Failed to add source: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
@@ -434,7 +435,7 @@ pub async fn upsert_source_handler(
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create or update sources.".to_string(),
@@ -533,12 +534,12 @@ pub async fn get_source(
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
     // Get source runtime info from ComponentGraph (source of truth)
     let info = core
         .get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
@@ -571,14 +572,14 @@ pub async fn get_source_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
     core.get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let events = core
         .get_source_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let collected = events
         .map(ComponentEventDto::from)
         .collect::<Vec<_>>()
@@ -591,14 +592,14 @@ pub async fn get_source_events(
 pub async fn stream_source_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_source_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -620,14 +621,14 @@ pub async fn get_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
     core.get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, _) = core
         .subscribe_source_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let data = apply_limit(
         history.into_iter().map(LogMessageDto::from).collect(),
         query.limit,
@@ -639,14 +640,14 @@ pub async fn get_source_logs(
 pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_source_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -670,7 +671,7 @@ pub async fn delete_source(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot delete sources.".to_string(),
@@ -696,19 +697,12 @@ pub async fn delete_source(
 pub async fn start_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.start_source(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source started successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -716,19 +710,12 @@ pub async fn start_source(
 pub async fn stop_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.stop_source(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Source stopped successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -771,7 +758,7 @@ pub async fn create_query(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Json(config_dto): Json<QueryConfigDto>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create queries.".to_string(),
@@ -842,11 +829,11 @@ pub async fn create_query(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                 log::info!("Query '{query_id}' already exists");
-                return Err(StatusCode::CONFLICT);
+                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
             }
 
             log::error!("Failed to create query: {e}");
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Internal server error"))
         }
     }
 }
@@ -858,7 +845,7 @@ pub async fn get_query(
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
     match core.get_query_config(&id).await {
         Ok(query_config) => {
             let config = if view.include_config() {
@@ -867,7 +854,7 @@ pub async fn get_query(
                     Ok(v) => Some(v),
                     Err(e) => {
                         log::error!("Failed to serialize query config: {e}");
-                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                        return Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Internal server error"));
                     }
                 }
             } else {
@@ -890,7 +877,7 @@ pub async fn get_query(
                 config,
             })))
         }
-        Err(_) => Err(StatusCode::NOT_FOUND),
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -899,14 +886,14 @@ pub async fn get_query_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
     core.get_query_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let events = core
         .get_query_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let collected = events
         .map(ComponentEventDto::from)
         .collect::<Vec<_>>()
@@ -919,14 +906,14 @@ pub async fn get_query_events(
 pub async fn stream_query_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_query_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_query_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -948,14 +935,14 @@ pub async fn get_query_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
     core.get_query_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, _) = core
         .subscribe_query_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let data = apply_limit(
         history.into_iter().map(LogMessageDto::from).collect(),
         query.limit,
@@ -967,14 +954,14 @@ pub async fn get_query_logs(
 pub async fn stream_query_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_query_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_query_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -998,7 +985,7 @@ pub async fn delete_query(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot delete queries.".to_string(),
@@ -1024,19 +1011,12 @@ pub async fn delete_query(
 pub async fn start_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.start_query(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query started successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -1044,19 +1024,12 @@ pub async fn start_query(
 pub async fn stop_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.stop_query(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Query stopped successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -1064,17 +1037,10 @@ pub async fn stop_query(
 pub async fn get_query_results(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, ErrorResponse> {
     match core.get_query_results(&id).await {
         Ok(results) => Ok(Json(ApiResponse::success(results))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -1217,7 +1183,7 @@ pub async fn create_reaction_handler(
     Extension(_instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create reactions.".to_string(),
@@ -1269,7 +1235,7 @@ pub async fn create_reaction_handler(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
                 log::info!("Reaction '{reaction_id}' already exists - use PUT for upsert");
-                return Err(StatusCode::CONFLICT);
+                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
             }
             log::error!("Failed to add reaction: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
@@ -1286,7 +1252,7 @@ pub async fn upsert_reaction_handler(
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot create or update reactions.".to_string(),
@@ -1386,12 +1352,12 @@ pub async fn get_reaction(
     Extension(instance_id): Extension<String>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<ComponentListItem>>, StatusCode> {
+) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
     // Get reaction runtime info from ComponentGraph (source of truth)
     let info = core
         .get_reaction_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
 
     // Build config from runtime info if view=full
     let config = if view.include_config() {
@@ -1433,14 +1399,14 @@ pub async fn get_reaction_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
     core.get_reaction_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let events = core
         .get_reaction_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let collected = events
         .map(ComponentEventDto::from)
         .collect::<Vec<_>>()
@@ -1453,14 +1419,14 @@ pub async fn get_reaction_events(
 pub async fn stream_reaction_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_reaction_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_reaction_events(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(ComponentEventDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -1482,14 +1448,14 @@ pub async fn get_reaction_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
-) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
     core.get_reaction_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, _) = core
         .subscribe_reaction_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let data = apply_limit(
         history.into_iter().map(LogMessageDto::from).collect(),
         query.limit,
@@ -1501,14 +1467,14 @@ pub async fn get_reaction_logs(
 pub async fn stream_reaction_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
     core.get_reaction_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
         .subscribe_reaction_logs(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
     let history_stream =
         stream::iter(history.into_iter().map(LogMessageDto::from)).filter_map(sse_event_async);
     let live_stream = stream::unfold(receiver, |mut receiver| async move {
@@ -1532,7 +1498,7 @@ pub async fn delete_reaction(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(_instance_id): Extension<String>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Ok(Json(ApiResponse::error(
             "Server is in read-only mode. Cannot delete reactions.".to_string(),
@@ -1558,19 +1524,12 @@ pub async fn delete_reaction(
 pub async fn start_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.start_reaction(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction started successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -1578,19 +1537,12 @@ pub async fn start_reaction(
 pub async fn stop_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<StatusResponse>>, StatusCode> {
+) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     match core.stop_reaction(&id).await {
         Ok(_) => Ok(Json(ApiResponse::success(StatusResponse {
             message: "Reaction stopped successfully".to_string(),
         }))),
-        Err(e) => {
-            let error_msg = e.to_string();
-            if error_msg.contains("not found") {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                Ok(Json(ApiResponse::error(error_msg)))
-            }
-        }
+        Err(e) => Err(ErrorResponse::from(e)),
     }
 }
 
@@ -1630,11 +1582,11 @@ pub async fn push_source_data(
     Extension(core): Extension<Arc<DrasiLib>>,
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
-) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let info = core
         .get_source_info(&id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(ErrorResponse::from)?;
 
     let props = info.properties;
     let host = props
@@ -1666,11 +1618,11 @@ pub async fn push_source_data(
             let status_code = resp.status().as_u16();
             let msg = resp.text().await.unwrap_or_default();
             log::warn!("Source proxy got {status_code} from {url}: {msg}");
-            Err(StatusCode::BAD_GATEWAY)
+            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Upstream service unavailable"))
         }
         Err(err) => {
             log::warn!("Source proxy failed for {url}: {err}");
-            Err(StatusCode::BAD_GATEWAY)
+            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Upstream service unavailable"))
         }
     }
 }
