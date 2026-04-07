@@ -152,6 +152,7 @@ fn test_empty_config_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -191,6 +192,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -241,6 +243,7 @@ fn test_mock_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -287,6 +290,7 @@ fn test_http_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -332,6 +336,7 @@ fn test_grpc_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -401,6 +406,7 @@ fn test_postgres_source_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -480,6 +486,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -543,6 +550,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -599,6 +607,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -650,6 +659,7 @@ fn test_log_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -695,6 +705,7 @@ fn test_http_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -741,6 +752,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -790,6 +802,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -857,6 +870,7 @@ fn test_query_generates_valid_yaml() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
@@ -949,6 +963,7 @@ fn test_full_config_roundtrip() {
         hot_reload_plugins: false,
         hot_reload_debounce_ms: 2000,
         hot_reload_mode: "upgrade".to_string(),
+        cors_allowed_origins: Vec::new(),
         solutions_dir: None,
     };
 
