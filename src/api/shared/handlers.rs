@@ -863,7 +863,13 @@ pub async fn get_query(
         Ok(query_config) => {
             let config = if view.include_config() {
                 let dto = QueryConfigDto::from(query_config.clone());
-                Some(serde_json::to_value(dto).expect("query config serialization"))
+                match serde_json::to_value(dto) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        log::error!("Failed to serialize query config: {e}");
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                }
             } else {
                 None
             };
