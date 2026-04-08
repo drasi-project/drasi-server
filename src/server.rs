@@ -27,9 +27,6 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::config::{
-    DrasiLibInstanceConfig, DrasiServerConfig, ReactionConfig, ResolvedInstanceConfig, SourceConfig,
-};
 use crate::factories::{
     create_reaction, create_source, create_state_store_provider, get_reaction_plugin_metadata,
     get_source_plugin_metadata,
@@ -55,8 +52,6 @@ pub struct DrasiServer {
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     plugin_orchestrator: Arc<PluginOrchestrator>,
     cors_allowed_origins: Vec<String>,
-    #[allow(dead_code)]
-    config_persistence: Option<Arc<ConfigPersistence>>,
 }
 
 struct PreparedInstance {
@@ -480,7 +475,6 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: config.cors_allowed_origins.clone(),
-            config_persistence: None, // Will be set after core is started
         })
     }
 
@@ -513,7 +507,6 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            config_persistence: None,         // Will be set up if config file is provided
         }
     }
 
@@ -551,7 +544,6 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            config_persistence: None,
         }
     }
 
@@ -808,64 +800,6 @@ impl DrasiServer {
         Ok(())
     }
 
-    /// Extract source, reaction, and query configs from resolved instances for persistence initialization.
-    /// The `config` parameter provides the original `QueryConfigDto` entries (before resolution)
-    /// since the persistence layer stores queries as DTOs, not resolved `QueryConfig` domain objects.
-    #[allow(dead_code)]
-    fn extract_component_configs(
-        config: &DrasiServerConfig,
-        resolved_instances: &[ResolvedInstanceConfig],
-    ) -> Result<(
-        IndexMap<String, IndexMap<String, SourceConfig>>,
-        IndexMap<String, IndexMap<String, ReactionConfig>>,
-        IndexMap<String, IndexMap<String, crate::api::models::QueryConfigDto>>,
-    )> {
-        use crate::api::models::QueryConfigDto;
-
-        let mut source_configs: IndexMap<String, IndexMap<String, SourceConfig>> = IndexMap::new();
-        let mut reaction_configs: IndexMap<String, IndexMap<String, ReactionConfig>> =
-            IndexMap::new();
-        let mut query_configs: IndexMap<String, IndexMap<String, QueryConfigDto>> = IndexMap::new();
-
-        // Get the raw instances (before resolution) to extract QueryConfigDto
-        let raw_instances: Vec<&DrasiLibInstanceConfig> = if config.instances.is_empty() {
-            // Single instance mode - create a temporary reference
-            vec![]
-        } else {
-            config.instances.iter().collect()
-        };
-
-        for (i, instance) in resolved_instances.iter().enumerate() {
-            let mut sources = IndexMap::new();
-            for source in &instance.sources {
-                sources.insert(source.id().to_string(), source.clone());
-            }
-            source_configs.insert(instance.id.clone(), sources);
-
-            let mut reactions = IndexMap::new();
-            for reaction in &instance.reactions {
-                reactions.insert(reaction.id().to_string(), reaction.clone());
-            }
-            reaction_configs.insert(instance.id.clone(), reactions);
-
-            // Extract query configs from the original DTOs
-            let query_dtos: &Vec<QueryConfigDto> = if config.instances.is_empty() {
-                // Single instance mode - use root-level queries
-                &config.queries
-            } else {
-                // Multi-instance mode - use the corresponding instance's queries
-                &raw_instances[i].queries
-            };
-
-            let mut queries = IndexMap::new();
-            for dto in query_dtos {
-                queries.insert(dto.id.clone(), dto.clone());
-            }
-            query_configs.insert(instance.id.clone(), queries);
-        }
-
-        Ok((source_configs, reaction_configs, query_configs))
-    }
 }
 
 /// Register plugins that are always available regardless of feature flags.

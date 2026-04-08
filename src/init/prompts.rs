@@ -71,14 +71,6 @@ pub struct DiscoveredPlugins {
     pub bootstrappers: Vec<DiscoveredPlugin>,
 }
 
-impl DiscoveredPlugins {
-    /// Returns true if no plugins were discovered.
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.sources.is_empty() && self.reactions.is_empty() && self.bootstrappers.is_empty()
-    }
-}
-
 /// Discover available plugins by scanning a local plugins directory.
 ///
 /// Uses `PluginOperations::scan_local_plugins()` which reads plugin metadata
@@ -127,27 +119,6 @@ pub fn discover_available_plugins(plugins_dir: &Path) -> DiscoveredPlugins {
     result
 }
 
-/// Source type selection options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum SourceType {
-    Postgres,
-    Http,
-    Grpc,
-    Mock,
-}
-
-impl std::fmt::Display for SourceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SourceType::Postgres => write!(f, "PostgreSQL - CDC from PostgreSQL database"),
-            SourceType::Http => write!(f, "HTTP - Receive events via HTTP endpoint"),
-            SourceType::Grpc => write!(f, "gRPC - Stream events via gRPC"),
-            SourceType::Mock => write!(f, "Mock - Generate test data (for development)"),
-        }
-    }
-}
-
 /// Bootstrap provider type selection options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootstrapType {
@@ -164,27 +135,6 @@ impl std::fmt::Display for BootstrapType {
                 write!(f, "PostgreSQL - Load initial data from PostgreSQL")
             }
             BootstrapType::ScriptFile => write!(f, "Script File - Load from JSONL file"),
-        }
-    }
-}
-
-/// Reaction type selection options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum ReactionType {
-    Log,
-    Http,
-    Sse,
-    Grpc,
-}
-
-impl std::fmt::Display for ReactionType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReactionType::Log => write!(f, "Log - Write query results to console"),
-            ReactionType::Http => write!(f, "HTTP Webhook - POST results to external URL"),
-            ReactionType::Sse => write!(f, "SSE - Server-Sent Events endpoint"),
-            ReactionType::Grpc => write!(f, "gRPC - Stream results via gRPC"),
         }
     }
 }
@@ -297,57 +247,6 @@ fn prompt_state_store() -> Result<Option<StateStoreConfig>> {
 
             Ok(Some(StateStoreConfig::redb(path)))
         }
-    }
-}
-
-/// Prompt for source selection and configuration.
-#[allow(dead_code)]
-pub fn prompt_sources() -> Result<Vec<SourceConfig>> {
-    println!("Data Sources");
-    println!("------------");
-    println!("Select one or more data sources for your configuration.");
-    println!();
-
-    let source_types = vec![
-        SourceType::Postgres,
-        SourceType::Http,
-        SourceType::Grpc,
-        SourceType::Mock,
-    ];
-
-    let selected = MultiSelect::new(
-        "Select sources (space to select, enter to confirm):",
-        source_types,
-    )
-    .with_help_message("Use arrow keys to navigate, space to select/deselect")
-    .prompt()?;
-
-    if selected.is_empty() {
-        println!("No sources selected. You can add sources later by editing the config file.");
-        println!();
-        return Ok(Vec::new());
-    }
-
-    let mut sources = Vec::new();
-
-    for source_type in selected {
-        println!();
-        let source = prompt_source_details(source_type)?;
-        sources.push(source);
-    }
-
-    println!();
-    Ok(sources)
-}
-
-/// Prompt for details of a specific source type.
-#[allow(dead_code)]
-fn prompt_source_details(source_type: SourceType) -> Result<SourceConfig> {
-    match source_type {
-        SourceType::Postgres => prompt_postgres_source(),
-        SourceType::Http => prompt_http_source(),
-        SourceType::Grpc => prompt_grpc_source(),
-        SourceType::Mock => prompt_mock_source(),
     }
 }
 
@@ -660,63 +559,6 @@ fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
     }))
 }
 
-/// Prompt for reaction selection and configuration.
-#[allow(dead_code)]
-pub fn prompt_reactions(sources: &[SourceConfig]) -> Result<Vec<ReactionConfig>> {
-    println!("Reactions");
-    println!("---------");
-    println!("Select how you want to receive query results.");
-    println!();
-
-    let reaction_types = vec![
-        ReactionType::Log,
-        ReactionType::Sse,
-        ReactionType::Http,
-        ReactionType::Grpc,
-    ];
-
-    let selected = MultiSelect::new(
-        "Select reactions (space to select, enter to confirm):",
-        reaction_types,
-    )
-    .with_help_message("Use arrow keys to navigate, space to select/deselect")
-    .prompt()?;
-
-    if selected.is_empty() {
-        println!("No reactions selected. You can add reactions later by editing the config file.");
-        println!();
-        return Ok(Vec::new());
-    }
-
-    // Collect source IDs for query placeholder
-    let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
-
-    let mut reactions = Vec::new();
-
-    for reaction_type in selected {
-        println!();
-        let reaction = prompt_reaction_details(reaction_type, &source_ids)?;
-        reactions.push(reaction);
-    }
-
-    println!();
-    Ok(reactions)
-}
-
-/// Prompt for details of a specific reaction type.
-#[allow(dead_code)]
-fn prompt_reaction_details(
-    reaction_type: ReactionType,
-    _source_ids: &[String],
-) -> Result<ReactionConfig> {
-    match reaction_type {
-        ReactionType::Log => prompt_log_reaction(),
-        ReactionType::Http => prompt_http_reaction(),
-        ReactionType::Sse => prompt_sse_reaction(),
-        ReactionType::Grpc => prompt_grpc_reaction(),
-    }
-}
-
 /// Prompt for Log reaction configuration.
 fn prompt_log_reaction() -> Result<ReactionConfig> {
     println!("Configuring Log Reaction");
@@ -977,9 +819,7 @@ pub fn prompt_source_by_kind(kind: &str) -> Result<SourceConfig> {
 /// NOTE: During `drasi init`, plugins are discovered via metadata-only scanning
 /// (`drasi_plugin_metadata`), which does NOT call `drasi_plugin_init()`. This means
 /// plugin descriptors (and their `config_schema_json()`) are not available for
-/// unknown plugin kinds at init time. When schemas ARE available (e.g., when
-/// running against a server with fully loaded plugins), callers can use
-/// [`prompts_from_schema`] to generate field-by-field prompts instead.
+/// unknown plugin kinds at init time.
 fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
     println!("Configuring {kind} Source");
     println!("{}", "-".repeat(25 + kind.len()));
@@ -1079,8 +919,7 @@ pub fn prompt_reaction_by_kind(kind: &str, _source_ids: &[String]) -> Result<Rea
 /// Generic prompt for a reaction plugin with no dedicated prompt function.
 ///
 /// See [`prompt_generic_source`] for why schema-driven prompts are not used here:
-/// metadata-only scanning at init time does not load plugin descriptors. When schemas
-/// are available, use [`prompts_from_schema`] for field-by-field prompts.
+/// metadata-only scanning at init time does not load plugin descriptors.
 fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
     println!("Configuring {kind} Reaction");
     println!("{}", "-".repeat(25 + kind.len()));
@@ -1106,121 +945,6 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
     })
 }
 
-/// Generate field-by-field prompts from an OpenAPI-style JSON schema.
-///
-/// Used when plugin descriptors are available (e.g., when plugins are fully loaded
-/// via `drasi_plugin_init()` and their `config_schema_json()` is accessible). During
-/// `drasi init` with metadata-only scanning, schemas are typically not available — see
-/// [`prompt_generic_source`] and [`prompt_generic_reaction`] for the fallback approach.
-///
-/// The schema is expected to follow OpenAPI / JSON Schema conventions with `properties`,
-/// `required`, `type`, `description`, `default`, `enum`, and `format` fields.
-#[allow(dead_code)]
-pub fn prompts_from_schema(schema_json: &str) -> Result<serde_json::Value> {
-    let schema: serde_json::Value = serde_json::from_str(schema_json)?;
-    let properties = schema.get("properties").and_then(|p| p.as_object());
-    let required: std::collections::HashSet<&str> = schema
-        .get("required")
-        .and_then(|r| r.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-
-    let mut config = serde_json::Map::new();
-
-    if let Some(props) = properties {
-        for (name, prop) in props {
-            let description = prop
-                .get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or("");
-            let is_required = required.contains(name.as_str());
-            let type_str = prop
-                .get("type")
-                .and_then(|t| t.as_str())
-                .unwrap_or("string");
-            let default_val = prop.get("default");
-
-            let label = if description.is_empty() {
-                format!("{name}{}", if is_required { " *" } else { "" })
-            } else {
-                format!(
-                    "{name} ({description}){}",
-                    if is_required { " *" } else { "" }
-                )
-            };
-
-            match type_str {
-                "boolean" => {
-                    let default = default_val.and_then(|v| v.as_bool()).unwrap_or(false);
-                    let val = Confirm::new(&label).with_default(default).prompt()?;
-                    config.insert(name.clone(), serde_json::Value::Bool(val));
-                }
-                "integer" | "number" => {
-                    let default_str = default_val.map(|v| v.to_string()).unwrap_or_default();
-                    let mut prompt = Text::new(&label);
-                    if !default_str.is_empty() {
-                        prompt = prompt.with_default(&default_str);
-                    }
-                    if !is_required && default_str.is_empty() {
-                        prompt = prompt.with_default("");
-                    }
-                    let val = prompt.prompt()?;
-                    if !val.is_empty() {
-                        if let Ok(n) = val.parse::<i64>() {
-                            config.insert(name.clone(), serde_json::Value::Number(n.into()));
-                        } else if let Ok(n) = val.parse::<f64>() {
-                            if let Some(n) = serde_json::Number::from_f64(n) {
-                                config.insert(name.clone(), serde_json::Value::Number(n));
-                            }
-                        } else if is_required {
-                            anyhow::bail!("Invalid number for required field '{name}': '{val}'");
-                        }
-                    } else if is_required {
-                        anyhow::bail!("Required field '{name}' cannot be empty");
-                    }
-                }
-                _ => {
-                    // String type (including password, enum)
-                    if let Some(enum_values) = prop.get("enum").and_then(|e| e.as_array()) {
-                        let options: Vec<String> = enum_values
-                            .iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect();
-                        if !options.is_empty() {
-                            let val = Select::new(&label, options).prompt()?;
-                            config.insert(name.clone(), serde_json::Value::String(val));
-                            continue;
-                        }
-                    }
-
-                    let is_password =
-                        prop.get("format").and_then(|f| f.as_str()) == Some("password");
-                    if is_password {
-                        let val = Password::new(&label).prompt()?;
-                        if !val.is_empty() {
-                            config.insert(name.clone(), serde_json::Value::String(val));
-                        } else if is_required {
-                            anyhow::bail!("Required field '{name}' cannot be empty");
-                        }
-                    } else {
-                        let default_str = default_val.and_then(|v| v.as_str()).unwrap_or("");
-                        let mut prompt = Text::new(&label);
-                        if !default_str.is_empty() {
-                            prompt = prompt.with_default(default_str);
-                        }
-                        let val = prompt.prompt()?;
-                        if !val.is_empty() || is_required {
-                            config.insert(name.clone(), serde_json::Value::String(val));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(serde_json::Value::Object(config))
-}
-
 // ---------------------------------------------------------------------------
 // Registry download helpers for init wizard
 // ---------------------------------------------------------------------------
@@ -1230,9 +954,6 @@ pub fn prompts_from_schema(schema_json: &str) -> Result<serde_json::Value> {
 pub struct RegistryPlugin {
     /// Short plugin reference (e.g., "source/postgres").
     pub reference: String,
-    /// Full OCI reference (e.g., "ghcr.io/drasi-project/source/postgres").
-    #[allow(dead_code)]
-    pub full_reference: String,
     /// Available versions with their platforms.
     pub versions: Vec<(String, Vec<String>)>,
 }
@@ -1266,7 +987,6 @@ pub async fn search_registry_plugins(registry_url: &str) -> Result<Vec<RegistryP
                     };
                     RegistryPlugin {
                         reference: r.reference,
-                        full_reference: format!("file://{}", r.file_path.display()),
                         versions: vec![(version_str, vec![env!("TARGET_TRIPLE").to_string()])],
                     }
                 })
@@ -1285,7 +1005,6 @@ pub async fn search_registry_plugins(registry_url: &str) -> Result<Vec<RegistryP
                 .into_iter()
                 .map(|r| RegistryPlugin {
                     reference: r.reference,
-                    full_reference: r.full_reference,
                     versions: r
                         .versions
                         .into_iter()
@@ -1295,25 +1014,6 @@ pub async fn search_registry_plugins(registry_url: &str) -> Result<Vec<RegistryP
                 .collect())
         }
     }
-}
-
-/// Present a multi-select prompt for registry plugins.
-#[allow(dead_code)]
-pub fn prompt_registry_plugin_selection(available: &[RegistryPlugin]) -> Result<Vec<String>> {
-    let options: Vec<String> = available.iter().map(|p| p.to_string()).collect();
-
-    let selected = MultiSelect::new("Select plugins to download:", options).prompt()?;
-
-    // Map display strings back to references
-    Ok(selected
-        .iter()
-        .filter_map(|display| {
-            available
-                .iter()
-                .find(|p| p.to_string() == *display)
-                .map(|p| p.reference.clone())
-        })
-        .collect())
 }
 
 /// Download a single plugin from the registry into the plugins directory.
@@ -1421,60 +1121,6 @@ mod tests {
         assert_eq!(settings.hot_reload_mode, "side-by-side");
     }
 
-    // ==================== SourceType enum tests ====================
-
-    #[test]
-    fn test_source_type_display_postgres() {
-        let source_type = SourceType::Postgres;
-        let display = source_type.to_string();
-        assert!(display.contains("PostgreSQL"));
-        assert!(display.contains("CDC"));
-    }
-
-    #[test]
-    fn test_source_type_display_http() {
-        let source_type = SourceType::Http;
-        let display = source_type.to_string();
-        assert!(display.contains("HTTP"));
-        assert!(display.contains("endpoint"));
-    }
-
-    #[test]
-    fn test_source_type_display_grpc() {
-        let source_type = SourceType::Grpc;
-        let display = source_type.to_string();
-        assert!(display.contains("gRPC"));
-    }
-
-    #[test]
-    fn test_source_type_display_mock() {
-        let source_type = SourceType::Mock;
-        let display = source_type.to_string();
-        assert!(display.contains("Mock"));
-        assert!(display.contains("test"));
-    }
-
-    #[test]
-    fn test_source_type_equality() {
-        assert_eq!(SourceType::Postgres, SourceType::Postgres);
-        assert_ne!(SourceType::Postgres, SourceType::Http);
-        assert_ne!(SourceType::Mock, SourceType::Grpc);
-    }
-
-    #[test]
-    fn test_source_type_clone() {
-        let original = SourceType::Http;
-        let cloned = original;
-        assert_eq!(original, cloned);
-    }
-
-    #[test]
-    fn test_source_type_debug() {
-        let source_type = SourceType::Postgres;
-        let debug = format!("{source_type:?}");
-        assert_eq!(debug, "Postgres");
-    }
-
     // ==================== BootstrapType enum tests ====================
 
     #[test]
@@ -1512,134 +1158,6 @@ mod tests {
         let bootstrap_type = BootstrapType::ScriptFile;
         let debug = format!("{bootstrap_type:?}");
         assert_eq!(debug, "ScriptFile");
-    }
-
-    // ==================== ReactionType enum tests ====================
-
-    #[test]
-    fn test_reaction_type_display_log() {
-        let reaction_type = ReactionType::Log;
-        let display = reaction_type.to_string();
-        assert!(display.contains("Log"));
-        assert!(display.contains("console"));
-    }
-
-    #[test]
-    fn test_reaction_type_display_http() {
-        let reaction_type = ReactionType::Http;
-        let display = reaction_type.to_string();
-        assert!(display.contains("HTTP"));
-        assert!(display.contains("Webhook"));
-    }
-
-    #[test]
-    fn test_reaction_type_display_sse() {
-        let reaction_type = ReactionType::Sse;
-        let display = reaction_type.to_string();
-        assert!(display.contains("SSE"));
-        assert!(display.contains("Server-Sent Events"));
-    }
-
-    #[test]
-    fn test_reaction_type_display_grpc() {
-        let reaction_type = ReactionType::Grpc;
-        let display = reaction_type.to_string();
-        assert!(display.contains("gRPC"));
-    }
-
-    #[test]
-    fn test_reaction_type_equality() {
-        assert_eq!(ReactionType::Log, ReactionType::Log);
-        assert_ne!(ReactionType::Http, ReactionType::Sse);
-        assert_ne!(ReactionType::Grpc, ReactionType::Log);
-    }
-
-    #[test]
-    fn test_reaction_type_clone() {
-        let original = ReactionType::Sse;
-        let cloned = original;
-        assert_eq!(original, cloned);
-    }
-
-    // ==================== All enum variants coverage ====================
-
-    #[test]
-    fn test_all_source_types_have_display() {
-        let source_types = vec![
-            SourceType::Postgres,
-            SourceType::Http,
-            SourceType::Grpc,
-            SourceType::Mock,
-        ];
-
-        for source_type in source_types {
-            let display = source_type.to_string();
-            assert!(
-                !display.is_empty(),
-                "SourceType {source_type:?} has empty display"
-            );
-        }
-    }
-
-    #[test]
-    fn test_all_bootstrap_types_have_display() {
-        let bootstrap_types = vec![
-            BootstrapType::None,
-            BootstrapType::Postgres,
-            BootstrapType::ScriptFile,
-        ];
-
-        for bootstrap_type in bootstrap_types {
-            let display = bootstrap_type.to_string();
-            assert!(
-                !display.is_empty(),
-                "BootstrapType {bootstrap_type:?} has empty display"
-            );
-        }
-    }
-
-    #[test]
-    fn test_all_reaction_types_have_display() {
-        let reaction_types = vec![
-            ReactionType::Log,
-            ReactionType::Http,
-            ReactionType::Sse,
-            ReactionType::Grpc,
-        ];
-
-        for reaction_type in reaction_types {
-            let display = reaction_type.to_string();
-            assert!(
-                !display.is_empty(),
-                "ReactionType {reaction_type:?} has empty display"
-            );
-        }
-    }
-
-    // ==================== Display descriptions are helpful ====================
-
-    #[test]
-    fn test_source_type_displays_are_descriptive() {
-        // Each display should contain a description, not just the type name
-        assert!(SourceType::Postgres.to_string().len() > 15);
-        assert!(SourceType::Http.to_string().len() > 15);
-        assert!(SourceType::Grpc.to_string().len() > 15);
-        assert!(SourceType::Mock.to_string().len() > 15);
-    }
-
-    #[test]
-    fn test_bootstrap_type_displays_are_descriptive() {
-        assert!(BootstrapType::None.to_string().len() > 10);
-        assert!(BootstrapType::Postgres.to_string().len() > 15);
-        assert!(BootstrapType::ScriptFile.to_string().len() > 15);
-    }
-
-    #[test]
-    fn test_reaction_type_displays_are_descriptive() {
-        assert!(ReactionType::Log.to_string().len() > 15);
-        assert!(ReactionType::Http.to_string().len() > 15);
-        assert!(ReactionType::Sse.to_string().len() > 15);
-        assert!(ReactionType::Grpc.to_string().len() > 15);
     }
 
     // ==================== StateStoreType enum tests ====================
@@ -1709,23 +1227,6 @@ mod tests {
     }
 
     #[test]
-    fn test_discovered_plugins_is_empty() {
-        let empty = DiscoveredPlugins::default();
-        assert!(empty.is_empty());
-
-        let with_source = DiscoveredPlugins {
-            sources: vec![DiscoveredPlugin {
-                kind: "mock".to_string(),
-                version: "1.0".to_string(),
-                filename: "libdrasi_source_mock.dylib".to_string(),
-            }],
-            reactions: vec![],
-            bootstrappers: vec![],
-        };
-        assert!(!with_source.is_empty());
-    }
-
-    #[test]
     fn test_discovered_plugins_grouping() {
         let plugins = DiscoveredPlugins {
             sources: vec![
@@ -1756,7 +1257,9 @@ mod tests {
     fn test_discover_available_plugins_nonexistent_dir() {
         use std::path::PathBuf;
         let result = discover_available_plugins(&PathBuf::from("/nonexistent/path/to/plugins"));
-        assert!(result.is_empty());
+        assert!(result.sources.is_empty());
+        assert!(result.reactions.is_empty());
+        assert!(result.bootstrappers.is_empty());
     }
 
     #[test]
