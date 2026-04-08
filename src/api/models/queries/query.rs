@@ -97,10 +97,10 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
     type Error = serde_json::Error;
 
     fn try_from(config: QueryConfig) -> Result<Self, Self::Error> {
-        let joins = config.joins.map(|j| serde_json::to_value(j)).transpose()?;
+        let joins = config.joins.map(serde_json::to_value).transpose()?;
         let storage_backend = config
             .storage_backend
-            .map(|s| serde_json::to_value(s))
+            .map(serde_json::to_value)
             .transpose()?;
 
         Ok(Self {

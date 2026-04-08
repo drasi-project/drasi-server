@@ -216,7 +216,7 @@ async fn test_deploy_solution_validation_error_neither_template_nor_yaml() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(json["code"].is_string());
-    assert!(json["message"].as_str().unwrap().len() > 0);
+    assert!(!json["message"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -253,7 +253,7 @@ async fn test_deploy_solution_validation_error_both_template_and_yaml() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(json["code"].is_string());
-    assert!(json["message"].as_str().unwrap().len() > 0);
+    assert!(!json["message"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -288,7 +288,7 @@ async fn test_deploy_solution_nonexistent_template() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(json["code"].is_string());
-    assert!(json["message"].as_str().unwrap().len() > 0);
+    assert!(!json["message"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]
