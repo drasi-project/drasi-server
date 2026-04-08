@@ -68,6 +68,7 @@ pub fn build_v1_router(
         .layer(Extension(config_persistence))
         .layer(Extension(plugin_registry))
         .layer(Extension(solutions_dir))
+        .layer(Extension(reqwest::Client::new()))
 }
 
 /// Build routes for dynamic instance resources.

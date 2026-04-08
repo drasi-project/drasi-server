@@ -226,7 +226,7 @@ pub fn load_plugins(
 
         stats.loaded_plugins.push(StartupPluginRecord {
             plugin_id: derived_plugin_id,
-            file_path: dir.to_path_buf(),
+            file_path: plugin.file_path.clone(),
             kinds: plugin_kinds,
             generation,
             plugin_version,

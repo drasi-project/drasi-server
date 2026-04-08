@@ -453,6 +453,7 @@ pub async fn stop_source(
 /// This handler reads the source's configured host/port and forwards the request.
 pub async fn push_source_data(
     Extension(core): Extension<Arc<DrasiLib>>,
+    Extension(http_client): Extension<reqwest::Client>,
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
@@ -478,8 +479,7 @@ pub async fn push_source_data(
     let effective_host = if host == "0.0.0.0" { "127.0.0.1" } else { host };
     let url = format!("http://{effective_host}:{port}{base}/sources/{id}/events");
 
-    let client = reqwest::Client::new();
-    match client.post(&url).json(&body).send().await {
+    match http_client.post(&url).json(&body).send().await {
         Ok(resp) if resp.status().is_success() => {
             let resp_body: serde_json::Value = resp
                 .json()

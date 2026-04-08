@@ -413,6 +413,7 @@ pub async fn stop_source(
 )]
 pub async fn push_source_data(
     Extension(registry): Extension<InstanceRegistry>,
+    Extension(http_client): Extension<reqwest::Client>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
@@ -420,5 +421,11 @@ pub async fn push_source_data(
         .get(&instance_id)
         .await
         .ok_or_else(|| ErrorResponse::new(error_codes::INTERNAL_ERROR, "Instance not found"))?;
-    shared::push_source_data(Extension(core), Path(id), Json(body)).await
+    shared::push_source_data(
+        Extension(core),
+        Extension(http_client),
+        Path(id),
+        Json(body),
+    )
+    .await
 }
