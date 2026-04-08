@@ -324,6 +324,14 @@ async fn test_concurrent_operations() -> Result<()> {
     // The core should still be in a valid running state
     assert!(core.is_running().await);
 
+    drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "concurrent-source",
+        &[ComponentStatus::Running, ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
+
     core.stop().await?;
 
     Ok(())

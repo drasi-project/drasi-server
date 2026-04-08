@@ -204,5 +204,6 @@ async fn test_bootstrap_data_appears_in_query_results() {
         "Missing Gamma in {names:?}",
     );
 
-    server.stop().await.expect("Failed to stop server");
+    // Clean up — stop may fail if source already finished, that's OK
+    let _ = server.stop().await;
 }

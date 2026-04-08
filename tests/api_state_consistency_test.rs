@@ -47,9 +47,30 @@ async fn test_server_start_stop_cycle() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
+    // Wait for source to reach Running before stopping
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
+
     // Stop server
     core.stop().await.expect("Failed to stop");
     assert!(!core.is_running().await);
+
+    // Wait for source to reach Stopped before restarting
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Stopped");
 
     // Can start again
     core.start().await.expect("Failed to restart");
@@ -84,8 +105,16 @@ async fn test_components_with_auto_start() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Let components initialize
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for source to reach Running
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
 
     // Components should be running (we can't check individual status through public API)
     assert!(core.is_running().await);
@@ -121,8 +150,16 @@ async fn test_components_without_auto_start() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Components exist but are not started (we can't check individual status through public API)
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Wait for component graph to reach Running (sources/queries may not auto-start)
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "__component_graph__",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("component graph should reach Running");
 
     // Server should still be running
     assert!(core.is_running().await);
@@ -226,8 +263,16 @@ async fn test_multiple_query_sources() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Let components initialize
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for sources to reach Running
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "source1",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("source1 should reach Running");
 
     assert!(core.is_running().await);
 
@@ -269,8 +314,16 @@ async fn test_multiple_reaction_queries() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Let components initialize
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for source to reach Running
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
 
     assert!(core.is_running().await);
 
@@ -320,8 +373,16 @@ async fn test_query_with_joins() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Let components initialize
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Wait for source to reach Running
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "join-source1",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("join-source1 should reach Running");
 
     assert!(core.is_running().await);
 
