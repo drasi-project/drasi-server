@@ -16,6 +16,7 @@
 #[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
     use crate::api::models::query::QueryConfigDto;
+    use crate::api::shared::error::error_codes;
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use async_trait::async_trait;
@@ -476,15 +477,12 @@ mod api_query_joins_tests {
         )
         .await;
 
-        assert!(result.is_ok());
-        let response = result.unwrap();
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("Expected Err(ErrorResponse) for read-only mode"),
+        };
         // Should fail due to read-only mode
-        let json_response = serde_json::to_value(&response.0).unwrap();
-        assert_eq!(json_response["success"], false);
-        assert!(json_response["error"].is_string());
-        assert!(json_response["error"]
-            .as_str()
-            .unwrap()
-            .contains("read-only mode"));
+        assert_eq!(err.code, error_codes::CONFIG_READ_ONLY);
+        assert!(err.message.contains("read-only mode"));
     }
 }

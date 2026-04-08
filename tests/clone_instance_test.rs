@@ -292,22 +292,15 @@ async fn test_clone_source_instance_not_found() {
     let (status, json) =
         clone_request(router.clone(), TARGET_INSTANCE, "nonexistent-instance").await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
-        json["error"].is_string() || json["errors"].is_array(),
-        "Expected error in response when source instance not found: {json}"
+        json["message"].is_string(),
+        "Expected error message in response when source instance not found: {json}"
     );
 
-    let has_error = if let Some(err) = json["error"].as_str() {
-        err.contains("not found")
-    } else if let Some(errs) = json["errors"].as_array() {
-        errs.iter()
-            .any(|e| e.as_str().is_some_and(|s| s.contains("not found")))
-    } else {
-        false
-    };
+    let msg = json["message"].as_str().unwrap_or("");
     assert!(
-        has_error,
+        msg.contains("not found"),
         "Error message should mention 'not found': {json}"
     );
 }

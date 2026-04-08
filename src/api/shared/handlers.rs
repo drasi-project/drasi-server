@@ -75,24 +75,26 @@ pub struct ResourcePath {
 pub async fn get_instance_or_error(
     registry: &InstanceRegistry,
     instance_id: &str,
-) -> Result<Arc<DrasiLib>, Json<ApiResponse<()>>> {
+) -> Result<Arc<DrasiLib>, ErrorResponse> {
     match registry.get(instance_id).await {
         Some(core) => Ok(core),
-        None => Err(Json(ApiResponse::error(format!(
-            "Instance '{instance_id}' not found"
-        )))),
+        None => Err(ErrorResponse::new(
+            error_codes::INSTANCE_NOT_FOUND,
+            format!("Instance '{instance_id}' not found"),
+        )),
     }
 }
 
 /// Helper to get the default instance from the registry
 pub async fn get_default_instance_or_error(
     registry: &InstanceRegistry,
-) -> Result<(String, Arc<DrasiLib>), Json<ApiResponse<()>>> {
+) -> Result<(String, Arc<DrasiLib>), ErrorResponse> {
     match registry.get_default().await {
         Some((id, core)) => Ok((id, core)),
-        None => Err(Json(ApiResponse::error(
-            "No instances configured".to_string(),
-        ))),
+        None => Err(ErrorResponse::new(
+            error_codes::INSTANCE_NOT_FOUND,
+            "No instances configured",
+        )),
     }
 }
 
@@ -244,9 +246,10 @@ pub async fn create_instance(
     Json(request): Json<CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create instances.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create instances.",
+        ));
     }
 
     let instance_id = request.id.clone();
@@ -276,30 +279,29 @@ pub async fn create_instance(
     // For now, we skip persistent index for dynamically created instances
     // TODO: Add support for persistent index with configurable data path
 
-    let core = builder.build().await;
+    let core = builder.build().await.map_err(|e| {
+        log::error!("Failed to create instance: {e}");
+        ErrorResponse::new(
+            error_codes::INSTANCE_CREATE_FAILED,
+            format!("Failed to create instance: {e}"),
+        )
+    })?;
 
-    let core = match core {
-        Ok(c) => Arc::new(c),
-        Err(e) => {
-            log::error!("Failed to create instance: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to create instance: {e}"
-            ))));
-        }
-    };
+    let core = Arc::new(core);
 
     // Start the instance
     if let Err(e) = core.start().await {
         log::error!("Failed to start instance '{instance_id}': {e}");
-        return Ok(Json(ApiResponse::error(format!(
-            "Failed to start instance: {e}"
-        ))));
+        return Err(ErrorResponse::new(
+            error_codes::INSTANCE_CREATE_FAILED,
+            format!("Failed to start instance: {e}"),
+        ));
     }
 
     // Add to registry
     if let Err(e) = registry.add(instance_id.clone(), core).await {
         log::error!("Failed to register instance: {e}");
-        return Ok(Json(ApiResponse::error(e)));
+        return Err(ErrorResponse::new(error_codes::INSTANCE_CREATE_FAILED, e));
     }
 
     log::info!("Instance '{instance_id}' created successfully");
@@ -371,33 +373,32 @@ pub async fn create_source_handler(
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create sources.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create sources.",
+        ));
     }
 
-    let config: SourceConfig = match serde_json::from_value(config_json) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to parse source config: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Invalid source configuration: {e}"
-            ))));
-        }
-    };
+    let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
+        log::error!("Failed to parse source config: {e}");
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid source configuration: {e}"),
+        )
+    })?;
 
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let source = match create_source(&*plugin_registry.read().await, config.clone()).await {
-        Ok(s) => s,
-        Err(e) => {
+    let source = create_source(&*plugin_registry.read().await, config.clone())
+        .await
+        .map_err(|e| {
             log::error!("Failed to create source instance: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to create source: {e}"
-            ))));
-        }
-    };
+            ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                format!("Failed to create source: {e}"),
+            )
+        })?;
 
     let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
@@ -427,7 +428,10 @@ pub async fn create_source_handler(
                 ));
             }
             log::error!("Failed to add source: {e}");
-            Ok(Json(ApiResponse::error(error_msg)))
+            Err(ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                error_msg,
+            ))
         }
     }
 }
@@ -443,26 +447,28 @@ pub async fn upsert_source_handler(
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create or update sources.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create or update sources.",
+        ));
     }
 
-    let config: SourceConfig = match serde_json::from_value(config_json) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to parse source config: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Invalid source configuration: {e}"
-            ))));
-        }
-    };
+    let config: SourceConfig = serde_json::from_value(config_json).map_err(|e| {
+        log::error!("Failed to parse source config: {e}");
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid source configuration: {e}"),
+        )
+    })?;
 
     if config.id() != path_id {
-        return Ok(Json(ApiResponse::error(format!(
-            "Path id '{path_id}' does not match body id '{}'",
-            config.id()
-        ))));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!(
+                "Path id '{path_id}' does not match body id '{}'",
+                config.id()
+            ),
+        ));
     }
 
     let source_id = config.id().to_string();
@@ -473,20 +479,21 @@ pub async fn upsert_source_handler(
 
     if exists {
         // Create a new source instance and use update_source to replace in place
-        let new_source = match create_source(&*plugin_registry.read().await, config.clone()).await {
-            Ok(s) => s,
-            Err(e) => {
+        let new_source = create_source(&*plugin_registry.read().await, config.clone())
+            .await
+            .map_err(|e| {
                 log::error!("Failed to create source instance for update: {e}");
-                return Ok(Json(ApiResponse::error(format!(
-                    "Failed to create source for update: {e}"
-                ))));
-            }
-        };
+                ErrorResponse::new(
+                    error_codes::SOURCE_CREATE_FAILED,
+                    format!("Failed to create source for update: {e}"),
+                )
+            })?;
         if let Err(e) = core.update_source(&source_id, new_source).await {
             log::error!("Failed to update source '{source_id}': {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to update source: {e}"
-            ))));
+            return Err(ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                format!("Failed to update source: {e}"),
+            ));
         }
 
         log::info!("Source '{source_id}' updated successfully");
@@ -498,15 +505,15 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let source = match create_source(&*plugin_registry.read().await, config.clone()).await {
-        Ok(s) => s,
-        Err(e) => {
+    let source = create_source(&*plugin_registry.read().await, config.clone())
+        .await
+        .map_err(|e| {
             log::error!("Failed to create source instance: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to create source: {e}"
-            ))));
-        }
-    };
+            ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                format!("Failed to create source: {e}"),
+            )
+        })?;
 
     let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
@@ -528,7 +535,10 @@ pub async fn upsert_source_handler(
         }
         Err(e) => {
             log::error!("Failed to add source: {e}");
-            Ok(Json(ApiResponse::error(e.to_string())))
+            Err(ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                e.to_string(),
+            ))
         }
     }
 }
@@ -679,9 +689,10 @@ pub async fn delete_source(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete sources.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot delete sources.",
+        ));
     }
 
     match core.remove_source(&id, true).await {
@@ -694,7 +705,10 @@ pub async fn delete_source(
         }
         Err(e) => {
             log::error!("Failed to delete source: {e}");
-            Ok(Json(ApiResponse::error(e.to_string())))
+            Err(ErrorResponse::new(
+                error_codes::SOURCE_DELETE_FAILED,
+                e.to_string(),
+            ))
         }
     }
 }
@@ -766,9 +780,10 @@ pub async fn create_query(
     Json(config_dto): Json<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create queries.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create queries.",
+        ));
     }
 
     let query_id = config_dto.id.clone();
@@ -776,15 +791,13 @@ pub async fn create_query(
     // Convert QueryConfigDto to drasi-lib's QueryConfig
     let mapper = DtoMapper::default();
     let query_mapper = QueryConfigMapper;
-    let config = match mapper.map_with(&config_dto, &query_mapper) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to convert QueryConfigDto to QueryConfig: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Invalid query configuration: {e}"
-            ))));
-        }
-    };
+    let config = mapper.map_with(&config_dto, &query_mapper).map_err(|e| {
+        log::error!("Failed to convert QueryConfigDto to QueryConfig: {e}");
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid query configuration: {e}"),
+        )
+    })?;
 
     // Pre-flight join validation/logging (non-fatal warnings)
     if let Some(joins) = &config.joins {
@@ -1002,9 +1015,10 @@ pub async fn delete_query(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete queries.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot delete queries.",
+        ));
     }
 
     match core.remove_query(&id).await {
@@ -1017,7 +1031,10 @@ pub async fn delete_query(
         }
         Err(e) => {
             log::error!("Failed to delete query: {e}");
-            Ok(Json(ApiResponse::error(e.to_string())))
+            Err(ErrorResponse::new(
+                error_codes::QUERY_DELETE_FAILED,
+                e.to_string(),
+            ))
         }
     }
 }
@@ -1200,33 +1217,32 @@ pub async fn create_reaction_handler(
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create reactions.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create reactions.",
+        ));
     }
 
-    let config: ReactionConfig = match serde_json::from_value(config_json) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to parse reaction config: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Invalid reaction configuration: {e}"
-            ))));
-        }
-    };
+    let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
+        log::error!("Failed to parse reaction config: {e}");
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid reaction configuration: {e}"),
+        )
+    })?;
 
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let reaction = match create_reaction(&*plugin_registry.read().await, config.clone()).await {
-        Ok(r) => r,
-        Err(e) => {
+    let reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+        .await
+        .map_err(|e| {
             log::error!("Failed to create reaction instance: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to create reaction: {e}"
-            ))));
-        }
-    };
+            ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                format!("Failed to create reaction: {e}"),
+            )
+        })?;
 
     let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
@@ -1256,7 +1272,10 @@ pub async fn create_reaction_handler(
                 ));
             }
             log::error!("Failed to add reaction: {e}");
-            Ok(Json(ApiResponse::error(error_msg)))
+            Err(ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                error_msg,
+            ))
         }
     }
 }
@@ -1272,26 +1291,28 @@ pub async fn upsert_reaction_handler(
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot create or update reactions.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create or update reactions.",
+        ));
     }
 
-    let config: ReactionConfig = match serde_json::from_value(config_json) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to parse reaction config: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Invalid reaction configuration: {e}"
-            ))));
-        }
-    };
+    let config: ReactionConfig = serde_json::from_value(config_json).map_err(|e| {
+        log::error!("Failed to parse reaction config: {e}");
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!("Invalid reaction configuration: {e}"),
+        )
+    })?;
 
     if config.id() != path_id {
-        return Ok(Json(ApiResponse::error(format!(
-            "Path id '{path_id}' does not match body id '{}'",
-            config.id()
-        ))));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!(
+                "Path id '{path_id}' does not match body id '{}'",
+                config.id()
+            ),
+        ));
     }
 
     let reaction_id = config.id().to_string();
@@ -1302,21 +1323,21 @@ pub async fn upsert_reaction_handler(
 
     if exists {
         // Create a new reaction instance and use update_reaction to replace in place
-        let new_reaction =
-            match create_reaction(&*plugin_registry.read().await, config.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("Failed to create reaction instance for update: {e}");
-                    return Ok(Json(ApiResponse::error(format!(
-                        "Failed to create reaction for update: {e}"
-                    ))));
-                }
-            };
+        let new_reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+            .await
+            .map_err(|e| {
+                log::error!("Failed to create reaction instance for update: {e}");
+                ErrorResponse::new(
+                    error_codes::REACTION_CREATE_FAILED,
+                    format!("Failed to create reaction for update: {e}"),
+                )
+            })?;
         if let Err(e) = core.update_reaction(&reaction_id, new_reaction).await {
             log::error!("Failed to update reaction '{reaction_id}': {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to update reaction: {e}"
-            ))));
+            return Err(ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                format!("Failed to update reaction: {e}"),
+            ));
         }
 
         log::info!("Reaction '{reaction_id}' updated successfully");
@@ -1328,15 +1349,15 @@ pub async fn upsert_reaction_handler(
         })));
     }
 
-    let reaction = match create_reaction(&*plugin_registry.read().await, config.clone()).await {
-        Ok(r) => r,
-        Err(e) => {
+    let reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+        .await
+        .map_err(|e| {
             log::error!("Failed to create reaction instance: {e}");
-            return Ok(Json(ApiResponse::error(format!(
-                "Failed to create reaction: {e}"
-            ))));
-        }
-    };
+            ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                format!("Failed to create reaction: {e}"),
+            )
+        })?;
 
     let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
@@ -1358,7 +1379,10 @@ pub async fn upsert_reaction_handler(
         }
         Err(e) => {
             log::error!("Failed to add reaction: {e}");
-            Ok(Json(ApiResponse::error(e.to_string())))
+            Err(ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                e.to_string(),
+            ))
         }
     }
 }
@@ -1518,9 +1542,10 @@ pub async fn delete_reaction(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
-        return Ok(Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot delete reactions.".to_string(),
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot delete reactions.",
+        ));
     }
 
     match core.remove_reaction(&id, true).await {
@@ -1533,7 +1558,10 @@ pub async fn delete_reaction(
         }
         Err(e) => {
             log::error!("Failed to delete reaction: {e}");
-            Ok(Json(ApiResponse::error(e.to_string())))
+            Err(ErrorResponse::new(
+                error_codes::REACTION_DELETE_FAILED,
+                e.to_string(),
+            ))
         }
     }
 }
@@ -1694,41 +1722,37 @@ pub async fn clone_instance(
     config_persistence: Option<Arc<ConfigPersistence>>,
     target_instance_id: &str,
     source_instance_id: &str,
-) -> Json<ApiResponse<CloneInstanceResponse>> {
+) -> Result<Json<ApiResponse<CloneInstanceResponse>>, ErrorResponse> {
     if *read_only {
-        return Json(ApiResponse::error(
-            "Server is in read-only mode. Cannot clone instances.".to_string(),
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot clone instances.",
         ));
     }
 
     // Get source instance and take snapshot
-    let source_core = match registry.get(source_instance_id).await {
-        Some(core) => core,
-        None => {
-            return Json(ApiResponse::error(format!(
-                "Source instance '{source_instance_id}' not found"
-            )));
-        }
-    };
+    let source_core = registry.get(source_instance_id).await.ok_or_else(|| {
+        ErrorResponse::new(
+            error_codes::INSTANCE_NOT_FOUND,
+            format!("Source instance '{source_instance_id}' not found"),
+        )
+    })?;
 
-    let snapshot: ConfigurationSnapshot = match source_core.snapshot_configuration().await {
-        Ok(s) => s,
-        Err(e) => {
-            return Json(ApiResponse::error(format!(
-                "Failed to capture snapshot of source instance: {e}"
-            )));
-        }
-    };
+    let snapshot: ConfigurationSnapshot =
+        source_core.snapshot_configuration().await.map_err(|e| {
+            ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to capture snapshot of source instance: {e}"),
+            )
+        })?;
 
     // Get target instance (must already exist)
-    let target_core = match registry.get(target_instance_id).await {
-        Some(core) => core,
-        None => {
-            return Json(ApiResponse::error(format!(
-                "Target instance '{target_instance_id}' not found"
-            )));
-        }
-    };
+    let target_core = registry.get(target_instance_id).await.ok_or_else(|| {
+        ErrorResponse::new(
+            error_codes::INSTANCE_NOT_FOUND,
+            format!("Target instance '{target_instance_id}' not found"),
+        )
+    })?;
 
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
@@ -1767,10 +1791,10 @@ pub async fn clone_instance(
                 Err(e) => {
                     log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
                     rollback_sources(&target_core, &sources_created).await;
-                    return Json(ApiResponse::error(format!(
-                        "Failed to create source '{}': {e}",
-                        src_snap.id
-                    )));
+                    return Err(ErrorResponse::new(
+                        error_codes::SOURCE_CREATE_FAILED,
+                        format!("Failed to create source '{}': {e}", src_snap.id),
+                    ));
                 }
             };
 
@@ -1783,10 +1807,10 @@ pub async fn clone_instance(
         {
             log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
             rollback_sources(&target_core, &sources_created).await;
-            return Json(ApiResponse::error(format!(
-                "Failed to add source '{}': {e}",
-                src_snap.id
-            )));
+            return Err(ErrorResponse::new(
+                error_codes::SOURCE_CREATE_FAILED,
+                format!("Failed to add source '{}': {e}", src_snap.id),
+            ));
         }
 
         sources_created.push(src_snap.id.clone());
@@ -1805,10 +1829,10 @@ pub async fn clone_instance(
             log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
             rollback_queries(&target_core, &queries_created).await;
             rollback_sources(&target_core, &sources_created).await;
-            return Json(ApiResponse::error(format!(
-                "Failed to add query '{}': {e}",
-                q_snap.id
-            )));
+            return Err(ErrorResponse::new(
+                error_codes::QUERY_CREATE_FAILED,
+                format!("Failed to add query '{}': {e}", q_snap.id),
+            ));
         }
 
         queries_created.push(q_snap.id.clone());
@@ -1839,10 +1863,10 @@ pub async fn clone_instance(
                     rollback_reactions(&target_core, &reactions_created).await;
                     rollback_queries(&target_core, &queries_created).await;
                     rollback_sources(&target_core, &sources_created).await;
-                    return Json(ApiResponse::error(format!(
-                        "Failed to create reaction '{}': {e}",
-                        rx_snap.id
-                    )));
+                    return Err(ErrorResponse::new(
+                        error_codes::REACTION_CREATE_FAILED,
+                        format!("Failed to create reaction '{}': {e}", rx_snap.id),
+                    ));
                 }
             };
 
@@ -1857,10 +1881,10 @@ pub async fn clone_instance(
             rollback_reactions(&target_core, &reactions_created).await;
             rollback_queries(&target_core, &queries_created).await;
             rollback_sources(&target_core, &sources_created).await;
-            return Json(ApiResponse::error(format!(
-                "Failed to add reaction '{}': {e}",
-                rx_snap.id
-            )));
+            return Err(ErrorResponse::new(
+                error_codes::REACTION_CREATE_FAILED,
+                format!("Failed to add reaction '{}': {e}", rx_snap.id),
+            ));
         }
 
         reactions_created.push(rx_snap.id.clone());
@@ -1877,13 +1901,13 @@ pub async fn clone_instance(
         target_instance_id,
     );
 
-    Json(ApiResponse::success(CloneInstanceResponse {
+    Ok(Json(ApiResponse::success(CloneInstanceResponse {
         success: true,
         sources_created,
         queries_created,
         reactions_created,
         errors: Vec::new(),
-    }))
+    })))
 }
 
 async fn rollback_sources(core: &Arc<DrasiLib>, sources: &[String]) {

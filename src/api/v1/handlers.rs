@@ -1426,7 +1426,7 @@ pub async fn clone_instance(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<shared::CloneInstanceRequest>,
-) -> Json<ApiResponse<shared::CloneInstanceResponse>> {
+) -> Result<Json<ApiResponse<shared::CloneInstanceResponse>>, ErrorResponse> {
     shared::clone_instance(
         registry,
         read_only,

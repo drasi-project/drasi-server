@@ -100,6 +100,9 @@ pub mod error_codes {
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 
+    pub const INSTANCE_NOT_FOUND: &str = "INSTANCE_NOT_FOUND";
+    pub const INSTANCE_CREATE_FAILED: &str = "INSTANCE_CREATE_FAILED";
+
     pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
     pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
     pub const PLUGIN_INSTALL_FAILED: &str = "PLUGIN_INSTALL_FAILED";
@@ -213,6 +216,7 @@ fn status_from_code(code: &str) -> StatusCode {
         error_codes::SOURCE_NOT_FOUND
         | error_codes::QUERY_NOT_FOUND
         | error_codes::REACTION_NOT_FOUND
+        | error_codes::INSTANCE_NOT_FOUND
         | error_codes::PLUGIN_NOT_FOUND
         | error_codes::PLUGIN_FILE_NOT_FOUND
         | error_codes::PLUGIN_KIND_NOT_FOUND => StatusCode::NOT_FOUND,

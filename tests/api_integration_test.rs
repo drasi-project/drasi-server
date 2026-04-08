@@ -337,6 +337,16 @@ async fn test_source_lifecycle_via_api() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
 
+    // Wait for source to reach Stopped before deleting
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Stopped before delete");
+
     // Delete the source
     let response = router
         .clone()
