@@ -53,7 +53,9 @@ pub async fn list_sources(
     Path(InstancePath { instance_id }): Path<InstancePath>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
     let core = get_instance(&registry, &instance_id).await?;
-    Ok(shared::list_sources(Extension(core), Extension(instance_id)).await)
+    shared::list_sources(Extension(core), Extension(instance_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.message))
 }
 
 /// Create a new source

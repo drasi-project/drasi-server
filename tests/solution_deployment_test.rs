@@ -210,18 +210,13 @@ async fn test_deploy_solution_validation_error_neither_template_nor_yaml() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["success"], true);
-    let deploy_response = &json["data"];
-    assert_eq!(deploy_response["success"], false);
-
-    let errors = deploy_response["errors"].as_array().unwrap();
-    assert!(!errors.is_empty());
-    assert_eq!(errors[0]["phase"], "validation");
+    assert!(json["code"].is_string());
+    assert!(json["message"].as_str().unwrap().len() > 0);
 }
 
 #[tokio::test]
@@ -252,18 +247,13 @@ async fn test_deploy_solution_validation_error_both_template_and_yaml() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["success"], true);
-    let deploy_response = &json["data"];
-    assert_eq!(deploy_response["success"], false);
-
-    let errors = deploy_response["errors"].as_array().unwrap();
-    assert!(!errors.is_empty());
-    assert_eq!(errors[0]["phase"], "validation");
+    assert!(json["code"].is_string());
+    assert!(json["message"].as_str().unwrap().len() > 0);
 }
 
 #[tokio::test]
@@ -292,17 +282,13 @@ async fn test_deploy_solution_nonexistent_template() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["success"], true);
-    let deploy_response = &json["data"];
-    assert_eq!(deploy_response["success"], false);
-
-    let errors = deploy_response["errors"].as_array().unwrap();
-    assert!(!errors.is_empty());
+    assert!(json["code"].is_string());
+    assert!(json["message"].as_str().unwrap().len() > 0);
 }
 
 #[tokio::test]

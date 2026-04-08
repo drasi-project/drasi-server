@@ -46,7 +46,7 @@ use super::InstancePath;
 )]
 pub async fn list_solutions(
     Extension(solutions_dir): Extension<Option<String>>,
-) -> Json<ApiResponse<Vec<SolutionTemplateSummary>>> {
+) -> Result<Json<ApiResponse<Vec<SolutionTemplateSummary>>>, ErrorResponse> {
     solutions::list_solutions(solutions_dir).await
 }
 
@@ -66,7 +66,7 @@ pub async fn list_solutions(
 pub async fn get_solution(
     Extension(solutions_dir): Extension<Option<String>>,
     Path(id): Path<String>,
-) -> Json<ApiResponse<SolutionTemplateDetail>> {
+) -> Result<Json<ApiResponse<SolutionTemplateDetail>>, ErrorResponse> {
     solutions::get_solution(solutions_dir, &id).await
 }
 
@@ -91,15 +91,14 @@ pub async fn create_solution_template(
     Extension(solutions_dir): Extension<Option<String>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<CreateSolutionTemplateRequest>,
-) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
+) -> Result<Json<ApiResponse<CreateSolutionTemplateResponse>>, ErrorResponse> {
     let core = match registry.get(&instance_id).await {
         Some(c) => c,
         None => {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Instance '{instance_id}' not found")),
-            }));
+            return Err(ErrorResponse::new(
+                crate::api::shared::error::error_codes::INSTANCE_NOT_FOUND,
+                format!("Instance '{instance_id}' not found"),
+            ));
         }
     };
     solutions::create_solution_template(core, persistence, solutions_dir, &instance_id, request)
@@ -128,7 +127,7 @@ pub async fn deploy_solution(
     Extension(plugin_registry): Extension<Arc<RwLock<crate::plugin_registry::PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<SolutionDeployRequest>,
-) -> Json<ApiResponse<SolutionDeployResponse>> {
+) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
     let reg = plugin_registry.read().await;
     solutions::deploy_solution(
         registry,

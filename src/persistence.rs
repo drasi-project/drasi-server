@@ -188,7 +188,13 @@ impl ConfigPersistence {
             let queries: Vec<QueryConfigDto> = snapshot
                 .queries
                 .iter()
-                .map(|q| QueryConfigDto::from(q.config.clone()))
+                .filter_map(|q| match QueryConfigDto::try_from(q.config.clone()) {
+                    Ok(dto) => Some(dto),
+                    Err(e) => {
+                        log::error!("Failed to serialize query '{}' config: {e}", q.id);
+                        None
+                    }
+                })
                 .collect();
 
             // Map snapshot reactions to ReactionConfig

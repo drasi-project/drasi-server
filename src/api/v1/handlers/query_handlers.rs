@@ -51,7 +51,9 @@ pub async fn list_queries(
     Path(InstancePath { instance_id }): Path<InstancePath>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
     let core = get_instance(&registry, &instance_id).await?;
-    Ok(shared::list_queries(Extension(core), Extension(instance_id)).await)
+    shared::list_queries(Extension(core), Extension(instance_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.message))
 }
 
 /// Create a new query
@@ -363,15 +365,16 @@ pub async fn get_query_results(
 pub async fn attach_query_stream(
     Extension(registry): Extension<InstanceRegistry>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-) -> impl axum::response::IntoResponse {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, Infallible>>>,
+    ErrorResponse,
+> {
     let core = match registry.get(&instance_id).await {
         Some(c) => c,
         None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ApiResponse::<StatusResponse>::error(
-                    "Instance not found".to_string(),
-                )),
+            return Err(ErrorResponse::new(
+                error_codes::INSTANCE_NOT_FOUND,
+                format!("Instance '{instance_id}' not found"),
             ))
         }
     };

@@ -34,6 +34,7 @@ use crate::api::models::solution::{
     SolutionTemplateMetadata, SolutionTemplateSummary,
 };
 use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
+use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::ApiResponse;
 use crate::factories::{create_reaction, create_source};
 use crate::instance_registry::InstanceRegistry;
@@ -202,14 +203,12 @@ fn read_templates_from_dir(
 /// List all available solution templates.
 pub async fn list_solutions(
     solutions_dir: Option<String>,
-) -> Json<ApiResponse<Vec<SolutionTemplateSummary>>> {
+) -> Result<Json<ApiResponse<Vec<SolutionTemplateSummary>>>, ErrorResponse> {
     let dir = solutions_dir.as_deref().unwrap_or(DEFAULT_SOLUTIONS_DIR);
     let path = Path::new(dir);
 
-    let templates = match read_templates_from_dir(path) {
-        Ok(t) => t,
-        Err(e) => return Json(ApiResponse::error(e)),
-    };
+    let templates = read_templates_from_dir(path)
+        .map_err(|e| ErrorResponse::new(error_codes::INTERNAL_ERROR, e))?;
 
     let summaries: Vec<SolutionTemplateSummary> = templates
         .into_iter()
@@ -222,14 +221,14 @@ pub async fn list_solutions(
         })
         .collect();
 
-    Json(ApiResponse::success(summaries))
+    Ok(Json(ApiResponse::success(summaries)))
 }
 
 /// Get detailed information about a specific solution template.
 pub async fn get_solution(
     solutions_dir: Option<String>,
     template_id: &str,
-) -> Json<ApiResponse<SolutionTemplateDetail>> {
+) -> Result<Json<ApiResponse<SolutionTemplateDetail>>, ErrorResponse> {
     let dir = solutions_dir.as_deref().unwrap_or(DEFAULT_SOLUTIONS_DIR);
     let path = Path::new(dir);
 
@@ -238,31 +237,37 @@ pub async fn get_solution(
     let yml_path = path.join(format!("{template_id}.yml"));
 
     let (template_path, content) = if yaml_path.exists() {
-        match std::fs::read_to_string(&yaml_path) {
-            Ok(c) => (yaml_path, c),
-            Err(e) => return Json(ApiResponse::error(format!("Failed to read template: {e}"))),
-        }
+        let c = std::fs::read_to_string(&yaml_path).map_err(|e| {
+            ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to read template: {e}"),
+            )
+        })?;
+        (yaml_path, c)
     } else if yml_path.exists() {
-        match std::fs::read_to_string(&yml_path) {
-            Ok(c) => (yml_path, c),
-            Err(e) => return Json(ApiResponse::error(format!("Failed to read template: {e}"))),
-        }
+        let c = std::fs::read_to_string(&yml_path).map_err(|e| {
+            ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to read template: {e}"),
+            )
+        })?;
+        (yml_path, c)
     } else {
-        return Json(ApiResponse::error(format!(
-            "Solution template '{template_id}' not found"
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::PLUGIN_NOT_FOUND,
+            format!("Solution template '{template_id}' not found"),
+        ));
     };
 
-    let template: SolutionTemplateFile = match serde_yaml::from_str(&content) {
-        Ok(t) => t,
-        Err(e) => {
-            return Json(ApiResponse::error(format!(
-                "Failed to parse template '{}': {}",
-                template_path.display(),
-                e
-            )))
-        }
-    };
+    let template: SolutionTemplateFile = serde_yaml::from_str(&content).map_err(|e| {
+        ErrorResponse::new(
+            error_codes::INTERNAL_ERROR,
+            format!(
+                "Failed to parse template '{}': {e}",
+                template_path.display()
+            ),
+        )
+    })?;
 
     // Extract variables from the raw YAML content
     let variables = extract_variables(&content);
@@ -276,7 +281,7 @@ pub async fn get_solution(
         reaction_ids: template.reaction_ids(),
     };
 
-    Json(ApiResponse::success(detail))
+    Ok(Json(ApiResponse::success(detail)))
 }
 
 /// Create a new solution template from components in an instance.
@@ -288,25 +293,23 @@ pub async fn create_solution_template(
     solutions_dir: Option<String>,
     _instance_id: &str,
     request: CreateSolutionTemplateRequest,
-) -> Json<ApiResponse<CreateSolutionTemplateResponse>> {
+) -> Result<Json<ApiResponse<CreateSolutionTemplateResponse>>, ErrorResponse> {
     // Validate the request
     if let Err(e) = request.validate() {
-        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-            success: false,
-            template_id: None,
-            error: Some(e.to_string()),
-        }));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            e.to_string(),
+        ));
     }
 
     // Get current configuration snapshot from the DrasiLib instance
     let snapshot = match core.snapshot_configuration().await {
         Ok(s) => s,
         Err(e) => {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Failed to capture configuration snapshot: {e}")),
-            }));
+            return Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to capture configuration snapshot: {e}"),
+            ));
         }
     };
 
@@ -342,27 +345,33 @@ pub async fn create_solution_template(
                 sources.push(yaml_value);
             }
         } else {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Source '{source_id}' not found")),
-            }));
+            return Err(ErrorResponse::new(
+                error_codes::SOURCE_NOT_FOUND,
+                format!("Source '{source_id}' not found"),
+            ));
         }
     }
 
     // Collect queries from snapshot, converting to DTO for camelCase serialization
     for query_id in &request.query_ids {
         if let Some(query_snap) = snapshot.queries.iter().find(|q| &q.id == query_id) {
-            let query_dto = QueryConfigDto::from(query_snap.config.clone());
+            let query_dto = match QueryConfigDto::try_from(query_snap.config.clone()) {
+                Ok(dto) => dto,
+                Err(e) => {
+                    return Err(ErrorResponse::new(
+                        error_codes::INTERNAL_ERROR,
+                        format!("Failed to serialize query '{query_id}': {e}"),
+                    ));
+                }
+            };
             if let Ok(yaml_value) = serde_yaml::to_value(&query_dto) {
                 queries.push(yaml_value);
             }
         } else {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Query '{query_id}' not found")),
-            }));
+            return Err(ErrorResponse::new(
+                error_codes::QUERY_NOT_FOUND,
+                format!("Query '{query_id}' not found"),
+            ));
         }
     }
 
@@ -384,11 +393,10 @@ pub async fn create_solution_template(
                 reactions.push(yaml_value);
             }
         } else {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Reaction '{reaction_id}' not found")),
-            }));
+            return Err(ErrorResponse::new(
+                error_codes::REACTION_NOT_FOUND,
+                format!("Reaction '{reaction_id}' not found"),
+            ));
         }
     }
 
@@ -499,11 +507,10 @@ pub async fn create_solution_template(
     let yaml_content = match serde_yaml::to_string(&serde_yaml::Value::Mapping(template_map)) {
         Ok(content) => content,
         Err(e) => {
-            return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-                success: false,
-                template_id: None,
-                error: Some(format!("Failed to serialize template: {e}")),
-            }));
+            return Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to serialize template: {e}"),
+            ));
         }
     };
 
@@ -513,30 +520,27 @@ pub async fn create_solution_template(
 
     // Create directory if it doesn't exist
     if let Err(e) = std::fs::create_dir_all(dir_path) {
-        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-            success: false,
-            template_id: None,
-            error: Some(format!("Failed to create solutions directory: {e}")),
-        }));
+        return Err(ErrorResponse::new(
+            error_codes::INTERNAL_ERROR,
+            format!("Failed to create solutions directory: {e}"),
+        ));
     }
 
     let file_path = dir_path.join(format!("{}.yaml", request.id));
 
     // Check if file already exists
     if file_path.exists() {
-        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-            success: false,
-            template_id: None,
-            error: Some(format!("Template '{}' already exists", request.id)),
-        }));
+        return Err(ErrorResponse::new(
+            error_codes::DUPLICATE_RESOURCE,
+            format!("Template '{}' already exists", request.id),
+        ));
     }
 
     if let Err(e) = std::fs::write(&file_path, yaml_content) {
-        return Json(ApiResponse::success(CreateSolutionTemplateResponse {
-            success: false,
-            template_id: None,
-            error: Some(format!("Failed to write template file: {e}")),
-        }));
+        return Err(ErrorResponse::new(
+            error_codes::INTERNAL_ERROR,
+            format!("Failed to write template file: {e}"),
+        ));
     }
 
     log::info!(
@@ -545,11 +549,11 @@ pub async fn create_solution_template(
         file_path.display()
     );
 
-    Json(ApiResponse::success(CreateSolutionTemplateResponse {
+    Ok(Json(ApiResponse::success(CreateSolutionTemplateResponse {
         success: true,
         template_id: Some(request.id),
         error: None,
-    }))
+    })))
 }
 
 /// Deploy a solution template to an instance.
@@ -567,21 +571,23 @@ pub async fn deploy_solution(
     plugin_registry: &PluginRegistry,
     instance_id: &str,
     request: SolutionDeployRequest,
-) -> Json<ApiResponse<SolutionDeployResponse>> {
+) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
     // Validate the request
     if let Err(e) = request.validate() {
-        return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-            SolutionDeployError::validation(e),
-        ])));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            e.to_string(),
+        ));
     }
 
     // Get the target instance
     let core = match registry.get(instance_id).await {
         Some(c) => c,
         None => {
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-                SolutionDeployError::validation(format!("Instance '{instance_id}' not found")),
-            ])));
+            return Err(ErrorResponse::new(
+                error_codes::INSTANCE_NOT_FOUND,
+                format!("Instance '{instance_id}' not found"),
+            ));
         }
     };
 
@@ -596,33 +602,35 @@ pub async fn deploy_solution(
             match std::fs::read_to_string(&yaml_path) {
                 Ok(c) => c,
                 Err(e) => {
-                    return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-                        SolutionDeployError::validation(format!("Failed to read template: {e}")),
-                    ])));
+                    return Err(ErrorResponse::new(
+                        error_codes::INTERNAL_ERROR,
+                        format!("Failed to read template: {e}"),
+                    ));
                 }
             }
         } else if yml_path.exists() {
             match std::fs::read_to_string(&yml_path) {
                 Ok(c) => c,
                 Err(e) => {
-                    return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-                        SolutionDeployError::validation(format!("Failed to read template: {e}")),
-                    ])));
+                    return Err(ErrorResponse::new(
+                        error_codes::INTERNAL_ERROR,
+                        format!("Failed to read template: {e}"),
+                    ));
                 }
             }
         } else {
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-                SolutionDeployError::validation(format!(
-                    "Template '{template_id}' not found in solutions directory"
-                )),
-            ])));
+            return Err(ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Template '{template_id}' not found in solutions directory"),
+            ));
         }
     } else if let Some(yaml) = &request.yaml {
         yaml.clone()
     } else {
-        return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-            SolutionDeployError::validation("No template specified"),
-        ])));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            "No template specified",
+        ));
     };
 
     // Create a DtoMapper with the user's variable overrides
@@ -635,9 +643,10 @@ pub async fn deploy_solution(
     let template: SolutionTemplateFile = match serde_yaml::from_str(&resolved_yaml) {
         Ok(t) => t,
         Err(e) => {
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(vec![
-                SolutionDeployError::validation(format!("Failed to parse template: {e}")),
-            ])));
+            return Err(ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Failed to parse template: {e}"),
+            ));
         }
     };
 
@@ -676,9 +685,17 @@ pub async fn deploy_solution(
     }
 
     if !validation_errors.is_empty() {
-        return Json(ApiResponse::success(SolutionDeployResponse::failed(
-            validation_errors,
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!(
+                "Plugin validation failed: {}",
+                validation_errors
+                    .iter()
+                    .map(|e| e.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        ));
     }
 
     // ===== PHASE 1: VALIDATION =====
@@ -805,9 +822,17 @@ pub async fn deploy_solution(
 
     // If there are any validation errors, return them ALL without creating anything
     if !validation_errors.is_empty() {
-        return Json(ApiResponse::success(SolutionDeployResponse::failed(
-            validation_errors,
-        )));
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            format!(
+                "Component validation failed: {}",
+                validation_errors
+                    .iter()
+                    .map(|e| e.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        ));
     }
 
     // ===== PHASE 2: CREATION =====
@@ -842,9 +867,9 @@ pub async fn deploy_solution(
                 ));
                 // Rollback already-created sources
                 rollback_sources(&core, &created_sources).await;
-                return Json(ApiResponse::success(SolutionDeployResponse::failed(
+                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                     creation_errors,
-                )));
+                ))));
             }
         };
 
@@ -855,9 +880,9 @@ pub async fn deploy_solution(
                 e.to_string(),
             ));
             rollback_sources(&core, &created_sources).await;
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(
+            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                 creation_errors,
-            )));
+            ))));
         }
 
         created_sources.push(source_id.clone());
@@ -886,9 +911,9 @@ pub async fn deploy_solution(
                 ));
                 rollback_queries(&core, &created_queries).await;
                 rollback_sources(&core, &created_sources).await;
-                return Json(ApiResponse::success(SolutionDeployResponse::failed(
+                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                     creation_errors,
-                )));
+                ))));
             }
         };
 
@@ -900,9 +925,9 @@ pub async fn deploy_solution(
             ));
             rollback_queries(&core, &created_queries).await;
             rollback_sources(&core, &created_sources).await;
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(
+            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                 creation_errors,
-            )));
+            ))));
         }
 
         created_queries.push(query_id.clone());
@@ -929,9 +954,9 @@ pub async fn deploy_solution(
                 rollback_reactions(&core, &created_reactions).await;
                 rollback_queries(&core, &created_queries).await;
                 rollback_sources(&core, &created_sources).await;
-                return Json(ApiResponse::success(SolutionDeployResponse::failed(
+                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                     creation_errors,
-                )));
+                ))));
             }
         };
 
@@ -944,9 +969,9 @@ pub async fn deploy_solution(
             rollback_reactions(&core, &created_reactions).await;
             rollback_queries(&core, &created_queries).await;
             rollback_sources(&core, &created_sources).await;
-            return Json(ApiResponse::success(SolutionDeployResponse::failed(
+            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
                 creation_errors,
-            )));
+            ))));
         }
 
         created_reactions.push(reaction_id.clone());
@@ -1006,22 +1031,22 @@ pub async fn deploy_solution(
 
     // Return result
     if start_errors.is_empty() {
-        Json(ApiResponse::success(SolutionDeployResponse::success(
+        Ok(Json(ApiResponse::success(SolutionDeployResponse::success(
             created_sources,
             created_queries,
             created_reactions,
             components_started,
-        )))
+        ))))
     } else {
         // Partial success - all components created but some had start errors
-        Json(ApiResponse::success(SolutionDeployResponse {
+        Ok(Json(ApiResponse::success(SolutionDeployResponse {
             success: true, // Creation succeeded, only start had issues
             sources_created: created_sources,
             queries_created: created_queries,
             reactions_created: created_reactions,
             components_started,
             errors: start_errors,
-        }))
+        })))
     }
 }
 
@@ -1080,7 +1105,6 @@ async fn rollback_reactions(core: &Arc<drasi_lib::DrasiLib>, reactions: &[String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::solution::DeployPhase;
     use tempfile::TempDir;
 
     #[test]
@@ -1099,15 +1123,21 @@ mod tests {
     #[tokio::test]
     async fn test_list_solutions_empty_dir() {
         let temp_dir = TempDir::new().unwrap();
-        let Json(response) =
-            list_solutions(Some(temp_dir.path().to_string_lossy().to_string())).await;
+        let Ok(Json(response)) =
+            list_solutions(Some(temp_dir.path().to_string_lossy().to_string())).await
+        else {
+            panic!("expected Ok");
+        };
         assert!(response.success);
         assert!(response.data.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn test_list_solutions_non_existent_dir() {
-        let Json(response) = list_solutions(Some("/non/existent/path".to_string())).await;
+        let Ok(Json(response)) = list_solutions(Some("/non/existent/path".to_string())).await
+        else {
+            panic!("expected Ok");
+        };
         assert!(response.success);
         assert!(response.data.unwrap().is_empty());
     }
@@ -1136,8 +1166,11 @@ reactions:
 "#,
         );
 
-        let Json(response) =
-            list_solutions(Some(temp_dir.path().to_string_lossy().to_string())).await;
+        let Ok(Json(response)) =
+            list_solutions(Some(temp_dir.path().to_string_lossy().to_string())).await
+        else {
+            panic!("expected Ok");
+        };
         assert!(response.success);
 
         let summaries = response.data.unwrap();
@@ -1152,13 +1185,12 @@ reactions:
     #[tokio::test]
     async fn test_get_solution_not_found() {
         let temp_dir = TempDir::new().unwrap();
-        let Json(response) = get_solution(
+        let result = get_solution(
             Some(temp_dir.path().to_string_lossy().to_string()),
             "non-existent",
         )
         .await;
-        assert!(!response.success);
-        assert!(response.error.is_some());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1186,11 +1218,14 @@ reactions: []
 "#,
         );
 
-        let Json(response) = get_solution(
+        let Ok(Json(response)) = get_solution(
             Some(temp_dir.path().to_string_lossy().to_string()),
             "my-solution",
         )
-        .await;
+        .await
+        else {
+            panic!("expected Ok");
+        };
         assert!(response.success);
 
         let detail = response.data.unwrap();
@@ -1240,11 +1275,14 @@ reactions: []
         )
         .unwrap();
 
-        let Json(response) = get_solution(
+        let Ok(Json(response)) = get_solution(
             Some(temp_dir.path().to_string_lossy().to_string()),
             "yml-solution",
         )
-        .await;
+        .await
+        else {
+            panic!("expected Ok");
+        };
         assert!(response.success);
         assert_eq!(response.data.unwrap().metadata.name, "YML Solution");
     }
@@ -1259,7 +1297,7 @@ reactions: []
         };
 
         let plugin_registry = crate::plugin_registry::PluginRegistry::new();
-        let Json(response) = deploy_solution(
+        let result = deploy_solution(
             crate::instance_registry::InstanceRegistry::new(),
             None,
             None,
@@ -1269,11 +1307,10 @@ reactions: []
         )
         .await;
 
-        // Should return a validation error in the response
-        assert!(response.success);
-        let deploy_response = response.data.unwrap();
-        assert!(!deploy_response.success);
-        assert_eq!(deploy_response.errors.len(), 1);
-        assert_eq!(deploy_response.errors[0].phase, DeployPhase::Validation);
+        // Should return an ErrorResponse for validation failure
+        match result {
+            Err(err) => assert_eq!(err.code, error_codes::INVALID_REQUEST),
+            Ok(_) => panic!("expected ErrorResponse for missing template"),
+        }
     }
 }

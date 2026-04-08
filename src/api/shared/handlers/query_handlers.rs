@@ -14,7 +14,6 @@
 
 use axum::{
     extract::{Extension, Path, Query},
-    http::StatusCode,
     response::{
         sse::{Event, Sse},
         Json,
@@ -43,8 +42,8 @@ use uuid::Uuid;
 pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let queries = core.list_queries().await.unwrap_or_default();
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
+    let queries = core.list_queries().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(queries.len());
     for (id, status) in queries {
         let links = component_links(&instance_id, "queries", &id);
@@ -68,7 +67,7 @@ pub async fn list_queries(
         });
     }
 
-    Json(ApiResponse::success(items))
+    Ok(Json(ApiResponse::success(items)))
 }
 
 /// Create a new query
@@ -174,7 +173,10 @@ pub async fn get_query(
     match core.get_query_config(&id).await {
         Ok(query_config) => {
             let config = if view.include_config() {
-                let dto = QueryConfigDto::from(query_config.clone());
+                let dto = QueryConfigDto::try_from(query_config.clone()).map_err(|e| {
+                    log::error!("Failed to serialize query config: {e}");
+                    ErrorResponse::new(error_codes::INTERNAL_ERROR, "Internal server error")
+                })?;
                 match serde_json::to_value(dto) {
                     Ok(v) => Some(v),
                     Err(e) => {
@@ -380,27 +382,17 @@ pub async fn get_query_results(
 pub async fn attach_query_stream(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
-) -> Result<
-    Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>,
-    (StatusCode, Json<ApiResponse<StatusResponse>>),
-> {
-    if let Err(e) = core.get_query_config(&id).await {
-        let error_msg = e.to_string();
-        let status = if error_msg.contains("not found") {
-            StatusCode::NOT_FOUND
-        } else {
-            StatusCode::BAD_REQUEST
-        };
-        return Err((status, Json(ApiResponse::error(error_msg))));
-    }
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
+    core.get_query_config(&id)
+        .await
+        .map_err(ErrorResponse::from)?;
 
     let reaction_id = format!("__attach_{}_{}", id, Uuid::new_v4());
     let (reaction, handle) = ApplicationReaction::new(reaction_id.clone(), vec![id.clone()]);
     if let Err(e) = core.add_reaction(reaction).await {
-        let error_msg = format!("Failed to add attach reaction: {e}");
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse::error(error_msg)),
+        return Err(ErrorResponse::new(
+            error_codes::INTERNAL_ERROR,
+            format!("Failed to add attach reaction: {e}"),
         ));
     }
 
@@ -408,10 +400,9 @@ pub async fn attach_query_stream(
         let error_msg = e.to_string();
         if !error_msg.contains("already running") {
             let _ = core.remove_reaction(&reaction_id, true).await;
-            let error_msg = format!("Failed to start attach reaction: {error_msg}");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::error(error_msg)),
+            return Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to start attach reaction: {error_msg}"),
             ));
         }
     }
@@ -421,10 +412,9 @@ pub async fn attach_query_stream(
         Ok(subscription) => subscription,
         Err(e) => {
             let _ = core.remove_reaction(&reaction_id, true).await;
-            let error_msg = format!("Failed to subscribe to attach reaction: {e}");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::error(error_msg)),
+            return Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!("Failed to subscribe to attach reaction: {e}"),
             ));
         }
     };

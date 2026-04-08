@@ -313,7 +313,7 @@ pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &
         let enum_schema = ObjectBuilder::new()
             .schema_type(utoipa::openapi::SchemaType::String)
             .enum_values(Some(["Cypher", "GQL"]))
-            .default(Some("Cypher".into()))
+            .default(Some("GQL".into()))
             .build();
         schemas.insert(
             "QueryLanguage".to_string(),

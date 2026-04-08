@@ -43,8 +43,8 @@ use tokio::sync::broadcast;
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let sources = core.list_sources().await.unwrap_or_default();
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
+    let sources = core.list_sources().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(sources.len());
     for (id, status) in sources {
         let links = component_links(&instance_id, "sources", &id);
@@ -68,7 +68,7 @@ pub async fn list_sources(
         });
     }
 
-    Json(ApiResponse::success(items))
+    Ok(Json(ApiResponse::success(items)))
 }
 
 /// Create a new source

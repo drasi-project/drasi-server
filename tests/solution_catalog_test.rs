@@ -260,13 +260,12 @@ async fn test_get_solution_not_found() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["success"], false);
-    assert!(json["error"].as_str().unwrap().contains("not found"));
+    assert!(json["message"].as_str().unwrap().contains("not found"));
 }
 
 #[tokio::test]

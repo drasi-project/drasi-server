@@ -42,8 +42,8 @@ use tokio::sync::broadcast;
 pub async fn list_reactions(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(instance_id): Extension<String>,
-) -> Json<ApiResponse<Vec<ComponentListItem>>> {
-    let reactions = core.list_reactions().await.unwrap_or_default();
+) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
+    let reactions = core.list_reactions().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(reactions.len());
     for (id, status) in reactions {
         let links = component_links(&instance_id, "reactions", &id);
@@ -67,7 +67,7 @@ pub async fn list_reactions(
         });
     }
 
-    Json(ApiResponse::success(items))
+    Ok(Json(ApiResponse::success(items)))
 }
 
 /// Create a new reaction
