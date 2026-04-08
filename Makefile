@@ -190,7 +190,7 @@ test:
 
 # Run ALL tests: build test plugins, run cargo tests (including #[ignore]),
 # plugin smoke tests, and VSCode extension tests.
-test-all: build-local-test-plugins
+test-all: build-local-plugins-debug
 	@echo "=== Building server binary ==="
 	cargo build
 	@echo "=== Running all cargo tests (including ignored/E2E) ==="

@@ -799,7 +799,6 @@ impl DrasiServer {
 
         Ok(())
     }
-
 }
 
 /// Register plugins that are always available regardless of feature flags.
