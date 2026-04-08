@@ -1032,22 +1032,22 @@ fn resolve_yaml_variables(
 ) -> String {
     VAR_RESOLVE_RE
         .replace_all(yaml, |caps: &regex::Captures| {
-        let var_name = caps
-            .get(1)
-            .expect("Regex group 1 (variable name) must exist")
-            .as_str();
-        let default_value = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+            let var_name = caps
+                .get(1)
+                .expect("Regex group 1 (variable name) must exist")
+                .as_str();
+            let default_value = caps.get(2).map(|m| m.as_str()).unwrap_or("");
 
-        // Check user-provided variables first, then env vars, then default
-        if let Some(value) = variables.get(var_name) {
-            value.clone()
-        } else if let Ok(value) = std::env::var(var_name) {
-            value
-        } else {
-            default_value.to_string()
-        }
-    })
-    .to_string()
+            // Check user-provided variables first, then env vars, then default
+            if let Some(value) = variables.get(var_name) {
+                value.clone()
+            } else if let Ok(value) = std::env::var(var_name) {
+                value
+            } else {
+                default_value.to_string()
+            }
+        })
+        .to_string()
 }
 
 /// Rollback: delete created sources

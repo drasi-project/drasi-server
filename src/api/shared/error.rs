@@ -342,10 +342,9 @@ mod tests {
             technical_details: None,
         };
 
-        let (status, body) =
-            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, "load error")
-                .with_details(details)
-                .into_json_response();
+        let (status, body) = ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, "load error")
+            .with_details(details)
+            .into_json_response();
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         let json = body.0;

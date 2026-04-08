@@ -208,11 +208,8 @@ pub async fn retire_plugin(
                 "descriptorsRemoved": removed,
             })),
         ),
-        Err(e) => ErrorResponse::new(
-            error_codes::PLUGIN_RETIRE_FAILED,
-            format!("{e}"),
-        )
-        .into_json_response(),
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_RETIRE_FAILED, format!("{e}"))
+            .into_json_response(),
     }
 }
 
@@ -309,7 +306,9 @@ pub async fn load_plugin(
 
     match orchestrator.load_plugin(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response(),
+        Err(e) => {
+            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response()
+        }
     }
 }
 
@@ -344,7 +343,9 @@ pub async fn install_plugin(
     // Load the downloaded plugin
     match orchestrator.load_plugin(&plugin_path, None).await {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response(),
+        Err(e) => {
+            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response()
+        }
     }
 }
 
@@ -449,9 +450,8 @@ pub async fn upgrade_plugin(
                 })),
             )
         }
-        Err(e) => {
-            ErrorResponse::new(error_codes::PLUGIN_UPGRADE_FAILED, format!("{e}")).into_json_response()
-        }
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_UPGRADE_FAILED, format!("{e}"))
+            .into_json_response(),
     }
 }
 
@@ -480,9 +480,8 @@ pub async fn promote_plugin(
                 "promotedKinds": promoted_kinds,
             })),
         ),
-        Err(e) => {
-            ErrorResponse::new(error_codes::PLUGIN_PROMOTE_FAILED, format!("{e}")).into_json_response()
-        }
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_PROMOTE_FAILED, format!("{e}"))
+            .into_json_response(),
     }
 }
 
@@ -874,9 +873,8 @@ pub async fn search_registry(
                 .collect();
             (StatusCode::OK, Json(serde_json::json!(dtos)))
         }
-        Err(e) => {
-            ErrorResponse::new(error_codes::PLUGIN_SEARCH_FAILED, format!("{e}")).into_json_response()
-        },
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_SEARCH_FAILED, format!("{e}"))
+            .into_json_response(),
     }
 }
 

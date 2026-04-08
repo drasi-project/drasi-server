@@ -513,7 +513,7 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
-            config_persistence: None, // Will be set up if config file is provided
+            config_persistence: None,         // Will be set up if config file is provided
         }
     }
 

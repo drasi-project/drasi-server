@@ -175,8 +175,7 @@ async fn test_hot_loaded_plugin_kinds_available_in_registry() {
     let descriptor = reg.get_source(kind_name);
     assert!(
         descriptor.is_some(),
-        "Source kind '{}' should be findable in the registry after hot-load",
-        kind_name
+        "Source kind '{kind_name}' should be findable in the registry after hot-load",
     );
 }
 
@@ -208,8 +207,7 @@ async fn test_hot_loaded_reaction_plugin_kinds_available() {
     let descriptor = reg.get_reaction(kind_name);
     assert!(
         descriptor.is_some(),
-        "Reaction kind '{}' should be findable in the registry after hot-load",
-        kind_name
+        "Reaction kind '{kind_name}' should be findable in the registry after hot-load",
     );
 }
 
@@ -768,7 +766,11 @@ async fn test_watcher_detects_changed_file() {
     tokio::time::sleep(Duration::from_millis(150)).await;
 
     // Modify the file with different-sized content
-    std::fs::write(&fake_plugin, b"modified content that is longer than before!!!").unwrap();
+    std::fs::write(
+        &fake_plugin,
+        b"modified content that is longer than before!!!",
+    )
+    .unwrap();
 
     // Wait for detection
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
@@ -787,6 +789,9 @@ async fn test_watcher_detects_changed_file() {
         }
     }
 
-    assert!(got_changed, "Watcher should emit Changed event on size change");
+    assert!(
+        got_changed,
+        "Watcher should emit Changed event on size change"
+    );
     watcher.stop();
 }

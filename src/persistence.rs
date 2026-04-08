@@ -969,23 +969,27 @@ mod tests {
         let core = build_core("settings-inst", vec![], vec![], vec![]).await;
 
         // Create a config with non-default server-level settings
-        let mut original_config = DrasiServerConfig::default();
-        original_config.enable_ui = false;
-        original_config.plugin_registry = Some("my-registry.io/plugins".to_string());
-        original_config.auto_install_plugins = true;
-        original_config.plugins = vec![PluginDependency {
-            reference: "source/postgres:0.5.0".to_string(),
-        }];
-        original_config.verify_plugins = true;
-        original_config.trusted_identities = vec![TrustedIdentity {
-            issuer: "https://accounts.google.com".to_string(),
-            subject_pattern: "builder@my-org.iam.gserviceaccount.com".to_string(),
-        }];
-        original_config.hot_reload_plugins = true;
-        original_config.hot_reload_debounce_ms = 500;
-        original_config.hot_reload_mode = "side-by-side".to_string();
-        original_config.cors_allowed_origins =
-            vec!["http://localhost:3000".to_string(), "https://dashboard.example.com".to_string()];
+        let original_config = DrasiServerConfig {
+            enable_ui: false,
+            plugin_registry: Some("my-registry.io/plugins".to_string()),
+            auto_install_plugins: true,
+            plugins: vec![PluginDependency {
+                reference: "source/postgres:0.5.0".to_string(),
+            }],
+            verify_plugins: true,
+            trusted_identities: vec![TrustedIdentity {
+                issuer: "https://accounts.google.com".to_string(),
+                subject_pattern: "builder@my-org.iam.gserviceaccount.com".to_string(),
+            }],
+            hot_reload_plugins: true,
+            hot_reload_debounce_ms: 500,
+            hot_reload_mode: "side-by-side".to_string(),
+            cors_allowed_origins: vec![
+                "http://localhost:3000".to_string(),
+                "https://dashboard.example.com".to_string(),
+            ],
+            ..Default::default()
+        };
 
         let p = make_persistence_with_config(
             core,

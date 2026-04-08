@@ -161,10 +161,7 @@ fn build_default_instance_router() -> Router {
             get(shared::stream_source_events),
         )
         .route("/sources/:id/logs", get(shared::get_source_logs))
-        .route(
-            "/sources/:id/logs/stream",
-            get(shared::stream_source_logs),
-        )
+        .route("/sources/:id/logs/stream", get(shared::stream_source_logs))
         .route("/sources/:id", delete(shared::delete_source))
         .route("/sources/:id/start", post(shared::start_source))
         .route("/sources/:id/stop", post(shared::stop_source))
@@ -189,10 +186,7 @@ fn build_default_instance_router() -> Router {
         .route("/reactions", post(shared::create_reaction_handler))
         .route("/reactions/:id", put(shared::upsert_reaction_handler))
         .route("/reactions/:id", get(shared::get_reaction))
-        .route(
-            "/reactions/:id/events",
-            get(shared::get_reaction_events),
-        )
+        .route("/reactions/:id/events", get(shared::get_reaction_events))
         .route(
             "/reactions/:id/events/stream",
             get(shared::stream_reaction_events),
@@ -236,11 +230,7 @@ async fn resolve_default_instance(
                 "code": "INSTANCE_NOT_FOUND",
                 "message": "No instances configured"
             });
-            (
-                axum::http::StatusCode::NOT_FOUND,
-                axum::Json(body),
-            )
-                .into_response()
+            (axum::http::StatusCode::NOT_FOUND, axum::Json(body)).into_response()
         }
     }
 }

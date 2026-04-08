@@ -255,7 +255,10 @@ pub async fn create_instance(
     // Check if instance already exists
     if registry.contains(&instance_id).await {
         log::info!("Instance '{instance_id}' already exists");
-        return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
+        return Err(ErrorResponse::new(
+            error_codes::DUPLICATE_RESOURCE,
+            "Resource already exists",
+        ));
     }
 
     // Create a new DrasiLib instance with optional configuration
@@ -418,7 +421,10 @@ pub async fn create_source_handler(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
                 log::info!("Source '{source_id}' already exists - use PUT for upsert");
-                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
+                return Err(ErrorResponse::new(
+                    error_codes::DUPLICATE_RESOURCE,
+                    "Resource already exists",
+                ));
             }
             log::error!("Failed to add source: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
@@ -829,11 +835,17 @@ pub async fn create_query(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                 log::info!("Query '{query_id}' already exists");
-                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
+                return Err(ErrorResponse::new(
+                    error_codes::DUPLICATE_RESOURCE,
+                    "Resource already exists",
+                ));
             }
 
             log::error!("Failed to create query: {e}");
-            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Internal server error"))
+            Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                "Internal server error",
+            ))
         }
     }
 }
@@ -854,7 +866,10 @@ pub async fn get_query(
                     Ok(v) => Some(v),
                     Err(e) => {
                         log::error!("Failed to serialize query config: {e}");
-                        return Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Internal server error"));
+                        return Err(ErrorResponse::new(
+                            error_codes::INTERNAL_ERROR,
+                            "Internal server error",
+                        ));
                     }
                 }
             } else {
@@ -1235,7 +1250,10 @@ pub async fn create_reaction_handler(
             let error_msg = e.to_string();
             if error_msg.contains("already exists") {
                 log::info!("Reaction '{reaction_id}' already exists - use PUT for upsert");
-                return Err(ErrorResponse::new(error_codes::DUPLICATE_RESOURCE, "Resource already exists"));
+                return Err(ErrorResponse::new(
+                    error_codes::DUPLICATE_RESOURCE,
+                    "Resource already exists",
+                ));
             }
             log::error!("Failed to add reaction: {e}");
             Ok(Json(ApiResponse::error(error_msg)))
@@ -1618,11 +1636,17 @@ pub async fn push_source_data(
             let status_code = resp.status().as_u16();
             let msg = resp.text().await.unwrap_or_default();
             log::warn!("Source proxy got {status_code} from {url}: {msg}");
-            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Upstream service unavailable"))
+            Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                "Upstream service unavailable",
+            ))
         }
         Err(err) => {
             log::warn!("Source proxy failed for {url}: {err}");
-            Err(ErrorResponse::new(error_codes::INTERNAL_ERROR, "Upstream service unavailable"))
+            Err(ErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                "Upstream service unavailable",
+            ))
         }
     }
 }
