@@ -169,3 +169,126 @@ async fn test_create_instance_accepts_full_request() {
     assert_eq!(status, StatusCode::OK, "Create instance should succeed");
     assert_eq!(json["success"], true, "Response should indicate success");
 }
+
+#[test]
+fn test_openapi_has_delete_instance_endpoint() {
+    let openapi = ApiDocV1::openapi();
+    let json = serde_json::to_value(&openapi).unwrap();
+
+    // Check that DELETE /api/v1/instances/{instanceId} exists
+    let instance_path = &json["paths"]["/api/v1/instances/{instanceId}"];
+    assert!(
+        instance_path["delete"].is_object(),
+        "DELETE /api/v1/instances/{{instanceId}} should exist"
+    );
+
+    // Check that instanceId path parameter is documented
+    let parameters = &instance_path["delete"]["parameters"];
+    assert!(parameters.is_array(), "DELETE endpoint should have parameters");
+    let has_instance_id = parameters
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["name"] == "instanceId" && p["in"] == "path");
+    assert!(has_instance_id, "DELETE endpoint should have instanceId path parameter");
+}
+
+#[tokio::test]
+async fn test_delete_instance_succeeds() {
+    let router = create_test_router().await;
+
+    // First create an instance
+    let create_body = serde_json::json!({"id": "delete-test-instance"});
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/instances")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&create_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK, "Create instance should succeed");
+
+    // Then delete it
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/instances/delete-test-instance")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::OK, "Delete instance should succeed");
+    assert_eq!(json["success"], true, "Response should indicate success");
+}
+
+#[tokio::test]
+async fn test_delete_instance_not_found_returns_error() {
+    let router = create_test_router().await;
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/instances/nonexistent-instance")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::OK, "Response should be 200 with error body");
+    assert_eq!(json["success"], false, "Response should indicate failure");
+    assert!(
+        json["error"].as_str().unwrap_or("").contains("nonexistent-instance"),
+        "Error message should mention the instance ID"
+    );
+}
+
+#[tokio::test]
+async fn test_delete_instance_read_only_rejected() {
+    let registry = InstanceRegistry::new();
+    let read_only = Arc::new(true); // Read-only mode
+    let config_persistence = None;
+    let mut plugin_registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugin_registry);
+    let router = build_v1_router(registry, read_only, config_persistence, Arc::new(plugin_registry));
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/instances/some-instance")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::OK, "Response should be 200 with error body");
+    assert_eq!(json["success"], false, "Read-only mode should reject deletion");
+    assert!(
+        json["error"].as_str().unwrap_or("").contains("read-only"),
+        "Error message should mention read-only mode"
+    );
+}
