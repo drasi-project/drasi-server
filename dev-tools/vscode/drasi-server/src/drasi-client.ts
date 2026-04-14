@@ -70,6 +70,13 @@ export class DrasiClient {
     }
   }
 
+  async deleteInstance(instanceId: string): Promise<void> {
+    const res = await this.delete<ApiResponse<any>>(`${this.apiBase}/instances/${instanceId}`);
+    if (!res.data?.success) {
+      throw new Error(res.data?.error ?? res.statusText);
+    }
+  }
+
   async checkHealth(): Promise<boolean> {
     return DrasiClient.checkHealthForUrl(this.baseUrl);
   }

@@ -142,6 +142,14 @@
         "icon": "$(plug)"
       },
       {
+        "command": "drasi.connection.delete",
+        "title": "Delete server"
+      },
+      {
+        "command": "drasi.instance.delete",
+        "title": "Delete instance"
+      },
+      {
         "command": "drasi.resource.viewConfig",
         "title": "View Config (YAML)"
       },
@@ -292,6 +300,11 @@
           "group": "navigation"
         },
         {
+          "command": "drasi.connection.delete",
+          "when": "view == drasi && (viewItem == drasi.connectionNode || viewItem == drasi.connectionCurrentNode)",
+          "group": "3_danger"
+        },
+        {
           "command": "drasi.instance.add",
           "when": "view == drasi && (viewItem == drasi.connectionNode || viewItem == drasi.connectionCurrentNode)",
           "group": "navigation"
@@ -300,6 +313,11 @@
           "command": "drasi.instance.use",
           "when": "view == drasi && viewItem == drasi.instanceNode",
           "group": "inline"
+        },
+        {
+          "command": "drasi.instance.delete",
+          "when": "view == drasi && viewItem == drasi.instanceNode",
+          "group": "3_danger"
         }
       ],
       "editor/context": [

@@ -73,6 +73,21 @@ export class ConnectionRegistry {
     return connection;
   }
 
+  async deleteConnection(connectionId: string) {
+    const connections = this.getConnections();
+    const remaining = connections.filter((c) => c.id !== connectionId);
+    await this.setConnections(remaining);
+
+    // If we deleted the current connection, switch to the first remaining one
+    if (this.getCurrentConnectionId() === connectionId) {
+      if (remaining.length > 0) {
+        await this.setCurrentConnectionId(remaining[0].id);
+      } else {
+        await this.setCurrentConnectionId('');
+      }
+    }
+  }
+
   async updateCurrentConnectionUrl(url: string) {
     const connections = this.getConnections();
     const currentId = this.getCurrentConnectionId();

@@ -20,6 +20,8 @@
 //! ## Endpoint Structure
 //!
 //! - `GET /api/v1/instances` - List all DrasiLib instances
+//! - `POST /api/v1/instances` - Create a new DrasiLib instance
+//! - `DELETE /api/v1/instances/{instanceId}` - Delete a DrasiLib instance
 //! - `GET /api/v1/instances/{instanceId}/sources` - List sources for an instance
 //! - `POST /api/v1/instances/{instanceId}/sources` - Create a source
 //! - `GET /api/v1/instances/{instanceId}/sources/{id}` - Get source status

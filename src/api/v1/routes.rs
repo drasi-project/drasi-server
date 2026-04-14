@@ -41,7 +41,8 @@ pub fn build_v1_router(
     // Instance management routes
     let instance_routes = Router::new()
         .route("/instances", get(handlers::list_instances))
-        .route("/instances", post(handlers::create_instance));
+        .route("/instances", post(handlers::create_instance))
+        .route("/instances/:instanceId", delete(handlers::delete_instance));
 
     // Dynamic instance-specific routes using :instanceId path parameter
     let instance_resource_routes = build_dynamic_instance_router();

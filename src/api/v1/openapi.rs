@@ -44,6 +44,7 @@ use utoipa::openapi::RefOr;
         super::handlers::health_check,
         super::handlers::list_instances,
         super::handlers::create_instance,
+        super::handlers::delete_instance,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
         super::handlers::upsert_source_handler,

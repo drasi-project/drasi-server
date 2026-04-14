@@ -35,6 +35,8 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     vscode.commands.registerCommand('drasi.connection.configure', this.configureConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.add', this.addConnection.bind(this));
     vscode.commands.registerCommand('drasi.connection.use', this.useConnection.bind(this));
+    vscode.commands.registerCommand('drasi.connection.delete', this.deleteConnection.bind(this));
+    vscode.commands.registerCommand('drasi.instance.delete', this.deleteInstance.bind(this));
     vscode.commands.registerCommand('drasi.resource.viewConfig', this.viewConfig.bind(this));
   }
 
@@ -483,6 +485,72 @@ export class DrasiExplorer implements vscode.TreeDataProvider<ExplorerNode> {
     }
 
     await this.registry.setCurrentConnectionId(target.id);
+    this.refresh();
+  }
+
+  async deleteConnection(connectionNode?: ConnectionNode) {
+    let target = connectionNode?.connection;
+    if (!target) {
+      await this.registry.ensureDefaultConnection();
+      const connections = this.registry.getConnections();
+      const currentId = this.registry.getCurrentConnectionId();
+      const options = connections.map((connection) => ({
+        label: connection.name,
+        description: connection.url,
+        detail: connection.id === currentId ? 'Current' : undefined,
+        connection,
+      }));
+      const picked = await vscode.window.showQuickPick(options, {
+        placeHolder: 'Select server to delete',
+        matchOnDescription: true,
+      });
+      if (!picked) {
+        return;
+      }
+      target = picked.connection;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+      `Are you sure you want to remove server "${target.name}" (${target.url})?`,
+      'Yes',
+      'No'
+    );
+
+    if (confirm !== 'Yes') {
+      return;
+    }
+
+    await this.registry.deleteConnection(target.id);
+    this.refresh();
+  }
+
+  async deleteInstance(instanceNode?: InstanceNode) {
+    if (!instanceNode) {
+      return;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+      `Are you sure you want to delete instance "${instanceNode.instance.id}"? This will remove all sources, queries, and reactions in the instance.`,
+      'Yes',
+      'No'
+    );
+
+    if (confirm !== 'Yes') {
+      return;
+    }
+
+    await vscode.window.withProgress({
+      title: `Deleting instance ${instanceNode.instance.id}`,
+      location: vscode.ProgressLocation.Notification,
+    }, async (progress) => {
+      progress.report({ message: 'Deleting...' });
+      try {
+        await this.drasiClient.deleteInstance(instanceNode.instance.id);
+        vscode.window.showInformationMessage(`Instance '${instanceNode.instance.id}' deleted`);
+      } catch (err) {
+        vscode.window.showErrorMessage(`Error deleting instance: ${err}`);
+      }
+    });
     this.refresh();
   }
 

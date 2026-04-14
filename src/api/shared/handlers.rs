@@ -319,6 +319,38 @@ pub async fn create_instance(
     })))
 }
 
+/// Delete a DrasiLib instance
+pub async fn delete_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Json<ApiResponse<StatusResponse>> {
+    if *read_only {
+        return Json(ApiResponse::error(
+            "Server is in read-only mode. Cannot delete instances.".to_string(),
+        ));
+    }
+
+    match registry.remove(&instance_id).await {
+        Some(_) => {
+            if let Some(persistence) = &config_persistence {
+                persistence.unregister_instance(&instance_id).await;
+            }
+
+            persist_after_operation(&config_persistence, "deleting instance").await;
+
+            log::info!("Instance '{instance_id}' deleted successfully");
+            Json(ApiResponse::success(StatusResponse {
+                message: format!("Instance '{instance_id}' deleted successfully"),
+            }))
+        }
+        None => Json(ApiResponse::error(format!(
+            "Instance '{instance_id}' not found"
+        ))),
+    }
+}
+
 /// List all sources for an instance
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,

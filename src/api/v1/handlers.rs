@@ -147,6 +147,34 @@ pub async fn create_instance(
     .await
 }
 
+/// Delete a DrasiLib instance
+#[utoipa::path(
+    delete,
+    path = "/api/v1/instances/{instanceId}",
+    params(
+        ("instanceId" = String, Path, description = "DrasiLib instance ID")
+    ),
+    responses(
+        (status = 200, description = "Instance deleted successfully", body = ApiResponse),
+        (status = 404, description = "Instance not found"),
+    ),
+    tag = "Instances"
+)]
+pub async fn delete_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    Extension(read_only): Extension<Arc<bool>>,
+    Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Json<ApiResponse<StatusResponse>> {
+    shared::delete_instance(
+        Extension(registry),
+        Extension(read_only),
+        Extension(config_persistence),
+        Path(shared::InstancePath { instance_id }),
+    )
+    .await
+}
+
 /// List all sources
 #[utoipa::path(
     get,

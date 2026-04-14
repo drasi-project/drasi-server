@@ -199,6 +199,27 @@ impl ConfigPersistence {
         }
     }
 
+    /// Unregister an instance and all its associated configs (called on instance deletion)
+    pub async fn unregister_instance(&self, instance_id: &str) {
+        if !self.persist_config {
+            return;
+        }
+        let mut instance_configs = self.instance_configs.write().await;
+        instance_configs.swap_remove(instance_id);
+        drop(instance_configs);
+
+        let mut source_configs = self.source_configs.write().await;
+        source_configs.swap_remove(instance_id);
+        drop(source_configs);
+
+        let mut reaction_configs = self.reaction_configs.write().await;
+        reaction_configs.swap_remove(instance_id);
+        drop(reaction_configs);
+
+        let mut query_configs = self.query_configs.write().await;
+        query_configs.swap_remove(instance_id);
+    }
+
     /// Save the current configuration to the config file using atomic writes.
     /// Uses Core's public API to get current configuration snapshot.
     /// Includes source and reaction configs from the in-memory registry.
