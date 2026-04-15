@@ -19,7 +19,7 @@
         doctor validate clean clippy test test-all test-smoke \
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
-        build-ui clean-ui build-local-test-plugins \
+        build-ui clean-ui build-local-test-plugins download-test-plugins \
         build-local-plugins build-local-plugins-debug
 
 # Platform detection
@@ -90,6 +90,7 @@ help:
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
 	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
+	@echo "  make download-test-plugins      - Download test plugins from OCI registry (no drasi-core needed)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make clippy             - Run linter"
@@ -188,9 +189,18 @@ fmt-check:
 test:
 	cargo test
 
-# Run ALL tests: build test plugins, run cargo tests (including #[ignore]),
+# Run ALL tests: build/download test plugins, run cargo tests (including #[ignore]),
 # plugin smoke tests, and VSCode extension tests.
-test-all: build-local-plugins-debug
+# Prefers building from local drasi-core if available; falls back to downloading
+# pre-built plugins from the OCI registry.
+test-all:
+	@if [ -d "../drasi-core" ]; then \
+		echo "=== Building plugins from local drasi-core ==="; \
+		$(MAKE) build-local-plugins-debug; \
+	else \
+		echo "=== drasi-core not found, downloading plugins from OCI registry ==="; \
+		$(MAKE) download-test-plugins; \
+	fi
 	@echo "=== Building server binary ==="
 	cargo build
 	@echo "=== Running all cargo tests (including ignored/E2E) ==="
@@ -209,6 +219,19 @@ test-smoke:
 # Build cdylib test plugins (mock source, log reaction, http reaction, scriptfile bootstrap)
 # needed by solution deployment and E2E tests.
 # Plugins are built from ../drasi-core and copied to target/debug/plugins/.
+# Download pre-built test plugins from the OCI registry (no local drasi-core needed).
+# Uses the server's built-in `plugin install` CLI to fetch mock source, log reaction,
+# http reaction, and scriptfile bootstrap plugins.
+download-test-plugins:
+	@echo "=== Downloading test plugins from OCI registry ==="
+	@mkdir -p target/debug/plugins
+	cargo run -- plugin install source/mock --plugins-dir target/debug/plugins
+	cargo run -- plugin install reaction/log --plugins-dir target/debug/plugins
+	cargo run -- plugin install reaction/http --plugins-dir target/debug/plugins
+	cargo run -- plugin install bootstrap/scriptfile --plugins-dir target/debug/plugins
+	@echo "=== Test plugins downloaded to target/debug/plugins/ ==="
+	@ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) 2>/dev/null || echo "Warning: No plugin files found"
+
 build-local-test-plugins:
 	@echo "=== Building cdylib test plugins from drasi-core ==="
 	cd ../drasi-core && cargo build --lib -p drasi-source-mock --features drasi-source-mock/dynamic-plugin

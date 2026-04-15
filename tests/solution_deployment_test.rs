@@ -45,6 +45,7 @@ use tower::ServiceExt;
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_mock_source_log_reaction() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -136,6 +137,7 @@ async fn test_deploy_solution_mock_source_log_reaction() {
 }
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_with_variables() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -335,6 +337,7 @@ async fn test_deploy_solution_to_nonexistent_instance() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_to_non_default_instance() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -394,6 +397,7 @@ async fn test_deploy_solution_to_non_default_instance() {
 }
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_instance_isolation() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -459,6 +463,7 @@ async fn test_deploy_solution_instance_isolation() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_from_yaml() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -531,6 +536,7 @@ reactions:
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_multi_source_query() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -585,6 +591,7 @@ async fn test_deploy_solution_multi_source_query() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_components_started() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -644,6 +651,7 @@ async fn test_deploy_solution_components_started() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_with_scriptfile_bootstrap() {
     use test_support::solution_helpers::{
         create_test_jsonl_file, sample_bootstrap_jsonl_entries, scriptfile_bootstrap_template,
@@ -762,6 +770,7 @@ async fn test_deploy_solution_with_scriptfile_bootstrap() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_solution_log_reaction_receives_subscription() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(temp_dir.path(), "log-pipeline", simple_mock_log_template());
@@ -835,6 +844,7 @@ async fn test_solution_log_reaction_receives_subscription() {
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_with_joins_creates_query() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(
@@ -886,6 +896,7 @@ async fn test_deploy_solution_with_joins_creates_query() {
 }
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_deploy_solution_three_source_join() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -998,6 +1009,7 @@ reactions:
 // =============================================================================
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_e2e_sensor_monitoring_solution() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -1152,6 +1164,7 @@ reactions:
 }
 
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_e2e_multi_instance_deployment() {
     let temp_dir = TempDir::new().unwrap();
     create_test_solution_template(

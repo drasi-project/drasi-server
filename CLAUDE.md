@@ -29,11 +29,13 @@ Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdyli
 - Build all plugins from local drasi-core (release): `make build-local-plugins`
 - Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
 - Build test-only plugins (mock, log, scriptfile): `make build-local-test-plugins`
+- Download test plugins from OCI registry (no drasi-core needed): `make download-test-plugins`
 
 **Local directory plugin sources:** The `pluginRegistry` config field (and `--registry` CLI flag) accepts local filesystem paths in addition to OCI registry URLs. When a path is detected (e.g., `/path/to/plugins`, `./plugins`, `../drasi-core/target/debug/plugins`, `file:///opt/plugins`), the system scans the directory for plugin binaries instead of contacting an OCI registry. This is useful for development workflows where plugins are built locally. Detection is cross-platform: Unix absolute paths, relative paths (`./`, `../`), home-relative (`~/`), `file://` URIs, Windows drive letters, and UNC paths are all recognized as local directories.
 
 ### Testing
 - Run all tests: `cargo test`
+- Run all tests including plugin-dependent: `make test-all`
 - Run unit tests only: `cargo test --lib`
 - Run specific test: `cargo test test_name`
 - Run integration tests: `./tests/run_working_tests.sh`

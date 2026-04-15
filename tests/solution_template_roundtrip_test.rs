@@ -70,6 +70,7 @@ async fn send_json_request(
 /// 5. Create a second solution template from the new instance
 /// 6. Compare both templates structurally
 #[tokio::test]
+#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` or `make download-test-plugins` first"]
 async fn test_solution_template_roundtrip() {
     let temp_dir = TempDir::new().unwrap();
     let solutions_path = temp_dir.path().to_string_lossy().to_string();
