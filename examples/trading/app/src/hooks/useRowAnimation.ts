@@ -65,7 +65,7 @@ export function useRowAnimation<T>(
   
   const [animations, setAnimations] = useState<Map<string, AnimationDirection>>(new Map());
   const prevValuesRef = useRef<Map<string, number | string>>(new Map());
-  const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Cleanup timeouts on unmount
   useEffect(() => {

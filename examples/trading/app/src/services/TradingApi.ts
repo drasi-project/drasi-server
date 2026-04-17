@@ -73,6 +73,27 @@ class TradingApiService {
     this.baseUrl = baseUrl;
   }
 
+  /**
+   * Check response status and parse JSON, throwing a structured error on failure.
+   */
+  private async parseResponse<T>(response: Response, context: string): Promise<T> {
+    if (!response.ok) {
+      let errorMessage = `${context}: ${response.status} ${response.statusText}`;
+      try {
+        const body = await response.json();
+        if (body.error) errorMessage = `${context}: ${body.error}`;
+      } catch {
+        // Response body wasn't JSON, use the status text
+      }
+      throw new Error(errorMessage);
+    }
+    const data: ApiResponse<T> = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || context);
+    }
+    return data.data as T;
+  }
+
   // ============================================================================
   // Stocks API
   // ============================================================================
@@ -82,11 +103,7 @@ class TradingApiService {
    */
   async getStocks(): Promise<Stock[]> {
     const response = await fetch(`${this.baseUrl}/api/stocks`);
-    const data: ApiResponse<Stock[]> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch stocks');
-    }
-    return data.data || [];
+    return await this.parseResponse<Stock[]>(response, 'Failed to fetch stocks');
   }
 
   // ============================================================================
@@ -98,11 +115,7 @@ class TradingApiService {
    */
   async getWatchlist(): Promise<WatchlistItem[]> {
     const response = await fetch(`${this.baseUrl}/api/watchlist`);
-    const data: ApiResponse<WatchlistItem[]> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch watchlist');
-    }
-    return data.data || [];
+    return await this.parseResponse<WatchlistItem[]>(response, 'Failed to fetch watchlist');
   }
 
   /**
@@ -114,11 +127,8 @@ class TradingApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol })
     });
-    const data: ApiResponse<WatchlistItem> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to add to watchlist');
-    }
-    return data.data!;
+    const data = await this.parseResponse<WatchlistItem>(response, 'Failed to add to watchlist');
+    return data;
   }
 
   /**
@@ -128,10 +138,7 @@ class TradingApiService {
     const response = await fetch(`${this.baseUrl}/api/watchlist/${symbol}`, {
       method: 'DELETE'
     });
-    const data: ApiResponse<void> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to remove from watchlist');
-    }
+    await this.parseResponse<void>(response, 'Failed to remove from watchlist');
   }
 
   // ============================================================================
@@ -143,11 +150,7 @@ class TradingApiService {
    */
   async getPortfolio(): Promise<PortfolioPosition[]> {
     const response = await fetch(`${this.baseUrl}/api/portfolio`);
-    const data: ApiResponse<PortfolioPosition[]> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch portfolio');
-    }
-    return data.data || [];
+    return await this.parseResponse<PortfolioPosition[]>(response, 'Failed to fetch portfolio');
   }
 
   /**
@@ -159,11 +162,7 @@ class TradingApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, quantity, purchasePrice, purchaseDate })
     });
-    const data: ApiResponse<PortfolioPosition> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to add position');
-    }
-    return data.data!;
+    return await this.parseResponse<PortfolioPosition>(response, 'Failed to add position');
   }
 
   /**
@@ -175,11 +174,7 @@ class TradingApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
-    const data: ApiResponse<PortfolioPosition> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to update position');
-    }
-    return data.data!;
+    return await this.parseResponse<PortfolioPosition>(response, 'Failed to update position');
   }
 
   /**
@@ -189,10 +184,7 @@ class TradingApiService {
     const response = await fetch(`${this.baseUrl}/api/portfolio/${id}`, {
       method: 'DELETE'
     });
-    const data: ApiResponse<void> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to delete position');
-    }
+    await this.parseResponse<void>(response, 'Failed to delete position');
   }
 
   // ============================================================================
@@ -207,11 +199,7 @@ class TradingApiService {
       ? `${this.baseUrl}/api/orders?status=${status}`
       : `${this.baseUrl}/api/orders`;
     const response = await fetch(url);
-    const data: ApiResponse<LimitOrder[]> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch orders');
-    }
-    return data.data || [];
+    return await this.parseResponse<LimitOrder[]>(response, 'Failed to fetch orders');
   }
 
   /**
@@ -231,11 +219,7 @@ class TradingApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, orderType, targetPrice, quantity, expiresAt, staleDuration, expireDuration })
     });
-    const data: ApiResponse<LimitOrder> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to create order');
-    }
-    return data.data!;
+    return await this.parseResponse<LimitOrder>(response, 'Failed to create order');
   }
 
   /**
@@ -247,11 +231,7 @@ class TradingApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    const data: ApiResponse<LimitOrder> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to update order');
-    }
-    return data.data!;
+    return await this.parseResponse<LimitOrder>(response, 'Failed to update order');
   }
 
   /**
@@ -261,10 +241,7 @@ class TradingApiService {
     const response = await fetch(`${this.baseUrl}/api/orders/${id}`, {
       method: 'DELETE'
     });
-    const data: ApiResponse<void> = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to cancel order');
-    }
+    await this.parseResponse<void>(response, 'Failed to cancel order');
   }
 
   // ============================================================================

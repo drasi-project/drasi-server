@@ -14,6 +14,8 @@
 
 import { QueryResult, ConnectionStatus } from '@/types';
 
+const DEBUG_SSE = process.env.NODE_ENV === 'development';
+
 /**
  * SSE Client for consuming gRPC reaction's Server-Sent Events stream
  * This connects to the gRPC reaction's SSE endpoint to receive real-time updates
@@ -40,7 +42,7 @@ export class DrasiSSEClient {
     return new Promise((resolve, reject) => {
       try {
         this.sseEndpoint = sseEndpoint;
-        console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
+        DEBUG_SSE && console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
         
         // Close existing connection if any
         if (this.eventSource) {
@@ -53,13 +55,13 @@ export class DrasiSSEClient {
         // Log ALL events (for debugging)
         const originalAddEventListener = this.eventSource.addEventListener.bind(this.eventSource);
         this.eventSource.addEventListener = function(type: string, listener: any, options?: any) {
-          console.log(`>>> EventSource listener added for type: ${type}`);
+          DEBUG_SSE && console.log(`>>> EventSource listener added for type: ${type}`);
           return originalAddEventListener(type, listener, options);
         };
 
         // Handle connection open
         this.eventSource.onopen = () => {
-          console.log('SSE connection established');
+          DEBUG_SSE && console.log('SSE connection established');
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000;
           this.updateConnectionStatus({ connected: true });
@@ -79,7 +81,7 @@ export class DrasiSSEClient {
 
         // Handle incoming messages
         this.eventSource.onmessage = (event) => {
-          console.log('>>> SSE Message received:', {
+          DEBUG_SSE && console.log('>>> SSE Message received:', {
             data: event.data,
             type: event.type,
             lastEventId: event.lastEventId,
@@ -88,7 +90,7 @@ export class DrasiSSEClient {
           
           try {
             const data = JSON.parse(event.data);
-            console.log('>>> Parsed SSE data:', data);
+            DEBUG_SSE && console.log('>>> Parsed SSE data:', data);
             this.handleSSEMessage(data);
           } catch (error) {
             console.error('Failed to parse SSE message:', error, event.data);
@@ -107,7 +109,7 @@ export class DrasiSSEClient {
           if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
             const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
-            console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+            DEBUG_SSE && console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
             
             setTimeout(() => {
               if (this.sseEndpoint) {
@@ -131,7 +133,7 @@ export class DrasiSSEClient {
 
         this.eventSource.addEventListener('heartbeat', (event: MessageEvent) => {
           // Keep connection alive
-          console.log('>>> Heartbeat event received:', event.data);
+          DEBUG_SSE && console.log('>>> Heartbeat event received:', event.data);
         });
 
       } catch (error) {
@@ -145,11 +147,11 @@ export class DrasiSSEClient {
    * Handle incoming SSE messages from Drasi Server SSE reaction
    */
   private handleSSEMessage(data: any) {
-    console.log('>>> handleSSEMessage called with:', data);
+    DEBUG_SSE && console.log('>>> handleSSEMessage called with:', data);
     
     // Handle heartbeat messages
     if (data.type === 'heartbeat') {
-      console.log('>>> Heartbeat received at:', data.ts || data.timestamp);
+      DEBUG_SSE && console.log('>>> Heartbeat received at:', data.ts || data.timestamp);
       return;
     }
     
@@ -157,13 +159,13 @@ export class DrasiSSEClient {
     // This format is used for streaming changes from aggregation queries
     // Structure: { addedResults: [...], updatedResults: [...], deletedResults: [...], sequence: number }
     if (data.addedResults !== undefined || data.updatedResults !== undefined || data.deletedResults !== undefined) {
-      console.log('>>> Detected addedResults/updatedResults/deletedResults format');
+      DEBUG_SSE && console.log('>>> Detected addedResults/updatedResults/deletedResults format');
       
       const allResults: any[] = [];
       
       // Process added results
       if (data.addedResults && Array.isArray(data.addedResults)) {
-        console.log(`>>> Processing ${data.addedResults.length} added results`);
+        DEBUG_SSE && console.log(`>>> Processing ${data.addedResults.length} added results`);
         for (const result of data.addedResults) {
           // Extract the actual data - could be in 'after' or direct
           const item = result.after || result;
@@ -173,7 +175,7 @@ export class DrasiSSEClient {
       
       // Process updated results
       if (data.updatedResults && Array.isArray(data.updatedResults)) {
-        console.log(`>>> Processing ${data.updatedResults.length} updated results`);
+        DEBUG_SSE && console.log(`>>> Processing ${data.updatedResults.length} updated results`);
         for (const result of data.updatedResults) {
           // Extract the actual data from 'after' field
           const item = result.after || result;
@@ -183,18 +185,18 @@ export class DrasiSSEClient {
       
       // Process deleted results - mark them with _deleted flag
       if (data.deletedResults && Array.isArray(data.deletedResults)) {
-        console.log(`>>> Processing ${data.deletedResults.length} deleted results`);
+        DEBUG_SSE && console.log(`>>> Processing ${data.deletedResults.length} deleted results`);
         for (const result of data.deletedResults) {
           // Extract data from 'before' field and mark as deleted
           const item = result.before || result;
-          console.log(`>>> DELETE item:`, item);
+          DEBUG_SSE && console.log(`>>> DELETE item:`, item);
           allResults.push({ ...item, _deleted: true });
         }
       }
       
       if (allResults.length > 0) {
         // Route to appropriate subscribers based on data content
-        console.log(`>>> Routing ${allResults.length} results from addedResults/updatedResults/deletedResults format`);
+        DEBUG_SSE && console.log(`>>> Routing ${allResults.length} results from addedResults/updatedResults/deletedResults format`);
         this.routeDataToSubscribers(allResults);
       }
       return;
@@ -214,38 +216,38 @@ export class DrasiSSEClient {
       
       // Handle batch results (initial data or full refresh)
       if (data.results && Array.isArray(data.results)) {
-        console.log(`>>> Found query_id: ${queryId} with ${data.results.length} results`);
-        console.log(`>>> Raw results[0]:`, JSON.stringify(data.results[0], null, 2));
+        DEBUG_SSE && console.log(`>>> Found query_id: ${queryId} with ${data.results.length} results`);
+        DEBUG_SSE && console.log(`>>> Raw results[0]:`, JSON.stringify(data.results[0], null, 2));
         
         // Extract the actual data from results
         const extractedData = data.results.map((result: any) => {
           // Debug: log op and after values
           if (result.op) {
-            console.log(`>>> CDC event: op=${result.op}, after=${result.after}, hasAfter=${result.hasOwnProperty('after')}, afterIsNull=${result.after === null}`);
+            DEBUG_SSE && console.log(`>>> CDC event: op=${result.op}, after=${result.after}, hasAfter=${result.hasOwnProperty('after')}, afterIsNull=${result.after === null}`);
           }
           
           // Handle aggregation results (have type: "aggregation" with before/after)
           if (result.type === 'aggregation' && result.after) {
-            console.log(`>>> Extracting aggregation after:`, result.after);
+            DEBUG_SSE && console.log(`>>> Extracting aggregation after:`, result.after);
             return result.after;
           }
           // Handle CDC format DELETE (op: "d" or op: "u" with after: null/undefined)
           if (result.op === 'd' || (result.op === 'u' && !result.after)) {
             if (result.before) {
-              console.log(`>>> CDC DELETE detected for:`, result.before);
+              DEBUG_SSE && console.log(`>>> CDC DELETE detected for:`, result.before);
               return { ...result.before, _deleted: true };
             }
           }
           // Handle CDC format INSERT/UPDATE
           if ((result.op === 'c' || result.op === 'r' || result.op === 'u') && result.after) {
-            console.log(`>>> CDC ${result.op} detected:`, result.after);
+            DEBUG_SSE && console.log(`>>> CDC ${result.op} detected:`, result.after);
             return result.after;
           }
           // Handle DELETE results - extract the key for deletion
           if ((result.type === 'delete' || result.type === 'DELETE')) {
             const deleteData = result.before || result.data;
             if (deleteData) {
-              console.log(`>>> DELETE detected for:`, deleteData);
+              DEBUG_SSE && console.log(`>>> DELETE detected for:`, deleteData);
               // Mark as deletion by adding _deleted flag
               return { ...deleteData, _deleted: true };
             }
@@ -262,11 +264,11 @@ export class DrasiSSEClient {
             return result.data;
           }
           // Otherwise, the result itself is the data
-          console.log(`>>> Returning result as-is:`, JSON.stringify(result, null, 2));
+          DEBUG_SSE && console.log(`>>> Returning result as-is:`, JSON.stringify(result, null, 2));
           return result;
         }).filter((item: any) => item != null);
         
-        console.log(`>>> Extracted data[0]:`, JSON.stringify(extractedData[0], null, 2));
+        DEBUG_SSE && console.log(`>>> Extracted data[0]:`, JSON.stringify(extractedData[0], null, 2));
         
         if (extractedData.length > 0) {
           this.handleQueryResult({
@@ -278,7 +280,7 @@ export class DrasiSSEClient {
       }
       // Handle single change events
       else if (data.type && data.data) {
-        console.log(`>>> Found change event for ${queryId}: ${data.type}`);
+        DEBUG_SSE && console.log(`>>> Found change event for ${queryId}: ${data.type}`);
         
         // For now, treat all changes as full data updates
         // In the future, we could handle ADD/UPDATE/DELETE separately
@@ -290,7 +292,7 @@ export class DrasiSSEClient {
       }
       // Handle data array directly
       else if (data.data && Array.isArray(data.data)) {
-        console.log(`>>> Found query_id: ${queryId} with data array of ${data.data.length} items`);
+        DEBUG_SSE && console.log(`>>> Found query_id: ${queryId} with data array of ${data.data.length} items`);
         this.handleQueryResult({
           queryId: queryId,
           data: data.data,
@@ -303,31 +305,31 @@ export class DrasiSSEClient {
       const queryId = data.queryId;
       
       if (data.results && Array.isArray(data.results)) {
-        console.log(`>>> Found queryId: ${queryId} with ${data.results.length} results`);
+        DEBUG_SSE && console.log(`>>> Found queryId: ${queryId} with ${data.results.length} results`);
         
         const extractedData = data.results.map((result: any) => {
           // Handle aggregation results (have type: "aggregation" with before/after)
           if (result.type === 'aggregation' && result.after) {
-            console.log(`>>> Extracting aggregation after:`, result.after);
+            DEBUG_SSE && console.log(`>>> Extracting aggregation after:`, result.after);
             return result.after;
           }
           // Handle CDC format DELETE (op: "d" or op: "u" with after: null)
           if (result.op === 'd' || (result.op === 'u' && result.after === null)) {
             if (result.before) {
-              console.log(`>>> CDC DELETE detected for:`, result.before);
+              DEBUG_SSE && console.log(`>>> CDC DELETE detected for:`, result.before);
               return { ...result.before, _deleted: true };
             }
           }
           // Handle CDC format INSERT/UPDATE
           if ((result.op === 'c' || result.op === 'r' || result.op === 'u') && result.after) {
-            console.log(`>>> CDC ${result.op} detected:`, result.after);
+            DEBUG_SSE && console.log(`>>> CDC ${result.op} detected:`, result.after);
             return result.after;
           }
           // Handle DELETE results - extract the key for deletion
           if (result.type === 'DELETE') {
             const deleteData = result.before || result.data;
             if (deleteData) {
-              console.log(`>>> DELETE detected for:`, deleteData);
+              DEBUG_SSE && console.log(`>>> DELETE detected for:`, deleteData);
               // Mark as deletion by adding _deleted flag
               return { ...deleteData, _deleted: true };
             }
@@ -353,7 +355,7 @@ export class DrasiSSEClient {
           timestamp: data.timestamp || Date.now()
         });
       } else if (data.data) {
-        console.log(`>>> Found queryId: ${queryId} with data`);
+        DEBUG_SSE && console.log(`>>> Found queryId: ${queryId} with data`);
         this.handleQueryResult({
           queryId: queryId,
           data: Array.isArray(data.data) ? data.data : [data.data],
@@ -363,13 +365,13 @@ export class DrasiSSEClient {
     }
     // If no query ID but has recognizable stock data structure
     else if (data.symbol && (data.price !== undefined || data.name !== undefined)) {
-      console.log('>>> Detected stock data without query ID, routing to all subscribers');
+      DEBUG_SSE && console.log('>>> Detected stock data without query ID, routing to all subscribers');
       // This might be a direct data push, route to all subscribers
       this.routeDataToSubscribers([data]);
     }
     else {
-      console.log('>>> Unrecognized SSE format:', Object.keys(data));
-      console.log('>>> Full data:', JSON.stringify(data, null, 2));
+      DEBUG_SSE && console.log('>>> Unrecognized SSE format:', Object.keys(data));
+      DEBUG_SSE && console.log('>>> Full data:', JSON.stringify(data, null, 2));
     }
   }
 
@@ -382,16 +384,16 @@ export class DrasiSSEClient {
     
     const dataArray = Array.isArray(data) ? data : [data];
     
-    console.log(`>>> routeDataToSubscribers with ${dataArray.length} items, first item:`, dataArray[0]);
+    DEBUG_SSE && console.log(`>>> routeDataToSubscribers with ${dataArray.length} items, first item:`, dataArray[0]);
     
     // Check if data looks like portfolio summary (has total_value, total_cost, position_count)
     if (dataArray[0]?.total_value !== undefined && dataArray[0]?.total_cost !== undefined) {
-      console.log(`>>> Routing to portfolio-summary-query`);
+      DEBUG_SSE && console.log(`>>> Routing to portfolio-summary-query`);
       this.deliverToQuery('portfolio-summary-query', dataArray);
     }
     // Check if data looks like limit order data (has order_type and target_price)
     else if (dataArray[0]?.order_type !== undefined && dataArray[0]?.target_price !== undefined) {
-      console.log(`>>> Routing to active-orders-query`);
+      DEBUG_SSE && console.log(`>>> Routing to active-orders-query`);
       this.deliverToQuery('active-orders-query', dataArray);
     }
     // Check if data looks like portfolio data
@@ -399,7 +401,7 @@ export class DrasiSSEClient {
     // Delete events may only have id (the portfolio table's primary key)
     else if (dataArray[0]?.id !== undefined || 
         (dataArray[0]?.quantity !== undefined && dataArray[0]?.purchase_price !== undefined)) {
-      console.log(`>>> Routing to portfolio-query`);
+      DEBUG_SSE && console.log(`>>> Routing to portfolio-query`);
       this.deliverToQuery('portfolio-query', dataArray);
     }
     // Check if data looks like sector performance (has sector, stockCount or avgChangePercent)
@@ -408,7 +410,7 @@ export class DrasiSSEClient {
     }
     // Check if data looks like watchlist data (has watchlist_id)
     else if (dataArray[0]?.watchlist_id !== undefined) {
-      console.log(`>>> Routing to watchlist-query`);
+      DEBUG_SSE && console.log(`>>> Routing to watchlist-query`);
       this.deliverToQuery('watchlist-query', dataArray);
     }
     // Default stock data (has symbol and price)
@@ -451,9 +453,9 @@ export class DrasiSSEClient {
    * Handle a query result
    */
   private handleQueryResult(result: QueryResult) {
-    console.log(`>>> handleQueryResult called for queryId: ${result.queryId}`);
-    console.log(`>>> Result data:`, result.data);
-    console.log(`>>> Current subscribers:`, Array.from(this.subscribers.keys()));
+    DEBUG_SSE && console.log(`>>> handleQueryResult called for queryId: ${result.queryId}`);
+    DEBUG_SSE && console.log(`>>> Result data:`, result.data);
+    DEBUG_SSE && console.log(`>>> Current subscribers:`, Array.from(this.subscribers.keys()));
     
     // Cache the result
     this.queryCache.set(result.queryId, result);
@@ -461,18 +463,18 @@ export class DrasiSSEClient {
     const subscribers = this.subscribers.get(result.queryId);
     
     if (subscribers && subscribers.size > 0) {
-      console.log(`>>> Delivering to ${subscribers.size} subscribers for ${result.queryId}`);
+      DEBUG_SSE && console.log(`>>> Delivering to ${subscribers.size} subscribers for ${result.queryId}`);
       subscribers.forEach(callback => {
         try {
           callback(result);
-          console.log(`>>> Successfully delivered result to subscriber for ${result.queryId}`);
+          DEBUG_SSE && console.log(`>>> Successfully delivered result to subscriber for ${result.queryId}`);
         } catch (error) {
           console.error(`Error in subscriber callback for ${result.queryId}:`, error);
         }
       });
     } else {
-      console.log(`>>> WARNING: No subscribers for query ${result.queryId}, caching for later`);
-      console.log(`>>> Available subscriptions:`, this.subscribers);
+      DEBUG_SSE && console.log(`>>> WARNING: No subscribers for query ${result.queryId}, caching for later`);
+      DEBUG_SSE && console.log(`>>> Available subscriptions:`, this.subscribers);
     }
   }
 
@@ -485,12 +487,12 @@ export class DrasiSSEClient {
     }
     
     this.subscribers.get(queryId)!.add(callback);
-    console.log(`Subscribed to query ${queryId} (${this.subscribers.get(queryId)!.size} subscribers)`);
+    DEBUG_SSE && console.log(`Subscribed to query ${queryId} (${this.subscribers.get(queryId)!.size} subscribers)`);
     
     // If we have cached data for this query, deliver it immediately
     const cachedResult = this.queryCache.get(queryId);
     if (cachedResult) {
-      console.log(`Delivering cached result for ${queryId}`);
+      DEBUG_SSE && console.log(`Delivering cached result for ${queryId}`);
       setTimeout(() => {
         try {
           callback(cachedResult);
@@ -505,7 +507,7 @@ export class DrasiSSEClient {
       const callbacks = this.subscribers.get(queryId);
       if (callbacks) {
         callbacks.delete(callback);
-        console.log(`Unsubscribed from query ${queryId} (${callbacks.size} subscribers remaining)`);
+        DEBUG_SSE && console.log(`Unsubscribed from query ${queryId} (${callbacks.size} subscribers remaining)`);
         if (callbacks.size === 0) {
           this.subscribers.delete(queryId);
         }
@@ -559,7 +561,7 @@ export class DrasiSSEClient {
     this.updateConnectionStatus({ connected: false });
     this.subscribers.clear();
     this.statusListeners.clear();
-    console.log('SSE client disconnected');
+    DEBUG_SSE && console.log('SSE client disconnected');
   }
 
   /**

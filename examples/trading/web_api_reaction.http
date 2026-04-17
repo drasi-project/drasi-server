@@ -20,19 +20,19 @@
 @port = 8280
 @reaction_id = sse-stream
 
-### GET LIST of all sources
+### GET LIST of all reactions
 GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions
 
-### GET STATE of a specific source
+### GET STATE of a specific reaction
 GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}
 
-### GET STATE of a specific source with view=full
+### GET STATE of a specific reaction with view=full
 GET http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}?view=full
 
-### START a specific source
+### START a specific reaction
 POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}/start
 Content-Type: application/json
 
-### STOP a specific source
+### STOP a specific reaction
 POST http://{{hostname}}:{{port}}/api/v1/instances/trading-server/reactions/{{reaction_id}}/stop
 Content-Type: application/json
