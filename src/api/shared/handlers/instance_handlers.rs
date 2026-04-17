@@ -14,6 +14,7 @@
 
 use axum::{extract::Extension, response::Json};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -89,9 +90,21 @@ pub async fn create_instance(
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
 
-    // Note: persist_index requires RocksDB setup which needs a data path
-    // For now, we skip persistent index for dynamically created instances
-    // TODO: Add support for persistent index with configurable data path
+    // Set up RocksDB persistent indexing if requested
+    if persist_index {
+        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+        let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
+        log::info!(
+            "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
+            instance_id,
+            index_path.display()
+        );
+        let rocksdb_provider = drasi_index_rocksdb::RocksDbIndexProvider::new(
+            index_path, true,  // enable_archive - support for past() function
+            false, // direct_io - use OS page cache
+        );
+        builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+    }
 
     let core = builder.build().await.map_err(|e| {
         log::error!("Failed to create instance: {e}");
