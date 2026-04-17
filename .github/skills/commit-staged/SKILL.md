@@ -10,4 +10,4 @@
     - A blank line followed by a body explaining what and why
     - Include the Co-authored-by trailer
  4. Let the user review the commit message and make edits if necessary before finalizing the commit. Never commit without user approval of the message.
- 4. Commit with `git commit -m "..."`.
+ 5. Commit with `git commit -m "..."`.
