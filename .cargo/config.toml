@@ -6,7 +6,8 @@ xtask = "run --package xtask --"
 
 # To use local path-based dependencies for development:
 # 1. Uncomment the [patch.crates-io] section
-# 2. Run: cargo build
+# 2. Run: cargo update
+# 3. Run: cargo build
 #
 # To use published crates from crates.io:
 # 1. Keep the [patch.crates-io] section commented
@@ -38,23 +39,33 @@ rustc-cfg = ["openssl", "ossl101", "ossl102", "ossl102f", "ossl102h", "ossl110",
 version_number = "30600000"
 include = "vendor/x86_64-pc-windows-msvc/include"
 
-# [patch.crates-io]
-# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
-# drasi-ffi-primitives = { path = "../drasi-core/components/ffi-primitives" }
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-query-ast = { path = "../drasi-core/query-ast" }
-# drasi-query-cypher = { path = "../drasi-core/query-cypher" }
-# drasi-query-gql = { path = "../drasi-core/query-gql" }
-# drasi-functions-cypher = { path = "../drasi-core/functions-cypher" }
-# drasi-functions-gql = { path = "../drasi-core/functions-gql" }
-# drasi-middleware = { path = "../drasi-core/middleware" }
-# drasi-source-application = { path = "../drasi-core/components/sources/application" }
-# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
-# drasi-mssql-common = { path = "../drasi-core/components/mssql-common" }
-# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
+[patch.crates-io]
+# Core crates currently under active local MCP/schema-inspection development.
+drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+drasi-ffi-primitives = { path = "../drasi-core/components/ffi-primitives" }
+drasi-core = { path = "../drasi-core/core" }
+drasi-lib = { path = "../drasi-core/lib" }
+drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
+
+# Source crates with local schema discovery changes.
+# These are typically pulled in transitively through drasi-lib / plugin loading.
+drasi-source-http = { path = "../drasi-core/components/sources/http" }
+drasi-source-mock = { path = "../drasi-core/components/sources/mock" }
+drasi-source-mssql = { path = "../drasi-core/components/sources/mssql" }
+drasi-source-postgres = { path = "../drasi-core/components/sources/postgres" }
+
+# Supporting parser/function crates.
+drasi-query-ast = { path = "../drasi-core/query-ast" }
+drasi-query-cypher = { path = "../drasi-core/query-cypher" }
+drasi-query-gql = { path = "../drasi-core/query-gql" }
+drasi-functions-cypher = { path = "../drasi-core/functions-cypher" }
+drasi-functions-gql = { path = "../drasi-core/functions-gql" }
+drasi-middleware = { path = "../drasi-core/middleware" }
+drasi-source-application = { path = "../drasi-core/components/sources/application" }
+drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
+drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
+drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+drasi-mssql-common = { path = "../drasi-core/components/mssql-common" }

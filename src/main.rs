@@ -118,6 +118,22 @@ enum Commands {
         #[command(subcommand)]
         action: plugin::PluginAction,
     },
+
+    /// Run as an MCP server over stdio
+    #[cfg(feature = "mcp")]
+    Mcp {
+        /// Path to the configuration file
+        #[arg(short, long, default_value = "config/server.yaml")]
+        config: PathBuf,
+
+        /// Directory to scan for plugin shared libraries (defaults to binary directory)
+        #[arg(long)]
+        plugins_dir: Option<PathBuf>,
+
+        /// Enable cosign signature verification for downloaded plugins
+        #[arg(long)]
+        verify_plugins: bool,
+    },
 }
 
 #[tokio::main]
@@ -140,6 +156,12 @@ async fn main() -> Result<()> {
         Some(Commands::Plugin { action }) => {
             plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
         }
+        #[cfg(feature = "mcp")]
+        Some(Commands::Mcp {
+            config,
+            plugins_dir,
+            verify_plugins,
+        }) => run_mcp_server(config, plugins_dir, verify_plugins).await,
         None => {
             // Default behavior: run the server (backward compatible)
             run_server(cli.config, cli.port, cli.plugins_dir, cli.verify_plugins).await
@@ -147,16 +169,8 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Run the Drasi Server
-async fn run_server(
-    config_path: PathBuf,
-    port_override: Option<u16>,
-    plugins_dir: Option<PathBuf>,
-    verify_plugins: bool,
-) -> Result<()> {
-    // Load .env file if it exists (for environment variable interpolation)
-    // Look for .env in the same directory as the config file
-    let env_file_loaded = if let Some(config_dir) = config_path.parent() {
+fn maybe_load_env_file(config_path: &PathBuf) -> bool {
+    if let Some(config_dir) = config_path.parent() {
         let env_file = config_dir.join(".env");
         if env_file.exists() {
             match dotenvy::from_path(&env_file) {
@@ -171,7 +185,19 @@ async fn run_server(
         }
     } else {
         false
-    };
+    }
+}
+
+/// Run the Drasi Server
+async fn run_server(
+    config_path: PathBuf,
+    port_override: Option<u16>,
+    plugins_dir: Option<PathBuf>,
+    verify_plugins: bool,
+) -> Result<()> {
+    // Load .env file if it exists (for environment variable interpolation)
+    // Look for .env in the same directory as the config file
+    let env_file_loaded = maybe_load_env_file(&config_path);
 
     // Check if config file exists, create default if it doesn't
     let (config, tracing_initialized) = if !config_path.exists() {
@@ -266,6 +292,47 @@ async fn run_server(
     server.run().await?;
 
     Ok(())
+}
+
+/// Run the Drasi Server as an MCP stdio server
+#[cfg(feature = "mcp")]
+async fn run_mcp_server(
+    config_path: PathBuf,
+    plugins_dir: Option<PathBuf>,
+    verify_plugins: bool,
+) -> Result<()> {
+    let env_file_loaded = maybe_load_env_file(&config_path);
+    let config = load_config_file(&config_path)?;
+    let mapper = DtoMapper::new();
+    let resolved_settings = map_server_settings(&config, &mapper)?;
+
+    if std::env::var("RUST_LOG").is_err() {
+        // SAFETY: set_var is called before the server starts handling requests.
+        unsafe {
+            std::env::set_var(
+                "RUST_LOG",
+                format!("{},oci_client=error", resolved_settings.log_level),
+            );
+        }
+    }
+    get_or_init_global_registry();
+
+    info!("Starting Drasi MCP mode");
+    info!("Config file: {}", config_path.display());
+    if env_file_loaded {
+        info!("Loaded environment variables from .env file");
+    }
+
+    let plugins_dir = match plugins_dir {
+        Some(dir) => dir,
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+            .unwrap_or_else(|| PathBuf::from("plugins")),
+    };
+
+    let server = DrasiServer::new(config_path, 0, plugins_dir, verify_plugins).await?;
+    server.run_mcp().await
 }
 
 /// Validate a configuration file

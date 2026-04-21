@@ -25,14 +25,19 @@ pub enum ComponentTypeDto {
     Source,
     Query,
     Reaction,
+    BootstrapProvider,
+    IdentityProvider,
 }
 
 impl From<ComponentType> for ComponentTypeDto {
     fn from(component_type: ComponentType) -> Self {
-        match component_type {
-            ComponentType::Source => Self::Source,
-            ComponentType::Query => Self::Query,
-            ComponentType::Reaction => Self::Reaction,
+        match format!("{component_type:?}").as_str() {
+            "Source" => Self::Source,
+            "Query" => Self::Query,
+            "Reaction" => Self::Reaction,
+            "BootstrapProvider" => Self::BootstrapProvider,
+            "IdentityProvider" => Self::IdentityProvider,
+            _ => Self::Reaction,
         }
     }
 }

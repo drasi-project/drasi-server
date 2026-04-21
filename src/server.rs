@@ -36,6 +36,8 @@ use crate::plugin_registry::PluginRegistry;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
+#[cfg(feature = "mcp")]
+use rmcp::ServiceExt;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -53,6 +55,12 @@ struct PreparedInstance {
     id_hint: Option<String>,
     persist_index: bool,
     core: DrasiLib,
+}
+
+struct PreparedRuntime {
+    instances: Arc<IndexMap<String, Arc<DrasiLib>>>,
+    registry: InstanceRegistry,
+    config_persistence: Option<Arc<ConfigPersistence>>,
 }
 
 impl DrasiServer {
@@ -424,6 +432,57 @@ impl DrasiServer {
         );
         info!("Initializing Drasi Server");
 
+        let runtime = self.initialize_runtime().await?;
+
+        // Start web API if enabled
+        if self.enable_api {
+            self.start_api(
+                runtime.instances.clone(),
+                runtime.registry.clone(),
+                runtime.config_persistence.clone(),
+            )
+            .await?;
+            info!(
+                "Drasi Server started successfully with API on port {}",
+                self.port
+            );
+        } else {
+            info!("Drasi Server started successfully (API disabled)");
+        }
+
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+
+        info!("Shutting down Drasi Server");
+        Self::stop_all_instances(&runtime.registry).await?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "mcp")]
+    pub async fn run_mcp(mut self) -> Result<()> {
+        info!("Starting Drasi MCP server on stdio");
+
+        let runtime = self.initialize_runtime().await?;
+        let service = crate::mcp::DrasiMcpServer::new(
+            runtime.registry.clone(),
+            self.read_only.clone(),
+            runtime.config_persistence.clone(),
+            self.plugin_registry.clone(),
+        );
+
+        service
+            .serve(rmcp::transport::stdio())
+            .await?
+            .waiting()
+            .await?;
+
+        info!("Shutting down Drasi MCP server");
+        Self::stop_all_instances(&runtime.registry).await?;
+        Ok(())
+    }
+
+    async fn initialize_runtime(&mut self) -> Result<PreparedRuntime> {
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
         let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
 
@@ -501,30 +560,17 @@ impl DrasiServer {
             None
         };
 
-        // Start web API if enabled
-        if self.enable_api {
-            self.start_api(
-                instances.clone(),
-                registry.clone(),
-                config_persistence.clone(),
-            )
-            .await?;
-            info!(
-                "Drasi Server started successfully with API on port {}",
-                self.port
-            );
-        } else {
-            info!("Drasi Server started successfully (API disabled)");
-        }
+        Ok(PreparedRuntime {
+            instances,
+            registry,
+            config_persistence,
+        })
+    }
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
-
-        info!("Shutting down Drasi Server");
+    async fn stop_all_instances(registry: &InstanceRegistry) -> Result<()> {
         for (_id, core) in registry.list().await {
             core.stop().await?;
         }
-
         Ok(())
     }
 

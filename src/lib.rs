@@ -19,6 +19,8 @@ pub mod config;
 pub mod dynamic_loading;
 pub mod factories;
 pub mod instance_registry;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod persistence;
 pub mod plugin_install;
 pub mod plugin_lockfile;

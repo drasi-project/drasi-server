@@ -68,6 +68,30 @@ docker compose up -d
 
 See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
 
+### Local `drasi-core` Development
+
+If you are working on `drasi-server` and `../drasi-core` together, there is a commented `[patch.crates-io]` section in `.cargo/config.toml` that redirects the server to the local core workspace.
+
+This is especially useful for the MCP/schema-inspection work, where the actively modified local crates include:
+
+- `drasi-lib`
+- `drasi-core`
+- `drasi-plugin-sdk`
+- `drasi-host-sdk`
+- source/schema crates such as `drasi-source-http`, `drasi-source-mock`, `drasi-source-mssql`, and `drasi-source-postgres`
+
+To use them locally:
+
+```bash
+# 1. Uncomment the [patch.crates-io] block in .cargo/config.toml
+# 2. Refresh the lockfile
+cargo update
+
+# 3. Build normally, or enable MCP support
+cargo build
+cargo build --features mcp
+```
+
 ### Option 3: Manual Setup
 
 ```bash
@@ -160,6 +184,23 @@ drasi-server run --config config/server.yaml
 **Options:**
 - `--config <PATH>`: Path to configuration file (default: `config/server.yaml`)
 - `--port <PORT>`: Override the server port from config
+
+#### `mcp`
+
+Run `drasi-server` as a stdio-based MCP server for AI clients such as GitHub Copilot, Claude Desktop, and Cursor.
+
+```bash
+# Build with MCP support
+cargo build --features mcp
+
+# Start the MCP server over stdin/stdout
+cargo run --features mcp -- mcp --config config/server.yaml
+```
+
+**Options:**
+- `--config <PATH>`: Path to configuration file (default: `config/server.yaml`)
+- `--plugins-dir <PATH>`: Override the plugin scan directory
+- `--verify-plugins`: Enable cosign signature verification for downloaded plugins
 
 #### `init`
 

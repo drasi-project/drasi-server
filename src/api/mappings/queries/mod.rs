@@ -18,7 +18,8 @@ use crate::api::mappings::{ConfigMapper, DtoMapper, MappingError};
 use crate::api::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 use drasi_core::models::SourceMiddlewareConfig;
 use drasi_lib::channels::DispatchMode;
-use drasi_lib::config::{QueryConfig, SourceSubscriptionConfig};
+use drasi_lib::config::{QueryConfig, QueryJoinConfig, SourceSubscriptionConfig};
+use drasi_lib::indexes::StorageBackendRef;
 use std::sync::Arc;
 
 pub struct QueryConfigMapper;
@@ -35,7 +36,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .map(map_source_subscription)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let middleware = dto
+        let middleware: Vec<SourceMiddlewareConfig> = dto
             .middleware
             .iter()
             .map(|m| SourceMiddlewareConfig {
@@ -58,7 +59,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .transpose()?;
 
         // Parse joins if provided
-        let joins = dto
+        let joins: Option<Vec<QueryJoinConfig>> = dto
             .joins
             .as_ref()
             .map(|j| {
@@ -69,7 +70,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             .transpose()?;
 
         // Parse storage_backend if provided
-        let storage_backend = dto
+        let storage_backend: Option<StorageBackendRef> = dto
             .storage_backend
             .as_ref()
             .map(|sb| {
@@ -81,20 +82,24 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             })
             .transpose()?;
 
-        Ok(QueryConfig {
-            id: dto.id.clone(),
-            auto_start: dto.auto_start,
-            query: dto.query.clone(),
-            query_language: dto.query_language.clone(),
-            middleware,
-            sources,
-            enable_bootstrap: dto.enable_bootstrap,
-            bootstrap_buffer_size: dto.bootstrap_buffer_size,
-            joins,
-            priority_queue_capacity: dto.priority_queue_capacity,
-            dispatch_buffer_capacity: dto.dispatch_buffer_capacity,
-            dispatch_mode,
-            storage_backend,
+        let value = serde_json::json!({
+            "id": dto.id,
+            "auto_start": dto.auto_start,
+            "query": dto.query,
+            "queryLanguage": dto.query_language,
+            "middleware": middleware,
+            "sources": sources,
+            "enableBootstrap": dto.enable_bootstrap,
+            "bootstrapBufferSize": dto.bootstrap_buffer_size,
+            "joins": joins,
+            "priority_queue_capacity": dto.priority_queue_capacity,
+            "dispatch_buffer_capacity": dto.dispatch_buffer_capacity,
+            "dispatch_mode": dispatch_mode,
+            "storage_backend": storage_backend,
+        });
+
+        serde_json::from_value(value).map_err(|e| {
+            MappingError::SourceCreationError(format!("Invalid query configuration: {e}"))
         })
     }
 }
