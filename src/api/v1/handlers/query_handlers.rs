@@ -48,10 +48,11 @@ use crate::api::shared::handlers as shared;
 )]
 pub async fn list_queries(
     Extension(registry): Extension<InstanceRegistry>,
+    Extension(api_prefix): Extension<shared::ApiPrefix>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, (StatusCode, String)> {
     let core = get_instance(&registry, &instance_id).await?;
-    shared::list_queries(Extension(core), Extension(instance_id))
+    shared::list_queries(Extension(core), Extension(instance_id), Extension(api_prefix))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.message))
 }
@@ -109,6 +110,7 @@ pub async fn create_query(
 pub async fn get_query(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
+    Extension(api_prefix): Extension<shared::ApiPrefix>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
     Query(view): Query<ComponentViewQuery>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
@@ -120,6 +122,7 @@ pub async fn get_query(
         Extension(core),
         Extension(config_persistence),
         Extension(instance_id),
+        Extension(api_prefix),
         Query(view),
         Path(id),
     )

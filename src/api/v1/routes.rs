@@ -28,6 +28,8 @@ use tokio::sync::RwLock;
 
 use super::handlers;
 use crate::api::shared::handlers as shared;
+use crate::api::shared::handlers::ApiPrefix;
+use crate::api::version::ApiVersion;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -69,6 +71,9 @@ pub fn build_v1_router(
         .layer(Extension(plugin_registry))
         .layer(Extension(solutions_dir))
         .layer(Extension(reqwest::Client::new()))
+        .layer(Extension(ApiPrefix(
+            ApiVersion::V1.path_prefix().to_string(),
+        )))
 }
 
 /// Build routes for dynamic instance resources.

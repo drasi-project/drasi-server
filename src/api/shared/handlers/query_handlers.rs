@@ -23,8 +23,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use super::{
-    apply_limit, component_links, persist_after_operation, sse_event_async, ComponentViewQuery,
-    ObservabilityQuery,
+    apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
+    ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
@@ -42,11 +42,12 @@ use uuid::Uuid;
 pub async fn list_queries(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(instance_id): Extension<String>,
+    Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
     let queries = core.list_queries().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(queries.len());
     for (id, status) in queries {
-        let links = component_links(&instance_id, "queries", &id);
+        let links = component_links(&api_prefix.0, &instance_id, "queries", &id);
         let error_message = if matches!(status, ComponentStatus::Error) {
             match core.get_query_info(&id).await {
                 Ok(info) => info.error_message,
@@ -167,6 +168,7 @@ pub async fn get_query(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(_config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(api_prefix): Extension<ApiPrefix>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
@@ -203,7 +205,7 @@ pub async fn get_query(
                 id: query_config.id.clone(),
                 status,
                 error_message,
-                links: component_links(&instance_id, "queries", &id),
+                links: component_links(&api_prefix.0, &instance_id, "queries", &id),
                 config,
             })))
         }

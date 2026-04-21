@@ -109,8 +109,9 @@ pub async fn health_check() -> Json<HealthResponse> {
 )]
 pub async fn list_instances(
     Extension(registry): Extension<InstanceRegistry>,
+    Extension(api_prefix): Extension<shared::ApiPrefix>,
 ) -> Json<ApiResponse<Vec<InstanceListItem>>> {
-    shared::list_instances(Extension(registry)).await
+    shared::list_instances(Extension(registry), Extension(api_prefix)).await
 }
 
 /// Create a new DrasiLib instance

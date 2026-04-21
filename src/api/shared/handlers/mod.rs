@@ -44,6 +44,13 @@ use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use drasi_lib::DrasiLib;
 
+/// The URL path prefix for the current API version (e.g., `/api/v1`).
+///
+/// Injected as an Axum `Extension` so that shared handlers can build
+/// version-correct HATEOAS links without hardcoding a version string.
+#[derive(Debug, Clone)]
+pub struct ApiPrefix(pub String);
+
 /// Path parameters for instance-specific routes
 #[derive(Debug, Deserialize)]
 pub struct InstancePath {
@@ -86,8 +93,13 @@ pub async fn get_default_instance_or_error(
     }
 }
 
-pub(crate) fn component_links(instance_id: &str, kind: &str, id: &str) -> ComponentLinks {
-    let self_link = format!("/api/v1/instances/{instance_id}/{kind}/{id}");
+pub(crate) fn component_links(
+    api_prefix: &str,
+    instance_id: &str,
+    kind: &str,
+    id: &str,
+) -> ComponentLinks {
+    let self_link = format!("{api_prefix}/instances/{instance_id}/{kind}/{id}");
     ComponentLinks {
         self_link: self_link.clone(),
         full: format!("{self_link}?view=full"),
@@ -174,6 +186,7 @@ pub async fn health_check() -> Json<HealthResponse> {
 /// List configured DrasiLib instances
 pub async fn list_instances(
     Extension(registry): Extension<InstanceRegistry>,
+    Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Json<ApiResponse<Vec<InstanceListItem>>> {
     let instances = registry.list().await;
     let mut data = Vec::with_capacity(instances.len());
@@ -187,7 +200,7 @@ pub async fn list_instances(
             .map(|v| v.len())
             .unwrap_or(0);
 
-        let base_path = format!("/api/v1/instances/{id}");
+        let base_path = format!("{}/instances/{id}", api_prefix.0);
         data.push(InstanceListItem {
             id: id.clone(),
             source_count,

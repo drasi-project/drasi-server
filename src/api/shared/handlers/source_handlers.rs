@@ -24,8 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    apply_limit, component_links, persist_after_operation, sse_event_async, ComponentViewQuery,
-    ObservabilityQuery,
+    apply_limit, component_links, persist_after_operation, sse_event_async, ApiPrefix,
+    ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
@@ -43,11 +43,12 @@ use tokio::sync::broadcast;
 pub async fn list_sources(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(instance_id): Extension<String>,
+    Extension(api_prefix): Extension<ApiPrefix>,
 ) -> Result<Json<ApiResponse<Vec<ComponentListItem>>>, ErrorResponse> {
     let sources = core.list_sources().await.map_err(ErrorResponse::from)?;
     let mut items = Vec::with_capacity(sources.len());
     for (id, status) in sources {
-        let links = component_links(&instance_id, "sources", &id);
+        let links = component_links(&api_prefix.0, &instance_id, "sources", &id);
         let error_message = if matches!(status, ComponentStatus::Error) {
             match core.get_source_info(&id).await {
                 Ok(info) => info.error_message,
@@ -256,6 +257,7 @@ pub async fn get_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(_config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
+    Extension(api_prefix): Extension<ApiPrefix>,
     Query(view): Query<ComponentViewQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ComponentListItem>>, ErrorResponse> {
@@ -286,7 +288,7 @@ pub async fn get_source(
         id: info.id,
         status: info.status,
         error_message: info.error_message,
-        links: component_links(&instance_id, "sources", &id),
+        links: component_links(&api_prefix.0, &instance_id, "sources", &id),
         config,
     })))
 }
