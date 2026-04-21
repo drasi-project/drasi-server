@@ -52,6 +52,7 @@ pub struct DrasiServer {
     plugin_registry: Arc<RwLock<PluginRegistry>>,
     plugin_orchestrator: Arc<PluginOrchestrator>,
     cors_allowed_origins: Vec<String>,
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 struct PreparedInstance {
@@ -257,7 +258,7 @@ impl DrasiServer {
             .await;
 
         // Start plugin hot-reload watcher if configured
-        if config.hot_reload_plugins {
+        let watcher_handle = if config.hot_reload_plugins {
             use drasi_host_sdk::watcher::{PluginWatcher, PluginWatcherConfig};
 
             let watcher_config = PluginWatcherConfig {
@@ -278,7 +279,7 @@ impl DrasiServer {
             }
 
             // Spawn a task that receives file events and applies the configured policy
-            let _watcher_handle = tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 // Keep the watcher alive for the duration of this task
                 let _watcher = watcher;
                 loop {
@@ -325,7 +326,10 @@ impl DrasiServer {
                 "Plugin hot-reload enabled (mode: {}, debounce: {}ms)",
                 config.hot_reload_mode, config.hot_reload_debounce_ms
             );
-        }
+            Some(handle)
+        } else {
+            None
+        };
 
         // Resolve server settings using the mapper
         let mapper = DtoMapper::new();
@@ -475,6 +479,7 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: config.cors_allowed_origins.clone(),
+            watcher_handle,
         })
     }
 
@@ -507,6 +512,7 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
+            watcher_handle: None,
         }
     }
 
@@ -544,6 +550,7 @@ impl DrasiServer {
             plugin_registry,
             plugin_orchestrator,
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
+            watcher_handle: None,
         }
     }
 
@@ -663,6 +670,14 @@ impl DrasiServer {
         tokio::signal::ctrl_c().await?;
 
         info!("Shutting down Drasi Server");
+
+        // Cancel the hot-reload watcher task if running
+        if let Some(handle) = self.watcher_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+            info!("Plugin hot-reload watcher stopped");
+        }
+
         for (_id, core) in registry.list().await {
             core.stop().await?;
         }

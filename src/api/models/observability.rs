@@ -66,6 +66,8 @@ impl From<ComponentStatus> for ComponentStatusDto {
             ComponentStatus::Stopped => Self::Stopped,
             ComponentStatus::Error => Self::Error,
             ComponentStatus::Reconfiguring => Self::Reconfiguring,
+            ComponentStatus::Added => Self::Added,
+            ComponentStatus::Removed => Self::Removed,
         }
     }
 }
@@ -110,23 +112,10 @@ pub struct ComponentEventDto {
 
 impl From<ComponentEvent> for ComponentEventDto {
     fn from(event: ComponentEvent) -> Self {
-        // Detect structural events from drasi-core's message convention.
-        // ComponentGraph::add_component() emits: status=Stopped, message="{kind} added"
-        // ComponentGraph::remove_component() emits: status=Stopped, message="{kind} removed"
-        let status = match (&event.status, event.message.as_deref()) {
-            (ComponentStatus::Stopped, Some(msg)) if msg.ends_with(" added") => {
-                ComponentStatusDto::Added
-            }
-            (ComponentStatus::Stopped, Some(msg)) if msg.ends_with(" removed") => {
-                ComponentStatusDto::Removed
-            }
-            _ => ComponentStatusDto::from(event.status),
-        };
-
         Self {
             component_id: event.component_id,
             component_type: ComponentTypeDto::from(event.component_type),
-            status,
+            status: ComponentStatusDto::from(event.status),
             timestamp: event.timestamp,
             message: event.message,
         }
