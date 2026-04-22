@@ -188,15 +188,24 @@ pub async fn get_plugin(
     ),
     responses(
         (status = 200, description = "Plugin retired", body = PluginRetireResponse),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 500, description = "Retire failed")
     )
 )]
 /// Retire a loaded plugin, removing its descriptors from the registry.
 pub async fn retire_plugin(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path(plugin_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<RetireParams>,
 ) -> impl IntoResponse {
+    if *read_only {
+        return ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot retire plugins.",
+        )
+        .into_json_response();
+    }
     let force = params.force.unwrap_or(false);
 
     match orchestrator.retire_plugin(&plugin_id, force).await {
@@ -250,15 +259,24 @@ pub async fn list_kinds(
     responses(
         (status = 200, description = "Plugin loaded", body = PluginInfoDto),
         (status = 400, description = "Invalid path"),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 404, description = "File not found"),
         (status = 500, description = "Load failed")
     )
 )]
 /// Load a plugin shared library from the plugins directory by filename.
 pub async fn load_plugin(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Json(body): Json<LoadPluginRequest>,
 ) -> impl IntoResponse {
+    if *read_only {
+        return ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot load plugins.",
+        )
+        .into_json_response();
+    }
     let plugins_dir = match orchestrator.plugins_dir() {
         Some(dir) => dir.to_path_buf(),
         None => {
@@ -319,15 +337,24 @@ pub async fn load_plugin(
     request_body = InstallPluginRequest,
     responses(
         (status = 201, description = "Plugin installed and loaded", body = PluginInfoDto),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 500, description = "Install or load failed")
     )
 )]
 /// Download and load a plugin from an OCI registry.
 pub async fn install_plugin(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Extension(plugin_ops): Extension<Arc<crate::plugin_operations::PluginOperations>>,
     Json(body): Json<InstallPluginRequest>,
 ) -> impl IntoResponse {
+    if *read_only {
+        return ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot install plugins.",
+        )
+        .into_json_response();
+    }
     // Download from registry
     let plugin_path = match plugin_ops
         .install_from_registry(&body.plugin_ref, body.registry.as_deref())
@@ -361,17 +388,26 @@ pub async fn install_plugin(
         (status = 200, description = "Upgrade successful", body = PluginUpgradeResponse),
         (status = 207, description = "Upgrade partially failed"),
         (status = 400, description = "Missing filename"),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 404, description = "Plugin file not found"),
         (status = 500, description = "Upgrade failed")
     )
 )]
 /// Upgrade a plugin via drain-then-replace.
 pub async fn upgrade_plugin(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Extension(instances): Extension<InstanceRegistry>,
     Path(plugin_id): Path<String>,
     body: Option<Json<UpgradePluginRequest>>,
 ) -> impl IntoResponse {
+    if *read_only {
+        return ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot upgrade plugins.",
+        )
+        .into_json_response();
+    }
     // Resolve the path to the new plugin file
     let plugins_dir = match orchestrator.plugins_dir() {
         Some(dir) => dir.to_path_buf(),
@@ -464,14 +500,23 @@ pub async fn upgrade_plugin(
     ),
     responses(
         (status = 200, description = "Plugin promoted", body = PluginPromoteResponse),
-        (status = 400, description = "Promotion failed")
+        (status = 400, description = "Promotion failed"),
+        (status = 403, description = "Server is in read-only mode")
     )
 )]
 /// Promote a versioned plugin to be the incumbent for its kinds.
 pub async fn promote_plugin(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     Path(plugin_id): Path<String>,
 ) -> impl IntoResponse {
+    if *read_only {
+        return ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot promote plugins.",
+        )
+        .into_json_response();
+    }
     match orchestrator.promote_plugin(&plugin_id).await {
         Ok(promoted_kinds) => (
             StatusCode::OK,

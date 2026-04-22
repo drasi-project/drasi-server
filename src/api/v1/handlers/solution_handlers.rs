@@ -25,7 +25,7 @@ use crate::api::models::solution::{
     CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, SolutionDeployRequest,
     SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
 };
-use crate::api::shared::error::ErrorResponse;
+use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::handlers as shared;
 use crate::api::shared::solutions;
 use crate::api::shared::ApiResponse;
@@ -81,22 +81,30 @@ pub async fn get_solution(
     responses(
         (status = 200, description = "Creation result", body = ApiResponse<CreateSolutionTemplateResponse>),
         (status = 400, description = "Invalid request"),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 404, description = "Instance not found"),
     ),
     tag = "Catalog"
 )]
 pub async fn create_solution_template(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(registry): Extension<InstanceRegistry>,
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(solutions_dir): Extension<Option<String>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<CreateSolutionTemplateRequest>,
 ) -> Result<Json<ApiResponse<CreateSolutionTemplateResponse>>, ErrorResponse> {
+    if *read_only {
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot create solution templates.",
+        ));
+    }
     let core = match registry.get(&instance_id).await {
         Some(c) => c,
         None => {
             return Err(ErrorResponse::new(
-                crate::api::shared::error::error_codes::INSTANCE_NOT_FOUND,
+                error_codes::INSTANCE_NOT_FOUND,
                 format!("Instance '{instance_id}' not found"),
             ));
         }
@@ -116,11 +124,13 @@ pub async fn create_solution_template(
     responses(
         (status = 200, description = "Deployment result", body = ApiResponse<SolutionDeployResponse>),
         (status = 400, description = "Invalid request"),
+        (status = 403, description = "Server is in read-only mode"),
         (status = 404, description = "Instance or template not found"),
     ),
     tag = "Solutions"
 )]
 pub async fn deploy_solution(
+    Extension(read_only): Extension<Arc<bool>>,
     Extension(registry): Extension<InstanceRegistry>,
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(solutions_dir): Extension<Option<String>>,
@@ -128,6 +138,12 @@ pub async fn deploy_solution(
     Path(InstancePath { instance_id }): Path<InstancePath>,
     Json(request): Json<SolutionDeployRequest>,
 ) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
+    if *read_only {
+        return Err(ErrorResponse::new(
+            error_codes::CONFIG_READ_ONLY,
+            "Server is in read-only mode. Cannot deploy solutions.",
+        ));
+    }
     let reg = plugin_registry.read().await;
     solutions::deploy_solution(
         registry,
