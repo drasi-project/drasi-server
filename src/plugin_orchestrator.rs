@@ -36,9 +36,7 @@ use drasi_host_sdk::CallbackContext;
 
 use crate::config::{ReactionConfig, SourceConfig};
 use crate::dynamic_loading::StartupPluginRecord;
-use crate::factories::{
-    create_reaction, create_source, get_reaction_plugin_metadata, get_source_plugin_metadata,
-};
+use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_registry::InstanceRegistry;
 use crate::plugin_operations::PluginOperations;
 
@@ -231,7 +229,7 @@ impl PluginOrchestrator {
                 if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
                     if let Some(entry) = lockfile.get(filename) {
                         if entry.signature.is_some() {
-                            debug!("Plugin '{}' has cached verification in lockfile", filename);
+                            debug!("Plugin '{filename}' has cached verification in lockfile");
                             return Ok(());
                         }
                     }
@@ -672,11 +670,9 @@ impl PluginOrchestrator {
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to remove source: {e}"))?;
 
-                // Create new with updated plugin
-                let reg = self.lifecycle.registry().read().await;
-                let source = create_source(&reg, source_config).await?;
-                let plugin_meta = get_source_plugin_metadata(&reg, &component.kind);
-                drop(reg);
+                // Create new with updated plugin (lock acquired/released inside _locked fn)
+                let (source, plugin_meta) =
+                    create_source_locked(self.lifecycle.registry(), source_config).await?;
 
                 core.add_source_with_metadata(source, plugin_meta)
                     .await
@@ -723,11 +719,9 @@ impl PluginOrchestrator {
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to remove reaction: {e}"))?;
 
-                // Create new with updated plugin
-                let reg = self.lifecycle.registry().read().await;
-                let reaction = create_reaction(&reg, reaction_config).await?;
-                let plugin_meta = get_reaction_plugin_metadata(&reg, &component.kind);
-                drop(reg);
+                // Create new with updated plugin (lock acquired/released inside _locked fn)
+                let (reaction, plugin_meta) =
+                    create_reaction_locked(self.lifecycle.registry(), reaction_config).await?;
 
                 core.add_reaction_with_metadata(reaction, plugin_meta)
                     .await

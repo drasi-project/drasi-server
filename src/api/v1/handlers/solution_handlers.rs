@@ -144,12 +144,11 @@ pub async fn deploy_solution(
             "Server is in read-only mode. Cannot deploy solutions.",
         ));
     }
-    let reg = plugin_registry.read().await;
     solutions::deploy_solution(
         registry,
         persistence,
         solutions_dir,
-        &reg,
+        &plugin_registry,
         &instance_id,
         request,
     )

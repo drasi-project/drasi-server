@@ -24,9 +24,7 @@ use crate::api::models::ConfigValue;
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
-use crate::factories::{
-    create_reaction, create_source, get_reaction_plugin_metadata, get_source_plugin_metadata,
-};
+use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -264,8 +262,8 @@ pub async fn clone_instance(
             config: properties_json,
         };
 
-        let source =
-            match create_source(&*plugin_registry.read().await, source_config.clone()).await {
+        let (source, plugin_meta) =
+            match create_source_locked(&plugin_registry, source_config.clone()).await {
                 Ok(s) => s,
                 Err(e) => {
                     log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
@@ -276,9 +274,6 @@ pub async fn clone_instance(
                     ));
                 }
             };
-
-        let plugin_meta =
-            get_source_plugin_metadata(&*plugin_registry.read().await, &source_config.kind);
 
         if let Err(e) = target_core
             .add_source_with_metadata(source, plugin_meta)
@@ -334,8 +329,8 @@ pub async fn clone_instance(
             config: properties_json,
         };
 
-        let reaction =
-            match create_reaction(&*plugin_registry.read().await, reaction_config.clone()).await {
+        let (reaction, plugin_meta) =
+            match create_reaction_locked(&plugin_registry, reaction_config.clone()).await {
                 Ok(r) => r,
                 Err(e) => {
                     log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
@@ -348,9 +343,6 @@ pub async fn clone_instance(
                     ));
                 }
             };
-
-        let plugin_meta =
-            get_reaction_plugin_metadata(&*plugin_registry.read().await, &reaction_config.kind);
 
         if let Err(e) = target_core
             .add_reaction_with_metadata(reaction, plugin_meta)

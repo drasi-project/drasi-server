@@ -27,10 +27,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::factories::{
-    create_reaction, create_source, create_state_store_provider, get_reaction_plugin_metadata,
-    get_source_plugin_metadata,
-};
+use crate::factories::{create_reaction_locked, create_source_locked, create_state_store_provider};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -437,13 +434,10 @@ impl DrasiServer {
                 instance.sources.len(),
                 instance.id
             );
-            {
-                let reg = plugin_registry.read().await;
-                for source_config in instance.sources.clone() {
-                    let plugin_meta = get_source_plugin_metadata(&reg, &source_config.kind);
-                    let source = create_source(&reg, source_config).await?;
-                    builder = builder.with_source_metadata(source, plugin_meta);
-                }
+            for source_config in instance.sources.clone() {
+                let (source, plugin_meta) =
+                    create_source_locked(&plugin_registry, source_config).await?;
+                builder = builder.with_source_metadata(source, plugin_meta);
             }
 
             // Add queries from config (already resolved in config/types.rs)
@@ -452,13 +446,10 @@ impl DrasiServer {
             }
 
             // Create and add reactions from config
-            {
-                let reg = plugin_registry.read().await;
-                for reaction_config in instance.reactions.clone() {
-                    let plugin_meta = get_reaction_plugin_metadata(&reg, &reaction_config.kind);
-                    let reaction = create_reaction(&reg, reaction_config).await?;
-                    builder = builder.with_reaction_metadata(reaction, plugin_meta);
-                }
+            for reaction_config in instance.reactions.clone() {
+                let (reaction, plugin_meta) =
+                    create_reaction_locked(&plugin_registry, reaction_config).await?;
+                builder = builder.with_reaction_metadata(reaction, plugin_meta);
             }
 
             // Build and initialize the core

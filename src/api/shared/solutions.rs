@@ -36,7 +36,7 @@ use crate::api::models::solution::{
 use crate::api::models::{QueryConfigDto, ReactionConfig, SourceConfig};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::ApiResponse;
-use crate::factories::{create_reaction, create_source};
+use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -568,7 +568,7 @@ pub async fn deploy_solution(
     registry: InstanceRegistry,
     persistence: Option<Arc<ConfigPersistence>>,
     solutions_dir: Option<String>,
-    plugin_registry: &PluginRegistry,
+    plugin_registry: &tokio::sync::RwLock<PluginRegistry>,
     instance_id: &str,
     request: SolutionDeployRequest,
 ) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
@@ -664,16 +664,19 @@ pub async fn deploy_solution(
             continue;
         }
         let (plugin_type, plugin_kind) = (parts[0], parts[1]);
-        let available = match plugin_type {
-            "source" => plugin_registry.get_source(plugin_kind).is_some(),
-            "reaction" => plugin_registry.get_reaction(plugin_kind).is_some(),
-            "bootstrap" => plugin_registry.get_bootstrapper(plugin_kind).is_some(),
-            _ => {
-                validation_errors.push(SolutionDeployError::validation(format!(
-                    "Unknown plugin type '{}' in reference '{}'",
-                    plugin_type, plugin_ref.reference
-                )));
-                continue;
+        let available = {
+            let reg = plugin_registry.read().await;
+            match plugin_type {
+                "source" => reg.get_source(plugin_kind).is_some(),
+                "reaction" => reg.get_reaction(plugin_kind).is_some(),
+                "bootstrap" => reg.get_bootstrapper(plugin_kind).is_some(),
+                _ => {
+                    validation_errors.push(SolutionDeployError::validation(format!(
+                        "Unknown plugin type '{}' in reference '{}'",
+                        plugin_type, plugin_ref.reference
+                    )));
+                    continue;
+                }
             }
         };
         if !available {
@@ -857,21 +860,22 @@ pub async fn deploy_solution(
         // Force autoStart to false for initial creation
         source_config.set_auto_start(false);
 
-        let source = match create_source(plugin_registry, source_config.clone()).await {
-            Ok(s) => s,
-            Err(e) => {
-                creation_errors.push(SolutionDeployError::creation(
-                    "source",
-                    &source_id,
-                    e.to_string(),
-                ));
-                // Rollback already-created sources
-                rollback_sources(&core, &created_sources).await;
-                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                    creation_errors,
-                ))));
-            }
-        };
+        let (source, _plugin_meta) =
+            match create_source_locked(plugin_registry, source_config.clone()).await {
+                Ok(s) => s,
+                Err(e) => {
+                    creation_errors.push(SolutionDeployError::creation(
+                        "source",
+                        &source_id,
+                        e.to_string(),
+                    ));
+                    // Rollback already-created sources
+                    rollback_sources(&core, &created_sources).await;
+                    return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
+                        creation_errors,
+                    ))));
+                }
+            };
 
         if let Err(e) = core.add_source(source).await {
             creation_errors.push(SolutionDeployError::creation(
@@ -943,22 +947,23 @@ pub async fn deploy_solution(
         // Force autoStart to false for initial creation
         reaction_config.set_auto_start(false);
 
-        let reaction = match create_reaction(plugin_registry, reaction_config.clone()).await {
-            Ok(r) => r,
-            Err(e) => {
-                creation_errors.push(SolutionDeployError::creation(
-                    "reaction",
-                    &reaction_id,
-                    e.to_string(),
-                ));
-                rollback_reactions(&core, &created_reactions).await;
-                rollback_queries(&core, &created_queries).await;
-                rollback_sources(&core, &created_sources).await;
-                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                    creation_errors,
-                ))));
-            }
-        };
+        let (reaction, _plugin_meta) =
+            match create_reaction_locked(plugin_registry, reaction_config.clone()).await {
+                Ok(r) => r,
+                Err(e) => {
+                    creation_errors.push(SolutionDeployError::creation(
+                        "reaction",
+                        &reaction_id,
+                        e.to_string(),
+                    ));
+                    rollback_reactions(&core, &created_reactions).await;
+                    rollback_queries(&core, &created_queries).await;
+                    rollback_sources(&core, &created_sources).await;
+                    return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
+                        creation_errors,
+                    ))));
+                }
+            };
 
         if let Err(e) = core.add_reaction(reaction).await {
             creation_errors.push(SolutionDeployError::creation(
@@ -1296,7 +1301,8 @@ reactions: []
             variables: std::collections::HashMap::new(),
         };
 
-        let plugin_registry = crate::plugin_registry::PluginRegistry::new();
+        let plugin_registry =
+            tokio::sync::RwLock::new(crate::plugin_registry::PluginRegistry::new());
         let result = deploy_solution(
             crate::instance_registry::InstanceRegistry::new(),
             None,

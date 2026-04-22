@@ -30,11 +30,18 @@ use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
 
 /// Create a source instance from a SourceConfig using the plugin registry.
+///
+/// Looks up the source and bootstrap descriptors under the registry reference,
+/// then creates instances without holding a borrow on the registry across await
+/// points. Callers that hold an `Arc<RwLock<PluginRegistry>>` should use
+/// [`create_source_locked`] instead to avoid holding the lock across async
+/// creation calls.
 pub async fn create_source(
     registry: &PluginRegistry,
     config: SourceConfig,
 ) -> Result<Box<dyn Source + 'static>> {
-    let descriptor = registry.get_source(&config.kind).ok_or_else(|| {
+    // Clone Arc descriptors so we don't borrow `registry` across awaits
+    let descriptor = registry.get_source(&config.kind).cloned().ok_or_else(|| {
         anyhow::anyhow!(
             "Unknown source kind: '{}'. Available: {:?}",
             config.kind,
@@ -42,19 +49,83 @@ pub async fn create_source(
         )
     })?;
 
+    let bootstrap_descriptor = if let Some(bootstrap_config) = &config.bootstrap_provider {
+        let kind = bootstrap_config.kind();
+        Some(registry.get_bootstrapper(kind).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown bootstrap kind: '{}'. Available: {:?}",
+                kind,
+                registry.bootstrapper_kinds()
+            )
+        })?)
+    } else {
+        None
+    };
+
+    // All registry borrows are done — create instances without holding the registry
     let source = descriptor
         .create_source(&config.id, &config.config, config.auto_start)
         .await?;
 
-    // If a bootstrap provider is configured, create and attach it
-    if let Some(bootstrap_config) = &config.bootstrap_provider {
-        let provider =
-            create_bootstrap_provider(registry, bootstrap_config, &config.config).await?;
+    if let (Some(bootstrap_config), Some(bp_descriptor)) =
+        (&config.bootstrap_provider, bootstrap_descriptor)
+    {
+        let provider = bp_descriptor
+            .create_bootstrap_provider(&bootstrap_config.config, &config.config)
+            .await?;
         info!("Setting bootstrap provider for source '{}'", config.id());
         source.set_bootstrap_provider(provider).await;
     }
 
     Ok(source)
+}
+
+/// Create a source from config, acquiring and releasing the registry lock
+/// internally so the caller never holds a read guard across await points.
+pub async fn create_source_locked(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: SourceConfig,
+) -> Result<(Box<dyn Source + 'static>, HashMap<String, String>)> {
+    let (descriptor, bootstrap_descriptor, plugin_meta) = {
+        let reg = registry.read().await;
+        let desc = reg.get_source(&config.kind).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown source kind: '{}'. Available: {:?}",
+                config.kind,
+                reg.source_kinds()
+            )
+        })?;
+        let bp_desc = if let Some(bp_config) = &config.bootstrap_provider {
+            let kind = bp_config.kind();
+            Some(reg.get_bootstrapper(kind).cloned().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown bootstrap kind: '{}'. Available: {:?}",
+                    kind,
+                    reg.bootstrapper_kinds()
+                )
+            })?)
+        } else {
+            None
+        };
+        let meta = get_source_plugin_metadata(&reg, &config.kind);
+        (desc, bp_desc, meta)
+    }; // lock dropped here
+
+    let source = descriptor
+        .create_source(&config.id, &config.config, config.auto_start)
+        .await?;
+
+    if let (Some(bootstrap_config), Some(bp_descriptor)) =
+        (&config.bootstrap_provider, bootstrap_descriptor)
+    {
+        let provider = bp_descriptor
+            .create_bootstrap_provider(&bootstrap_config.config, &config.config)
+            .await?;
+        info!("Setting bootstrap provider for source '{}'", config.id());
+        source.set_bootstrap_provider(provider).await;
+    }
+
+    Ok((source, plugin_meta))
 }
 
 /// Create a bootstrap provider from configuration using the plugin registry.
@@ -64,7 +135,7 @@ pub async fn create_bootstrap_provider(
     source_config_json: &serde_json::Value,
 ) -> Result<Box<dyn drasi_lib::bootstrap::BootstrapProvider + 'static>> {
     let kind = bootstrap_config.kind();
-    let descriptor = registry.get_bootstrapper(kind).ok_or_else(|| {
+    let descriptor = registry.get_bootstrapper(kind).cloned().ok_or_else(|| {
         anyhow::anyhow!(
             "Unknown bootstrap kind: '{}'. Available: {:?}",
             kind,
@@ -78,17 +149,25 @@ pub async fn create_bootstrap_provider(
 }
 
 /// Create a reaction instance from a ReactionConfig using the plugin registry.
+///
+/// Looks up the reaction descriptor under the registry reference, then creates
+/// the instance. Callers that hold an `Arc<RwLock<PluginRegistry>>` should use
+/// [`create_reaction_locked`] instead to avoid holding the lock across async
+/// creation calls.
 pub async fn create_reaction(
     registry: &PluginRegistry,
     config: ReactionConfig,
 ) -> Result<Box<dyn Reaction + 'static>> {
-    let descriptor = registry.get_reaction(&config.kind).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Unknown reaction kind: '{}'. Available: {:?}",
-            config.kind,
-            registry.reaction_kinds()
-        )
-    })?;
+    let descriptor = registry
+        .get_reaction(&config.kind)
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown reaction kind: '{}'. Available: {:?}",
+                config.kind,
+                registry.reaction_kinds()
+            )
+        })?;
 
     descriptor
         .create_reaction(
@@ -98,6 +177,37 @@ pub async fn create_reaction(
             config.auto_start,
         )
         .await
+}
+
+/// Create a reaction from config, acquiring and releasing the registry lock
+/// internally so the caller never holds a read guard across await points.
+pub async fn create_reaction_locked(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: ReactionConfig,
+) -> Result<(Box<dyn Reaction + 'static>, HashMap<String, String>)> {
+    let (descriptor, plugin_meta) = {
+        let reg = registry.read().await;
+        let desc = reg.get_reaction(&config.kind).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown reaction kind: '{}'. Available: {:?}",
+                config.kind,
+                reg.reaction_kinds()
+            )
+        })?;
+        let meta = get_reaction_plugin_metadata(&reg, &config.kind);
+        (desc, meta)
+    }; // lock dropped here
+
+    let reaction = descriptor
+        .create_reaction(
+            &config.id,
+            config.queries.clone(),
+            &config.config,
+            config.auto_start,
+        )
+        .await?;
+
+    Ok((reaction, plugin_meta))
 }
 
 /// Create a state store provider from a StateStoreConfig.

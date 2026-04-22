@@ -31,7 +31,7 @@ use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::ReactionConfig;
-use crate::factories::{create_reaction, get_reaction_plugin_metadata};
+use crate::factories::create_reaction_locked;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_lib::channels::ComponentStatus;
@@ -98,7 +98,7 @@ pub async fn create_reaction_handler(
     let reaction_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
         .await
         .map_err(|e| {
             log::error!("Failed to create reaction instance: {e}");
@@ -107,8 +107,6 @@ pub async fn create_reaction_handler(
                 format!("Failed to create reaction: {e}"),
             )
         })?;
-
-    let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {
@@ -187,7 +185,7 @@ pub async fn upsert_reaction_handler(
 
     if exists {
         // Create a new reaction instance and use update_reaction to replace in place
-        let new_reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+        let (new_reaction, _meta) = create_reaction_locked(&plugin_registry, config.clone())
             .await
             .map_err(|e| {
                 log::error!("Failed to create reaction instance for update: {e}");
@@ -213,7 +211,7 @@ pub async fn upsert_reaction_handler(
         })));
     }
 
-    let reaction = create_reaction(&*plugin_registry.read().await, config.clone())
+    let (reaction, plugin_meta) = create_reaction_locked(&plugin_registry, config.clone())
         .await
         .map_err(|e| {
             log::error!("Failed to create reaction instance: {e}");
@@ -222,8 +220,6 @@ pub async fn upsert_reaction_handler(
                 format!("Failed to create reaction: {e}"),
             )
         })?;
-
-    let plugin_meta = get_reaction_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
     match core.add_reaction_with_metadata(reaction, plugin_meta).await {
         Ok(_) => {

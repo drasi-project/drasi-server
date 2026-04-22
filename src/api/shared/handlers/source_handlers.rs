@@ -31,7 +31,7 @@ use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::SourceConfig;
-use crate::factories::{create_source, get_source_plugin_metadata};
+use crate::factories::create_source_locked;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_lib::channels::ComponentStatus;
@@ -99,7 +99,7 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let source = create_source(&*plugin_registry.read().await, config.clone())
+    let (source, plugin_meta) = create_source_locked(&plugin_registry, config.clone())
         .await
         .map_err(|e| {
             log::error!("Failed to create source instance: {e}");
@@ -108,8 +108,6 @@ pub async fn create_source_handler(
                 format!("Failed to create source: {e}"),
             )
         })?;
-
-    let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
@@ -188,7 +186,7 @@ pub async fn upsert_source_handler(
 
     if exists {
         // Create a new source instance and use update_source to replace in place
-        let new_source = create_source(&*plugin_registry.read().await, config.clone())
+        let (new_source, _meta) = create_source_locked(&plugin_registry, config.clone())
             .await
             .map_err(|e| {
                 log::error!("Failed to create source instance for update: {e}");
@@ -214,7 +212,7 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let source = create_source(&*plugin_registry.read().await, config.clone())
+    let (source, plugin_meta) = create_source_locked(&plugin_registry, config.clone())
         .await
         .map_err(|e| {
             log::error!("Failed to create source instance: {e}");
@@ -223,8 +221,6 @@ pub async fn upsert_source_handler(
                 format!("Failed to create source: {e}"),
             )
         })?;
-
-    let plugin_meta = get_source_plugin_metadata(&*plugin_registry.read().await, &config.kind);
 
     match core.add_source_with_metadata(source, plugin_meta).await {
         Ok(_) => {
