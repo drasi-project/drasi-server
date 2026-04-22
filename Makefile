@@ -203,7 +203,7 @@ test-all:
 	fi
 	@echo "=== Building server binary ==="
 	cargo build
-	@echo "=== Running all cargo tests (including ignored/E2E) ==="
+	@echo "=== Running unit and integration tests (including ignored/E2E) ==="
 	cargo test --tests -- --include-ignored
 	@echo "=== Running doctests ==="
 	cargo test --doc
