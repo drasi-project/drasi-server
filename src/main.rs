@@ -58,9 +58,9 @@ struct Cli {
     #[arg(long, global = true)]
     plugins_dir: Option<PathBuf>,
 
-    /// Enable cosign signature verification for downloaded plugins
+    /// Disable cosign signature verification for plugins (verification is on by default)
     #[arg(long, global = true)]
-    verify_plugins: bool,
+    skip_verification: bool,
 
     /// Enable the web UI (overrides config file)
     #[arg(long, global = true, conflicts_with = "disable_ui")]
@@ -87,9 +87,9 @@ enum Commands {
         #[arg(long)]
         plugins_dir: Option<PathBuf>,
 
-        /// Enable cosign signature verification for downloaded plugins
+        /// Disable cosign signature verification for plugins (verification is on by default)
         #[arg(long)]
-        verify_plugins: bool,
+        skip_verification: bool,
     },
 
     /// Validate a configuration file without starting the server
@@ -141,7 +141,7 @@ async fn main() -> Result<()> {
             config,
             port,
             plugins_dir,
-            verify_plugins,
+            skip_verification,
         }) => {
             let ui_override = if cli.enable_ui {
                 Some(true)
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            run_server(config, port, plugins_dir, verify_plugins, ui_override).await
+            run_server(config, port, plugins_dir, skip_verification, ui_override).await
         }
         Some(Commands::Validate {
             config,
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
                 cli.config,
                 cli.port,
                 cli.plugins_dir,
-                cli.verify_plugins,
+                cli.skip_verification,
                 ui_override,
             )
             .await
@@ -193,7 +193,7 @@ async fn run_server(
     config_path: PathBuf,
     port_override: Option<u16>,
     plugins_dir: Option<PathBuf>,
-    verify_plugins: bool,
+    skip_verification: bool,
     ui_override: Option<bool>,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
@@ -317,7 +317,7 @@ async fn run_server(
         config_path,
         final_port,
         plugins_dir,
-        verify_plugins,
+        skip_verification,
         final_enable_ui,
     )
     .await?;

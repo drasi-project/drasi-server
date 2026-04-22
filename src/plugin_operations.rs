@@ -157,6 +157,10 @@ impl PluginOperations {
     }
 
     /// Remove a plugin file from the plugins directory and update the lockfile.
+    ///
+    /// **Concurrency note:** At runtime, callers should go through
+    /// [`PluginOrchestrator`] methods which hold the directory mutex.
+    /// Direct calls are safe during startup/CLI (single-threaded) workflows.
     pub fn remove_plugin_file(&self, filename: &str) -> Result<bool> {
         let path = self.plugins_dir.join(filename);
         if !path.exists() {
@@ -334,6 +338,10 @@ impl PluginOperations {
     ///
     /// When the registry value is a local path, the plugin is copied directly.
     /// When it's an OCI URL, the existing resolve/download flow is used.
+    ///
+    /// **Concurrency note:** At runtime, callers should go through
+    /// [`PluginOrchestrator::install_and_load`] which holds the directory mutex.
+    /// Direct calls are safe during startup/CLI (single-threaded) workflows.
     pub async fn install_from_registry(
         &self,
         reference: &str,

@@ -322,7 +322,7 @@ pub async fn load_plugin(
         .into_json_response();
     }
 
-    match orchestrator.load_plugin(&canonical_path, None).await {
+    match orchestrator.load_plugin_locked(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
         Err(e) => {
             ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response()
@@ -345,7 +345,6 @@ pub async fn load_plugin(
 pub async fn install_plugin(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Extension(plugin_ops): Extension<Arc<crate::plugin_operations::PluginOperations>>,
     Json(body): Json<InstallPluginRequest>,
 ) -> impl IntoResponse {
     if *read_only {
@@ -355,24 +354,14 @@ pub async fn install_plugin(
         )
         .into_json_response();
     }
-    // Download from registry
-    let plugin_path = match plugin_ops
-        .install_from_registry(&body.plugin_ref, body.registry.as_deref())
+    // Atomic install + verify + load via the orchestrator
+    match orchestrator
+        .install_and_load(&body.plugin_ref, body.registry.as_deref(), None)
         .await
     {
-        Ok(path) => path,
-        Err(e) => {
-            return ErrorResponse::new(error_codes::PLUGIN_INSTALL_FAILED, format!("{e}"))
-                .into_json_response();
-        }
-    };
-
-    // Load the downloaded plugin
-    match orchestrator.load_plugin(&plugin_path, None).await {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
-        Err(e) => {
-            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response()
-        }
+        Err(e) => ErrorResponse::new(error_codes::PLUGIN_INSTALL_FAILED, format!("{e}"))
+            .into_json_response(),
     }
 }
 
@@ -898,9 +887,19 @@ pub struct RegistryPluginDto {
     )
 )]
 pub async fn search_registry(
-    Extension(plugin_ops): Extension<Arc<crate::plugin_operations::PluginOperations>>,
+    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
     axum::extract::Query(params): axum::extract::Query<SearchRegistryParams>,
 ) -> impl IntoResponse {
+    let plugin_ops = match orchestrator.ops() {
+        Some(ops) => ops,
+        None => {
+            return ErrorResponse::new(
+                error_codes::PLUGIN_NO_DIRECTORY,
+                "Server was not started with plugin operations configured",
+            )
+            .into_json_response();
+        }
+    };
     match plugin_ops
         .search_registry(&params.q, params.registry.as_deref())
         .await

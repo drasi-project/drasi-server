@@ -354,7 +354,9 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Extension(crate::api::shared::handlers::ApiPrefix("/api/v1".to_string())),
+            Extension(crate::api::shared::handlers::ApiPrefix(
+                "/api/v1".to_string(),
+            )),
             axum::extract::Query(ComponentViewQuery::new(Some("full".to_string()))),
             axum::extract::Path("product-category-query".to_string()),
         )

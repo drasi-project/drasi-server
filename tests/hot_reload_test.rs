@@ -611,7 +611,7 @@ reactions: []
         config_path.clone(),
         port,
         plugins_dir.clone(),
-        false, // verify_plugins
+        false, // skip_verification
         false, // enable_ui
     )
     .await

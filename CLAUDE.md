@@ -14,7 +14,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
-- Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
+- Run with plugin verification disabled: `cargo run -- --skip-verification --config config/server.yaml`
 - Run with UI disabled: `cargo run -- --disable-ui`
 - Run with UI enabled (override config): `cargo run -- --enable-ui`
 - Validate config (structure only): `cargo run -- validate --config config/server.yaml`
@@ -120,7 +120,7 @@ port: 8080
 logLevel: "info"
 persistConfig: true  # Enable persistence (default)
 persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
-verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: false)
+verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: true)
 enableUi: true       # Enable the web UI at /ui (default: true)
 
 # Hot-reload plugin settings (default: all disabled)
@@ -517,7 +517,7 @@ server.run().await?;
 - Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
-- Plugin signature verification is available via `--verify-plugins` CLI flag or `verifyPlugins: true` in config. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
+- Plugin signature verification is enabled by default (`verifyPlugins: true` in config). Use `--skip-verification` CLI flag or `verifyPlugins: false` to disable. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
 - **Plugin lifecycle management**: Plugins can be loaded, upgraded (drain-then-retire), and retired at runtime via the `/api/v1/plugins/` API
 - **Plugin registry is mutable**: Uses `Arc<RwLock<PluginRegistry>>` — shared types (PluginRegistry, PluginLockfile, PluginLifecycleManager, PluginWatcher) live in `drasi-host-sdk`, re-exported by this repo
 - **Component metadata**: Sources and reactions carry `pluginId` and `pluginGeneration` in their ComponentGraph metadata

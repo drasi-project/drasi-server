@@ -76,7 +76,7 @@ pub struct StartupPluginRecord {
 /// making them visible through the REST API.
 ///
 /// When `allowed_files` is `Some`, only plugins whose filename matches the
-/// allowlist will be loaded. This is used when `--verify-plugins` is enabled
+/// allowlist will be loaded. This is used when `--skip-verification` is NOT set
 /// to ensure only verified plugins are loaded.
 pub fn load_plugins(
     dir: &Path,
@@ -101,7 +101,7 @@ pub fn load_plugins(
                     .iter()
                     .any(|pat| matches_glob(pat, &name));
                 if is_plugin && !allowed.contains(&name) {
-                    warn!("Skipping unverified plugin: {name} (--verify-plugins is enabled)",);
+                    warn!("Skipping unverified plugin: {name} (plugin verification is enabled)",);
                 }
             }
         }

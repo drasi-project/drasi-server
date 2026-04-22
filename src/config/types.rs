@@ -27,6 +27,11 @@ use crate::api::models::{
 };
 use drasi_lib::config::QueryConfig;
 
+/// Serde helper: returns `true` for use as `#[serde(default = "default_true")]`.
+fn default_true() -> bool {
+    true
+}
+
 /// DrasiServer configuration
 ///
 /// This is a self-contained configuration struct that includes all settings
@@ -94,8 +99,8 @@ pub struct DrasiServerConfig {
     /// Plugin dependencies to install from OCI registry
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginDependency>,
-    /// Enable cosign signature verification for downloaded plugins (default: false)
-    #[serde(default)]
+    /// Enable cosign signature verification for downloaded plugins (default: true)
+    #[serde(default = "default_true")]
     pub verify_plugins: bool,
     /// Trusted identities for plugin signature verification.
     /// When `verify_plugins` is true and this is omitted, defaults to the drasi-project identity.
@@ -152,7 +157,7 @@ impl Default for DrasiServerConfig {
             plugin_registry: default_plugin_registry(),
             auto_install_plugins: false,
             plugins: Vec::new(),
-            verify_plugins: false,
+            verify_plugins: true,
             trusted_identities: Vec::new(),
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,

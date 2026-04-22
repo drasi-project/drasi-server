@@ -67,15 +67,15 @@ impl DrasiServer {
         config_path: PathBuf,
         port: u16,
         plugins_dir: PathBuf,
-        verify_plugins: bool,
+        skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
         let mut config = load_config_file(&config_path)?;
         config.validate()?;
 
-        // CLI --verify-plugins flag overrides config (true if either is set)
-        if verify_plugins {
-            config.verify_plugins = true;
+        // CLI --skip-verification flag overrides config (disables when set)
+        if skip_verification {
+            config.verify_plugins = false;
         }
 
         // Create and populate the plugin registry
@@ -247,9 +247,15 @@ impl DrasiServer {
 
         // Create the plugin lifecycle and orchestration layers
         let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
-        let plugin_orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
+        let verification_config =
+            crate::plugin_operations::PluginOperations::verification_config(&config);
+        let plugin_ops =
+            crate::plugin_operations::PluginOperations::from_config(&config, plugins_dir.clone());
+        let plugin_orchestrator = Arc::new(PluginOrchestrator::with_ops(
             lifecycle,
             plugins_dir.clone(),
+            plugin_ops,
+            verification_config,
         ));
 
         // Register startup-loaded plugins in the orchestrator
@@ -294,7 +300,7 @@ impl DrasiServer {
                                     } else {
                                         // Upgrade mode: load/replace
                                         match orchestrator_for_watcher
-                                            .load_plugin(&path, None)
+                                            .load_plugin_locked(&path, None)
                                             .await
                                         {
                                             Ok(info) => info!(
@@ -719,29 +725,9 @@ impl DrasiServer {
         );
 
         // Build the plugin management sub-router
-        let plugin_ops = {
-            let default_registry = if let Some(config_file) = &self.config_file_path {
-                crate::plugin_operations::PluginOperations::resolve_registry(
-                    std::path::Path::new(config_file),
-                    None,
-                )
-            } else {
-                "ghcr.io/drasi-project".to_string()
-            };
-            let plugins_dir = self
-                .plugin_orchestrator
-                .plugins_dir()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| PathBuf::from("plugins"));
-            Arc::new(crate::plugin_operations::PluginOperations::new(
-                plugins_dir,
-                default_registry,
-            ))
-        };
         let plugin_router = api::v1::plugin_routes()
             .layer(axum::extract::Extension(self.plugin_orchestrator.clone()))
-            .layer(axum::extract::Extension(registry.clone()))
-            .layer(axum::extract::Extension(plugin_ops));
+            .layer(axum::extract::Extension(registry.clone()));
 
         // Build the main application router
         let mut app = Router::new()
