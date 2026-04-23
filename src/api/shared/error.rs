@@ -224,6 +224,19 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::PLUGIN_INVALID_PATH
         | error_codes::PLUGIN_INVALID_CATEGORY => StatusCode::BAD_REQUEST,
 
+        // The server was not started with a plugins directory, so the
+        // requested plugin operation is unavailable on this instance.
+        error_codes::PLUGIN_NO_DIRECTORY => StatusCode::SERVICE_UNAVAILABLE,
+
+        // Plugin install/search talk to an external OCI registry; surface
+        // upstream failures as 502 Bad Gateway rather than 500.
+        error_codes::PLUGIN_INSTALL_FAILED | error_codes::PLUGIN_SEARCH_FAILED => {
+            StatusCode::BAD_GATEWAY
+        }
+
+        // PLUGIN_LOAD_FAILED keeps the default 500 — it usually indicates a
+        // server-side failure loading a local cdylib (ABI mismatch, dlopen
+        // failure, etc.) rather than a malformed client request.
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

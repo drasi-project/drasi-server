@@ -121,9 +121,19 @@ impl ValueResolver for OverridingEnvResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serializes tests that mutate process-wide environment variables.
+    ///
+    /// `std::env::set_var`/`remove_var` race with each other (and with any
+    /// other code reading env) when `cargo test` runs tests in parallel.
+    /// Every test below that touches env vars must hold this guard for its
+    /// entire body so the env state stays deterministic.
+    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_env_resolver_with_set_var() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("TEST_VAR_1", "test_value");
 
         let resolver = EnvironmentVariableResolver;
@@ -140,6 +150,7 @@ mod tests {
 
     #[test]
     fn test_env_resolver_with_default() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let resolver = EnvironmentVariableResolver;
         let value = ConfigValue::EnvironmentVariable {
             name: "NONEXISTENT_VAR_12345".to_string(),
@@ -152,6 +163,7 @@ mod tests {
 
     #[test]
     fn test_env_resolver_missing_var_no_default() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let resolver = EnvironmentVariableResolver;
         let value = ConfigValue::EnvironmentVariable {
             name: "NONEXISTENT_VAR_67890".to_string(),
@@ -185,6 +197,7 @@ mod tests {
 
     #[test]
     fn test_overriding_resolver_override_takes_precedence() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Set env var that should be overridden
         std::env::set_var("TEST_OVERRIDE_VAR", "env_value");
 
@@ -208,6 +221,7 @@ mod tests {
 
     #[test]
     fn test_overriding_resolver_falls_back_to_env() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("TEST_FALLBACK_ENV_VAR", "env_value");
 
         let overrides = HashMap::new(); // No overrides
@@ -226,6 +240,7 @@ mod tests {
 
     #[test]
     fn test_overriding_resolver_falls_back_to_default() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let overrides = HashMap::new(); // No overrides
                                         // No env var set
 
@@ -241,6 +256,7 @@ mod tests {
 
     #[test]
     fn test_overriding_resolver_error_when_no_value() {
+        let _guard = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let overrides = HashMap::new(); // No overrides
                                         // No env var set, no default
 
