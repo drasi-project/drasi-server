@@ -6,34 +6,11 @@ PR #84 has 19 review comment threads from two sources:
 - **Copilot Bot** (automated reviewer): 12 comments (C1–C12)
 - **Daniel Gerlag** (human reviewer, repo MEMBER): 7 comments (C13–C19)
 
-**Progress: 13 of 19 resolved** — see [Completed Items](#completed-items) below.
+**Progress: 17 of 19 resolved** — see [Completed Items](#completed-items) below.
 
 ---
 
 ## Remaining Items
-
-### High Priority (bugs / correctness — Daniel's concerns first)
-
-#### C14 — No rollback if load fails after removal (Daniel Gerlag)
-- **File:** `src/plugin_orchestrator.rs:480-603`
-- **Issue:** If new component creation fails after removing the old one, we can't get back to a working state.
-- **Investigation findings:** This is part of a **systemic pattern** across plugin lifecycle management — every operation (load, upgrade, retire, promote) mutates state in-place with no rollback. `migrate_component()` deletes the old component before creating the new one; `upgrade_plugin()` collects partial failures but doesn't roll back successful migrations; `PluginRegistry` has no staging/commit model; and there's no per-plugin concurrency guard against racing upgrades.
-- **Plan — Scoped to C14 (create-before-destroy):**
-  1. In `migrate_component()`, create the new component **before** removing the old one
-  2. Only stop and remove the old component after the new one is successfully created and added
-  3. If creation fails, the old component remains untouched and running
-  4. Note: broader lifecycle robustness (upgrade rollback, registry staging, concurrency guards) is out of scope for this PR but documented as follow-up work
-
-#### C17 — RwLock held across await in plugin_orchestrator (Daniel Gerlag)
-- **File:** `src/plugin_orchestrator.rs:534`
-- **Issue:** Registry read lock held across async `create_source()`/`create_reaction()` calls, blocking writers and risking deadlock.
-- **Plan:** Extract needed metadata under the lock, drop guard, then call async constructors. Same pattern as C2 but in different code.
-- **Depends on:** C14 (rollback restructuring touches same code)
-
-#### C2 — RwLock read-guard held across `.await` in instance_handlers (Copilot Bot)
-- **File:** `src/api/shared/handlers/instance_handlers.rs:268`
-- **Issue:** `plugin_registry.read().await` guard is held across async `create_source`/`create_reaction` calls, blocking writers.
-- **Plan:** Clone the registry reference or extract needed data under the lock, then drop the guard before calling async constructors.
 
 ### Medium Priority (robustness / correctness)
 
@@ -47,32 +24,37 @@ PR #84 has 19 review comment threads from two sources:
 - **Issue:** New plugin-related error codes like `PLUGIN_NO_DIRECTORY` default to 500 when they may represent client errors.
 - **Plan:** Add explicit HTTP status mappings for all plugin error codes (PLUGIN_NOT_FOUND → 404, PLUGIN_ALREADY_EXISTS → 409, etc.).
 
-### Low Priority (polish / documentation)
-
-#### C13 — Plugin upgrade behavior for sources with running queries (Daniel Gerlag)
-- **File:** `src/plugin_orchestrator.rs:529`
-- **Issue:** How does drain-then-retire work when a source has queries running against it?
-- **Plan:** Verify and document the query recovery flow during plugin upgrade in code comments.
-
 ---
 
 ## Remaining Todos
 
 | ID | Title | Depends On | Priority |
 |----|-------|------------|----------|
-| c14-rollback-migrate | Create-before-destroy in migrate_component | — | High |
-| c17-rwlock-orchestrator | Fix RwLock across await in plugin_orchestrator | c14-rollback-migrate | High |
-| c2-rwlock-instance | Fix RwLock across await in instance_handlers | — | High |
 | c3-env-test-mutex | Serialize env-mutating tests | — | Medium |
 | c9-error-mappings | Add plugin error code HTTP status mappings | — | Medium |
-| c13-upgrade-docs | Document upgrade behavior for running queries | — | Low |
 
 ---
 
 ## Completed Items
 
 <details>
-<summary>13 items resolved (click to expand)</summary>
+<summary>17 items resolved (click to expand)</summary>
+
+### C13 — Plugin upgrade behavior for sources with running queries (Daniel Gerlag) ✅
+- **Original file:** `src/plugin_orchestrator.rs:529` (no longer exists)
+- **Resolution:** Resolved by removal, not by patch. The `migrate_component()` / `upgrade_plugin()` drain-then-retire path was incomplete and contained the unresolved query-recovery question Daniel raised. Commit `2d03ef2` strips the entire half-implemented upgrade/migration surface (orchestrator methods, REST endpoints, UI panels, related tests). Live plugin replacement now requires a server restart, as documented in `README.md` and `CLAUDE.md`. A correct redesign — including defined query-recovery semantics — will land in a follow-up PR.
+
+### C14 — No rollback if load fails after removal (Daniel Gerlag) ✅
+- **Original file:** `src/plugin_orchestrator.rs:480-603` (no longer exists)
+- **Resolution:** Resolved by removal, not by patch. Rather than retrofit create-before-destroy onto a partial design, commit `2d03ef2` removes the entire upgrade/migration surface (`migrate_component`, `upgrade_plugin`, `retire_plugin`, `promote_plugin`, `library_generation` tracking, the corresponding REST endpoints, and the UI controls). The systemic concerns Daniel identified (no rollback, no registry staging, no per-plugin concurrency guards) are tracked for the follow-up redesign that will reintroduce live replacement with atomic semantics.
+
+### C17 — RwLock held across await in plugin_orchestrator (Daniel Gerlag) ✅
+- **File:** `src/plugin_orchestrator.rs:534`
+- **Fix:** Introduced `create_source_locked()` and `create_reaction_locked()` factory functions that acquire the `RwLock<PluginRegistry>`, clone Arc descriptors and extract metadata, drop the lock, then perform async component creation. Updated `migrate_component()` to use these `_locked` variants, eliminating the read-guard-across-await anti-pattern.
+
+### C2 — RwLock read-guard held across `.await` in instance_handlers (Copilot Bot) ✅
+- **File:** `src/api/shared/handlers/instance_handlers.rs:268`
+- **Fix:** Replaced all `plugin_registry.read().await` + `create_source`/`create_reaction` patterns with `create_source_locked`/`create_reaction_locked` across all handler files: `instance_handlers.rs` (clone handler), `source_handlers.rs` (create/upsert), `reaction_handlers.rs` (create/upsert), `solution_handlers.rs` (deploy), `solutions.rs` (deploy_solution), `server.rs` (startup loop), and `plugin_orchestrator.rs` (migrate_component). The RwLock is now never held across an `.await` point in any code path.
 
 ### C1 — `persist_index` accepted but not applied (Copilot Bot) ✅
 - **File:** `src/api/shared/handlers/instance_handlers.rs:95`
