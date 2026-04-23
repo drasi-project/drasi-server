@@ -95,13 +95,9 @@ use utoipa::openapi::RefOr;
         super::plugin_handlers::get_plugin,
         super::plugin_handlers::load_plugin,
         super::plugin_handlers::install_plugin,
-        super::plugin_handlers::upgrade_plugin,
-        super::plugin_handlers::promote_plugin,
-        super::plugin_handlers::retire_plugin,
         super::plugin_handlers::list_dependents,
         super::plugin_handlers::list_kinds,
         super::plugin_handlers::get_kind_schema,
-        super::plugin_handlers::plugin_event_stream,
         // Missing instance handlers
         super::handlers::stream_all_component_events,
         super::handlers::push_source_data,
@@ -156,12 +152,8 @@ use utoipa::openapi::RefOr;
             super::plugin_handlers::PluginKindInfoDto,
             super::plugin_handlers::PluginDependentsResponse,
             super::plugin_handlers::PluginDependentDto,
-            super::plugin_handlers::PluginUpgradeResponse,
-            super::plugin_handlers::PluginPromoteResponse,
-            super::plugin_handlers::PluginRetireResponse,
             super::plugin_handlers::LoadPluginRequest,
             super::plugin_handlers::InstallPluginRequest,
-            super::plugin_handlers::UpgradePluginRequest,
         )
     ),
     tags(
@@ -173,7 +165,7 @@ use utoipa::openapi::RefOr;
         (name = "Reactions", description = "Reaction management"),
         (name = "Solutions", description = "Deploy solution templates to instances"),
         (name = "Catalog", description = "Browse solution templates and other reusable configurations"),
-        (name = "Plugins", description = "Plugin management — load, upgrade, retire, and inspect plugins"),
+        (name = "Plugins", description = "Plugin management — load, install, and inspect plugins"),
     ),
     info(
         title = "Drasi Server API",
@@ -422,7 +414,7 @@ fn inject_kind_property(
 
 /// Cache for the generated OpenAPI spec, tied to the plugin registry version.
 ///
-/// When plugins are loaded, upgraded, or retired at runtime, the registry version
+/// When plugins are loaded at runtime, the registry version
 /// increments. This cache detects staleness and regenerates the spec on demand.
 pub struct OpenApiCache {
     cached_spec: tokio::sync::RwLock<(u64, utoipa::openapi::OpenApi)>,

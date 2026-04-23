@@ -266,7 +266,7 @@ async fn test_orchestrator_load_multiple_plugins() {
 // 4. Re-loading an already-loaded plugin (simulates Changed event)
 // =============================================================================
 
-/// Loading the same plugin twice should not break or duplicate the entry.
+/// Loading the same plugin twice should return an error (duplicates are rejected).
 #[tokio::test]
 #[ignore = "requires cdylib plugins — run `make build-local-test-plugins` first"]
 async fn test_orchestrator_reload_same_plugin() {
@@ -277,39 +277,26 @@ async fn test_orchestrator_reload_same_plugin() {
     let path = mock_source_plugin_path();
 
     // First load
-    let info1 = orchestrator
+    let _info1 = orchestrator
         .load_plugin(&path, None)
         .await
         .expect("first load");
 
-    // Second load (simulating a Changed event re-triggering load)
-    let info2 = orchestrator
-        .load_plugin(&path, None)
-        .await
-        .expect("second load should not fail");
-
-    // Should have the same plugin ID
-    assert_eq!(info1.id, info2.id, "Reloaded plugin should have same ID");
-
-    // Should still be exactly one plugin in inventory (not duplicated)
-    let plugins = orchestrator.list_plugins().await;
-    assert_eq!(
-        plugins.len(),
-        1,
-        "Reloaded plugin should overwrite, not duplicate"
-    );
-
-    // The kind should still be usable in the registry
-    let reg = registry.read().await;
-    let source_kind = info2
-        .kinds
-        .iter()
-        .find(|k| k.category == drasi_host_sdk::plugin_types::PluginCategory::Source)
-        .expect("reload should still have source kind");
+    // Second load should fail — duplicate plugin
+    let result = orchestrator.load_plugin(&path, None).await;
     assert!(
-        reg.get_source(&source_kind.kind).is_some(),
-        "Source kind should remain in registry after reload"
+        result.is_err(),
+        "Re-loading the same plugin should be rejected"
     );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("already loaded"),
+        "Error should mention 'already loaded', got: {err_msg}"
+    );
+
+    // Should still be exactly one plugin in inventory
+    let plugins = orchestrator.list_plugins().await;
+    assert_eq!(plugins.len(), 1, "Original plugin should still be loaded");
 }
 
 // =============================================================================
@@ -401,79 +388,7 @@ async fn test_watcher_to_orchestrator_pipeline() {
 }
 
 // =============================================================================
-// 6. Side-by-side mode skips automatic loading
-// =============================================================================
-
-/// Verify that in "side-by-side" mode, the server's watcher task does NOT
-/// automatically call load_plugin. This tests the policy branch in server.rs.
-#[tokio::test]
-#[ignore = "requires cdylib plugins — run `make build-local-test-plugins` first"]
-async fn test_side_by_side_mode_skips_auto_load() {
-    let temp_dir = tempfile::tempdir().expect("create temp dir");
-    let plugins_dir = temp_dir.path().to_path_buf();
-
-    let registry = Arc::new(RwLock::new(PluginRegistry::new()));
-    let lifecycle = Arc::new(PluginLifecycleManager::new(registry.clone()));
-    let orchestrator = Arc::new(PluginOrchestrator::with_plugins_dir(
-        lifecycle,
-        plugins_dir.clone(),
-    ));
-
-    // Set up the watcher
-    let watcher_config = PluginWatcherConfig {
-        plugins_dir: plugins_dir.clone(),
-        debounce: Duration::from_millis(100),
-    };
-    let mut watcher = PluginWatcher::new(watcher_config);
-    let mut rx = watcher.subscribe();
-    watcher.start_polling().expect("start watcher");
-
-    // Simulate the server's watcher task with "side-by-side" mode
-    let reload_mode = "side-by-side".to_string();
-    let orch_clone = orchestrator.clone();
-    let _handle = tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(event) => match event {
-                    PluginFileEvent::Added(_path) | PluginFileEvent::Changed(_path) => {
-                        if reload_mode == "side-by-side" {
-                            // Side-by-side mode: skip automatic load (matches server.rs behavior)
-                        } else {
-                            let _ = orch_clone.load_plugin(&_path, None).await;
-                        }
-                    }
-                    PluginFileEvent::Removed(_) => {}
-                },
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                Err(_) => continue,
-            }
-        }
-    });
-
-    // Wait for initial scan
-    tokio::time::sleep(Duration::from_millis(150)).await;
-
-    // Copy plugin into watched directory
-    let source_path = mock_source_plugin_path();
-    let dest_path = plugins_dir.join(source_path.file_name().unwrap());
-    std::fs::copy(&source_path, &dest_path).expect("copy plugin");
-
-    // Wait enough time for watcher to detect + handler to decide
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
-    // In side-by-side mode, the plugin should NOT be auto-loaded
-    let plugins = orchestrator.list_plugins().await;
-    assert!(
-        plugins.is_empty(),
-        "Side-by-side mode should NOT auto-load plugins; found {} plugin(s)",
-        plugins.len()
-    );
-
-    watcher.stop();
-}
-
-// =============================================================================
-// 7. Watcher filters non-plugin files
+// 6. Watcher filters non-plugin files
 // =============================================================================
 
 /// Non-plugin files dropped into the watched directory should not trigger events.
@@ -598,7 +513,6 @@ logLevel: info
 persistConfig: false
 hotReloadPlugins: true
 hotReloadDebounceMs: 200
-hotReloadMode: upgrade
 sources: []
 queries: []
 reactions: []

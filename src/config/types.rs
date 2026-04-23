@@ -113,9 +113,6 @@ pub struct DrasiServerConfig {
     /// Debounce window for filesystem events in milliseconds (default: 2000)
     #[serde(default = "default_hot_reload_debounce_ms")]
     pub hot_reload_debounce_ms: u64,
-    /// Hot-reload mode: "upgrade" (drain-then-retire) or "side-by-side" (default: "upgrade")
-    #[serde(default = "default_hot_reload_mode")]
-    pub hot_reload_mode: String,
     /// Allowed CORS origins for the REST API.
     ///
     /// When empty (default), all origins are permitted (`CorsLayer::permissive()`).
@@ -161,7 +158,6 @@ impl Default for DrasiServerConfig {
             trusted_identities: Vec::new(),
             hot_reload_plugins: false,
             hot_reload_debounce_ms: 2000,
-            hot_reload_mode: "upgrade".to_string(),
             cors_allowed_origins: Vec::new(),
             sources: Vec::new(),
             queries: Vec::new(),
@@ -197,10 +193,6 @@ fn default_persist_index() -> bool {
 
 fn default_hot_reload_debounce_ms() -> u64 {
     2000
-}
-
-fn default_hot_reload_mode() -> String {
-    "upgrade".to_string()
 }
 
 pub fn default_plugin_registry() -> Option<String> {

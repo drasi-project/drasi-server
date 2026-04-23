@@ -195,24 +195,8 @@ fn test_openapi_spec_includes_plugin_paths() {
         "Should have /api/v1/plugins/install path"
     );
     assert!(
-        paths.contains_key("/api/v1/plugins/events"),
-        "Should have /api/v1/plugins/events path"
-    );
-    assert!(
         paths.contains_key("/api/v1/plugins/{pluginId}"),
         "Should have /api/v1/plugins/{{pluginId}} path"
-    );
-    assert!(
-        paths.contains_key("/api/v1/plugins/{pluginId}/retire"),
-        "Should have /api/v1/plugins/{{pluginId}}/retire path"
-    );
-    assert!(
-        paths.contains_key("/api/v1/plugins/{pluginId}/upgrade"),
-        "Should have /api/v1/plugins/{{pluginId}}/upgrade path"
-    );
-    assert!(
-        paths.contains_key("/api/v1/plugins/{pluginId}/promote"),
-        "Should have /api/v1/plugins/{{pluginId}}/promote path"
     );
     assert!(
         paths.contains_key("/api/v1/plugins/{pluginId}/dependents"),

@@ -39,7 +39,6 @@ pub struct ServerSettings {
     pub persist_index: bool,
     pub state_store: Option<StateStoreConfig>,
     pub hot_reload_plugins: bool,
-    pub hot_reload_mode: String,
     pub plugin_registry: String,
     pub auto_install_plugins: bool,
     pub verify_plugins: bool,
@@ -202,14 +201,6 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         .with_default(false)
         .prompt()?;
 
-    let hot_reload_mode = if hot_reload_plugins {
-        hint("upgrade: replace existing plugin in-place; side-by-side: run old and new simultaneously");
-        let modes = vec!["upgrade", "side-by-side"];
-        Select::new("Hot-reload mode:", modes).prompt()?.to_string()
-    } else {
-        "upgrade".to_string()
-    };
-
     println!();
 
     Ok(ServerSettings {
@@ -219,7 +210,6 @@ pub fn prompt_server_settings() -> Result<ServerSettings> {
         persist_index,
         state_store,
         hot_reload_plugins,
-        hot_reload_mode,
         plugin_registry,
         auto_install_plugins,
         verify_plugins,
@@ -1043,7 +1033,6 @@ mod tests {
             persist_index: true,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -1055,7 +1044,6 @@ mod tests {
         assert!(settings.persist_index);
         assert!(settings.state_store.is_none());
         assert!(!settings.hot_reload_plugins);
-        assert_eq!(settings.hot_reload_mode, "upgrade");
         assert_eq!(settings.plugin_registry, "ghcr.io/drasi-project");
         assert!(!settings.auto_install_plugins);
         assert!(!settings.verify_plugins);
@@ -1070,7 +1058,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -1092,7 +1079,6 @@ mod tests {
             persist_index: false,
             state_store: Some(StateStoreConfig::redb("./data/state.redb")),
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -1111,14 +1097,12 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: true,
-            hot_reload_mode: "side-by-side".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
         };
 
         assert!(settings.hot_reload_plugins);
-        assert_eq!(settings.hot_reload_mode, "side-by-side");
     }
 
     // ==================== BootstrapType enum tests ====================

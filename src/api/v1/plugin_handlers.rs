@@ -15,19 +15,14 @@
 //! Plugin management API handlers.
 //!
 //! These handlers implement the `/api/v1/plugins/` endpoints for listing,
-//! inspecting, loading, retiring, upgrading, and querying available plugin kinds.
+//! inspecting, loading, and querying available plugin kinds.
 
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
 use axum::Json;
-use futures_util::stream::Stream;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt;
 
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::instance_registry::InstanceRegistry;
@@ -51,7 +46,6 @@ pub struct PluginInfoDto {
     pub sdk_version: String,
     pub file_path: String,
     pub loaded_at: String,
-    pub library_generation: u64,
     pub dependent_count: usize,
     pub kinds: Vec<PluginKindDto>,
 }
@@ -104,34 +98,6 @@ pub struct PluginDependentDto {
     pub running: bool,
 }
 
-/// Result of a plugin upgrade operation.
-#[derive(serde::Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginUpgradeResponse {
-    pub plugin_id: String,
-    pub old_version: String,
-    pub new_version: String,
-    pub migrated: Vec<String>,
-    pub failed: Vec<serde_json::Value>,
-}
-
-/// Result of a plugin promote operation.
-#[derive(serde::Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginPromoteResponse {
-    pub id: String,
-    pub promoted_kinds: Vec<String>,
-}
-
-/// Result of a plugin retire operation.
-#[derive(serde::Serialize, utoipa::ToSchema)]
-pub struct PluginRetireResponse {
-    pub id: String,
-    pub status: String,
-    #[serde(rename = "descriptorsRemoved")]
-    pub descriptors_removed: usize,
-}
-
 #[utoipa::path(
     get,
     path = "/api/v1/plugins",
@@ -175,50 +141,6 @@ pub async fn get_plugin(
             format!("Plugin '{plugin_id}' is not loaded"),
         )
         .into_json_response(),
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/plugins/{pluginId}/retire",
-    tag = "Plugins",
-    params(
-        ("pluginId" = String, Path, description = "Plugin identifier"),
-        ("force" = Option<bool>, Query, description = "Force retire even with active dependents")
-    ),
-    responses(
-        (status = 200, description = "Plugin retired", body = PluginRetireResponse),
-        (status = 403, description = "Server is in read-only mode"),
-        (status = 500, description = "Retire failed")
-    )
-)]
-/// Retire a loaded plugin, removing its descriptors from the registry.
-pub async fn retire_plugin(
-    Extension(read_only): Extension<Arc<bool>>,
-    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Path(plugin_id): Path<String>,
-    axum::extract::Query(params): axum::extract::Query<RetireParams>,
-) -> impl IntoResponse {
-    if *read_only {
-        return ErrorResponse::new(
-            error_codes::CONFIG_READ_ONLY,
-            "Server is in read-only mode. Cannot retire plugins.",
-        )
-        .into_json_response();
-    }
-    let force = params.force.unwrap_or(false);
-
-    match orchestrator.retire_plugin(&plugin_id, force).await {
-        Ok(removed) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": plugin_id,
-                "status": "Retired",
-                "descriptorsRemoved": removed,
-            })),
-        ),
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_RETIRE_FAILED, format!("{e}"))
-            .into_json_response(),
     }
 }
 
@@ -361,160 +283,6 @@ pub async fn install_plugin(
     {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
         Err(e) => ErrorResponse::new(error_codes::PLUGIN_INSTALL_FAILED, format!("{e}"))
-            .into_json_response(),
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/plugins/{pluginId}/upgrade",
-    tag = "Plugins",
-    params(
-        ("pluginId" = String, Path, description = "Plugin identifier to upgrade")
-    ),
-    request_body = UpgradePluginRequest,
-    responses(
-        (status = 200, description = "Upgrade successful", body = PluginUpgradeResponse),
-        (status = 207, description = "Upgrade partially failed"),
-        (status = 400, description = "Missing filename"),
-        (status = 403, description = "Server is in read-only mode"),
-        (status = 404, description = "Plugin file not found"),
-        (status = 500, description = "Upgrade failed")
-    )
-)]
-/// Upgrade a plugin via drain-then-replace.
-pub async fn upgrade_plugin(
-    Extension(read_only): Extension<Arc<bool>>,
-    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Extension(instances): Extension<InstanceRegistry>,
-    Path(plugin_id): Path<String>,
-    body: Option<Json<UpgradePluginRequest>>,
-) -> impl IntoResponse {
-    if *read_only {
-        return ErrorResponse::new(
-            error_codes::CONFIG_READ_ONLY,
-            "Server is in read-only mode. Cannot upgrade plugins.",
-        )
-        .into_json_response();
-    }
-    // Resolve the path to the new plugin file
-    let plugins_dir = match orchestrator.plugins_dir() {
-        Some(dir) => dir.to_path_buf(),
-        None => {
-            return ErrorResponse::new(
-                error_codes::PLUGIN_NO_DIRECTORY,
-                "Server was not started with a plugins directory",
-            )
-            .into_json_response();
-        }
-    };
-
-    let filename = body.and_then(|b| b.filename.clone());
-    let new_path = match filename {
-        Some(f) => {
-            let path = plugins_dir.join(&f);
-            // Security: prevent path traversal — canonicalize and verify containment
-            let canonical_dir = match plugins_dir.canonicalize() {
-                Ok(d) => d,
-                Err(e) => {
-                    return ErrorResponse::new(
-                        error_codes::INTERNAL_ERROR,
-                        format!("Cannot resolve plugins directory: {e}"),
-                    )
-                    .into_json_response();
-                }
-            };
-            let canonical_path = match path.canonicalize() {
-                Ok(p) => p,
-                Err(_) => {
-                    return ErrorResponse::new(
-                        error_codes::PLUGIN_FILE_NOT_FOUND,
-                        format!("Plugin file '{f}' not found in plugins directory"),
-                    )
-                    .into_json_response();
-                }
-            };
-            if !canonical_path.starts_with(&canonical_dir) {
-                return ErrorResponse::new(
-                    error_codes::PLUGIN_INVALID_PATH,
-                    "Filename must refer to a file within the plugins directory",
-                )
-                .into_json_response();
-            }
-            canonical_path
-        }
-        None => {
-            return ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "Request body must include a 'filename' field pointing to the new plugin file",
-            )
-            .into_json_response();
-        }
-    };
-
-    match orchestrator
-        .upgrade_plugin(&plugin_id, &new_path, &instances, None)
-        .await
-    {
-        Ok(result) => {
-            let status = if result.failed.is_empty() {
-                StatusCode::OK
-            } else {
-                StatusCode::MULTI_STATUS
-            };
-            (
-                status,
-                Json(serde_json::json!({
-                    "pluginId": result.new_plugin_id,
-                    "oldVersion": result.old_version,
-                    "newVersion": result.new_version,
-                    "migrated": result.migrated,
-                    "failed": result.failed.iter().map(|(id, err)| {
-                        serde_json::json!({ "componentId": id, "error": err })
-                    }).collect::<Vec<_>>(),
-                })),
-            )
-        }
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_UPGRADE_FAILED, format!("{e}"))
-            .into_json_response(),
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/plugins/{pluginId}/promote",
-    tag = "Plugins",
-    params(
-        ("pluginId" = String, Path, description = "Versioned plugin identifier to promote")
-    ),
-    responses(
-        (status = 200, description = "Plugin promoted", body = PluginPromoteResponse),
-        (status = 400, description = "Promotion failed"),
-        (status = 403, description = "Server is in read-only mode")
-    )
-)]
-/// Promote a versioned plugin to be the incumbent for its kinds.
-pub async fn promote_plugin(
-    Extension(read_only): Extension<Arc<bool>>,
-    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Path(plugin_id): Path<String>,
-) -> impl IntoResponse {
-    if *read_only {
-        return ErrorResponse::new(
-            error_codes::CONFIG_READ_ONLY,
-            "Server is in read-only mode. Cannot promote plugins.",
-        )
-        .into_json_response();
-    }
-    match orchestrator.promote_plugin(&plugin_id).await {
-        Ok(promoted_kinds) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": plugin_id,
-                "promotedKinds": promoted_kinds,
-            })),
-        ),
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_PROMOTE_FAILED, format!("{e}"))
             .into_json_response(),
     }
 }
@@ -678,144 +446,6 @@ pub async fn get_kind_schema(
     }
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/v1/plugins/events",
-    tag = "Plugins",
-    responses(
-        (status = 200, description = "SSE event stream", content_type = "text/event-stream")
-    )
-)]
-/// Stream plugin lifecycle events via Server-Sent Events.
-pub async fn plugin_event_stream(
-    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let rx = orchestrator.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(event) => {
-            let (event_type, data) = plugin_event_to_sse(&event);
-            Some(Ok(Event::default().event(event_type).data(data)))
-        }
-        // Lagged receiver — skip lost events
-        Err(_) => None,
-    });
-
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-/// Convert a PluginEvent to an SSE event type and JSON data string.
-fn plugin_event_to_sse(event: &drasi_host_sdk::plugin_types::PluginEvent) -> (String, String) {
-    use drasi_host_sdk::plugin_types::PluginEvent;
-
-    match event {
-        PluginEvent::Loaded {
-            plugin_id,
-            version,
-            kinds,
-        } => (
-            "plugin.loaded".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "version": version,
-                "kinds": kinds,
-            })
-            .to_string(),
-        ),
-        PluginEvent::LoadedSideBySide {
-            plugin_id,
-            version,
-            incumbent_plugin_id,
-            versioned_kinds,
-        } => (
-            "plugin.loaded_side_by_side".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "version": version,
-                "incumbentPluginId": incumbent_plugin_id,
-                "versionedKinds": versioned_kinds,
-            })
-            .to_string(),
-        ),
-        PluginEvent::Upgraded {
-            plugin_id,
-            old_version,
-            new_version,
-            migrated_components,
-        } => (
-            "plugin.upgraded".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "oldVersion": old_version,
-                "newVersion": new_version,
-                "migratedComponents": migrated_components,
-            })
-            .to_string(),
-        ),
-        PluginEvent::UpgradePartialFailure {
-            plugin_id,
-            old_version,
-            new_version,
-            migrated,
-            failed,
-        } => (
-            "plugin.upgrade_partial_failure".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "oldVersion": old_version,
-                "newVersion": new_version,
-                "migrated": migrated,
-                "failed": failed,
-            })
-            .to_string(),
-        ),
-        PluginEvent::Draining {
-            plugin_id,
-            affected_components,
-        } => (
-            "plugin.draining".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "affectedComponents": affected_components,
-            })
-            .to_string(),
-        ),
-        PluginEvent::Promoted {
-            plugin_id,
-            promoted_kinds,
-            previous_incumbent,
-        } => (
-            "plugin.promoted".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-                "promotedKinds": promoted_kinds,
-                "previousIncumbent": previous_incumbent,
-            })
-            .to_string(),
-        ),
-        PluginEvent::Retired { plugin_id } => (
-            "plugin.retired".to_string(),
-            serde_json::json!({
-                "pluginId": plugin_id,
-            })
-            .to_string(),
-        ),
-        PluginEvent::LoadFailed { path, error } => (
-            "plugin.load_failed".to_string(),
-            serde_json::json!({
-                "path": path.display().to_string(),
-                "error": error,
-            })
-            .to_string(),
-        ),
-    }
-}
-
-/// Query parameters for the retire endpoint.
-#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
-pub struct RetireParams {
-    pub force: Option<bool>,
-}
-
 /// Request body for POST /api/v1/plugins/load.
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct LoadPluginRequest {
@@ -830,13 +460,6 @@ pub struct InstallPluginRequest {
     pub plugin_ref: String,
     /// OCI registry URL, e.g. "ghcr.io/drasi-project".
     pub registry: Option<String>,
-}
-
-/// Request body for POST /api/v1/plugins/:id/upgrade.
-#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
-pub struct UpgradePluginRequest {
-    /// Filename of the new plugin file in the plugins directory.
-    pub filename: Option<String>,
 }
 
 /// Query parameters for GET /api/v1/plugins/registry/search.
@@ -938,11 +561,7 @@ pub fn plugin_routes() -> axum::Router {
         .route("/load", axum::routing::post(load_plugin))
         .route("/install", axum::routing::post(install_plugin))
         .route("/registry/search", axum::routing::get(search_registry))
-        .route("/events", axum::routing::get(plugin_event_stream))
         .route("/:plugin_id", axum::routing::get(get_plugin))
-        .route("/:plugin_id/retire", axum::routing::post(retire_plugin))
-        .route("/:plugin_id/upgrade", axum::routing::post(upgrade_plugin))
-        .route("/:plugin_id/promote", axum::routing::post(promote_plugin))
         .route(
             "/:plugin_id/dependents",
             axum::routing::get(list_dependents),

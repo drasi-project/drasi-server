@@ -66,7 +66,7 @@ This repository contains only the server wrapper functionality:
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 5. **Dynamic Loading** (`src/dynamic_loading.rs`) - Runtime plugin loading from shared libraries
 6. **Plugin Operations** (`src/plugin_operations.rs`) - Shared plugin management service used by CLI, init, startup, and API
-7. **Plugin Orchestrator** (`src/plugin_orchestrator.rs`) - Server-level plugin lifecycle coordination with drain-then-retire
+7. **Plugin Orchestrator** (`src/plugin_orchestrator.rs`) - Server-level plugin lifecycle coordination (load, install, track)
 8. **Plugin Registry** (`src/plugin_registry.rs`) - Re-exports from host-sdk: mutable registry with `Arc<RwLock<PluginRegistry>>`
 
 ### Core Components (External Dependency)
@@ -126,7 +126,6 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 # Hot-reload plugin settings (default: all disabled)
 # hotReloadPlugins: false          # Enable filesystem watching for plugin changes
 # hotReloadDebounceMs: 2000        # Debounce window in milliseconds
-# hotReloadMode: "upgrade"         # "upgrade" (drain-then-retire) or "side-by-side"
 
 # Optional trusted identities for plugin signature verification
 # trustedIdentities:
@@ -369,13 +368,9 @@ Plugin endpoints are server-wide (not per-instance) since plugins are shared acr
 - `GET /api/v1/plugins/{pluginId}` - Get plugin details
 - `POST /api/v1/plugins/load` - Load a plugin from disk
 - `POST /api/v1/plugins/install` - Install from remote OCI registry
-- `POST /api/v1/plugins/{pluginId}/upgrade` - Upgrade (drain-then-replace)
-- `POST /api/v1/plugins/{pluginId}/promote` - Promote side-by-side version to incumbent
-- `POST /api/v1/plugins/{pluginId}/retire` - Retire a plugin (with optional `?force=true`)
 - `GET /api/v1/plugins/{pluginId}/dependents` - List dependent components
 - `GET /api/v1/plugins/kinds` - List all available kinds (sources, reactions, bootstrappers)
 - `GET /api/v1/plugins/kinds/{category}/{kind}/schema` - Get config schema for a kind
-- `GET /api/v1/plugins/events` - SSE stream for plugin lifecycle events
 
 ## Important Patterns
 
@@ -428,7 +423,7 @@ or add new ones — never use ad-hoc string error codes.
 
 ### State Management
 - Components track their status (Stopped/Starting/Running/Stopping/Failed)
-- Plugins track their lifecycle (Loaded/Active/Draining/Retired/Failed)
+- Plugins track their lifecycle (Loaded/Active/Failed)
 - Plugin registry uses `Arc<RwLock<PluginRegistry>>` for concurrent read/write access
 - Configuration persisted to YAML files (when persistence enabled)
 - In-memory state for active components
@@ -518,7 +513,7 @@ server.run().await?;
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
 - Plugin signature verification is enabled by default (`verifyPlugins: true` in config). Use `--skip-verification` CLI flag or `verifyPlugins: false` to disable. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
-- **Plugin lifecycle management**: Plugins can be loaded, upgraded (drain-then-retire), and retired at runtime via the `/api/v1/plugins/` API
+- **Plugin lifecycle management**: Plugins can be loaded and installed at runtime via the `/api/v1/plugins/` API. Dynamic upgrade/replacement of a running plugin is not currently supported — restart the server to replace a plugin.
 - **Plugin registry is mutable**: Uses `Arc<RwLock<PluginRegistry>>` — shared types (PluginRegistry, PluginLockfile, PluginLifecycleManager, PluginWatcher) live in `drasi-host-sdk`, re-exported by this repo
-- **Component metadata**: Sources and reactions carry `pluginId` and `pluginGeneration` in their ComponentGraph metadata
+- **Component metadata**: Sources and reactions carry `pluginId` and `pluginVersion` in their ComponentGraph metadata
 - **Shared plugin operations**: `PluginOperations` in `src/plugin_operations.rs` provides the single source of truth for plugin management used by CLI, init, startup, and API

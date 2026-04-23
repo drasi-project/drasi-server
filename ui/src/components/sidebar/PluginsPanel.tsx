@@ -209,8 +209,6 @@ export default function PluginsPanel({ onRefreshAction }: PluginsPanelProps) {
 const STATUS_STYLES: Record<string, string> = {
   Loaded: "bg-blue-500/15 text-blue-400",
   Active: "bg-emerald-500/15 text-emerald-400",
-  Draining: "bg-yellow-500/15 text-yellow-400",
-  Retired: "bg-[var(--drasi-card)] text-[var(--drasi-text-secondary)]",
   Failed: "bg-red-500/15 text-red-400",
 };
 

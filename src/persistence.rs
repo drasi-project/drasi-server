@@ -41,7 +41,6 @@ struct PreservedServerSettings {
     trusted_identities: Vec<TrustedIdentity>,
     hot_reload_plugins: bool,
     hot_reload_debounce_ms: u64,
-    hot_reload_mode: String,
     cors_allowed_origins: Vec<String>,
 }
 
@@ -105,7 +104,6 @@ impl ConfigPersistence {
                 trusted_identities: original_config.trusted_identities.clone(),
                 hot_reload_plugins: original_config.hot_reload_plugins,
                 hot_reload_debounce_ms: original_config.hot_reload_debounce_ms,
-                hot_reload_mode: original_config.hot_reload_mode.clone(),
                 cors_allowed_origins: original_config.cors_allowed_origins.clone(),
             },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
@@ -271,7 +269,6 @@ impl ConfigPersistence {
                 trusted_identities: self.preserved.trusted_identities.clone(),
                 hot_reload_plugins: self.preserved.hot_reload_plugins,
                 hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
-                hot_reload_mode: self.preserved.hot_reload_mode.clone(),
                 cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
                 sources: instance.sources,
                 queries: instance.queries,
@@ -308,7 +305,6 @@ impl ConfigPersistence {
                 trusted_identities: self.preserved.trusted_identities.clone(),
                 hot_reload_plugins: self.preserved.hot_reload_plugins,
                 hot_reload_debounce_ms: self.preserved.hot_reload_debounce_ms,
-                hot_reload_mode: self.preserved.hot_reload_mode.clone(),
                 cors_allowed_origins: self.preserved.cors_allowed_origins.clone(),
                 sources: Vec::new(),
                 queries: Vec::new(),
@@ -989,7 +985,6 @@ mod tests {
             }],
             hot_reload_plugins: true,
             hot_reload_debounce_ms: 500,
-            hot_reload_mode: "side-by-side".to_string(),
             cors_allowed_origins: vec![
                 "http://localhost:3000".to_string(),
                 "https://dashboard.example.com".to_string(),
@@ -1026,7 +1021,6 @@ mod tests {
         );
         assert!(parsed.hot_reload_plugins);
         assert_eq!(parsed.hot_reload_debounce_ms, 500);
-        assert_eq!(parsed.hot_reload_mode, "side-by-side");
         assert_eq!(parsed.cors_allowed_origins.len(), 2);
         assert_eq!(parsed.cors_allowed_origins[0], "http://localhost:3000");
         assert_eq!(

@@ -106,9 +106,6 @@ pub mod error_codes {
     pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
     pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
     pub const PLUGIN_INSTALL_FAILED: &str = "PLUGIN_INSTALL_FAILED";
-    pub const PLUGIN_RETIRE_FAILED: &str = "PLUGIN_RETIRE_FAILED";
-    pub const PLUGIN_UPGRADE_FAILED: &str = "PLUGIN_UPGRADE_FAILED";
-    pub const PLUGIN_PROMOTE_FAILED: &str = "PLUGIN_PROMOTE_FAILED";
     pub const PLUGIN_SEARCH_FAILED: &str = "PLUGIN_SEARCH_FAILED";
     pub const PLUGIN_FILE_NOT_FOUND: &str = "PLUGIN_FILE_NOT_FOUND";
     pub const PLUGIN_INVALID_PATH: &str = "PLUGIN_INVALID_PATH";
@@ -699,9 +696,6 @@ mod tests {
             error_codes::PLUGIN_NOT_FOUND,
             error_codes::PLUGIN_LOAD_FAILED,
             error_codes::PLUGIN_INSTALL_FAILED,
-            error_codes::PLUGIN_RETIRE_FAILED,
-            error_codes::PLUGIN_UPGRADE_FAILED,
-            error_codes::PLUGIN_PROMOTE_FAILED,
             error_codes::PLUGIN_SEARCH_FAILED,
             error_codes::PLUGIN_FILE_NOT_FOUND,
             error_codes::PLUGIN_INVALID_PATH,

@@ -270,7 +270,6 @@ impl DrasiServer {
             };
             let mut watcher = PluginWatcher::new(watcher_config);
             let mut rx = watcher.subscribe();
-            let reload_mode = config.hot_reload_mode.clone();
             let orchestrator_for_watcher = plugin_orchestrator.clone();
 
             // Start the filesystem watcher
@@ -292,23 +291,18 @@ impl DrasiServer {
                             match event {
                                 PluginFileEvent::Added(path) | PluginFileEvent::Changed(path) => {
                                     info!("Plugin file change detected: {}", path.display());
-                                    if reload_mode == "side-by-side" {
-                                        info!("Side-by-side mode: skipping automatic upgrade");
-                                    } else {
-                                        // Upgrade mode: load/replace
-                                        match orchestrator_for_watcher
-                                            .load_plugin_locked(&path, None)
-                                            .await
-                                        {
-                                            Ok(info) => info!(
-                                                "Hot-reloaded plugin: {} ({})",
-                                                info.id, info.status
-                                            ),
-                                            Err(e) => warn!(
-                                                "Failed to hot-reload plugin {}: {e}",
-                                                path.display()
-                                            ),
-                                        }
+                                    match orchestrator_for_watcher
+                                        .load_plugin_locked(&path, None)
+                                        .await
+                                    {
+                                        Ok(info) => info!(
+                                            "Hot-reloaded plugin: {} ({})",
+                                            info.id, info.status
+                                        ),
+                                        Err(e) => warn!(
+                                            "Failed to hot-reload plugin {}: {e}",
+                                            path.display()
+                                        ),
                                     }
                                 }
                                 PluginFileEvent::Removed(path) => {
@@ -326,8 +320,8 @@ impl DrasiServer {
                 }
             });
             info!(
-                "Plugin hot-reload enabled (mode: {}, debounce: {}ms)",
-                config.hot_reload_mode, config.hot_reload_debounce_ms
+                "Plugin hot-reload enabled (debounce: {}ms)",
+                config.hot_reload_debounce_ms
             );
             Some(handle)
         } else {

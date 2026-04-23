@@ -660,6 +660,11 @@ drasi-server plugin install --from-config --locked
 
 Upgrade installed plugins to newer compatible versions from the OCI registry.
 
+> **Note:** This is an offline, package-manager-style command. It only
+> updates plugin binaries on disk and the `plugins.lock` file — it does
+> **not** reload or replace plugins in a running server. Restart the server
+> for upgraded plugins to take effect.
+
 ```bash
 # Upgrade a specific plugin
 drasi-server plugin upgrade source/postgres

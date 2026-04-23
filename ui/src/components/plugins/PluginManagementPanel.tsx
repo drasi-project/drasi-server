@@ -128,8 +128,6 @@ export function PluginManagementPanel({ onClose }: PluginManagementPanelProps) {
 const STATUS_STYLES: Record<string, string> = {
   Loaded: "bg-blue-500/15 text-blue-400",
   Active: "bg-emerald-500/15 text-emerald-400",
-  Draining: "bg-yellow-500/15 text-yellow-400",
-  Retired: "bg-drasi-card text-drasi-text-secondary",
   Failed: "bg-red-500/15 text-red-400",
 };
 

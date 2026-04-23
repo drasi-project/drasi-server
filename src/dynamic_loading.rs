@@ -63,7 +63,6 @@ pub struct StartupPluginRecord {
     pub plugin_id: String,
     pub file_path: PathBuf,
     pub kinds: Vec<PluginKindEntry>,
-    pub generation: u64,
     pub plugin_version: String,
     pub sdk_version: String,
 }
@@ -131,7 +130,6 @@ pub fn load_plugins(
     )?;
 
     let mut stats = PluginLoadStats::default();
-    let mut generation: u64 = 0;
 
     for mut plugin in loaded {
         let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
@@ -168,12 +166,7 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            generation += 1;
-            registry.register_source_with_metadata(
-                Arc::new(proxy),
-                &plugin_id_parts[0],
-                generation,
-            );
+            registry.register_source_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
             stats.source_descriptors += 1;
         }
 
@@ -189,12 +182,7 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            generation += 1;
-            registry.register_reaction_with_metadata(
-                Arc::new(proxy),
-                &plugin_id_parts[0],
-                generation,
-            );
+            registry.register_reaction_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
             stats.reaction_descriptors += 1;
         }
 
@@ -210,12 +198,7 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            generation += 1;
-            registry.register_bootstrapper_with_metadata(
-                Arc::new(proxy),
-                &plugin_id_parts[0],
-                generation,
-            );
+            registry.register_bootstrapper_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
             stats.bootstrap_descriptors += 1;
         }
 
@@ -228,7 +211,6 @@ pub fn load_plugins(
             plugin_id: derived_plugin_id,
             file_path: plugin.file_path.clone(),
             kinds: plugin_kinds,
-            generation,
             plugin_version,
             sdk_version,
         });

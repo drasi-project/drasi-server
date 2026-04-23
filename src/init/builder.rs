@@ -83,7 +83,6 @@ pub fn build_config(
         trusted_identities: Vec::new(),
         hot_reload_plugins: server_settings.hot_reload_plugins,
         hot_reload_debounce_ms: 2000,
-        hot_reload_mode: server_settings.hot_reload_mode,
         cors_allowed_origins: Vec::new(),
         sources,
         queries,
@@ -130,7 +129,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -277,7 +275,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -345,7 +342,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -474,7 +470,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -496,7 +491,6 @@ mod tests {
             persist_index: true,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -518,7 +512,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -542,7 +535,6 @@ mod tests {
             persist_index: true,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -566,7 +558,6 @@ mod tests {
             persist_index: true,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -600,7 +591,6 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -634,7 +624,6 @@ mod tests {
             persist_index: true,
             state_store: None,
             hot_reload_plugins: false,
-            hot_reload_mode: "upgrade".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
@@ -657,7 +646,6 @@ mod tests {
         let settings = test_server_settings();
         let config = build_config(settings, vec![], vec![]);
         assert!(!config.hot_reload_plugins);
-        assert_eq!(config.hot_reload_mode, "upgrade");
         assert_eq!(config.hot_reload_debounce_ms, 2000);
     }
 
@@ -670,13 +658,11 @@ mod tests {
             persist_index: false,
             state_store: None,
             hot_reload_plugins: true,
-            hot_reload_mode: "side-by-side".to_string(),
             plugin_registry: "ghcr.io/drasi-project".to_string(),
             auto_install_plugins: false,
             verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
         assert!(config.hot_reload_plugins);
-        assert_eq!(config.hot_reload_mode, "side-by-side");
     }
 }
