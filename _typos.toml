@@ -1,0 +1,11 @@
+[default.extend-words]
+# BA = Boeing stock ticker symbol
+BA = "BA"
+
+[files]
+extend-exclude = [
+    "target/",
+    "Cargo.lock",
+    "*.lock",
+    "Dockerfile.cross-windows-gnu",
+]
