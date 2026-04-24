@@ -742,11 +742,11 @@ impl DrasiServer {
                         get(|| async { axum::response::Redirect::temporary("/ui/") }),
                     );
             } else {
-                let abs_path = ui_dir
-                    .canonicalize()
-                    .unwrap_or_else(|_| std::env::current_dir()
+                let abs_path = ui_dir.canonicalize().unwrap_or_else(|_| {
+                    std::env::current_dir()
                         .map(|cwd| cwd.join(ui_dir))
-                        .unwrap_or_else(|_| ui_dir.to_path_buf()));
+                        .unwrap_or_else(|_| ui_dir.to_path_buf())
+                });
                 warn!(
                     "Web UI is enabled but ui/dist directory not found at {}. \
                      The /ui route will return 404. \
