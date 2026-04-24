@@ -116,6 +116,7 @@ impl SourceTrait for MockSource {
             source_id: self.inner.id.clone(),
             receiver,
             bootstrap_receiver: None,
+            position_handle: None,
         })
     }
 

@@ -80,6 +80,7 @@ mod api_query_joins_tests {
                 source_id: self.id.clone(),
                 receiver,
                 bootstrap_receiver: None,
+                position_handle: None,
             })
         }
         fn as_any(&self) -> &dyn std::any::Any {

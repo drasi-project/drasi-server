@@ -114,6 +114,7 @@ impl SourceTrait for BootstrapMockSource {
             source_id: self.id.clone(),
             receiver,
             bootstrap_receiver: Some(bootstrap_rx),
+            position_handle: None,
         })
     }
 
