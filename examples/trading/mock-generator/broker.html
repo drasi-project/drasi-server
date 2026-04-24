@@ -1,0 +1,828 @@
+<!--
+Copyright 2025 The Drasi Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Broker Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      background: #1a1a1a;
+      color: #b0b0b0;
+      width: 380px;
+      min-height: 100vh;
+      font-size: 11px;
+    }
+
+    header {
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      padding: 8px 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 11px;
+      font-weight: normal;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    header .subtitle {
+      font-size: 10px;
+      color: #555;
+      margin-top: 1px;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 4px;
+      font-size: 10px;
+    }
+
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      background: #800;
+    }
+
+    .status-dot.connected { background: #0a0; }
+
+    .status-text {
+      font-size: 10px;
+      color: #555;
+    }
+
+    .section {
+      border-bottom: 1px solid #333;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      cursor: pointer;
+      background: #222;
+      user-select: none;
+    }
+
+    .section-header:hover {
+      background: #282828;
+    }
+
+    .section-title {
+      font-size: 10px;
+      font-weight: normal;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title .count {
+      color: #666;
+      font-size: 10px;
+    }
+
+    .section-title .count::before { content: '('; }
+    .section-title .count::after { content: ')'; }
+
+    .chevron {
+      font-size: 8px;
+      color: #555;
+      transition: transform 0.1s;
+    }
+
+    .section.collapsed .chevron {
+      transform: rotate(-90deg);
+    }
+
+    .section.collapsed .section-body {
+      display: none;
+    }
+
+    .section-body {
+      padding: 6px 10px 8px;
+    }
+
+    .item-list {
+      list-style: none;
+      margin-bottom: 6px;
+    }
+
+    .item-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 4px;
+      font-size: 11px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .item-list li:last-child {
+      border-bottom: none;
+    }
+
+    .item-list li:hover {
+      background: #252525;
+    }
+
+    .item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      min-width: 0;
+    }
+
+    .item-symbol {
+      color: #ccc;
+      font-size: 11px;
+    }
+
+    .item-detail {
+      color: #555;
+      font-size: 10px;
+    }
+
+    .item-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .btn-delete {
+      background: none;
+      border: 1px solid #333;
+      color: #666;
+      cursor: pointer;
+      font-size: 10px;
+      padding: 0 4px;
+      line-height: 1.4;
+      font-family: inherit;
+    }
+
+    .btn-delete:hover {
+      color: #c00;
+      border-color: #600;
+    }
+
+    .form-toggle {
+      display: inline-block;
+      background: none;
+      border: 1px dashed #444;
+      color: #666;
+      font-size: 10px;
+      font-family: inherit;
+      padding: 2px 6px;
+      cursor: pointer;
+    }
+
+    .form-toggle:hover {
+      border-color: #888;
+      color: #aaa;
+    }
+
+    .add-form {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      padding: 8px;
+      margin-top: 6px;
+    }
+
+    .add-form.hidden { display: none; }
+
+    .form-row {
+      margin-bottom: 6px;
+    }
+
+    .form-row:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 10px;
+      color: #666;
+      margin-bottom: 2px;
+    }
+
+    select, input[type="number"], input[type="date"], input[type="text"] {
+      width: 100%;
+      background: #111;
+      border: 1px solid #333;
+      color: #b0b0b0;
+      font-size: 11px;
+      font-family: inherit;
+      padding: 4px 5px;
+      outline: none;
+    }
+
+    select:focus, input:focus {
+      border-color: #666;
+    }
+
+    .form-row-inline {
+      display: flex;
+      gap: 6px;
+    }
+
+    .form-row-inline .form-row {
+      flex: 1;
+    }
+
+    .order-type-toggle {
+      display: flex;
+      gap: 0;
+    }
+
+    .order-type-btn {
+      flex: 1;
+      padding: 3px;
+      border: 1px solid #333;
+      background: #111;
+      color: #666;
+      font-size: 10px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .order-type-btn + .order-type-btn {
+      border-left: none;
+    }
+
+    .order-type-btn.active-buy {
+      background: #111;
+      border-color: #0a0;
+      color: #0c0;
+    }
+
+    .order-type-btn.active-sell {
+      background: #111;
+      border-color: #a00;
+      color: #c00;
+    }
+
+    .order-type-btn:hover:not(.active-buy):not(.active-sell) {
+      color: #999;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 4px;
+      background: #333;
+      color: #ccc;
+      border: 1px solid #444;
+      font-size: 10px;
+      font-family: inherit;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    .btn-submit:hover {
+      background: #444;
+      color: #fff;
+    }
+
+    .btn-submit:disabled {
+      background: #222;
+      color: #444;
+      border-color: #333;
+      cursor: not-allowed;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 8px;
+      left: 8px;
+      right: 8px;
+      max-width: 364px;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-family: inherit;
+      z-index: 100;
+    }
+
+    .toast.success {
+      background: #1a1a1a;
+      border: 1px solid #0a0;
+      color: #0c0;
+    }
+
+    .toast.error {
+      background: #1a1a1a;
+      border: 1px solid #a00;
+      color: #c00;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #444;
+      font-size: 10px;
+      padding: 8px;
+      font-style: italic;
+    }
+
+    .order-status {
+      font-size: 10px;
+      padding: 0 3px;
+      font-family: inherit;
+    }
+
+    .order-status.pending { color: #aa0; }
+    .order-status.filled { color: #0a0; }
+    .order-status.expired, .order-status.cancelled { color: #555; }
+    .order-status.stale { color: #a60; }
+
+    .order-type-badge {
+      font-size: 10px;
+    }
+
+    .order-type-badge.buy { color: #0c0; }
+    .order-type-badge.sell { color: #c00; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>broker // panel</h1>
+    <div class="subtitle">trading_api &mdash; direct db ops</div>
+    <div class="status-bar">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText" class="status-text">checking...</span>
+    </div>
+  </header>
+
+  <!-- Portfolio Section -->
+  <div class="section" id="portfolioSection">
+    <div class="section-header" onclick="toggleSection('portfolioSection')">
+      <span class="section-title">
+        Portfolio <span class="count" id="portfolioCount">0</span>
+      </span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <ul class="item-list" id="portfolioList"></ul>
+      <button class="form-toggle" onclick="toggleForm('portfolioForm')">+ Add Position</button>
+      <div class="add-form hidden" id="portfolioForm">
+        <div class="form-row">
+          <label>Stock</label>
+          <select id="portfolioStock"></select>
+        </div>
+        <div class="form-row-inline">
+          <div class="form-row">
+            <label>Quantity</label>
+            <input type="number" id="portfolioQty" placeholder="100" min="1">
+          </div>
+          <div class="form-row">
+            <label>Price ($)</label>
+            <input type="number" id="portfolioPrice" placeholder="150.00" step="0.01" min="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Purchase Date</label>
+          <input type="date" id="portfolioDate">
+        </div>
+        <button class="btn-submit" id="portfolioSubmit" onclick="addPosition()">Add Position</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watchlist Section -->
+  <div class="section" id="watchlistSection">
+    <div class="section-header" onclick="toggleSection('watchlistSection')">
+      <span class="section-title">
+        Watchlist <span class="count" id="watchlistCount">0</span>
+      </span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <ul class="item-list" id="watchlistList"></ul>
+      <button class="form-toggle" onclick="toggleForm('watchlistForm')">+ Add to Watchlist</button>
+      <div class="add-form hidden" id="watchlistForm">
+        <div class="form-row">
+          <label>Stock</label>
+          <select id="watchlistStock"></select>
+        </div>
+        <button class="btn-submit" onclick="addToWatchlist()">Add to Watchlist</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Limit Orders Section -->
+  <div class="section" id="ordersSection">
+    <div class="section-header" onclick="toggleSection('ordersSection')">
+      <span class="section-title">
+        Limit Orders <span class="count" id="ordersCount">0</span>
+      </span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <ul class="item-list" id="ordersList"></ul>
+      <button class="form-toggle" onclick="toggleForm('ordersForm')">+ New Order</button>
+      <div class="add-form hidden" id="ordersForm">
+        <div class="form-row">
+          <label>Stock</label>
+          <select id="orderStock"></select>
+        </div>
+        <div class="form-row">
+          <label>Order Type</label>
+          <div class="order-type-toggle">
+            <button class="order-type-btn active-buy" id="orderBuyBtn" onclick="setOrderType('buy')">BUY</button>
+            <button class="order-type-btn" id="orderSellBtn" onclick="setOrderType('sell')">SELL</button>
+          </div>
+        </div>
+        <div class="form-row-inline">
+          <div class="form-row">
+            <label>Target Price ($)</label>
+            <input type="number" id="orderPrice" placeholder="150.00" step="0.01" min="0.01">
+          </div>
+          <div class="form-row">
+            <label>Quantity</label>
+            <input type="number" id="orderQty" placeholder="100" min="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Expires In (seconds)</label>
+          <input type="number" id="orderExpiry" value="60" min="10" max="3600">
+        </div>
+        <button class="btn-submit" onclick="createOrder()">Create Order</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer"></div>
+
+  <script>
+    const API = window.location.origin;
+    let stocks = [];
+    let orderType = 'buy';
+
+    // ========================================================================
+    // Initialization
+    // ========================================================================
+
+    async function init() {
+      await checkHealth();
+      await loadStocks();
+      await Promise.all([loadPortfolio(), loadWatchlist(), loadOrders()]);
+
+      // Set default date to today
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('portfolioDate').value = today;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API}/health`);
+        const data = await res.json();
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        if (data.status === 'healthy') {
+          dot.classList.add('connected');
+          text.textContent = 'connected :: localhost:9200';
+        } else {
+          text.textContent = 'api unhealthy';
+        }
+      } catch {
+        document.getElementById('statusText').textContent = 'err: cannot reach api';
+      }
+    }
+
+    async function loadStocks() {
+      try {
+        const res = await fetch(`${API}/api/stocks`);
+        const data = await res.json();
+        if (data.success) {
+          stocks = data.data;
+          populateStockDropdowns();
+        }
+      } catch (e) {
+        showToast('Failed to load stocks', 'error');
+      }
+    }
+
+    function populateStockDropdowns() {
+      ['portfolioStock', 'watchlistStock', 'orderStock'].forEach(id => {
+        const el = document.getElementById(id);
+        el.innerHTML = stocks.map(s =>
+          `<option value="${s.symbol}">${s.symbol} — ${s.name}</option>`
+        ).join('');
+      });
+    }
+
+    // ========================================================================
+    // Portfolio
+    // ========================================================================
+
+    async function loadPortfolio() {
+      try {
+        const res = await fetch(`${API}/api/portfolio`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const list = document.getElementById('portfolioList');
+        document.getElementById('portfolioCount').textContent = data.data.length;
+
+        if (data.data.length === 0) {
+          list.innerHTML = '<li class="empty-state">No positions yet</li>';
+          return;
+        }
+
+        list.innerHTML = data.data.map(p => `
+          <li>
+            <div class="item-info">
+              <span class="item-symbol">${p.symbol}</span>
+              <span class="item-detail">${p.quantity} shares @ $${Number(p.purchase_price).toFixed(2)}</span>
+            </div>
+            <div class="item-meta">
+              <button class="btn-delete" onclick="deletePosition(${p.id})" title="Delete">✕</button>
+            </div>
+          </li>
+        `).join('');
+      } catch (e) {
+        showToast('Failed to load portfolio', 'error');
+      }
+    }
+
+    async function addPosition() {
+      const symbol = document.getElementById('portfolioStock').value;
+      const quantity = parseInt(document.getElementById('portfolioQty').value);
+      const purchasePrice = parseFloat(document.getElementById('portfolioPrice').value);
+      const purchaseDate = document.getElementById('portfolioDate').value;
+
+      if (!symbol || !quantity || !purchasePrice) {
+        showToast('Please fill in all fields', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('portfolioSubmit');
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+
+      try {
+        const res = await fetch(`${API}/api/portfolio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, quantity, purchasePrice, purchaseDate })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Added ${quantity} ${symbol} to portfolio`, 'success');
+          document.getElementById('portfolioQty').value = '';
+          document.getElementById('portfolioPrice').value = '';
+          await loadPortfolio();
+        } else {
+          showToast(data.error || 'Failed to add position', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to add position', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add Position';
+      }
+    }
+
+    async function deletePosition(id) {
+      try {
+        const res = await fetch(`${API}/api/portfolio/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Position deleted', 'success');
+          await loadPortfolio();
+        } else {
+          showToast(data.error || 'Failed to delete', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to delete position', 'error');
+      }
+    }
+
+    // ========================================================================
+    // Watchlist
+    // ========================================================================
+
+    async function loadWatchlist() {
+      try {
+        const res = await fetch(`${API}/api/watchlist`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const list = document.getElementById('watchlistList');
+        document.getElementById('watchlistCount').textContent = data.data.length;
+
+        if (data.data.length === 0) {
+          list.innerHTML = '<li class="empty-state">No items in watchlist</li>';
+          return;
+        }
+
+        list.innerHTML = data.data.map(w => `
+          <li>
+            <div class="item-info">
+              <span class="item-symbol">${w.symbol}</span>
+              <span class="item-detail">${w.name}</span>
+            </div>
+            <div class="item-meta">
+              <button class="btn-delete" onclick="removeFromWatchlist('${w.symbol}')" title="Remove">✕</button>
+            </div>
+          </li>
+        `).join('');
+      } catch (e) {
+        showToast('Failed to load watchlist', 'error');
+      }
+    }
+
+    async function addToWatchlist() {
+      const symbol = document.getElementById('watchlistStock').value;
+      if (!symbol) return;
+
+      try {
+        const res = await fetch(`${API}/api/watchlist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`${symbol} added to watchlist`, 'success');
+          await loadWatchlist();
+        } else {
+          showToast(data.error || 'Failed to add', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to add to watchlist', 'error');
+      }
+    }
+
+    async function removeFromWatchlist(symbol) {
+      try {
+        const res = await fetch(`${API}/api/watchlist/${symbol}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`${symbol} removed from watchlist`, 'success');
+          await loadWatchlist();
+        } else {
+          showToast(data.error || 'Failed to remove', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to remove from watchlist', 'error');
+      }
+    }
+
+    // ========================================================================
+    // Limit Orders
+    // ========================================================================
+
+    async function loadOrders() {
+      try {
+        const res = await fetch(`${API}/api/orders`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const list = document.getElementById('ordersList');
+        document.getElementById('ordersCount').textContent = data.data.length;
+
+        if (data.data.length === 0) {
+          list.innerHTML = '<li class="empty-state">No orders</li>';
+          return;
+        }
+
+        list.innerHTML = data.data.map(o => `
+          <li>
+            <div class="item-info">
+              <span class="item-symbol">
+                <span class="order-type-badge ${o.order_type}">${o.order_type.toUpperCase()}</span>
+                ${o.symbol}
+              </span>
+              <span class="item-detail">${o.quantity} @ $${Number(o.target_price).toFixed(2)}</span>
+            </div>
+            <div class="item-meta">
+              <span class="order-status ${o.status}">${o.status}</span>
+              ${o.status === 'pending' || o.status === 'stale' ? `<button class="btn-delete" onclick="cancelOrder(${o.id})" title="Cancel">✕</button>` : ''}
+            </div>
+          </li>
+        `).join('');
+      } catch (e) {
+        showToast('Failed to load orders', 'error');
+      }
+    }
+
+    function setOrderType(type) {
+      orderType = type;
+      const buyBtn = document.getElementById('orderBuyBtn');
+      const sellBtn = document.getElementById('orderSellBtn');
+      buyBtn.className = 'order-type-btn' + (type === 'buy' ? ' active-buy' : '');
+      sellBtn.className = 'order-type-btn' + (type === 'sell' ? ' active-sell' : '');
+    }
+
+    async function createOrder() {
+      const symbol = document.getElementById('orderStock').value;
+      const targetPrice = parseFloat(document.getElementById('orderPrice').value);
+      const quantity = parseInt(document.getElementById('orderQty').value);
+      const expiresInSeconds = parseInt(document.getElementById('orderExpiry').value);
+
+      if (!symbol || !targetPrice || !quantity || !expiresInSeconds) {
+        showToast('Please fill in all fields', 'error');
+        return;
+      }
+
+      const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+
+      try {
+        const res = await fetch(`${API}/api/orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol,
+            orderType,
+            targetPrice,
+            quantity,
+            expiresAt,
+            staleDuration: Math.floor(expiresInSeconds / 2),
+            expireDuration: expiresInSeconds
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`${orderType.toUpperCase()} order created for ${symbol}`, 'success');
+          document.getElementById('orderPrice').value = '';
+          document.getElementById('orderQty').value = '';
+          await loadOrders();
+        } else {
+          showToast(data.error || 'Failed to create order', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to create order', 'error');
+      }
+    }
+
+    async function cancelOrder(id) {
+      try {
+        const res = await fetch(`${API}/api/orders/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Order cancelled', 'success');
+          await loadOrders();
+        } else {
+          showToast(data.error || 'Failed to cancel', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to cancel order', 'error');
+      }
+    }
+
+    // ========================================================================
+    // UI Helpers
+    // ========================================================================
+
+    function toggleSection(sectionId) {
+      document.getElementById(sectionId).classList.toggle('collapsed');
+    }
+
+    function toggleForm(formId) {
+      document.getElementById(formId).classList.toggle('hidden');
+    }
+
+    function showToast(message, type) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

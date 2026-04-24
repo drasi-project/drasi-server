@@ -19,12 +19,17 @@
 
 use axum::{
     extract::Extension,
+    middleware,
     routing::{delete, get, post, put},
     Router,
 };
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use super::handlers;
+use crate::api::shared::handlers as shared;
+use crate::api::shared::handlers::ApiPrefix;
+use crate::api::version::ApiVersion;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -36,7 +41,8 @@ pub fn build_v1_router(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
     config_persistence: Option<Arc<ConfigPersistence>>,
-    plugin_registry: Arc<PluginRegistry>,
+    plugin_registry: Arc<RwLock<PluginRegistry>>,
+    solutions_dir: Option<String>,
 ) -> Router {
     // Instance management routes
     let instance_routes = Router::new()
@@ -49,20 +55,33 @@ pub fn build_v1_router(
     // Convenience routes for the default (first) instance
     let default_routes = build_default_instance_router();
 
+    // Catalog routes (global, not instance-specific)
+    let catalog_routes = Router::new()
+        .route("/catalog/solutions", get(handlers::list_solutions))
+        .route("/catalog/solutions/:id", get(handlers::get_solution));
+
     Router::new()
         .merge(instance_routes)
+        .merge(catalog_routes)
         .nest("/instances/:instanceId", instance_resource_routes)
         .merge(default_routes)
         .layer(Extension(registry))
         .layer(Extension(read_only))
         .layer(Extension(config_persistence))
         .layer(Extension(plugin_registry))
+        .layer(Extension(solutions_dir))
+        .layer(Extension(reqwest::Client::new()))
+        .layer(Extension(ApiPrefix(
+            ApiVersion::V1.path_prefix().to_string(),
+        )))
 }
 
 /// Build routes for dynamic instance resources.
 /// These routes use :instanceId path parameter - handlers look up instance from registry.
 fn build_dynamic_instance_router() -> Router {
     Router::new()
+        // Instance snapshot
+        .route("/snapshot", get(handlers::get_instance_snapshot))
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))
@@ -115,85 +134,111 @@ fn build_dynamic_instance_router() -> Router {
         .route("/reactions/:id", delete(handlers::delete_reaction))
         .route("/reactions/:id/start", post(handlers::start_reaction))
         .route("/reactions/:id/stop", post(handlers::stop_reaction))
+        // Global component events SSE stream
+        .route("/events", get(handlers::stream_all_component_events))
+        // Source data push proxy (avoids browser CORS issues)
+        .route("/sources/:id/push", post(handlers::push_source_data))
+        // Solution deployment to this instance
+        .route("/solutions", post(handlers::deploy_solution))
+        // Clone another instance's configuration into this instance
+        .route("/clone", post(handlers::clone_instance))
+        // Create solution template from this instance's components
+        .route(
+            "/catalog/solutions",
+            post(handlers::create_solution_template),
+        )
 }
 
 /// Build convenience routes that operate on the default (first) instance.
+///
+/// Uses middleware to resolve the default instance and inject `Extension<Arc<DrasiLib>>`
+/// and `Extension<String>` (instance_id), so the shared handlers can serve these
+/// routes directly without per-handler wrapper functions.
 fn build_default_instance_router() -> Router {
     Router::new()
         // Source routes (default instance)
-        .route("/sources", get(handlers::list_sources_default))
-        .route("/sources", post(handlers::create_source_default))
-        .route("/sources/:id", put(handlers::upsert_source_default))
-        .route("/sources/:id", get(handlers::get_source_default))
-        .route(
-            "/sources/:id/events",
-            get(handlers::get_source_events_default),
-        )
+        .route("/sources", get(shared::list_sources))
+        .route("/sources", post(shared::create_source_handler))
+        .route("/sources/:id", put(shared::upsert_source_handler))
+        .route("/sources/:id", get(shared::get_source))
+        .route("/sources/:id/events", get(shared::get_source_events))
         .route(
             "/sources/:id/events/stream",
-            get(handlers::stream_source_events_default),
+            get(shared::stream_source_events),
         )
-        .route("/sources/:id/logs", get(handlers::get_source_logs_default))
-        .route(
-            "/sources/:id/logs/stream",
-            get(handlers::stream_source_logs_default),
-        )
-        .route("/sources/:id", delete(handlers::delete_source_default))
-        .route("/sources/:id/start", post(handlers::start_source_default))
-        .route("/sources/:id/stop", post(handlers::stop_source_default))
+        .route("/sources/:id/logs", get(shared::get_source_logs))
+        .route("/sources/:id/logs/stream", get(shared::stream_source_logs))
+        .route("/sources/:id", delete(shared::delete_source))
+        .route("/sources/:id/start", post(shared::start_source))
+        .route("/sources/:id/stop", post(shared::stop_source))
         // Query routes (default instance)
-        .route("/queries", get(handlers::list_queries_default))
-        .route("/queries", post(handlers::create_query_default))
-        .route("/queries/:id", get(handlers::get_query_default))
-        .route(
-            "/queries/:id/events",
-            get(handlers::get_query_events_default),
-        )
+        .route("/queries", get(shared::list_queries))
+        .route("/queries", post(shared::create_query))
+        .route("/queries/:id", get(shared::get_query))
+        .route("/queries/:id/events", get(shared::get_query_events))
         .route(
             "/queries/:id/events/stream",
-            get(handlers::stream_query_events_default),
+            get(shared::stream_query_events),
         )
-        .route("/queries/:id/logs", get(handlers::get_query_logs_default))
-        .route(
-            "/queries/:id/logs/stream",
-            get(handlers::stream_query_logs_default),
-        )
-        .route("/queries/:id", delete(handlers::delete_query_default))
-        .route("/queries/:id/start", post(handlers::start_query_default))
-        .route("/queries/:id/stop", post(handlers::stop_query_default))
-        .route(
-            "/queries/:id/results",
-            get(handlers::get_query_results_default),
-        )
-        .route(
-            "/queries/:id/attach",
-            get(handlers::attach_query_stream_default),
-        )
+        .route("/queries/:id/logs", get(shared::get_query_logs))
+        .route("/queries/:id/logs/stream", get(shared::stream_query_logs))
+        .route("/queries/:id", delete(shared::delete_query))
+        .route("/queries/:id/start", post(shared::start_query))
+        .route("/queries/:id/stop", post(shared::stop_query))
+        .route("/queries/:id/results", get(shared::get_query_results))
+        .route("/queries/:id/attach", get(shared::attach_query_stream))
         // Reaction routes (default instance)
-        .route("/reactions", get(handlers::list_reactions_default))
-        .route("/reactions", post(handlers::create_reaction_default))
-        .route("/reactions/:id", put(handlers::upsert_reaction_default))
-        .route("/reactions/:id", get(handlers::get_reaction_default))
-        .route(
-            "/reactions/:id/events",
-            get(handlers::get_reaction_events_default),
-        )
+        .route("/reactions", get(shared::list_reactions))
+        .route("/reactions", post(shared::create_reaction_handler))
+        .route("/reactions/:id", put(shared::upsert_reaction_handler))
+        .route("/reactions/:id", get(shared::get_reaction))
+        .route("/reactions/:id/events", get(shared::get_reaction_events))
         .route(
             "/reactions/:id/events/stream",
-            get(handlers::stream_reaction_events_default),
+            get(shared::stream_reaction_events),
         )
-        .route(
-            "/reactions/:id/logs",
-            get(handlers::get_reaction_logs_default),
-        )
+        .route("/reactions/:id/logs", get(shared::get_reaction_logs))
         .route(
             "/reactions/:id/logs/stream",
-            get(handlers::stream_reaction_logs_default),
+            get(shared::stream_reaction_logs),
         )
-        .route("/reactions/:id", delete(handlers::delete_reaction_default))
-        .route(
-            "/reactions/:id/start",
-            post(handlers::start_reaction_default),
-        )
-        .route("/reactions/:id/stop", post(handlers::stop_reaction_default))
+        .route("/reactions/:id", delete(shared::delete_reaction))
+        .route("/reactions/:id/start", post(shared::start_reaction))
+        .route("/reactions/:id/stop", post(shared::stop_reaction))
+        // Global component events SSE stream (default instance)
+        .route("/events", get(shared::stream_all_component_events))
+        // Source data push proxy (default instance)
+        .route("/sources/:id/push", post(shared::push_source_data))
+        // Apply middleware that resolves the default instance
+        .layer(middleware::from_fn(resolve_default_instance))
 }
+
+/// Axum middleware that resolves the default (first) instance from the
+/// `InstanceRegistry` and injects `Extension<Arc<DrasiLib>>` and
+/// `Extension<String>` (instance_id) into the request extensions.
+///
+/// This allows the shared handlers to serve convenience routes at
+/// `/api/v1/sources`, `/api/v1/queries`, `/api/v1/reactions` without
+/// needing per-handler wrapper functions.
+async fn resolve_default_instance(
+    Extension(registry): Extension<InstanceRegistry>,
+    mut request: axum::http::Request<axum::body::Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    match registry.get_default().await {
+        Some((instance_id, core)) => {
+            request.extensions_mut().insert(core);
+            request.extensions_mut().insert(instance_id);
+            next.run(request).await
+        }
+        None => {
+            let body = serde_json::json!({
+                "code": "INSTANCE_NOT_FOUND",
+                "message": "No instances configured"
+            });
+            (axum::http::StatusCode::NOT_FOUND, axum::Json(body)).into_response()
+        }
+    }
+}
+
+use axum::response::IntoResponse;

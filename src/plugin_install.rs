@@ -22,10 +22,11 @@
 
 use crate::config::{DrasiServerConfig, PluginDependency};
 use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
+use crate::plugin_operations::PluginOperations;
 use anyhow::{bail, Context, Result};
 use drasi_host_sdk::registry::{
-    CosignVerifier, HostVersionInfo, OciRegistryClient, PluginResolver, RegistryAuth,
-    RegistryConfig, ResolvedPlugin, SignatureStatus, TrustedIdentity, VerificationConfig,
+    CosignVerifier, OciRegistryClient, PluginResolver, RegistryConfig, ResolvedPlugin,
+    SignatureStatus,
 };
 use log::{info, warn};
 use std::path::Path;
@@ -44,6 +45,8 @@ pub async fn auto_install_plugins(
     plugins_dir: &Path,
     locked: bool,
 ) -> Result<Vec<ResolvedPlugin>> {
+    use drasi_host_sdk::registry::PluginSourceKind;
+
     if !config.auto_install_plugins || config.plugins.is_empty() {
         return Ok(Vec::new());
     }
@@ -60,6 +63,11 @@ pub async fn auto_install_plugins(
         if locked { " (locked)" } else { "" }
     );
 
+    // Check if the registry is a local directory
+    if let PluginSourceKind::LocalDir(dir) = PluginSourceKind::parse(registry_url) {
+        return auto_install_from_local_dir(config, plugins_dir, &dir).await;
+    }
+
     // Read existing lockfile
     let lockfile_dir = plugins_dir;
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
@@ -69,7 +77,7 @@ pub async fn auto_install_plugins(
     }
 
     // Build registry config with auth from environment
-    let auth = get_registry_auth();
+    let auth = PluginOperations::registry_auth();
     let registry_config = RegistryConfig {
         default_registry: registry_url.to_string(),
         auth,
@@ -77,14 +85,14 @@ pub async fn auto_install_plugins(
 
     // Always attempt verification during install to record signature info.
     // The verify_plugins flag only controls whether unverified plugins are blocked at load time.
-    let mut verification = build_verification_config(config);
+    let mut verification = PluginOperations::verification_config(config);
     verification.enabled = true;
 
     let client =
         OciRegistryClient::with_verifier(registry_config, CosignVerifier::new(verification));
 
     // Build host version info from compiled-in dependency versions
-    let host_info = build_host_version_info();
+    let host_info = PluginOperations::host_version_info();
 
     let resolver = PluginResolver::new(&client, &host_info);
 
@@ -269,45 +277,102 @@ async fn install_if_missing(
     Ok((resolved, download.verification))
 }
 
-/// Build host version info from compiled-in dependency versions.
-fn build_host_version_info() -> HostVersionInfo {
-    HostVersionInfo {
-        sdk_version: env!("DRASI_PLUGIN_SDK_VERSION").to_string(),
-        core_version: env!("DRASI_CORE_VERSION").to_string(),
-        lib_version: env!("DRASI_LIB_VERSION").to_string(),
-        target_triple: env!("TARGET_TRIPLE").to_string(),
-    }
-}
+/// Auto-install plugins from a local directory.
+///
+/// For each plugin in `config.plugins`, resolves and copies from the local dir.
+async fn auto_install_from_local_dir(
+    config: &DrasiServerConfig,
+    plugins_dir: &Path,
+    dir: &Path,
+) -> Result<Vec<ResolvedPlugin>> {
+    use drasi_host_sdk::registry::LocalDirRegistry;
 
-/// Get registry auth from environment variables.
-pub(crate) fn get_registry_auth() -> RegistryAuth {
-    let password = std::env::var("OCI_REGISTRY_PASSWORD")
-        .or_else(|_| std::env::var("GHCR_TOKEN"))
-        .ok();
+    let local = LocalDirRegistry::new(dir);
 
-    match password {
-        Some(pwd) => {
-            let username = std::env::var("OCI_REGISTRY_USERNAME").unwrap_or_default();
-            RegistryAuth::Basic {
-                username,
-                password: pwd,
+    std::fs::create_dir_all(plugins_dir).context("failed to create plugins directory")?;
+
+    let lockfile_dir = plugins_dir;
+    let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
+    let mut lockfile_updated = false;
+    let mut resolved = Vec::new();
+
+    for plugin_dep in &config.plugins {
+        match local.resolve(&plugin_dep.reference) {
+            Ok(info) => {
+                let dest_path = plugins_dir.join(&info.filename);
+                if dest_path.exists() {
+                    info!("  ✓ {} — already installed (local)", plugin_dep.reference);
+                } else {
+                    info!(
+                        "  ← {} — copying from {}...",
+                        plugin_dep.reference,
+                        dir.display()
+                    );
+                    local.install(&info, plugins_dir).with_context(|| {
+                        format!(
+                            "failed to install '{}' from local dir",
+                            plugin_dep.reference
+                        )
+                    })?;
+                    info!(
+                        "  ✓ {} — installed → {}",
+                        plugin_dep.reference, info.filename
+                    );
+                }
+
+                let locked_entry = LockedPlugin {
+                    reference: format!("file://{}", info.file_path.display()),
+                    version: info.version.clone(),
+                    digest: String::new(),
+                    sdk_version: info.sdk_version.clone(),
+                    core_version: String::new(),
+                    lib_version: String::new(),
+                    platform: env!("TARGET_TRIPLE").to_string(),
+                    filename: info.filename.clone(),
+                    file_hash: crate::plugin_lockfile::compute_file_hash(
+                        &plugins_dir.join(&info.filename),
+                    )
+                    .ok(),
+                    git_commit: None,
+                    build_timestamp: None,
+                    signature: None,
+                };
+                if lockfile.get(&plugin_dep.reference) != Some(&locked_entry) {
+                    lockfile.insert(plugin_dep.reference.clone(), locked_entry);
+                    lockfile_updated = true;
+                }
+
+                // Build a ResolvedPlugin for compatibility with callers
+                resolved.push(ResolvedPlugin {
+                    reference: format!("file://{}", info.file_path.display()),
+                    version: info.version,
+                    sdk_version: info.sdk_version,
+                    core_version: String::new(),
+                    lib_version: String::new(),
+                    platform: env!("TARGET_TRIPLE").to_string(),
+                    digest: String::new(),
+                    filename: info.filename,
+                });
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to install plugin '{}' from local dir: {}",
+                    plugin_dep.reference, e
+                );
             }
         }
-        None => RegistryAuth::Anonymous,
     }
-}
 
-/// Build verification config from server configuration.
-fn build_verification_config(config: &DrasiServerConfig) -> VerificationConfig {
-    VerificationConfig {
-        enabled: config.verify_plugins,
-        trusted_identities: config
-            .trusted_identities
-            .iter()
-            .map(|ti| TrustedIdentity {
-                issuer: ti.issuer.clone(),
-                subject_pattern: ti.subject_pattern.clone(),
-            })
-            .collect(),
+    if lockfile_updated {
+        lockfile.write(lockfile_dir)?;
     }
+
+    if !resolved.is_empty() {
+        info!(
+            "Plugin auto-install from local dir complete: {} plugin(s) ready",
+            resolved.len()
+        );
+    }
+
+    Ok(resolved)
 }

@@ -22,6 +22,7 @@ use super::{
     load_trusted_identities,
 };
 use crate::cli_styles;
+use drasi_server::plugin_operations::{is_wildcard_pattern, wildcard_match};
 
 /// Install a single plugin from the registry.
 pub async fn install_single(
@@ -31,12 +32,19 @@ pub async fn install_single(
     registry_override: Option<&str>,
 ) -> Result<()> {
     use drasi_host_sdk::fetcher::{parse_source_type, PluginSourceType};
+    use drasi_host_sdk::registry::PluginSourceKind;
 
     match parse_source_type(reference) {
         PluginSourceType::File | PluginSourceType::Http => {
             install_from_uri(reference, plugins_dir).await
         }
         PluginSourceType::Oci => {
+            // Check if the registry is a local directory
+            let registry_url = get_plugin_registry(config_path, registry_override);
+            if let PluginSourceKind::LocalDir(dir) = PluginSourceKind::parse(&registry_url) {
+                return install_from_local_dir(reference, plugins_dir, &dir).await;
+            }
+
             if is_wildcard_pattern(reference) {
                 install_from_oci_pattern(reference, plugins_dir, config_path, registry_override)
                     .await
@@ -47,37 +55,115 @@ pub async fn install_single(
     }
 }
 
-fn is_wildcard_pattern(reference: &str) -> bool {
-    reference.contains('*') || reference.contains('?') || reference.contains('[')
-}
+/// Install a plugin from a local directory.
+async fn install_from_local_dir(
+    reference: &str,
+    plugins_dir: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<()> {
+    use drasi_host_sdk::registry::LocalDirRegistry;
 
-fn wildcard_match(pattern: &str, text: &str) -> bool {
-    let p = pattern.as_bytes();
-    let t = text.as_bytes();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let (mut star_pi, mut star_ti) = (None::<usize>, 0usize);
+    let sp = cli_styles::spinner(&format!("Installing {reference} from {}...", dir.display()));
 
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == b'*' {
-            star_pi = Some(pi);
-            pi += 1;
-            star_ti = ti;
-        } else if let Some(sp) = star_pi {
-            pi = sp + 1;
-            star_ti += 1;
-            ti = star_ti;
-        } else {
-            return false;
+    let local = LocalDirRegistry::new(dir);
+
+    if is_wildcard_pattern(reference) {
+        let results = local.search(reference)?;
+        sp.finish_and_clear();
+
+        if results.is_empty() {
+            println!(
+                "{}",
+                cli_styles::skip(&format!("No plugins found matching '{reference}'."))
+            );
+            return Ok(());
         }
+
+        cli_styles::section(&format!(
+            "Installing {} plugin(s) from local directory",
+            results.len()
+        ));
+
+        std::fs::create_dir_all(plugins_dir)?;
+        let mut lockfile = PluginLockfile::read(plugins_dir)?.unwrap_or_default();
+        let mut installed = 0;
+
+        for info in &results {
+            let dest = local.install(info, plugins_dir)?;
+            println!(
+                "{}",
+                cli_styles::success(&format!(
+                    "{} → {}",
+                    info.reference,
+                    cli_styles::path(&dest.display().to_string())
+                ))
+            );
+            lockfile.insert(
+                info.reference.clone(),
+                LockedPlugin {
+                    reference: format!("file://{}", info.file_path.display()),
+                    version: info.version.clone(),
+                    digest: String::new(),
+                    sdk_version: info.sdk_version.clone(),
+                    core_version: String::new(),
+                    lib_version: String::new(),
+                    platform: env!("TARGET_TRIPLE").to_string(),
+                    filename: info.filename.clone(),
+                    file_hash: drasi_server::plugin_lockfile::compute_file_hash(&dest).ok(),
+                    git_commit: None,
+                    build_timestamp: None,
+                    signature: None,
+                },
+            );
+            installed += 1;
+        }
+
+        lockfile.write(plugins_dir)?;
+        cli_styles::install_summary(installed, 0, 0);
+    } else {
+        let info = local.resolve(reference)?;
+        sp.finish_and_clear();
+
+        std::fs::create_dir_all(plugins_dir)?;
+        let dest = local.install(&info, plugins_dir)?;
+
+        // Update lockfile
+        let mut lockfile = PluginLockfile::read(plugins_dir)?.unwrap_or_default();
+        lockfile.insert(
+            reference.to_string(),
+            LockedPlugin {
+                reference: format!("file://{}", info.file_path.display()),
+                version: info.version.clone(),
+                digest: String::new(),
+                sdk_version: info.sdk_version.clone(),
+                core_version: String::new(),
+                lib_version: String::new(),
+                platform: env!("TARGET_TRIPLE").to_string(),
+                filename: info.filename.clone(),
+                file_hash: drasi_server::plugin_lockfile::compute_file_hash(&dest).ok(),
+                git_commit: None,
+                build_timestamp: None,
+                signature: None,
+            },
+        );
+        lockfile.write(plugins_dir)?;
+
+        let ver_info = if !info.version.is_empty() {
+            format!(" v{}", info.version)
+        } else {
+            String::new()
+        };
+        println!(
+            "{}",
+            cli_styles::success(&format!(
+                "Installed{} → {}",
+                ver_info,
+                cli_styles::path(&dest.display().to_string())
+            ))
+        );
     }
 
-    while pi < p.len() && p[pi] == b'*' {
-        pi += 1;
-    }
-    pi == p.len()
+    Ok(())
 }
 
 fn wildcard_matches_plugin<'a, I>(
@@ -532,6 +618,12 @@ pub async fn install_all(
     config_path: &std::path::Path,
     registry_override: Option<&str>,
 ) -> Result<()> {
+    use drasi_host_sdk::registry::PluginSourceKind;
+
+    let registry_url = get_plugin_registry(config_path, registry_override);
+    if let PluginSourceKind::LocalDir(dir) = PluginSourceKind::parse(&registry_url) {
+        return install_from_local_dir("*", plugins_dir, &dir).await;
+    }
     install_from_oci_pattern("*", plugins_dir, config_path, registry_override).await
 }
 
@@ -736,7 +828,8 @@ async fn install_from_oci_pattern(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_wildcard_pattern, wildcard_match, wildcard_matches_plugin};
+    use super::wildcard_matches_plugin;
+    use drasi_server::plugin_operations::{is_wildcard_pattern, wildcard_match};
 
     #[test]
     fn test_is_wildcard_pattern() {

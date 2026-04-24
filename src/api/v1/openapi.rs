@@ -20,6 +20,11 @@
 
 use utoipa::OpenApi;
 
+use crate::api::models::solution::{
+    CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, DeployPhase,
+    SolutionDeployError, SolutionDeployRequest, SolutionDeployResponse, SolutionTemplateDetail,
+    SolutionTemplateMetadata, SolutionTemplateSummary, SolutionVariable,
+};
 use crate::api::models::{
     ComponentEventDto, ComponentStatusDto, ComponentTypeDto, ConfigValueBoolSchema,
     ConfigValueStringSchema, ConfigValueU16Schema, ConfigValueU32Schema, ConfigValueU64Schema,
@@ -27,6 +32,7 @@ use crate::api::models::{
     SourceMiddlewareConfigDto, SourceSubscriptionConfigDto,
 };
 use crate::api::shared::handlers::CreateInstanceRequest;
+use crate::api::shared::handlers::{CloneInstanceRequest, CloneInstanceResponse};
 use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
     HealthResponse, InstanceLinks, InstanceListItem, StatusResponse,
@@ -44,6 +50,7 @@ use utoipa::openapi::RefOr;
         super::handlers::health_check,
         super::handlers::list_instances,
         super::handlers::create_instance,
+        super::handlers::get_instance_snapshot,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
         super::handlers::upsert_source_handler,
@@ -78,6 +85,22 @@ use utoipa::openapi::RefOr;
         super::handlers::delete_reaction,
         super::handlers::start_reaction,
         super::handlers::stop_reaction,
+        super::handlers::list_solutions,
+        super::handlers::get_solution,
+        super::handlers::create_solution_template,
+        super::handlers::deploy_solution,
+        super::handlers::clone_instance,
+        // Plugin management
+        super::plugin_handlers::list_plugins,
+        super::plugin_handlers::get_plugin,
+        super::plugin_handlers::load_plugin,
+        super::plugin_handlers::install_plugin,
+        super::plugin_handlers::list_dependents,
+        super::plugin_handlers::list_kinds,
+        super::plugin_handlers::get_kind_schema,
+        // Missing instance handlers
+        super::handlers::stream_all_component_events,
+        super::handlers::push_source_data,
     ),
     components(
         schemas(
@@ -88,6 +111,8 @@ use utoipa::openapi::RefOr;
             InstanceListItem,
             InstanceLinks,
             CreateInstanceRequest,
+            CloneInstanceRequest,
+            CloneInstanceResponse,
             ApiVersionsResponse,
             ErrorResponse,
             ErrorDetail,
@@ -108,6 +133,27 @@ use utoipa::openapi::RefOr;
             ConfigValueU64Schema,
             ConfigValueUsizeSchema,
             ConfigValueBoolSchema,
+            // Solution Templates
+            SolutionTemplateMetadata,
+            SolutionVariable,
+            SolutionTemplateSummary,
+            SolutionTemplateDetail,
+            SolutionDeployRequest,
+            SolutionDeployResponse,
+            SolutionDeployError,
+            DeployPhase,
+            CreateSolutionTemplateRequest,
+            CreateSolutionTemplateResponse,
+            // Plugin DTOs
+            super::plugin_handlers::PluginListResponse,
+            super::plugin_handlers::PluginInfoDto,
+            super::plugin_handlers::PluginKindDto,
+            super::plugin_handlers::PluginKindsResponse,
+            super::plugin_handlers::PluginKindInfoDto,
+            super::plugin_handlers::PluginDependentsResponse,
+            super::plugin_handlers::PluginDependentDto,
+            super::plugin_handlers::LoadPluginRequest,
+            super::plugin_handlers::InstallPluginRequest,
         )
     ),
     tags(
@@ -117,6 +163,9 @@ use utoipa::openapi::RefOr;
         (name = "Sources", description = "Data source management"),
         (name = "Queries", description = "Continuous query management"),
         (name = "Reactions", description = "Reaction management"),
+        (name = "Solutions", description = "Deploy solution templates to instances"),
+        (name = "Catalog", description = "Browse solution templates and other reusable configurations"),
+        (name = "Plugins", description = "Plugin management — load, install, and inspect plugins"),
     ),
     info(
         title = "Drasi Server API",
@@ -256,7 +305,7 @@ pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &
         let enum_schema = ObjectBuilder::new()
             .schema_type(utoipa::openapi::SchemaType::String)
             .enum_values(Some(["Cypher", "GQL"]))
-            .default(Some("Cypher".into()))
+            .default(Some("GQL".into()))
             .build();
         schemas.insert(
             "QueryLanguage".to_string(),
@@ -360,5 +409,52 @@ fn inject_kind_property(
         .insert("kind".to_string(), RefOr::T(Schema::Object(kind_schema)));
     if !obj.required.contains(&"kind".to_string()) {
         obj.required.push("kind".to_string());
+    }
+}
+
+/// Cache for the generated OpenAPI spec, tied to the plugin registry version.
+///
+/// When plugins are loaded at runtime, the registry version
+/// increments. This cache detects staleness and regenerates the spec on demand.
+pub struct OpenApiCache {
+    cached_spec: tokio::sync::RwLock<(u64, utoipa::openapi::OpenApi)>,
+    plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
+}
+
+impl OpenApiCache {
+    /// Create a new cache with an initial spec.
+    pub fn new(
+        initial_spec: utoipa::openapi::OpenApi,
+        plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
+        initial_version: u64,
+    ) -> Self {
+        Self {
+            cached_spec: tokio::sync::RwLock::new((initial_version, initial_spec)),
+            plugin_registry,
+        }
+    }
+
+    /// Get the current OpenAPI spec, regenerating if the registry has been mutated.
+    pub async fn get_spec(&self) -> utoipa::openapi::OpenApi {
+        let reg = self.plugin_registry.read().await;
+        let current_version = reg.version();
+        drop(reg);
+
+        let cached = self.cached_spec.read().await;
+        if cached.0 == current_version {
+            return cached.1.clone();
+        }
+        drop(cached);
+
+        // Registry has changed — regenerate
+        let mut spec = ApiDocV1::openapi();
+        {
+            let reg = self.plugin_registry.read().await;
+            inject_plugin_schemas(&mut spec, &reg);
+        }
+
+        let mut cached = self.cached_spec.write().await;
+        *cached = (current_version, spec.clone());
+        spec
     }
 }

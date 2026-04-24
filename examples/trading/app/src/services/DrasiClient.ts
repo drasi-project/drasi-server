@@ -14,23 +14,7 @@
 
 import { QueryResult, ConnectionStatus } from '@/types';
 import { DrasiSSEClient } from './grpc/SSEClient';
-
-interface QueryDefinition {
-  id: string;
-  query: string;
-  sources: Array<{ sourceId: string; pipeline: string[] }>;
-  joins?: QueryJoin[];
-}
-
-interface QueryJoin {
-  id: string;
-  keys: QueryJoinKey[];
-}
-
-interface QueryJoinKey {
-  label: string;
-  property: string;
-}
+import { QueryDefinition, ALL_QUERIES, HAS_PRICE } from './queries';
 
 export class DrasiClient {
   private baseUrl: string;
@@ -39,7 +23,9 @@ export class DrasiClient {
   private initialized = false;
   private reactionId = 'sse-stream';
   private createdQueries: Set<string> = new Set();
+  private createdReaction = false;
   private customQueries: Set<string> = new Set();
+  private instanceId: string | null = null;
 
   constructor(baseUrl?: string) {
     // Use direct URL - Drasi Server should have CORS enabled
@@ -49,133 +35,10 @@ export class DrasiClient {
   }
 
   private initializeQueries() {
-    // Define synthetic joins for cross-source relationships
-    const hasPrice: QueryJoin = {
-      id: 'HAS_PRICE',
-      keys: [
-        { label: 'stocks', property: 'symbol' },
-        { label: 'stock_prices', property: 'symbol' }
-      ]
-    };
-
-    const ownsStock: QueryJoin = {
-      id: 'OWNS_STOCK',
-      keys: [
-        { label: 'portfolio', property: 'symbol' },
-        { label: 'stocks', property: 'symbol' }
-      ]
-    };
-
-    // Define all queries with synthetic joins
-    this.queries.set('watchlist-query', {
-      id: 'watchlist-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE s.symbol IN ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA']
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    this.queries.set('portfolio-query', {
-      id: 'portfolio-query',
-      query: `
-        MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)
-        OPTIONAL MATCH (s)-[:HAS_PRICE]->(sp:stock_prices)
-        RETURN  p.symbol AS symbol,
-                s.name AS name,
-                p.quantity AS quantity,
-                p.purchase_price AS purchase_price,
-                sp.price AS current_price,
-                (sp.price * p.quantity) AS current_value,
-                (p.purchase_price * p.quantity) AS cost_basis,
-                ((sp.price - p.purchase_price) * p.quantity) AS profit_loss,
-                ((sp.price - p.purchase_price) / p.purchase_price * 100) AS profit_loss_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [ownsStock, hasPrice]
-    });
-
-    this.queries.set('top-gainers-query', {
-      id: 'top-gainers-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.price > sp.previous_close
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    this.queries.set('top-losers-query', {
-      id: 'top-losers-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.price < sp.previous_close
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    this.queries.set('high-volume-query', {
-      id: 'high-volume-query',
-      query: `
-        MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
-        WHERE sp.volume > 10000000
-        RETURN s.symbol AS symbol,
-               s.name AS name,
-               sp.price AS price,
-               sp.volume AS volume,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'postgres-stocks', pipeline: [] },
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [hasPrice]
-    });
-
-    // Add a simple price ticker query that only uses price-feed
-    this.queries.set('price-ticker-query', {
-      id: 'price-ticker-query',
-      query: `
-        MATCH (sp:stock_prices)
-        RETURN sp.symbol AS symbol,
-               sp.price AS price,
-               sp.previous_close AS previous_close,
-               ((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent
-      `,
-      sources: [
-        { sourceId: 'price-feed', pipeline: [] }
-      ],
-      joins: [] // No joins needed - single source
-    });
+    // Load all queries from the queries.ts definitions
+    for (const query of ALL_QUERIES) {
+      this.queries.set(query.id, query);
+    }
   }
 
   /**
@@ -191,6 +54,21 @@ export class DrasiClient {
       const healthResponse = await fetch(`${this.baseUrl}/health`);
       if (!healthResponse.ok) {
         throw new Error('Drasi Server is not healthy');
+      }
+
+      // Discover the instance ID (convenience routes map to the first instance)
+      try {
+        const instancesResponse = await fetch(`${this.baseUrl}/api/v1/instances`);
+        if (instancesResponse.ok) {
+          const instancesJson = await instancesResponse.json();
+          const instances = instancesJson.data ?? instancesJson;
+          if (Array.isArray(instances) && instances.length > 0) {
+            this.instanceId = instances[0].id ?? instances[0];
+            console.log(`Discovered instance ID: ${this.instanceId}`);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not discover instance ID:', err);
       }
 
       // Check if sources exist
@@ -225,11 +103,16 @@ export class DrasiClient {
       for (const queryId of this.queries.keys()) {
         try {
           const results = await this.getQueryResults(queryId);
+          // Always store results (even empty) so loading state completes
+          initialResults[queryId] = results;
           if (results.length > 0) {
-            initialResults[queryId] = results;
             console.log(`Got ${results.length} initial results for ${queryId}`);
+          } else {
+            console.log(`No initial results for ${queryId} (empty)`);
           }
         } catch (error) {
+          // On error, still store empty array so loading completes
+          initialResults[queryId] = [];
           console.warn(`Failed to fetch initial results for ${queryId}:`, error);
         }
       }
@@ -291,6 +174,9 @@ export class DrasiClient {
           const error = await createResponse.text();
           throw new Error(`Failed to create reaction ${this.reactionId}: ${error}`);
         }
+
+        // Track that this session created the reaction
+        this.createdReaction = true;
 
         // Start the reaction
         await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, { method: 'POST' });
@@ -382,27 +268,20 @@ export class DrasiClient {
     whereClause: string,
     additionalFields?: string[]
   ): Promise<void> {
-    const hasPrice: QueryJoin = {
-      id: 'HAS_PRICE',
-      keys: [
-        { label: 'stocks', property: 'symbol' },
-        { label: 'stock_prices', property: 'symbol' }
-      ]
-    };
-
     const baseFields = [
       's.symbol AS symbol',
       's.name AS name',
       's.sector AS sector',
       'sp.price AS price',
       'sp.volume AS volume',
-      '((sp.price - sp.previous_close) / sp.previous_close * 100) AS change_percent'
+      '((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent'
     ];
 
     const allFields = [...baseFields, ...(additionalFields || [])];
 
     const queryDef: QueryDefinition = {
       id,
+      description: name,
       query: `
         MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
         WHERE ${whereClause}
@@ -413,7 +292,7 @@ export class DrasiClient {
         { sourceId: 'postgres-stocks', pipeline: [] },
         { sourceId: 'price-feed', pipeline: [] }
       ],
-      joins: [hasPrice]
+      joins: [HAS_PRICE]
     };
 
     await this.ensureQuery(queryDef);
@@ -448,6 +327,26 @@ export class DrasiClient {
   }
 
   /**
+   * Get a query's full configuration from the Drasi Server
+   */
+  async getQueryConfig(queryId: string): Promise<Record<string, any> | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/queries/${queryId}?view=full`);
+      if (!response.ok) {
+        console.warn(`Failed to fetch query config for ${queryId}: ${response.status}`);
+        return null;
+      }
+      const json = await response.json();
+      const payload = json.data ?? json;
+      const config = payload?.config ?? payload;
+      return config ?? null;
+    } catch (error) {
+      console.error(`Failed to get query config for ${queryId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get initial query results from REST API
    */
   async getQueryResults(queryId: string): Promise<any[]> {
@@ -457,7 +356,9 @@ export class DrasiClient {
         console.warn(`No results available for query ${queryId}`);
         return [];
       }
-      const data = await response.json();
+      const json = await response.json();
+      // API returns { success: true, data: [...] }
+      const data = json.data ?? json;
       return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error(`Failed to get results for query ${queryId}:`, error);
@@ -487,6 +388,14 @@ export class DrasiClient {
   }
 
   /**
+   * Get the Drasi Server UI URL for the current instance
+   */
+  getDrasiUiUrl(): string | null {
+    if (!this.instanceId) return null;
+    return `${this.baseUrl}/ui?instance=${encodeURIComponent(this.instanceId)}`;
+  }
+
+  /**
    * Register cleanup handlers for browser events
    */
   private registerCleanupHandlers() {
@@ -507,42 +416,12 @@ export class DrasiClient {
    * Clean up all created resources
    */
   async cleanup(): Promise<void> {
-    console.log('Cleaning up Drasi Client resources...');
-
-    // IMPORTANT: Stop and delete reaction FIRST (before queries)
-    try {
-      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/stop`, { method: 'POST' });
-      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}`, { method: 'DELETE' });
-      console.log(`Deleted reaction: ${this.reactionId}`);
-    } catch (error) {
-      console.error(`Failed to cleanup reaction ${this.reactionId}:`, error);
-    }
-
-    // Then stop and delete all queries
-    for (const queryId of this.createdQueries) {
-      try {
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
-        console.log(`Deleted query: ${queryId}`);
-      } catch (error) {
-        console.error(`Failed to cleanup query ${queryId}:`, error);
-      }
-    }
-
-    // Stop and delete custom queries
-    for (const queryId of this.customQueries) {
-      try {
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}/stop`, { method: 'POST' });
-        await fetch(`${this.baseUrl}/api/v1/queries/${queryId}`, { method: 'DELETE' });
-        console.log(`Deleted custom query: ${queryId}`);
-      } catch (error) {
-        console.error(`Failed to cleanup custom query ${queryId}:`, error);
-      }
-    }
+    console.log('Drasi Client closing — leaving queries and reactions in place');
 
     // Clear tracking sets
     this.createdQueries.clear();
     this.customQueries.clear();
+    this.createdReaction = false;
   }
 
   /**

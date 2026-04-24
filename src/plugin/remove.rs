@@ -17,6 +17,9 @@ use std::collections::HashSet;
 use std::fs;
 
 use drasi_server::plugin_lockfile::PluginLockfile;
+use drasi_server::plugin_operations::{
+    is_plugin_binary, is_wildcard_pattern, plugin_kind_from_filename, wildcard_match,
+};
 
 use crate::cli_styles;
 
@@ -146,64 +149,9 @@ pub fn remove(reference: &str, plugins_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-fn is_wildcard_pattern(reference: &str) -> bool {
-    reference.contains('*') || reference.contains('?') || reference.contains('[')
-}
-
-fn is_plugin_binary(name: &str) -> bool {
-    name.ends_with(".so") || name.ends_with(".dll") || name.ends_with(".dylib")
-}
-
-fn plugin_kind_from_filename(filename: &str) -> Option<String> {
-    let stem = if let Some(stem) = filename.strip_suffix(".so") {
-        stem.strip_prefix("lib")?
-    } else if let Some(stem) = filename.strip_suffix(".dll") {
-        stem
-    } else if let Some(stem) = filename.strip_suffix(".dylib") {
-        stem.strip_prefix("lib")?
-    } else {
-        return None;
-    };
-
-    let stem = stem.strip_prefix("drasi_")?;
-    let mut parts = stem.splitn(2, '_');
-    let ptype = parts.next()?;
-    let kind = parts.next()?.replace('_', "-");
-    Some(format!("{ptype}/{kind}"))
-}
-
-fn wildcard_match(pattern: &str, text: &str) -> bool {
-    let p = pattern.as_bytes();
-    let t = text.as_bytes();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let (mut star_pi, mut star_ti) = (None::<usize>, 0usize);
-
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == b'*' {
-            star_pi = Some(pi);
-            pi += 1;
-            star_ti = ti;
-        } else if let Some(sp) = star_pi {
-            pi = sp + 1;
-            star_ti += 1;
-            ti = star_ti;
-        } else {
-            return false;
-        }
-    }
-
-    while pi < p.len() && p[pi] == b'*' {
-        pi += 1;
-    }
-    pi == p.len()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{plugin_kind_from_filename, wildcard_match};
+    use drasi_server::plugin_operations::{plugin_kind_from_filename, wildcard_match};
 
     #[test]
     fn test_plugin_kind_from_filename() {

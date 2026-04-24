@@ -95,6 +95,7 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             dispatch_buffer_capacity: dto.dispatch_buffer_capacity,
             dispatch_mode,
             storage_backend,
+            recovery_policy: None,
         })
     }
 }

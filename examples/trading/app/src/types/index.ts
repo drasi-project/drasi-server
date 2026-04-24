@@ -25,6 +25,7 @@ export interface Stock {
 }
 
 export interface PortfolioPosition {
+  id: number;
   symbol: string;
   name: string;
   quantity: number;
@@ -38,9 +39,45 @@ export interface PortfolioPosition {
 
 export interface SectorPerformance {
   sector: string;
-  avgPrice: number;
-  avgChangePercent: number;
   stockCount: number;
+  avgChangePercent: number;
+  totalVolume: number;
+  minPrice: number;
+  maxPrice: number;
+}
+
+export interface PortfolioSummary {
+  totalValue: number;
+  totalCost: number;
+  totalProfitLoss: number;
+  totalProfitLossPercent: number;
+  positionCount: number;
+}
+
+export interface LimitOrderResult {
+  id: number;
+  symbol: string;
+  orderType: string;
+  targetPrice: number;
+  currentPrice: number;
+  quantity: number;
+  status: string;
+  createdAt: string;
+  triggeredAt?: string;
+  expiresAt?: string;
+  distancePercent: number;
+}
+
+export interface OrderAlert {
+  id: number;
+  symbol: string;
+  orderType: string;
+  targetPrice: number;
+  quantity: number;
+  triggeredAt?: string;
+  expiresAt?: string;
+  alertType: 'STALE' | 'EXPIRED';
+  alertMessage: string;
 }
 
 export interface QueryResult {
