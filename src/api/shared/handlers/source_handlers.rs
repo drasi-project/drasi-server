@@ -119,7 +119,7 @@ pub async fn create_source_handler(
                 }
             }
 
-            persist_after_operation(&config_persistence, "creating source").await;
+            persist_after_operation(&config_persistence, "creating source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Source '{source_id}' created successfully"),
@@ -205,7 +205,7 @@ pub async fn upsert_source_handler(
 
         log::info!("Source '{source_id}' updated successfully");
 
-        persist_after_operation(&config_persistence, "upserting source").await;
+        persist_after_operation(&config_persistence, "upserting source").await?;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
             message: format!("Source '{source_id}' updated successfully"),
@@ -232,7 +232,7 @@ pub async fn upsert_source_handler(
                 }
             }
 
-            persist_after_operation(&config_persistence, "upserting source").await;
+            persist_after_operation(&config_persistence, "upserting source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Source '{source_id}' created successfully"),
@@ -403,7 +403,7 @@ pub async fn delete_source(
 
     match core.remove_source(&id, true).await {
         Ok(_) => {
-            persist_after_operation(&config_persistence, "deleting source").await;
+            persist_after_operation(&config_persistence, "deleting source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Source deleted successfully".to_string(),

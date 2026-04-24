@@ -118,7 +118,7 @@ pub async fn create_reaction_handler(
                 }
             }
 
-            persist_after_operation(&config_persistence, "creating reaction").await;
+            persist_after_operation(&config_persistence, "creating reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Reaction '{reaction_id}' created successfully"),
@@ -204,7 +204,7 @@ pub async fn upsert_reaction_handler(
 
         log::info!("Reaction '{reaction_id}' updated successfully");
 
-        persist_after_operation(&config_persistence, "upserting reaction").await;
+        persist_after_operation(&config_persistence, "upserting reaction").await?;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
             message: format!("Reaction '{reaction_id}' updated successfully"),
@@ -231,7 +231,7 @@ pub async fn upsert_reaction_handler(
                 }
             }
 
-            persist_after_operation(&config_persistence, "upserting reaction").await;
+            persist_after_operation(&config_persistence, "upserting reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: format!("Reaction '{reaction_id}' created successfully"),
@@ -411,7 +411,7 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
-            persist_after_operation(&config_persistence, "deleting reaction").await;
+            persist_after_operation(&config_persistence, "deleting reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Reaction deleted successfully".to_string(),

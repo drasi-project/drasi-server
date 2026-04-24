@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use super::error::{error_codes, ErrorResponse};
+use super::error::{error_codes, ErrorDetail, ErrorResponse};
 use super::responses::{
     ApiResponse, ApiVersionsResponse, ComponentLinks, HealthResponse, InstanceListItem,
 };
@@ -154,15 +154,48 @@ pub(crate) async fn sse_event_async<T: Serialize>(payload: T) -> Option<Result<E
     sse_event(payload)
 }
 
-/// Helper function to persist configuration after a successful operation.
-/// Logs errors but does not fail the request - persistence failures are non-fatal.
+/// Helper to persist configuration after a successful in-memory mutation.
+///
+/// **Important contract:** the in-memory state has already been mutated
+/// before this is called. If persistence fails, the runtime is now ahead of
+/// the on-disk YAML and the operator must retry or restart after fixing the
+/// underlying issue. To make this visible to API callers, persistence
+/// failures are surfaced as a [`ErrorResponse`] with code
+/// [`error_codes::PERSISTENCE_FAILED`] (HTTP 500). Handlers should
+/// `?`-propagate the result.
+///
+/// The high-level message states the in-memory/on-disk divergence
+/// explicitly; the underlying technical error is placed in
+/// [`ErrorDetail::technical_details`] (never embedded in `message`) per the
+/// project's error-handling convention.
+///
+/// When persistence is disabled (no config file or `persistConfig: false`),
+/// this is a no-op and returns `Ok(())`.
 pub async fn persist_after_operation(
     config_persistence: &Option<Arc<ConfigPersistence>>,
     operation: &str,
-) {
-    if let Some(persistence) = config_persistence {
-        if let Err(e) = persistence.save().await {
+) -> Result<(), ErrorResponse> {
+    let Some(persistence) = config_persistence else {
+        return Ok(());
+    };
+    match persistence.save().await {
+        Ok(()) => Ok(()),
+        Err(e) => {
             log::error!("Failed to persist configuration after {operation}: {e}");
+            Err(ErrorResponse::new(
+                error_codes::PERSISTENCE_FAILED,
+                format!(
+                    "Configuration change applied in memory but could not be persisted to disk \
+                     after {operation}. The runtime state has changed; the on-disk \
+                     configuration has not. Retry the operation or restart the server \
+                     after fixing the underlying persistence issue."
+                ),
+            )
+            .with_details(ErrorDetail {
+                component_type: None,
+                component_id: None,
+                technical_details: Some(e.to_string()),
+            }))
         }
     }
 }

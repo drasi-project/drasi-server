@@ -138,7 +138,7 @@ pub async fn create_query(
         Ok(_) => {
             log::info!("Query '{query_id}' created successfully");
 
-            persist_after_operation(&config_persistence, "creating query").await;
+            persist_after_operation(&config_persistence, "creating query").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query created successfully".to_string(),
@@ -327,7 +327,7 @@ pub async fn delete_query(
 
     match core.remove_query(&id).await {
         Ok(_) => {
-            persist_after_operation(&config_persistence, "deleting query").await;
+            persist_after_operation(&config_persistence, "deleting query").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
                 message: "Query deleted successfully".to_string(),

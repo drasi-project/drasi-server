@@ -148,7 +148,7 @@ pub async fn create_instance(
             queries: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
-        persist_after_operation(&Some(persistence.clone()), "creating instance").await;
+        persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
     }
 
     Ok(Json(ApiResponse::success(StatusResponse {
@@ -361,7 +361,7 @@ pub async fn clone_instance(
         reactions_created.push(rx_snap.id.clone());
     }
 
-    persist_after_operation(&config_persistence, "cloning instance").await;
+    persist_after_operation(&config_persistence, "cloning instance").await?;
 
     log::info!(
         "Clone complete: {} sources, {} queries, {} reactions cloned from '{}' to '{}'",

@@ -99,6 +99,11 @@ pub mod error_codes {
     pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    /// Returned when an in-memory mutation succeeded but the configuration
+    /// could not be persisted to disk. The runtime state has changed; the
+    /// on-disk YAML has not. Operators should retry the operation or restart
+    /// the server after fixing the underlying persistence issue.
+    pub const PERSISTENCE_FAILED: &str = "PERSISTENCE_FAILED";
 
     pub const INSTANCE_NOT_FOUND: &str = "INSTANCE_NOT_FOUND";
     pub const INSTANCE_CREATE_FAILED: &str = "INSTANCE_CREATE_FAILED";

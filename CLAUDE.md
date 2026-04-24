@@ -415,6 +415,20 @@ or add new ones — never use ad-hoc string error codes.
 - Use `ErrorResponse::from(drasi_error)` to convert DrasiLib errors
 - Use `anyhow::Result` with `.context()` in internal/service modules
 - Add new error codes to `error_codes` module when needed
+- **Never embed raw underlying error strings in `ErrorResponse.message`.** The
+  `message` field is a high-level human-readable description of the failure.
+  Underlying technical errors (`e.to_string()`, file paths, `DrasiError`
+  internals) belong in `ErrorDetail::technical_details`.
+
+**Persistence failures:** Mutating handlers (create/delete source/query/
+reaction, instance create, clone, etc.) call `persist_after_operation` which
+returns `Result<(), ErrorResponse>`. If persistence fails after the in-memory
+mutation has already succeeded, the helper returns `PERSISTENCE_FAILED` (HTTP
+500) — handlers `?`-propagate this. The error message states explicitly that
+the change was applied in memory but not persisted; the underlying
+filesystem error (`e.to_string()`) is in `ErrorDetail::technical_details`.
+Operators must retry the operation or restart after fixing the underlying
+issue, since the runtime is now ahead of the on-disk YAML.
 
 ### Async/Await
 - All I/O operations are async using Tokio

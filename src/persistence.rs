@@ -1029,4 +1029,91 @@ mod tests {
             "https://dashboard.example.com"
         );
     }
+
+    /// `persist_after_operation` must surface persistence failures to the
+    /// caller as `PERSISTENCE_FAILED` with the underlying technical error
+    /// in `details.technical_details`. The high-level message must not
+    /// embed the raw error string.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_persist_after_operation_surfaces_failure() {
+        use crate::api::shared::error::error_codes;
+        use crate::api::shared::handlers::persist_after_operation;
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let cfg_dir = tmp.path().join("cfg");
+        std::fs::create_dir(&cfg_dir).unwrap();
+        let cfg_path = cfg_dir.join("server.yaml");
+
+        let core = build_core(
+            "inst1",
+            vec![TestSource::new("src1", "mock")],
+            vec![Query::cypher("q1")
+                .query("MATCH (n) RETURN n")
+                .from_source("src1")
+                .build()],
+            vec![TestReaction::new("rx1", "log", vec!["q1".into()])],
+        )
+        .await;
+
+        let persistence = Arc::new(make_persistence(core, "inst1", cfg_path, true));
+
+        // Sanity: succeeds when directory is writable.
+        persist_after_operation(&Some(persistence.clone()), "test op")
+            .await
+            .expect("baseline persist should succeed");
+
+        // Make the parent directory read-only so the temp-file write fails.
+        let mut perms = std::fs::metadata(&cfg_dir).unwrap().permissions();
+        let original_mode = perms.mode();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(&cfg_dir, perms).unwrap();
+
+        let err = persist_after_operation(&Some(persistence.clone()), "creating source")
+            .await
+            .expect_err("persist should fail when config dir is read-only");
+
+        // Restore permissions before any assertion can panic so the TempDir
+        // can be cleaned up.
+        let mut restore = std::fs::metadata(&cfg_dir).unwrap().permissions();
+        restore.set_mode(original_mode);
+        let _ = std::fs::set_permissions(&cfg_dir, restore);
+
+        assert_eq!(err.code, error_codes::PERSISTENCE_FAILED);
+        assert!(
+            err.message.contains("creating source")
+                && err.message.contains("in memory")
+                && err.message.contains("not be persisted"),
+            "high-level message should describe the in-memory/on-disk divergence, got: {}",
+            err.message
+        );
+        let details = err
+            .details
+            .as_ref()
+            .expect("technical details should be populated");
+        let tech = details
+            .technical_details
+            .as_ref()
+            .expect("technical_details should carry the underlying error");
+        assert!(
+            !tech.is_empty(),
+            "technical_details should contain the underlying error"
+        );
+        // The underlying error must NOT be embedded in the high-level message.
+        assert!(
+            !err.message.contains(tech),
+            "underlying technical error must not be embedded in `message`"
+        );
+    }
+
+    /// When persistence is disabled (`None`), `persist_after_operation` is a no-op.
+    #[tokio::test]
+    async fn test_persist_after_operation_none_is_noop() {
+        use crate::api::shared::handlers::persist_after_operation;
+
+        persist_after_operation(&None, "anything")
+            .await
+            .expect("None config persistence should be Ok");
+    }
 }
