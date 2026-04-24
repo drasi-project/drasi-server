@@ -65,11 +65,37 @@ pub struct ReferenceWarning {
     pub message: String,
 }
 
+/// Stable codes for meta-level schema-evaluation outcomes.
+///
+/// These appear on [`FieldError::code`] when the schema itself could not be
+/// evaluated (parse, lookup, or compile failure) — distinct from
+/// jsonschema-derived field errors, where `code` is `None` and the
+/// `field` + `message` pair is the contract.
+///
+/// Modeled on the `error_codes` pattern in `crate::api::shared::error`
+/// (string consts, no enum) for consistency.
+pub mod schema_error_codes {
+    /// Plugin schema JSON could not be parsed (or was not a JSON object).
+    pub const SCHEMA_UNPARSEABLE: &str = "SCHEMA_UNPARSEABLE";
+    /// The named entry point was not found in the parsed schema map.
+    pub const SCHEMA_ENTRY_MISSING: &str = "SCHEMA_ENTRY_MISSING";
+    /// `jsonschema::validator_for` failed to compile the schema document.
+    pub const SCHEMA_VALIDATOR_BUILD_FAILED: &str = "SCHEMA_VALIDATOR_BUILD_FAILED";
+}
+
 /// A single field-level config validation error.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FieldError {
     pub field: String,
     pub message: String,
+    /// Optional stable code for meta-level validation outcomes.
+    ///
+    /// `None` for jsonschema-derived field errors (the `field` + `message`
+    /// pair is the contract there). `Some(...)` for schema-evaluation
+    /// failures (see [`schema_error_codes`]) so callers can branch
+    /// without string-matching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
 }
 
 /// Report for a single component's config validation.

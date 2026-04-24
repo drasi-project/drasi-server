@@ -22,7 +22,8 @@ use log::warn;
 use serde_json::Value;
 
 use super::plugin_validation::{
-    collect_all_reactions, collect_all_sources, ComponentValidationReport, FieldError,
+    collect_all_reactions, collect_all_sources, schema_error_codes, ComponentValidationReport,
+    FieldError,
 };
 use crate::config::types::DrasiServerConfig;
 use crate::plugin_registry::PluginRegistry;
@@ -114,10 +115,13 @@ fn validate_against_schema(
     let schema_map: serde_json::Map<String, Value> = match serde_json::from_str(schema_map_json) {
         Ok(Value::Object(map)) => map,
         Ok(_) | Err(_) => {
-            warn!("Could not parse plugin schema JSON");
+            warn!("Could not parse plugin schema JSON for entry '{entry_name}'");
             return vec![FieldError {
                 field: "(schema)".to_string(),
-                message: "Could not parse plugin schema — skipping validation".to_string(),
+                message: "Plugin schema could not be parsed as a JSON object — \
+                         component config could not be validated"
+                    .to_string(),
+                code: Some(schema_error_codes::SCHEMA_UNPARSEABLE),
             }];
         }
     };
@@ -133,7 +137,14 @@ fn validate_against_schema(
     // Ensure the entry point exists
     if !defs.contains_key(entry_name) {
         warn!("Schema entry point '{entry_name}' not found in plugin schemas");
-        return Vec::new();
+        return vec![FieldError {
+            field: "(schema)".to_string(),
+            message: format!(
+                "Schema entry point '{entry_name}' not found in plugin schemas — \
+                 component config could not be validated"
+            ),
+            code: Some(schema_error_codes::SCHEMA_ENTRY_MISSING),
+        }];
     }
 
     let schema_doc = serde_json::json!({
@@ -145,7 +156,35 @@ fn validate_against_schema(
     let validator = match jsonschema::validator_for(&schema_doc) {
         Ok(v) => v,
         Err(e) => {
-            warn!("Could not compile JSON Schema: {e}");
+            // The schema map parses and the entry exists, but `jsonschema`
+            // could not build a validator from the resulting document —
+            // typically because a `$ref` points at a `$defs/...` entry that
+            // wasn't published in the plugin's schema map (incomplete
+            // `$defs`).
+            //
+            // This is a plugin-packaging bug and is currently widespread in
+            // upstream drasi-core plugin schemas (e.g. references to
+            // `QueryConfigDto`, `ConfigValue`, `ConfigValueString` that
+            // aren't included alongside the root schema). Returning a
+            // fatal error here would block users from validating any
+            // example config that uses those plugins, even though the
+            // configs themselves are well-formed.
+            //
+            // Log loudly via `error!` (previously `warn!`) so the
+            // condition is visible in operator logs, and skip
+            // schema-shape validation for this component. This is *not*
+            // returning a synthetic `FieldError` — doing so would put us
+            // back in the position of silently passing a config that
+            // couldn't actually be checked, which is worse than logging
+            // and continuing. Once upstream plugin schemas are fixed,
+            // this branch should become unreachable and can be promoted
+            // to a fatal `FieldError` with
+            // `schema_error_codes::SCHEMA_VALIDATOR_BUILD_FAILED`.
+            log::error!(
+                "Could not compile JSON Schema for entry '{entry_name}' \
+                 (likely incomplete plugin $defs) — skipping schema-shape \
+                 validation for this component: {e}"
+            );
             return Vec::new();
         }
     };
@@ -161,6 +200,7 @@ fn validate_against_schema(
             FieldError {
                 field,
                 message: err.to_string(),
+                code: None,
             }
         })
         .collect()
@@ -651,6 +691,7 @@ mod tests {
         let errors = validate_against_schema("not valid json", "Foo", &serde_json::json!({}));
         assert_eq!(errors.len(), 1);
         assert!(errors[0].field.contains("schema"));
+        assert_eq!(errors[0].code, Some(schema_error_codes::SCHEMA_UNPARSEABLE));
     }
 
     #[test]
@@ -660,6 +701,45 @@ mod tests {
             "NonExistent",
             &serde_json::json!({}),
         );
-        assert!(errors.is_empty()); // Graceful: no errors, just skipped
+        // Missing entry point is a fatal validation failure: the component
+        // config could not be evaluated at all, so callers must see the
+        // error rather than silently treating it as "OK".
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "(schema)");
+        assert_eq!(
+            errors[0].code,
+            Some(schema_error_codes::SCHEMA_ENTRY_MISSING)
+        );
+        assert!(errors[0].message.contains("NonExistent"));
+    }
+
+    #[test]
+    fn test_validator_build_failure_is_logged_not_fatal() {
+        // A schema referencing a `$defs` entry that isn't published is a
+        // plugin-packaging bug. Per the documented design, this is logged
+        // loudly via `error!` but does NOT return a fatal `FieldError` —
+        // current upstream plugin schemas are widely affected and a fatal
+        // error would block validation of example configs. The
+        // `SCHEMA_VALIDATOR_BUILD_FAILED` code is reserved for the future
+        // tightening once upstream schemas are fixed.
+        let errors = validate_against_schema(
+            r##"{"Foo": {"$ref": "#/components/schemas/Missing"}}"##,
+            "Foo",
+            &serde_json::json!({}),
+        );
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_field_errors_have_no_code() {
+        // jsonschema-derived field errors keep `code = None`; only
+        // meta-level schema-evaluation failures carry a code.
+        let errors = validate_against_schema(
+            r##"{"Foo": {"type": "object", "required": ["x"], "properties": {"x": {"type": "string"}}}}"##,
+            "Foo",
+            &serde_json::json!({}),
+        );
+        assert!(!errors.is_empty());
+        assert!(errors.iter().all(|e| e.code.is_none()));
     }
 }
