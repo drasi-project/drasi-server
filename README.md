@@ -84,15 +84,23 @@ curl http://localhost:8080/health
 
 **Option B: Using Cargo**
 
+> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> bundled Web UI).
+
 ```bash
-# Clone and build
+# Clone and build (server + Web UI)
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
-cargo build --release
+make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 
 # Start the server (creates default config if none exists)
 cargo run --release
 ```
+
+> **Note:** Plain `cargo build --release` does **not** build the Web UI. If you
+> use Cargo directly, also run `make build-ui` (or `cd ui && npm install &&
+> npm run build`) so the `/ui` route is available. Otherwise the server logs a
+> warning and the UI returns 404.
 
 ### Step 2: Open the Web UI
 
@@ -214,17 +222,28 @@ DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -
 
 ### Option 2: Build from Source
 
+> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> bundled Web UI). The Docker image (Option 1) bundles a pre-built UI, so npm
+> is only needed for source builds.
+
 ```bash
 # Install Rust if needed
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone and build
+# Clone and build (server + Web UI)
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
-cargo build --release
+make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 
 # The binary is at target/release/drasi-server
+# The Web UI assets are at ui/dist (served by the binary at /ui)
 ```
+
+> **Note:** Plain `cargo build --release` does **not** build the Web UI — it
+> only builds the Rust binary. To enable the `/ui` route, either use
+> `make build-release` (recommended) or run `make build-ui` separately. If
+> `ui/dist` is missing at startup, the server logs a warning and `/ui`
+> returns 404.
 
 ### Option 3: Interactive Setup
 
@@ -338,6 +357,25 @@ drasi-server --config config/server.yaml
 ## Web UI Guide
 
 Drasi Server includes a visual Web UI for managing data pipelines without writing configuration files or API calls.
+
+### Prerequisites (source builds only)
+
+The Web UI is a separate Vite/React app under `ui/` that compiles to static
+assets in `ui/dist`, which the server binary serves at `/ui`. When building
+from source you must build the UI alongside the binary:
+
+```bash
+make build-release    # builds server + UI (recommended)
+# or, if you already built the binary with cargo:
+make build-ui         # build only the UI
+```
+
+The pre-built **Docker image** (`ghcr.io/drasi-project/drasi-server`) already
+includes the compiled UI — no extra step needed.
+
+If `ui/dist` is missing at startup, the server logs a warning and the `/ui`
+route returns 404. Use `--disable-ui` (or `enableUi: false`) to suppress the
+warning when you intentionally don't want the UI.
 
 ### Accessing the Web UI
 
