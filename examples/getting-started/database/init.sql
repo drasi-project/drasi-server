@@ -33,11 +33,11 @@ GRANT CREATE ON DATABASE getting_started TO drasi_user;
 GRANT ALL PRIVILEGES ON DATABASE getting_started TO drasi_user;
 
 -- Drop existing table if exists
-DROP TABLE IF EXISTS message CASCADE;
+DROP TABLE IF EXISTS "Message" CASCADE;
 
 -- Message table matching Platform tutorial schema
 -- Stores messages with sender and content
-CREATE TABLE message (
+CREATE TABLE "Message" (
     messageid SERIAL PRIMARY KEY,
     "from" VARCHAR(255) NOT NULL,
     message TEXT NOT NULL,
@@ -46,10 +46,10 @@ CREATE TABLE message (
 
 -- Set REPLICA IDENTITY to FULL for complete CDC support
 -- This ensures all columns are included in change events
-ALTER TABLE message REPLICA IDENTITY FULL;
+ALTER TABLE "Message" REPLICA IDENTITY FULL;
 
 -- Ensure drasi_user owns the table
-ALTER TABLE message OWNER TO drasi_user;
+ALTER TABLE "Message" OWNER TO drasi_user;
 
 -- Grant permissions to drasi_user
 GRANT USAGE ON SCHEMA public TO drasi_user;
@@ -61,7 +61,7 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO drasi_user;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'drasi_getting_started_pub') THEN
-        CREATE PUBLICATION drasi_getting_started_pub FOR TABLE message;
+        CREATE PUBLICATION drasi_getting_started_pub FOR TABLE "Message";
     END IF;
 END
 $$;
@@ -69,14 +69,14 @@ $$;
 -- Insert initial sample data (only if table is empty)
 -- This must happen BEFORE the replication slot is created so that
 -- existing data is loaded via bootstrap, not replayed as change events.
-INSERT INTO message ("from", message)
+INSERT INTO "Message" ("from", message)
 SELECT * FROM (VALUES
     ('Buzz Lightyear', 'To infinity and beyond!'),
     ('Brian Kernighan', 'Hello World'),
     ('Antoninus', 'I am Spartacus'),
     ('David', 'I am Spartacus')
 ) AS data("from", message)
-WHERE NOT EXISTS (SELECT 1 FROM message);
+WHERE NOT EXISTS (SELECT 1 FROM "Message");
 
 -- Create replication slot for CDC (if not exists)
 -- The slot captures only changes made AFTER this point.
@@ -94,7 +94,7 @@ SET client_min_messages = NOTICE;
 DO $$
 BEGIN
     RAISE NOTICE 'Getting Started database initialized successfully!';
-    RAISE NOTICE 'Tables: message';
+    RAISE NOTICE 'Tables: Message';
     RAISE NOTICE 'Publication: drasi_getting_started_pub';
     RAISE NOTICE 'Replication slot: drasi_getting_started_slot';
 END
