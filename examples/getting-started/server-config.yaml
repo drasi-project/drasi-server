@@ -59,7 +59,7 @@ sources:
     port: ${POSTGRES_PORT:-5432}
     database: "${POSTGRES_DATABASE:-getting_started}"
     user: "${POSTGRES_USER:-drasi_user}"
-    password: "${POSTGRES_PASSWORD}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
     sslMode: prefer
 
     # Tables to monitor for changes
