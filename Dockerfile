@@ -56,12 +56,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files first for dependency caching
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 
 
 # Copy source code
 COPY src ./src
 COPY config ./config
+COPY xtask ./xtask
 
 # Build release binary
 # Set JQ_LIB_DIR dynamically for multiarch support (no pkg-config file in Debian's libjq-dev)
