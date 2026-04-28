@@ -236,73 +236,6 @@ jobs:
           path: drasi-server-${{ matrix.artifact_suffix }}
           if-no-files-found: error
 
-  # Windows cross-compiled from Linux (bundles MinGW runtime DLLs)
-  build-windows:
-    name: Build Windows (x86_64)
-    runs-on: ubuntu-latest
-    needs: determine-version
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Install cross
-        run: cargo install cross --version 0.2.5
-
-      - name: Build binary
-        run: |
-          echo "=== Cross.toml ==="
-          cat Cross.toml
-          echo ""
-          echo "=== Dockerfile.cross-windows-gnu ==="
-          cat Dockerfile.cross-windows-gnu
-          echo ""
-
-          rustup target add x86_64-pc-windows-gnu
-          cross build --release --target x86_64-pc-windows-gnu --bin drasi-server
-
-          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-server.exe"
-          ARTIFACT_NAME="drasi-server-x86_64-windows.exe"
-
-          echo "=== Build output ==="
-          ls -lh "$SRC_BINARY" || true
-          file "$SRC_BINARY" || true
-
-          if [[ -f "$SRC_BINARY" ]]; then
-            cp "$SRC_BINARY" "$ARTIFACT_NAME"
-            echo "✓ Built $ARTIFACT_NAME ($(du -h "$ARTIFACT_NAME" | cut -f1))"
-          else
-            echo "Error: Built binary not found at $SRC_BINARY"
-            echo "=== release directory listing ==="
-            ls -la "target/x86_64-pc-windows-gnu/release/" || true
-            exit 1
-          fi
-
-      - name: Verify no DLL dependencies
-        run: |
-          # Check that the built .exe doesn't depend on MinGW runtime DLLs
-          SRC_BINARY="target/x86_64-pc-windows-gnu/release/drasi-server.exe"
-          echo "=== Checking for MinGW DLL dependencies ==="
-          if x86_64-w64-mingw32-objdump -p "$SRC_BINARY" 2>/dev/null | grep -i 'DLL Name' | grep -iE 'libgcc|libstdc|libwinpthread'; then
-            echo "WARNING: Binary still has MinGW DLL dependencies!"
-            x86_64-w64-mingw32-objdump -p "$SRC_BINARY" | grep -i 'DLL Name'
-          else
-            echo "✓ No MinGW runtime DLL dependencies found"
-            echo "All DLL imports:"
-            x86_64-w64-mingw32-objdump -p "$SRC_BINARY" 2>/dev/null | grep -i 'DLL Name' || echo "(could not read DLL imports)"
-          fi
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: drasi-server-x86_64-windows
-          path: drasi-server-x86_64-windows.exe
-          if-no-files-found: error
-
   # Windows MSVC native build (uses vendored static libs for jq and OpenSSL)
   build-windows-msvc:
     name: Build Windows MSVC (x86_64)
@@ -612,7 +545,6 @@ jobs:
           echo "Binary artifacts are available as workflow artifacts for the following targets:" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-aarch64-apple-darwin\` (macOS ARM64 / Apple Silicon)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-x86_64-apple-darwin\` (macOS x86_64 / Intel)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`drasi-server-x86_64-windows.exe\` (Windows x86_64 MinGW)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-x86_64-windows-msvc.exe\` (Windows x86_64 MSVC)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-aarch64-linux-gnu\` (Linux ARM64 glibc)" >> $GITHUB_STEP_SUMMARY
           echo "- \`drasi-server-x86_64-linux-gnu\` (Linux x86_64 glibc)" >> $GITHUB_STEP_SUMMARY
@@ -632,7 +564,7 @@ jobs:
   # Smoke-test each binary with the hello-world (mock source) config
   test-binaries:
     name: Test ${{ matrix.artifact_suffix }}
-    needs: [build-linux, build-macos, build-windows, build-windows-msvc]
+    needs: [build-linux, build-macos, build-windows-msvc]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -654,10 +586,6 @@ jobs:
           - artifact_suffix: aarch64-linux-gnu
             runner: ubuntu-24.04-arm
             binary_name: "drasi-server-aarch64-linux-gnu"
-          # Windows x86_64 (MinGW)
-          - artifact_suffix: x86_64-windows
-            runner: windows-latest
-            binary_name: "drasi-server-x86_64-windows.exe"
           # Windows x86_64 (MSVC)
           - artifact_suffix: x86_64-windows-msvc
             runner: windows-latest
@@ -798,7 +726,6 @@ jobs:
           - x86_64 (Intel) - `drasi-server-x86_64-apple-darwin`
 
           ### Windows
-          - x86_64 (MinGW) - `drasi-server-x86_64-windows.exe`
           - x86_64 (MSVC) - `drasi-server-x86_64-windows-msvc.exe`
 
           ### Linux (glibc)
