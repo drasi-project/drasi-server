@@ -27,6 +27,11 @@ use crate::api::models::{
 };
 use drasi_lib::config::QueryConfig;
 
+/// Serde helper: returns `true` for use as `#[serde(default = "default_true")]`.
+fn default_true() -> bool {
+    true
+}
+
 /// DrasiServer configuration
 ///
 /// This is a self-contained configuration struct that includes all settings
@@ -58,6 +63,15 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the web UI at /ui (default: true)
+    #[serde(default = "default_enable_ui")]
+    pub enable_ui: bool,
+    /// Directory containing solution template YAML files (default: "./solutions")
+    #[serde(
+        default = "default_solutions_dir",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub solutions_dir: Option<String>,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -73,6 +87,39 @@ pub struct DrasiServerConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
+    #[serde(
+        default = "default_plugin_registry",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plugin_registry: Option<String>,
+    /// Automatically download missing plugins from registry on startup
+    #[serde(default)]
+    pub auto_install_plugins: bool,
+    /// Plugin dependencies to install from OCI registry
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginDependency>,
+    /// Enable cosign signature verification for downloaded plugins (default: true)
+    #[serde(default = "default_true")]
+    pub verify_plugins: bool,
+    /// Trusted identities for plugin signature verification.
+    /// When `verify_plugins` is true and this is omitted, defaults to the drasi-project identity.
+    /// When provided, only listed identities are trusted (no implicit default).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trusted_identities: Vec<TrustedIdentity>,
+    /// Enable filesystem watching for plugin changes (default: false, OFF by default for stability)
+    #[serde(default)]
+    pub hot_reload_plugins: bool,
+    /// Debounce window for filesystem events in milliseconds (default: 2000)
+    #[serde(default = "default_hot_reload_debounce_ms")]
+    pub hot_reload_debounce_ms: u64,
+    /// Allowed CORS origins for the REST API.
+    ///
+    /// When empty (default), all origins are permitted (`CorsLayer::permissive()`).
+    /// When set, only the listed origins are allowed.
+    /// Example: `["http://localhost:3000", "https://dashboard.example.com"]`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_allowed_origins: Vec<String>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
@@ -87,26 +134,6 @@ pub struct DrasiServerConfig {
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
-    /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
-    #[serde(
-        default = "default_plugin_registry",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub plugin_registry: Option<String>,
-    /// Automatically download missing plugins from registry on startup
-    #[serde(default)]
-    pub auto_install_plugins: bool,
-    /// Plugin dependencies to install from OCI registry
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub plugins: Vec<PluginDependency>,
-    /// Enable cosign signature verification for downloaded plugins (default: false)
-    #[serde(default)]
-    pub verify_plugins: bool,
-    /// Trusted identities for plugin signature verification.
-    /// When `verify_plugins` is true and this is omitted, defaults to the drasi-project identity.
-    /// When provided, only listed identities are trusted (no implicit default).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub trusted_identities: Vec<TrustedIdentity>,
 }
 
 impl Default for DrasiServerConfig {
@@ -119,18 +146,23 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_ui: true,
+            solutions_dir: None,
             state_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
-            sources: Vec::new(),
-            reactions: Vec::new(),
-            queries: Vec::new(),
-            instances: Vec::new(),
             plugin_registry: default_plugin_registry(),
             auto_install_plugins: false,
             plugins: Vec::new(),
-            verify_plugins: false,
+            verify_plugins: true,
             trusted_identities: Vec::new(),
+            hot_reload_plugins: false,
+            hot_reload_debounce_ms: 2000,
+            cors_allowed_origins: Vec::new(),
+            sources: Vec::new(),
+            queries: Vec::new(),
+            reactions: Vec::new(),
+            instances: Vec::new(),
         }
     }
 }
@@ -157,6 +189,10 @@ fn default_persist_config() -> bool {
 
 fn default_persist_index() -> bool {
     false
+}
+
+fn default_hot_reload_debounce_ms() -> u64 {
+    2000
 }
 
 pub fn default_plugin_registry() -> Option<String> {
@@ -193,6 +229,14 @@ pub struct TrustedIdentity {
     /// Glob pattern to match against the certificate subject/SAN.
     /// Example: "https://github.com/drasi-project/*"
     pub subject_pattern: String,
+}
+
+fn default_enable_ui() -> bool {
+    true
+}
+
+fn default_solutions_dir() -> Option<String> {
+    None
 }
 
 /// Configuration for a single DrasiLib instance (multi-instance mode)
@@ -544,6 +588,49 @@ mod tests {
             config.persist_config,
             "persist_config should default to true"
         );
+    }
+
+    // ==================== cors_allowed_origins tests ====================
+
+    #[test]
+    fn test_cors_allowed_origins_defaults_to_empty() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            config.cors_allowed_origins.is_empty(),
+            "cors_allowed_origins should default to empty (permissive)"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_parsed_from_yaml() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            corsAllowedOrigins:
+              - "http://localhost:3000"
+              - "https://dashboard.example.com"
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.cors_allowed_origins.len(), 2);
+        assert_eq!(config.cors_allowed_origins[0], "http://localhost:3000");
+        assert_eq!(
+            config.cors_allowed_origins[1],
+            "https://dashboard.example.com"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_omitted_is_empty() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.cors_allowed_origins.is_empty());
     }
 
     // ==================== DrasiServerConfig validation tests ====================

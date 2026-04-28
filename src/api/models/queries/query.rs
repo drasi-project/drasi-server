@@ -93,9 +93,17 @@ fn default_bootstrap_buffer_size() -> usize {
     10000
 }
 
-impl From<QueryConfig> for QueryConfigDto {
-    fn from(config: QueryConfig) -> Self {
-        Self {
+impl TryFrom<QueryConfig> for QueryConfigDto {
+    type Error = serde_json::Error;
+
+    fn try_from(config: QueryConfig) -> Result<Self, Self::Error> {
+        let joins = config.joins.map(serde_json::to_value).transpose()?;
+        let storage_backend = config
+            .storage_backend
+            .map(serde_json::to_value)
+            .transpose()?;
+
+        Ok(Self {
             id: config.id,
             auto_start: config.auto_start,
             query: config.query,
@@ -121,15 +129,11 @@ impl From<QueryConfig> for QueryConfigDto {
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,
             bootstrap_buffer_size: config.bootstrap_buffer_size,
-            joins: config
-                .joins
-                .map(|j| serde_json::to_value(j).expect("joins serialization")),
+            joins,
             priority_queue_capacity: config.priority_queue_capacity,
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,
             dispatch_mode: config.dispatch_mode.map(|d| format!("{d:?}")),
-            storage_backend: config
-                .storage_backend
-                .map(|s| serde_json::to_value(s).expect("storage_backend serialization")),
-        }
+            storage_backend,
+        })
     }
 }

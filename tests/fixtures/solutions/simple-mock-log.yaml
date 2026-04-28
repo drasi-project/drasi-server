@@ -1,0 +1,40 @@
+# Simple Mock Log Pipeline
+# A basic solution template for testing
+
+name: Simple Mock Log Pipeline
+description: Basic pipeline with mock source and log reaction for testing
+version: "1.0.0"
+author: Test Suite
+
+sources:
+  - kind: mock
+    id: mock-sensor
+    autoStart: true
+    dataType:
+      type: sensorReading
+      sensorCount: 3
+    intervalMs: 100
+
+queries:
+  - id: all-sensor-data
+    query: |
+      MATCH (s:SensorReading)
+      RETURN s.sensor_id AS sensorId, s.temperature AS temp, s.humidity AS humidity
+    queryLanguage: Cypher
+    sources:
+      - sourceId: mock-sensor
+    autoStart: true
+
+reactions:
+  - kind: log
+    id: console-logger
+    queries:
+      - all-sensor-data
+    autoStart: true
+    defaultTemplate:
+      added:
+        template: "[+] Sensor {{after.sensorId}}: temp={{after.temp}}°C"
+      updated:
+        template: "[~] Sensor {{after.sensorId}}: temp={{after.temp}}°C"
+      deleted:
+        template: "[-] Sensor {{before.sensorId}} removed"

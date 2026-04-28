@@ -16,20 +16,93 @@
 #[allow(clippy::unwrap_used)]
 mod api_query_joins_tests {
     use crate::api::models::query::QueryConfigDto;
+    use crate::api::shared::error::error_codes;
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
+    use async_trait::async_trait;
     use axum::{Extension, Json};
     use drasi_lib::{
-        config::{QueryJoinConfig, QueryJoinKeyConfig},
+        channels::{
+            dispatcher::{ChangeDispatcher, ChannelChangeDispatcher},
+            ComponentStatus, SubscriptionResponse,
+        },
+        config::{QueryJoinConfig, QueryJoinKeyConfig, SourceSubscriptionSettings},
+        context::SourceRuntimeContext,
+        sources::Source,
         DrasiLib, Query, QueryConfig,
     };
+    use std::collections::HashMap;
     use std::sync::Arc;
+
+    /// Minimal stub source that satisfies ComponentGraph source validation.
+    struct StubSource {
+        id: String,
+    }
+
+    impl StubSource {
+        fn new(id: &str) -> Self {
+            Self { id: id.to_string() }
+        }
+    }
+
+    #[async_trait]
+    impl Source for StubSource {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn type_name(&self) -> &str {
+            "stub"
+        }
+        fn properties(&self) -> HashMap<String, serde_json::Value> {
+            HashMap::new()
+        }
+        fn auto_start(&self) -> bool {
+            false
+        }
+        async fn start(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn stop(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn status(&self) -> ComponentStatus {
+            ComponentStatus::Stopped
+        }
+        async fn subscribe(
+            &self,
+            settings: SourceSubscriptionSettings,
+        ) -> anyhow::Result<SubscriptionResponse> {
+            let dispatcher =
+                ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(10);
+            let receiver = dispatcher.create_receiver().await?;
+            Ok(SubscriptionResponse {
+                query_id: settings.query_id,
+                source_id: self.id.clone(),
+                receiver,
+                bootstrap_receiver: None,
+                position_handle: None,
+            })
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        async fn initialize(&self, _context: SourceRuntimeContext) {}
+    }
 
     async fn create_test_environment() -> (Arc<DrasiLib>, Arc<bool>, Option<Arc<ConfigPersistence>>)
     {
-        // Create a minimal DrasiLib using the builder
+        // Register stub sources for all sources referenced by queries in these tests.
+        // ComponentGraph now validates that referenced sources exist.
         let core = DrasiLib::builder()
             .with_id("test-server")
+            .with_source(StubSource::new("source1"))
+            .with_source(StubSource::new("source2"))
+            .with_source(StubSource::new("vehicles"))
+            .with_source(StubSource::new("drivers"))
+            .with_source(StubSource::new("orders"))
+            .with_source(StubSource::new("restaurants"))
+            .with_source(StubSource::new("products"))
+            .with_source(StubSource::new("categories"))
             .build()
             .await
             .expect("Failed to build test core");
@@ -282,6 +355,9 @@ mod api_query_joins_tests {
             Extension(core.clone()),
             Extension(config_persistence),
             Extension("test-server".to_string()),
+            Extension(crate::api::shared::handlers::ApiPrefix(
+                "/api/v1".to_string(),
+            )),
             axum::extract::Query(ComponentViewQuery::new(Some("full".to_string()))),
             axum::extract::Path("product-category-query".to_string()),
         )
@@ -405,15 +481,12 @@ mod api_query_joins_tests {
         )
         .await;
 
-        assert!(result.is_ok());
-        let response = result.unwrap();
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("Expected Err(ErrorResponse) for read-only mode"),
+        };
         // Should fail due to read-only mode
-        let json_response = serde_json::to_value(&response.0).unwrap();
-        assert_eq!(json_response["success"], false);
-        assert!(json_response["error"].is_string());
-        assert!(json_response["error"]
-            .as_str()
-            .unwrap()
-            .contains("read-only mode"));
+        assert_eq!(err.code, error_codes::CONFIG_READ_ONLY);
+        assert!(err.message.contains("read-only mode"));
     }
 }

@@ -18,7 +18,7 @@ exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Drasi Project"]
 description = "Standalone Drasi server for data change processing"
@@ -36,7 +36,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.4.1", features = [
+drasi-lib = { version = "0.6.0", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,27 +47,27 @@ drasi-lib = { version = "0.4.1", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.4.1"
+drasi-core = "0.4.2"
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.1.9"
-drasi-bootstrap-application = "0.1.10"
+drasi-bootstrap-noop = "0.1.12"
+drasi-bootstrap-application = "0.1.13"
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.2.9"
+drasi-reaction-application = "0.2.11"
 
 # Index plugins
-drasi-index-rocksdb = "0.3.1"
-drasi-index-garnet = "0.1.7"
+drasi-index-rocksdb = "0.3.2"
+drasi-index-garnet = "0.1.9"
 
 # State store plugins
-drasi-state-store-redb = "0.1.7"
+drasi-state-store-redb = "0.1.9"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.4.2"
+drasi-plugin-sdk = "0.6.0"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.4.2", features = ["registry", "fetcher"] }
+drasi-host-sdk = { version = "0.6.0", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -75,14 +75,14 @@ tokio = { version = "1.0", features = ["full"] }
 axum = "0.7"
 bytes = "1.6"
 futures-util = "0.3"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 anyhow = "1.0"
 log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
 clap = { version = "4.0", features = ["derive"] }
 console = "0.15"
 indicatif = "0.17"
@@ -95,9 +95,12 @@ dotenvy = "0.15"
 inquire = "0.7"
 handlebars = "6"
 async-stream = "0.3.6"
+regex = "1"
+jsonschema = "0.28"
 openssl = { version = "0.10", features = ["vendored"] }
 toml = "0.8"
 sha2 = "0.10"
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 # Testing utilities
@@ -118,7 +121,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.4.1"
+drasi-core = "0.4.2"
 
 # Integration testing with testcontainers
 testcontainers = "0.23"
@@ -146,3 +149,17 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
+
+# Local development: use path-based dependencies
+# [patch.crates-io]
+# drasi-core = { path = "../drasi-core/core" }
+# drasi-lib = { path = "../drasi-core/lib" }
+# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
+# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
+# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }

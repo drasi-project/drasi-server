@@ -138,7 +138,7 @@ test_create_source() {
 
     printf "  %-45s" "source/${kind} (${id})"
     local http_code
-    http_code=$(curl -sf -o /dev/null -w "%{http_code}" \
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body" 2>/dev/null) || http_code="000"
@@ -148,14 +148,14 @@ test_create_source() {
         return 1
     fi
 
-    if [[ "$http_code" == "200" ]]; then
+    if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
         echo -e "${GREEN}OK${NC} (HTTP ${http_code})"
         PASSED=$((PASSED + 1))
     elif [[ "$http_code" == "000" ]]; then
         echo -e "${RED}FAIL${NC} (connection refused / crash)"
         FAILED=$((FAILED + 1))
     else
-        # Non-200 but server is still alive — config issue, not a crash
+        # Non-2xx but server is still alive — config issue, not a crash
         echo -e "${YELLOW}SKIP${NC} (HTTP ${http_code} — plugin needs external deps)"
         SKIPPED=$((SKIPPED + 1))
     fi
@@ -180,7 +180,7 @@ test_create_reaction() {
 
     printf "  %-45s" "reaction/${kind} (${id})"
     local http_code
-    http_code=$(curl -sf -o /dev/null -w "%{http_code}" \
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "$body" 2>/dev/null) || http_code="000"
@@ -190,7 +190,7 @@ test_create_reaction() {
         return 1
     fi
 
-    if [[ "$http_code" == "200" ]]; then
+    if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
         echo -e "${GREEN}OK${NC} (HTTP ${http_code})"
         PASSED=$((PASSED + 1))
     elif [[ "$http_code" == "000" ]]; then

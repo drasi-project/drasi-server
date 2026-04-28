@@ -22,6 +22,8 @@ pub mod instance_registry;
 pub mod persistence;
 pub mod plugin_install;
 pub mod plugin_lockfile;
+pub mod plugin_operations;
+pub mod plugin_orchestrator;
 pub mod plugin_registry;
 pub mod server;
 

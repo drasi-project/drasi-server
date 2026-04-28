@@ -23,7 +23,7 @@ use clap::Subcommand;
 use std::path::PathBuf;
 
 use drasi_lib::get_or_init_global_registry;
-use drasi_server::load_config_file;
+use drasi_server::plugin_operations::PluginOperations;
 
 use crate::cli_styles;
 
@@ -180,91 +180,36 @@ pub async fn run_plugin_command(
     }
 }
 
-// ── Shared helpers ──────────────────────────────────────────────────────────
+// ── Shared helpers (delegates to PluginOperations) ──────────────────────────
 
 /// Get plugin registry URL from config or override.
 pub(crate) fn get_plugin_registry(
     config_path: &std::path::Path,
     override_registry: Option<&str>,
 ) -> String {
-    if let Some(r) = override_registry {
-        return r.to_string();
-    }
-    if let Ok(config) = load_config_file(config_path) {
-        config
-            .plugin_registry
-            .unwrap_or_else(|| "ghcr.io/drasi-project".to_string())
-    } else {
-        "ghcr.io/drasi-project".to_string()
-    }
+    PluginOperations::resolve_registry(config_path, override_registry)
 }
 
 /// Get registry auth from environment for CLI commands.
 pub(crate) fn get_cli_registry_auth() -> drasi_host_sdk::registry::RegistryAuth {
-    let password = std::env::var("OCI_REGISTRY_PASSWORD")
-        .or_else(|_| std::env::var("GHCR_TOKEN"))
-        .ok();
-    match password {
-        Some(pwd) => {
-            let username = std::env::var("OCI_REGISTRY_USERNAME").unwrap_or_default();
-            drasi_host_sdk::registry::RegistryAuth::Basic {
-                username,
-                password: pwd,
-            }
-        }
-        None => drasi_host_sdk::registry::RegistryAuth::Anonymous,
-    }
+    PluginOperations::registry_auth()
 }
 
 /// Build host version info for CLI commands.
 pub(crate) fn cli_host_version_info() -> drasi_host_sdk::registry::HostVersionInfo {
-    drasi_host_sdk::registry::HostVersionInfo {
-        sdk_version: env!("DRASI_PLUGIN_SDK_VERSION").to_string(),
-        core_version: env!("DRASI_CORE_VERSION").to_string(),
-        lib_version: env!("DRASI_LIB_VERSION").to_string(),
-        target_triple: env!("TARGET_TRIPLE").to_string(),
-    }
+    PluginOperations::host_version_info()
 }
 
 /// Create an OCI registry client with best-effort signature verification.
 pub(crate) fn cli_registry_client(
     config: drasi_host_sdk::registry::RegistryConfig,
 ) -> drasi_host_sdk::registry::OciRegistryClient {
-    let verification = drasi_host_sdk::registry::VerificationConfig {
-        enabled: true,
-        ..Default::default()
-    };
-    drasi_host_sdk::registry::OciRegistryClient::with_verifier(
-        config,
-        drasi_host_sdk::registry::CosignVerifier::new(verification),
-    )
+    PluginOperations::build_registry_client(config)
 }
 
 /// Load trusted identities from the server config file.
-///
-/// Falls back to the default drasi-project identity if the config file
-/// is missing or has no `trustedIdentities` configured.
 pub(crate) fn load_trusted_identities(
     config_path: &std::path::Path,
 ) -> Vec<drasi_host_sdk::registry::TrustedIdentity> {
-    let config_identities = load_config_file(config_path)
-        .ok()
-        .map(|c| c.trusted_identities)
-        .unwrap_or_default();
-
-    if config_identities.is_empty() {
-        // Default to drasi-project CI identity
-        vec![drasi_host_sdk::registry::TrustedIdentity {
-            issuer: "https://token.actions.githubusercontent.com".to_string(),
-            subject_pattern: "https://github.com/drasi-project/*".to_string(),
-        }]
-    } else {
-        config_identities
-            .iter()
-            .map(|ti| drasi_host_sdk::registry::TrustedIdentity {
-                issuer: ti.issuer.clone(),
-                subject_pattern: ti.subject_pattern.clone(),
-            })
-            .collect()
-    }
+    PluginOperations::load_trusted_identities(config_path)
 }

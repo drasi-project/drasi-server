@@ -22,7 +22,7 @@ export class DrasiGrpcClient {
   private baseUrl: string;
   private subscribers: Map<string, Set<(result: QueryResult) => void>> = new Map();
   private connectionStatus: { connected: boolean; error?: string } = { connected: false };
-  private pollIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private pollIntervals: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(baseUrl: string = 'http://localhost:8280') {
     // Use REST API base URL, not gRPC port

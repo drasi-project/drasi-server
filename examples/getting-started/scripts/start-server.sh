@@ -44,10 +44,12 @@ if ! docker ps | grep -q getting-started-postgres; then
     fi
 fi
 
-# Build the server
-echo "Building Drasi Server (release mode)..."
+# Build the server (and the Web UI). `make build-release` invokes `make build-ui`
+# first so the /ui route is available; using `cargo build --release` alone would
+# leave ui/dist missing and the Web UI would not be served.
+echo "Building Drasi Server (release mode, including Web UI)..."
 cd "$SERVER_ROOT"
-cargo build --release
+make build-release
 
 echo
 echo "Starting Drasi Server..."

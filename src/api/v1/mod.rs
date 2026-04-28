@@ -51,9 +51,12 @@
 
 pub mod handlers;
 pub mod openapi;
+pub mod plugin_handlers;
 pub mod routes;
 
 pub use handlers::*;
 pub use openapi::inject_plugin_schemas;
 pub use openapi::ApiDocV1;
+pub use openapi::OpenApiCache;
+pub use plugin_handlers::plugin_routes;
 pub use routes::build_v1_router;

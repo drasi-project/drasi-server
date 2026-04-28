@@ -33,11 +33,19 @@
 //! ```
 
 pub mod loader;
+pub mod plugin_validation;
+pub mod schema_validation;
 pub mod types;
 pub mod validation;
 
 // Re-export commonly used types
 pub use loader::{from_json_str, from_yaml_str, load_config_file, save_config_file, ConfigError};
+pub use plugin_validation::{
+    check_config_references, check_plugin_availability, extract_plugin_requirements,
+    validate_with_plugins, ComponentValidationReport, FieldError, FullValidationResult,
+    MissingPlugin, PluginRequirement, ReferenceWarning,
+};
+pub use schema_validation::validate_component_configs;
 pub use types::{
     default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency,
     ResolvedInstanceConfig, TrustedIdentity,
