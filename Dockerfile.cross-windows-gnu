@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # -lgcc_s → libgcc_s_seh-1.dll (GCC unwinder / SEH exception handling)
 # We replace it with -lgcc_eh (static exception handling archive).
 # We also force-static-link winpthread and stdc++ if they appear.
-RUN printf '#!/bin/sh\nnewargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -lgcc_s)      newargs="$newargs -lgcc_eh" ;;\n    -lwinpthread) newargs="$newargs -l:libwinpthread.a" ;;\n    -lstdc++)     newargs="$newargs -l:libstdc++.a" ;;\n    *)            newargs="$newargs $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $newargs\n' \
+RUN printf '#!/bin/sh\nnewargs=""\nfor arg in "$@"; do\n  case "$arg" in\n    -lgcc_s)      newargs="$newargs -lgcc_eh" ;;\n    -lwinpthread) newargs="$newargs -l:libwinpthread.a" ;;\n    -lstdc++)     newargs="$newargs -l:libstdc++.a" ;;\n    *)            newargs="$newargs $arg" ;;\n  esac\ndone\nexec x86_64-w64-mingw32-gcc $newargs -lshlwapi\n' \
     > /usr/local/bin/mingw-static-wrapper \
     && chmod +x /usr/local/bin/mingw-static-wrapper
 
