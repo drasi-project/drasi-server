@@ -14,6 +14,7 @@
 
 [workspace]
 members = [".", "xtask"]
+exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
@@ -129,7 +130,10 @@ redis = { version = "0.24", features = ["tokio-comp", "streams"] }
 warnings = "deny"
 
 [build-dependencies]
-ureq = { version = "3", features = ["json"] }
+# Use rustls with aws-lc-rs instead of ring to avoid ring's macOS cross-compilation
+# assembly architecture mismatch (ring compiles asm for target instead of host).
+ureq = { version = "3", default-features = false, features = ["json", "rustls-no-provider", "rustls-webpki-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 flate2 = "1"
 tar = "0.4"
 serde_json = "1"

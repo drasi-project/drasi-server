@@ -9,7 +9,7 @@ COPY --from=toolchain /linux-runner /linux-runner
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gcc g++ libc6-dev pkg-config \
-    perl make autoconf automake libtool \
+    perl make cmake autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
     libclang-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -29,3 +29,6 @@ ENV ONIG_LIB_DIR=/usr/local/jq/lib
 ENV JQ_INCLUDE_DIR=/usr/local/jq/include
 ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
+
+# Force aws-lc-sys to use CMake builder (avoids GCC memcmp bug in ubuntu:20.04's gcc)
+ENV AWS_LC_SYS_CMAKE_BUILDER=1

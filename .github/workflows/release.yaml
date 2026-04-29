@@ -42,7 +42,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine version
         id: version
@@ -65,7 +65,7 @@ jobs:
     needs: determine-version
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -157,7 +157,7 @@ jobs:
             runner: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -210,7 +210,7 @@ jobs:
             export JQ_LIB_DIR="$X86_PREFIX/lib"
             export ONIG_LIB_DIR="$X86_PREFIX/lib"
             export PKG_CONFIG_PATH="$X86_PREFIX/lib/pkgconfig"
-            export CFLAGS="-arch x86_64"
+            export CFLAGS_x86_64_apple_darwin="-arch x86_64"
           else
             export JQ_LIB_DIR="$(brew --prefix jq)/lib"
             export ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
@@ -243,7 +243,7 @@ jobs:
     needs: determine-version
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -310,7 +310,7 @@ jobs:
     needs: determine-version
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -359,7 +359,7 @@ jobs:
     needs: determine-version
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -451,7 +451,7 @@ jobs:
             runner: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -491,7 +491,7 @@ jobs:
     needs: determine-version
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -541,7 +541,7 @@ jobs:
             suffix: arm64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -674,7 +674,7 @@ jobs:
             use_alpine: true
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download binary artifact
         uses: actions/download-artifact@v4
@@ -752,7 +752,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download drasi-server artifacts
         uses: actions/download-artifact@v4
