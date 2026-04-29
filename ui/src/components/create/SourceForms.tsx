@@ -30,6 +30,13 @@ export default function SourceForm({
         kind={kind}
         formData={fields}
         onChange={(data) => {
+          // Atomic replacement: clear old config keys, apply new ones
+          const configKeys = Object.keys(fields).filter(
+            (k) => k !== "id" && k !== "autoStart" && k !== "kind",
+          );
+          for (const key of configKeys) {
+            if (!(key in data)) onChange(key, undefined);
+          }
           for (const [key, val] of Object.entries(data)) {
             if (key !== "id" && key !== "autoStart") onChange(key, val);
           }
