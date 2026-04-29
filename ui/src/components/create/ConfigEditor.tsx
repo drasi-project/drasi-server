@@ -16,6 +16,8 @@ interface ConfigEditorProps {
   kind: string;
   formData: Record<string, unknown>;
   onChange: (data: Record<string, unknown>) => void;
+  /** Selected query IDs — used to pre-populate per-query route config sections */
+  selectedQueries?: string[];
 }
 
 export default function ConfigEditor({
@@ -23,6 +25,7 @@ export default function ConfigEditor({
   kind,
   formData,
   onChange,
+  selectedQueries,
 }: ConfigEditorProps) {
   const { schema: rawSchema, loading, error } = usePluginSchema(category, kind);
   const [mode, setMode] = useState<EditorMode>("form");
@@ -43,6 +46,36 @@ export default function ConfigEditor({
     return extractUiSchema(resolved.jsonSchema);
   }, [resolved]);
 
+  // Rewrite schema: expand map-type properties keyed by selected queries
+  // e.g. "routes: { type: object, additionalProperties: X }" becomes
+  //      "routes: { type: object, properties: { q1: X, q2: X } }"
+  const effectiveSchema = useMemo(() => {
+    if (!resolved || !selectedQueries || selectedQueries.length === 0) {
+      return resolved?.jsonSchema ?? {};
+    }
+    const schema = JSON.parse(JSON.stringify(resolved.jsonSchema)) as Record<string, unknown>;
+    const props = schema.properties as Record<string, Record<string, unknown>> | undefined;
+    if (!props) return schema;
+
+    for (const [, propSchema] of Object.entries(props)) {
+      if (
+        propSchema.type === "object" &&
+        propSchema.additionalProperties &&
+        typeof propSchema.additionalProperties === "object"
+      ) {
+        // Convert map to fixed properties keyed by selected queries
+        const valueSchema = propSchema.additionalProperties as Record<string, unknown>;
+        const queryProperties: Record<string, unknown> = {};
+        for (const qId of selectedQueries) {
+          queryProperties[qId] = { ...valueSchema, title: qId };
+        }
+        propSchema.properties = queryProperties;
+        delete propSchema.additionalProperties;
+      }
+    }
+    return schema;
+  }, [resolved, selectedQueries]);
+
   // Extract config-only fields (exclude id, autoStart, kind, queries)
   const configOnly = useMemo(() => {
     const result: Record<string, unknown> = {};
@@ -61,10 +94,10 @@ export default function ConfigEditor({
     if (Object.keys(configOnly).length > 0) {
       setYamlText(formDataToYaml(configOnly));
     } else {
-      setYamlText(generateYamlTemplate(resolved.jsonSchema));
+      setYamlText(generateYamlTemplate(effectiveSchema));
     }
     setInitialized(true);
-  }, [resolved, configOnly, initialized]);
+  }, [resolved, configOnly, initialized, effectiveSchema]);
 
   // Sync YAML text when switching to YAML mode
   const switchToYaml = useCallback(() => {
@@ -151,14 +184,14 @@ export default function ConfigEditor({
 
       {mode === "form" ? (
         <SchemaConfigForm
-          schema={resolved.jsonSchema as Record<string, unknown>}
+          schema={effectiveSchema as Record<string, unknown>}
           uiSchema={uiSchema}
           formData={configOnly}
           onChange={handleFormChange}
         />
       ) : (
         <YamlConfigEditor
-          schema={resolved.jsonSchema}
+          schema={effectiveSchema}
           value={yamlText}
           onChange={handleYamlChange}
         />

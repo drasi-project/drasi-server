@@ -88,6 +88,7 @@ export default function ReactionForm({
         category="reaction"
         kind={kind}
         formData={fields}
+        selectedQueries={(fields.queries as string[]) ?? []}
         onChange={(data) => {
           // Atomic replacement: clear old config keys, apply new ones
           const configKeys = Object.keys(fields).filter(
