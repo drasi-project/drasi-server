@@ -248,6 +248,35 @@ function buildRefLookup(definitions: Record<string, unknown>): Map<string, strin
   return lookup;
 }
 
+/**
+ * Fallback: try suffix matching when exact lookup fails.
+ * e.g. $ref "TemplateSpecDto" → strip Dto → "TemplateSpec" →
+ *      find definition whose short name ends with "TemplateSpec"
+ *      → "reaction.log.LogTemplateSpec" ✓
+ */
+function suffixMatchRef(
+  refName: string,
+  definitions: Record<string, unknown>,
+): string | undefined {
+  // Strip Dto suffix if present to get the core name
+  const baseName = refName.endsWith("Dto")
+    ? refName.slice(0, -3)
+    : refName;
+
+  const candidates: string[] = [];
+  for (const fullKey of Object.keys(definitions)) {
+    const parts = fullKey.split(".");
+    const shortName = parts[parts.length - 1];
+    if (shortName === baseName || shortName.endsWith(baseName)) {
+      candidates.push(fullKey);
+    }
+  }
+
+  // Only use if unambiguous (exactly one match)
+  if (candidates.length === 1) return candidates[0];
+  return undefined;
+}
+
 function rewriteRefs(
   obj: unknown,
   definitions: Record<string, unknown>,
@@ -277,7 +306,7 @@ function rewriteRefs(
     }
 
     // If the referenced schema exists in definitions, rewrite the ref path, preserving siblings
-    const defKey = refLookup.get(refName);
+    const defKey = refLookup.get(refName) ?? suffixMatchRef(refName, definitions);
     if (defKey && defKey in definitions) {
       const preserved: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(record)) {
