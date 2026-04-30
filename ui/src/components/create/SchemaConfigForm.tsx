@@ -17,8 +17,8 @@ export default function SchemaConfigForm({
   onChange,
 }: SchemaConfigFormProps) {
   const mergedUiSchema: UiSchema = {
-    "ui:submitButtonOptions": { norender: true },
     ...uiSchema,
+    "ui:submitButtonOptions": { norender: true },
   };
 
   return (

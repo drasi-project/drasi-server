@@ -32,6 +32,13 @@ export default function ConfigEditor({
   const [yamlText, setYamlText] = useState<string>("");
   const [initialized, setInitialized] = useState(false);
 
+  // Reset state when plugin kind changes
+  useEffect(() => {
+    setInitialized(false);
+    setYamlText("");
+    setMode("form");
+  }, [kind, category]);
+
   const resolved = useMemo(() => {
     if (!rawSchema) return null;
     return resolvePluginSchema({
@@ -40,11 +47,6 @@ export default function ConfigEditor({
       schema: rawSchema.schema,
     });
   }, [rawSchema]);
-
-  const uiSchema = useMemo(() => {
-    if (!resolved) return undefined;
-    return extractUiSchema(resolved.jsonSchema);
-  }, [resolved]);
 
   // Rewrite schema: expand map-type properties keyed by selected queries
   // e.g. "routes: { type: object, additionalProperties: X }" becomes
@@ -75,6 +77,11 @@ export default function ConfigEditor({
     }
     return schema;
   }, [resolved, selectedQueries]);
+
+  const uiSchema = useMemo(() => {
+    if (!effectiveSchema || Object.keys(effectiveSchema).length === 0) return undefined;
+    return extractUiSchema(effectiveSchema);
+  }, [effectiveSchema]);
 
   // Extract config-only fields (exclude id, autoStart, kind, queries)
   const configOnly = useMemo(() => {
@@ -108,9 +115,7 @@ export default function ConfigEditor({
   // Sync form data when switching to form mode
   const switchToForm = useCallback(() => {
     const parsed = yamlToFormData(yamlText);
-    if (Object.keys(parsed).length > 0) {
-      onChange(parsed);
-    }
+    onChange(parsed);
     setMode("form");
   }, [yamlText, onChange]);
 
@@ -125,9 +130,7 @@ export default function ConfigEditor({
     (text: string) => {
       setYamlText(text);
       const parsed = yamlToFormData(text);
-      if (Object.keys(parsed).length > 0) {
-        onChange(parsed);
-      }
+      onChange(parsed);
     },
     [onChange],
   );

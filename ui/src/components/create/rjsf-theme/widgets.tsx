@@ -20,8 +20,8 @@ function TextWidget(props: WidgetProps) {
       placeholder={placeholder}
       className={`${inputBase} ${hasError ? inputError : inputNormal}`}
       onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
-      onBlur={() => onBlur(id, value)}
-      onFocus={() => onFocus(id, value)}
+      onBlur={(e) => onBlur(id, e.target.value)}
+      onFocus={(e) => onFocus(id, e.target.value)}
     />
   );
 }
@@ -41,8 +41,8 @@ function PasswordWidget(props: WidgetProps) {
       placeholder={placeholder}
       className={`${inputBase} ${hasError ? inputError : inputNormal}`}
       onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
-      onBlur={() => onBlur(id, value)}
-      onFocus={() => onFocus(id, value)}
+      onBlur={(e) => onBlur(id, e.target.value)}
+      onFocus={(e) => onFocus(id, e.target.value)}
     />
   );
 }
@@ -62,8 +62,8 @@ function TextareaWidget(props: WidgetProps) {
       rows={3}
       className={`${inputBase} font-mono ${hasError ? inputError : inputNormal}`}
       onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
-      onBlur={() => onBlur(id, value)}
-      onFocus={() => onFocus(id, value)}
+      onBlur={(e) => onBlur(id, e.target.value)}
+      onFocus={(e) => onFocus(id, e.target.value)}
     />
   );
 }
@@ -92,8 +92,8 @@ function SelectWidget(props: WidgetProps) {
           : undefined;
         onChange(match ? match.value : selected);
       }}
-      onBlur={() => onBlur(id, value)}
-      onFocus={() => onFocus(id, value)}
+      onBlur={(e) => onBlur(id, e.target.value)}
+      onFocus={(e) => onFocus(id, e.target.value)}
     >
       <option value="">Select...</option>
       {Array.isArray(enumOptions) &&
@@ -109,20 +109,22 @@ function SelectWidget(props: WidgetProps) {
 function CheckboxWidget(props: WidgetProps) {
   const { id, value, disabled, readonly, onChange, label } = props;
   const checked = Boolean(value);
+  const isDisabled = disabled || readonly;
 
   return (
     <div className="flex items-center justify-between py-2">
-      <span className="text-sm text-drasi-text-primary">{label}</span>
+      <span id={`${id}-label`} className="text-sm text-drasi-text-primary">{label}</span>
       <button
         id={id}
         type="button"
         role="switch"
         aria-checked={checked}
-        disabled={disabled || readonly}
+        aria-labelledby={`${id}-label`}
+        disabled={isDisabled}
         onClick={() => onChange(!checked)}
         className={`relative w-10 h-5 rounded-full transition-colors ${
           checked ? "bg-drasi-running" : "bg-drasi-border"
-        } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+        } ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       >
         <span
           className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${

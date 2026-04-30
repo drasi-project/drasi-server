@@ -319,7 +319,12 @@ function rewriteRefs(
     // This happens when the plugin schema references types defined elsewhere in the
     // server's OpenAPI spec (e.g., TemplateSpecDto, QueryConfigDto).
     const shortName = refName.split(".").pop() || refName;
+    const preserved: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (k !== "$ref") preserved[k] = v;
+    }
     return {
+      ...preserved,
       type: "object",
       title: shortName,
       description: `Configuration for ${shortName}`,

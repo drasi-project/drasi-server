@@ -38,7 +38,7 @@ export default function SourceForm({
             if (!(key in data)) onChange(key, undefined);
           }
           for (const [key, val] of Object.entries(data)) {
-            if (key !== "id" && key !== "autoStart") onChange(key, val);
+            if (key !== "id" && key !== "autoStart" && key !== "kind") onChange(key, val);
           }
         }}
       />
