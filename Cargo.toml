@@ -14,7 +14,7 @@
 
 [workspace]
 members = [".", "xtask"]
-exclude = ["examples/sse-cli"]
+exclude = ["examples/sse-cli", "tests/fixtures/upgrade_test_plugin"]
 
 [package]
 name = "drasi-server"

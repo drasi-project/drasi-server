@@ -20,7 +20,8 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins download-test-plugins \
-        build-local-plugins build-local-plugins-debug
+        build-local-plugins build-local-plugins-debug \
+        build-upgrade-test-plugins test-upgrade
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -245,6 +246,22 @@ build-local-test-plugins:
 		ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) || \
 		echo "Warning: No test plugin files found to copy"
 	@echo "=== Test plugins ready in target/debug/plugins/ ==="
+
+# Build upgrade test plugin binaries (v1 and v2) for rolling upgrade integration tests.
+# Builds the same plugin crate twice with different PLUGIN_VERSION env vars and separate target dirs.
+build-upgrade-test-plugins:
+	@echo "=== Building upgrade test plugins (v1 and v2) ==="
+	PLUGIN_VERSION=1.0.0 cargo build --manifest-path tests/fixtures/upgrade_test_plugin/Cargo.toml --target-dir target/upgrade-v1
+	PLUGIN_VERSION=2.0.0 cargo build --manifest-path tests/fixtures/upgrade_test_plugin/Cargo.toml --target-dir target/upgrade-v2
+	@mkdir -p target/debug/plugins
+	@cp target/upgrade-v1/debug/$(PLUGIN_LIB_PREFIX)drasi_source_upgrade_test.$(PLUGIN_LIB_EXT) target/debug/plugins/
+	@cp target/upgrade-v2/debug/$(PLUGIN_LIB_PREFIX)drasi_source_upgrade_test.$(PLUGIN_LIB_EXT) target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_source_upgrade_test_v2.$(PLUGIN_LIB_EXT)
+	@echo "=== Upgrade test plugins ready ==="
+	@ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_source_upgrade_test*.$(PLUGIN_LIB_EXT)
+
+# Run upgrade integration tests (requires build-upgrade-test-plugins)
+test-upgrade: build-upgrade-test-plugins
+	cargo test --test upgrade_test -- --ignored --nocapture
 
 # Build ALL cdylib plugins from local ../drasi-core (release mode) and copy to target/release/plugins/.
 # Use this when developing with [patch.crates-io] pointing to local drasi-core, so plugins match

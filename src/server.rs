@@ -714,6 +714,15 @@ impl DrasiServer {
             .layer(axum::extract::Extension(self.plugin_orchestrator.clone()))
             .layer(axum::extract::Extension(registry.clone()));
 
+        // Build the upgrade engine and its sub-router
+        let upgrade_engine = Arc::new(crate::upgrade::UpgradeEngine::new(
+            registry.clone(),
+            self.plugin_registry.clone(),
+            self.plugin_orchestrator.clone(),
+        ));
+        let upgrade_router = api::v1::upgrade_routes()
+            .layer(axum::extract::Extension(upgrade_engine));
+
         // Build the main application router
         let mut app = Router::new()
             // Health check at root level (operational endpoint, not versioned)
@@ -724,6 +733,8 @@ impl DrasiServer {
             .nest("/api/v1", v1_router)
             // Nest plugin management API under /api/v1/plugins
             .nest("/api/v1/plugins", plugin_router)
+            // Nest upgrade management API under /api/v1/plugins/upgrades
+            .nest("/api/v1/plugins/upgrades", upgrade_router)
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
