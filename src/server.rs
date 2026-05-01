@@ -748,12 +748,10 @@ impl DrasiServer {
             } else if has_embedded_ui {
                 // Fall back to embedded assets (release binary)
                 info!("Drasi Server Admin UI (embedded), serving at /ui/");
-                app = app
-                    .merge(crate::ui_assets::embedded_ui_routes())
-                    .route(
-                        "/",
-                        get(|| async { axum::response::Redirect::temporary("/ui/") }),
-                    );
+                app = app.merge(crate::ui_assets::embedded_ui_routes()).route(
+                    "/",
+                    get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                );
             } else {
                 warn!(
                     "Web UI is enabled but no UI assets found. \
