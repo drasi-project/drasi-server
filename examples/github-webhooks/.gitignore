@@ -1,0 +1,2 @@
+# Local environment overrides
+.env.local
