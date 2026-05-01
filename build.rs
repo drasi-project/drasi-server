@@ -14,6 +14,14 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-env-changed=TARGET");
 
+    // Track UI dist directory so recompilation picks up new UI assets.
+    // Also ensure the directory exists so rust-embed doesn't fail.
+    let ui_dist = std::path::Path::new("ui/dist");
+    println!("cargo:rerun-if-changed=ui/dist");
+    if !ui_dist.exists() {
+        std::fs::create_dir_all(ui_dist).ok();
+    }
+
     let rustc_version = Command::new("rustc")
         .arg("--version")
         .output()
