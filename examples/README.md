@@ -46,6 +46,20 @@ Comprehensive example demonstrating advanced features and production patterns.
 
 ---
 
+### 🐙 [github-webhooks/](github-webhooks/)
+**GitHub Integration** - Receive and process GitHub webhook events in real-time using the HTTP source in webhook mode.
+
+**Features:**
+- HTTP source with webhook mode and HMAC-SHA256 signature verification
+- Conditional mappings for push, pull request, and issue events
+- Continuous queries over GitHub activity
+- SSE streaming and console logging
+- Simulation scripts for local testing (no GitHub setup required)
+
+**Use this for:** Learning webhook mode, building real-world HTTP integrations
+
+---
+
 ## Quick Start
 
 Each example includes:
