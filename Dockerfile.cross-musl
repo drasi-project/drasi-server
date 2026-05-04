@@ -1,4 +1,4 @@
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
 
 # Install build dependencies for vendored OpenSSL, protobuf, and jq
 ENV DEBIAN_FRONTEND=noninteractive

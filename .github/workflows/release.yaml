@@ -72,8 +72,11 @@ jobs:
         with:
           toolchain: stable
 
+      # Install cross from git: the last tagged release (0.2.5, March 2022) ships
+      # container images based on glibc 2.27, which is too old for current rustc's
+      # build-script binaries (require GLIBC_2.34). Main has newer base images.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
 
       - name: Build all Linux targets
         run: |
@@ -299,8 +302,9 @@ jobs:
         with:
           toolchain: stable
 
+      # See note in build-linux about why we install cross from git.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
 
       - name: Build all Linux targets
         run: |
@@ -431,8 +435,9 @@ jobs:
         with:
           toolchain: stable
 
+      # See note in build-linux about why we install cross from git.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
 
       - name: Build binary
         run: |
