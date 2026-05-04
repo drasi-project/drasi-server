@@ -1,6 +1,6 @@
 FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5 AS toolchain
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Remove symlink that conflicts with COPY from toolchain
 RUN rm -rf /usr/local/man
