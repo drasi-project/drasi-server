@@ -3,11 +3,11 @@ host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: false
-# Auto-install + signature verification are disabled for this smoke test.
-# The required plugins (mock source, log reaction) are bundled with the
-# release artifact under bin/plugins/ — we just need the dynamic loader
-# to pick them up without needing a cosign lockfile.
-autoInstallPlugins: false
+# The smoke test pre-installs required plugins into bin/plugins/ via the
+# binary's `plugin install` CLI before starting the server, so startup-time
+# auto-install is unnecessary. Signature verification is disabled because
+# the test runs offline against a freshly built binary.
+autoInstallPlugins: true
 verifyPlugins: false
 
 plugins:

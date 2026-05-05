@@ -619,19 +619,32 @@ jobs:
         if: runner.os != 'Windows' && !matrix.use_alpine
         run: |
           chmod +x "bin/${{ matrix.binary_name }}"
-          SERVER_BINARY="$(pwd)/bin/${{ matrix.binary_name }}" \
+          BINARY="$(pwd)/bin/${{ matrix.binary_name }}"
+
+          # Pre-install required plugins so the smoke test does not depend on
+          # the server's startup-time auto-install path.
+          mkdir -p bin/plugins
+          "$BINARY" plugin install source/mock --plugins-dir "$(pwd)/bin/plugins" --skip-verification
+          "$BINARY" plugin install reaction/log --plugins-dir "$(pwd)/bin/plugins" --skip-verification
+          ls -la bin/plugins
+
+          SERVER_BINARY="$BINARY" \
             tests/integration/hello-world/run-integration-test.sh
 
       - name: Run hello-world smoke test (Alpine/musl)
         if: matrix.use_alpine
         run: |
           chmod +x "bin/${{ matrix.binary_name }}"
+          mkdir -p bin/plugins
           docker run --rm \
             -v "$(pwd)/bin:/bin-artifacts" \
             -v "$(pwd)/tests:/tests" \
             alpine:latest \
             sh -c "
               apk add --no-cache bash curl libstdc++ libgcc &&
+              /bin-artifacts/${{ matrix.binary_name }} plugin install source/mock --plugins-dir /bin-artifacts/plugins --skip-verification &&
+              /bin-artifacts/${{ matrix.binary_name }} plugin install reaction/log --plugins-dir /bin-artifacts/plugins --skip-verification &&
+              ls -la /bin-artifacts/plugins &&
               SERVER_BINARY=/bin-artifacts/${{ matrix.binary_name }} \
                 bash /tests/integration/hello-world/run-integration-test.sh
             "
@@ -655,6 +668,12 @@ jobs:
           echo "=== Sanity check: --help ==="
           "$BINARY_PATH" --help 2>&1 || echo "(exit code: $?)"
           echo ""
+
+          # Pre-install required plugins
+          mkdir -p bin/plugins
+          "$BINARY_PATH" plugin install source/mock --plugins-dir "$(pwd)/bin/plugins" --skip-verification
+          "$BINARY_PATH" plugin install reaction/log --plugins-dir "$(pwd)/bin/plugins" --skip-verification
+          ls -la bin/plugins
 
           SERVER_BINARY="$BINARY_PATH" \
             tests/integration/hello-world/run-integration-test.sh
