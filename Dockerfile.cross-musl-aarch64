@@ -1,4 +1,4 @@
-FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:main AS toolchain
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5 AS toolchain
 
 FROM ubuntu:22.04
 
