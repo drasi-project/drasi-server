@@ -728,11 +728,11 @@ impl DrasiServer {
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
         // Serve the Drasi Server Admin UI if enabled
-        if self.enable_ui {
-            let ui_dir = std::path::Path::new("ui/dist");
-            let has_filesystem_ui = ui_dir.join("index.html").exists();
-            let has_embedded_ui = crate::ui_assets::has_embedded_ui();
+        let ui_dir = std::path::Path::new("ui/dist");
+        let has_filesystem_ui = ui_dir.join("index.html").exists();
+        let has_embedded_ui = crate::ui_assets::has_embedded_ui();
 
+        if self.enable_ui {
             if has_filesystem_ui {
                 // Prefer filesystem for development (hot-reload)
                 info!("Drasi Server Admin UI found on filesystem, serving at /ui/");
@@ -787,10 +787,7 @@ impl DrasiServer {
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
-        if self.enable_ui
-            && (std::path::Path::new("ui/dist/index.html").exists()
-                || crate::ui_assets::has_embedded_ui())
-        {
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 

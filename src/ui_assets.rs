@@ -52,11 +52,23 @@ async fn serve_path(Path(path): Path<String>) -> Response {
     serve_asset(&path)
 }
 
+fn has_file_extension(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|ext| !ext.is_empty())
+}
+
 fn serve_asset(path: &str) -> Response {
-    // Try the exact path first, fall back to index.html for SPA client-side routing
+    // Try the exact path first
     let (content, served_path) = if let Some(file) = UiAssets::get(path) {
         (file, path)
+    } else if has_file_extension(path) {
+        // Paths with file extensions (e.g. .js, .css) are static assets —
+        // return 404 so broken builds surface clearly instead of silently
+        // serving index.html with the wrong content-type.
+        return StatusCode::NOT_FOUND.into_response();
     } else if let Some(file) = UiAssets::get("index.html") {
+        // Route-like paths without extensions get the SPA fallback
         (file, "index.html")
     } else {
         return StatusCode::NOT_FOUND.into_response();
