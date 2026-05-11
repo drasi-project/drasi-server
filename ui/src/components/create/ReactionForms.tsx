@@ -88,7 +88,15 @@ export default function ReactionForm({
         category="reaction"
         kind={kind}
         formData={fields}
+        selectedQueries={(fields.queries as string[]) ?? []}
         onChange={(data) => {
+          // Atomic replacement: clear old config keys, apply new ones
+          const configKeys = Object.keys(fields).filter(
+            (k) => k !== "id" && k !== "autoStart" && k !== "kind" && k !== "queries",
+          );
+          for (const key of configKeys) {
+            if (!(key in data)) onChange(key, undefined);
+          }
           for (const [key, val] of Object.entries(data)) {
             if (key !== "id" && key !== "autoStart" && key !== "queries") {
               onChange(key, val);
