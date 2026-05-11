@@ -14,6 +14,22 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-env-changed=TARGET");
 
+    // Track UI dist directory so recompilation picks up new UI assets.
+    // Ensure the directory exists so rust-embed doesn't fail at compile time.
+    // This runs unconditionally because build.rs executes before runtime config
+    // is known — the `enableUi` setting is a runtime concern, not a build concern.
+    // An empty directory simply means no assets are embedded.
+    let ui_dist = std::path::Path::new("ui/dist");
+    println!("cargo:rerun-if-changed=ui/dist");
+    if !ui_dist.exists() {
+        if let Err(e) = std::fs::create_dir_all(ui_dist) {
+            println!(
+                "cargo:warning=Failed to create ui/dist directory: {e}. \
+                 Embedded UI assets will not be available."
+            );
+        }
+    }
+
     let rustc_version = Command::new("rustc")
         .arg("--version")
         .output()

@@ -3,7 +3,11 @@ host: "0.0.0.0"
 port: 8080
 logLevel: info
 persistConfig: false
+# Auto-install required plugins from the default OCI registry on startup.
+# Signature verification is disabled to keep the smoke test self-contained
+# and avoid a hard dependency on Sigstore/Rekor availability in CI.
 autoInstallPlugins: true
+verifyPlugins: false
 
 plugins:
   - ref: source/mock
