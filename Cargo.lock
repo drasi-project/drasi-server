@@ -1241,9 +1241,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d680cd05ff03194bd7a23e244a42f1fd37a390facefc9d7bf58f3c6365be286"
+checksum = "0f099e34684c52d981068b48ac420362441a2099e99513cb4fb3191cf544127f"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1282,33 +1282,33 @@ dependencies = [
 
 [[package]]
 name = "drasi-ffi-primitives"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "148d5a99c8aae31e0f9c171f276822e42b9b1a2b6e19d759af1fbfeb743c21e6"
+checksum = "834cf0bc8e8b4b93ecc9ee658de7f1b8bf4dc949c3451933aa8d310e3b52ed72"
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1741349a79439b7e798dcb2b273b9a9c0d71080522109e71d50bc722a8ea15b6"
+checksum = "d318a4a283af53b75db456f9ad75d28fb3df0705e4a5915ec5f683ac8fcb74f1"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19be32c6c8b22dd968abeeeeec0a61db7883bca803cd379c7d3094cefed2271"
+checksum = "845f67f0b10a0c771cde161b813cd4827e14509e8a427042c5150344be3d19f9"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-host-sdk"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6c98786cfdb0a0594d1e5a4a396efde3534318ca347a0f9291724e58794adf9"
+checksum = "0af6e2452b08659e47cd0dfc8f72ba8970ff729123309f1937688f1621bbdc7d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1390,9 +1390,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3b2173e4b9ee2749515069873d0c95018bc18b3f0567482d9bcc17096d05d5a"
+checksum = "00981a206eec668354f631bc9373a915e9e591fc0cecba1466bb62f8e942db79"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1423,9 +1423,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f70063dbaf9a80ef2c76aa8c940cee7003fc3b1457c614a6f0766907ac115cb5"
+checksum = "aa7946678620b288c174bbb7918ff2d9f6da8f88e0fbf301c7b67470645cb193"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1442,9 +1442,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-plugin-sdk"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86b45a111102551a28d6cdd6aee2322f10d2bf6bc91d263bc654b02afe92c981"
+checksum = "e597176496d287b6e5ecd344be77e828ad383947d4620b189170d0e039cd3b73"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1465,9 +1465,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-query-ast"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67735fb6769ce9db6133dd63243afc6d59cee98db286fa562f1756d747204536"
+checksum = "49280bc42f7e32017c1ea175805c4455e2c3f0bb0532bfe3e3b79563ac6806a2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1476,9 +1476,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-query-cypher"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaac2a525e7362ccad675a5c37bd6ecf9e879a487174629b44de895764a5ca6b"
+checksum = "e9a0fe94bdf0cd89d2206600002bf34e13cde44448ce98c27a9923bf0dc02139"
 dependencies = [
  "drasi-query-ast",
  "peg",
@@ -1488,9 +1488,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-query-gql"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f38efd2483c6e9faadaa1dcae5248d9f1a7dec22d3c73cec1fad9c9155684371"
+checksum = "4233c584ceefd8394090c6eea703d8fc10e7efda4be769992214b2c48eae700b"
 dependencies = [
  "drasi-query-ast",
  "peg",

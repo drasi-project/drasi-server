@@ -1,10 +1,23 @@
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5 AS toolchain
+
+# Use Ubuntu 22.04 (glibc 2.35) as the runtime base so build-script binaries
+# produced by modern rustc (which require GLIBC_2.34) can execute. The cross-rs
+# musl image is used only as a source for the musl cross-toolchain.
+FROM ubuntu:22.04
+
+# Remove symlink that conflicts with COPY from toolchain
+RUN rm -rf /usr/local/man
+
+# Copy the musl cross-toolchain from the cross image
+COPY --from=toolchain /usr/local/ /usr/local/
 
 # Install build dependencies for vendored OpenSSL, protobuf, and jq
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gcc libc6-dev pkg-config \
     perl make cmake autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
+    clang libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build libjq from source for musl (with bundled oniguruma)
@@ -35,3 +48,19 @@ RUN printf '#!/bin/sh\nexec x86_64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthr
 
 # Override the linker to use our wrapper
 ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc-wrapper
+
+# Cross-toolchain env vars (previously inherited from the cross-rs image; must
+# be set explicitly now that we use ubuntu:22.04 as the runtime base).
+ENV CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc
+ENV CXX_x86_64_unknown_linux_musl=x86_64-linux-musl-g++
+ENV AR_x86_64_unknown_linux_musl=x86_64-linux-musl-ar
+
+# Provide a stable include path for the musl gcc internal headers (stddef.h,
+# stdarg.h, etc.) so bindgen / libclang can find them when cross-compiling.
+# The gcc version directory under /usr/local/lib/gcc/x86_64-linux-musl/ varies
+# between cross-rs image revisions, so we resolve it at image-build time and
+# symlink to a fixed location.
+RUN set -eux; \
+    GCC_INCLUDE_DIR=$(ls -d /usr/local/lib/gcc/x86_64-linux-musl/*/include | head -n1); \
+    ln -s "$GCC_INCLUDE_DIR" /usr/local/x86_64-linux-musl-gcc-include
+ENV BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl="--sysroot=/usr/local/x86_64-linux-musl -I/usr/local/x86_64-linux-musl-gcc-include"
