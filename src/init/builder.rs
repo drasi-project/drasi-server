@@ -142,6 +142,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }
     }
@@ -153,6 +154,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }
     }
@@ -164,6 +166,7 @@ mod tests {
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"routes": {}}),
         }
     }
@@ -175,6 +178,7 @@ mod tests {
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }
     }

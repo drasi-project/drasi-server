@@ -544,6 +544,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: serde_json::json!({}),
         }
     }
@@ -555,6 +556,7 @@ mod tests {
             auto_start: true,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: bp_kind.to_string(),
+                identity_provider: None,
                 config: serde_json::json!({}),
             }),
             config: serde_json::json!({}),
@@ -567,6 +569,7 @@ mod tests {
             id: id.to_string(),
             queries: vec![],
             auto_start: true,
+            identity_provider: None,
             config: serde_json::json!({}),
         }
     }
@@ -738,6 +741,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({"host": "localhost"}),
             }],
             vec![],
@@ -760,6 +764,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": {
                         "kind": "EnvironmentVariable",
@@ -789,6 +794,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "password": {
                         "kind": "EnvironmentVariable",
@@ -815,6 +821,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": {
                         "kind": "EnvironmentVariable",
@@ -840,6 +847,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "password": "${DRASI_TEST_HBS_MISSING}"
                 }),
@@ -862,6 +870,7 @@ mod tests {
                 id: "s1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "password": "${DRASI_TEST_HBS_DEFAULT:-secret}"
                 }),

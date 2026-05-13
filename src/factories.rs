@@ -345,6 +345,7 @@ mod tests {
             id: "test".to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: serde_json::json!({}),
         };
 
@@ -365,6 +366,7 @@ mod tests {
             id: "test".to_string(),
             queries: vec![],
             auto_start: true,
+            identity_provider: None,
             config: serde_json::json!({}),
         };
 

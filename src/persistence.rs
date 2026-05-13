@@ -167,6 +167,7 @@ impl ConfigPersistence {
                         kind: s.source_type.clone(),
                         id: s.id.clone(),
                         auto_start: s.auto_start,
+                        identity_provider: None,
                         bootstrap_provider: s.bootstrap_provider.as_ref().map(|bp| {
                             let mut bp_config = serde_json::Map::new();
                             for (k, v) in &bp.properties {
@@ -209,6 +210,7 @@ impl ConfigPersistence {
                         id: r.id.clone(),
                         queries: r.queries.clone(),
                         auto_start: r.auto_start,
+                        identity_provider: None,
                         config: serde_json::Value::Object(config_map),
                     }
                 })
