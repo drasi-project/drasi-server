@@ -231,6 +231,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
+                    identity_providers: Vec::new(),
                 }
             } else {
                 DrasiLibInstanceConfig {
@@ -242,6 +243,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
+                    identity_providers: Vec::new(),
                 }
             };
             instance_configs.push(instance_config);
@@ -275,6 +277,7 @@ impl ConfigPersistence {
                 sources: instance.sources,
                 queries: instance.queries,
                 reactions: instance.reactions,
+                identity_providers: Vec::new(),
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -311,6 +314,7 @@ impl ConfigPersistence {
                 sources: Vec::new(),
                 queries: Vec::new(),
                 reactions: Vec::new(),
+                identity_providers: Vec::new(),
                 instances: instance_configs,
             }
         };

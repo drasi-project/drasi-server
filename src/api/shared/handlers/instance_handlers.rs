@@ -146,6 +146,7 @@ pub async fn create_instance(
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
+            identity_providers: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;

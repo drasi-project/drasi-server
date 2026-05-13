@@ -87,6 +87,7 @@ pub fn build_config(
         sources,
         queries,
         reactions,
+        identity_providers: Vec::new(),
         instances: vec![], // Empty = use single-instance mode
     }
 }

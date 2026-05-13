@@ -27,7 +27,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::factories::{create_reaction_locked, create_source_locked, create_state_store_provider};
+use crate::factories::{
+    build_identity_provider_map, create_reaction_locked, create_source_locked,
+    create_state_store_provider,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -422,6 +425,11 @@ impl DrasiServer {
                 builder = builder.with_state_store_provider(state_store_provider);
             }
 
+            // Build the identity-provider map for this instance. Sources and
+            // reactions can reference entries here via `identityProvider: <id>`.
+            let identity_providers =
+                build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
+
             // Create and add sources from config
             info!(
                 "Loading {} source(s) from configuration for instance '{}'",
@@ -429,8 +437,19 @@ impl DrasiServer {
                 instance.id
             );
             for source_config in instance.sources.clone() {
+                let identity_ref = source_config.identity_provider().map(str::to_string);
                 let (source, plugin_meta) =
                     create_source_locked(&plugin_registry, source_config).await?;
+                if let Some(id) = identity_ref {
+                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Source references unknown identityProvider '{id}'. \
+                             Declared providers: {:?}",
+                            identity_providers.keys().collect::<Vec<_>>()
+                        )
+                    })?;
+                    source.set_identity_provider(provider).await;
+                }
                 builder = builder.with_source_metadata(source, plugin_meta);
             }
 
@@ -441,8 +460,19 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
+                let identity_ref = reaction_config.identity_provider().map(str::to_string);
                 let (reaction, plugin_meta) =
                     create_reaction_locked(&plugin_registry, reaction_config).await?;
+                if let Some(id) = identity_ref {
+                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Reaction references unknown identityProvider '{id}'. \
+                             Declared providers: {:?}",
+                            identity_providers.keys().collect::<Vec<_>>()
+                        )
+                    })?;
+                    reaction.set_identity_provider(provider).await;
+                }
                 builder = builder.with_reaction_metadata(reaction, plugin_meta);
             }
 

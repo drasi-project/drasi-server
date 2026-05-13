@@ -17,7 +17,8 @@
 //! This module provides factory functions that use the PluginRegistry to look up
 //! descriptors and create instances from generic config structs.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use drasi_lib::identity::{IdentityProvider, PasswordIdentityProvider};
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
@@ -25,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
-use crate::api::models::BootstrapProviderConfig;
+use crate::api::models::{BootstrapProviderConfig, IdentityProviderConfig, BUILTIN_PASSWORD_KIND};
 use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
 
@@ -271,6 +272,128 @@ pub fn get_reaction_plugin_metadata(
         }
     }
     meta
+}
+
+/// Create a single identity provider instance from configuration.
+///
+/// For the built-in `password` kind, this constructs a
+/// `PasswordIdentityProvider` directly from drasi-lib without consulting the
+/// plugin registry. All other kinds are resolved via
+/// `PluginRegistry::get_identity_provider(kind)` and built through the
+/// plugin's `create_identity_provider` factory.
+pub async fn create_identity_provider(
+    registry: &PluginRegistry,
+    config: &IdentityProviderConfig,
+) -> Result<Arc<dyn IdentityProvider>> {
+    if config.kind == BUILTIN_PASSWORD_KIND {
+        let username = config
+            .config
+            .get("username")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "identity provider '{}': missing or non-string 'username'",
+                    config.id
+                )
+            })?;
+        let password = config
+            .config
+            .get("password")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "identity provider '{}': missing or non-string 'password'",
+                    config.id
+                )
+            })?;
+        return Ok(Arc::new(PasswordIdentityProvider::new(username, password)));
+    }
+
+    let descriptor = registry
+        .get_identity_provider(&config.kind)
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown identity provider kind: '{}'. Available: {:?}",
+                config.kind,
+                registry.identity_provider_kinds()
+            )
+        })?;
+
+    let provider = descriptor
+        .create_identity_provider(&config.config)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create identity provider '{}' (kind '{}')",
+                config.id, config.kind,
+            )
+        })?;
+
+    Ok(Arc::from(provider))
+}
+
+/// Acquire the registry read lock and create a single identity provider.
+pub async fn create_identity_provider_locked(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: &IdentityProviderConfig,
+) -> Result<Arc<dyn IdentityProvider>> {
+    if config.kind == BUILTIN_PASSWORD_KIND {
+        let reg = registry.read().await;
+        return create_identity_provider(&reg, config).await;
+    }
+
+    // For plugin-backed providers, clone the descriptor under the lock and
+    // drop the guard before awaiting plugin construction.
+    let descriptor = {
+        let reg = registry.read().await;
+        reg.get_identity_provider(&config.kind)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown identity provider kind: '{}'. Available: {:?}",
+                    config.kind,
+                    reg.identity_provider_kinds()
+                )
+            })?
+    };
+
+    let provider = descriptor
+        .create_identity_provider(&config.config)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create identity provider '{}' (kind '{}')",
+                config.id, config.kind,
+            )
+        })?;
+
+    Ok(Arc::from(provider))
+}
+
+/// Build a `{id -> provider}` map from a slice of identity-provider configs.
+///
+/// Fails on duplicate ids or if any plugin-backed kind is not registered.
+pub async fn build_identity_provider_map(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    configs: &[IdentityProviderConfig],
+) -> Result<HashMap<String, Arc<dyn IdentityProvider>>> {
+    let mut map: HashMap<String, Arc<dyn IdentityProvider>> = HashMap::new();
+    for cfg in configs {
+        if map.contains_key(&cfg.id) {
+            return Err(anyhow::anyhow!(
+                "Duplicate identityProvider id '{}'",
+                cfg.id
+            ));
+        }
+        let provider = create_identity_provider_locked(registry, cfg).await?;
+        info!(
+            "Configured identity provider '{}' (kind '{}')",
+            cfg.id, cfg.kind
+        );
+        map.insert(cfg.id.clone(), provider);
+    }
+    Ok(map)
 }
 
 #[cfg(test)]
