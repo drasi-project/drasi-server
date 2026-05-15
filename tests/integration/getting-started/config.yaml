@@ -7,6 +7,9 @@ port: 8080
 logLevel: info
 persistConfig: true
 autoInstallPlugins: true
+# Signature verification is disabled to keep the integration test self-contained
+# and avoid a hard dependency on Sigstore/Rekor availability in CI.
+verifyPlugins: false
 
 id: integration-test-server
 

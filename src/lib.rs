@@ -26,6 +26,7 @@ pub mod plugin_operations;
 pub mod plugin_orchestrator;
 pub mod plugin_registry;
 pub mod server;
+pub mod ui_assets;
 
 // Main exports for library users
 pub use builder::DrasiServerBuilder;

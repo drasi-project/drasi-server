@@ -727,11 +727,15 @@ impl DrasiServer {
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
-        // Serve the Drasi Server Admin UI if enabled and the dist directory exists
+        // Serve the Drasi Server Admin UI if enabled
         let ui_dir = std::path::Path::new("ui/dist");
+        let has_filesystem_ui = ui_dir.join("index.html").exists();
+        let has_embedded_ui = crate::ui_assets::has_embedded_ui();
+
         if self.enable_ui {
-            if ui_dir.exists() {
-                info!("Drasi Server Admin UI found, serving at /ui/");
+            if has_filesystem_ui {
+                // Prefer filesystem for development (hot-reload)
+                info!("Drasi Server Admin UI found on filesystem, serving at /ui/");
                 app = app
                     .nest_service(
                         "/ui",
@@ -741,20 +745,21 @@ impl DrasiServer {
                         "/",
                         get(|| async { axum::response::Redirect::temporary("/ui/") }),
                     );
+            } else if has_embedded_ui {
+                // Fall back to embedded assets (release binary)
+                info!("Drasi Server Admin UI (embedded), serving at /ui/");
+                app = app.merge(crate::ui_assets::embedded_ui_routes()).route(
+                    "/",
+                    get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                );
             } else {
-                let abs_path = ui_dir.canonicalize().unwrap_or_else(|_| {
-                    std::env::current_dir()
-                        .map(|cwd| cwd.join(ui_dir))
-                        .unwrap_or_else(|_| ui_dir.to_path_buf())
-                });
                 warn!(
-                    "Web UI is enabled but ui/dist directory not found at {}. \
+                    "Web UI is enabled but no UI assets found. \
                      The /ui route will return 404. \
                      To build the UI, run `make build-ui` (or `make build-release`) from the \
                      repository root — `cargo build` alone does not build the UI. \
                      To suppress this warning, start the server with `--disable-ui` or set \
-                     `enableUi: false` in the config file.",
-                    abs_path.display()
+                     `enableUi: false` in the config file."
                 );
             }
         } else {
@@ -782,7 +787,7 @@ impl DrasiServer {
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
-        if self.enable_ui && ui_dir.exists() {
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 
