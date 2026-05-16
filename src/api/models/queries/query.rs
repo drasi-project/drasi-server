@@ -50,6 +50,10 @@ pub struct QueryConfigDto {
     pub dispatch_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_backend: Option<serde_json::Value>,
+    #[serde(default = "default_outbox_capacity")]
+    pub outbox_capacity: usize,
+    #[serde(default = "default_bootstrap_timeout_secs")]
+    pub bootstrap_timeout_secs: u64,
 }
 
 /// Source subscription configuration DTO with camelCase serialization
@@ -93,6 +97,14 @@ fn default_bootstrap_buffer_size() -> usize {
     10000
 }
 
+fn default_outbox_capacity() -> usize {
+    1000
+}
+
+fn default_bootstrap_timeout_secs() -> u64 {
+    300
+}
+
 impl TryFrom<QueryConfig> for QueryConfigDto {
     type Error = serde_json::Error;
 
@@ -134,6 +146,8 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,
             dispatch_mode: config.dispatch_mode.map(|d| format!("{d:?}")),
             storage_backend,
+            outbox_capacity: config.outbox_capacity,
+            bootstrap_timeout_secs: config.bootstrap_timeout_secs,
         })
     }
 }

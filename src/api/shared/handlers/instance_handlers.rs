@@ -137,6 +137,7 @@ pub async fn create_instance(
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
             state_store: None,
+            secret_store: None,
             default_priority_queue_capacity: request
                 .default_priority_queue_capacity
                 .map(ConfigValue::Static),

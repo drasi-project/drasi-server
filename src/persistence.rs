@@ -220,6 +220,7 @@ impl ConfigPersistence {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
                     state_store: dynamic_config.state_store.clone(),
+                    secret_store: dynamic_config.secret_store.clone(),
                     default_priority_queue_capacity: dynamic_config
                         .default_priority_queue_capacity
                         .clone(),
@@ -235,6 +236,7 @@ impl ConfigPersistence {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
                     state_store: None,
+                    secret_store: None,
                     default_priority_queue_capacity: None,
                     default_dispatch_buffer_capacity: None,
                     sources,
@@ -260,6 +262,7 @@ impl ConfigPersistence {
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
+                secret_store: instance.secret_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
                 plugin_registry: self.preserved.plugin_registry.clone(),
@@ -295,7 +298,8 @@ impl ConfigPersistence {
                 persist_index: false, // Per-instance setting in multi-instance mode
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
-                state_store: None, // Per-instance setting in multi-instance mode
+                state_store: None,  // Per-instance setting in multi-instance mode
+                secret_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 plugin_registry: self.preserved.plugin_registry.clone(),

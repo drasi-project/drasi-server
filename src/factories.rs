@@ -12,22 +12,148 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Factory functions for creating source, reaction, and state store instances from config.
+//! Factory functions for creating source, reaction, state store, and secret store instances from config.
 //!
 //! This module provides factory functions that use the PluginRegistry to look up
 //! descriptors and create instances from generic config structs.
 
 use anyhow::Result;
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
 use crate::api::models::BootstrapProviderConfig;
-use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
+use crate::config::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
+
+use drasi_host_sdk::ConfigResolverFn;
+use drasi_plugin_sdk::ffi::secret_store::FfiGetSecretResult;
+use drasi_plugin_sdk::ffi::FfiStr;
+
+// ============================================================================
+// Host-side config value resolver (FFI callback for plugins)
+// ============================================================================
+
+/// Context passed to the host config resolver callback.
+///
+/// Contains the secret store provider and a tokio runtime handle for
+/// resolving async `get_secret` calls from within synchronous FFI callbacks.
+pub struct ConfigResolverContext {
+    pub provider: Arc<dyn SecretStoreProvider>,
+    pub runtime_handle: tokio::runtime::Handle,
+}
+
+/// Host-side `extern "C"` callback that plugins invoke (via `DtoMapper`) to
+/// resolve `ConfigValue` references (secrets, env vars) back through the host.
+///
+/// The plugin serializes the `ConfigValue` to JSON and passes it here.
+/// The host parses it, resolves the value using the appropriate store,
+/// and returns the resolved string.
+pub extern "C" fn host_resolve_config_value(
+    ctx: *const c_void,
+    config_value_json: FfiStr,
+) -> FfiGetSecretResult {
+    if ctx.is_null() {
+        return FfiGetSecretResult::err("Config resolver context is null".to_string());
+    }
+
+    let context = unsafe { &*(ctx as *const ConfigResolverContext) };
+    let json_str = unsafe { config_value_json.to_string() };
+
+    // Parse the ConfigValue JSON to determine the kind
+    let json_value: serde_json::Value = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return FfiGetSecretResult::err(format!("Invalid config value JSON: {e}"));
+        }
+    };
+
+    // Dispatch based on kind
+    if let Some(kind) = json_value.get("kind").and_then(|v| v.as_str()) {
+        match kind {
+            "Secret" => {
+                let name = match json_value.get("name").and_then(|v| v.as_str()) {
+                    Some(n) => n.to_string(),
+                    None => {
+                        return FfiGetSecretResult::err(
+                            "Secret config value missing 'name' field".to_string(),
+                        );
+                    }
+                };
+
+                let provider = context.provider.clone();
+                let handle = context.runtime_handle.clone();
+
+                // Resolve async get_secret from a non-tokio thread to avoid
+                // blocking the plugin's tokio worker that called us.
+                match std::thread::spawn(move || handle.block_on(provider.get_secret(&name))).join()
+                {
+                    Ok(Ok(value)) => FfiGetSecretResult::ok(value),
+                    Ok(Err(e)) => FfiGetSecretResult::err(format!("Failed to resolve secret: {e}")),
+                    Err(_) => {
+                        FfiGetSecretResult::err("Secret resolution thread panicked".to_string())
+                    }
+                }
+            }
+            "EnvironmentVariable" => {
+                let name = match json_value.get("name").and_then(|v| v.as_str()) {
+                    Some(n) => n.to_string(),
+                    None => {
+                        return FfiGetSecretResult::err(
+                            "EnvironmentVariable config value missing 'name' field".to_string(),
+                        );
+                    }
+                };
+                let default = json_value
+                    .get("default")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                match std::env::var(&name) {
+                    Ok(v) => FfiGetSecretResult::ok(v),
+                    Err(_) => match default {
+                        Some(d) => FfiGetSecretResult::ok(d),
+                        None => FfiGetSecretResult::err(format!(
+                            "Environment variable '{name}' not found and no default provided"
+                        )),
+                    },
+                }
+            }
+            other => FfiGetSecretResult::err(format!("Unknown config value kind: '{other}'")),
+        }
+    } else {
+        // No "kind" field — treat as a static string value
+        match json_value.as_str() {
+            Some(s) => FfiGetSecretResult::ok(s.to_string()),
+            None => FfiGetSecretResult::ok(json_str),
+        }
+    }
+}
+
+/// Build a leaked `ConfigResolverContext` pointer for injection into plugins.
+///
+/// The returned pointer is intentionally leaked (process-lifetime) because
+/// plugins store it globally and need it for as long as they're loaded.
+pub fn build_config_resolver_context(
+    provider: Arc<dyn SecretStoreProvider>,
+    runtime_handle: tokio::runtime::Handle,
+) -> *mut c_void {
+    let ctx = Box::new(ConfigResolverContext {
+        provider,
+        runtime_handle,
+    });
+    Box::into_raw(ctx) as *mut c_void
+}
+
+/// Get the config resolver callback function pointer.
+pub fn config_resolver_callback() -> ConfigResolverFn {
+    host_resolve_config_value
+}
 
 /// Create a source instance from a SourceConfig using the plugin registry.
 ///
@@ -227,6 +353,38 @@ pub fn create_state_store_provider(
             Ok(Arc::new(provider))
         }
     }
+}
+
+/// Create a secret store provider from a SecretStoreConfig using the plugin registry.
+///
+/// Looks up the `SecretStorePluginDescriptor` by kind from the registry,
+/// then calls `create_secret_store()` with the config JSON.
+pub async fn create_secret_store_from_registry(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: &SecretStoreConfig,
+) -> Result<Arc<dyn SecretStoreProvider>> {
+    let descriptor = {
+        let reg = registry.read().await;
+        reg.get_secret_store(&config.kind).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No secret store plugin registered for kind '{}'. \
+                     Available: {:?}. Make sure the plugin is loaded.",
+                config.kind,
+                reg.secret_store_kinds()
+            )
+        })?
+    };
+
+    info!(
+        "Creating secret store provider (kind: {}, config_version: {})",
+        descriptor.kind(),
+        descriptor.config_version()
+    );
+
+    let provider = descriptor.create_secret_store(&config.config).await?;
+    // Box<dyn SecretStoreProvider> → Arc<dyn SecretStoreProvider>
+    let arc: Arc<dyn SecretStoreProvider> = Arc::from(provider);
+    Ok(arc)
 }
 
 /// Get plugin metadata for a source kind from the registry.

@@ -25,10 +25,13 @@ use anyhow::Result;
 use drasi_host_sdk::callbacks::{self, CallbackContext};
 use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
 use drasi_host_sdk::plugin_types::{PluginCategory, PluginKindEntry};
+use drasi_host_sdk::ConfigResolverFn;
+use drasi_plugin_sdk::prelude::SecretStorePluginDescriptor;
 use drasi_plugin_sdk::{
     BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
 };
 use log::{debug, info, warn};
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -38,9 +41,11 @@ const PLUGIN_FILE_PATTERNS: &[&str] = &[
     "libdrasi_source_*",
     "libdrasi_reaction_*",
     "libdrasi_bootstrap_*",
+    "libdrasi_secret_store_*",
     "drasi_source_*",
     "drasi_reaction_*",
     "drasi_bootstrap_*",
+    "drasi_secret_store_*",
 ];
 
 /// Statistics from a cdylib plugin loading operation.
@@ -51,8 +56,37 @@ pub struct PluginLoadStats {
     pub source_descriptors: usize,
     pub reaction_descriptors: usize,
     pub bootstrap_descriptors: usize,
+    pub secret_store_descriptors: usize,
     /// Per-plugin information for orchestrator registration.
     pub loaded_plugins: Vec<StartupPluginRecord>,
+    /// Config resolver injection handles for all loaded plugin cdylibs.
+    /// Stored as raw fn ptrs because `LoadedPlugin` is consumed during registration.
+    config_resolver_injectors: Vec<ConfigResolverInjector>,
+}
+
+/// Saved config resolver injection handle for a single loaded plugin cdylib.
+struct ConfigResolverInjector {
+    set_fn: extern "C" fn(*mut c_void, ConfigResolverFn),
+}
+
+// Debug impl for ConfigResolverInjector
+impl std::fmt::Debug for ConfigResolverInjector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigResolverInjector").finish()
+    }
+}
+
+impl PluginLoadStats {
+    /// Inject a config value resolver callback into all loaded plugins.
+    ///
+    /// Must be called after the secret store is created and before any
+    /// source/reaction creation calls, so the plugins' `DtoMapper` can
+    /// resolve `ConfigValue::Secret` references through the host.
+    pub fn inject_config_resolver_into_all(&self, ctx: *mut c_void, callback: ConfigResolverFn) {
+        for injector in &self.config_resolver_injectors {
+            (injector.set_fn)(ctx, callback);
+        }
+    }
 }
 
 /// Information about a single plugin loaded at startup.
@@ -150,6 +184,15 @@ pub fn load_plugins(
 
         let mut plugin_kinds = Vec::new();
 
+        // Save the config resolver injection handle before consuming the plugin.
+        // This allows the server to inject a config resolver callback later
+        // (after the secret store is created) so plugins can resolve secrets.
+        stats
+            .config_resolver_injectors
+            .push(ConfigResolverInjector {
+                set_fn: plugin.config_resolver_injection_fn(),
+            });
+
         // Derive a plugin_id from the first descriptor kind.
         // This mirrors how the lifecycle manager groups descriptors by plugin.
         let mut plugin_id_parts: Vec<String> = Vec::new();
@@ -202,6 +245,22 @@ pub fn load_plugins(
             stats.bootstrap_descriptors += 1;
         }
 
+        for proxy in std::mem::take(&mut plugin.secret_store_plugins) {
+            let kind = proxy.kind().to_string();
+            if plugin_id_parts.is_empty() {
+                plugin_id_parts.push(format!("secret_store/{kind}"));
+            }
+            info!("  [cdylib] secret_store: {kind} ({meta})");
+            plugin_kinds.push(PluginKindEntry {
+                category: PluginCategory::SecretStore,
+                kind: kind.clone(),
+                config_version: proxy.config_version().to_string(),
+                config_schema_name: proxy.config_schema_name().to_string(),
+            });
+            registry.register_secret_store_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            stats.secret_store_descriptors += 1;
+        }
+
         let derived_plugin_id = plugin_id_parts
             .into_iter()
             .next()
@@ -218,17 +277,20 @@ pub fn load_plugins(
         stats.plugins_loaded += 1;
     }
 
-    let total_descriptors =
-        stats.source_descriptors + stats.reaction_descriptors + stats.bootstrap_descriptors;
+    let total_descriptors = stats.source_descriptors
+        + stats.reaction_descriptors
+        + stats.bootstrap_descriptors
+        + stats.secret_store_descriptors;
 
     if stats.plugins_loaded > 0 {
         info!(
-            "cdylib plugin loading complete: {} loaded, {} descriptors ({} sources, {} reactions, {} bootstraps)",
+            "cdylib plugin loading complete: {} loaded, {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores)",
             stats.plugins_loaded,
             total_descriptors,
             stats.source_descriptors,
             stats.reaction_descriptors,
             stats.bootstrap_descriptors,
+            stats.secret_store_descriptors,
         );
     } else {
         debug!("No cdylib plugins found in '{}'", dir.display());

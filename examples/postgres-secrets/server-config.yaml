@@ -1,0 +1,50 @@
+# Drasi Server — PostgreSQL with Secret Store Example
+#
+# This configuration demonstrates using the file-based secret store plugin
+# to resolve passwords from a secrets file instead of hardcoding them.
+
+apiVersion: drasi.io/v1
+id: postgres-secrets-demo
+host: "0.0.0.0"
+port: 8080
+logLevel: info
+
+# Secret store plugin configuration.
+# The "file" secret store reads secrets from a flat JSON file.
+secretStore:
+  kind: file
+  path: ./examples/postgres-secrets/secrets.json
+
+# PostgreSQL source — password uses a Secret envelope resolved at runtime
+sources:
+  - kind: postgres
+    id: pg-sensors
+    autoStart: true
+    host: localhost
+    port: 5432
+    user: postgres
+    password:
+      kind: Secret
+      name: DB_PASSWORD
+    database: drasi_demo
+    slotName: drasi_slot
+    publicationName: drasi_pub
+    tables:
+      - sensors
+
+# Continuous query: sensors with high temperature
+queries:
+  - id: high-temp
+    query: "MATCH (s:Sensor) WHERE s.temperature > 75 RETURN s.id, s.name, s.location, s.temperature"
+    queryLanguage: Cypher
+    sources:
+      - sourceId: pg-sensors
+    autoStart: true
+
+# Log reaction: prints change events to stdout
+reactions:
+  - kind: log
+    id: log-temps
+    queries:
+      - high-temp
+    autoStart: true

@@ -27,7 +27,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::factories::{create_reaction_locked, create_source_locked, create_state_store_provider};
+use crate::factories::{
+    build_config_resolver_context, config_resolver_callback, create_reaction_locked,
+    create_secret_store_from_registry, create_source_locked, create_state_store_provider,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -219,6 +222,7 @@ impl DrasiServer {
 
         // Load dynamic plugins from the plugins directory
         let mut startup_plugin_records = Vec::new();
+        let mut plugin_load_stats: Option<crate::dynamic_loading::PluginLoadStats> = None;
         if plugins_dir.exists() {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
@@ -237,7 +241,8 @@ impl DrasiServer {
                 Some(callback_ctx),
                 verified_files.as_ref(),
             )?;
-            startup_plugin_records = load_stats.loaded_plugins;
+            startup_plugin_records = load_stats.loaded_plugins.clone();
+            plugin_load_stats = Some(load_stats);
         }
 
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
@@ -420,6 +425,32 @@ impl DrasiServer {
                 );
                 let state_store_provider = create_state_store_provider(state_store_config)?;
                 builder = builder.with_state_store_provider(state_store_provider);
+            }
+
+            // Create and add secret store provider if configured
+            if let Some(ref secret_store_config) = instance.secret_store {
+                info!(
+                    "Enabling secret store for instance '{}' with '{}' provider",
+                    instance.id, secret_store_config.kind
+                );
+                let provider =
+                    create_secret_store_from_registry(&plugin_registry, secret_store_config)
+                        .await?;
+                builder = builder.with_secret_store_provider(provider.clone());
+
+                // Inject the config resolver callback into all loaded plugins so their
+                // DtoMapper can resolve ConfigValue::Secret references back through the host.
+                // The context is intentionally leaked (process-lifetime) since plugins store
+                // the callback globally.
+                if let Some(ref stats) = plugin_load_stats {
+                    let resolver_ctx =
+                        build_config_resolver_context(provider, tokio::runtime::Handle::current());
+                    stats.inject_config_resolver_into_all(resolver_ctx, config_resolver_callback());
+                    info!(
+                        "Injected config resolver into {} loaded plugin(s)",
+                        stats.plugins_loaded,
+                    );
+                }
             }
 
             // Create and add sources from config

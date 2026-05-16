@@ -23,7 +23,7 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, StateStoreConfig,
+    ConfigValue, QueryConfigDto, ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -79,6 +79,12 @@ pub struct DrasiServerConfig {
     /// store is used (state is lost on restart).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_store: Option<StateStoreConfig>,
+    /// Optional secret store plugin configuration for resolving ConfigValue::Secret references.
+    ///
+    /// When set, component configs can use `{ kind: Secret, name: "..." }` values
+    /// which are resolved at runtime by the configured secret store plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_store: Option<SecretStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -149,6 +155,7 @@ impl Default for DrasiServerConfig {
             enable_ui: true,
             solutions_dir: None,
             state_store: None,
+            secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
             plugin_registry: default_plugin_registry(),
@@ -257,6 +264,9 @@ pub struct DrasiLibInstanceConfig {
     /// store is used (state is lost on restart).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_store: Option<StateStoreConfig>,
+    /// Optional secret store plugin configuration for resolving ConfigValue::Secret references
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_store: Option<SecretStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -284,6 +294,7 @@ pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
     pub state_store: Option<StateStoreConfig>,
+    pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
     pub sources: Vec<SourceConfig>,
@@ -336,6 +347,7 @@ impl DrasiServerConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
                 state_store: self.state_store.clone(),
+                secret_store: self.secret_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
                 default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
                 sources: self.sources.clone(),
@@ -384,6 +396,7 @@ impl DrasiServerConfig {
                 id,
                 persist_index: instance.persist_index,
                 state_store: instance.state_store.clone(),
+                secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 sources: instance.sources.clone(),
