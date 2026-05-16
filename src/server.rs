@@ -27,6 +27,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::config::DrasiLibInstanceConfig;
 use crate::factories::{
     build_config_resolver_context, config_resolver_callback, create_reaction_locked,
     create_secret_store_from_registry, create_source_locked, create_state_store_provider,
@@ -656,6 +657,32 @@ impl DrasiServer {
                         config.solutions_dir.clone(),
                         &config,
                     ));
+                    // Register initial instance configs so save() preserves
+                    // per-instance settings (secret_store, state_store, etc.)
+                    let initial_instances: Vec<DrasiLibInstanceConfig> =
+                        if config.instances.is_empty() {
+                            vec![DrasiLibInstanceConfig {
+                                id: config.id.clone(),
+                                persist_index: config.persist_index,
+                                state_store: config.state_store.clone(),
+                                secret_store: config.secret_store.clone(),
+                                default_priority_queue_capacity: config
+                                    .default_priority_queue_capacity
+                                    .clone(),
+                                default_dispatch_buffer_capacity: config
+                                    .default_dispatch_buffer_capacity
+                                    .clone(),
+                                sources: config.sources.clone(),
+                                queries: config.queries.clone(),
+                                reactions: config.reactions.clone(),
+                            }]
+                        } else {
+                            config.instances.clone()
+                        };
+                    for inst in initial_instances {
+                        persistence.register_instance(inst).await;
+                    }
+
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
                 } else {
