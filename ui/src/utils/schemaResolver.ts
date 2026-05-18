@@ -45,13 +45,18 @@ export function resolvePluginSchema(apiResponse: {
   // Add titles to oneOf variants based on discriminator enum values
   addOneOfTitles(definitions);
 
+  // Build a lookup from utoipa short ref names to full definition keys.
+  // Plugin schemas use fully-qualified keys like "reaction.http.CallSpec"
+  // but $ref values use utoipa short names like "CallSpecDto".
+  const refLookup = buildRefLookup(definitions);
+
   // Rewrite $ref paths inside definitions themselves (they can cross-reference)
   for (const [name, def] of Object.entries(definitions)) {
-    definitions[name] = rewriteRefs(def, definitions);
+    definitions[name] = rewriteRefs(def, definitions, refLookup);
   }
 
   // Rewrite $ref paths in the root schema
-  const rewritten = rewriteRefs(rootSchema, definitions);
+  const rewritten = rewriteRefs(rootSchema, definitions, refLookup);
 
   return {
     jsonSchema: {
@@ -219,9 +224,63 @@ function addOneOfTitles(definitions: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Build a map from utoipa-generated $ref names to full definition keys.
+ *
+ * Plugin schemas use fully-qualified keys like "reaction.http.CallSpec",
+ * but $ref values use utoipa short names like "CallSpecDto".
+ * This map resolves:
+ *   "reaction.http.CallSpec" → "reaction.http.CallSpec"  (exact)
+ *   "CallSpec"               → "reaction.http.CallSpec"  (short name)
+ *   "CallSpecDto"            → "reaction.http.CallSpec"  (short name + Dto suffix)
+ */
+function buildRefLookup(definitions: Record<string, unknown>): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const fullKey of Object.keys(definitions)) {
+    lookup.set(fullKey, fullKey);
+    const parts = fullKey.split(".");
+    const shortName = parts[parts.length - 1];
+    // Map short name and Dto-suffixed variant (first definition wins)
+    if (!lookup.has(shortName)) lookup.set(shortName, fullKey);
+    const dtoName = shortName + "Dto";
+    if (!lookup.has(dtoName)) lookup.set(dtoName, fullKey);
+  }
+  return lookup;
+}
+
+/**
+ * Fallback: try suffix matching when exact lookup fails.
+ * e.g. $ref "TemplateSpecDto" → strip Dto → "TemplateSpec" →
+ *      find definition whose short name ends with "TemplateSpec"
+ *      → "reaction.log.LogTemplateSpec" ✓
+ */
+function suffixMatchRef(
+  refName: string,
+  definitions: Record<string, unknown>,
+): string | undefined {
+  // Strip Dto suffix if present to get the core name
+  const baseName = refName.endsWith("Dto")
+    ? refName.slice(0, -3)
+    : refName;
+
+  const candidates: string[] = [];
+  for (const fullKey of Object.keys(definitions)) {
+    const parts = fullKey.split(".");
+    const shortName = parts[parts.length - 1];
+    if (shortName === baseName || shortName.endsWith(baseName)) {
+      candidates.push(fullKey);
+    }
+  }
+
+  // Only use if unambiguous (exactly one match)
+  if (candidates.length === 1) return candidates[0];
+  return undefined;
+}
+
 function rewriteRefs(
   obj: unknown,
   definitions: Record<string, unknown>,
+  refLookup: Map<string, string>,
 ): unknown {
   if (typeof obj !== "object" || obj === null) return obj;
 
@@ -231,9 +290,14 @@ function rewriteRefs(
   if (typeof record.$ref === "string") {
     const refName = record.$ref.replace("#/components/schemas/", "");
 
-    // Handle ConfigValue — replace with string type
+    // Handle ConfigValue — replace $ref with string type, preserving sibling keys (x-ui:*, etc.)
     if (refName === "ConfigValue" || refName.includes("ConfigValue")) {
+      const preserved: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(record)) {
+        if (k !== "$ref") preserved[k] = v;
+      }
       return {
+        ...preserved,
         type: "string",
         description:
           ((record.description as string) || "") +
@@ -241,16 +305,26 @@ function rewriteRefs(
       };
     }
 
-    // If the referenced schema exists in definitions, rewrite the ref path
-    if (refName in definitions) {
-      return { $ref: `#/definitions/${refName}` };
+    // If the referenced schema exists in definitions, rewrite the ref path, preserving siblings
+    const defKey = refLookup.get(refName) ?? suffixMatchRef(refName, definitions);
+    if (defKey && defKey in definitions) {
+      const preserved: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(record)) {
+        if (k !== "$ref") preserved[k] = v;
+      }
+      return { ...preserved, $ref: `#/definitions/${defKey}` };
     }
 
     // Unknown ref — replace with a generic object/string schema so RJSF doesn't crash
     // This happens when the plugin schema references types defined elsewhere in the
     // server's OpenAPI spec (e.g., TemplateSpecDto, QueryConfigDto).
     const shortName = refName.split(".").pop() || refName;
+    const preserved: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (k !== "$ref") preserved[k] = v;
+    }
     return {
+      ...preserved,
       type: "object",
       title: shortName,
       description: `Configuration for ${shortName}`,
@@ -259,7 +333,7 @@ function rewriteRefs(
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => rewriteRefs(item, definitions));
+    return obj.map((item) => rewriteRefs(item, definitions, refLookup));
   }
 
   // Handle allOf wrapping pattern (used for nullable fields):
@@ -274,7 +348,7 @@ function rewriteRefs(
         value[0] !== null &&
         "$ref" in value[0]
       ) {
-        const resolved = rewriteRefs(value[0], definitions);
+        const resolved = rewriteRefs(value[0], definitions, refLookup);
         // Merge the resolved ref with any sibling properties (like nullable, description)
         const siblings: Record<string, unknown> = {};
         for (const [sk, sv] of Object.entries(record)) {
@@ -282,9 +356,9 @@ function rewriteRefs(
         }
         return { ...siblings, ...(resolved as Record<string, unknown>) };
       }
-      result[key] = value.map((item) => rewriteRefs(item, definitions));
+      result[key] = value.map((item) => rewriteRefs(item, definitions, refLookup));
     } else {
-      result[key] = rewriteRefs(value, definitions);
+      result[key] = rewriteRefs(value, definitions, refLookup);
     }
   }
   return result;
