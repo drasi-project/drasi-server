@@ -8,3 +8,6 @@ on:
 jobs:
   test:
     uses: drasi-project/.github/.github/workflows/rust-unit-test.yaml@main
+    with:
+      install-jq: true
+      install-protobuf: true

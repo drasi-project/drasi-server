@@ -10,5 +10,6 @@ jobs:
     uses: drasi-project/.github/.github/workflows/rust-lint.yaml@main
     with:
       install-jq: true
+      install-protobuf: true
       clippy-command: "make clippy"
       fmt-command: "make fmt-check"
