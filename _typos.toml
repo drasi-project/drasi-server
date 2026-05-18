@@ -1,6 +1,8 @@
 [default.extend-words]
 # BA = Boeing stock ticker symbol
 BA = "BA"
+# Intentional spelling used in error codes (SCHEMA_UNPARSEABLE)
+UNPARSEABLE = "UNPARSEABLE"
 
 [files]
 extend-exclude = [
