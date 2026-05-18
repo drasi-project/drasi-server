@@ -22,7 +22,18 @@
 #   docker run -p 8080:8080 -v ./config:/app/config drasi-server
 
 # =============================================================================
-# Stage 1: Build Environment
+# Stage 1: Build Web UI
+# =============================================================================
+FROM node:22-slim AS ui-builder
+
+WORKDIR /app/ui
+COPY ui/package.json ui/package-lock.json* ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Build Rust Binary
 # =============================================================================
 FROM rust:1.88-slim-bookworm AS builder
 
@@ -45,12 +56,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files first for dependency caching
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 
 
 # Copy source code
 COPY src ./src
 COPY config ./config
+COPY xtask ./xtask
+
+# Copy built UI from ui-builder so it gets embedded into the binary
+COPY --from=ui-builder /app/ui/dist ./ui/dist
 
 # Build release binary
 # Set JQ_LIB_DIR dynamically for multiarch support (no pkg-config file in Debian's libjq-dev)
@@ -58,7 +73,7 @@ RUN JQ_LIB_DIR=$(dirname $(find /usr/lib -name 'libjq.so' | head -1)) \
     cargo build --release --bin drasi-server
 
 # =============================================================================
-# Stage 2: Runtime Environment
+# Stage 3: Runtime Environment
 # =============================================================================
 FROM debian:bookworm-slim AS runtime
 
@@ -77,6 +92,9 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/drasi-server /usr/local/bin/drasi-server
+
+# Copy built UI from ui-builder
+COPY --from=ui-builder /app/ui/dist /app/ui/dist
 
 # Create config directory with proper permissions
 RUN mkdir -p /app/config && chown -R drasi:drasi /app

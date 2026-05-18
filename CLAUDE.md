@@ -14,14 +14,28 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
-- Run with plugin verification: `cargo run -- --verify-plugins --config config/server.yaml`
+- Run with plugin verification disabled: `cargo run -- --skip-verification --config config/server.yaml`
+- Run with UI disabled: `cargo run -- --disable-ui`
+- Run with UI enabled (override config): `cargo run -- --enable-ui`
+- Validate config (structure only): `cargo run -- validate --config config/server.yaml`
+- Validate config (with plugins): `cargo run -- validate --config config/server.yaml --plugins-dir ./plugins`
 - Check compilation: `cargo check`
 
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
+**Important: `[patch.crates-io]` does NOT affect plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime — they must be built separately. When developing with local drasi-core changes, always use `make build-local-plugins` to rebuild plugins from local source. Registry-downloaded plugins (`autoInstallPlugins: true`) will NOT be ABI-compatible with local drasi-core changes.
+
+- Build all plugins from local drasi-core (release): `make build-local-plugins`
+- Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
+- Build test-only plugins (mock, log, scriptfile): `make build-local-test-plugins`
+- Download test plugins from OCI registry (no drasi-core needed): `make download-test-plugins`
+
+**Local directory plugin sources:** The `pluginRegistry` config field (and `--registry` CLI flag) accepts local filesystem paths in addition to OCI registry URLs. When a path is detected (e.g., `/path/to/plugins`, `./plugins`, `../drasi-core/target/debug/plugins`, `file:///opt/plugins`), the system scans the directory for plugin binaries instead of contacting an OCI registry. This is useful for development workflows where plugins are built locally. Detection is cross-platform: Unix absolute paths, relative paths (`./`, `../`), home-relative (`~/`), `file://` URIs, Windows drive letters, and UNC paths are all recognized as local directories.
+
 ### Testing
 - Run all tests: `cargo test`
+- Run all tests including plugin-dependent: `make test-all`
 - Run unit tests only: `cargo test --lib`
 - Run specific test: `cargo test test_name`
 - Run integration tests: `./tests/run_working_tests.sh`
@@ -43,6 +57,7 @@ This repository contains only the server wrapper functionality:
 1. **Server** (`src/server.rs`) - Main server implementation that wraps DrasiLib
 2. **API** (`src/api/`) - REST API implementation with OpenAPI documentation
    - `v1/` - API version 1 handlers, routes, and OpenAPI spec
+   - `v1/plugin_handlers.rs` - Plugin management API endpoints
    - `shared/` - Common handlers, error types, and response types shared across versions
    - `version.rs` - API version constants and utilities
    - `models/` - Data Transfer Objects (DTOs)
@@ -50,6 +65,9 @@ This repository contains only the server wrapper functionality:
 3. **Builder** (`src/builder.rs`) - Builder pattern for server construction
 4. **Main** (`src/main.rs`) - CLI entry point for standalone server
 5. **Dynamic Loading** (`src/dynamic_loading.rs`) - Runtime plugin loading from shared libraries
+6. **Plugin Operations** (`src/plugin_operations.rs`) - Shared plugin management service used by CLI, init, startup, and API
+7. **Plugin Orchestrator** (`src/plugin_orchestrator.rs`) - Server-level plugin lifecycle coordination (load, install, track)
+8. **Plugin Registry** (`src/plugin_registry.rs`) - Re-exports from host-sdk: mutable registry with `Arc<RwLock<PluginRegistry>>`
 
 ### Core Components (External Dependency)
 
@@ -102,7 +120,12 @@ port: 8080
 logLevel: "info"
 persistConfig: true  # Enable persistence (default)
 persistIndex: false  # Use RocksDB for persistent indexing (default: false, uses in-memory)
-verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: false)
+verifyPlugins: true  # Enable cosign signature verification for downloaded plugins (default: true)
+enableUi: true       # Enable the web UI at /ui (default: true)
+
+# Hot-reload plugin settings (default: all disabled)
+# hotReloadPlugins: false          # Enable filesystem watching for plugin changes
+# hotReloadDebounceMs: 2000        # Debounce window in milliseconds
 
 # Optional trusted identities for plugin signature verification
 # trustedIdentities:
@@ -120,6 +143,12 @@ verifyPlugins: true  # Enable cosign signature verification for downloaded plugi
 # defaultPriorityQueueCapacity: "${PRIORITY_QUEUE_CAPACITY:-10000}"
 # defaultDispatchBufferCapacity: 1000
 # defaultDispatchBufferCapacity: "${DISPATCH_BUFFER_CAPACITY:-1000}"
+
+# CORS allowed origins (default: empty = all origins permitted)
+# When set, only listed origins are allowed for cross-origin requests.
+# corsAllowedOrigins:
+#   - "http://localhost:3000"
+#   - "https://dashboard.example.com"
 
 # Sources (parsed into plugin instances)
 sources:
@@ -182,6 +211,8 @@ The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-ins
 
 ### Configuration Persistence
 
+Persistence uses a snapshot-based approach: when saving, `ConfigPersistence::save()` calls `snapshot_configuration()` on each DrasiLib instance via the ComponentGraph. The ComponentGraph is the single source of truth — there are no shadow caches or separate registration steps. Mutations flow through the ComponentGraph, and the persisted YAML is reconstructed from the current graph state at save time.
+
 DrasiServer separates two independent concepts:
 
 1. **Persistence** - Whether API changes are saved to the config file
@@ -206,7 +237,7 @@ DrasiServer separates two independent concepts:
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
 **Behavior:**
-- When persistence enabled: all API mutations (create/delete queries) are automatically saved to the config file using atomic writes (temp file + rename) to prevent corruption
+- When persistence enabled: `save()` snapshots component state from the ComponentGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
 - When persistence disabled: API mutations work but changes are lost on restart
 - When read-only: all create/delete operations via API are rejected
 
@@ -291,6 +322,8 @@ The server exposes a versioned REST API on port 8080 by default. All API endpoin
 ### Instance Management
 
 - `GET /api/v1/instances` - List all DrasiLib instances
+- `GET /api/v1/instances/{instanceId}/snapshot` - Get configuration snapshot of an instance
+- `POST /api/v1/instances/{instanceId}/clone` - Clone components from another instance
 
 ### Component Management (Instance-Specific)
 
@@ -328,12 +361,74 @@ For convenience, the first configured instance is accessible via shortened route
 - `GET/POST /api/v1/queries` - Queries of the first instance
 - `GET/POST /api/v1/reactions` - Reactions of the first instance
 
+### Plugin Management (Server-Wide)
+
+Plugin endpoints are server-wide (not per-instance) since plugins are shared across all instances:
+- `GET /api/v1/plugins` - List all loaded plugins with status
+- `GET /api/v1/plugins/{pluginId}` - Get plugin details
+- `POST /api/v1/plugins/load` - Load a plugin from disk
+- `POST /api/v1/plugins/install` - Install from remote OCI registry
+- `GET /api/v1/plugins/{pluginId}/dependents` - List dependent components
+- `GET /api/v1/plugins/kinds` - List all available kinds (sources, reactions, bootstrappers)
+- `GET /api/v1/plugins/kinds/{category}/{kind}/schema` - Get config schema for a kind
+
 ## Important Patterns
 
 ### Error Handling
-- Use `anyhow::Result` for functions that can fail
-- Custom `DrasiError` type for domain-specific errors
-- Proper error propagation with `?` operator
+
+Drasi Server uses a three-layer error pattern aligned with drasi-lib:
+
+**Layer 1 — HTTP handlers → `ErrorResponse`:**
+All API error responses use `ErrorResponse` from `src/api/shared/error.rs`, which implements
+`IntoResponse` to automatically set the HTTP status code and serialize a structured
+`{code, message, details?}` JSON body. Handlers return `Result<Json<ApiResponse<T>>, ErrorResponse>`.
+
+```rust
+// Good: handler returns ErrorResponse on failure
+Err(ErrorResponse::new(error_codes::SOURCE_NOT_FOUND, "Source 'x' not found"))
+
+// Good: convert DrasiError to ErrorResponse automatically
+Err(ErrorResponse::from(drasi_error))
+
+// Bad: DO NOT return bare StatusCode without body
+Err(StatusCode::NOT_FOUND)  // ← No error body!
+
+// Bad: DO NOT return 200 OK with error in body
+Ok(Json(ApiResponse::error("something failed")))  // ← Wrong status code!
+```
+
+**Layer 2 — Server services → `anyhow::Result`:**
+Internal modules (server.rs, persistence.rs, factories.rs, plugin_orchestrator.rs, config/)
+use `anyhow::Result` with `.context()` for rich error chains. These convert to `ErrorResponse`
+at the handler boundary via `From<anyhow::Error>`.
+
+**Layer 3 — drasi-lib → `DrasiError`:**
+Calls to `DrasiLib` return `DrasiError` which converts to `ErrorResponse` via `From<DrasiError>`
+with proper status code mapping (ComponentNotFound → 404, AlreadyExists → 409, etc.).
+
+**Error codes** are defined in `src/api/shared/error.rs::error_codes` module. Use existing codes
+or add new ones — never use ad-hoc string error codes.
+
+**Rules for contributors:**
+- Never return bare `Err(StatusCode::...)` from handlers — always use `ErrorResponse`
+- Never return `Ok(Json(ApiResponse::error(...)))` — errors must have proper HTTP status codes
+- Use `ErrorResponse::from(drasi_error)` to convert DrasiLib errors
+- Use `anyhow::Result` with `.context()` in internal/service modules
+- Add new error codes to `error_codes` module when needed
+- **Never embed raw underlying error strings in `ErrorResponse.message`.** The
+  `message` field is a high-level human-readable description of the failure.
+  Underlying technical errors (`e.to_string()`, file paths, `DrasiError`
+  internals) belong in `ErrorDetail::technical_details`.
+
+**Persistence failures:** Mutating handlers (create/delete source/query/
+reaction, instance create, clone, etc.) call `persist_after_operation` which
+returns `Result<(), ErrorResponse>`. If persistence fails after the in-memory
+mutation has already succeeded, the helper returns `PERSISTENCE_FAILED` (HTTP
+500) — handlers `?`-propagate this. The error message states explicitly that
+the change was applied in memory but not persisted; the underlying
+filesystem error (`e.to_string()`) is in `ErrorDetail::technical_details`.
+Operators must retry the operation or restart after fixing the underlying
+issue, since the runtime is now ahead of the on-disk YAML.
 
 ### Async/Await
 - All I/O operations are async using Tokio
@@ -342,6 +437,8 @@ For convenience, the first configured instance is accessible via shortened route
 
 ### State Management
 - Components track their status (Stopped/Starting/Running/Stopping/Failed)
+- Plugins track their lifecycle (Loaded/Active/Failed)
+- Plugin registry uses `Arc<RwLock<PluginRegistry>>` for concurrent read/write access
 - Configuration persisted to YAML files (when persistence enabled)
 - In-memory state for active components
 
@@ -429,4 +526,8 @@ server.run().await?;
 - Plugin metadata validation checks SDK version (major.minor match) and target triple at load time
 - All data processing logic resides in drasi-lib
 - This repository focuses on API and server lifecycle management
-- Plugin signature verification is available via `--verify-plugins` CLI flag or `verifyPlugins: true` in config. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
+- Plugin signature verification is enabled by default (`verifyPlugins: true` in config). Use `--skip-verification` CLI flag or `verifyPlugins: false` to disable. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
+- **Plugin lifecycle management**: Plugins can be loaded and installed at runtime via the `/api/v1/plugins/` API. Dynamic upgrade/replacement of a running plugin is not currently supported — restart the server to replace a plugin.
+- **Plugin registry is mutable**: Uses `Arc<RwLock<PluginRegistry>>` — shared types (PluginRegistry, PluginLockfile, PluginLifecycleManager, PluginWatcher) live in `drasi-host-sdk`, re-exported by this repo
+- **Component metadata**: Sources and reactions carry `pluginId` and `pluginVersion` in their ComponentGraph metadata
+- **Shared plugin operations**: `PluginOperations` in `src/plugin_operations.rs` provides the single source of truth for plugin management used by CLI, init, startup, and API

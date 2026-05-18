@@ -52,6 +52,17 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
 
+    // Wait for source to reach Running before testing stop
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
+
     // Try to start again (should fail)
     assert!(core.start().await.is_err());
 
@@ -59,12 +70,32 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     core.stop().await?;
     assert!(!core.is_running().await);
 
+    // Wait for source to reach Stopped before restarting
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Stopped");
+
     // Try to stop again (should fail)
     assert!(core.stop().await.is_err());
 
     // Start again
     core.start().await?;
     assert!(core.is_running().await);
+
+    // Wait for source to reach Running again
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running on restart");
 
     // Stop again
     core.stop().await?;
@@ -102,6 +133,17 @@ async fn test_server_with_query() -> Result<()> {
     // Start the server
     core.start().await?;
     assert!(core.is_running().await);
+
+    // Wait for components to reach Running before stopping
+    let graph = core.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "test-source",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
 
     // Stop the server
     core.stop().await?;

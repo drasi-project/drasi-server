@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub struct DrasiServerBuilder {
     core_builders: Vec<DrasiLibBuilder>,
     enable_api: bool,
+    enable_ui: bool,
     port: Option<u16>,
     host: Option<String>,
     config_file_path: Option<String>,
@@ -32,6 +33,7 @@ impl Default for DrasiServerBuilder {
         Self {
             core_builders: vec![DrasiLib::builder()],
             enable_api: false,
+            enable_ui: true,
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
             config_file_path: None,
@@ -149,6 +151,18 @@ impl DrasiServerBuilder {
         self
     }
 
+    /// Enable the web UI (enabled by default)
+    pub fn enable_ui(mut self) -> Self {
+        self.enable_ui = true;
+        self
+    }
+
+    /// Disable the web UI
+    pub fn disable_ui(mut self) -> Self {
+        self.enable_ui = false;
+        self
+    }
+
     /// Enable the REST API on a specific port
     pub fn with_port(mut self, port: u16) -> Self {
         self.enable_api = true;
@@ -183,6 +197,7 @@ impl DrasiServerBuilder {
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
+        let ui_enabled = self.enable_ui;
         let host = self.host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
         let port = self.port.unwrap_or(8080);
         let config_file = self.config_file_path.clone();
@@ -195,8 +210,14 @@ impl DrasiServerBuilder {
         }
 
         // Create the full server with optional features
-        let server =
-            crate::server::DrasiServer::from_cores(cores, api_enabled, host, port, config_file);
+        let server = crate::server::DrasiServer::from_cores(
+            cores,
+            api_enabled,
+            ui_enabled,
+            host,
+            port,
+            config_file,
+        );
 
         Ok(server)
     }

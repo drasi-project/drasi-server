@@ -63,7 +63,7 @@ export function useQuery<T = any>(queryId: string): {
   const { client, initialized } = useDrasiClient();
   const unsubscribeRef = useRef<(() => void) | null>(null);
   
-  // Keep track of data by key (symbol for stocks, etc.)
+  // Keep track of data by key (symbol for stocks, id for portfolio, etc.)
   const dataMapRef = useRef<Map<string, T>>(new Map());
 
   useEffect(() => {
@@ -77,90 +77,46 @@ export function useQuery<T = any>(queryId: string): {
     const handleResult = (result: QueryResult) => {
       console.log(`[${queryId}] Received ${result.data.length} items`);
       
-      // Special logging for portfolio query debugging
-      if (queryId === 'portfolio-query') {
-        console.log(`[${queryId}] Raw data:`, result.data);
-      }
-      
-      // Transform snake_case from Drasi to camelCase and convert numeric strings
+      // Convert numeric string values to numbers for portfolio query
       const transformedData = result.data.map(item => {
-        const transformed: any = {};
-        for (const [key, value] of Object.entries(item)) {
-          // Convert snake_case to camelCase
-          const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-          
-          // For portfolio query, convert numeric string values to numbers
-          if (queryId === 'portfolio-query' && value != null && value !== '') {
-            const numericFields = [
-              'quantity', 'purchasePrice', 'currentPrice', 'currentValue', 
-              'costBasis', 'profitLoss', 'profitLossPercent', 'changePercent'
-            ];
-            
-            if (numericFields.includes(camelKey)) {
-              const parsed = parseFloat(String(value));
-              transformed[camelKey] = isNaN(parsed) ? null : parsed;
-            } else {
-              transformed[camelKey] = value;
+        const transformed: any = { ...item };
+
+        if (queryId === 'portfolio-query') {
+          const numericFields = [
+            'quantity', 'purchasePrice', 'currentPrice', 'currentValue', 
+            'costBasis', 'profitLoss', 'profitLossPercent', 'changePercent'
+          ];
+          for (const field of numericFields) {
+            if (transformed[field] != null && transformed[field] !== '') {
+              const parsed = parseFloat(String(transformed[field]));
+              transformed[field] = isNaN(parsed) ? null : parsed;
             }
-          } else {
-            transformed[camelKey] = value;
           }
         }
+
         return transformed as T;
       });
       
-      // Log transformed portfolio data
-      if (queryId === 'portfolio-query' && transformedData.length > 0) {
-        console.log(`[${queryId}] Received update with ${transformedData.length} items at ${new Date().toLocaleTimeString()}`);
-        console.log(`[${queryId}] Current map size before update: ${dataMapRef.current.size}`);
-      }
+      // Handle deletions - items marked with _deleted flag
+      const deletedItems = transformedData.filter((item: any) => item._deleted);
+      const regularItems = transformedData.filter((item: any) => !item._deleted);
       
-      // Portfolio query needs to accumulate data, not replace it
-      if (queryId === 'portfolio-query') {
-        // Portfolio updates come incrementally (one stock at a time)
-        // Only clear if we get a large batch (bootstrap/initial load)
-        if (transformedData.length > 5) {
-          // This looks like initial bootstrap data, replace everything
-          console.log(`[${queryId}] Received bootstrap data with ${transformedData.length} items, replacing all`);
-          dataMapRef.current.clear();
-          transformedData.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
-        } else {
-          // This is an incremental update, merge with existing data
-          console.log(`[${queryId}] Received incremental update with ${transformedData.length} items, merging`);
-          transformedData.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
+      // Remove deleted items from the map
+      deletedItems.forEach((item: any) => {
+        const key = getItemKey(item, queryId);
+        if (key) {
+          console.log(`[${queryId}] Deleting item with key: ${key}`);
+          dataMapRef.current.delete(key);
         }
-      } else {
-        // For other queries, use the accumulation logic
-        if (transformedData.length > 5) {
-          // This looks like a full dataset, replace everything
-          dataMapRef.current.clear();
-          transformedData.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              dataMapRef.current.set(key, item);
-            }
-          });
-        } else {
-          // This looks like incremental updates, merge with existing data
-          transformedData.forEach(item => {
-            const key = getItemKey(item, queryId);
-            if (key) {
-              // Update or add the item
-              dataMapRef.current.set(key, item);
-            }
-          });
+      });
+      
+      // Add/update regular items
+      regularItems.forEach((item: any) => {
+        const key = getItemKey(item, queryId);
+        if (key) {
+          dataMapRef.current.set(key, item);
         }
-      }
+      });
       
       // Convert map back to array and apply query-specific filtering/sorting
       let finalData = Array.from(dataMapRef.current.values());
@@ -184,15 +140,10 @@ export function useQuery<T = any>(queryId: string): {
           .sort((a: any, b: any) => (b.volume || 0) - (a.volume || 0))
           .slice(0, 10); // Top 10 by volume
       } else if (queryId === 'watchlist-query') {
-        // Keep watchlist items in a specific order
-        const watchlistSymbols = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA'];
-        finalData = finalData
-          .filter((item: any) => watchlistSymbols.includes(item.symbol))
-          .sort((a: any, b: any) => {
-            const aIndex = watchlistSymbols.indexOf(a.symbol);
-            const bIndex = watchlistSymbols.indexOf(b.symbol);
-            return aIndex - bIndex;
-          });
+        // Sort watchlist alphabetically by symbol
+        finalData = finalData.sort((a: any, b: any) => 
+          (a.symbol || '').localeCompare(b.symbol || '')
+        );
       } else if (queryId === 'portfolio-query') {
         // Portfolio data is accumulated in the map, sort by current value
         console.log(`[${queryId}] Final portfolio has ${finalData.length} items from accumulated data (map size: ${dataMapRef.current.size})`);
@@ -201,6 +152,13 @@ export function useQuery<T = any>(queryId: string): {
         console.log(`[${queryId}] Portfolio symbols: ${symbols}`);
         finalData = finalData
           .sort((a: any, b: any) => (b.currentValue || 0) - (a.currentValue || 0));
+      } else if (queryId === 'sector-performance-query') {
+        // Debug log sector performance data
+        console.log(`[${queryId}] Final data has ${finalData.length} sectors (map size: ${dataMapRef.current.size})`);
+        if (finalData.length > 0) {
+          console.log(`[${queryId}] Sectors:`, finalData.map((item: any) => item.sector).join(', '));
+          console.log(`[${queryId}] Sample item:`, finalData[0]);
+        }
       }
       
       setData(finalData);
@@ -227,17 +185,33 @@ export function useQuery<T = any>(queryId: string): {
 
 // Helper function to get a unique key for each data item
 function getItemKey(item: any, queryId: string): string | null {
-  // Portfolio items should use symbol as key
-  if (queryId === 'portfolio-query' && item.symbol) {
-    return `portfolio-${item.symbol}`;
+  // Portfolio items should use id as the primary key
+  // This ensures delete events (which only have id) can match
+  if (queryId === 'portfolio-query') {
+    if (item.id !== undefined) {
+      return `portfolio-id-${item.id}`;
+    }
+    // Fallback to symbol for backwards compatibility
+    if (item.symbol) {
+      return `portfolio-${item.symbol}`;
+    }
+  }
+  // Portfolio summary is a single aggregation row — use a stable key
+  if (queryId === 'portfolio-summary-query') {
+    return 'portfolio-summary';
   }
   // Most items have a symbol as the unique identifier
   if (item.symbol) {
     return item.symbol;
   }
   // Sector performance uses sector as the key
-  if (item.sector && queryId === 'sector-performance-query') {
-    return item.sector;
+  if (queryId === 'sector-performance-query') {
+    if (item.sector) {
+      return `sector-${item.sector}`;
+    }
+    console.warn(`[${queryId}] Item missing sector field:`, item);
+    // Fallback to stringifying for sector data
+    return `sector-${JSON.stringify(item)}`;
   }
   // If no clear key, generate one from available properties
   if (item.id) {
@@ -267,6 +241,53 @@ export function useConnectionStatus(): ConnectionStatus {
   }, [client, initialized]);
 
   return status;
+}
+
+/**
+ * Hook to get the Drasi Server UI URL for the current instance.
+ */
+export function useDrasiUiUrl(): string | null {
+  const { client, initialized } = useDrasiClient();
+  if (!initialized || !client) return null;
+  return client.getDrasiUiUrl();
+}
+
+/**
+ * Hook to fetch a query's full configuration from the Drasi Server.
+ * Returns the complete config object and loading state.
+ */
+export function useQueryDefinition(queryId: string): {
+  config: Record<string, any> | null;
+  loading: boolean;
+} {
+  const [config, setConfig] = useState<Record<string, any> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { client, initialized } = useDrasiClient();
+
+  useEffect(() => {
+    if (!initialized || !client) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchConfig = async () => {
+      setLoading(true);
+      const result = await client.getQueryConfig(queryId);
+      if (!cancelled) {
+        setConfig(result);
+        setLoading(false);
+      }
+    };
+
+    fetchConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryId, client, initialized]);
+
+  return { config, loading };
 }
 
 export function useQueryParameters(queryId: string) {

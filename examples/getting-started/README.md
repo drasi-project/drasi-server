@@ -51,7 +51,86 @@ Before you begin, ensure you have:
   - macOS: `brew install postgresql`
   - Ubuntu: `sudo apt-get install postgresql-client`
 
-## Quick Start
+## Run the entire demo end-to-end (automated)
+
+If you just want to verify the example works on your machine, a single
+script will start PostgreSQL, build and start Drasi Server, run the same
+REST and CDC change-detection assertions used by CI, and report a pass /
+fail summary:
+
+```bash
+cd scripts
+./run-end-to-end.sh
+```
+
+What it does:
+
+1. Calls `setup-database.sh` to start the `getting-started-postgres`
+   container with sample data and a logical-replication slot.
+2. Runs `cargo build --release` from the repo root.
+3. Launches `drasi-server` against
+   [`server-config.yaml`](./server-config.yaml) in the background and
+   waits for `GET /health`.
+4. Verifies that the configured sources and queries are present via the
+   REST API.
+5. Inserts a `'Hello World'` row into the `message` table and polls
+   `/api/v1/queries/hello-world-from/results` until the new row appears
+   (asserting the end-to-end CDC pipeline works).
+6. Stops the server. By default it leaves the Postgres container
+   running so you can keep exploring; pass `CLEANUP=1` to tear it down.
+
+Exit code is `0` on success and `1` on any failure (with the tail of
+the server log printed for debugging).
+
+Useful overrides:
+
+| Variable          | Default     | Purpose                               |
+|-------------------|-------------|---------------------------------------|
+| `SERVER_HOST`     | `localhost` | Host used for `/health` + REST checks |
+| `SERVER_PORT`     | `8080`      | Port used for `/health` + REST checks |
+| `STARTUP_TIMEOUT` | `60`        | Seconds to wait for `/health`         |
+| `RESULT_TIMEOUT`  | `30`        | Seconds to wait for the inserted row  |
+| `SKIP_BUILD`      | unset       | Skip `cargo build --release`          |
+| `CLEANUP`         | unset       | Run `cleanup.sh` on exit              |
+| `LOCAL_PLUGINS_DIR` | auto-detect | Path to a local plugins directory to use instead of the OCI registry. By default the script auto-detects a sibling `../drasi-core/target/release/plugins`. Set to `skip` to force the OCI registry path. |
+| `BUILD_LOCAL_PLUGINS` | unset   | If set to `1` and a sibling `../drasi-core` exists without built plugins, run `make build-local-plugins` first |
+
+Examples:
+
+```bash
+# Fast re-run after a previous build, with full teardown afterwards
+SKIP_BUILD=1 CLEANUP=1 ./run-end-to-end.sh
+
+# Use a non-default port
+SERVER_PORT=18080 ./run-end-to-end.sh
+
+# Force use of the OCI registry even if a local drasi-core build is present
+LOCAL_PLUGINS_DIR=skip ./run-end-to-end.sh
+
+# Build local plugins from sibling drasi-core source first, then run
+BUILD_LOCAL_PLUGINS=1 ./run-end-to-end.sh
+```
+
+> **Plugin source order:**
+> 1. If `LOCAL_PLUGINS_DIR` is set explicitly, the script uses it (and
+>    fails fast if it's missing the required plugin binaries).
+> 2. Otherwise, if `../drasi-core/target/release/plugins` exists with all
+>    required plugins, the script uses it automatically. This is the
+>    recommended path on platforms like darwin-arm64 where the OCI
+>    registry may not yet publish builds for the SDK version this PR
+>    requires.
+> 3. Otherwise, the script falls back to the OCI registry
+>    (`ghcr.io/drasi-project`). This is what CI uses on linux-amd64.
+>
+> When a local plugins directory is used, the script generates a temp
+> `server-config.local.yaml` whose `pluginRegistry` points at it and
+> launches the server with `--skip-verification --plugins-dir <dir>`.
+> The temp file is git-ignored.
+
+## Run the Example Manually
+
+The remainder of this README walks through the same flow manually so
+you can learn what each step does.
 
 ### Step 1: Start PostgreSQL Database
 

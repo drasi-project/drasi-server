@@ -25,6 +25,7 @@ pub struct ResolvedServerSettings {
     pub port: u16,
     pub log_level: String,
     pub persist_config: bool,
+    pub enable_ui: bool,
 }
 
 /// Maps DrasiServerConfig to ResolvedServerSettings domain model
@@ -37,5 +38,6 @@ pub fn map_server_settings(
         port: mapper.resolve_typed(&config.port)?,
         log_level: mapper.resolve_typed(&config.log_level)?,
         persist_config: config.persist_config,
+        enable_ui: config.enable_ui,
     })
 }

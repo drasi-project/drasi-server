@@ -40,11 +40,11 @@ mod handler_tests {
     async fn test_component_status_serialization() {
         // Test that ComponentStatus can be serialized
         let status = ComponentStatus::Running;
-        let json = serde_json::to_value(&status).unwrap();
+        let json = serde_json::to_value(status).unwrap();
         assert_eq!(json, "Running");
 
         let stopped = ComponentStatus::Stopped;
-        let json = serde_json::to_value(&stopped).unwrap();
+        let json = serde_json::to_value(stopped).unwrap();
         assert_eq!(json, "Stopped");
     }
 }

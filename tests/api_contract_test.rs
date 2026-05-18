@@ -134,10 +134,12 @@ fn test_component_status_serialization() {
         ComponentStatus::Stopped,
         ComponentStatus::Error,
         ComponentStatus::Reconfiguring,
+        ComponentStatus::Added,
+        ComponentStatus::Removed,
     ];
 
     for status in statuses {
-        let json = serde_json::to_value(&status).unwrap();
+        let json = serde_json::to_value(status).unwrap();
         match status {
             ComponentStatus::Starting => assert_eq!(json, "Starting"),
             ComponentStatus::Running => assert_eq!(json, "Running"),
@@ -145,6 +147,8 @@ fn test_component_status_serialization() {
             ComponentStatus::Stopped => assert_eq!(json, "Stopped"),
             ComponentStatus::Error => assert_eq!(json, "Error"),
             ComponentStatus::Reconfiguring => assert_eq!(json, "Reconfiguring"),
+            ComponentStatus::Added => assert_eq!(json, "Added"),
+            ComponentStatus::Removed => assert_eq!(json, "Removed"),
         }
     }
 }

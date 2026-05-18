@@ -17,6 +17,7 @@
 use async_trait::async_trait;
 use drasi_lib::channels::dispatcher::ChangeDispatcher;
 use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::component_graph::{ComponentUpdate, ComponentUpdateSender};
 use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
 use drasi_lib::Reaction as ReactionTrait;
 use drasi_lib::Source as SourceTrait;
@@ -34,6 +35,7 @@ struct MockSourceInner {
     id: String,
     status: RwLock<ComponentStatus>,
     instance_id: RwLock<String>,
+    update_tx: RwLock<Option<ComponentUpdateSender>>,
 }
 
 impl MockSource {
@@ -43,6 +45,7 @@ impl MockSource {
                 id: id.to_string(),
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
+                update_tx: RwLock::new(None),
             }),
         }
     }
@@ -57,6 +60,16 @@ impl MockSource {
         );
         let _guard = span.enter();
         tracing::info!("{}", message);
+    }
+
+    async fn report_status(&self, status: ComponentStatus) {
+        if let Some(tx) = self.inner.update_tx.read().await.as_ref() {
+            let _ = tx.try_send(ComponentUpdate::Status {
+                component_id: self.inner.id.clone(),
+                status,
+                message: None,
+            });
+        }
     }
 }
 
@@ -76,16 +89,18 @@ impl SourceTrait for MockSource {
 
     async fn start(&self) -> anyhow::Result<()> {
         *self.inner.status.write().await = ComponentStatus::Running;
+        self.report_status(ComponentStatus::Running).await;
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
         *self.inner.status.write().await = ComponentStatus::Stopped;
+        self.report_status(ComponentStatus::Stopped).await;
         Ok(())
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.inner.status.read().await.clone()
+        *self.inner.status.read().await
     }
 
     async fn subscribe(
@@ -101,6 +116,7 @@ impl SourceTrait for MockSource {
             source_id: self.inner.id.clone(),
             receiver,
             bootstrap_receiver: None,
+            position_handle: None,
         })
     }
 
@@ -110,6 +126,7 @@ impl SourceTrait for MockSource {
 
     async fn initialize(&self, context: SourceRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
+        *self.inner.update_tx.write().await = Some(context.update_tx);
     }
 }
 
@@ -124,6 +141,7 @@ struct MockReactionInner {
     queries: Vec<String>,
     status: RwLock<ComponentStatus>,
     instance_id: RwLock<String>,
+    update_tx: RwLock<Option<ComponentUpdateSender>>,
 }
 
 impl MockReaction {
@@ -134,6 +152,7 @@ impl MockReaction {
                 queries,
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
+                update_tx: RwLock::new(None),
             }),
         }
     }
@@ -148,6 +167,16 @@ impl MockReaction {
         );
         let _guard = span.enter();
         tracing::info!("{}", message);
+    }
+
+    async fn report_status(&self, status: ComponentStatus) {
+        if let Some(tx) = self.inner.update_tx.read().await.as_ref() {
+            let _ = tx.try_send(ComponentUpdate::Status {
+                component_id: self.inner.id.clone(),
+                status,
+                message: None,
+            });
+        }
     }
 }
 
@@ -171,20 +200,23 @@ impl ReactionTrait for MockReaction {
 
     async fn initialize(&self, context: ReactionRuntimeContext) {
         *self.inner.instance_id.write().await = context.instance_id.clone();
+        *self.inner.update_tx.write().await = Some(context.update_tx);
     }
 
     async fn start(&self) -> anyhow::Result<()> {
         *self.inner.status.write().await = ComponentStatus::Running;
+        self.report_status(ComponentStatus::Running).await;
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
         *self.inner.status.write().await = ComponentStatus::Stopped;
+        self.report_status(ComponentStatus::Stopped).await;
         Ok(())
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.inner.status.read().await.clone()
+        *self.inner.status.read().await
     }
 
     async fn enqueue_query_result(

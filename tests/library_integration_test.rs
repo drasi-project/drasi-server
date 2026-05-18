@@ -19,6 +19,7 @@
 
 mod test_support;
 
+use drasi_lib::channels::ComponentStatus;
 use drasi_server::DrasiServerBuilder;
 use std::sync::Arc;
 use test_support::mock_components::{create_mock_reaction, create_mock_source};
@@ -39,6 +40,16 @@ async fn test_basic_server_lifecycle() {
     // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
+
+    // Wait for source to reach Running before stopping
+    drasi_lib::wait_for_status(
+        &server.component_graph(),
+        "test-source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test-source should reach Running");
 
     // Verify it's running
     assert!(server.is_running().await);
@@ -70,8 +81,15 @@ async fn test_server_with_components() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Wait a bit for components to start
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for source to reach Running
+    drasi_lib::wait_for_status(
+        &server.component_graph(),
+        "test_source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("test_source should reach Running");
 
     // Check that server is running with all components
     assert!(server.is_running().await);
@@ -95,9 +113,16 @@ async fn test_source_lifecycle_operations() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Source is already running (auto-started on first startup)
-    // Wait briefly for startup to complete
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Wait for source to reach Running before lifecycle operations
+    let graph = server.component_graph();
+    drasi_lib::wait_for_status(
+        &graph,
+        "lifecycle_source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("lifecycle_source should reach Running");
 
     // Server should still be running
     assert!(server.is_running().await);
@@ -107,6 +132,16 @@ async fn test_source_lifecycle_operations() {
         .stop_source("lifecycle_source")
         .await
         .expect("Failed to stop source");
+
+    // Wait for source to reach Stopped before removal
+    drasi_lib::wait_for_status(
+        &graph,
+        "lifecycle_source",
+        &[ComponentStatus::Stopped],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("lifecycle_source should reach Stopped");
 
     // Remove the source
     server
@@ -223,6 +258,20 @@ async fn test_concurrent_start_stop_operations() {
     // Server should still be running with all sources
     assert!(server.is_running().await);
 
+    // Wait for all sources to reach Running before stopping
+    let graph = server.component_graph();
+    for i in 1..=5 {
+        let source_id = format!("concurrent_source_{i}");
+        drasi_lib::wait_for_status(
+            &graph,
+            &source_id,
+            &[ComponentStatus::Running],
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("{source_id} should reach Running"));
+    }
+
     server.stop().await.expect("Failed to stop server");
 }
 
@@ -241,6 +290,16 @@ async fn test_graceful_shutdown_timeout() {
     // The builder already initializes the server, just start it
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
+
+    // Wait for source to reach Running before stopping
+    drasi_lib::wait_for_status(
+        &server.component_graph(),
+        "timeout_source",
+        &[ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("timeout_source should reach Running");
 
     // Shutdown should complete within reasonable time
     let shutdown_result = timeout(Duration::from_secs(5), server.stop()).await;

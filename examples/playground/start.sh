@@ -71,9 +71,15 @@ if ! command_exists npm; then
 fi
 
 if [ ! -f "$DRASI_SERVER_ROOT/target/release/drasi-server" ]; then
-    echo -e "${YELLOW}Drasi Server binary not found. Building...${NC}"
+    echo -e "${YELLOW}Drasi Server binary not found. Building (server + Web UI)...${NC}"
     cd "$DRASI_SERVER_ROOT"
-    cargo build --release
+    # Use the Makefile target so the Web UI (ui/dist) is built alongside the binary.
+    # `cargo build --release` alone does NOT build the UI and the /ui route would 404.
+    make build-release
+elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
+    echo -e "${YELLOW}Web UI not built (ui/dist missing). Building UI...${NC}"
+    cd "$DRASI_SERVER_ROOT"
+    make build-ui
 fi
 
 echo -e "${GREEN}All prerequisites met!${NC}"
