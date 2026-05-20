@@ -11,11 +11,11 @@
         "ghcr.io/devcontainers/features/node:1": {
             "version": "22"
         },
-        "ghcr.io/devcontainers/features/python:2": {
+        "ghcr.io/devcontainers/features/python:1": {
             "version": "3.12"
         }
     },
-    "initializeCommand": "docker network create drasi-network 2>/dev/null || true",
+    "initializeCommand": "docker network inspect drasi-network || docker network create drasi-network",
     "postCreateCommand": "bash .devcontainer/trading/post-create.sh",
     "runArgs": ["--network=drasi-network"],
     "forwardPorts": [8280, 9100, 5632, 5273],
@@ -55,6 +55,7 @@
     },
     "remoteUser": "vscode",
     "containerEnv": {
-        "RUST_BACKTRACE": "1"
+        "RUST_BACKTRACE": "1",
+        "HOST_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
     }
 }
