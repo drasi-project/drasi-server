@@ -37,6 +37,7 @@ use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
+use drasi_wal_redb::RedbWalProvider;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -420,6 +421,19 @@ impl DrasiServer {
                 );
                 let state_store_provider = create_state_store_provider(state_store_config)?;
                 builder = builder.with_state_store_provider(state_store_provider);
+            }
+
+            // Create WAL provider for durable source event persistence
+            {
+                let safe_id = instance.id.replace(['/', '\\'], "_").replace("..", "_");
+                let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
+                info!(
+                    "Enabling WAL provider for instance '{}' at: {}",
+                    instance.id,
+                    wal_path.display()
+                );
+                let wal_provider = Arc::new(RedbWalProvider::new(&wal_path));
+                builder = builder.with_wal_provider(wal_provider);
             }
 
             // Create and add sources from config

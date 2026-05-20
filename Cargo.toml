@@ -63,6 +63,9 @@ drasi-index-garnet = "0.1.9"
 # State store plugins
 drasi-state-store-redb = "0.1.9"
 
+# WAL plugins
+drasi-wal-redb = "0.2.0"
+
 # Plugin SDK
 drasi-plugin-sdk = "0.6.2"
 
@@ -154,14 +157,15 @@ large_enum_variant = "allow"
 
 
 # Local development: use path-based dependencies
-# [patch.crates-io]
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
-# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
-# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
+[patch.crates-io]
+drasi-core = { path = "../drasi-core/core" }
+drasi-lib = { path = "../drasi-core/lib" }
+drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
+drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
+drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+drasi-wal-redb = { path = "../drasi-core/components/wals/redb" }
+drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }

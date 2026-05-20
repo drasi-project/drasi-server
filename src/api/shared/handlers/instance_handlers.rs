@@ -104,6 +104,14 @@ pub async fn create_instance(
         builder = builder.with_index_provider(Arc::new(rocksdb_provider));
     }
 
+    // WAL provider for durable source event persistence
+    {
+        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+        let wal_path = std::path::PathBuf::from(format!("./data/{safe_id}/wal"));
+        let wal_provider = Arc::new(drasi_wal_redb::RedbWalProvider::new(&wal_path));
+        builder = builder.with_wal_provider(wal_provider);
+    }
+
     let core = builder.build().await.map_err(|e| {
         log::error!("Failed to create instance: {e}");
         ErrorResponse::new(
