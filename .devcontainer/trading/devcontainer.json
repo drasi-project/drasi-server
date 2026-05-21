@@ -1,6 +1,6 @@
 {
     "name": "Drasi Server - Trading Demo",
-    "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
     "features": {
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers/features/git:1": {},
@@ -17,8 +17,15 @@
     },
     "initializeCommand": "docker network inspect drasi-network || docker network create drasi-network",
     "postCreateCommand": "bash .devcontainer/trading/post-create.sh",
-    "runArgs": ["--network=drasi-network"],
-    "forwardPorts": [8280, 9100, 5632, 5273],
+    "runArgs": [
+        "--network=drasi-network"
+    ],
+    "forwardPorts": [
+        8280,
+        9100,
+        5632,
+        5273
+    ],
     "portsAttributes": {
         "8280": {
             "label": "Drasi Server API",

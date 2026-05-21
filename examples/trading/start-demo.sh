@@ -94,13 +94,11 @@ elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
     make build-ui
 fi
 
-# Ensure local plugins are built (required when using [patch.crates-io] with local drasi-core)
+# Plugins are auto-installed by drasi-server at startup because the trading
+# config sets `autoInstallPlugins: true` (downloads from the OCI registry).
+# Just make sure the plugins/ directory exists so drasi-server can write into it.
 PLUGINS_DIR="$DRASI_SERVER_ROOT/target/release/plugins"
-if [ ! -d "$PLUGINS_DIR" ] || [ -z "$(ls -A "$PLUGINS_DIR"/*.dylib "$PLUGINS_DIR"/*.so "$PLUGINS_DIR"/*.dll 2>/dev/null)" ]; then
-    echo -e "${YELLOW}No local plugins found. Building from drasi-core...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-local-plugins
-fi
+mkdir -p "$PLUGINS_DIR"
 
 echo -e "${GREEN}All prerequisites met!${NC}"
 echo ""
