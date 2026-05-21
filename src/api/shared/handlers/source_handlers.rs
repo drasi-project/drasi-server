@@ -433,7 +433,8 @@ pub async fn delete_source(
     match core.remove_source(&id, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {
-                p.unregister_source_identity_provider(&instance_id, &id).await;
+                p.unregister_source_identity_provider(&instance_id, &id)
+                    .await;
             }
             persist_after_operation(&config_persistence, "deleting source").await?;
 

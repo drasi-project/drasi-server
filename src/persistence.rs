@@ -194,9 +194,7 @@ impl ConfigPersistence {
                             .instances
                             .iter()
                             .filter_map(|inst| match &inst.id {
-                                ConfigValue::Static(id)
-                                    if !inst.identity_providers.is_empty() =>
-                                {
+                                ConfigValue::Static(id) if !inst.identity_providers.is_empty() => {
                                     Some((id.clone(), inst.identity_providers.clone()))
                                 }
                                 _ => None,
@@ -213,9 +211,7 @@ impl ConfigPersistence {
                 },
             },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
-            source_identity_provider: Arc::new(RwLock::new(
-                source_identity_provider_by_instance,
-            )),
+            source_identity_provider: Arc::new(RwLock::new(source_identity_provider_by_instance)),
             reaction_identity_provider: Arc::new(RwLock::new(
                 reaction_identity_provider_by_instance,
             )),
@@ -240,7 +236,10 @@ impl ConfigPersistence {
         let mut map = self.source_identity_provider.write().await;
         match identity_provider {
             Some(ip) => {
-                map.insert((instance_id.to_string(), source_id.to_string()), ip.to_string());
+                map.insert(
+                    (instance_id.to_string(), source_id.to_string()),
+                    ip.to_string(),
+                );
             }
             None => {
                 map.shift_remove(&(instance_id.to_string(), source_id.to_string()));

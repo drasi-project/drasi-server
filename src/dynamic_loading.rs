@@ -218,8 +218,7 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry
-                .register_identity_provider_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_identity_provider_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
             stats.identity_provider_descriptors += 1;
         }
 
