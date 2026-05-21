@@ -153,6 +153,7 @@ fn test_empty_config_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -192,6 +193,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -227,6 +229,7 @@ fn test_mock_source_generates_valid_yaml() {
             kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
             config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
         }],
@@ -242,6 +245,7 @@ fn test_mock_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -273,6 +277,7 @@ fn test_http_source_generates_valid_yaml() {
             kind: "http".to_string(),
             id: "http-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
             config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }],
@@ -288,6 +293,7 @@ fn test_http_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -318,6 +324,7 @@ fn test_grpc_source_generates_valid_yaml() {
             kind: "grpc".to_string(),
             id: "grpc-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
             config: json!({"host": "0.0.0.0", "port": 50051, "timeoutMs": 5000}),
         }],
@@ -333,6 +340,7 @@ fn test_grpc_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -362,6 +370,7 @@ fn test_postgres_source_generates_valid_yaml() {
             kind: "postgres".to_string(),
             id: "postgres-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
                 config: serde_json::json!({
@@ -402,6 +411,7 @@ fn test_postgres_source_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -452,6 +462,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
                 config: serde_json::json!({
@@ -481,6 +492,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -524,6 +536,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
                 config: serde_json::json!({
@@ -544,6 +557,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -582,6 +596,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: "noop".to_string(),
                 config: serde_json::json!({}),
@@ -600,6 +615,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -639,6 +655,7 @@ fn test_log_reaction_generates_valid_yaml() {
             id: "log-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"routes": {}}),
         }],
         instances: vec![],
@@ -651,6 +668,7 @@ fn test_log_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -684,6 +702,7 @@ fn test_http_reaction_generates_valid_yaml() {
             id: "http-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"baseUrl": "https://api.example.com", "token": "secret-token", "timeoutMs": 5000, "routes": {}}),
         }],
         instances: vec![],
@@ -696,6 +715,7 @@ fn test_http_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -730,6 +750,7 @@ fn test_sse_reaction_generates_valid_yaml() {
             id: "sse-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }],
         instances: vec![],
@@ -742,6 +763,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -779,6 +801,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
             id: "grpc-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"endpoint": "grpc://localhost:50052", "timeoutMs": 5000, "batchSize": 100, "batchFlushTimeoutMs": 1000, "maxRetries": 3, "connectionRetryAttempts": 5, "initialConnectionTimeoutMs": 10000, "metadata": {}}),
         }],
         instances: vec![],
@@ -791,6 +814,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -858,6 +882,7 @@ fn test_query_generates_valid_yaml() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -905,6 +930,7 @@ fn test_full_config_roundtrip() {
             kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
                 config: serde_json::json!({
@@ -938,6 +964,7 @@ fn test_full_config_roundtrip() {
             id: "log-reaction".to_string(),
             queries: vec!["sensor-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"routes": {}}),
         }],
         instances: vec![],
@@ -950,6 +977,7 @@ fn test_full_config_roundtrip() {
         hot_reload_debounce_ms: 2000,
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");

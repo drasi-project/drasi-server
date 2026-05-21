@@ -77,7 +77,7 @@ pub async fn create_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
@@ -119,6 +119,17 @@ pub async fn create_source_handler(
                 }
             }
 
+            // Track any `identityProvider` reference so persistence can
+            // round-trip it (snapshot_configuration() doesn't carry it).
+            if let Some(p) = &config_persistence {
+                p.register_source_identity_provider(
+                    &instance_id,
+                    &source_id,
+                    config.identity_provider(),
+                )
+                .await;
+            }
+
             persist_after_operation(&config_persistence, "creating source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -148,7 +159,7 @@ pub async fn upsert_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
@@ -205,6 +216,15 @@ pub async fn upsert_source_handler(
 
         log::info!("Source '{source_id}' updated successfully");
 
+        if let Some(p) = &config_persistence {
+            p.register_source_identity_provider(
+                &instance_id,
+                &source_id,
+                config.identity_provider(),
+            )
+            .await;
+        }
+
         persist_after_operation(&config_persistence, "upserting source").await?;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
@@ -230,6 +250,15 @@ pub async fn upsert_source_handler(
                 if let Err(e) = core.start_source(&source_id).await {
                     log::warn!("Failed to auto-start source '{source_id}': {e}");
                 }
+            }
+
+            if let Some(p) = &config_persistence {
+                p.register_source_identity_provider(
+                    &instance_id,
+                    &source_id,
+                    config.identity_provider(),
+                )
+                .await;
             }
 
             persist_after_operation(&config_persistence, "upserting source").await?;
@@ -391,7 +420,7 @@ pub async fn delete_source(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -403,6 +432,9 @@ pub async fn delete_source(
 
     match core.remove_source(&id, true).await {
         Ok(_) => {
+            if let Some(p) = &config_persistence {
+                p.unregister_source_identity_provider(&instance_id, &id).await;
+            }
             persist_after_operation(&config_persistence, "deleting source").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {

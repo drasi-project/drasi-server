@@ -614,9 +614,9 @@ mod tests {
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
+                identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
-                    identity_provider: None,
                     config: serde_json::json!({
                         "filePaths": ["/data/file1.jsonl"]
                     }),
@@ -641,9 +641,9 @@ mod tests {
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
+                identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
-                    identity_provider: None,
                     config: serde_json::json!({}), // missing filePaths
                 }),
                 config: serde_json::json!({

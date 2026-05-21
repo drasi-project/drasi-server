@@ -138,6 +138,7 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
 
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
+    let all_identity_providers = collect_all_identity_providers(config);
 
     for src in &all_sources {
         requirements.push(PluginRequirement {
@@ -163,6 +164,23 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
         });
     }
 
+    // Identity providers are loaded as plugins (except for the built-in
+    // `password` kind which is provided by drasi-lib itself). Include them in
+    // the preflight check so missing identity/* plugins are reported through
+    // the same aggregated "Missing plugins required by configuration" error
+    // as sources/reactions/bootstrappers, rather than failing later inside
+    // `build_identity_provider_map` with a different error shape.
+    for ip in &all_identity_providers {
+        if ip.is_builtin() {
+            continue;
+        }
+        requirements.push(PluginRequirement {
+            category: "identity_provider".to_string(),
+            kind: ip.kind.clone(),
+            referenced_by: format!("identityProvider '{}'", ip.id),
+        });
+    }
+
     requirements
 }
 
@@ -185,6 +203,7 @@ pub fn check_plugin_availability(
             "source" => registry.get_source(&req.kind).is_some(),
             "reaction" => registry.get_reaction(&req.kind).is_some(),
             "bootstrap" => registry.get_bootstrapper(&req.kind).is_some(),
+            "identity_provider" => registry.get_identity_provider(&req.kind).is_some(),
             _ => false,
         };
 
@@ -204,6 +223,11 @@ pub fn check_plugin_availability(
                     .collect(),
                 "bootstrap" => registry
                     .bootstrapper_kinds()
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
+                "identity_provider" => registry
+                    .identity_provider_kinds()
                     .into_iter()
                     .map(String::from)
                     .collect(),
@@ -230,6 +254,7 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
 
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
+    let all_identity_providers = collect_all_identity_providers(config);
 
     for src in &all_sources {
         let prefix = format!("sources['{}']", src.id);
@@ -243,6 +268,11 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
     for rxn in &all_reactions {
         let prefix = format!("reactions['{}']", rxn.id);
         walk_json_env_refs(&rxn.config, &prefix, &mut warnings);
+    }
+
+    for ip in &all_identity_providers {
+        let prefix = format!("identityProviders['{}']", ip.id);
+        walk_json_env_refs(&ip.config, &prefix, &mut warnings);
     }
 
     warnings
@@ -415,6 +445,17 @@ pub(crate) fn collect_all_reactions(
     reactions
 }
 
+/// Collect all identity providers from config (top-level + instances).
+pub(crate) fn collect_all_identity_providers(
+    config: &DrasiServerConfig,
+) -> Vec<crate::api::models::IdentityProviderConfig> {
+    let mut providers = config.identity_providers.clone();
+    for inst in &config.instances {
+        providers.extend(inst.identity_providers.clone());
+    }
+    providers
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -554,9 +595,9 @@ mod tests {
             kind: kind.to_string(),
             id: id.to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderConfig {
                 kind: bp_kind.to_string(),
-                identity_provider: None,
                 config: serde_json::json!({}),
             }),
             config: serde_json::json!({}),
