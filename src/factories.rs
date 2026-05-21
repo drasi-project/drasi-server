@@ -26,7 +26,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
-use crate::api::models::{BootstrapProviderConfig, IdentityProviderConfig, BUILTIN_PASSWORD_KIND};
+use crate::api::models::{
+    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, BUILTIN_PASSWORD_KIND,
+};
 use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
 
@@ -286,27 +288,45 @@ pub async fn create_identity_provider(
     config: &IdentityProviderConfig,
 ) -> Result<Arc<dyn IdentityProvider>> {
     if config.kind == BUILTIN_PASSWORD_KIND {
-        let username = config
-            .config
-            .get("username")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "identity provider '{}': missing or non-string 'username'",
+        // Deserialize the inner config into a typed DTO so that `username` and
+        // `password` participate in the `ConfigValue` envelope system. This
+        // allows them to be supplied as plain strings, `${ENV_VAR}` POSIX
+        // references, or structured `{kind: Secret, name: ...}` /
+        // `{kind: EnvironmentVariable, ...}` objects — same as every other
+        // plugin-provided config field. Without this, secrets and env vars
+        // would be read as their literal text.
+        #[derive(serde::Deserialize)]
+        struct PasswordIdpDto {
+            username: ConfigValue<String>,
+            password: ConfigValue<String>,
+        }
+
+        let dto: PasswordIdpDto =
+            serde_json::from_value(config.config.clone()).with_context(|| {
+                format!(
+                    "identity provider '{}': invalid 'password' configuration \
+                     (expected 'username' and 'password' fields)",
                     config.id
                 )
             })?;
-        let password = config
-            .config
-            .get("password")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "identity provider '{}': missing or non-string 'password'",
-                    config.id
-                )
-            })?;
-        return Ok(Arc::new(PasswordIdentityProvider::new(username, password)));
+
+        let mapper = DtoMapper::new();
+        let username = mapper.resolve_string(&dto.username).with_context(|| {
+            format!(
+                "identity provider '{}': failed to resolve 'username'",
+                config.id
+            )
+        })?;
+        let password = mapper.resolve_string(&dto.password).with_context(|| {
+            format!(
+                "identity provider '{}': failed to resolve 'password'",
+                config.id
+            )
+        })?;
+
+        return Ok(Arc::new(PasswordIdentityProvider::new(
+            &username, &password,
+        )));
     }
 
     let descriptor = registry
@@ -499,6 +519,113 @@ mod tests {
         assert!(
             err_msg.contains("Unknown reaction kind"),
             "Unexpected error: {err_msg}"
+        );
+    }
+
+    // ==========================================================================
+    // Built-in Password Identity Provider — ConfigValue Envelope Tests
+    // ==========================================================================
+
+    #[tokio::test]
+    async fn test_password_identity_provider_static_values() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-static".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": "s3cret",
+            }),
+        };
+
+        create_identity_provider(&registry, &config)
+            .await
+            .expect("static values should work");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_env_var_reference() {
+        // SAFETY: tests are single-threaded per-process for env var manipulation
+        // but cargo test runs them in parallel by default. Use a unique var name
+        // to avoid collisions.
+        let var_name = "DRASI_TEST_PG_PASSWORD_ENVELOPE_ENV";
+        std::env::set_var(var_name, "resolved-from-env");
+
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-env".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": format!("${{{var_name}}}"),
+            }),
+        };
+
+        let result = create_identity_provider(&registry, &config).await;
+        std::env::remove_var(var_name);
+        result.expect("`${VAR}` reference should resolve via ConfigValue envelope");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_env_var_with_default() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-default".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": "${DRASI_DEFINITELY_UNSET_VAR:-fallback-pw}",
+            }),
+        };
+
+        create_identity_provider(&registry, &config)
+            .await
+            .expect("`${VAR:-default}` should fall back to the default");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_structured_env_var() {
+        let var_name = "DRASI_TEST_PG_PASSWORD_STRUCTURED_ENV";
+        std::env::set_var(var_name, "structured-resolved");
+
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-structured".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": {
+                    "kind": "EnvironmentVariable",
+                    "name": var_name,
+                },
+            }),
+        };
+
+        let result = create_identity_provider(&registry, &config).await;
+        std::env::remove_var(var_name);
+        result.expect("structured EnvironmentVariable reference should resolve");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_missing_field_errors() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-missing".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                // password missing
+            }),
+        };
+
+        let err = match create_identity_provider(&registry, &config).await {
+            Ok(_) => panic!("missing password field must be rejected"),
+            Err(e) => e,
+        };
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("password") || msg.contains("invalid"),
+            "Unexpected error: {msg}"
         );
     }
 }
