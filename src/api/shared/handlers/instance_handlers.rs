@@ -147,6 +147,7 @@ pub async fn create_instance(
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
+            identity_providers: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -260,6 +261,7 @@ pub async fn clone_instance(
             id: src_snap.id.clone(),
             auto_start: false,
             bootstrap_provider,
+            identity_provider: None,
             config: properties_json,
         };
 
@@ -336,6 +338,7 @@ pub async fn clone_instance(
             id: rx_snap.id.clone(),
             queries: rx_snap.queries.clone(),
             auto_start: false,
+            identity_provider: None,
             config: properties_json,
         };
 

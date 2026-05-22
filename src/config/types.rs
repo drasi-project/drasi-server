@@ -23,7 +23,8 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, QueryConfigDto, ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig,
+    ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SecretStoreConfig,
+    SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -137,6 +138,10 @@ pub struct DrasiServerConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
+    /// Identity provider configurations (referenced by sources/reactions via `identityProvider: <id>`)
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -169,6 +174,7 @@ impl Default for DrasiServerConfig {
             sources: Vec::new(),
             queries: Vec::new(),
             reactions: Vec::new(),
+            identity_providers: Vec::new(),
             instances: Vec::new(),
         }
     }
@@ -286,6 +292,10 @@ pub struct DrasiLibInstanceConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
+    /// Identity provider configurations referenced by sources/reactions via `identityProvider: <id>`.
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -300,6 +310,7 @@ pub struct ResolvedInstanceConfig {
     pub sources: Vec<SourceConfig>,
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
+    pub identity_providers: Vec<IdentityProviderConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -353,6 +364,7 @@ impl DrasiServerConfig {
                 sources: self.sources.clone(),
                 queries: self.queries.clone(),
                 reactions: self.reactions.clone(),
+                identity_providers: self.identity_providers.clone(),
             }]
         } else {
             self.instances.clone()
@@ -402,6 +414,7 @@ impl DrasiServerConfig {
                 sources: instance.sources.clone(),
                 queries,
                 reactions: instance.reactions.clone(),
+                identity_providers: instance.identity_providers.clone(),
             });
         }
 

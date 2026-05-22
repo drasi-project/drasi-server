@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2025 The Drasi Authors.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Webhooks - Drasi Live Viewer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 20px;
+        }
+        h1 {
+            color: #58a6ff;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: #8b949e;
+            margin-bottom: 20px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .status.connected { background: #1b4332; color: #4ade80; }
+        .status.disconnected { background: #3b1c1c; color: #f87171; }
+        .status.connecting { background: #3b2e1c; color: #fbbf24; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .card h2 {
+            color: #58a6ff;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card h2 .count {
+            background: #21262d;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            color: #8b949e;
+        }
+        .event-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .event-item {
+            padding: 10px;
+            border-bottom: 1px solid #21262d;
+            animation: fadeIn 0.3s ease;
+        }
+        .event-item:last-child { border-bottom: none; }
+        .event-item .type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .event-item .type.push { color: #4ade80; }
+        .event-item .type.pr { color: #a78bfa; }
+        .event-item .type.issue { color: #fbbf24; }
+        .event-item .title {
+            font-size: 14px;
+            color: #f0f6fc;
+            margin-bottom: 4px;
+        }
+        .event-item .meta {
+            font-size: 12px;
+            color: #8b949e;
+        }
+        .event-item .meta a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        .empty {
+            color: #484f58;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <h1>🐙 GitHub Webhooks - Live Activity</h1>
+    <p class="subtitle">Real-time GitHub events powered by Drasi Server</p>
+    <span id="status" class="status connecting">⏳ Connecting...</span>
+
+    <div class="grid">
+        <div class="card">
+            <h2>🚀 Push Events <span id="push-count" class="count">0</span></h2>
+            <div id="push-events" class="event-list">
+                <div class="empty">Waiting for push events...</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>🔀 Pull Requests <span id="pr-count" class="count">0</span></h2>
+            <div id="pr-events" class="event-list">
+                <div class="empty">Waiting for pull request events...</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>📋 Issues <span id="issue-count" class="count">0</span></h2>
+            <div id="issue-events" class="event-list">
+                <div class="empty">Waiting for issue events...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📡 Raw Event Stream</h2>
+        <div id="raw-events" class="event-list" style="max-height: 200px; font-family: monospace; font-size: 12px;">
+            <div class="empty">Waiting for events...</div>
+        </div>
+    </div>
+
+    <script>
+        const SSE_URL = 'http://localhost:8081/events';
+        const statusEl = document.getElementById('status');
+        const pushList = document.getElementById('push-events');
+        const prList = document.getElementById('pr-events');
+        const issueList = document.getElementById('issue-events');
+        const rawList = document.getElementById('raw-events');
+        const pushCount = document.getElementById('push-count');
+        const prCount = document.getElementById('pr-count');
+        const issueCount = document.getElementById('issue-count');
+
+        let counts = { push: 0, pr: 0, issue: 0 };
+
+        function connect() {
+            const es = new EventSource(SSE_URL);
+
+            es.onopen = () => {
+                statusEl.textContent = '✅ Connected';
+                statusEl.className = 'status connected';
+            };
+
+            es.onerror = () => {
+                statusEl.textContent = '❌ Disconnected';
+                statusEl.className = 'status disconnected';
+                es.close();
+                setTimeout(connect, 3000);
+            };
+
+            es.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleEvent(data);
+                } catch (e) {
+                    addRawEvent(event.data);
+                }
+            };
+        }
+
+        function handleEvent(data) {
+            addRawEvent(JSON.stringify(data));
+
+            // Handle added items from different queries
+            if (data.added) {
+                for (const item of data.added) {
+                    const after = item.after || item;
+                    if (after.CommitMessage !== undefined) {
+                        addPushEvent(after);
+                    } else if (after.PRNumber !== undefined) {
+                        addPREvent(after);
+                    } else if (after.IssueNumber !== undefined) {
+                        addIssueEvent(after);
+                    }
+                }
+            }
+        }
+
+        function addPushEvent(data) {
+            counts.push++;
+            pushCount.textContent = counts.push;
+            clearEmpty(pushList);
+            const el = document.createElement('div');
+            el.className = 'event-item';
+            el.innerHTML = `
+                <div class="type push">PUSH</div>
+                <div class="title">${escapeHtml(data.CommitMessage || '')}</div>
+                <div class="meta">
+                    ${escapeHtml(data.Pusher || '')} pushed to
+                    <strong>${escapeHtml(data.Branch || '')}</strong>
+                    in ${escapeHtml(data.Repository || '')}
+                </div>
+            `;
+            pushList.prepend(el);
+        }
+
+        function addPREvent(data) {
+            counts.pr++;
+            prCount.textContent = counts.pr;
+            clearEmpty(prList);
+            const el = document.createElement('div');
+            el.className = 'event-item';
+            el.innerHTML = `
+                <div class="type pr">PULL REQUEST #${escapeHtml(String(data.PRNumber || ''))}</div>
+                <div class="title">${escapeHtml(data.Title || '')}</div>
+                <div class="meta">
+                    by ${escapeHtml(data.Author || '')} •
+                    ${escapeHtml(data.HeadBranch || '')} → ${escapeHtml(data.BaseBranch || '')}
+                </div>
+            `;
+            prList.prepend(el);
+        }
+
+        function addIssueEvent(data) {
+            counts.issue++;
+            issueCount.textContent = counts.issue;
+            clearEmpty(issueList);
+            const el = document.createElement('div');
+            el.className = 'event-item';
+            el.innerHTML = `
+                <div class="type issue">ISSUE #${escapeHtml(String(data.IssueNumber || ''))}</div>
+                <div class="title">${escapeHtml(data.Title || '')}</div>
+                <div class="meta">
+                    opened by ${escapeHtml(data.Author || '')} in ${escapeHtml(data.Repository || '')}
+                </div>
+            `;
+            issueList.prepend(el);
+        }
+
+        function addRawEvent(text) {
+            clearEmpty(rawList);
+            const el = document.createElement('div');
+            el.className = 'event-item';
+            el.style.color = '#8b949e';
+            el.textContent = text.substring(0, 200) + (text.length > 200 ? '...' : '');
+            rawList.prepend(el);
+            // Keep only last 50 raw events
+            while (rawList.children.length > 50) {
+                rawList.removeChild(rawList.lastChild);
+            }
+        }
+
+        function clearEmpty(list) {
+            const empty = list.querySelector('.empty');
+            if (empty) empty.remove();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        connect();
+    </script>
+</body>
+</html>

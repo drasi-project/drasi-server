@@ -360,6 +360,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: serde_json::json!({}),
         }
     }
@@ -437,6 +438,7 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": "localhost",
                     "database": "mydb"
@@ -458,6 +460,7 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": "localhost"
                     // missing "database" which is required
@@ -485,6 +488,7 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": "localhost",
                     "database": "mydb",
@@ -508,6 +512,7 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": 12345,  // should be string
                     "database": "mydb"
@@ -530,6 +535,7 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 bootstrap_provider: None,
+                identity_provider: None,
                 config: serde_json::json!({
                     "host": "localhost",
                     "database": "mydb",
@@ -567,6 +573,7 @@ mod tests {
                 id: "log1".to_string(),
                 queries: vec![],
                 auto_start: true,
+                identity_provider: None,
                 config: serde_json::json!({
                     "level": "info"
                 }),
@@ -587,6 +594,7 @@ mod tests {
                 id: "log1".to_string(),
                 queries: vec![],
                 auto_start: true,
+                identity_provider: None,
                 config: serde_json::json!({
                     "level": "verbose"  // not in enum
                 }),
@@ -606,6 +614,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
+                identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
                     config: serde_json::json!({
@@ -632,6 +641,7 @@ mod tests {
                 kind: "postgres".to_string(),
                 id: "pg1".to_string(),
                 auto_start: true,
+                identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
                     config: serde_json::json!({}), // missing filePaths

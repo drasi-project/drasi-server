@@ -57,6 +57,7 @@ fn test_secret_reference_survives_source_config_roundtrip() {
                 "user": "admin",
                 "password": { "kind": "secret", "name": "DB_PASSWORD" }
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -98,6 +99,7 @@ fn test_secret_reference_survives_reaction_config_roundtrip() {
                 "endpoint": "https://api.example.com",
                 "authToken": { "kind": "secret", "name": "API_TOKEN" }
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -136,6 +138,7 @@ fn test_env_var_reference_survives_roundtrip() {
                 "user": "admin",
                 "password": "static-pass"
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -166,6 +169,7 @@ fn test_env_var_without_default_survives_roundtrip() {
                 "host": { "kind": "EnvironmentVariable", "name": "DB_HOST" },
                 "port": 5432
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -203,6 +207,7 @@ fn test_camelcase_keys_preserved_in_source_config_roundtrip() {
                 "sslMode": "prefer",
                 "tables": [{ "name": "users", "keys": ["id"] }]
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -254,6 +259,7 @@ fn test_camelcase_keys_preserved_in_reaction_config_roundtrip() {
                     "q1": { "format": "json" }
                 }
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -301,6 +307,7 @@ fn test_mixed_static_secret_and_env_var_values_roundtrip() {
                     { "name": "orders", "keys": ["order_id"] }
                 ]
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -356,6 +363,7 @@ fn test_password_field_preserved_not_stripped() {
                 "port": 5432,
                 "password": "my-secret-password"
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -384,6 +392,7 @@ fn test_password_as_secret_preserved() {
                 "host": "localhost",
                 "password": { "kind": "secret", "name": "PG_PASSWORD" }
             }),
+            identity_provider: None,
         }],
         ..DrasiServerConfig::default()
     };
@@ -417,6 +426,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                     "host": { "kind": "EnvironmentVariable", "name": "S1_HOST" },
                     "password": { "kind": "secret", "name": "S1_PASS" }
                 }),
+                identity_provider: None,
             },
             SourceConfig {
                 kind: "http".to_string(),
@@ -427,6 +437,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                     "endpoint": "https://api.example.com",
                     "authHeader": { "kind": "secret", "name": "API_KEY" }
                 }),
+                identity_provider: None,
             },
         ],
         reactions: vec![
@@ -436,6 +447,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                 queries: vec!["q1".to_string()],
                 auto_start: true,
                 config: serde_json::json!({"routes": {}}),
+                identity_provider: None,
             },
             ReactionConfig {
                 kind: "http".to_string(),
@@ -446,6 +458,7 @@ fn test_multiple_sources_and_reactions_all_preserve_config_values() {
                     "endpoint": { "kind": "EnvironmentVariable", "name": "WEBHOOK_URL" },
                     "bearerToken": { "kind": "secret", "name": "WEBHOOK_TOKEN" }
                 }),
+                identity_provider: None,
             },
         ],
         ..DrasiServerConfig::default()

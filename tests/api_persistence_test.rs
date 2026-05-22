@@ -95,6 +95,7 @@ async fn test_persistence_saves_complete_configuration() {
         kind: "mock".to_string(),
         id: "test-source-1".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
@@ -102,6 +103,7 @@ async fn test_persistence_saves_complete_configuration() {
         kind: "mock".to_string(),
         id: "test-source-2".to_string(),
         auto_start: false,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
@@ -134,6 +136,7 @@ async fn test_persistence_saves_complete_configuration() {
         id: "test-reaction-1".to_string(),
         queries: vec!["test-query-1".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({"routes": {}}),
     };
 
@@ -222,6 +225,7 @@ async fn test_persistence_atomic_write() {
         kind: "mock".to_string(),
         id: "new-source".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };

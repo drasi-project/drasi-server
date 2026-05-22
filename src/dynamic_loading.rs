@@ -28,7 +28,8 @@ use drasi_host_sdk::plugin_types::{PluginCategory, PluginKindEntry};
 use drasi_host_sdk::ConfigResolverFn;
 use drasi_plugin_sdk::prelude::SecretStorePluginDescriptor;
 use drasi_plugin_sdk::{
-    BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
+    BootstrapPluginDescriptor, IdentityProviderPluginDescriptor, ReactionPluginDescriptor,
+    SourcePluginDescriptor,
 };
 use log::{debug, info, warn};
 use std::ffi::c_void;
@@ -42,10 +43,12 @@ const PLUGIN_FILE_PATTERNS: &[&str] = &[
     "libdrasi_reaction_*",
     "libdrasi_bootstrap_*",
     "libdrasi_secret_store_*",
+    "libdrasi_identity_*",
     "drasi_source_*",
     "drasi_reaction_*",
     "drasi_bootstrap_*",
     "drasi_secret_store_*",
+    "drasi_identity_*",
 ];
 
 /// Statistics from a cdylib plugin loading operation.
@@ -57,6 +60,7 @@ pub struct PluginLoadStats {
     pub reaction_descriptors: usize,
     pub bootstrap_descriptors: usize,
     pub secret_store_descriptors: usize,
+    pub identity_provider_descriptors: usize,
     /// Per-plugin information for orchestrator registration.
     pub loaded_plugins: Vec<StartupPluginRecord>,
     /// Config resolver injection handles for all loaded plugin cdylibs.
@@ -261,6 +265,22 @@ pub fn load_plugins(
             stats.secret_store_descriptors += 1;
         }
 
+        for proxy in std::mem::take(&mut plugin.identity_provider_plugins) {
+            let kind = proxy.kind().to_string();
+            if plugin_id_parts.is_empty() {
+                plugin_id_parts.push(format!("identity/{kind}"));
+            }
+            info!("  [cdylib] identity: {kind} ({meta})");
+            plugin_kinds.push(PluginKindEntry {
+                category: PluginCategory::IdentityProvider,
+                kind: kind.clone(),
+                config_version: proxy.config_version().to_string(),
+                config_schema_name: proxy.config_schema_name().to_string(),
+            });
+            registry.register_identity_provider_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            stats.identity_provider_descriptors += 1;
+        }
+
         let derived_plugin_id = plugin_id_parts
             .into_iter()
             .next()
@@ -280,17 +300,19 @@ pub fn load_plugins(
     let total_descriptors = stats.source_descriptors
         + stats.reaction_descriptors
         + stats.bootstrap_descriptors
-        + stats.secret_store_descriptors;
+        + stats.secret_store_descriptors
+        + stats.identity_provider_descriptors;
 
     if stats.plugins_loaded > 0 {
         info!(
-            "cdylib plugin loading complete: {} loaded, {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores)",
+            "cdylib plugin loading complete: {} loaded, {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores, {} identity providers)",
             stats.plugins_loaded,
             total_descriptors,
             stats.source_descriptors,
             stats.reaction_descriptors,
             stats.bootstrap_descriptors,
             stats.secret_store_descriptors,
+            stats.identity_provider_descriptors,
         );
     } else {
         debug!("No cdylib plugins found in '{}'", dir.display());

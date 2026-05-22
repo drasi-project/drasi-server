@@ -36,6 +36,7 @@
 pub mod bootstrap;
 
 // Organized submodules
+pub mod identity_provider;
 pub mod observability;
 pub mod queries;
 pub mod reaction;
@@ -47,6 +48,7 @@ pub mod state_store;
 // Re-export all DTO types for convenient access
 pub use bootstrap::BootstrapProviderConfig;
 pub use drasi_plugin_sdk::config_value::*;
+pub use identity_provider::{IdentityProviderConfig, BUILTIN_PASSWORD_KIND};
 pub use observability::*;
 pub use queries::*;
 pub use reaction::ReactionConfig;

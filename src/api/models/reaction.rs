@@ -29,6 +29,11 @@ pub struct ReactionConfig {
     pub id: String,
     pub queries: Vec<String>,
     pub auto_start: bool,
+    /// Reference (by `id`) to an entry in the top-level
+    /// `identityProviders` block. When set, the resolved provider is
+    /// attached to the reaction via `Reaction::set_identity_provider` after
+    /// construction.
+    pub identity_provider: Option<String>,
     pub config: serde_json::Value,
 }
 
@@ -43,6 +48,9 @@ impl Serialize for ReactionConfig {
         map.serialize_entry("id", &self.id)?;
         map.serialize_entry("queries", &self.queries)?;
         map.serialize_entry("autoStart", &self.auto_start)?;
+        if let Some(ip) = &self.identity_provider {
+            map.serialize_entry("identityProvider", ip)?;
+        }
         if let serde_json::Value::Object(config_map) = &self.config {
             for (k, v) in config_map {
                 map.serialize_entry(k, v)?;
@@ -71,11 +79,11 @@ impl<'de> Deserialize<'de> for ReactionConfig {
             where
                 M: MapAccess<'de>,
             {
-                // Storage for common fields
                 let mut kind: Option<String> = None;
                 let mut id: Option<String> = None;
                 let mut queries: Option<Vec<String>> = None;
                 let mut auto_start: Option<bool> = None;
+                let mut identity_provider: Option<String> = None;
 
                 // Collect remaining fields for the inner config
                 let mut remaining = serde_json::Map::new();
@@ -106,10 +114,21 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                             }
                             auto_start = Some(map.next_value()?);
                         }
+                        "identityProvider" => {
+                            if identity_provider.is_some() {
+                                return Err(de::Error::duplicate_field("identityProvider"));
+                            }
+                            identity_provider = Some(map.next_value()?);
+                        }
                         // Reject common snake_case misspellings of known fields
                         "auto_start" => {
                             return Err(de::Error::custom(
                                 "unknown field `auto_start`, did you mean `autoStart`?",
+                            ));
+                        }
+                        "identity_provider" => {
+                            return Err(de::Error::custom(
+                                "unknown field `identity_provider`, did you mean `identityProvider`?",
                             ));
                         }
                         // Collect all other fields for the inner config
@@ -133,6 +152,7 @@ impl<'de> Deserialize<'de> for ReactionConfig {
                     id,
                     queries,
                     auto_start,
+                    identity_provider,
                     config: remaining_value,
                 })
             }
@@ -156,6 +176,12 @@ impl ReactionConfig {
     /// Check if auto_start is enabled
     pub fn auto_start(&self) -> bool {
         self.auto_start
+    }
+
+    /// Get the optional identity provider reference (id of an entry in
+    /// the top-level `identityProviders` block).
+    pub fn identity_provider(&self) -> Option<&str> {
+        self.identity_provider.as_deref()
     }
 
     /// Get the reaction kind
@@ -515,6 +541,7 @@ autoStart: true
             id: "roundtrip-reaction".to_string(),
             queries: vec!["q1".to_string(), "q2".to_string()],
             auto_start: false,
+            identity_provider: None,
             config: serde_json::json!({"routes": {}}),
         };
 
