@@ -17,8 +17,26 @@
     },
     "initializeCommand": "docker network inspect drasi-network || docker network create drasi-network",
     "postCreateCommand": "bash .devcontainer/trading/post-create.sh",
+    // Attach to the shared `drasi-network` so the dev container can reach
+    // the `trading-postgres` container by hostname. Because a custom Docker
+    // network disables Docker's automatic host port publishing AND because
+    // VS Code's `forwardPorts` tunnel is unreliable on Docker Desktop with
+    // custom networks (the Ports panel shows the port but the host never
+    // actually binds it), we publish the demo ports explicitly with `-p`
+    // so `http://localhost:<port>` works in the host browser without
+    // depending on VS Code's auto-forwarder.
     "runArgs": [
-        "--network=drasi-network"
+        "--network=drasi-network",
+        "-p",
+        "5273:5273",
+        "-p",
+        "8280:8280",
+        "-p",
+        "8281:8281",
+        "-p",
+        "9100:9100",
+        "-p",
+        "9200:9200"
     ],
     "forwardPorts": [
         8280,
@@ -63,6 +81,15 @@
     "remoteUser": "vscode",
     "containerEnv": {
         "RUST_BACKTRACE": "1",
-        "HOST_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+        "HOST_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+        // The trading_api.py (and other helpers under examples/trading/mock-generator)
+        // default to POSTGRES_HOST=localhost / POSTGRES_PORT=5632, which only works
+        // when running on the host machine where docker-compose publishes 5632:5432.
+        // Inside this dev container Postgres is reached via the shared
+        // `drasi-network` as `trading-postgres:5432`. Without these overrides,
+        // start-demo.sh aborts at "Waiting for Trading API to be ready" because
+        // the API health check returns 500 (connection refused on localhost:5632).
+        "POSTGRES_HOST": "trading-postgres",
+        "POSTGRES_PORT": "5432"
     }
 }

@@ -34,8 +34,8 @@ sources:
 - kind: postgres
   id: postgres-stocks
   autoStart: true
-  host: localhost
-  port: 5632
+  host: trading-postgres
+  port: 5432
   database: trading_demo
   user: drasi_user
   password: drasi_password
@@ -61,8 +61,8 @@ sources:
 - kind: postgres
   id: postgres-broker
   autoStart: true
-  host: localhost
-  port: 5632
+  host: trading-postgres
+  port: 5432
   database: trading_demo
   user: drasi_user
   password: drasi_password
