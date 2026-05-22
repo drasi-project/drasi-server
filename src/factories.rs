@@ -44,11 +44,18 @@ use drasi_plugin_sdk::ffi::FfiStr;
 
 /// Context passed to the host config resolver callback.
 ///
-/// Contains the secret store provider and a tokio runtime handle for
-/// resolving async `get_secret` calls from within synchronous FFI callbacks.
+/// Contains a channel sender to dispatch secret resolution requests to a
+/// dedicated resolver thread, avoiding per-call OS thread creation.
+/// Environment variable lookups are handled inline (no async needed).
 pub struct ConfigResolverContext {
-    pub provider: Arc<dyn SecretStoreProvider>,
-    pub runtime_handle: tokio::runtime::Handle,
+    /// Sender to the dedicated resolver thread for async secret lookups.
+    secret_resolver_tx: std::sync::mpsc::SyncSender<SecretResolveRequest>,
+}
+
+/// A request sent to the dedicated resolver thread.
+struct SecretResolveRequest {
+    name: String,
+    response_tx: std::sync::mpsc::SyncSender<Result<String, String>>,
 }
 
 /// Host-side `extern "C"` callback that plugins invoke (via `DtoMapper`) to
@@ -89,18 +96,23 @@ pub extern "C" fn host_resolve_config_value(
                     }
                 };
 
-                let provider = context.provider.clone();
-                let handle = context.runtime_handle.clone();
+                // Send the request to the dedicated resolver thread and wait
+                // for the response on a bounded oneshot-style channel.
+                let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+                let request = SecretResolveRequest { name, response_tx };
 
-                // Resolve async get_secret from a non-tokio thread to avoid
-                // blocking the plugin's tokio worker that called us.
-                match std::thread::spawn(move || handle.block_on(provider.get_secret(&name))).join()
-                {
+                if context.secret_resolver_tx.send(request).is_err() {
+                    return FfiGetSecretResult::err(
+                        "Secret resolver thread is no longer running".to_string(),
+                    );
+                }
+
+                match response_rx.recv() {
                     Ok(Ok(value)) => FfiGetSecretResult::ok(value),
                     Ok(Err(e)) => FfiGetSecretResult::err(format!("Failed to resolve secret: {e}")),
-                    Err(_) => {
-                        FfiGetSecretResult::err("Secret resolution thread panicked".to_string())
-                    }
+                    Err(_) => FfiGetSecretResult::err(
+                        "Secret resolver thread dropped response channel".to_string(),
+                    ),
                 }
             }
             "EnvironmentVariable" => {
@@ -140,15 +152,32 @@ pub extern "C" fn host_resolve_config_value(
 
 /// Build a leaked `ConfigResolverContext` pointer for injection into plugins.
 ///
-/// The returned pointer is intentionally leaked (process-lifetime) because
-/// plugins store it globally and need it for as long as they're loaded.
+/// Spawns a dedicated resolver thread that services secret lookups for the
+/// lifetime of the process. The returned pointer is intentionally leaked
+/// (process-lifetime) because plugins store it globally.
 pub fn build_config_resolver_context(
     provider: Arc<dyn SecretStoreProvider>,
     runtime_handle: tokio::runtime::Handle,
 ) -> *mut c_void {
+    // Bounded channel to back-pressure if resolution is slow.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<SecretResolveRequest>(64);
+
+    // Spawn a dedicated OS thread that runs async secret resolution.
+    std::thread::Builder::new()
+        .name("secret-resolver".to_string())
+        .spawn(move || {
+            while let Ok(req) = rx.recv() {
+                let result = runtime_handle
+                    .block_on(provider.get_secret(&req.name))
+                    .map_err(|e| e.to_string());
+                // Ignore send error — caller may have timed out / dropped.
+                let _ = req.response_tx.send(result);
+            }
+        })
+        .expect("Failed to spawn secret-resolver thread");
+
     let ctx = Box::new(ConfigResolverContext {
-        provider,
-        runtime_handle,
+        secret_resolver_tx: tx,
     });
     Box::into_raw(ctx) as *mut c_void
 }

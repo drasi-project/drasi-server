@@ -27,7 +27,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::config::DrasiLibInstanceConfig;
+use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
 use crate::factories::{
     build_config_resolver_context, build_identity_provider_map, config_resolver_callback,
     create_reaction_locked, create_secret_store_from_registry, create_source_locked,
@@ -40,6 +40,7 @@ use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_index_rocksdb::RocksDbIndexProvider;
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
 
@@ -391,6 +392,55 @@ impl DrasiServer {
             }
         }
 
+        // Resolve the process-wide secret store provider (if any instance configures one).
+        // The FFI config resolver is a single global callback — only one secret store
+        // provider can be active. Validate that all instances agree on the same config.
+        let process_secret_store: Option<Arc<dyn SecretStoreProvider>> = {
+            let mut chosen: Option<(&str, &SecretStoreConfig)> = None;
+            for inst in &resolved_instances {
+                if let Some(ref ss) = inst.secret_store {
+                    if let Some((prev_id, prev_cfg)) = chosen {
+                        if prev_cfg != ss {
+                            return Err(anyhow::anyhow!(
+                                "Conflicting secret store configurations: instance '{}' and '{}' \
+                                 specify different secret store configs. Only one process-wide \
+                                 secret store is supported because the FFI config resolver is global.",
+                                prev_id,
+                                inst.id,
+                            ));
+                        }
+                    } else {
+                        chosen = Some((&inst.id, ss));
+                    }
+                }
+            }
+            if let Some((inst_id, ss_config)) = chosen {
+                info!(
+                    "Enabling process-wide secret store with '{}' provider (from instance '{}')",
+                    ss_config.kind, inst_id
+                );
+                let provider =
+                    create_secret_store_from_registry(&plugin_registry, ss_config).await?;
+
+                // Inject the config resolver callback into all loaded plugins so their
+                // DtoMapper can resolve ConfigValue::Secret references through the host.
+                if let Some(ref stats) = plugin_load_stats {
+                    let resolver_ctx = build_config_resolver_context(
+                        provider.clone(),
+                        tokio::runtime::Handle::current(),
+                    );
+                    stats.inject_config_resolver_into_all(resolver_ctx, config_resolver_callback());
+                    info!(
+                        "Injected config resolver into {} loaded plugin(s)",
+                        stats.plugins_loaded,
+                    );
+                }
+                Some(provider)
+            } else {
+                None
+            }
+        };
+
         for instance in resolved_instances {
             let mut builder = DrasiLib::builder().with_id(&instance.id);
 
@@ -429,29 +479,10 @@ impl DrasiServer {
                 builder = builder.with_state_store_provider(state_store_provider);
             }
 
-            // Create and add secret store provider if configured
-            if let Some(ref secret_store_config) = instance.secret_store {
-                info!(
-                    "Enabling secret store for instance '{}' with '{}' provider",
-                    instance.id, secret_store_config.kind
-                );
-                let provider =
-                    create_secret_store_from_registry(&plugin_registry, secret_store_config)
-                        .await?;
-                builder = builder.with_secret_store_provider(provider.clone());
-
-                // Inject the config resolver callback into all loaded plugins so their
-                // DtoMapper can resolve ConfigValue::Secret references back through the host.
-                // The context is intentionally leaked (process-lifetime) since plugins store
-                // the callback globally.
-                if let Some(ref stats) = plugin_load_stats {
-                    let resolver_ctx =
-                        build_config_resolver_context(provider, tokio::runtime::Handle::current());
-                    stats.inject_config_resolver_into_all(resolver_ctx, config_resolver_callback());
-                    info!(
-                        "Injected config resolver into {} loaded plugin(s)",
-                        stats.plugins_loaded,
-                    );
+            // Attach the process-wide secret store provider to this instance's builder
+            if instance.secret_store.is_some() {
+                if let Some(ref provider) = process_secret_store {
+                    builder = builder.with_secret_store_provider(provider.clone());
                 }
             }
 

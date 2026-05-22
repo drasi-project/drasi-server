@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 ///   kind: file
 ///   path: ./secrets.json
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretStoreConfig {
     /// The secret store plugin kind (e.g., "file", "keyring", "azure-keyvault")

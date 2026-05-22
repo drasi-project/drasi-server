@@ -26,7 +26,7 @@ use drasi_host_sdk::callbacks::{self, CallbackContext};
 use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
 use drasi_host_sdk::plugin_types::{PluginCategory, PluginKindEntry};
 use drasi_host_sdk::ConfigResolverFn;
-use drasi_plugin_sdk::prelude::SecretStorePluginDescriptor;
+use drasi_plugin_sdk::descriptor::SecretStorePluginDescriptor;
 use drasi_plugin_sdk::{
     BootstrapPluginDescriptor, IdentityProviderPluginDescriptor, ReactionPluginDescriptor,
     SourcePluginDescriptor,
