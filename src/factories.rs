@@ -34,9 +34,11 @@ use crate::api::models::{
 use crate::config::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
 
-use drasi_host_sdk::ConfigResolverFn;
+use drasi_host_sdk::{ConfigResolverFn, SecretStoreValueResolverAdapter};
 use drasi_plugin_sdk::ffi::secret_store::FfiGetSecretResult;
 use drasi_plugin_sdk::ffi::FfiStr;
+use drasi_plugin_sdk::resolver::{EnvironmentVariableResolver, ValueResolver};
+use drasi_plugin_sdk::ConfigValue as SdkConfigValue;
 
 // ============================================================================
 // Host-side config value resolver (FFI callback for plugins)
@@ -44,17 +46,16 @@ use drasi_plugin_sdk::ffi::FfiStr;
 
 /// Context passed to the host config resolver callback.
 ///
-/// Contains a channel sender to dispatch secret resolution requests to a
-/// dedicated resolver thread, avoiding per-call OS thread creation.
-/// Environment variable lookups are handled inline (no async needed).
+/// Contains a channel sender to dispatch resolution requests to a dedicated
+/// resolver thread that owns the SDK resolvers (EnvironmentVariableResolver,
+/// SecretStoreValueResolverAdapter).
 pub struct ConfigResolverContext {
-    /// Sender to the dedicated resolver thread for async secret lookups.
-    secret_resolver_tx: std::sync::mpsc::SyncSender<SecretResolveRequest>,
+    resolver_tx: std::sync::mpsc::SyncSender<ResolveRequest>,
 }
 
 /// A request sent to the dedicated resolver thread.
-struct SecretResolveRequest {
-    name: String,
+struct ResolveRequest {
+    config_value: SdkConfigValue<String>,
     response_tx: std::sync::mpsc::SyncSender<Result<String, String>>,
 }
 
@@ -62,8 +63,7 @@ struct SecretResolveRequest {
 /// resolve `ConfigValue` references (secrets, env vars) back through the host.
 ///
 /// The plugin serializes the `ConfigValue` to JSON and passes it here.
-/// The host parses it, resolves the value using the appropriate store,
-/// and returns the resolved string.
+/// The host deserializes it and dispatches to the appropriate SDK resolver.
 pub extern "C" fn host_resolve_config_value(
     ctx: *const c_void,
     config_value_json: FfiStr,
@@ -75,110 +75,74 @@ pub extern "C" fn host_resolve_config_value(
     let context = unsafe { &*(ctx as *const ConfigResolverContext) };
     let json_str = unsafe { config_value_json.to_string() };
 
-    // Parse the ConfigValue JSON to determine the kind
-    let json_value: serde_json::Value = match serde_json::from_str(&json_str) {
+    // Deserialize into SDK ConfigValue using the same serde logic the SDK uses.
+    let config_value: SdkConfigValue<String> = match serde_json::from_str(&json_str) {
         Ok(v) => v,
         Err(e) => {
             return FfiGetSecretResult::err(format!("Invalid config value JSON: {e}"));
         }
     };
 
-    // Dispatch based on kind
-    if let Some(kind) = json_value.get("kind").and_then(|v| v.as_str()) {
-        match kind {
-            "Secret" => {
-                let name = match json_value.get("name").and_then(|v| v.as_str()) {
-                    Some(n) => n.to_string(),
-                    None => {
-                        return FfiGetSecretResult::err(
-                            "Secret config value missing 'name' field".to_string(),
-                        );
-                    }
-                };
+    // Static values don't need resolution — return directly.
+    if let SdkConfigValue::Static(ref s) = config_value {
+        return FfiGetSecretResult::ok(s.clone());
+    }
 
-                // Send the request to the dedicated resolver thread and wait
-                // for the response on a bounded oneshot-style channel.
-                let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
-                let request = SecretResolveRequest { name, response_tx };
+    // Dispatch to the resolver thread for Secret and EnvironmentVariable variants.
+    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let request = ResolveRequest {
+        config_value,
+        response_tx,
+    };
 
-                if context.secret_resolver_tx.send(request).is_err() {
-                    return FfiGetSecretResult::err(
-                        "Secret resolver thread is no longer running".to_string(),
-                    );
-                }
+    if context.resolver_tx.send(request).is_err() {
+        return FfiGetSecretResult::err("Config resolver thread is no longer running".to_string());
+    }
 
-                match response_rx.recv() {
-                    Ok(Ok(value)) => FfiGetSecretResult::ok(value),
-                    Ok(Err(e)) => FfiGetSecretResult::err(format!("Failed to resolve secret: {e}")),
-                    Err(_) => FfiGetSecretResult::err(
-                        "Secret resolver thread dropped response channel".to_string(),
-                    ),
-                }
-            }
-            "EnvironmentVariable" => {
-                let name = match json_value.get("name").and_then(|v| v.as_str()) {
-                    Some(n) => n.to_string(),
-                    None => {
-                        return FfiGetSecretResult::err(
-                            "EnvironmentVariable config value missing 'name' field".to_string(),
-                        );
-                    }
-                };
-                let default = json_value
-                    .get("default")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                match std::env::var(&name) {
-                    Ok(v) => FfiGetSecretResult::ok(v),
-                    Err(_) => match default {
-                        Some(d) => FfiGetSecretResult::ok(d),
-                        None => FfiGetSecretResult::err(format!(
-                            "Environment variable '{name}' not found and no default provided"
-                        )),
-                    },
-                }
-            }
-            other => FfiGetSecretResult::err(format!("Unknown config value kind: '{other}'")),
-        }
-    } else {
-        // No "kind" field — treat as a static string value
-        match json_value.as_str() {
-            Some(s) => FfiGetSecretResult::ok(s.to_string()),
-            None => FfiGetSecretResult::ok(json_str),
+    match response_rx.recv() {
+        Ok(Ok(value)) => FfiGetSecretResult::ok(value),
+        Ok(Err(e)) => FfiGetSecretResult::err(e),
+        Err(_) => {
+            FfiGetSecretResult::err("Config resolver thread dropped response channel".to_string())
         }
     }
 }
 
 /// Build a leaked `ConfigResolverContext` pointer for injection into plugins.
 ///
-/// Spawns a dedicated resolver thread that services secret lookups for the
-/// lifetime of the process. The returned pointer is intentionally leaked
-/// (process-lifetime) because plugins store it globally.
+/// Spawns a dedicated resolver thread that uses the SDK's `ValueResolver`
+/// implementations to handle all `ConfigValue` variants. The returned pointer
+/// is intentionally leaked (process-lifetime) because plugins store it globally.
 pub fn build_config_resolver_context(
     provider: Arc<dyn SecretStoreProvider>,
     runtime_handle: tokio::runtime::Handle,
 ) -> *mut c_void {
-    // Bounded channel to back-pressure if resolution is slow.
-    let (tx, rx) = std::sync::mpsc::sync_channel::<SecretResolveRequest>(64);
+    let (tx, rx) = std::sync::mpsc::sync_channel::<ResolveRequest>(64);
 
-    // Spawn a dedicated OS thread that runs async secret resolution.
+    // Build the SDK resolvers
+    let env_resolver = EnvironmentVariableResolver;
+    let secret_resolver = SecretStoreValueResolverAdapter::new(provider);
+
+    // Spawn a dedicated OS thread that runs resolution using the SDK resolvers.
     std::thread::Builder::new()
-        .name("secret-resolver".to_string())
+        .name("config-resolver".to_string())
         .spawn(move || {
             while let Ok(req) = rx.recv() {
-                let result = runtime_handle
-                    .block_on(provider.get_secret(&req.name))
-                    .map_err(|e| e.to_string());
-                // Ignore send error — caller may have timed out / dropped.
+                let result = match &req.config_value {
+                    SdkConfigValue::EnvironmentVariable { .. } => runtime_handle
+                        .block_on(env_resolver.resolve_to_string(&req.config_value))
+                        .map_err(|e| e.to_string()),
+                    SdkConfigValue::Secret { .. } => runtime_handle
+                        .block_on(secret_resolver.resolve_to_string(&req.config_value))
+                        .map_err(|e| e.to_string()),
+                    SdkConfigValue::Static(s) => Ok(s.clone()),
+                };
                 let _ = req.response_tx.send(result);
             }
         })
-        .expect("Failed to spawn secret-resolver thread");
+        .expect("Failed to spawn config-resolver thread");
 
-    let ctx = Box::new(ConfigResolverContext {
-        secret_resolver_tx: tx,
-    });
+    let ctx = Box::new(ConfigResolverContext { resolver_tx: tx });
     Box::into_raw(ctx) as *mut c_void
 }
 
