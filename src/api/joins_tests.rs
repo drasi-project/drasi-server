@@ -81,6 +81,7 @@ mod api_query_joins_tests {
                 receiver,
                 bootstrap_receiver: None,
                 position_handle: None,
+                bootstrap_result_receiver: None,
             })
         }
         fn as_any(&self) -> &dyn std::any::Any {

@@ -109,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hot_reload_debounce_ms: 2000,
         solutions_dir: None, // Use default solutions directory
         cors_allowed_origins: vec![],
+        identity_providers: vec![],
     };
 
     // Save configuration to file
