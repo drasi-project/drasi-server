@@ -38,16 +38,20 @@ use std::sync::Arc;
 
 /// File patterns for discovering cdylib plugins.
 /// Includes both Unix (`lib` prefix) and Windows (no prefix) naming conventions.
+/// Also includes both hyphenated and underscored variants for secret-store plugins,
+/// since OCI registry artifacts use hyphens (e.g. `libdrasi_secret-store_file.so`).
 const PLUGIN_FILE_PATTERNS: &[&str] = &[
     "libdrasi_source_*",
     "libdrasi_reaction_*",
     "libdrasi_bootstrap_*",
     "libdrasi_secret_store_*",
+    "libdrasi_secret-store_*",
     "libdrasi_identity_*",
     "drasi_source_*",
     "drasi_reaction_*",
     "drasi_bootstrap_*",
     "drasi_secret_store_*",
+    "drasi_secret-store_*",
     "drasi_identity_*",
 ];
 
