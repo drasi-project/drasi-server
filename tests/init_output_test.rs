@@ -138,6 +138,7 @@ fn test_empty_config_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -178,6 +179,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
         }),
+        secret_store: None,
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
         sources: vec![],
@@ -223,6 +225,7 @@ fn test_mock_source_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -271,6 +274,7 @@ fn test_http_source_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -318,6 +322,7 @@ fn test_grpc_source_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -364,6 +369,7 @@ fn test_postgres_source_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -456,6 +462,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -530,6 +537,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -590,6 +598,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![SourceConfig {
@@ -646,6 +655,7 @@ fn test_log_reaction_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -693,6 +703,7 @@ fn test_http_reaction_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -741,6 +752,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -792,6 +804,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -848,6 +861,7 @@ fn test_query_generates_valid_yaml() {
         persist_index: false,
         enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
@@ -870,6 +884,8 @@ fn test_query_generates_valid_yaml() {
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }],
         reactions: vec![],
         instances: vec![],
@@ -924,6 +940,7 @@ fn test_full_config_roundtrip() {
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
         }),
+        secret_store: None,
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
         sources: vec![SourceConfig {
@@ -958,6 +975,8 @@ fn test_full_config_roundtrip() {
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }],
         reactions: vec![ReactionConfig {
             kind: "log".to_string(),
