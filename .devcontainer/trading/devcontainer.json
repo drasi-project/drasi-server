@@ -40,6 +40,7 @@
     ],
     "forwardPorts": [
         8280,
+        8281,
         9100,
         5632,
         5273
@@ -48,6 +49,10 @@
         "8280": {
             "label": "Drasi Server API",
             "onAutoForward": "notify"
+        },
+        "8281": {
+            "label": "Drasi SSE Reaction",
+            "onAutoForward": "silent"
         },
         "9100": {
             "label": "HTTP Source",

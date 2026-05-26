@@ -129,6 +129,7 @@ NEEDED_PLUGINS=(
     "source/postgres"
     "bootstrap/scriptfile"
     "bootstrap/postgres"
+    "reaction/sse"
 )
 for ref in "${NEEDED_PLUGINS[@]}"; do
     category="${ref%%/*}"
