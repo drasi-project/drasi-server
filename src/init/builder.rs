@@ -58,6 +58,8 @@ pub fn build_config(
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }]
     } else {
         vec![]
@@ -74,6 +76,7 @@ pub fn build_config(
         enable_ui: true,     // Enable web UI by default
         solutions_dir: None, // Use default
         state_store: server_settings.state_store,
+        secret_store: None,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         plugin_registry: Some(server_settings.plugin_registry.clone()),

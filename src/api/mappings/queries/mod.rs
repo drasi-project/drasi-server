@@ -96,8 +96,8 @@ impl ConfigMapper<QueryConfigDto, QueryConfig> for QueryConfigMapper {
             dispatch_mode,
             storage_backend,
             recovery_policy: None,
-            outbox_capacity: 1000,
-            bootstrap_timeout_secs: 300,
+            outbox_capacity: dto.outbox_capacity,
+            bootstrap_timeout_secs: dto.bootstrap_timeout_secs,
         })
     }
 }
