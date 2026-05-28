@@ -48,6 +48,11 @@ pub struct SourceConfig {
     pub id: String,
     pub auto_start: bool,
     pub bootstrap_provider: Option<BootstrapProviderConfig>,
+    /// Reference (by `id`) to an entry in the top-level
+    /// `identityProviders` block. When set, the resolved provider is
+    /// attached to the source via `Source::set_identity_provider` after
+    /// construction.
+    pub identity_provider: Option<String>,
     pub config: serde_json::Value,
 }
 
@@ -63,6 +68,9 @@ impl Serialize for SourceConfig {
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(bp) = &self.bootstrap_provider {
             map.serialize_entry("bootstrapProvider", bp)?;
+        }
+        if let Some(ip) = &self.identity_provider {
+            map.serialize_entry("identityProvider", ip)?;
         }
         if let serde_json::Value::Object(config_map) = &self.config {
             for (k, v) in config_map {
@@ -96,6 +104,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 let mut id: Option<String> = None;
                 let mut auto_start: Option<bool> = None;
                 let mut bootstrap_provider: Option<serde_json::Value> = None;
+                let mut identity_provider: Option<String> = None;
 
                 // Collect remaining fields for the inner config
                 let mut remaining = serde_json::Map::new();
@@ -126,6 +135,12 @@ impl<'de> Deserialize<'de> for SourceConfig {
                             }
                             bootstrap_provider = Some(map.next_value()?);
                         }
+                        "identityProvider" => {
+                            if identity_provider.is_some() {
+                                return Err(de::Error::duplicate_field("identityProvider"));
+                            }
+                            identity_provider = Some(map.next_value()?);
+                        }
                         // Reject common snake_case misspellings of known fields
                         "auto_start" => {
                             return Err(de::Error::custom(
@@ -135,6 +150,11 @@ impl<'de> Deserialize<'de> for SourceConfig {
                         "bootstrap_provider" => {
                             return Err(de::Error::custom(
                                 "unknown field `bootstrap_provider`, did you mean `bootstrapProvider`?"
+                            ));
+                        }
+                        "identity_provider" => {
+                            return Err(de::Error::custom(
+                                "unknown field `identity_provider`, did you mean `identityProvider`?"
                             ));
                         }
                         // Collect all other fields for the inner config
@@ -168,6 +188,7 @@ impl<'de> Deserialize<'de> for SourceConfig {
                     id,
                     auto_start,
                     bootstrap_provider,
+                    identity_provider,
                     config: remaining_value,
                 })
             }
@@ -196,6 +217,12 @@ impl SourceConfig {
     /// Get the bootstrap provider configuration if any
     pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
         self.bootstrap_provider.as_ref()
+    }
+
+    /// Get the optional identity provider reference (id of an entry in
+    /// the top-level `identityProviders` block).
+    pub fn identity_provider(&self) -> Option<&str> {
+        self.identity_provider.as_deref()
     }
 
     /// Get the source kind
@@ -610,6 +637,7 @@ intervalMs: 1000
             id: "roundtrip-source".to_string(),
             auto_start: false,
             bootstrap_provider: None,
+            identity_provider: None,
             config: serde_json::json!({
                 "dataType": { "type": "sensorReading", "sensorCount": 5 },
                 "intervalMs": 1000

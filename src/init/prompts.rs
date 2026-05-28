@@ -295,6 +295,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         id,
         auto_start: true,
         bootstrap_provider,
+        identity_provider: None,
         config: serde_json::json!({
             "host": host,
             "port": port,
@@ -433,6 +434,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
         id,
         auto_start: true,
         bootstrap_provider,
+        identity_provider: None,
         config: serde_json::json!({
             "host": host,
             "port": port,
@@ -464,6 +466,7 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
         id,
         auto_start: true,
         bootstrap_provider,
+        identity_provider: None,
         config: serde_json::json!({
             "host": host,
             "port": port,
@@ -509,6 +512,7 @@ fn prompt_mock_source() -> Result<SourceConfig> {
         id,
         auto_start: true,
         bootstrap_provider: None,
+        identity_provider: None,
         config: serde_json::json!({
             "intervalMs": interval_ms,
             "dataType": data_type
@@ -563,6 +567,7 @@ fn prompt_log_reaction() -> Result<ReactionConfig> {
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({
             "routes": {}
         }),
@@ -588,6 +593,7 @@ fn prompt_http_reaction() -> Result<ReactionConfig> {
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({
             "baseUrl": base_url,
             "timeoutMs": 5000,
@@ -620,6 +626,7 @@ fn prompt_sse_reaction() -> Result<ReactionConfig> {
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({
             "host": host,
             "port": port,
@@ -649,6 +656,7 @@ fn prompt_grpc_reaction() -> Result<ReactionConfig> {
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({
             "endpoint": endpoint,
             "timeoutMs": 5000,
@@ -832,6 +840,7 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
         kind: kind.to_string(),
         id,
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider,
         config,
     })
@@ -931,6 +940,7 @@ fn prompt_generic_reaction(kind: &str) -> Result<ReactionConfig> {
         id,
         queries: vec!["my-query".to_string()],
         auto_start: true,
+        identity_provider: None,
         config,
     })
 }

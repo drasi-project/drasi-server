@@ -115,6 +115,7 @@ impl SourceTrait for BootstrapMockSource {
             receiver,
             bootstrap_receiver: Some(bootstrap_rx),
             position_handle: None,
+            bootstrap_result_receiver: None,
         })
     }
 

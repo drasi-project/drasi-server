@@ -72,6 +72,8 @@ fn test_explicit_cypher_language() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Map the DTO to a QueryConfig
@@ -111,6 +113,8 @@ fn test_explicit_gql_language() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Map the DTO to a QueryConfig
