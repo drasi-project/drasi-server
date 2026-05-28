@@ -125,8 +125,8 @@ rstest = "0.18"
 drasi-core = "0.5.3"
 
 # Integration testing with testcontainers
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["redis"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["redis"] }
 redis = { version = "0.24", features = ["tokio-comp", "streams"] }
 
 [lints.rust]
