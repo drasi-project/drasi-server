@@ -64,6 +64,9 @@ COPY src ./src
 COPY config ./config
 COPY xtask ./xtask
 
+# Copy built UI from ui-builder so it gets embedded into the binary
+COPY --from=ui-builder /app/ui/dist ./ui/dist
+
 # Build release binary
 # Set JQ_LIB_DIR dynamically for multiarch support (no pkg-config file in Debian's libjq-dev)
 RUN JQ_LIB_DIR=$(dirname $(find /usr/lib -name 'libjq.so' | head -1)) \

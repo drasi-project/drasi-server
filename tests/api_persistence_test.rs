@@ -95,6 +95,7 @@ async fn test_persistence_saves_complete_configuration() {
         kind: "mock".to_string(),
         id: "test-source-1".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
@@ -102,6 +103,7 @@ async fn test_persistence_saves_complete_configuration() {
         kind: "mock".to_string(),
         id: "test-source-2".to_string(),
         auto_start: false,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
@@ -126,6 +128,8 @@ async fn test_persistence_saves_complete_configuration() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Create reaction using enum variant
@@ -134,6 +138,7 @@ async fn test_persistence_saves_complete_configuration() {
         id: "test-reaction-1".to_string(),
         queries: vec!["test-query-1".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({"routes": {}}),
     };
 
@@ -222,6 +227,7 @@ async fn test_persistence_atomic_write() {
         kind: "mock".to_string(),
         id: "new-source".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: default_mock_config(),
     };
@@ -350,6 +356,8 @@ fn test_multiple_queries_persist_correctly() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     let query2 = QueryConfigDto {
@@ -371,6 +379,8 @@ fn test_multiple_queries_persist_correctly() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Create config with both queries
@@ -444,6 +454,8 @@ fn test_adding_query_preserves_existing_queries() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     let initial_config = DrasiServerConfig {
@@ -483,6 +495,8 @@ fn test_adding_query_preserves_existing_queries() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     loaded_config.queries.push(query2);

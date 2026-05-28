@@ -27,7 +27,12 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::factories::{create_reaction_locked, create_source_locked, create_state_store_provider};
+use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
+use crate::factories::{
+    build_config_resolver_context, build_identity_provider_map, config_resolver_callback,
+    create_reaction_locked, create_secret_store_from_registry, create_source_locked,
+    create_state_store_provider,
+};
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -35,6 +40,7 @@ use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
 use drasi_index_rocksdb::RocksDbIndexProvider;
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
 
@@ -219,6 +225,7 @@ impl DrasiServer {
 
         // Load dynamic plugins from the plugins directory
         let mut startup_plugin_records = Vec::new();
+        let mut plugin_load_stats: Option<crate::dynamic_loading::PluginLoadStats> = None;
         if plugins_dir.exists() {
             let callback_ctx = Arc::new(drasi_host_sdk::CallbackContext {
                 instance_id: String::new(),
@@ -237,7 +244,8 @@ impl DrasiServer {
                 Some(callback_ctx),
                 verified_files.as_ref(),
             )?;
-            startup_plugin_records = load_stats.loaded_plugins;
+            startup_plugin_records = load_stats.loaded_plugins.clone();
+            plugin_load_stats = Some(load_stats);
         }
 
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
@@ -384,6 +392,55 @@ impl DrasiServer {
             }
         }
 
+        // Resolve the process-wide secret store provider (if any instance configures one).
+        // The FFI config resolver is a single global callback — only one secret store
+        // provider can be active. Validate that all instances agree on the same config.
+        let process_secret_store: Option<Arc<dyn SecretStoreProvider>> = {
+            let mut chosen: Option<(&str, &SecretStoreConfig)> = None;
+            for inst in &resolved_instances {
+                if let Some(ref ss) = inst.secret_store {
+                    if let Some((prev_id, prev_cfg)) = chosen {
+                        if prev_cfg != ss {
+                            return Err(anyhow::anyhow!(
+                                "Conflicting secret store configurations: instance '{}' and '{}' \
+                                 specify different secret store configs. Only one process-wide \
+                                 secret store is supported because the FFI config resolver is global.",
+                                prev_id,
+                                inst.id,
+                            ));
+                        }
+                    } else {
+                        chosen = Some((&inst.id, ss));
+                    }
+                }
+            }
+            if let Some((inst_id, ss_config)) = chosen {
+                info!(
+                    "Enabling process-wide secret store with '{}' provider (from instance '{}')",
+                    ss_config.kind, inst_id
+                );
+                let provider =
+                    create_secret_store_from_registry(&plugin_registry, ss_config).await?;
+
+                // Inject the config resolver callback into all loaded plugins so their
+                // DtoMapper can resolve ConfigValue::Secret references through the host.
+                if let Some(ref stats) = plugin_load_stats {
+                    let resolver_ctx = build_config_resolver_context(
+                        provider.clone(),
+                        tokio::runtime::Handle::current(),
+                    );
+                    stats.inject_config_resolver_into_all(resolver_ctx, config_resolver_callback());
+                    info!(
+                        "Injected config resolver into {} loaded plugin(s)",
+                        stats.plugins_loaded,
+                    );
+                }
+                Some(provider)
+            } else {
+                None
+            }
+        };
+
         for instance in resolved_instances {
             let mut builder = DrasiLib::builder().with_id(&instance.id);
 
@@ -422,6 +479,18 @@ impl DrasiServer {
                 builder = builder.with_state_store_provider(state_store_provider);
             }
 
+            // Attach the process-wide secret store provider to this instance's builder
+            if instance.secret_store.is_some() {
+                if let Some(ref provider) = process_secret_store {
+                    builder = builder.with_secret_store_provider(provider.clone());
+                }
+            }
+
+            // Build the identity-provider map for this instance. Sources and
+            // reactions can reference entries here via `identityProvider: <id>`.
+            let identity_providers =
+                build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
+
             // Create and add sources from config
             info!(
                 "Loading {} source(s) from configuration for instance '{}'",
@@ -429,8 +498,19 @@ impl DrasiServer {
                 instance.id
             );
             for source_config in instance.sources.clone() {
+                let identity_ref = source_config.identity_provider().map(str::to_string);
                 let (source, plugin_meta) =
                     create_source_locked(&plugin_registry, source_config).await?;
+                if let Some(id) = identity_ref {
+                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Source references unknown identityProvider '{id}'. \
+                             Declared providers: {:?}",
+                            identity_providers.keys().collect::<Vec<_>>()
+                        )
+                    })?;
+                    source.set_identity_provider(provider).await;
+                }
                 builder = builder.with_source_metadata(source, plugin_meta);
             }
 
@@ -441,8 +521,19 @@ impl DrasiServer {
 
             // Create and add reactions from config
             for reaction_config in instance.reactions.clone() {
+                let identity_ref = reaction_config.identity_provider().map(str::to_string);
                 let (reaction, plugin_meta) =
                     create_reaction_locked(&plugin_registry, reaction_config).await?;
+                if let Some(id) = identity_ref {
+                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Reaction references unknown identityProvider '{id}'. \
+                             Declared providers: {:?}",
+                            identity_providers.keys().collect::<Vec<_>>()
+                        )
+                    })?;
+                    reaction.set_identity_provider(provider).await;
+                }
                 builder = builder.with_reaction_metadata(reaction, plugin_meta);
             }
 
@@ -625,6 +716,33 @@ impl DrasiServer {
                         config.solutions_dir.clone(),
                         &config,
                     ));
+                    // Register initial instance configs so save() preserves
+                    // per-instance settings (secret_store, state_store, etc.)
+                    let initial_instances: Vec<DrasiLibInstanceConfig> =
+                        if config.instances.is_empty() {
+                            vec![DrasiLibInstanceConfig {
+                                id: config.id.clone(),
+                                persist_index: config.persist_index,
+                                state_store: config.state_store.clone(),
+                                secret_store: config.secret_store.clone(),
+                                default_priority_queue_capacity: config
+                                    .default_priority_queue_capacity
+                                    .clone(),
+                                default_dispatch_buffer_capacity: config
+                                    .default_dispatch_buffer_capacity
+                                    .clone(),
+                                sources: config.sources.clone(),
+                                queries: config.queries.clone(),
+                                reactions: config.reactions.clone(),
+                                identity_providers: config.identity_providers.clone(),
+                            }]
+                        } else {
+                            config.instances.clone()
+                        };
+                    for inst in initial_instances {
+                        persistence.register_instance(inst).await;
+                    }
+
                     info!("Configuration persistence enabled");
                     (Some(persistence), solutions_dir)
                 } else {
@@ -727,11 +845,15 @@ impl DrasiServer {
             // Swagger UI and OpenAPI spec for v1
             .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
 
-        // Serve the Drasi Server Admin UI if enabled and the dist directory exists
+        // Serve the Drasi Server Admin UI if enabled
         let ui_dir = std::path::Path::new("ui/dist");
+        let has_filesystem_ui = ui_dir.join("index.html").exists();
+        let has_embedded_ui = crate::ui_assets::has_embedded_ui();
+
         if self.enable_ui {
-            if ui_dir.exists() {
-                info!("Drasi Server Admin UI found, serving at /ui/");
+            if has_filesystem_ui {
+                // Prefer filesystem for development (hot-reload)
+                info!("Drasi Server Admin UI found on filesystem, serving at /ui/");
                 app = app
                     .nest_service(
                         "/ui",
@@ -741,20 +863,21 @@ impl DrasiServer {
                         "/",
                         get(|| async { axum::response::Redirect::temporary("/ui/") }),
                     );
+            } else if has_embedded_ui {
+                // Fall back to embedded assets (release binary)
+                info!("Drasi Server Admin UI (embedded), serving at /ui/");
+                app = app.merge(crate::ui_assets::embedded_ui_routes()).route(
+                    "/",
+                    get(|| async { axum::response::Redirect::temporary("/ui/") }),
+                );
             } else {
-                let abs_path = ui_dir.canonicalize().unwrap_or_else(|_| {
-                    std::env::current_dir()
-                        .map(|cwd| cwd.join(ui_dir))
-                        .unwrap_or_else(|_| ui_dir.to_path_buf())
-                });
                 warn!(
-                    "Web UI is enabled but ui/dist directory not found at {}. \
+                    "Web UI is enabled but no UI assets found. \
                      The /ui route will return 404. \
                      To build the UI, run `make build-ui` (or `make build-release`) from the \
                      repository root — `cargo build` alone does not build the UI. \
                      To suppress this warning, start the server with `--disable-ui` or set \
-                     `enableUi: false` in the config file.",
-                    abs_path.display()
+                     `enableUi: false` in the config file."
                 );
             }
         } else {
@@ -782,7 +905,7 @@ impl DrasiServer {
         info!("Starting web API on {addr}");
         info!("API v1 available at http://{addr}/api/v1/");
         info!("Swagger UI available at http://{addr}/api/v1/docs/");
-        if self.enable_ui && ui_dir.exists() {
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
             info!("Drasi Server Admin UI at http://{addr}/ui/");
         }
 

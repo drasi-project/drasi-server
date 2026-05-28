@@ -21,9 +21,16 @@ on:
         description: 'Version Tag (optional, defaults to version from Cargo.toml)'
         required: false
       image_prefix:
-        description: 'Image Prefix'
+        description: 'Image Prefix (defaults to ghcr.io/<repo-owner>)'
         required: false
-        default: 'ghcr.io/drasi-project'
+        default: ''
+      dry_run:
+        description: 'Dry run — build everything but skip publish/release steps'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 8 * * 1' # Weekly Monday 08:00 UTC dry-run
 
 permissions:
   id-token: write
@@ -32,6 +39,9 @@ permissions:
 
 env:
   IMAGE_NAME: drasi-server
+  # Resolved image prefix: use the user-provided value if set, otherwise default
+  # to ghcr.io/<repo-owner> so forks publish to their own namespace by default.
+  IMAGE_PREFIX: ${{ inputs.image_prefix != '' && inputs.image_prefix || format('ghcr.io/{0}', github.repository_owner) }}
 
 jobs:
   # Determine the version tag to use
@@ -72,8 +82,12 @@ jobs:
         with:
           toolchain: stable
 
+      # Install cross from a pinned git commit: the last tagged release (0.2.5,
+      # March 2022) ships container images based on glibc 2.27, which is too old
+      # for current rustc's build-script binaries (require GLIBC_2.34). Main has
+      # newer base images, but we pin to a specific commit for reproducibility.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 65fe72b0cdb1e7e0cc0652517498d4389cc8f5cf --locked
 
       - name: Build all Linux targets
         run: |
@@ -299,8 +313,9 @@ jobs:
         with:
           toolchain: stable
 
+      # See note in build-linux about why we install cross from a pinned commit.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 65fe72b0cdb1e7e0cc0652517498d4389cc8f5cf --locked
 
       - name: Build all Linux targets
         run: |
@@ -431,8 +446,9 @@ jobs:
         with:
           toolchain: stable
 
+      # See note in build-linux about why we install cross from a pinned commit.
       - name: Install cross
-        run: cargo install cross --version 0.2.5
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 65fe72b0cdb1e7e0cc0652517498d4389cc8f5cf --locked
 
       - name: Build binary
         run: |
@@ -480,6 +496,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
+        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -487,16 +504,27 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push platform-specific image
+        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
         env:
-          IMAGE_PREFIX: ${{ inputs.image_prefix }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
           DOCKER_TAG_VERSION: ${{ needs.determine-version.outputs.tag }}-${{ matrix.suffix }}
           DOCKERX_OPTS: --platform ${{ matrix.platform }} --push --cache-from type=gha --cache-to type=gha,mode=max
+        run: |
+          make docker-build
+
+      - name: Build platform-specific image (dry run)
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run }}
+        env:
+          IMAGE_PREFIX: local
+          DOCKER_TAG_VERSION: dry-run-${{ matrix.suffix }}
+          DOCKERX_OPTS: --platform ${{ matrix.platform }} --cache-from type=gha --cache-to type=gha,mode=max --load
         run: |
           make docker-build
 
   # Create multi-arch manifest
   create-manifest:
     name: Create Multi-Arch Manifest
+    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
     needs: [determine-version, build-docker]
     runs-on: ubuntu-latest
     steps:
@@ -509,35 +537,35 @@ jobs:
 
       - name: Create and push manifest list
         run: |
-          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }} \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
+          docker buildx imagetools create -t ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }} \
+            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
 
       - name: Create and push 'latest' tag
         run: |
-          docker buildx imagetools create -t ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
-            ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
+          docker buildx imagetools create -t ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64 \
+            ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64
 
       - name: Generate summary
         run: |
           echo "## Docker Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Tags Created" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platform-Specific Tags" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-amd64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}-arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Binary Artifacts Published :package:" >> $GITHUB_STEP_SUMMARY
@@ -614,7 +642,11 @@ jobs:
         if: runner.os != 'Windows' && !matrix.use_alpine
         run: |
           chmod +x "bin/${{ matrix.binary_name }}"
-          SERVER_BINARY="$(pwd)/bin/${{ matrix.binary_name }}" \
+          BINARY="$(pwd)/bin/${{ matrix.binary_name }}"
+
+          # Plugins are auto-installed at server startup (autoInstallPlugins: true
+          # in the test config) from the default OCI registry.
+          SERVER_BINARY="$BINARY" \
             tests/integration/hello-world/run-integration-test.sh
 
       - name: Run hello-world smoke test (Alpine/musl)
@@ -651,6 +683,8 @@ jobs:
           "$BINARY_PATH" --help 2>&1 || echo "(exit code: $?)"
           echo ""
 
+          # Plugins are auto-installed at server startup (autoInstallPlugins: true
+          # in the test config) from the default OCI registry.
           SERVER_BINARY="$BINARY_PATH" \
             tests/integration/hello-world/run-integration-test.sh
 
@@ -674,6 +708,7 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
+    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
     needs: [determine-version, create-manifest, test-binaries, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows]
     runs-on: ubuntu-latest
     permissions:
@@ -762,8 +797,8 @@ jobs:
           ## Docker Images
 
           Multi-arch Docker images are available at:
-          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}`
-          - `${{ inputs.image_prefix }}/${{ env.IMAGE_NAME }}:latest`
+          - `${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:${{ needs.determine-version.outputs.tag }}`
+          - `${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest`
 
           Supported architectures: `linux/amd64`, `linux/arm64`
           NOTES_EOF

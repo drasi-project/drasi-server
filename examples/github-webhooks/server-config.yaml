@@ -1,0 +1,221 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server GitHub Webhooks Example
+# =============================================================================
+# This configuration demonstrates using the HTTP source in webhook mode to
+# receive and process GitHub webhook events in real-time.
+#
+# Features:
+# - HTTP source with webhook mode for receiving GitHub events
+# - HMAC-SHA256 signature verification (GitHub's X-Hub-Signature-256)
+# - Conditional mappings for push, pull_request, and issues events
+# - Continuous Cypher queries over GitHub activity
+# - Log and SSE reactions for real-time output
+#
+# Run with: cargo run -- --config examples/github-webhooks/server-config.yaml
+
+# Server Configuration
+apiVersion: drasi.io/v1
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8080}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+id: github-webhooks-server
+
+autoInstallPlugins: true
+plugins:
+  - ref: source/http
+  - ref: reaction/log
+  - ref: reaction/sse
+
+# =============================================================================
+# Sources
+# =============================================================================
+# The HTTP source in webhook mode receives GitHub webhook payloads and
+# transforms them into graph nodes using configurable mappings.
+
+sources:
+  - kind: http
+    id: github-webhooks
+    autoStart: true
+    host: "0.0.0.0"
+    port: ${WEBHOOK_PORT:-9000}
+    timeoutMs: 30000
+    webhooks:
+      errorBehavior: reject
+      routes:
+        - path: "/github/events"
+          methods: [POST]
+          auth:
+            signature:
+              type: hmac-sha256
+              secretEnv: GITHUB_WEBHOOK_SECRET
+              header: X-Hub-Signature-256
+              prefix: "sha256="
+              encoding: hex
+          mappings:
+            # Push events - track commits pushed to branches
+            - when:
+                header: X-GitHub-Event
+                equals: push
+              operation: insert
+              elementType: node
+              template:
+                id: "push-{{payload.head_commit.id}}"
+                labels: [PushEvent]
+                properties:
+                  repo: "{{payload.repository.full_name}}"
+                  branch: "{{payload.ref}}"
+                  pusher: "{{payload.pusher.name}}"
+                  message: "{{payload.head_commit.message}}"
+                  commit_url: "{{payload.head_commit.url}}"
+                  timestamp: "{{payload.head_commit.timestamp}}"
+                  commit_count: "{{payload.size}}"
+
+            # Pull request events - track PR activity
+            - when:
+                header: X-GitHub-Event
+                equals: pull_request
+              operation: insert
+              elementType: node
+              template:
+                id: "pr-{{payload.pull_request.id}}"
+                labels: [PullRequestEvent]
+                properties:
+                  repo: "{{payload.repository.full_name}}"
+                  action: "{{payload.action}}"
+                  title: "{{payload.pull_request.title}}"
+                  author: "{{payload.pull_request.user.login}}"
+                  number: "{{payload.pull_request.number}}"
+                  state: "{{payload.pull_request.state}}"
+                  url: "{{payload.pull_request.html_url}}"
+                  base_branch: "{{payload.pull_request.base.ref}}"
+                  head_branch: "{{payload.pull_request.head.ref}}"
+
+            # Issue events - track issue activity
+            - when:
+                header: X-GitHub-Event
+                equals: issues
+              operation: insert
+              elementType: node
+              template:
+                id: "issue-{{payload.issue.id}}"
+                labels: [IssueEvent]
+                properties:
+                  repo: "{{payload.repository.full_name}}"
+                  action: "{{payload.action}}"
+                  title: "{{payload.issue.title}}"
+                  author: "{{payload.issue.user.login}}"
+                  number: "{{payload.issue.number}}"
+                  state: "{{payload.issue.state}}"
+                  url: "{{payload.issue.html_url}}"
+
+# =============================================================================
+# Queries
+# =============================================================================
+# Continuous queries that process incoming GitHub events in real-time.
+
+queries:
+  # Query 1: recent-pushes
+  # Track push events with commit details
+  - id: recent-pushes
+    autoStart: true
+    query: |
+      MATCH (p:PushEvent)
+      RETURN elementId(p) AS EventId, p.repo AS Repository,
+             p.branch AS Branch, p.pusher AS Pusher,
+             p.message AS CommitMessage
+    queryLanguage: Cypher
+    sources:
+      - sourceId: github-webhooks
+
+  # Query 2: open-pull-requests
+  # Track pull requests in "open" state
+  - id: open-pull-requests
+    autoStart: true
+    query: |
+      MATCH (pr:PullRequestEvent)
+      WHERE pr.state = 'open'
+      RETURN elementId(pr) AS EventId, pr.repo AS Repository,
+             pr.number AS PRNumber, pr.title AS Title,
+             pr.author AS Author, pr.head_branch AS HeadBranch,
+             pr.base_branch AS BaseBranch
+    queryLanguage: Cypher
+    sources:
+      - sourceId: github-webhooks
+
+  # Query 3: issues-opened
+  # Track newly opened issues
+  - id: issues-opened
+    autoStart: true
+    query: |
+      MATCH (i:IssueEvent)
+      WHERE i.action = 'opened'
+      RETURN elementId(i) AS EventId, i.repo AS Repository,
+             i.number AS IssueNumber, i.title AS Title,
+             i.author AS Author, i.url AS URL
+    queryLanguage: Cypher
+    sources:
+      - sourceId: github-webhooks
+
+# =============================================================================
+# Reactions
+# =============================================================================
+# Reactions define what happens when query results change.
+
+reactions:
+  # Log Reaction - Console Output
+  # Prints GitHub events to the console with formatted templates
+  - kind: log
+    id: log-github-activity
+    autoStart: true
+    queries:
+      - recent-pushes
+      - open-pull-requests
+      - issues-opened
+    defaultTemplate:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
+    routes:
+      recent-pushes:
+        added:
+          template: "[PUSH] {{after.Pusher}} pushed to {{after.Branch}} in {{after.Repository}}: {{after.CommitMessage}}"
+      open-pull-requests:
+        added:
+          template: "[PR] #{{after.PRNumber}} opened by {{after.Author}} in {{after.Repository}}: {{after.Title}}"
+      issues-opened:
+        added:
+          template: "[ISSUE] #{{after.IssueNumber}} opened by {{after.Author}} in {{after.Repository}}: {{after.Title}}"
+
+  # SSE Reaction - Real-time Browser Streaming
+  # Streams GitHub events to connected clients via Server-Sent Events
+  # Access at: http://localhost:8081/events
+  - kind: sse
+    id: sse-github-events
+    autoStart: true
+    queries:
+      - recent-pushes
+      - open-pull-requests
+      - issues-opened
+    host: "${SSE_HOST:-0.0.0.0}"
+    port: ${SSE_PORT:-8081}
+    ssePath: /events
+    heartbeatIntervalMs: 30000
