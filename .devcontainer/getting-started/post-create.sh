@@ -5,10 +5,6 @@ set -e
 
 echo "🔧 Initializing Drasi Server Getting Started tutorial environment..."
 
-# Ensure the shared Docker network exists (for connecting to PostgreSQL container)
-echo "🌐 Creating shared Docker network..."
-docker network create drasi-network 2>/dev/null || true
-
 # Install system dependencies
 echo "🐘 Installing system dependencies (PostgreSQL client)..."
 sudo apt-get update && sudo apt-get install -y postgresql-client
