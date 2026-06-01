@@ -93,7 +93,10 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     // Build DrasiLib with the RocksDB provider
     let core = DrasiLib::builder()
         .with_id("test-persist-index")
-        .with_index_provider(Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::builder::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .build()
         .await?;
 
@@ -267,7 +270,10 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     let core = DrasiLib::builder()
         .with_id("test-directory-creation")
-        .with_index_provider(Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::builder::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .with_query(query)
         .build()
         .await?;
@@ -285,11 +291,14 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     core.stop().await?;
 
-    // The index directory should now exist (RocksDB creates it when queries start)
-    // Note: The exact directory structure depends on RocksDB implementation
+    // The query has no explicit storage_backend, so it is only backed by RocksDB
+    // because the provider was registered as the default. RocksDB creates the
+    // index directory at `{index_path}/{query_id}` when the query starts, so its
+    // existence proves the default provider actually served the query.
     assert!(
-        temp_dir.path().exists(),
-        "Temp directory should still exist after test"
+        index_path.join("test-query").exists(),
+        "RocksDB index directory for the query should exist, proving the default \
+         provider backed a query with no explicit storage_backend"
     );
 
     Ok(())
@@ -318,13 +327,19 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
     // Build two independent cores
     let core1 = DrasiLib::builder()
         .with_id("test-isolation-1")
-        .with_index_provider(Arc::new(provider1))
+        .with_default_index_provider(
+            drasi_server::builder::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider1),
+        )
         .build()
         .await?;
 
     let core2 = DrasiLib::builder()
         .with_id("test-isolation-2")
-        .with_index_provider(Arc::new(provider2))
+        .with_default_index_provider(
+            drasi_server::builder::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider2),
+        )
         .build()
         .await?;
 

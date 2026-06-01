@@ -101,7 +101,10 @@ pub async fn create_instance(
             index_path, true,  // enable_archive - support for past() function
             false, // direct_io - use OS page cache
         );
-        builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+        builder = builder.with_default_index_provider(
+            crate::builder::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(rocksdb_provider),
+        );
     }
 
     let core = builder.build().await.map_err(|e| {

@@ -784,7 +784,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
-| `persistIndex` | boolean | `false` | Use RocksDB for persistent query indexes |
+| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` and makes it the **default** index backend for every query in the instance (stored under `./data/<instanceId>/index`). When `false`, queries use in-memory indexes. Individual queries can override this via their `storageBackend` field. |
 | `stateStore` | object | (none) | State store provider for plugin state persistence |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
@@ -1328,9 +1328,34 @@ queries:
 | `bootstrapBufferSize` | integer | `10000` | Event buffer size during bootstrap |
 | `priorityQueueCapacity` | integer | (global) | Override queue capacity for this query |
 | `dispatchBufferCapacity` | integer | (global) | Override buffer capacity for this query |
+| `storageBackend` | string or object | (instance default) | Index backend for this query. See [Per-Query Index Backend](#per-query-index-backend). |
 | `joins` | array | (none) | Synthetic join definitions |
 
 **Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
+
+#### Per-Query Index Backend
+
+By default, every query uses the instance's index backend: in-memory when `persistIndex` is `false`, or the persistent `rocksdb` provider when `persistIndex` is `true`. The optional `storageBackend` field lets an individual query override that default.
+
+It accepts either a **named provider** (a string) or an **inline specification** (an object):
+
+```yaml
+queries:
+  # Reference the instance's persistent provider by name.
+  # Requires `persistIndex: true` so the `rocksdb` provider is registered.
+  - id: persistent-query
+    query: "MATCH (n) RETURN n"
+    storageBackend: rocksdb
+
+  # Force in-memory indexes for this query, even when persistIndex is true.
+  - id: volatile-query
+    query: "MATCH (n) RETURN n"
+    storageBackend:
+      kind: memory
+      enableArchive: true
+```
+
+> **Note**: `rocksdb` is the only persistent provider compiled into drasi-server, and it is only registered when `persistIndex: true`. Referencing a named backend that has not been registered will fail query startup.
 
 #### Source Subscriptions
 
