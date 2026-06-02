@@ -24,6 +24,13 @@ on:
         description: 'Image Prefix (defaults to ghcr.io/<repo-owner>)'
         required: false
         default: ''
+      dry_run:
+        description: 'Dry run — build everything but skip publish/release steps'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 8 * * 1' # Weekly Monday 08:00 UTC dry-run
 
 permissions:
   id-token: write
@@ -489,6 +496,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
+        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -496,6 +504,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push platform-specific image
+        if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
         env:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
           DOCKER_TAG_VERSION: ${{ needs.determine-version.outputs.tag }}-${{ matrix.suffix }}
@@ -503,9 +512,19 @@ jobs:
         run: |
           make docker-build
 
+      - name: Build platform-specific image (dry run)
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run }}
+        env:
+          IMAGE_PREFIX: local
+          DOCKER_TAG_VERSION: dry-run-${{ matrix.suffix }}
+          DOCKERX_OPTS: --platform ${{ matrix.platform }} --cache-from type=gha --cache-to type=gha,mode=max --load
+        run: |
+          make docker-build
+
   # Create multi-arch manifest
   create-manifest:
     name: Create Multi-Arch Manifest
+    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
     needs: [determine-version, build-docker]
     runs-on: ubuntu-latest
     steps:
@@ -689,6 +708,7 @@ jobs:
   # Create GitHub Release with binary artifacts
   create-release:
     name: Create GitHub Release
+    if: ${{ github.event_name != 'schedule' && !inputs.dry_run }}
     needs: [determine-version, create-manifest, test-binaries, build-sse-cli-linux, build-sse-cli-macos, build-sse-cli-windows]
     runs-on: ubuntu-latest
     permissions:

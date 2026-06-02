@@ -26,6 +26,7 @@ async fn test_unknown_source_kind_returns_helpful_error() {
         kind: "nosql-fantasy".to_string(),
         id: "test".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: serde_json::json!({}),
     };
@@ -50,6 +51,7 @@ async fn test_unknown_reaction_kind_returns_helpful_error() {
         id: "test".to_string(),
         queries: vec!["q1".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({}),
     };
 
@@ -93,6 +95,7 @@ async fn test_empty_registry_rejects_all_sources() {
         kind: "mock".to_string(),
         id: "test".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: serde_json::json!({}),
     };
@@ -112,6 +115,7 @@ async fn test_empty_registry_rejects_all_reactions() {
         id: "test".to_string(),
         queries: vec![],
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({}),
     };
 

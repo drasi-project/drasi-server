@@ -81,6 +81,7 @@ mod api_query_joins_tests {
                 receiver,
                 bootstrap_receiver: None,
                 position_handle: None,
+                bootstrap_result_receiver: None,
             })
         }
         fn as_any(&self) -> &dyn std::any::Any {
@@ -147,6 +148,8 @@ mod api_query_joins_tests {
             storage_backend: config
                 .storage_backend
                 .map(|s| serde_json::to_value(s).unwrap()),
+            outbox_capacity: config.outbox_capacity,
+            bootstrap_timeout_secs: config.bootstrap_timeout_secs,
         }
     }
 

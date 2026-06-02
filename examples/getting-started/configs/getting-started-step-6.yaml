@@ -1,3 +1,7 @@
+# Drasi Server Configuration
+#
+# Edit this file to customize your configuration.
+
 id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
 host: 0.0.0.0
 port: 8080

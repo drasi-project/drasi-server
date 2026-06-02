@@ -76,7 +76,7 @@ pub async fn create_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Json(config_json): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
@@ -118,6 +118,15 @@ pub async fn create_reaction_handler(
                 }
             }
 
+            if let Some(p) = &config_persistence {
+                p.register_reaction_identity_provider(
+                    &instance_id,
+                    &reaction_id,
+                    config.identity_provider(),
+                )
+                .await;
+            }
+
             persist_after_operation(&config_persistence, "creating reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {
@@ -147,7 +156,7 @@ pub async fn upsert_reaction_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
     Json(config_json): Json<serde_json::Value>,
@@ -204,6 +213,15 @@ pub async fn upsert_reaction_handler(
 
         log::info!("Reaction '{reaction_id}' updated successfully");
 
+        if let Some(p) = &config_persistence {
+            p.register_reaction_identity_provider(
+                &instance_id,
+                &reaction_id,
+                config.identity_provider(),
+            )
+            .await;
+        }
+
         persist_after_operation(&config_persistence, "upserting reaction").await?;
 
         return Ok(Json(ApiResponse::success(StatusResponse {
@@ -229,6 +247,15 @@ pub async fn upsert_reaction_handler(
                 if let Err(e) = core.start_reaction(&reaction_id).await {
                     log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
                 }
+            }
+
+            if let Some(p) = &config_persistence {
+                p.register_reaction_identity_provider(
+                    &instance_id,
+                    &reaction_id,
+                    config.identity_provider(),
+                )
+                .await;
             }
 
             persist_after_operation(&config_persistence, "upserting reaction").await?;
@@ -399,7 +426,7 @@ pub async fn delete_reaction(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Extension(_instance_id): Extension<String>,
+    Extension(instance_id): Extension<String>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -411,6 +438,10 @@ pub async fn delete_reaction(
 
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
+            if let Some(p) = &config_persistence {
+                p.unregister_reaction_identity_provider(&instance_id, &id)
+                    .await;
+            }
             persist_after_operation(&config_persistence, "deleting reaction").await?;
 
             Ok(Json(ApiResponse::success(StatusResponse {

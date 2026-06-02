@@ -545,7 +545,14 @@ pub async fn search_registry(
     }
 }
 
-/// Build the plugin API router.
+/// Build the plugin API router (without extensions).
+///
+/// Prefer [`build_plugin_router`] which wires the required extensions in the
+/// same place as the routes. Callers using `plugin_routes()` directly must add
+/// every extension that any plugin handler extracts, including
+/// `Extension<Arc<PluginOrchestrator>>`, `Extension<InstanceRegistry>`, and
+/// `Extension<Arc<bool>>` (the read-only flag used by `load_plugin` /
+/// `install_plugin`).
 pub fn plugin_routes() -> axum::Router {
     // Schema subrouter — needs to be separate to avoid {plugin_id} conflict
     let kinds_router = axum::Router::new()
@@ -566,4 +573,21 @@ pub fn plugin_routes() -> axum::Router {
             "/:plugin_id/dependents",
             axum::routing::get(list_dependents),
         )
+}
+
+/// Build the plugin API router with all required extensions layered.
+///
+/// This is the preferred constructor: it collocates the route definitions
+/// with the extensions that the handlers extract so that adding a new
+/// extension to a handler is caught here rather than at request time with a
+/// `Missing request extension` error.
+pub fn build_plugin_router(
+    orchestrator: Arc<PluginOrchestrator>,
+    instances: InstanceRegistry,
+    read_only: Arc<bool>,
+) -> axum::Router {
+    plugin_routes()
+        .layer(Extension(orchestrator))
+        .layer(Extension(instances))
+        .layer(Extension(read_only))
 }

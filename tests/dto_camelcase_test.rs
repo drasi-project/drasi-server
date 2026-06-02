@@ -31,6 +31,8 @@ fn test_query_config_dto_serializes_camelcase() {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     let json = serde_json::to_value(&dto).unwrap();

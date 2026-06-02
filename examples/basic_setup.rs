@@ -53,6 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     let pending_orders_query = QueryConfigDto {
@@ -80,6 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Create the configuration structure
@@ -94,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         persist_index: false,                  // Use in-memory indexes (default)
         enable_ui: true,                       // Enable web UI (default)
         state_store: None,                     // Use in-memory state store (default)
+        secret_store: None,                    // No secret store configured
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources: vec![],                       // Add sources using SourceConfig enum
@@ -109,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hot_reload_debounce_ms: 2000,
         solutions_dir: None, // Use default solutions directory
         cors_allowed_origins: vec![],
+        identity_providers: vec![],
     };
 
     // Save configuration to file

@@ -58,6 +58,8 @@ pub fn build_config(
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }]
     } else {
         vec![]
@@ -74,6 +76,7 @@ pub fn build_config(
         enable_ui: true,     // Enable web UI by default
         solutions_dir: None, // Use default
         state_store: server_settings.state_store,
+        secret_store: None,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         plugin_registry: Some(server_settings.plugin_registry.clone()),
@@ -87,6 +90,7 @@ pub fn build_config(
         sources,
         queries,
         reactions,
+        identity_providers: Vec::new(),
         instances: vec![], // Empty = use single-instance mode
     }
 }
@@ -142,6 +146,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }
     }
@@ -153,6 +158,7 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }
     }
@@ -164,6 +170,7 @@ mod tests {
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"routes": {}}),
         }
     }
@@ -175,6 +182,7 @@ mod tests {
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
+            identity_provider: None,
             config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }
     }
