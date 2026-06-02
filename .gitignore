@@ -34,3 +34,12 @@ logs/
 # Cargo install metadata
 .crates.toml
 .crates2.json
+
+# Vendored native libraries (downloaded from OCI registry)
+vendor/
+
+# UI build artifacts
+ui/node_modules/
+ui/dist/
+
+.vscode

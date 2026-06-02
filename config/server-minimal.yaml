@@ -5,6 +5,7 @@ port: 8080
 logLevel: info
 persistConfig: true
 # persistIndex: false  # Enable RocksDB persistent indexing (default: false)
+# enableUi: true       # Enable the web UI at /ui (default: true)
 sources: []
 reactions: []
 queries: []

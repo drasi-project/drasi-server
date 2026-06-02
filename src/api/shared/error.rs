@@ -13,11 +13,66 @@
 // limitations under the License.
 
 //! Error types and error handling utilities shared across API versions.
+//!
+//! ## Error Handling Architecture
+//!
+//! Drasi Server uses a three-layer error pattern aligned with drasi-lib:
+//!
+//! - **Layer 1 (HTTP handlers):** Return `ErrorResponse` which implements
+//!   `IntoResponse` — automatically sets the HTTP status code and serializes
+//!   a structured `{code, message, details?}` JSON body.
+//!
+//! - **Layer 2 (Server services):** Use `anyhow::Result` with `.context()`
+//!   for rich error chains. These are converted to `ErrorResponse` at the
+//!   handler boundary via `From<anyhow::Error>`.
+//!
+//! - **Layer 3 (drasi-lib):** Returns `DrasiError` which is converted to
+//!   `ErrorResponse` via `From<DrasiError>` with proper status code mapping.
 
+use axum::async_trait;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::FromRequest;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use drasi_lib::DrasiError;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 use utoipa::ToSchema;
+
+/// A custom JSON extractor that returns detailed error messages on deserialization failure.
+///
+/// Drop-in replacement for `axum::Json<T>` that converts `JsonRejection` errors
+/// into structured `ErrorResponse` bodies with the serde error details included.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct JsonBody<T>(pub T);
+
+#[async_trait]
+impl<T, S> FromRequest<S> for JsonBody<T>
+where
+    axum::Json<T>: FromRequest<S, Rejection = JsonRejection>,
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, axum::Json<ErrorResponse>);
+
+    async fn from_request(
+        req: axum::http::Request<axum::body::Body>,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        match axum::Json::<T>::from_request(req, state).await {
+            Ok(axum::Json(value)) => Ok(JsonBody(value)),
+            Err(rejection) => {
+                let message = rejection.body_text();
+
+                log::debug!("JSON extraction failed: {message}");
+
+                Err((
+                    rejection.status(),
+                    axum::Json(ErrorResponse::new(error_codes::INVALID_REQUEST, message)),
+                ))
+            }
+        }
+    }
+}
 
 /// Error codes for API responses
 pub mod error_codes {
@@ -44,6 +99,24 @@ pub mod error_codes {
     pub const DUPLICATE_RESOURCE: &str = "DUPLICATE_RESOURCE";
     pub const INVALID_REQUEST: &str = "INVALID_REQUEST";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    /// Returned when an in-memory mutation succeeded but the configuration
+    /// could not be persisted to disk. The runtime state has changed; the
+    /// on-disk YAML has not. Operators should retry the operation or restart
+    /// the server after fixing the underlying persistence issue.
+    pub const PERSISTENCE_FAILED: &str = "PERSISTENCE_FAILED";
+
+    pub const INSTANCE_NOT_FOUND: &str = "INSTANCE_NOT_FOUND";
+    pub const INSTANCE_CREATE_FAILED: &str = "INSTANCE_CREATE_FAILED";
+
+    pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
+    pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
+    pub const PLUGIN_INSTALL_FAILED: &str = "PLUGIN_INSTALL_FAILED";
+    pub const PLUGIN_SEARCH_FAILED: &str = "PLUGIN_SEARCH_FAILED";
+    pub const PLUGIN_FILE_NOT_FOUND: &str = "PLUGIN_FILE_NOT_FOUND";
+    pub const PLUGIN_INVALID_PATH: &str = "PLUGIN_INVALID_PATH";
+    pub const PLUGIN_NO_DIRECTORY: &str = "PLUGIN_NO_DIRECTORY";
+    pub const PLUGIN_KIND_NOT_FOUND: &str = "PLUGIN_KIND_NOT_FOUND";
+    pub const PLUGIN_INVALID_CATEGORY: &str = "PLUGIN_INVALID_CATEGORY";
 }
 
 /// API error response structure
@@ -93,6 +166,50 @@ impl ErrorResponse {
         let status = status_from_code(&self.code);
         (status, axum::Json(self))
     }
+
+    /// Convert to an explicit HTTP status code.
+    ///
+    /// Use this when the status code cannot be derived from the error code
+    /// (e.g., 207 Multi-Status for partial failures).
+    pub fn with_explicit_status(self, status: StatusCode) -> (StatusCode, axum::Json<Self>) {
+        (status, axum::Json(self))
+    }
+
+    /// Convert to a (StatusCode, Json<Value>) tuple for use in handlers that
+    /// return `impl IntoResponse` with `serde_json::Value` success bodies.
+    pub fn into_json_response(self) -> (StatusCode, axum::Json<serde_json::Value>) {
+        let status = status_from_code(&self.code);
+        let mut body = serde_json::json!({
+            "code": self.code,
+            "message": self.message,
+        });
+        if let Some(details) = &self.details {
+            body["details"] = serde_json::to_value(details).unwrap_or_default();
+        }
+        (status, axum::Json(body))
+    }
+}
+
+/// `ErrorResponse` implements `IntoResponse` so handlers can return
+/// `Result<Json<T>, ErrorResponse>` — the error branch automatically
+/// sets the HTTP status code from the error code and serializes the
+/// structured JSON body.
+impl IntoResponse for ErrorResponse {
+    fn into_response(self) -> axum::response::Response {
+        let status = status_from_code(&self.code);
+        (status, axum::Json(self)).into_response()
+    }
+}
+
+/// Convert `anyhow::Error` to `ErrorResponse` for service-layer errors.
+///
+/// This bridges Layer 2 (internal `anyhow::Result` with `.context()`) to
+/// Layer 1 (HTTP error responses). All anyhow errors map to `INTERNAL_ERROR`
+/// with 500 status.
+impl From<anyhow::Error> for ErrorResponse {
+    fn from(err: anyhow::Error) -> Self {
+        ErrorResponse::new(error_codes::INTERNAL_ERROR, err.to_string())
+    }
 }
 
 /// Convert an error code to an HTTP status code
@@ -100,12 +217,31 @@ fn status_from_code(code: &str) -> StatusCode {
     match code {
         error_codes::SOURCE_NOT_FOUND
         | error_codes::QUERY_NOT_FOUND
-        | error_codes::REACTION_NOT_FOUND => StatusCode::NOT_FOUND,
+        | error_codes::REACTION_NOT_FOUND
+        | error_codes::INSTANCE_NOT_FOUND
+        | error_codes::PLUGIN_NOT_FOUND
+        | error_codes::PLUGIN_FILE_NOT_FOUND
+        | error_codes::PLUGIN_KIND_NOT_FOUND => StatusCode::NOT_FOUND,
 
         error_codes::CONFIG_READ_ONLY | error_codes::DUPLICATE_RESOURCE => StatusCode::CONFLICT,
 
-        error_codes::INVALID_REQUEST => StatusCode::BAD_REQUEST,
+        error_codes::INVALID_REQUEST
+        | error_codes::PLUGIN_INVALID_PATH
+        | error_codes::PLUGIN_INVALID_CATEGORY => StatusCode::BAD_REQUEST,
 
+        // The server was not started with a plugins directory, so the
+        // requested plugin operation is unavailable on this instance.
+        error_codes::PLUGIN_NO_DIRECTORY => StatusCode::SERVICE_UNAVAILABLE,
+
+        // Plugin install/search talk to an external OCI registry; surface
+        // upstream failures as 502 Bad Gateway rather than 500.
+        error_codes::PLUGIN_INSTALL_FAILED | error_codes::PLUGIN_SEARCH_FAILED => {
+            StatusCode::BAD_GATEWAY
+        }
+
+        // PLUGIN_LOAD_FAILED keeps the default 500 — it usually indicates a
+        // server-side failure loading a local cdylib (ABI mismatch, dlopen
+        // failure, etc.) rather than a malformed client request.
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
@@ -206,6 +342,75 @@ mod tests {
     }
 
     #[test]
+    fn test_into_json_response() {
+        let (status, body) =
+            ErrorResponse::new(error_codes::PLUGIN_NOT_FOUND, "Plugin 'x' is not loaded")
+                .into_json_response();
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let json = body.0;
+        assert_eq!(json["code"], "PLUGIN_NOT_FOUND");
+        assert_eq!(json["message"], "Plugin 'x' is not loaded");
+    }
+
+    #[test]
+    fn test_into_json_response_with_details() {
+        let details = ErrorDetail {
+            component_type: Some("plugin".to_string()),
+            component_id: Some("source/mock".to_string()),
+            technical_details: None,
+        };
+
+        let (status, body) = ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, "load error")
+            .with_details(details)
+            .into_json_response();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        let json = body.0;
+        assert_eq!(json["code"], "PLUGIN_LOAD_FAILED");
+        assert!(json["details"]["component_type"].as_str().is_some());
+    }
+
+    #[test]
+    fn test_error_response_into_response() {
+        use axum::body::to_bytes;
+
+        let error = ErrorResponse::new(error_codes::SOURCE_NOT_FOUND, "Source 'x' not found");
+        let response = error.into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        // Verify the body is valid JSON with the expected structure
+        let body = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(to_bytes(response.into_body(), usize::MAX))
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["code"], "SOURCE_NOT_FOUND");
+        assert_eq!(json["message"], "Source 'x' not found");
+    }
+
+    #[test]
+    fn test_from_anyhow_error() {
+        let anyhow_err = anyhow::anyhow!("something broke internally");
+        let error_response: ErrorResponse = anyhow_err.into();
+
+        assert_eq!(error_response.code, error_codes::INTERNAL_ERROR);
+        assert_eq!(error_response.message, "something broke internally");
+    }
+
+    #[test]
+    fn test_from_drasi_error() {
+        let drasi_err = DrasiError::ComponentNotFound {
+            component_type: "source".to_string(),
+            component_id: "my-source".to_string(),
+        };
+        let error_response: ErrorResponse = drasi_err.into();
+
+        assert_eq!(error_response.code, error_codes::SOURCE_NOT_FOUND);
+        assert!(error_response.message.contains("my-source"));
+    }
+
+    #[test]
     fn test_error_response_serialization() {
         let response = ErrorResponse::new("TEST_CODE", "Test message");
         let json = serde_json::to_string(&response).expect("Failed to serialize");
@@ -252,6 +457,18 @@ mod tests {
             status_from_code(error_codes::REACTION_NOT_FOUND),
             StatusCode::NOT_FOUND
         );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_FILE_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_KIND_NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[test]
@@ -270,6 +487,14 @@ mod tests {
     fn test_status_from_code_bad_request() {
         assert_eq!(
             status_from_code(error_codes::INVALID_REQUEST),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_INVALID_PATH),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_from_code(error_codes::PLUGIN_INVALID_CATEGORY),
             StatusCode::BAD_REQUEST
         );
     }
@@ -486,6 +711,15 @@ mod tests {
             error_codes::DUPLICATE_RESOURCE,
             error_codes::INVALID_REQUEST,
             error_codes::INTERNAL_ERROR,
+            error_codes::PLUGIN_NOT_FOUND,
+            error_codes::PLUGIN_LOAD_FAILED,
+            error_codes::PLUGIN_INSTALL_FAILED,
+            error_codes::PLUGIN_SEARCH_FAILED,
+            error_codes::PLUGIN_FILE_NOT_FOUND,
+            error_codes::PLUGIN_INVALID_PATH,
+            error_codes::PLUGIN_NO_DIRECTORY,
+            error_codes::PLUGIN_KIND_NOT_FOUND,
+            error_codes::PLUGIN_INVALID_CATEGORY,
         ];
 
         let mut unique: std::collections::HashSet<&str> = std::collections::HashSet::new();

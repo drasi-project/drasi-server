@@ -18,7 +18,8 @@
 //! with queries. Sources and reactions are created as instances and passed
 //! directly to the builder.
 
-use drasi_server::models::{ConfigValue, QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_lib::config::QueryLanguage;
+use drasi_server::models::{QueryConfigDto, SourceSubscriptionConfigDto};
 
 #[tokio::main]
 #[allow(clippy::print_stdout)]
@@ -30,19 +31,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let available_drivers_query = QueryConfigDto {
         id: "available-drivers-query".to_string(),
         auto_start: true,
-        query: ConfigValue::Static(
-            r#"
+        query: r#"
             MATCH (d:Driver {status: 'available'})
             WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
             RETURN elementId(d) AS driverId, d.driver_name AS driverName,
                    d.latitude AS lat, d.longitude AS lng, d.status AS status
         "#
-            .to_string(),
-        ),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        .to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("vehicle-location-source".to_string()),
+            source_id: "vehicle-location-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -54,24 +53,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     let pending_orders_query = QueryConfigDto {
         id: "pending-orders-query".to_string(),
         auto_start: true,
-        query: ConfigValue::Static(
-            r#"
+        query: r#"
             MATCH (o:Order)
             WHERE o.status IN ['pending', 'preparing', 'ready']
             RETURN elementId(o) AS orderId, o.status AS status,
                    o.restaurant AS restaurant, o.delivery_address AS address
         "#
-            .to_string(),
-        ),
-        query_language: ConfigValue::Static("Cypher".to_string()),
+        .to_string(),
+        query_language: QueryLanguage::Cypher,
         middleware: vec![],
         sources: vec![SourceSubscriptionConfigDto {
-            source_id: ConfigValue::Static("vehicle-location-source".to_string()),
+            source_id: "vehicle-location-source".to_string(),
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
@@ -83,6 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatch_buffer_capacity: None,
         dispatch_mode: None,
         storage_backend: None,
+        outbox_capacity: 1000,
+        bootstrap_timeout_secs: 300,
     };
 
     // Create the configuration structure
@@ -95,13 +96,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,                  // Use in-memory indexes (default)
+        enable_ui: true,                       // Enable web UI (default)
         state_store: None,                     // Use in-memory state store (default)
+        secret_store: None,                    // No secret store configured
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
         sources: vec![],                       // Add sources using SourceConfig enum
         reactions: vec![],                     // Add reactions using ReactionConfig enum
         queries: vec![available_drivers_query, pending_orders_query],
         instances: vec![], // Empty = use legacy single-instance mode
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        solutions_dir: None, // Use default solutions directory
+        cors_allowed_origins: vec![],
+        identity_providers: vec![],
     };
 
     // Save configuration to file

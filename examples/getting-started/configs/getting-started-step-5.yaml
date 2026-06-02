@@ -1,9 +1,18 @@
+# Drasi Server Configuration
+#
+# Edit this file to customize your configuration.
+
 id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
 host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
 persistIndex: false
+autoInstallPlugins: true
+plugins:
+- ref: source/postgres
+- ref: bootstrap/postgres
+- ref: reaction/log
 sources:
 - kind: postgres
   id: my-postgres

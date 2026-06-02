@@ -35,6 +35,13 @@ persistConfig: false
 
 id: getting-started-server
 
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: reaction/log
+  - ref: reaction/sse
+
 # =============================================================================
 # Sources
 # =============================================================================

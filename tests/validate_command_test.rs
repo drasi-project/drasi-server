@@ -83,7 +83,7 @@ reactions: []
         "Output should contain success indicator"
     );
     assert!(
-        stdout.contains("Configuration file is valid"),
+        stdout.contains("YAML syntax valid"),
         "Output should confirm validity"
     );
 }
@@ -114,7 +114,7 @@ reactions: []
 
     assert!(success, "Config with mock source should pass validation");
     assert!(stdout.contains("[OK]"));
-    assert!(stdout.contains("Sources: 1"));
+    assert!(stdout.contains("1 source(s)"));
 }
 
 #[test]
@@ -145,7 +145,7 @@ reactions: []
     let (success, stdout, _stderr) = run_validate(config_path.to_str().unwrap());
 
     assert!(success, "Config with query should pass validation");
-    assert!(stdout.contains("Queries: 1"));
+    assert!(stdout.contains("1 query/queries"));
 }
 
 #[test]
@@ -171,7 +171,7 @@ reactions:
     let (success, stdout, _stderr) = run_validate(config_path.to_str().unwrap());
 
     assert!(success, "Config with log reaction should pass validation");
-    assert!(stdout.contains("Reactions: 1"));
+    assert!(stdout.contains("1 reaction(s)"));
 }
 
 #[test]
@@ -258,7 +258,7 @@ reactions: []
         "Config with snake_case log_level should fail validation"
     );
     assert!(
-        stdout.contains("[ERROR]") || stdout.contains("invalid"),
+        stdout.contains("[ERR]") || stdout.contains("[ERROR]") || stdout.contains("invalid"),
         "Output should indicate error"
     );
 }
@@ -526,9 +526,9 @@ reactions:
     let (success, stdout, _stderr) = run_validate(config_path.to_str().unwrap());
 
     assert!(success, "Config should be valid");
-    assert!(stdout.contains("Sources: 2"), "Should show 2 sources");
-    assert!(stdout.contains("Queries: 3"), "Should show 3 queries");
-    assert!(stdout.contains("Reactions: 1"), "Should show 1 reaction");
+    assert!(stdout.contains("2 source(s)"), "Should show 2 sources");
+    assert!(stdout.contains("3 query/queries"), "Should show 3 queries");
+    assert!(stdout.contains("1 reaction(s)"), "Should show 1 reaction");
 }
 
 // =============================================================================
@@ -566,7 +566,7 @@ instances:
 
     assert!(success, "Multi-instance config should pass validation");
     assert!(
-        stdout.contains("Instances: 2"),
+        stdout.contains("2 instance(s)"),
         "Should show 2 instances. Output: {stdout}"
     );
 }

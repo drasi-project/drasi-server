@@ -77,7 +77,7 @@ impl SourceTrait for BootstrapMockSource {
     }
 
     async fn status(&self) -> ComponentStatus {
-        self.status.read().await.clone()
+        *self.status.read().await
     }
 
     async fn subscribe(
@@ -114,6 +114,8 @@ impl SourceTrait for BootstrapMockSource {
             source_id: self.id.clone(),
             receiver,
             bootstrap_receiver: Some(bootstrap_rx),
+            position_handle: None,
+            bootstrap_result_receiver: None,
         })
     }
 
@@ -204,5 +206,6 @@ async fn test_bootstrap_data_appears_in_query_results() {
         "Missing Gamma in {names:?}",
     );
 
-    server.stop().await.expect("Failed to stop server");
+    // Clean up — stop may fail if source already finished, that's OK
+    let _ = server.stop().await;
 }

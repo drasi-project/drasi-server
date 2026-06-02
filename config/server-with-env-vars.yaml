@@ -27,6 +27,10 @@ persistConfig: true
 # Enable persistent indexing using RocksDB (default: false, uses in-memory indexes)
 # persistIndex: false
 
+# Enable the web UI at /ui (default: true)
+# Set to false to disable the UI or use: --disable-ui flag
+# enableUi: "${ENABLE_UI:-true}"
+
 # Unique server identifier
 id: "${SERVER_ID:-drasi-server-1}"
 

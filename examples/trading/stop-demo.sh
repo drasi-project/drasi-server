@@ -59,6 +59,16 @@ if [ -f /tmp/drasi-demo-generator.pid ]; then
     rm /tmp/drasi-demo-generator.pid
 fi
 
+if [ -f /tmp/drasi-demo-api.pid ]; then
+    PID=$(cat /tmp/drasi-demo-api.pid)
+    if kill $PID 2>/dev/null; then
+        echo -e "Stopped Trading API (PID: $PID) ${GREEN}✓${NC}"
+    else
+        echo -e "Trading API already stopped ${YELLOW}✓${NC}"
+    fi
+    rm /tmp/drasi-demo-api.pid
+fi
+
 if [ -f /tmp/drasi-demo-react.pid ]; then
     PID=$(cat /tmp/drasi-demo-react.pid)
     if kill $PID 2>/dev/null; then
@@ -99,6 +109,15 @@ if [ $ret -eq 0 ]; then
     echo "$result"
 elif [ $ret -eq 2 ]; then
     echo -e "Port 9100: ${YELLOW}No process found${NC}"
+fi
+
+# Port 9200: Trading API
+result=$(kill_port 9200 "Trading API")
+ret=$?
+if [ $ret -eq 0 ]; then
+    echo "$result"
+elif [ $ret -eq 2 ]; then
+    echo -e "Port 9200: ${YELLOW}No process found${NC}"
 fi
 
 # Port 5273: React app (Vite)

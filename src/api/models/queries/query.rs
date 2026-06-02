@@ -14,9 +14,10 @@
 
 //! Query configuration DTOs with camelCase serialization.
 
-use crate::api::models::ConfigValue;
+use drasi_lib::config::QueryLanguage;
 use drasi_lib::QueryConfig;
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 
 /// Query configuration DTO with camelCase serialization
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
@@ -26,11 +27,12 @@ pub struct QueryConfigDto {
     pub id: String,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
-    pub query: ConfigValue<String>,
+    pub query: String,
     #[serde(default = "default_query_language")]
-    pub query_language: ConfigValue<String>,
+    pub query_language: QueryLanguage,
     #[serde(default)]
-    pub middleware: Vec<String>,
+    #[schema(value_type = Vec<SourceMiddlewareConfig>)]
+    pub middleware: Vec<SourceMiddlewareConfigDto>,
     #[serde(default)]
     #[schema(value_type = Vec<SourceSubscriptionConfig>)]
     pub sources: Vec<SourceSubscriptionConfigDto>,
@@ -48,6 +50,10 @@ pub struct QueryConfigDto {
     pub dispatch_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_backend: Option<serde_json::Value>,
+    #[serde(default = "default_outbox_capacity")]
+    pub outbox_capacity: usize,
+    #[serde(default = "default_bootstrap_timeout_secs")]
+    pub bootstrap_timeout_secs: u64,
 }
 
 /// Source subscription configuration DTO with camelCase serialization
@@ -55,7 +61,7 @@ pub struct QueryConfigDto {
 #[schema(as = SourceSubscriptionConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSubscriptionConfigDto {
-    pub source_id: ConfigValue<String>,
+    pub source_id: String,
     #[serde(default)]
     pub nodes: Vec<String>,
     #[serde(default)]
@@ -64,12 +70,23 @@ pub struct SourceSubscriptionConfigDto {
     pub pipeline: Vec<String>,
 }
 
+/// Source middleware configuration DTO with camelCase serialization
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[schema(as = SourceMiddlewareConfig)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceMiddlewareConfigDto {
+    pub kind: String,
+    pub name: String,
+    #[serde(default)]
+    pub config: Map<String, serde_json::Value>,
+}
+
 fn default_auto_start() -> bool {
     false
 }
 
-fn default_query_language() -> ConfigValue<String> {
-    ConfigValue::Static("GQL".to_string())
+fn default_query_language() -> QueryLanguage {
+    QueryLanguage::GQL
 }
 
 fn default_enable_bootstrap() -> bool {
@@ -80,23 +97,43 @@ fn default_bootstrap_buffer_size() -> usize {
     10000
 }
 
-impl From<QueryConfig> for QueryConfigDto {
-    fn from(config: QueryConfig) -> Self {
-        Self {
+fn default_outbox_capacity() -> usize {
+    1000
+}
+
+fn default_bootstrap_timeout_secs() -> u64 {
+    300
+}
+
+impl TryFrom<QueryConfig> for QueryConfigDto {
+    type Error = serde_json::Error;
+
+    fn try_from(config: QueryConfig) -> Result<Self, Self::Error> {
+        let joins = config.joins.map(serde_json::to_value).transpose()?;
+        let storage_backend = config
+            .storage_backend
+            .map(serde_json::to_value)
+            .transpose()?;
+
+        Ok(Self {
             id: config.id,
             auto_start: config.auto_start,
-            query: ConfigValue::Static(config.query),
-            query_language: ConfigValue::Static(format!("{:?}", config.query_language)),
+            query: config.query,
+            query_language: config.query_language,
             middleware: config
                 .middleware
                 .into_iter()
-                .map(|m| m.name.to_string())
+                .map(|m| SourceMiddlewareConfigDto {
+                    kind: m.kind.to_string(),
+                    name: m.name.to_string(),
+                    config: m.config,
+                })
                 .collect(),
             sources: config
                 .sources
                 .into_iter()
                 .map(|s| SourceSubscriptionConfigDto {
-                    source_id: ConfigValue::Static(s.source_id),
+                    source_id: s.source_id,
                     nodes: s.nodes,
                     relations: s.relations,
                     pipeline: s.pipeline,
@@ -104,15 +141,13 @@ impl From<QueryConfig> for QueryConfigDto {
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,
             bootstrap_buffer_size: config.bootstrap_buffer_size,
-            joins: config
-                .joins
-                .map(|j| serde_json::to_value(j).expect("joins serialization")),
+            joins,
             priority_queue_capacity: config.priority_queue_capacity,
             dispatch_buffer_capacity: config.dispatch_buffer_capacity,
             dispatch_mode: config.dispatch_mode.map(|d| format!("{d:?}")),
-            storage_backend: config
-                .storage_backend
-                .map(|s| serde_json::to_value(s).expect("storage_backend serialization")),
-        }
+            storage_backend,
+            outbox_capacity: config.outbox_capacity,
+            bootstrap_timeout_secs: config.bootstrap_timeout_secs,
+        })
     }
 }

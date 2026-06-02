@@ -183,7 +183,12 @@ function findVariantSchemas(definitions: Record<string, any>, suffix: string): V
 }
 
 function schemaNameToKind(name: string, suffix: string) {
-  let base = name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
+  // Strip dotted namespace prefix (e.g. "source.grpc.GrpcSourceConfig" → "GrpcSourceConfig")
+  const lastDot = name.lastIndexOf('.');
+  let base = lastDot >= 0 ? name.slice(lastDot + 1) : name;
+  if (suffix && base.endsWith(suffix)) {
+    base = base.slice(0, -suffix.length);
+  }
   if (base.endsWith('Source')) {
     base = base.slice(0, -'Source'.length);
   }

@@ -22,10 +22,10 @@
 //! - All bootstrap provider types produce valid configurations
 //! - Generated configs use camelCase field names
 
-use drasi_server::api::models::sources::mock::DataTypeDto;
+use drasi_lib::config::QueryLanguage;
 use drasi_server::api::models::*;
 use drasi_server::DrasiServerConfig;
-use std::collections::HashMap;
+use serde_json::json;
 
 /// Helper to strip YAML comments and parse config
 fn parse_yaml_config(yaml: &str) -> Result<DrasiServerConfig, serde_yaml::Error> {
@@ -136,13 +136,25 @@ fn test_empty_config_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -163,15 +175,27 @@ fn test_config_with_state_store_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: true,
+        enable_ui: true,
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
         }),
+        secret_store: None,
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
         sources: vec![],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -199,21 +223,32 @@ fn test_mock_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Mock {
+        sources: vec![SourceConfig {
+            kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
-                interval_ms: ConfigValue::Static(5000),
-            },
+            config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -237,30 +272,32 @@ fn test_http_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Http {
+        sources: vec![SourceConfig {
+            kind: "http".to_string(),
             id: "http-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
-            config: HttpSourceConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(9000),
-                endpoint: None,
-                timeout_ms: ConfigValue::Static(10000),
-                adaptive_max_batch_size: None,
-                adaptive_min_batch_size: None,
-                adaptive_max_wait_ms: None,
-                adaptive_min_wait_ms: None,
-                adaptive_window_secs: None,
-                adaptive_enabled: None,
-                webhooks: None,
-            },
+            config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -283,23 +320,32 @@ fn test_grpc_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Grpc {
+        sources: vec![SourceConfig {
+            kind: "grpc".to_string(),
             id: "grpc-source".to_string(),
             auto_start: true,
+            identity_provider: None,
             bootstrap_provider: None,
-            config: GrpcSourceConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(50051),
-                endpoint: None,
-                timeout_ms: ConfigValue::Static(5000),
-            },
+            config: json!({"host": "0.0.0.0", "port": 50051, "timeoutMs": 5000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -321,48 +367,57 @@ fn test_postgres_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Postgres {
+        sources: vec![SourceConfig {
+            kind: "postgres".to_string(),
             id: "postgres-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto {
-                    host: ConfigValue::Static("localhost".to_string()),
-                    port: ConfigValue::Static(5432),
-                    database: ConfigValue::Static("testdb".to_string()),
-                    user: ConfigValue::Static("testuser".to_string()),
-                    password: ConfigValue::Static("testpass".to_string()),
-                    tables: vec!["users".to_string(), "orders".to_string()],
-                    slot_name: "drasi_slot".to_string(),
-                    publication_name: "drasi_pub".to_string(),
-                    ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-                    table_keys: vec![TableKeyConfigDto {
-                        table: "users".to_string(),
-                        key_columns: vec!["id".to_string()],
-                    }],
-                },
-            )),
-            config: PostgresSourceConfigDto {
-                host: ConfigValue::Static("localhost".to_string()),
-                port: ConfigValue::Static(5432),
-                database: ConfigValue::Static("testdb".to_string()),
-                user: ConfigValue::Static("testuser".to_string()),
-                password: ConfigValue::Static("testpass".to_string()),
-                tables: vec!["users".to_string(), "orders".to_string()],
-                slot_name: "drasi_slot".to_string(),
-                publication_name: "drasi_pub".to_string(),
-                ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-                table_keys: vec![TableKeyConfigDto {
-                    table: "users".to_string(),
-                    key_columns: vec!["id".to_string()],
-                }],
-            },
+            identity_provider: None,
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                config: serde_json::json!({
+                    "host": "localhost",
+                    "port": 5432,
+                    "database": "testdb",
+                    "user": "testuser",
+                    "password": "testpass",
+                    "tables": ["users", "orders"],
+                    "slotName": "drasi_slot",
+                    "publicationName": "drasi_pub",
+                    "sslMode": "prefer",
+                    "tableKeys": [{"table": "users", "keyColumns": ["id"]}]
+                }),
+            }),
+            config: json!({
+                "host": "localhost",
+                "port": 5432,
+                "database": "testdb",
+                "user": "testuser",
+                "password": "testpass",
+                "tables": ["users", "orders"],
+                "slotName": "drasi_slot",
+                "publicationName": "drasi_pub",
+                "sslMode": "prefer",
+                "tableKeys": [{"table": "users", "keyColumns": ["id"]}]
+            }),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -391,57 +446,6 @@ fn test_postgres_source_generates_valid_yaml() {
     assert_eq!(parsed.sources.len(), 1);
 }
 
-#[test]
-fn test_platform_source_generates_valid_yaml() {
-    let config = DrasiServerConfig {
-        api_version: None,
-        id: ConfigValue::Static("test-server".to_string()),
-        host: ConfigValue::Static("0.0.0.0".to_string()),
-        port: ConfigValue::Static(8080),
-        log_level: ConfigValue::Static("info".to_string()),
-        persist_config: true,
-        persist_index: false,
-        state_store: None,
-        default_priority_queue_capacity: None,
-        default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Platform {
-            id: "platform-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: None,
-            config: PlatformSourceConfigDto {
-                redis_url: ConfigValue::Static("redis://localhost:6379".to_string()),
-                stream_key: ConfigValue::Static("my-stream".to_string()),
-                consumer_group: ConfigValue::Static("drasi-core".to_string()),
-                consumer_name: None,
-                batch_size: ConfigValue::Static(100),
-                block_ms: ConfigValue::Static(5000),
-            },
-        }],
-        queries: vec![],
-        reactions: vec![],
-        instances: vec![],
-    };
-
-    let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
-    assert_camel_case_fields(&yaml);
-
-    assert!(
-        yaml.contains("kind: platform"),
-        "Should contain kind: platform"
-    );
-    assert!(yaml.contains("redisUrl:"), "Should contain redisUrl");
-    assert!(yaml.contains("streamKey:"), "Should contain streamKey");
-    assert!(
-        yaml.contains("consumerGroup:"),
-        "Should contain consumerGroup"
-    );
-    assert!(yaml.contains("batchSize:"), "Should contain batchSize");
-    assert!(yaml.contains("blockMs:"), "Should contain blockMs");
-
-    let parsed = parse_yaml_config(&yaml).expect("Should parse back to config");
-    assert_eq!(parsed.sources.len(), 1);
-}
-
 // =============================================================================
 // Bootstrap Provider Tests
 // =============================================================================
@@ -456,37 +460,46 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Mock {
+        sources: vec![SourceConfig {
+            kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::Postgres(
-                PostgresBootstrapConfigDto {
-                    host: ConfigValue::Static("localhost".to_string()),
-                    port: ConfigValue::Static(5432),
-                    database: ConfigValue::Static("testdb".to_string()),
-                    user: ConfigValue::Static("testuser".to_string()),
-                    password: ConfigValue::Static("testpass".to_string()),
-                    tables: vec!["users".to_string(), "orders".to_string()],
-                    slot_name: "drasi_slot".to_string(),
-                    publication_name: "drasi_pub".to_string(),
-                    ssl_mode: ConfigValue::Static(SslModeDto::Prefer),
-                    table_keys: vec![TableKeyConfigDto {
-                        table: "users".to_string(),
-                        key_columns: vec!["id".to_string()],
-                    }],
-                },
-            )),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(5000),
-            },
+            identity_provider: None,
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                config: serde_json::json!({
+                    "host": "localhost",
+                    "port": 5432,
+                    "database": "testdb",
+                    "user": "testuser",
+                    "password": "testpass",
+                    "tables": ["users", "orders"],
+                    "slotName": "drasi_slot",
+                    "publicationName": "drasi_pub",
+                    "sslMode": "prefer",
+                    "tableKeys": [{"table": "users", "keyColumns": ["id"]}]
+                }),
+            }),
+            config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -522,25 +535,37 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Mock {
+        sources: vec![SourceConfig {
+            kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::ScriptFile(
-                ScriptFileBootstrapConfigDto {
-                    file_paths: vec!["/data/init.jsonl".to_string()],
-                },
-            )),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(5000),
-            },
+            identity_provider: None,
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "scriptfile".to_string(),
+                config: serde_json::json!({
+                    "filePaths": ["/data/init.jsonl"]
+                }),
+            }),
+            config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -561,55 +586,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
 }
 
 #[test]
-fn test_platform_bootstrap_provider_generates_valid_yaml() {
-    let config = DrasiServerConfig {
-        api_version: None,
-        id: ConfigValue::Static("test-server".to_string()),
-        host: ConfigValue::Static("0.0.0.0".to_string()),
-        port: ConfigValue::Static(8080),
-        log_level: ConfigValue::Static("info".to_string()),
-        persist_config: true,
-        persist_index: false,
-        state_store: None,
-        default_priority_queue_capacity: None,
-        default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Mock {
-            id: "mock-source".to_string(),
-            auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::Platform(
-                PlatformBootstrapConfigDto {
-                    query_api_url: Some("http://query-api:8080".to_string()),
-                    timeout_seconds: 300,
-                },
-            )),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(5000),
-            },
-        }],
-        queries: vec![],
-        reactions: vec![],
-        instances: vec![],
-    };
 
-    let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
-    assert_camel_case_fields(&yaml);
-
-    assert!(
-        yaml.contains("kind: platform"),
-        "Bootstrap provider should use kind: platform"
-    );
-    assert!(yaml.contains("queryApiUrl:"), "Should contain queryApiUrl");
-    assert!(
-        yaml.contains("timeoutSeconds:"),
-        "Should contain timeoutSeconds"
-    );
-
-    let parsed = parse_yaml_config(&yaml).expect("Should parse back to config");
-    assert_eq!(parsed.sources.len(), 1);
-}
-
-#[test]
 fn test_noop_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
         api_version: None,
@@ -619,21 +596,35 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
-        sources: vec![SourceConfig::Mock {
+        sources: vec![SourceConfig {
+            kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::Noop),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::Generic,
-                interval_ms: ConfigValue::Static(5000),
-            },
+            identity_provider: None,
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "noop".to_string(),
+                config: serde_json::json!({}),
+            }),
+            config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -662,18 +653,32 @@ fn test_log_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![],
-        reactions: vec![ReactionConfig::Log {
+        reactions: vec![ReactionConfig {
+            kind: "log".to_string(),
             id: "log-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            identity_provider: None,
+            config: json!({"routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -696,23 +701,32 @@ fn test_http_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![],
-        reactions: vec![ReactionConfig::Http {
+        reactions: vec![ReactionConfig {
+            kind: "http".to_string(),
             id: "http-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: HttpReactionConfigDto {
-                base_url: ConfigValue::Static("https://api.example.com".to_string()),
-                token: Some(ConfigValue::Static("secret-token".to_string())),
-                timeout_ms: ConfigValue::Static(5000),
-                routes: HashMap::new(),
-            },
+            identity_provider: None,
+            config: json!({"baseUrl": "https://api.example.com", "token": "secret-token", "timeoutMs": 5000, "routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -736,25 +750,32 @@ fn test_sse_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![],
-        reactions: vec![ReactionConfig::Sse {
+        reactions: vec![ReactionConfig {
+            kind: "sse".to_string(),
             id: "sse-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: SseReactionConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(8081),
-                sse_path: ConfigValue::Static("/events".to_string()),
-                heartbeat_interval_ms: ConfigValue::Static(30000),
-                routes: HashMap::new(),
-                default_template: None,
-            },
+            identity_provider: None,
+            config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -781,27 +802,32 @@ fn test_grpc_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![],
-        reactions: vec![ReactionConfig::Grpc {
+        reactions: vec![ReactionConfig {
+            kind: "grpc".to_string(),
             id: "grpc-reaction".to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: GrpcReactionConfigDto {
-                endpoint: ConfigValue::Static("grpc://localhost:50052".to_string()),
-                timeout_ms: ConfigValue::Static(5000),
-                batch_size: ConfigValue::Static(100),
-                batch_flush_timeout_ms: ConfigValue::Static(1000),
-                max_retries: ConfigValue::Static(3),
-                connection_retry_attempts: ConfigValue::Static(5),
-                initial_connection_timeout_ms: ConfigValue::Static(10000),
-                metadata: HashMap::new(),
-            },
+            identity_provider: None,
+            config: json!({"endpoint": "grpc://localhost:50052", "timeoutMs": 5000, "batchSize": 100, "batchFlushTimeoutMs": 1000, "maxRetries": 3, "connectionRetryAttempts": 5, "initialConnectionTimeoutMs": 10000, "metadata": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -814,65 +840,6 @@ fn test_grpc_reaction_generates_valid_yaml() {
         "Should contain batchFlushTimeoutMs"
     );
     assert!(yaml.contains("maxRetries:"), "Should contain maxRetries");
-
-    let parsed = parse_yaml_config(&yaml).expect("Should parse back to config");
-    assert_eq!(parsed.reactions.len(), 1);
-}
-
-#[test]
-fn test_platform_reaction_generates_valid_yaml() {
-    let config = DrasiServerConfig {
-        api_version: None,
-        id: ConfigValue::Static("test-server".to_string()),
-        host: ConfigValue::Static("0.0.0.0".to_string()),
-        port: ConfigValue::Static(8080),
-        log_level: ConfigValue::Static("info".to_string()),
-        persist_config: true,
-        persist_index: false,
-        state_store: None,
-        default_priority_queue_capacity: None,
-        default_dispatch_buffer_capacity: None,
-        sources: vec![],
-        queries: vec![],
-        reactions: vec![ReactionConfig::Platform {
-            id: "platform-reaction".to_string(),
-            queries: vec!["my-query".to_string()],
-            auto_start: true,
-            config: PlatformReactionConfigDto {
-                redis_url: ConfigValue::Static("redis://localhost:6379".to_string()),
-                pubsub_name: Some(ConfigValue::Static("my-pubsub".to_string())),
-                source_name: None,
-                max_stream_length: Some(ConfigValue::Static(1000)),
-                emit_control_events: ConfigValue::Static(false),
-                batch_enabled: ConfigValue::Static(true),
-                batch_max_size: ConfigValue::Static(100),
-                batch_max_wait_ms: ConfigValue::Static(100),
-            },
-        }],
-        instances: vec![],
-    };
-
-    let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
-    assert_camel_case_fields(&yaml);
-
-    assert!(
-        yaml.contains("kind: platform"),
-        "Should contain kind: platform"
-    );
-    assert!(yaml.contains("redisUrl:"), "Should contain redisUrl");
-    assert!(yaml.contains("pubsubName:"), "Should contain pubsubName");
-    assert!(
-        yaml.contains("batchEnabled:"),
-        "Should contain batchEnabled"
-    );
-    assert!(
-        yaml.contains("batchMaxSize:"),
-        "Should contain batchMaxSize"
-    );
-    assert!(
-        yaml.contains("batchMaxWaitMs:"),
-        "Should contain batchMaxWaitMs"
-    );
 
     let parsed = parse_yaml_config(&yaml).expect("Should parse back to config");
     assert_eq!(parsed.reactions.len(), 1);
@@ -892,20 +859,22 @@ fn test_query_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_ui: true,
         state_store: None,
+        secret_store: None,
         default_priority_queue_capacity: None,
         default_dispatch_buffer_capacity: None,
         sources: vec![],
         queries: vec![QueryConfigDto {
             id: "my-query".to_string(),
-            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("Cypher".to_string()),
+            query: "MATCH (n) RETURN n".to_string(),
+            query_language: QueryLanguage::Cypher,
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static("test-source".to_string()),
+                source_id: "test-source".to_string(),
                 nodes: vec!["Node".to_string()],
                 relations: vec!["REL".to_string()],
                 pipeline: vec![],
@@ -915,9 +884,21 @@ fn test_query_generates_valid_yaml() {
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }],
         reactions: vec![],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -955,34 +936,36 @@ fn test_full_config_roundtrip() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: true,
+        enable_ui: true,
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
         }),
+        secret_store: None,
         default_priority_queue_capacity: Some(ConfigValue::Static(5000)),
         default_dispatch_buffer_capacity: Some(ConfigValue::Static(500)),
-        sources: vec![SourceConfig::Mock {
+        sources: vec![SourceConfig {
+            kind: "mock".to_string(),
             id: "mock-source".to_string(),
             auto_start: true,
-            bootstrap_provider: Some(BootstrapProviderConfig::ScriptFile(
-                ScriptFileBootstrapConfigDto {
-                    file_paths: vec!["/data/init.jsonl".to_string()],
-                },
-            )),
-            config: MockSourceConfigDto {
-                data_type: DataTypeDto::SensorReading { sensor_count: 5 },
-                interval_ms: ConfigValue::Static(5000),
-            },
+            identity_provider: None,
+            bootstrap_provider: Some(BootstrapProviderConfig {
+                kind: "scriptfile".to_string(),
+                config: serde_json::json!({
+                    "filePaths": ["/data/init.jsonl"]
+                }),
+            }),
+            config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
         }],
         queries: vec![QueryConfigDto {
             id: "sensor-query".to_string(),
-            query: ConfigValue::Static("MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string()),
-            query_language: ConfigValue::Static("Cypher".to_string()),
+            query: "MATCH (s:Sensor) WHERE s.temp > 100 RETURN s".to_string(),
+            query_language: QueryLanguage::Cypher,
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static("mock-source".to_string()),
+                source_id: "mock-source".to_string(),
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],
@@ -992,14 +975,28 @@ fn test_full_config_roundtrip() {
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }],
-        reactions: vec![ReactionConfig::Log {
+        reactions: vec![ReactionConfig {
+            kind: "log".to_string(),
             id: "log-reaction".to_string(),
             queries: vec!["sensor-query".to_string()],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            identity_provider: None,
+            config: json!({"routes": {}}),
         }],
         instances: vec![],
+        plugin_registry: None,
+        auto_install_plugins: false,
+        plugins: vec![],
+        verify_plugins: false,
+        trusted_identities: vec![],
+        hot_reload_plugins: false,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
+        solutions_dir: None,
+        identity_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceTrait};
@@ -22,6 +23,7 @@ use std::sync::Arc;
 pub struct DrasiServerBuilder {
     core_builders: Vec<DrasiLibBuilder>,
     enable_api: bool,
+    enable_ui: bool,
     port: Option<u16>,
     host: Option<String>,
     config_file_path: Option<String>,
@@ -32,6 +34,7 @@ impl Default for DrasiServerBuilder {
         Self {
             core_builders: vec![DrasiLib::builder()],
             enable_api: false,
+            enable_ui: true,
             port: Some(8080),
             host: Some("127.0.0.1".to_string()),
             config_file_path: None,
@@ -108,6 +111,16 @@ impl DrasiServerBuilder {
         self
     }
 
+    /// Add a secret store provider for resolving ConfigValue::Secret references
+    ///
+    /// When set, component configs can use `{ kind: Secret, name: "..." }` values
+    /// whose actual values are resolved at runtime by the configured provider.
+    pub fn with_secret_store_provider(mut self, provider: Arc<dyn SecretStoreProvider>) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_secret_store_provider(provider);
+        self
+    }
+
     /// Add a query configuration helper (creates a Cypher query)
     /// For GQL queries, use with_query() with Query::gql() builder instead
     pub fn with_query_config(
@@ -149,6 +162,18 @@ impl DrasiServerBuilder {
         self
     }
 
+    /// Enable the web UI (enabled by default)
+    pub fn enable_ui(mut self) -> Self {
+        self.enable_ui = true;
+        self
+    }
+
+    /// Disable the web UI
+    pub fn disable_ui(mut self) -> Self {
+        self.enable_ui = false;
+        self
+    }
+
     /// Enable the REST API on a specific port
     pub fn with_port(mut self, port: u16) -> Self {
         self.enable_api = true;
@@ -166,7 +191,7 @@ impl DrasiServerBuilder {
 
     /// Build the DrasiLib instance
     pub async fn build_core(self) -> Result<DrasiLib, DrasiError> {
-        let mut builders = self.core_builders;
+        let builders = self.core_builders;
         let primary = builders
             .into_iter()
             .next()
@@ -183,6 +208,7 @@ impl DrasiServerBuilder {
     /// Build a DrasiServer instance with optional API
     pub async fn build(self) -> Result<crate::server::DrasiServer, DrasiError> {
         let api_enabled = self.enable_api;
+        let ui_enabled = self.enable_ui;
         let host = self.host.clone().unwrap_or_else(|| "127.0.0.1".to_string());
         let port = self.port.unwrap_or(8080);
         let config_file = self.config_file_path.clone();
@@ -195,8 +221,14 @@ impl DrasiServerBuilder {
         }
 
         // Create the full server with optional features
-        let server =
-            crate::server::DrasiServer::from_cores(cores, api_enabled, host, port, config_file);
+        let server = crate::server::DrasiServer::from_cores(
+            cores,
+            api_enabled,
+            ui_enabled,
+            host,
+            port,
+            config_file,
+        );
 
         Ok(server)
     }

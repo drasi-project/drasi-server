@@ -23,10 +23,15 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, LogReactionConfigDto, MockSourceConfigDto, QueryConfigDto, ReactionConfig,
+    ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SecretStoreConfig,
     SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
+
+/// Serde helper: returns `true` for use as `#[serde(default = "default_true")]`.
+fn default_true() -> bool {
+    true
+}
 
 /// DrasiServer configuration
 ///
@@ -59,6 +64,15 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the web UI at /ui (default: true)
+    #[serde(default = "default_enable_ui")]
+    pub enable_ui: bool,
+    /// Directory containing solution template YAML files (default: "./solutions")
+    #[serde(
+        default = "default_solutions_dir",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub solutions_dir: Option<String>,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -66,6 +80,12 @@ pub struct DrasiServerConfig {
     /// store is used (state is lost on restart).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_store: Option<StateStoreConfig>,
+    /// Optional secret store plugin configuration for resolving ConfigValue::Secret references.
+    ///
+    /// When set, component configs can use `{ kind: Secret, name: "..." }` values
+    /// which are resolved at runtime by the configured secret store plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_store: Option<SecretStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,17 +94,54 @@ pub struct DrasiServerConfig {
     /// Supports environment variables: ${DISPATCH_BUFFER_CAPACITY:-1000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
+    /// Default OCI registry for short plugin names (e.g., "ghcr.io/drasi-project")
+    #[serde(
+        default = "default_plugin_registry",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plugin_registry: Option<String>,
+    /// Automatically download missing plugins from registry on startup
+    #[serde(default)]
+    pub auto_install_plugins: bool,
+    /// Plugin dependencies to install from OCI registry
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginDependency>,
+    /// Enable cosign signature verification for downloaded plugins (default: true)
+    #[serde(default = "default_true")]
+    pub verify_plugins: bool,
+    /// Trusted identities for plugin signature verification.
+    /// When `verify_plugins` is true and this is omitted, defaults to the drasi-project identity.
+    /// When provided, only listed identities are trusted (no implicit default).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trusted_identities: Vec<TrustedIdentity>,
+    /// Enable filesystem watching for plugin changes (default: false, OFF by default for stability)
+    #[serde(default)]
+    pub hot_reload_plugins: bool,
+    /// Debounce window for filesystem events in milliseconds (default: 2000)
+    #[serde(default = "default_hot_reload_debounce_ms")]
+    pub hot_reload_debounce_ms: u64,
+    /// Allowed CORS origins for the REST API.
+    ///
+    /// When empty (default), all origins are permitted (`CorsLayer::permissive()`).
+    /// When set, only the listed origins are allowed.
+    /// Example: `["http://localhost:3000", "https://dashboard.example.com"]`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_allowed_origins: Vec<String>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<MockSourceConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<LogReactionConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
+    /// Identity provider configurations (referenced by sources/reactions via `identityProvider: <id>`)
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -100,12 +157,24 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_ui: true,
+            solutions_dir: None,
             state_store: None,
+            secret_store: None,
             default_priority_queue_capacity: None,
             default_dispatch_buffer_capacity: None,
+            plugin_registry: default_plugin_registry(),
+            auto_install_plugins: false,
+            plugins: Vec::new(),
+            verify_plugins: true,
+            trusted_identities: Vec::new(),
+            hot_reload_plugins: false,
+            hot_reload_debounce_ms: 2000,
+            cors_allowed_origins: Vec::new(),
             sources: Vec::new(),
-            reactions: Vec::new(),
             queries: Vec::new(),
+            reactions: Vec::new(),
+            identity_providers: Vec::new(),
             instances: Vec::new(),
         }
     }
@@ -135,6 +204,54 @@ fn default_persist_index() -> bool {
     false
 }
 
+fn default_hot_reload_debounce_ms() -> u64 {
+    2000
+}
+
+pub fn default_plugin_registry() -> Option<String> {
+    Some("ghcr.io/drasi-project".to_string())
+}
+
+/// A plugin dependency declared in the server configuration.
+///
+/// Specifies a plugin to be installed from an OCI registry.
+/// The `ref` field follows OCI image reference format with optional default registry expansion.
+///
+/// Examples:
+/// - `source/postgres` — latest compatible version from default registry
+/// - `source/postgres:0.1.8` — exact version
+/// - `ghcr.io/acme-corp/custom-source:1.0.0` — third-party registry
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct PluginDependency {
+    /// OCI image reference (e.g., "source/postgres:0.1.8")
+    #[serde(rename = "ref")]
+    pub reference: String,
+}
+
+/// A trusted identity for cosign plugin signature verification.
+///
+/// When `verifyPlugins` is enabled, downloaded plugin signatures must match
+/// at least one trusted identity. Each identity specifies an OIDC issuer
+/// and a subject pattern (glob) to match against the signing certificate.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedIdentity {
+    /// OIDC issuer URL (must match exactly).
+    /// Example: "https://token.actions.githubusercontent.com"
+    pub issuer: String,
+    /// Glob pattern to match against the certificate subject/SAN.
+    /// Example: "https://github.com/drasi-project/*"
+    pub subject_pattern: String,
+}
+
+fn default_enable_ui() -> bool {
+    true
+}
+
+fn default_solutions_dir() -> Option<String> {
+    None
+}
+
 /// Configuration for a single DrasiLib instance (multi-instance mode)
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(as = DrasiLibInstanceConfig)]
@@ -153,6 +270,9 @@ pub struct DrasiLibInstanceConfig {
     /// store is used (state is lost on restart).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_store: Option<StateStoreConfig>,
+    /// Optional secret store plugin configuration for resolving ConfigValue::Secret references
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_store: Option<SecretStoreConfig>,
     /// Default priority queue capacity for queries and reactions (default: 10000 if not specified)
     /// Supports environment variables: ${PRIORITY_QUEUE_CAPACITY:-10000}
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -163,15 +283,19 @@ pub struct DrasiLibInstanceConfig {
     pub default_dispatch_buffer_capacity: Option<ConfigValue<usize>>,
     /// Source configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<MockSourceConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub sources: Vec<SourceConfig>,
     /// Query configurations
     #[serde(default)]
     pub queries: Vec<QueryConfigDto>,
     /// Reaction configurations (parsed into plugin instances)
     #[serde(default)]
-    #[schema(value_type = Vec<LogReactionConfigDto>)]
+    #[schema(value_type = Vec<serde_json::Value>)]
     pub reactions: Vec<ReactionConfig>,
+    /// Identity provider configurations referenced by sources/reactions via `identityProvider: <id>`.
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub identity_providers: Vec<IdentityProviderConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -180,11 +304,13 @@ pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
     pub state_store: Option<StateStoreConfig>,
+    pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
     pub default_dispatch_buffer_capacity: Option<usize>,
     pub sources: Vec<SourceConfig>,
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
+    pub identity_providers: Vec<IdentityProviderConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -232,11 +358,13 @@ impl DrasiServerConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
                 state_store: self.state_store.clone(),
+                secret_store: self.secret_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
                 default_dispatch_buffer_capacity: self.default_dispatch_buffer_capacity.clone(),
                 sources: self.sources.clone(),
                 queries: self.queries.clone(),
                 reactions: self.reactions.clone(),
+                identity_providers: self.identity_providers.clone(),
             }]
         } else {
             self.instances.clone()
@@ -280,11 +408,13 @@ impl DrasiServerConfig {
                 id,
                 persist_index: instance.persist_index,
                 state_store: instance.state_store.clone(),
+                secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
                 default_dispatch_buffer_capacity,
                 sources: instance.sources.clone(),
                 queries,
                 reactions: instance.reactions.clone(),
+                identity_providers: instance.identity_providers.clone(),
             });
         }
 
@@ -484,6 +614,49 @@ mod tests {
             config.persist_config,
             "persist_config should default to true"
         );
+    }
+
+    // ==================== cors_allowed_origins tests ====================
+
+    #[test]
+    fn test_cors_allowed_origins_defaults_to_empty() {
+        let config = DrasiServerConfig::default();
+        assert!(
+            config.cors_allowed_origins.is_empty(),
+            "cors_allowed_origins should default to empty (permissive)"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_parsed_from_yaml() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            corsAllowedOrigins:
+              - "http://localhost:3000"
+              - "https://dashboard.example.com"
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.cors_allowed_origins.len(), 2);
+        assert_eq!(config.cors_allowed_origins[0], "http://localhost:3000");
+        assert_eq!(
+            config.cors_allowed_origins[1],
+            "https://dashboard.example.com"
+        );
+    }
+
+    #[test]
+    fn test_cors_allowed_origins_omitted_is_empty() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.cors_allowed_origins.is_empty());
     }
 
     // ==================== DrasiServerConfig validation tests ====================
@@ -751,5 +924,87 @@ mod tests {
             !content.contains("stateStore:"),
             "Saved file should not contain stateStore when None"
         );
+    }
+
+    // ==================== plugin registry config tests ====================
+
+    #[test]
+    fn test_plugin_registry_defaults() {
+        let config = DrasiServerConfig::default();
+        assert_eq!(
+            config.plugin_registry,
+            Some("ghcr.io/drasi-project".to_string())
+        );
+        assert!(!config.auto_install_plugins);
+        assert!(config.plugins.is_empty());
+    }
+
+    #[test]
+    fn test_plugin_registry_deserialization() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+            pluginRegistry: ghcr.io/my-org
+            autoInstallPlugins: true
+            plugins:
+              - ref: source/postgres
+              - ref: source/http:0.1.7
+              - ref: ghcr.io/acme-corp/custom-source:1.0.0
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.plugin_registry, Some("ghcr.io/my-org".to_string()));
+        assert!(config.auto_install_plugins);
+        assert_eq!(config.plugins.len(), 3);
+        assert_eq!(config.plugins[0].reference, "source/postgres");
+        assert_eq!(config.plugins[1].reference, "source/http:0.1.7");
+        assert_eq!(
+            config.plugins[2].reference,
+            "ghcr.io/acme-corp/custom-source:1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_plugin_registry_serialization_roundtrip() {
+        let config = DrasiServerConfig {
+            api_version: None,
+            plugin_registry: Some("ghcr.io/custom".to_string()),
+            auto_install_plugins: true,
+            plugins: vec![PluginDependency {
+                reference: "source/postgres:0.1.8".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(yaml.contains("pluginRegistry:"));
+        assert!(yaml.contains("autoInstallPlugins: true"));
+        assert!(yaml.contains("source/postgres:0.1.8"));
+
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(
+            deserialized.plugin_registry,
+            Some("ghcr.io/custom".to_string())
+        );
+        assert!(deserialized.auto_install_plugins);
+        assert_eq!(deserialized.plugins.len(), 1);
+    }
+
+    #[test]
+    fn test_plugin_registry_omitted_in_yaml_uses_defaults() {
+        let yaml = r#"
+            id: test-server
+            host: 0.0.0.0
+            port: 8080
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            config.plugin_registry,
+            Some("ghcr.io/drasi-project".to_string())
+        );
+        assert!(!config.auto_install_plugins);
+        assert!(config.plugins.is_empty());
     }
 }

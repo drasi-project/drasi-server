@@ -10,6 +10,7 @@ use axum::{
 use drasi_server::api::v1::openapi::ApiDocV1;
 use drasi_server::api::v1::routes::build_v1_router;
 use drasi_server::instance_registry::InstanceRegistry;
+use drasi_server::plugin_registry::PluginRegistry;
 use std::sync::Arc;
 use tower::ServiceExt;
 use utoipa::OpenApi;
@@ -18,8 +19,17 @@ async fn create_test_router() -> Router {
     let registry = InstanceRegistry::new();
     let read_only = Arc::new(false);
     let config_persistence = None;
+    let mut plugin_registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugin_registry);
+    let solutions_dir = None;
 
-    build_v1_router(registry, read_only, config_persistence)
+    build_v1_router(
+        registry,
+        read_only,
+        config_persistence,
+        Arc::new(tokio::sync::RwLock::new(plugin_registry)),
+        solutions_dir,
+    )
 }
 
 #[test]
@@ -160,4 +170,105 @@ async fn test_create_instance_accepts_full_request() {
 
     assert_eq!(status, StatusCode::OK, "Create instance should succeed");
     assert_eq!(json["success"], true, "Response should indicate success");
+}
+
+#[test]
+fn test_openapi_spec_includes_plugin_paths() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let paths = json["paths"].as_object().unwrap();
+
+    assert!(
+        paths.contains_key("/api/v1/plugins"),
+        "Should have /api/v1/plugins path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/kinds"),
+        "Should have /api/v1/plugins/kinds path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/load"),
+        "Should have /api/v1/plugins/load path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/install"),
+        "Should have /api/v1/plugins/install path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/{pluginId}"),
+        "Should have /api/v1/plugins/{{pluginId}} path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/{pluginId}/dependents"),
+        "Should have /api/v1/plugins/{{pluginId}}/dependents path"
+    );
+    assert!(
+        paths.contains_key("/api/v1/plugins/kinds/{category}/{kind}/schema"),
+        "Should have /api/v1/plugins/kinds/{{category}}/{{kind}}/schema path"
+    );
+}
+
+#[test]
+fn test_openapi_spec_includes_plugin_schemas() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let schemas = json["components"]["schemas"].as_object().unwrap();
+
+    assert!(
+        schemas.contains_key("PluginListResponse"),
+        "Should have PluginListResponse schema"
+    );
+    assert!(
+        schemas.contains_key("PluginInfoDto"),
+        "Should have PluginInfoDto schema"
+    );
+    assert!(
+        schemas.contains_key("PluginKindsResponse"),
+        "Should have PluginKindsResponse schema"
+    );
+    assert!(
+        schemas.contains_key("LoadPluginRequest"),
+        "Should have LoadPluginRequest schema"
+    );
+    assert!(
+        schemas.contains_key("InstallPluginRequest"),
+        "Should have InstallPluginRequest schema"
+    );
+}
+
+#[test]
+fn test_openapi_spec_includes_instance_event_stream() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let paths = json["paths"].as_object().unwrap();
+
+    assert!(
+        paths.contains_key("/api/v1/instances/{instanceId}/events"),
+        "Should have instance events SSE endpoint"
+    );
+}
+
+#[test]
+fn test_openapi_spec_includes_push_source_data() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let paths = json["paths"].as_object().unwrap();
+
+    assert!(
+        paths.contains_key("/api/v1/instances/{instanceId}/sources/{id}/push"),
+        "Should have push source data endpoint"
+    );
+}
+
+#[test]
+fn test_openapi_spec_has_plugins_tag() {
+    let spec = ApiDocV1::openapi();
+    let json = serde_json::to_value(&spec).unwrap();
+    let tags = json["tags"].as_array().unwrap();
+    let tag_names: Vec<&str> = tags.iter().filter_map(|t| t["name"].as_str()).collect();
+
+    assert!(
+        tag_names.contains(&"Plugins"),
+        "Should have 'Plugins' tag, found: {tag_names:?}",
+    );
 }

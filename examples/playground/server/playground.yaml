@@ -18,6 +18,26 @@ host: 0.0.0.0
 port: 8380
 logLevel: info
 persistConfig: false
+autoInstallPlugins: true
+plugins:
+  - ref: source/mock
+  - ref: source/postgres
+  - ref: source/http
+  - ref: source/grpc
+  - ref: source/mssql
+  - ref: reaction/log
+  - ref: reaction/sse
+  - ref: reaction/http
+  - ref: reaction/grpc
+  - ref: reaction/profiler
+  - ref: reaction/http-adaptive
+  - ref: reaction/grpc-adaptive
+  - ref: reaction/storedproc-postgres
+  - ref: reaction/storedproc-mysql
+  - ref: reaction/storedproc-mssql
+  - ref: bootstrap/postgres
+  - ref: bootstrap/scriptfile
+  - ref: bootstrap/mssql
 sources: []
 queries: []
 reactions: []

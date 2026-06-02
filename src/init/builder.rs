@@ -15,6 +15,7 @@
 //! Configuration building logic for init command.
 
 use anyhow::Result;
+use drasi_lib::config::QueryLanguage;
 
 use drasi_server::api::models::{
     ConfigValue, QueryConfigDto, ReactionConfig, SourceConfig, SourceSubscriptionConfigDto,
@@ -40,14 +41,14 @@ pub fn build_config(
             .unwrap_or_default();
         vec![QueryConfigDto {
             id: "my-query".to_string(),
-            query: ConfigValue::Static("MATCH (n) RETURN n".to_string()),
-            query_language: ConfigValue::Static("GQL".to_string()),
+            query: "MATCH (n) RETURN n".to_string(),
+            query_language: QueryLanguage::GQL,
             auto_start: true,
             enable_bootstrap: true,
             bootstrap_buffer_size: 10000,
             middleware: vec![],
             sources: vec![SourceSubscriptionConfigDto {
-                source_id: ConfigValue::Static(source_id),
+                source_id,
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],
@@ -57,6 +58,8 @@ pub fn build_config(
             dispatch_buffer_capacity: None,
             dispatch_mode: None,
             storage_backend: None,
+            outbox_capacity: 1000,
+            bootstrap_timeout_secs: 300,
         }]
     } else {
         vec![]
@@ -70,12 +73,24 @@ pub fn build_config(
         log_level: ConfigValue::Static(server_settings.log_level),
         persist_config: true,
         persist_index: server_settings.persist_index,
+        enable_ui: true,     // Enable web UI by default
+        solutions_dir: None, // Use default
         state_store: server_settings.state_store,
+        secret_store: None,
         default_priority_queue_capacity: None, // Use lib defaults
         default_dispatch_buffer_capacity: None, // Use lib defaults
+        plugin_registry: Some(server_settings.plugin_registry.clone()),
+        auto_install_plugins: server_settings.auto_install_plugins,
+        plugins: Vec::new(),
+        verify_plugins: server_settings.verify_plugins,
+        trusted_identities: Vec::new(),
+        hot_reload_plugins: server_settings.hot_reload_plugins,
+        hot_reload_debounce_ms: 2000,
+        cors_allowed_origins: Vec::new(),
         sources,
-        reactions,
         queries,
+        reactions,
+        identity_providers: Vec::new(),
         instances: vec![], // Empty = use single-instance mode
     }
 }
@@ -107,10 +122,7 @@ pub fn generate_yaml(config: &DrasiServerConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drasi_server::api::models::sources::mock::DataTypeDto;
-    use drasi_server::api::models::{
-        HttpSourceConfigDto, LogReactionConfigDto, MockSourceConfigDto, SseReactionConfigDto,
-    };
+    use serde_json::json;
 
     /// Helper to create test server settings
     fn test_server_settings() -> ServerSettings {
@@ -120,68 +132,58 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         }
     }
 
     /// Helper to create a mock source config for testing
     fn mock_source_config(id: &str) -> SourceConfig {
-        SourceConfig::Mock {
+        SourceConfig {
+            kind: "mock".to_string(),
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: MockSourceConfigDto {
-                interval_ms: ConfigValue::Static(5000),
-                data_type: DataTypeDto::Generic,
-            },
+            identity_provider: None,
+            config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }
     }
 
     /// Helper to create an HTTP source config for testing
     fn http_source_config(id: &str) -> SourceConfig {
-        SourceConfig::Http {
+        SourceConfig {
+            kind: "http".to_string(),
             id: id.to_string(),
             auto_start: true,
             bootstrap_provider: None,
-            config: HttpSourceConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(9000),
-                endpoint: None,
-                timeout_ms: ConfigValue::Static(10000),
-                adaptive_max_batch_size: None,
-                adaptive_min_batch_size: None,
-                adaptive_max_wait_ms: None,
-                adaptive_min_wait_ms: None,
-                adaptive_window_secs: None,
-                adaptive_enabled: None,
-                webhooks: None,
-            },
+            identity_provider: None,
+            config: json!({"host": "0.0.0.0", "port": 9000, "timeoutMs": 10000}),
         }
     }
 
     /// Helper to create a log reaction config for testing
     fn log_reaction_config(id: &str) -> ReactionConfig {
-        ReactionConfig::Log {
+        ReactionConfig {
+            kind: "log".to_string(),
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: LogReactionConfigDto::default(),
+            identity_provider: None,
+            config: json!({"routes": {}}),
         }
     }
 
     /// Helper to create an SSE reaction config for testing
     fn sse_reaction_config(id: &str) -> ReactionConfig {
-        ReactionConfig::Sse {
+        ReactionConfig {
+            kind: "sse".to_string(),
             id: id.to_string(),
             queries: vec!["my-query".to_string()],
             auto_start: true,
-            config: SseReactionConfigDto {
-                host: ConfigValue::Static("0.0.0.0".to_string()),
-                port: ConfigValue::Static(8081),
-                sse_path: ConfigValue::Static("/events".to_string()),
-                heartbeat_interval_ms: ConfigValue::Static(30000),
-                routes: std::collections::HashMap::new(),
-                default_template: None,
-            },
+            identity_provider: None,
+            config: json!({"host": "0.0.0.0", "port": 8081, "ssePath": "/events", "heartbeatIntervalMs": 30000, "routes": {}}),
         }
     }
 
@@ -228,20 +230,14 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         let query = &config.queries[0];
         assert_eq!(query.id, "my-query");
-        assert_eq!(
-            query.query,
-            ConfigValue::Static("MATCH (n) RETURN n".to_string())
-        );
+        assert_eq!(query.query, "MATCH (n) RETURN n".to_string());
         assert!(query.auto_start);
         assert!(query.enable_bootstrap);
         assert_eq!(query.bootstrap_buffer_size, 10000);
 
         // Check query subscribes to the source
         assert_eq!(query.sources.len(), 1);
-        assert_eq!(
-            query.sources[0].source_id,
-            ConfigValue::Static("my-mock".to_string())
-        );
+        assert_eq!(query.sources[0].source_id, "my-mock".to_string());
     }
 
     #[test]
@@ -262,7 +258,7 @@ mod tests {
         assert_eq!(config.queries.len(), 1);
         assert_eq!(
             config.queries[0].sources[0].source_id,
-            ConfigValue::Static("source-1".to_string())
+            "source-1".to_string()
         );
     }
 
@@ -286,6 +282,10 @@ mod tests {
             log_level: "debug".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let sources = vec![mock_source_config("data-source")];
         let reactions = vec![log_reaction_config("my-log")];
@@ -349,6 +349,10 @@ mod tests {
             log_level: "warn".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -473,6 +477,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -490,6 +498,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -507,6 +519,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -526,6 +542,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let config = build_config(settings, vec![], vec![]);
 
@@ -545,6 +565,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -574,6 +598,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: false,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let original_config = build_config(settings, vec![], vec![]);
 
@@ -603,6 +631,10 @@ mod tests {
             log_level: "info".to_string(),
             persist_index: true,
             state_store: None,
+            hot_reload_plugins: false,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
         };
         let sources = vec![mock_source_config("test-source")];
         let reactions = vec![log_reaction_config("test-reaction")];
@@ -613,5 +645,32 @@ mod tests {
         assert_eq!(config.sources.len(), 1);
         assert_eq!(config.reactions.len(), 1);
         assert_eq!(config.queries.len(), 1);
+    }
+
+    // ==================== hot_reload tests ====================
+
+    #[test]
+    fn test_build_config_hot_reload_defaults() {
+        let settings = test_server_settings();
+        let config = build_config(settings, vec![], vec![]);
+        assert!(!config.hot_reload_plugins);
+        assert_eq!(config.hot_reload_debounce_ms, 2000);
+    }
+
+    #[test]
+    fn test_build_config_hot_reload_enabled() {
+        let settings = ServerSettings {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "info".to_string(),
+            persist_index: false,
+            state_store: None,
+            hot_reload_plugins: true,
+            plugin_registry: "ghcr.io/drasi-project".to_string(),
+            auto_install_plugins: false,
+            verify_plugins: false,
+        };
+        let config = build_config(settings, vec![], vec![]);
+        assert!(config.hot_reload_plugins);
     }
 }

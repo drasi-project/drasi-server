@@ -20,6 +20,7 @@
 pub mod error;
 pub mod handlers;
 pub mod responses;
+pub mod solutions;
 
 pub use error::*;
 pub use handlers::*;

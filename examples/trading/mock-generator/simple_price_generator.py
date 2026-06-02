@@ -19,11 +19,9 @@ Simple Stock Price Generator for Testing
 Sends price updates to Drasi HTTP Source using direct format
 """
 
-import json
 import random
 import time
 import requests
-import sys
 from datetime import datetime
 
 def generate_price_update(symbol, base_price, volatility=0.02):
@@ -77,32 +75,69 @@ def main():
     http_source_url = "http://localhost:9100"
     source_id = "price-feed"
     
-    # Stock symbols with base prices
+    # Stock symbols with base prices - all 50 stocks from the database
     stocks = {
+        # Technology stocks
         "AAPL": 175.50,
         "MSFT": 405.25, 
         "GOOGL": 140.75,
-        "TSLA": 250.30,
-        "NVDA": 880.25,
         "META": 485.50,
-        "AMZN": 178.90,
+        "NVDA": 880.25,
         "AMD": 165.30,
         "INTC": 42.80,
+        "CRM": 285.40,
+        "ORCL": 125.60,
+        "ADBE": 520.30,
+        
+        # Financial stocks
         "JPM": 195.80,
         "BAC": 34.25,
         "WFC": 48.90,
         "GS": 425.60,
+        "MS": 95.40,
         "V": 280.45,
+        "MA": 465.20,
+        "AXP": 185.30,
+        "BLK": 785.60,
+        "SCHW": 72.45,
+        
+        # Healthcare stocks
         "JNJ": 155.20,
-        "PFE": 28.75,
         "UNH": 525.30,
+        "PFE": 28.75,
+        "ABBV": 175.40,
+        "MRK": 125.80,
+        "LLY": 785.60,
         "CVS": 72.45,
-        "XOM": 105.80,
-        "CVX": 145.60,
+        "MDT": 82.30,
+        "ABT": 115.40,
+        "TMO": 545.20,
+        
+        # Consumer stocks
+        "AMZN": 178.90,
+        "TSLA": 250.30,
+        "WMT": 165.40,
+        "HD": 385.60,
         "DIS": 92.15,
         "NKE": 98.40,
+        "MCD": 285.30,
+        "SBUX": 92.45,
+        "PG": 165.80,
+        "KO": 62.30,
+        
+        # Energy stocks
+        "XOM": 105.80,
+        "CVX": 145.60,
+        "COP": 115.40,
+        "SLB": 52.30,
+        "EOG": 125.60,
+        
+        # Industrial stocks
         "BA": 215.70,
-        "CAT": 285.30
+        "CAT": 285.30,
+        "GE": 165.40,
+        "UPS": 145.60,
+        "HON": 205.30
     }
     
     print(f"Starting simple price generator...")
@@ -121,7 +156,6 @@ def main():
     print("-" * 50)
     print("Starting continuous price updates (Ctrl+C to stop)...")
     
-    # Continuously generate price updates
     try:
         while True:
             # Pick a random subset of stocks to update
