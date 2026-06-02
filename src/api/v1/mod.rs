@@ -58,5 +58,6 @@ pub use handlers::*;
 pub use openapi::inject_plugin_schemas;
 pub use openapi::ApiDocV1;
 pub use openapi::OpenApiCache;
+pub use plugin_handlers::build_plugin_router;
 pub use plugin_handlers::plugin_routes;
 pub use routes::build_v1_router;

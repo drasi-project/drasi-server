@@ -10,6 +10,7 @@ fn test_source_config_mock_serializes_camelcase() {
         kind: "mock".to_string(),
         id: "test-mock".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 1000}),
     };
@@ -56,6 +57,7 @@ fn test_source_config_postgres_serializes_camelcase() {
         kind: "postgres".to_string(),
         id: "test-postgres".to_string(),
         auto_start: false,
+        identity_provider: None,
         bootstrap_provider: None,
         config: json!({
             "host": "localhost",
@@ -113,6 +115,7 @@ fn test_source_config_http_serializes_camelcase() {
         kind: "http".to_string(),
         id: "test-http".to_string(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: json!({
             "host": "localhost",
@@ -160,6 +163,7 @@ fn test_reaction_config_log_serializes_camelcase() {
         id: "test-log".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: json!({"routes": {}}),
     };
 
@@ -184,6 +188,7 @@ fn test_reaction_config_http_serializes_camelcase() {
         id: "test-http-reaction".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: false,
+        identity_provider: None,
         config: json!({
             "baseUrl": "http://localhost:8080",
             "timeoutMs": 5000,
@@ -221,6 +226,7 @@ fn test_reaction_config_grpc_serializes_camelcase() {
         id: "test-grpc-reaction".to_string(),
         queries: vec!["query1".to_string()],
         auto_start: true,
+        identity_provider: None,
         config: json!({
             "endpoint": "localhost:50051",
             "timeoutMs": 3000,

@@ -36,9 +36,11 @@
 pub mod bootstrap;
 
 // Organized submodules
+pub mod identity_provider;
 pub mod observability;
 pub mod queries;
 pub mod reaction;
+pub mod secret_store;
 pub mod solution;
 pub mod source;
 pub mod state_store;
@@ -46,8 +48,10 @@ pub mod state_store;
 // Re-export all DTO types for convenient access
 pub use bootstrap::BootstrapProviderConfig;
 pub use drasi_plugin_sdk::config_value::*;
+pub use identity_provider::{IdentityProviderConfig, BUILTIN_PASSWORD_KIND};
 pub use observability::*;
 pub use queries::*;
 pub use reaction::ReactionConfig;
+pub use secret_store::SecretStoreConfig;
 pub use source::SourceConfig;
 pub use state_store::{RedbStateStoreConfigDto, StateStoreConfig};

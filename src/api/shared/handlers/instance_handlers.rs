@@ -25,6 +25,7 @@ use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
+use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -90,7 +91,7 @@ pub async fn create_instance(
 
     // Set up RocksDB persistent indexing if requested
     if persist_index {
-        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+        let safe_id = instance_storage_key(&instance_id);
         let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
         log::info!(
             "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
@@ -106,7 +107,7 @@ pub async fn create_instance(
 
     // WAL provider for durable source event persistence
     {
-        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+        let safe_id = instance_storage_key(&instance_id);
         let wal_path = std::path::PathBuf::from(format!("./data/{safe_id}/wal"));
         let wal_provider = Arc::new(drasi_wal_redb::RedbWalProvider::new(&wal_path));
         builder = builder.with_wal_provider(wal_provider);
@@ -145,6 +146,7 @@ pub async fn create_instance(
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
             state_store: None,
+            secret_store: None,
             default_priority_queue_capacity: request
                 .default_priority_queue_capacity
                 .map(ConfigValue::Static),
@@ -154,6 +156,7 @@ pub async fn create_instance(
             sources: Vec::new(),
             reactions: Vec::new(),
             queries: Vec::new(),
+            identity_providers: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -267,6 +270,7 @@ pub async fn clone_instance(
             id: src_snap.id.clone(),
             auto_start: false,
             bootstrap_provider,
+            identity_provider: None,
             config: properties_json,
         };
 
@@ -343,6 +347,7 @@ pub async fn clone_instance(
             id: rx_snap.id.clone(),
             queries: rx_snap.queries.clone(),
             auto_start: false,
+            identity_provider: None,
             config: properties_json,
         };
 

@@ -1,0 +1,17 @@
+name: DevSkim
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 0 * * 0' # runs every Sunday at 00:30 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  devskim:
+    uses: drasi-project/.github/.github/workflows/devskim.yaml@main
+    permissions:
+      actions: read
+      contents: read
+      security-events: write

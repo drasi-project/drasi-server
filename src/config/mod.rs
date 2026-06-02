@@ -53,4 +53,4 @@ pub use types::{
 pub use validation::{validate_config, ValidationError};
 
 // Re-export config enums from api::models for backward compatibility
-pub use crate::api::models::{ReactionConfig, SourceConfig, StateStoreConfig};
+pub use crate::api::models::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
