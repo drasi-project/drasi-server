@@ -1,1 +1,8 @@
 .github/workflows/*.lock.yml linguist-generated=true merge=ours
+
+# Always check out shell scripts with LF line endings, regardless of the
+# host's core.autocrlf setting. Bash treats a trailing CR as part of the
+# command/argument and produces errors like `$'\r': command not found` or
+# `Unable to locate package <name>\r` when scripts are checked out as CRLF
+# on Windows hosts.
+*.sh text eol=lf
