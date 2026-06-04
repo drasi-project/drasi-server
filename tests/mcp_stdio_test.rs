@@ -182,21 +182,6 @@ fn open_ui_info(resp: &Value) -> Value {
         .unwrap_or_else(|| panic!("missing open_admin_ui info block: {resp}"))
 }
 
-/// Extract the embedded MCP App resource object from an `open_admin_ui` result.
-fn ui_resource(resp: &Value) -> Value {
-    resp.get("result")
-        .and_then(|r| r.get("content"))
-        .and_then(Value::as_array)
-        .and_then(|items| {
-            items
-                .iter()
-                .find(|c| c.get("type").and_then(Value::as_str) == Some("resource"))
-        })
-        .and_then(|c| c.get("resource"))
-        .cloned()
-        .unwrap_or_else(|| panic!("missing UI resource in result: {resp}"))
-}
-
 /// Perform a blocking HTTP/1.1 GET against `base_url` (e.g. `http://127.0.0.1:PORT`)
 /// using only the standard library. Returns `(status_code, body)`.
 fn http_get(base_url: &str, path: &str) -> (u16, String) {
@@ -300,40 +285,14 @@ fn open_admin_ui_boots_server_and_crud_round_trips() {
     let mut client = McpClient::spawn();
     client.initialize();
 
-    // Boot on demand and render the admin UI as an MCP App resource.
+    // Boot on demand. Rendering is driven by the tool's _meta.ui.resourceUri;
+    // the result also carries _meta.ui.resourceUri for hosts that read it there.
     let resp = client.call(3, "open_admin_ui", json!({"config_path": config}));
-
-    // The embedded resource is an MCP App HTML document (SEP-1865), served as
-    // `text/html;profile=mcp-app` and embedding the admin UI in an iframe.
-    let resource = ui_resource(&resp);
     assert_eq!(
-        resource.get("mimeType").and_then(Value::as_str),
-        Some("text/html;profile=mcp-app"),
-        "UI resource is not an MCP App HTML resource: {resource}"
-    );
-    assert_eq!(
-        resource.get("uri").and_then(Value::as_str),
-        Some("ui://drasi/admin")
-    );
-    let html = resource
-        .get("text")
-        .and_then(Value::as_str)
-        .expect("ui resource html");
-    assert!(
-        html.contains("<iframe"),
-        "resource HTML missing iframe: {html}"
-    );
-    // The CSP must permit framing the local admin origin, else the host blocks it.
-    let frame_domains = resource
-        .get("_meta")
-        .and_then(|m| m.get("ui"))
-        .and_then(|u| u.get("csp"))
-        .and_then(|c| c.get("frameDomains"))
-        .and_then(Value::as_array)
-        .expect("resource _meta.ui.csp.frameDomains");
-    assert!(
-        !frame_domains.is_empty(),
-        "frameDomains must declare the local UI origin"
+        resp.pointer("/result/_meta/ui/resourceUri")
+            .and_then(Value::as_str),
+        Some("ui://drasi/admin"),
+        "open_admin_ui result missing _meta.ui.resourceUri: {resp}"
     );
 
     // The JSON info block carries the localhost UI URL (forced private binding
@@ -813,13 +772,13 @@ fn open_admin_ui_without_config_boots_empty_default() {
 
     let resp = client.call(2, "open_admin_ui", json!({}));
 
-    // The embedded resource is the MCP App HTML; the URL lives in the JSON info
-    // block now (not the resource text, which is the app HTML).
-    let resource = ui_resource(&resp);
+    // Rendering is driven by the tool/result _meta.ui.resourceUri; the URL is in
+    // the JSON info block.
     assert_eq!(
-        resource.get("mimeType").and_then(Value::as_str),
-        Some("text/html;profile=mcp-app"),
-        "no-config boot did not render an MCP App resource: {resource}"
+        resp.pointer("/result/_meta/ui/resourceUri")
+            .and_then(Value::as_str),
+        Some("ui://drasi/admin"),
+        "no-config boot result missing _meta.ui.resourceUri: {resp}"
     );
     let info = open_ui_info(&resp);
     let ui_url = info["uiUrl"].as_str().expect("uiUrl");

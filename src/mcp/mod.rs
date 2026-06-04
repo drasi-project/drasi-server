@@ -404,21 +404,29 @@ impl DrasiMcpServer {
             }
         };
 
-        // Embedded MCP App resource (text/html;profile=mcp-app) for hosts that
-        // render UI apps (Claude Desktop and other `io.modelcontextprotocol/ui`
-        // hosts). The same resource is also served via `resources/read` at
-        // `ADMIN_UI_RESOURCE_URI`, which the `open_admin_ui` tool references via
-        // `_meta.ui.resourceUri`.
-        let ui_resource = Content::resource(admin_ui_resource_contents(&base_url));
-
-        // JSON fallback for hosts that don't render UI resources.
+        // Rendering is driven by the `open_admin_ui` tool's
+        // `_meta.ui.resourceUri` (declared in `list_tools`): the host fetches
+        // `ui://drasi/admin` via `resources/read` and renders it as an MCP App.
+        // The tool result itself is plain text/JSON (matching the MCP Apps
+        // reference servers), with `_meta.ui.resourceUri` also set on the result
+        // so hosts that associate the view via the tool call can find it.
+        let summary = Content::text(format!(
+            "Drasi Server admin UI is ready at {ui_url} (config: {config_loaded})."
+        ));
         let info = Content::json(serde_json::json!({
             "uiUrl": ui_url,
             "baseUrl": base_url,
             "configLoaded": config_loaded,
         }))?;
 
-        Ok(CallToolResult::success(vec![ui_resource, info]))
+        let mut result = CallToolResult::success(vec![summary, info]);
+        let mut meta = Meta::new();
+        meta.insert(
+            "ui".to_string(),
+            serde_json::json!({ "resourceUri": ADMIN_UI_RESOURCE_URI }),
+        );
+        result.meta = Some(meta);
+        Ok(result)
     }
 
     /// Implementation of the `stop_server` tool.
