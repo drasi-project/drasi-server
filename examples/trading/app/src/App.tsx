@@ -18,11 +18,11 @@ import { Watchlist } from '@/components/Watchlist';
 import { SectorPerformance } from '@/components/SectorPerformance';
 import { Orders } from '@/components/Orders';
 import StockTicker from '@/components/StockTicker';
-import { useConnectionStatus } from '@/hooks/useDrasi';
+import { useDrasiConnectionStatus } from '@drasi/react';
 import clsx from 'clsx';
 
 function App() {
-  const connectionStatus = useConnectionStatus();
+  const connectionStatus = useDrasiConnectionStatus();
 
   return (
     <div className="min-h-screen bg-trading-bg">
