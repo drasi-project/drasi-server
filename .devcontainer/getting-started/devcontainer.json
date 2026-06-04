@@ -1,6 +1,6 @@
 {
     "name": "Drasi Server - Getting Started Tutorial",
-    "image": "mcr.microsoft.com/devcontainers/base:bullseye",
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
     "features": {
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers/features/git:1": {},
@@ -9,10 +9,16 @@
             "configureZshAsDefaultShell": true
         }
     },
-    "initializeCommand": "docker network create drasi-network 2>/dev/null || true",
+    "initializeCommand": "docker network inspect drasi-network || docker network create drasi-network",
     "postCreateCommand": "bash .devcontainer/getting-started/post-create.sh",
-    "runArgs": ["--network=drasi-network"],
-    "forwardPorts": [8180, 8181, 5532],
+    "runArgs": [
+        "--network=drasi-network"
+    ],
+    "forwardPorts": [
+        8180,
+        8181,
+        5532
+    ],
     "portsAttributes": {
         "8180": {
             "label": "Drasi Server API",
