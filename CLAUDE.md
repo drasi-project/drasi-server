@@ -28,9 +28,18 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
 
 - **Boot-on-demand:** the Drasi runtime + HTTP API/UI are not started at launch.
-  The `open_admin_ui` tool boots them and returns an MCP-UI resource
-  (`text/uri-list`) pointing at `http://127.0.0.1:<port>/ui/`. Binding is forced
-  to private `127.0.0.1` on an ephemeral port (override `--port`).
+  The `open_admin_ui` tool boots them and renders the admin UI as an **MCP App**
+  (SEP-1865, `io.modelcontextprotocol/ui`): the server advertises the `resources`
+  capability, the tool declares `_meta.ui.resourceUri = ui://drasi/admin`, and the
+  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — HTML that
+  iframes `http://127.0.0.1:<port>/ui/` with `_meta.ui.csp.frameDomains` set so the
+  host permits framing the local origin. The `ServerHandler` is implemented
+  manually (not via `#[tool_handler]`) so `list_tools` can inject the tool `_meta`
+  and `list_resources`/`read_resource` can serve the UI resource. Binding is forced
+  to private `127.0.0.1` on an ephemeral port (override `--port`). `open_admin_ui`
+  also probes `/ui/` and errors with build instructions if the UI assets are
+  missing (a bare `cargo build` does not build them; use `make build-ui` or a
+  release build).
 - **Optional config:** `open_admin_ui`'s `config_path` is optional; if it and the
   launch-time `--config` are both unset the server boots from
   `DrasiServerConfig::default()` (empty, persistence disabled, mutations allowed

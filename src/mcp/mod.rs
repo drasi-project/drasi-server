@@ -38,18 +38,82 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use rmcp::handler::server::tool::ToolRouter;
+use rmcp::handler::server::tool::{ToolCallContext, ToolRouter};
 use rmcp::model::{
-    CallToolResult, Content, Implementation, ProtocolVersion, ResourceContents, ServerCapabilities,
-    ServerInfo,
+    AnnotateAble, CallToolRequestParam, CallToolResult, Content, Implementation,
+    ListResourcesResult, ListToolsResult, Meta, PaginatedRequestParam, ProtocolVersion,
+    RawResource, ReadResourceRequestParam, ReadResourceResult, Resource, ResourceContents,
+    ServerCapabilities, ServerInfo,
 };
-use rmcp::{tool_handler, ErrorData as McpError, ServerHandler, ServiceExt};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData as McpError, RoleServer, ServerHandler, ServiceExt};
 use tokio::sync::{watch, Mutex};
 
 use crate::{DrasiServer, RunningServer};
 
-/// URI advertised for the admin UI MCP-UI resource.
+/// URI advertised for the admin UI MCP App resource.
 const ADMIN_UI_RESOURCE_URI: &str = "ui://drasi/admin";
+
+/// Human-readable name for the admin UI resource.
+const ADMIN_UI_RESOURCE_NAME: &str = "drasi_admin_ui";
+
+/// MIME type for MCP Apps HTML resources (SEP-1865 / `io.modelcontextprotocol/ui`).
+const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
+
+/// Build the HTML for the admin UI MCP App resource.
+///
+/// The host renders this HTML inside a sandboxed iframe. It embeds the live
+/// admin SPA (served at `<base_url>/ui/`) in a nested iframe so the SPA's
+/// same-origin REST calls work unchanged. The nested iframe is permitted via
+/// the resource's `_meta.ui.csp.frameDomains` (see [`admin_ui_resource_meta`]).
+fn admin_ui_resource_html(base_url: &str) -> String {
+    let ui_url = format!("{base_url}/ui/");
+    format!(
+        "<!doctype html>\n\
+<html lang=\"en\">\n\
+<head>\n\
+<meta charset=\"utf-8\">\n\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
+<title>Drasi Server Admin</title>\n\
+<style>\n\
+  html, body {{ margin: 0; padding: 0; height: 100%; width: 100%; background: #171717; }}\n\
+  iframe {{ position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }}\n\
+  .fallback {{ color: #fafafa; font-family: system-ui, sans-serif; padding: 16px; }}\n\
+  .fallback a {{ color: #7aa2f7; }}\n\
+</style>\n\
+</head>\n\
+<body>\n\
+<iframe src=\"{ui_url}\" title=\"Drasi Server Admin UI\" allow=\"clipboard-write\"></iframe>\n\
+<noscript><div class=\"fallback\">Open the Drasi admin UI: <a href=\"{ui_url}\">{ui_url}</a></div></noscript>\n\
+</body>\n\
+</html>\n"
+    )
+}
+
+/// Build the `_meta` for the admin UI resource, declaring the CSP needed to
+/// frame the local admin UI origin. Without `frameDomains` the host's default
+/// `frame-src 'none'` would block the nested iframe.
+fn admin_ui_resource_meta(base_url: &str) -> Meta {
+    let mut meta = Meta::new();
+    meta.insert(
+        "ui".to_string(),
+        serde_json::json!({
+            "csp": { "frameDomains": [base_url] },
+            "prefersBorder": false
+        }),
+    );
+    meta
+}
+
+/// Build the embedded resource content block for the admin UI MCP App.
+fn admin_ui_resource_contents(base_url: &str) -> ResourceContents {
+    ResourceContents::TextResourceContents {
+        uri: ADMIN_UI_RESOURCE_URI.to_string(),
+        mime_type: Some(MCP_APP_MIME_TYPE.to_string()),
+        text: admin_ui_resource_html(base_url),
+        meta: Some(admin_ui_resource_meta(base_url)),
+    }
+}
 
 /// Startup options for MCP mode, sourced from the CLI.
 #[derive(Debug, Clone)]
@@ -268,6 +332,13 @@ impl DrasiMcpServer {
         ))
     }
 
+    /// Check whether the admin UI is actually served (assets are present).
+    /// A bare `cargo build` leaves `ui/dist` empty, so `/ui/` would 404.
+    async fn ui_is_available(&self, base_url: &str) -> bool {
+        let url = format!("{base_url}/ui/");
+        matches!(self.http.get(&url).send().await, Ok(resp) if resp.status().is_success())
+    }
+
     /// Return the base URL of the running server. If a boot is in progress this
     /// awaits it; if nothing is running it instructs the caller to start first.
     async fn require_base_url(&self) -> Result<String, McpError> {
@@ -291,6 +362,17 @@ impl DrasiMcpServer {
         }
     }
 
+    /// Return the base URL only if a server is currently running, without
+    /// waiting for an in-progress boot. Used by `resources/read`, which a host
+    /// may call before the boot tool completes (returns `None` in that case).
+    async fn current_base_url(&self) -> Option<String> {
+        let slot = self.state.lock().await;
+        match &*slot {
+            ServerSlot::Running { base_url, .. } => Some(base_url.clone()),
+            _ => None,
+        }
+    }
+
     /// Implementation of the `open_admin_ui` tool.
     async fn open_admin_ui_impl(
         &self,
@@ -298,6 +380,18 @@ impl DrasiMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let base_url = self.ensure_started(config_path).await?;
         let ui_url = format!("{base_url}/ui/");
+
+        // Guard against returning a dead UI URL: a bare `cargo build` does not
+        // build the web assets, so `/ui/` would 404. Fail loudly with build
+        // instructions instead of handing the host a broken app.
+        if !self.ui_is_available(&base_url).await {
+            return Err(McpError::internal_error(
+                "The admin UI assets are not available, so the UI cannot be rendered. \
+                 Build the UI first (run `make build-ui`, or use a release build via \
+                 `make build-release`) and restart the MCP server.",
+                Some(serde_json::json!({ "uiUrl": ui_url, "baseUrl": base_url })),
+            ));
+        }
 
         let config_loaded = {
             let slot = self.state.lock().await;
@@ -310,13 +404,12 @@ impl DrasiMcpServer {
             }
         };
 
-        // MCP-UI resource (text/uri-list) for hosts that render UI apps.
-        let ui_resource = Content::resource(ResourceContents::TextResourceContents {
-            uri: ADMIN_UI_RESOURCE_URI.to_string(),
-            mime_type: Some("text/uri-list".to_string()),
-            text: ui_url.clone(),
-            meta: None,
-        });
+        // Embedded MCP App resource (text/html;profile=mcp-app) for hosts that
+        // render UI apps (Claude Desktop and other `io.modelcontextprotocol/ui`
+        // hosts). The same resource is also served via `resources/read` at
+        // `ADMIN_UI_RESOURCE_URI`, which the `open_admin_ui` tool references via
+        // `_meta.ui.resourceUri`.
+        let ui_resource = Content::resource(admin_ui_resource_contents(&base_url));
 
         // JSON fallback for hosts that don't render UI resources.
         let info = Content::json(serde_json::json!({
@@ -486,12 +579,14 @@ fn map_reqwest_err(e: reqwest::Error) -> McpError {
     )
 }
 
-#[tool_handler]
 impl ServerHandler for DrasiMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "Drasi Server MCP. Call `open_admin_ui` (optionally with a `config_path`) first to \
@@ -500,6 +595,94 @@ impl ServerHandler for DrasiMcpServer {
                     .to_string(),
             ),
         }
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let tcc = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        let mut tools = self.tool_router.list_all();
+        // Link the `open_admin_ui` tool to its MCP App resource so that
+        // `io.modelcontextprotocol/ui` hosts render the admin UI when the tool
+        // is invoked (SEP-1865 `_meta.ui.resourceUri`).
+        for tool in &mut tools {
+            if tool.name.as_ref() == "open_admin_ui" {
+                let mut meta = Meta::new();
+                meta.insert(
+                    "ui".to_string(),
+                    serde_json::json!({ "resourceUri": ADMIN_UI_RESOURCE_URI }),
+                );
+                tool.meta = Some(meta);
+            }
+        }
+        Ok(ListToolsResult::with_all_items(tools))
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        let resource: Resource = RawResource {
+            uri: ADMIN_UI_RESOURCE_URI.to_string(),
+            name: ADMIN_UI_RESOURCE_NAME.to_string(),
+            title: Some("Drasi Server Admin UI".to_string()),
+            description: Some(
+                "Interactive admin UI for the running Drasi Server, rendered as an MCP App."
+                    .to_string(),
+            ),
+            mime_type: Some(MCP_APP_MIME_TYPE.to_string()),
+            size: None,
+            icons: None,
+        }
+        .no_annotation();
+        Ok(ListResourcesResult::with_all_items(vec![resource]))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        if request.uri != ADMIN_UI_RESOURCE_URI {
+            return Err(McpError::resource_not_found(
+                "Unknown resource",
+                Some(serde_json::json!({ "uri": request.uri })),
+            ));
+        }
+
+        let contents = match self.current_base_url().await {
+            Some(base_url) => admin_ui_resource_contents(&base_url),
+            // The server hasn't been booted yet (host prefetched the resource).
+            // Return a valid MCP App page that prompts the user to start it.
+            None => ResourceContents::TextResourceContents {
+                uri: ADMIN_UI_RESOURCE_URI.to_string(),
+                mime_type: Some(MCP_APP_MIME_TYPE.to_string()),
+                text: "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+                       <title>Drasi Server</title></head>\
+                       <body style=\"font-family:system-ui,sans-serif;padding:16px;\
+                       background:#171717;color:#fafafa\">\
+                       <p>The Drasi Server is not running yet. Invoke the \
+                       <code>open_admin_ui</code> tool to start it and load the admin UI.</p>\
+                       </body></html>"
+                    .to_string(),
+                meta: None,
+            },
+        };
+
+        Ok(ReadResourceResult {
+            contents: vec![contents],
+        })
     }
 }
 

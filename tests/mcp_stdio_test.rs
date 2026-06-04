@@ -169,6 +169,58 @@ fn result_texts(resp: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Extract the JSON info content block emitted by `open_admin_ui` (carries
+/// `baseUrl` / `uiUrl` / `configLoaded`).
+fn open_ui_info(resp: &Value) -> Value {
+    result_texts(resp)
+        .into_iter()
+        .find_map(|t| {
+            serde_json::from_str::<Value>(&t)
+                .ok()
+                .filter(|v| v.get("baseUrl").is_some())
+        })
+        .unwrap_or_else(|| panic!("missing open_admin_ui info block: {resp}"))
+}
+
+/// Extract the embedded MCP App resource object from an `open_admin_ui` result.
+fn ui_resource(resp: &Value) -> Value {
+    resp.get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|c| c.get("type").and_then(Value::as_str) == Some("resource"))
+        })
+        .and_then(|c| c.get("resource"))
+        .cloned()
+        .unwrap_or_else(|| panic!("missing UI resource in result: {resp}"))
+}
+
+/// Perform a blocking HTTP/1.1 GET against `base_url` (e.g. `http://127.0.0.1:PORT`)
+/// using only the standard library. Returns `(status_code, body)`.
+fn http_get(base_url: &str, path: &str) -> (u16, String) {
+    use std::io::{Read, Write};
+    let authority = base_url.strip_prefix("http://").expect("http base url");
+    let mut stream = std::net::TcpStream::connect(authority).expect("connect to local Drasi API");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n");
+    stream.write_all(req.as_bytes()).expect("write request");
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("read response");
+    let text = String::from_utf8_lossy(&raw).into_owned();
+    let status = text
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or_else(|| panic!("could not parse status line: {text:?}"));
+    let body = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+    (status, body.to_string())
+}
+
 /// Whether a tool result is flagged as an error (`result.isError == true`).
 fn is_tool_error(resp: &Value) -> bool {
     resp.get("result")
@@ -248,33 +300,65 @@ fn open_admin_ui_boots_server_and_crud_round_trips() {
     let mut client = McpClient::spawn();
     client.initialize();
 
-    // Boot on demand and render the admin UI as an MCP-UI resource.
+    // Boot on demand and render the admin UI as an MCP App resource.
     let resp = client.call(3, "open_admin_ui", json!({"config_path": config}));
-    let content = resp
-        .get("result")
-        .and_then(|r| r.get("content"))
-        .and_then(Value::as_array)
-        .unwrap_or_else(|| panic!("open_admin_ui failed: {resp}"));
 
-    let resource = content
-        .iter()
-        .find(|c| c.get("type").and_then(Value::as_str) == Some("resource"))
-        .and_then(|c| c.get("resource"))
-        .expect("ui resource present");
+    // The embedded resource is an MCP App HTML document (SEP-1865), served as
+    // `text/html;profile=mcp-app` and embedding the admin UI in an iframe.
+    let resource = ui_resource(&resp);
     assert_eq!(
         resource.get("mimeType").and_then(Value::as_str),
-        Some("text/uri-list")
+        Some("text/html;profile=mcp-app"),
+        "UI resource is not an MCP App HTML resource: {resource}"
     );
-    let ui_url = resource
+    assert_eq!(
+        resource.get("uri").and_then(Value::as_str),
+        Some("ui://drasi/admin")
+    );
+    let html = resource
         .get("text")
         .and_then(Value::as_str)
-        .expect("ui url text");
-    // Forced private localhost binding regardless of the 0.0.0.0 config host.
+        .expect("ui resource html");
     assert!(
-        ui_url.starts_with("http://127.0.0.1:"),
-        "UI url not localhost: {ui_url}"
+        html.contains("<iframe"),
+        "resource HTML missing iframe: {html}"
+    );
+    // The CSP must permit framing the local admin origin, else the host blocks it.
+    let frame_domains = resource
+        .get("_meta")
+        .and_then(|m| m.get("ui"))
+        .and_then(|u| u.get("csp"))
+        .and_then(|c| c.get("frameDomains"))
+        .and_then(Value::as_array)
+        .expect("resource _meta.ui.csp.frameDomains");
+    assert!(
+        !frame_domains.is_empty(),
+        "frameDomains must declare the local UI origin"
+    );
+
+    // The JSON info block carries the localhost UI URL (forced private binding
+    // regardless of the 0.0.0.0 config host).
+    let info = open_ui_info(&resp);
+    let base_url = info["baseUrl"].as_str().expect("baseUrl");
+    let ui_url = info["uiUrl"].as_str().expect("uiUrl");
+    assert!(
+        base_url.starts_with("http://127.0.0.1:"),
+        "UI url not localhost: {base_url}"
     );
     assert!(ui_url.ends_with("/ui/"), "unexpected UI url: {ui_url}");
+
+    // The CRITICAL regression check: the advertised UI URL must actually serve
+    // the admin SPA (a bare `cargo build` would 404 here).
+    let (status, body) = http_get(base_url, "/ui/");
+    assert_eq!(
+        status, 200,
+        "/ui/ did not serve the admin UI (got {status})"
+    );
+    assert!(
+        body.contains("id=\"root\"") || body.to_lowercase().contains("drasi"),
+        "/ui/ body is not the admin SPA: {}",
+        &body[..body.len().min(200)]
+    );
 
     // CRUD round-trip against the live API.
     let resp = client.call(
@@ -728,19 +812,17 @@ fn open_admin_ui_without_config_boots_empty_default() {
     client.initialize();
 
     let resp = client.call(2, "open_admin_ui", json!({}));
-    let content = resp
-        .get("result")
-        .and_then(|r| r.get("content"))
-        .and_then(Value::as_array)
-        .unwrap_or_else(|| panic!("open_admin_ui (no config) failed: {resp}"));
 
-    let ui_url = content
-        .iter()
-        .find(|c| c.get("type").and_then(Value::as_str) == Some("resource"))
-        .and_then(|c| c.get("resource"))
-        .and_then(|r| r.get("text"))
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("missing UI resource: {resp}"));
+    // The embedded resource is the MCP App HTML; the URL lives in the JSON info
+    // block now (not the resource text, which is the app HTML).
+    let resource = ui_resource(&resp);
+    assert_eq!(
+        resource.get("mimeType").and_then(Value::as_str),
+        Some("text/html;profile=mcp-app"),
+        "no-config boot did not render an MCP App resource: {resource}"
+    );
+    let info = open_ui_info(&resp);
+    let ui_url = info["uiUrl"].as_str().expect("uiUrl");
     assert!(
         ui_url.starts_with("http://127.0.0.1:") && ui_url.ends_with("/ui/"),
         "unexpected UI url: {ui_url}"
@@ -772,5 +854,123 @@ fn open_admin_ui_without_config_boots_empty_default() {
     );
 
     client.call(5, "stop_server", json!({}));
+    client.shutdown();
+}
+
+/// Full MCP Apps (SEP-1865 / `io.modelcontextprotocol/ui`) contract: the server
+/// advertises the `resources` capability, links `open_admin_ui` to the UI
+/// resource via `_meta.ui.resourceUri`, lists the `ui://drasi/admin` resource,
+/// and serves it as a `text/html;profile=mcp-app` document via `resources/read`.
+#[test]
+fn mcp_apps_resource_contract_is_satisfied() {
+    let mut client = McpClient::spawn();
+
+    // Initialize advertising the MCP Apps extension, like Claude Desktop does.
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {
+                "extensions": {
+                    "io.modelcontextprotocol/ui": {
+                        "mimeTypes": ["text/html;profile=mcp-app"]
+                    }
+                }
+            },
+            "clientInfo": {"name": "test", "version": "0"}
+        }
+    }));
+    let init = client.recv_id(1);
+    // The server must advertise the resources capability so the host will call
+    // resources/read for the UI resource.
+    assert!(
+        init.pointer("/result/capabilities/resources").is_some(),
+        "server did not advertise resources capability: {init}"
+    );
+    client.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+
+    // tools/list: open_admin_ui must declare _meta.ui.resourceUri.
+    client.send(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}));
+    let tl = client.recv_id(2);
+    let tools = tl
+        .pointer("/result/tools")
+        .and_then(Value::as_array)
+        .expect("tools array");
+    let open_ui = tools
+        .iter()
+        .find(|t| t.get("name").and_then(Value::as_str) == Some("open_admin_ui"))
+        .expect("open_admin_ui tool");
+    assert_eq!(
+        open_ui
+            .pointer("/_meta/ui/resourceUri")
+            .and_then(Value::as_str),
+        Some("ui://drasi/admin"),
+        "open_admin_ui missing _meta.ui.resourceUri: {open_ui}"
+    );
+
+    // Boot the server so the resource can reference the live port.
+    let resp = client.call(3, "open_admin_ui", json!({}));
+    assert!(resp.get("result").is_some(), "open_admin_ui failed: {resp}");
+
+    // resources/list must include the UI resource.
+    client.send(&json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list", "params": {}}));
+    let rl = client.recv_id(4);
+    let resources = rl
+        .pointer("/result/resources")
+        .and_then(Value::as_array)
+        .expect("resources array");
+    assert!(
+        resources
+            .iter()
+            .any(|r| r.get("uri").and_then(Value::as_str) == Some("ui://drasi/admin")),
+        "resources/list missing ui://drasi/admin: {rl}"
+    );
+
+    // resources/read must return the MCP App HTML.
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "resources/read",
+        "params": {"uri": "ui://drasi/admin"}
+    }));
+    let rr = client.recv_id(5);
+    let contents = rr
+        .pointer("/result/contents/0")
+        .expect("read resource contents");
+    assert_eq!(
+        contents.get("mimeType").and_then(Value::as_str),
+        Some("text/html;profile=mcp-app"),
+        "resources/read returned wrong mimeType: {contents}"
+    );
+    let html = contents
+        .get("text")
+        .and_then(Value::as_str)
+        .expect("html text");
+    assert!(html.contains("<iframe"), "read HTML missing iframe: {html}");
+    assert!(
+        contents
+            .pointer("/_meta/ui/csp/frameDomains")
+            .and_then(Value::as_array)
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
+        "read resource missing _meta.ui.csp.frameDomains: {contents}"
+    );
+
+    // An unknown resource URI is rejected, not panicked.
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "resources/read",
+        "params": {"uri": "ui://drasi/does-not-exist"}
+    }));
+    let bad = client.recv_id(6);
+    assert!(
+        bad.get("error").is_some(),
+        "unknown resource read should error: {bad}"
+    );
+
+    client.call(7, "stop_server", json!({}));
     client.shutdown();
 }

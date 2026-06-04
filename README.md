@@ -345,7 +345,7 @@ drasi-server mcp --config config/server.yaml  # default config for tools
 
 `drasi-server mcp` runs the process as a **stdio-based MCP server**, speaking
 JSON-RPC over stdin/stdout. It lets MCP-capable hosts (e.g. AI assistants) drive
-Drasi Server as a set of tools, and render its admin UI as an embedded MCP-UI app.
+Drasi Server as a set of tools, and render its admin UI as an embedded MCP App.
 
 - The Drasi runtime and HTTP API/UI are **not** started immediately. They boot
   **on demand** when the `open_admin_ui` tool is called. A `config_path` is
@@ -353,10 +353,20 @@ Drasi Server as a set of tools, and render its admin UI as an embedded MCP-UI ap
   from an **empty in-memory configuration** that you can populate with the
   source/query/reaction tools. This makes `open_admin_ui {}` work out-of-the-box
   in hosts like Claude Desktop that launch `drasi-server mcp` with no arguments.
-- That tool returns an MCP-UI resource (`text/uri-list`) pointing at the local
-  admin UI (`http://127.0.0.1:<port>/ui/`), which MCP-UI-capable hosts render in
-  an iframe. The binding is always forced to a private `127.0.0.1` address on an
-  OS-assigned ephemeral port (override with `--port`).
+- That tool renders the admin UI as an **MCP App** (per SEP-1865, the
+  `io.modelcontextprotocol/ui` extension): the server advertises the `resources`
+  capability, the `open_admin_ui` tool declares `_meta.ui.resourceUri =
+  ui://drasi/admin`, and the `ui://drasi/admin` resource is served as
+  `text/html;profile=mcp-app`. That HTML embeds the live admin UI
+  (`http://127.0.0.1:<port>/ui/`) in an iframe, with `_meta.ui.csp.frameDomains`
+  set so the host permits framing the local origin. The binding is always forced
+  to a private `127.0.0.1` address on an OS-assigned ephemeral port (override
+  with `--port`). The tool result also includes the URL as JSON for hosts that
+  do not render MCP Apps.
+- The admin UI assets must be built for the app to render. A bare `cargo build`
+  does **not** build them, so `open_admin_ui` checks that `/ui/` serves and fails
+  with a clear message if not — build the UI with `make build-ui`, or use a
+  release build (`make build-release`, which embeds the UI in the binary).
 - The remaining tools wrap the REST API: sources, queries, reactions (CRUD +
   lifecycle, including `upsert_source` / `upsert_reaction` via PUT), query
   results, instances, plugins, and the solutions catalog.
@@ -387,7 +397,7 @@ Example session (host calls, simplified):
 
 ```text
 → open_admin_ui {"config_path": "config/server.yaml"}
-← MCP-UI resource: http://127.0.0.1:54123/ui/
+← MCP App resource (ui://drasi/admin, text/html;profile=mcp-app) embedding http://127.0.0.1:54123/ui/
 → create_query {"definition": {"id": "q1", "query": "MATCH (n) RETURN n", "queryLanguage": "Cypher", "sources": []}}
 ← {"success": true, ...}
 → stop_server {}
