@@ -130,6 +130,29 @@ enum Commands {
         #[command(subcommand)]
         action: plugin::PluginAction,
     },
+
+    /// Run as a stdio-based MCP (Model Context Protocol) server
+    ///
+    /// Speaks JSON-RPC over stdin/stdout. The Drasi runtime and web UI are
+    /// booted on demand when the `open_admin_ui` tool is called with a config
+    /// path; that tool renders the admin UI as an MCP app.
+    Mcp {
+        /// Default config file used when a tool does not specify one
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
+        /// Port for the local HTTP API/UI (0 = OS-assigned ephemeral port)
+        #[arg(short, long, default_value_t = 0)]
+        port: u16,
+
+        /// Directory to scan for plugin shared libraries (defaults to binary directory)
+        #[arg(long)]
+        plugins_dir: Option<PathBuf>,
+
+        /// Disable cosign signature verification for plugins (verification is on by default)
+        #[arg(long)]
+        skip_verification: bool,
+    },
 }
 
 #[tokio::main]
@@ -166,6 +189,20 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Plugin { action }) => {
             plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
+        }
+        Some(Commands::Mcp {
+            config,
+            port,
+            plugins_dir,
+            skip_verification,
+        }) => {
+            run_mcp(
+                config,
+                port,
+                plugins_dir.or(cli.plugins_dir),
+                skip_verification,
+            )
+            .await
         }
         None => {
             // Default behavior: run the server (backward compatible)
@@ -324,6 +361,33 @@ async fn run_server(
     server.run().await?;
 
     Ok(())
+}
+
+/// Run the server in stdio MCP mode.
+async fn run_mcp(
+    config: Option<PathBuf>,
+    port: u16,
+    plugins_dir: Option<PathBuf>,
+    skip_verification: bool,
+) -> Result<()> {
+    // Resolve the plugins directory the same way run_server does: use the CLI
+    // arg if provided, otherwise default to ./plugins under the binary directory.
+    let plugins_dir = match plugins_dir {
+        Some(dir) => dir,
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.join("plugins")))
+            .unwrap_or_else(|| PathBuf::from("plugins")),
+    };
+
+    let options = drasi_server::mcp::McpServerOptions {
+        config,
+        port,
+        plugins_dir,
+        skip_verification,
+    };
+
+    drasi_server::mcp::run_mcp_server(options).await
 }
 
 /// Validate a configuration file

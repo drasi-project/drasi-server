@@ -19,6 +19,7 @@ pub mod config;
 pub mod dynamic_loading;
 pub mod factories;
 pub mod instance_registry;
+pub mod mcp;
 pub mod persistence;
 pub mod plugin_install;
 pub mod plugin_lockfile;
@@ -40,6 +41,7 @@ pub use factories::{create_reaction, create_source, create_state_store_provider}
 pub use plugin_registry::PluginRegistry;
 pub use server::register_core_plugins;
 pub use server::DrasiServer;
+pub use server::RunningServer;
 
 // Re-export the Plugin SDK for library users
 pub use drasi_plugin_sdk;

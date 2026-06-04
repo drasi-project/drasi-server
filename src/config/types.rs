@@ -33,6 +33,14 @@ fn default_true() -> bool {
     true
 }
 
+/// Options controlling which checks [`DrasiServerConfig::validate_with`] runs.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ValidateOptions {
+    /// Skip host/port (bind address) validation. Used by MCP mode, which forces
+    /// its own private localhost/ephemeral binding regardless of config.
+    pub skip_bind: bool,
+}
+
 /// DrasiServer configuration
 ///
 /// This is a self-contained configuration struct that includes all settings
@@ -429,6 +437,17 @@ impl DrasiServerConfig {
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
+        self.validate_with(ValidateOptions::default())
+    }
+
+    /// Validate the configuration with explicit options.
+    ///
+    /// When `opts.skip_bind` is set, the host/port (bind address) checks are
+    /// skipped. This is used by MCP mode, which forces a private `127.0.0.1`
+    /// ephemeral (`port 0`) binding regardless of the configured host/port, so
+    /// the config's bind settings are intentionally ignored. All other checks
+    /// (instance layout, log level, ...) still run.
+    pub fn validate_with(&self, opts: ValidateOptions) -> Result<()> {
         use crate::api::mappings::map_server_settings;
 
         // Resolve server settings to validate them
@@ -437,21 +456,23 @@ impl DrasiServerConfig {
         // Validate instance layout
         let _ = self.resolved_instances(&mapper)?;
 
-        if !resolved_settings.host.is_empty()
-            && resolved_settings.host != "0.0.0.0"
-            && !is_valid_hostname(&resolved_settings.host)
-            && IpAddr::from_str(&resolved_settings.host).is_err()
-        {
-            return Err(anyhow::anyhow!(
-                "Invalid host '{}': must be a valid hostname or IP address",
-                resolved_settings.host
-            ));
-        }
+        if !opts.skip_bind {
+            if !resolved_settings.host.is_empty()
+                && resolved_settings.host != "0.0.0.0"
+                && !is_valid_hostname(&resolved_settings.host)
+                && IpAddr::from_str(&resolved_settings.host).is_err()
+            {
+                return Err(anyhow::anyhow!(
+                    "Invalid host '{}': must be a valid hostname or IP address",
+                    resolved_settings.host
+                ));
+            }
 
-        if resolved_settings.port == 0 {
-            return Err(anyhow::anyhow!(
-                "Invalid port 0: port must be between 1 and 65535"
-            ));
+            if resolved_settings.port == 0 {
+                return Err(anyhow::anyhow!(
+                    "Invalid port 0: port must be between 1 and 65535"
+                ));
+            }
         }
 
         let valid_levels = ["trace", "debug", "info", "warn", "error"];

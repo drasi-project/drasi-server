@@ -64,8 +64,56 @@ struct PreparedInstance {
     core: DrasiLib,
 }
 
+/// Handle to a started [`DrasiServer`].
+///
+/// Owns the running DrasiLib instances, the web API task, and the plugin
+/// hot-reload watcher. Created by [`DrasiServer::start`]. Call
+/// [`RunningServer::shutdown`] to stop everything gracefully.
+pub struct RunningServer {
+    registry: InstanceRegistry,
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
+    api_handle: Option<(std::net::SocketAddr, tokio::task::JoinHandle<()>)>,
+}
+
+impl RunningServer {
+    /// The address the web API is bound to, if the API is enabled.
+    pub fn local_addr(&self) -> Option<std::net::SocketAddr> {
+        self.api_handle.as_ref().map(|(addr, _)| *addr)
+    }
+
+    /// The base URL of the web API (e.g. `http://127.0.0.1:8080`), if enabled.
+    pub fn base_url(&self) -> Option<String> {
+        self.local_addr().map(|addr| format!("http://{addr}"))
+    }
+
+    /// Gracefully stop the web API, the plugin watcher, and all DrasiLib
+    /// instances.
+    pub async fn shutdown(mut self) -> Result<()> {
+        info!("Shutting down Drasi Server");
+
+        // Stop accepting HTTP requests.
+        if let Some((_, server_task)) = self.api_handle.take() {
+            server_task.abort();
+            let _ = server_task.await;
+        }
+
+        // Cancel the hot-reload watcher task if running.
+        if let Some(handle) = self.watcher_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+            info!("Plugin hot-reload watcher stopped");
+        }
+
+        for (_id, core) in self.registry.list().await {
+            core.stop().await?;
+        }
+
+        Ok(())
+    }
+}
+
 impl DrasiServer {
-    /// Create a new DrasiServer from a configuration file
+    /// Create a new DrasiServer from a configuration file.
     pub async fn new(
         config_path: PathBuf,
         port: u16,
@@ -73,8 +121,56 @@ impl DrasiServer {
         skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
+        Self::new_inner(
+            config_path,
+            port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            None,
+        )
+        .await
+    }
+
+    /// Create a new DrasiServer that ignores the config's bind settings and
+    /// binds to `bind_host:bind_port` instead.
+    ///
+    /// Used by MCP mode to force a private, ephemeral `127.0.0.1:0` binding
+    /// regardless of what the loaded config specifies. The config's host/port
+    /// are not validated (they are intentionally unused); all other config
+    /// validation still runs.
+    pub async fn new_with_bind_override(
+        config_path: PathBuf,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        bind_host: impl Into<String>,
+        bind_port: u16,
+    ) -> Result<Self> {
+        let bind_host = bind_host.into();
+        Self::new_inner(
+            config_path,
+            bind_port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            Some((bind_host, bind_port)),
+        )
+        .await
+    }
+
+    async fn new_inner(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        bind_override: Option<(String, u16)>,
+    ) -> Result<Self> {
         let mut config = load_config_file(&config_path)?;
-        config.validate()?;
+        config.validate_with(crate::config::ValidateOptions {
+            skip_bind: bind_override.is_some(),
+        })?;
 
         // CLI --skip-verification flag overrides config (disables when set)
         if skip_verification {
@@ -550,11 +646,18 @@ impl DrasiServer {
             });
         }
 
+        // Apply the bind override (MCP mode) so host/port reflect the forced
+        // private binding rather than the config's (unvalidated) bind settings.
+        let (host, port) = match bind_override {
+            Some((h, p)) => (h, p),
+            None => (resolved_settings.host, port),
+        };
+
         Ok(Self {
             instances,
             enable_api: true,
             enable_ui,
-            host: resolved_settings.host,
+            host,
             port,
             config_file_path: Some(config_path.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
@@ -643,7 +746,7 @@ impl DrasiServer {
     }
 
     #[allow(clippy::print_stdout)]
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
         println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
@@ -656,6 +759,24 @@ impl DrasiServer {
             "  Log level: {}",
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string())
         );
+
+        let running = self.start().await?;
+
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+
+        running.shutdown().await
+    }
+
+    /// Start the server (instances + optional web API) without printing a banner
+    /// or blocking on a shutdown signal.
+    ///
+    /// Returns a [`RunningServer`] handle that owns the running instances, the
+    /// web API task, and the plugin watcher. The caller is responsible for
+    /// driving shutdown via [`RunningServer::shutdown`]. This is the entry point
+    /// used by MCP server mode, where stdout is reserved for the JSON-RPC
+    /// protocol stream and the lifecycle is tied to the transport.
+    pub async fn start(mut self) -> Result<RunningServer> {
         info!("Initializing Drasi Server");
 
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
@@ -704,12 +825,16 @@ impl DrasiServer {
                 let persistence_enabled = resolved_settings.persist_config;
 
                 if persistence_enabled {
-                    // Persistence is enabled - create ConfigPersistence instance
+                    // Persistence is enabled - create ConfigPersistence instance.
+                    // Use the config's authored host/port (not the runtime bind
+                    // address) so a CLI `--port` override or the MCP-mode
+                    // ephemeral 127.0.0.1:0 binding is never written back into
+                    // the user's config file.
                     let persistence = Arc::new(ConfigPersistence::new(
                         PathBuf::from(config_file),
                         registry.clone(),
-                        self.host.clone(),
-                        self.port,
+                        resolved_settings.host.clone(),
+                        resolved_settings.port,
                         resolved_settings.log_level,
                         true, // persist_config = true
                         persist_settings.clone(),
@@ -759,39 +884,27 @@ impl DrasiServer {
         };
 
         // Start web API if enabled
-        if self.enable_api {
-            self.start_api(
-                instances.clone(),
-                registry.clone(),
-                config_persistence.clone(),
-                solutions_dir,
-            )
-            .await?;
-            info!(
-                "Drasi Server started successfully with API on port {}",
-                self.port
-            );
+        let api_handle = if self.enable_api {
+            let (local_addr, server_task) = self
+                .start_api(
+                    instances.clone(),
+                    registry.clone(),
+                    config_persistence.clone(),
+                    solutions_dir,
+                )
+                .await?;
+            info!("Drasi Server started successfully with API on {local_addr}");
+            Some((local_addr, server_task))
         } else {
             info!("Drasi Server started successfully (API disabled)");
-        }
+            None
+        };
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
-
-        info!("Shutting down Drasi Server");
-
-        // Cancel the hot-reload watcher task if running
-        if let Some(handle) = self.watcher_handle.take() {
-            handle.abort();
-            let _ = handle.await;
-            info!("Plugin hot-reload watcher stopped");
-        }
-
-        for (_id, core) in registry.list().await {
-            core.stop().await?;
-        }
-
-        Ok(())
+        Ok(RunningServer {
+            registry,
+            watcher_handle: self.watcher_handle.take(),
+            api_handle,
+        })
     }
 
     async fn start_api(
@@ -800,7 +913,7 @@ impl DrasiServer {
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<(std::net::SocketAddr, tokio::task::JoinHandle<()>)> {
         // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
         let registry_version = {
@@ -905,21 +1018,23 @@ impl DrasiServer {
 
         let addr = format!("{}:{}", self.host, self.port);
         info!("Starting web API on {addr}");
-        info!("API v1 available at http://{addr}/api/v1/");
-        info!("Swagger UI available at http://{addr}/api/v1/docs/");
-        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
-            info!("Drasi Server Admin UI at http://{addr}/ui/");
-        }
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
+        let local_addr = listener.local_addr()?;
 
-        tokio::spawn(async move {
+        info!("API v1 available at http://{local_addr}/api/v1/");
+        info!("Swagger UI available at http://{local_addr}/api/v1/docs/");
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
+            info!("Drasi Server Admin UI at http://{local_addr}/ui/");
+        }
+
+        let server_task = tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
                 error!("Web API server error: {e}");
             }
         });
 
-        Ok(())
+        Ok((local_addr, server_task))
     }
 }
 

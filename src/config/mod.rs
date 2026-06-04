@@ -48,7 +48,7 @@ pub use plugin_validation::{
 pub use schema_validation::validate_component_configs;
 pub use types::{
     default_plugin_registry, DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency,
-    ResolvedInstanceConfig, TrustedIdentity,
+    ResolvedInstanceConfig, TrustedIdentity, ValidateOptions,
 };
 pub use validation::{validate_config, ValidationError};
 

@@ -313,6 +313,8 @@ drasi-server [OPTIONS] [COMMAND]
 | `init` | Create a new configuration file interactively |
 | `validate` | Validate a configuration file without starting |
 | `doctor` | Check system dependencies |
+| `plugin` | Manage plugins from OCI registries |
+| `mcp` | Run as a stdio-based MCP (Model Context Protocol) server |
 
 **Examples:**
 
@@ -333,7 +335,65 @@ drasi-server validate --config config/server.yaml --show-resolved
 # Check dependencies
 drasi-server doctor
 drasi-server doctor --all  # Include optional deps
+
+# Run as a stdio MCP server (JSON-RPC over stdin/stdout)
+drasi-server mcp
+drasi-server mcp --config config/server.yaml  # default config for tools
 ```
+
+### MCP (Model Context Protocol) Server Mode
+
+`drasi-server mcp` runs the process as a **stdio-based MCP server**, speaking
+JSON-RPC over stdin/stdout. It lets MCP-capable hosts (e.g. AI assistants) drive
+Drasi Server as a set of tools, and render its admin UI as an embedded MCP-UI app.
+
+- The Drasi runtime and HTTP API/UI are **not** started immediately. They boot
+  **on demand** when the `open_admin_ui` tool is called with a `config_path`.
+- That tool returns an MCP-UI resource (`text/uri-list`) pointing at the local
+  admin UI (`http://127.0.0.1:<port>/ui/`), which MCP-UI-capable hosts render in
+  an iframe. The binding is always forced to a private `127.0.0.1` address on an
+  OS-assigned ephemeral port (override with `--port`).
+- The remaining tools wrap the REST API: sources, queries, reactions (CRUD +
+  lifecycle, including `upsert_source` / `upsert_reaction` via PUT), query
+  results, instances, plugins, and the solutions catalog.
+- A server boots against exactly one config at a time. Calling `open_admin_ui`
+  again with the **same** `config_path` is idempotent; calling it with a
+  **different** config while a server is running is rejected — call `stop_server`
+  first. Concurrent tool calls issued during a boot wait for readiness rather
+  than racing it (single-flight).
+- API errors are surfaced as structured tool errors: non-2xx responses are
+  emitted as JSON `{ httpStatus, code, message, details }` (preserving the full
+  `details`) plus a short text summary, with `isError` set.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config <PATH>` | (none) | Default config used when a tool omits `config_path` |
+| `--port <PORT>` | `0` (ephemeral) | Port for the local HTTP API/UI |
+| `--plugins-dir <DIR>` | `./plugins` | Directory to scan for plugin libraries |
+| `--skip-verification` | `false` | Disable cosign signature verification for plugins |
+
+**stdout hygiene:** MCP owns stdout for the JSON-RPC stream. On startup the
+process redirects file descriptor 1 to stderr (handing the original stdout to the
+MCP transport), so all logs and banners go to stderr and never corrupt the
+protocol stream. The redirect is implemented for both Unix (`dup2`) and Windows
+(`SetStdHandle` + CRT `dup2`); the Windows path is compile-checked for
+`x86_64-pc-windows-gnu` but not runtime-verified on this project's CI.
+
+Example session (host calls, simplified):
+
+```text
+→ open_admin_ui {"config_path": "config/server.yaml"}
+← MCP-UI resource: http://127.0.0.1:54123/ui/
+→ create_query {"definition": {"id": "q1", "query": "MATCH (n) RETURN n", "queryLanguage": "Cypher", "sources": []}}
+← {"success": true, ...}
+→ stop_server {}
+← Drasi Server stopped.
+```
+
+> **Host compatibility:** the embedded `http://127.0.0.1:<port>/ui/` iframe works
+> for local/native MCP hosts on the same machine. Remote or HTTPS-only hosts may
+> block the local HTTP iframe (mixed-content/CSP); the CRUD/lifecycle tools remain
+> fully usable regardless.
 
 ### Environment Variables
 

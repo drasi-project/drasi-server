@@ -19,7 +19,54 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 - Run with UI enabled (override config): `cargo run -- --enable-ui`
 - Validate config (structure only): `cargo run -- validate --config config/server.yaml`
 - Validate config (with plugins): `cargo run -- validate --config config/server.yaml --plugins-dir ./plugins`
+- Run as stdio MCP server: `cargo run -- mcp` (optionally `--config config/server.yaml` as the default config for tools)
 - Check compilation: `cargo check`
+
+### MCP (stdio) Server Mode
+
+`drasi-server mcp` runs the process as a stdio-based MCP (Model Context Protocol)
+server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
+
+- **Boot-on-demand:** the Drasi runtime + HTTP API/UI are not started at launch.
+  The `open_admin_ui` tool boots them against a `config_path` and returns an
+  MCP-UI resource (`text/uri-list`) pointing at `http://127.0.0.1:<port>/ui/`.
+  Binding is forced to private `127.0.0.1` on an ephemeral port (override `--port`).
+- **Tools call the live HTTP API** via `reqwest` to reuse all existing API logic
+  (sources/queries/reactions CRUD + lifecycle incl. `upsert_source`/
+  `upsert_reaction` via PUT, query results, instances, plugins, solutions
+  catalog). The MCP layer stays thin and parity-preserving.
+- **Single-flight boot (`ServerSlot` state machine in `src/mcp/mod.rs`):** the
+  lazily-booted runtime lives in `Arc<Mutex<ServerSlot>>` (`Stopped`/`Starting`/
+  `Running`) plus a `watch` progress channel. `ensure_started` boots outside the
+  lock and stays `Starting` through health-readiness, so concurrent tool calls
+  wait for readiness instead of seeing "not started". A second `open_admin_ui`
+  with a **different** config while `Running` is rejected ("call `stop_server`
+  first") — no silent reboot. Failed boots reset to `Stopped` and wake waiters.
+- **Bind-validation bypass:** MCP forces `127.0.0.1:0`. `DrasiServer::
+  new_with_bind_override` validates via `validate_with(ValidateOptions{
+  skip_bind:true})`, skipping ONLY the host/port checks; normal CLI configs still
+  reject `port: 0`.
+- **Structured errors:** `response_to_result` parses non-2xx bodies as the API
+  `ErrorResponse` and emits JSON `{ httpStatus, code, message, details }` (full
+  `details`) + a text summary, keeping `isError`; falls back to raw text.
+- **stdout hygiene (critical):** MCP owns stdout. drasi-lib's tracing layer writes
+  to fd 1, so `run_mcp_server` redirects fd 1 → stderr (handing the original
+  stdout to the MCP transport) *before* `get_or_init_global_registry()`. Never
+  add `println!`/stdout writes that could reach the JSON-RPC stream in MCP mode.
+  `redirect_stdout_to_stderr` has `#[cfg(unix)]` (`fcntl`/`dup2`) and
+  `#[cfg(windows)]` (`SetStdHandle` + CRT `dup2`, via `windows-sys`) variants;
+  the Windows path is compile-checked only.
+- **Server refactor:** `DrasiServer::start()` returns a non-printing
+  `RunningServer` (used by MCP); `run()` is a thin banner + `start()` + ctrl_c
+  wrapper. `start_api()` binds the listener first and returns the real
+  `local_addr` so ephemeral port 0 resolves to the bound port.
+- **Tests:** `tests/mcp_stdio_test.rs` drives the binary over stdio and asserts
+  stdout carries only JSON-RPC, tools are advertised, `open_admin_ui` boots and
+  returns a localhost UI resource, CRUD round-trips, plus hardening cases:
+  tool-before-boot errors, bad-config-path doesn't panic, config-switch
+  rejection, duplicate-create structured 409, single-flight concurrency,
+  failed-boot retry, `stop_server` doesn't hang, upsert routing/id-check, and a
+  regression that normal configs still reject `port: 0`.
 
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
