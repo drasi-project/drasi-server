@@ -14,7 +14,7 @@ These exercises are designed to help you understand Drasi by making small, focus
 
 **Goal**: Understand how queries filter data.
 
-1. Open `app/src/services/DrasiClient.ts`
+1. Open `app/src/services/queries.ts`
 2. Find the `watchlist-query` definition
 3. Add `'AMZN'` to the `WHERE s.symbol IN [...]` clause
 4. Restart the app and observe the new stock appear
@@ -25,7 +25,7 @@ These exercises are designed to help you understand Drasi by making small, focus
 
 **Goal**: Understand query conditions and result set changes.
 
-1. Find `high-volume-query` in `DrasiClient.ts`
+1. Find `high-volume-query` in `queries.ts`
 2. Change `sp.volume > 10000000` to `sp.volume > 5000000`
 3. Watch how more stocks now qualify for the "High Volume" panel
 
@@ -35,7 +35,7 @@ These exercises are designed to help you understand Drasi by making small, focus
 
 **Goal**: Understand query RETURN clauses.
 
-1. Find `price-ticker-query` in `DrasiClient.ts`
+1. Find `price-ticker-query` in `queries.ts`
 2. Add `sp.volume AS volume` to the RETURN clause
 3. Update `StockTicker.tsx` to display the volume
 
@@ -49,9 +49,14 @@ These exercises are designed to help you understand Drasi by making small, focus
 
 Create a query that shows only Technology stocks:
 
+Add a new query definition to `app/src/services/queries.ts` and include it in
+the exported `ALL_QUERIES` array (it is passed to `<DrasiProvider queries={...}>`
+in `app/src/main.tsx`):
+
 ```typescript
-this.queries.set('tech-stocks-query', {
+export const TECH_STOCKS_QUERY: QueryDefinition = {
   id: 'tech-stocks-query',
+  description: 'Technology sector stocks',
   query: `
     MATCH (s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
     WHERE s.sector = 'Technology'
@@ -64,8 +69,8 @@ this.queries.set('tech-stocks-query', {
     { sourceId: 'postgres-stocks', pipeline: [] },
     { sourceId: 'price-feed', pipeline: [] }
   ],
-  joins: [hasPrice]
-});
+  joins: [HAS_PRICE]
+};
 ```
 
 Then create a new UI panel to display it.
@@ -176,7 +181,7 @@ These are more substantial features that would improve the demo for everyone.
 **Files to modify**:
 
 - New: `app/src/components/QueryInspector.tsx`
-- `app/src/services/grpc/SSEClient.ts` - Add event hooks
+- `drasi-react/src/DrasiSSEClient.ts` - Add event hooks
 - `app/src/App.tsx` - Add toggle button
 
 #### 3. Custom Screener Builder
@@ -193,7 +198,7 @@ These are more substantial features that would improve the demo for everyone.
 **Files to modify**:
 
 - New: `app/src/components/ScreenerBuilder.tsx`
-- `app/src/services/DrasiClient.ts` - Already has `createCustomQuery()`
+- `app/src/services/queries.ts` - Add the query definition and call the REST API to create it dynamically
 
 ### Medium Priority
 
@@ -209,7 +214,7 @@ These are more substantial features that would improve the demo for everyone.
 
 **Files to modify**:
 
-- `app/src/hooks/useDrasi.ts` - Track price history
+- `app/src/drasi/queryOptions.ts` - Track price history via a query's `transform`/`postProcess`
 - `app/src/components/StockList.tsx` - Add sparkline column
 
 #### 5. Connection Status Improvements
@@ -225,7 +230,7 @@ These are more substantial features that would improve the demo for everyone.
 
 **Files to modify**:
 
-- `app/src/services/grpc/SSEClient.ts` - Expose more status info
+- `drasi-react/src/DrasiSSEClient.ts` - Expose more status info
 - `app/src/App.tsx` - Add notification system
 
 #### 6. Mobile-Responsive Layout
