@@ -62,43 +62,102 @@ const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
 
 /// Build the HTML for the admin UI MCP App resource.
 ///
-/// The host renders this HTML inside a sandboxed iframe. It embeds the live
-/// admin SPA (served at `<base_url>/ui/`) in a nested iframe so the SPA's
-/// same-origin REST calls work unchanged. The nested iframe is permitted via
-/// the resource's `_meta.ui.csp.frameDomains` (see [`admin_ui_resource_meta`]).
+/// MCP Apps run inside a host-controlled sandbox iframe on a *different* origin
+/// than the Drasi Server, and hosts block nested iframes to arbitrary origins
+/// (the inner sandbox is `allow-scripts allow-same-origin allow-forms`, with no
+/// frame escape). So rather than embedding the live `/ui/` in a nested iframe,
+/// we serve an *inlined* variant of the SPA shell: the app's entry script and
+/// stylesheet are loaded cross-origin directly from the Drasi Server
+/// (`<base_url>/ui/assets/...`), permitted via `_meta.ui.csp.resourceDomains`,
+/// and the app's API/SSE calls are permitted via `connectDomains` and rewritten
+/// to the absolute origin by the injected bridge script
+/// (`crate::ui_assets::MCP_BRIDGE_JS`). The Drasi Server already responds with
+/// permissive CORS (`Access-Control-Allow-Origin: *`), so cross-origin loads
+/// succeed without a stable `_meta.ui.domain`.
 fn admin_ui_resource_html(base_url: &str) -> String {
+    match crate::ui_assets::index_html() {
+        Some(raw) => inline_admin_ui_html(&raw, base_url),
+        None => fallback_admin_ui_html(base_url),
+    }
+}
+
+/// Transform the SPA `index.html` into an MCP-App-ready document:
+/// rewrite root-relative `/ui/` asset URLs to absolute `<base_url>/ui/...`,
+/// strip the bare inline `<script>` (host CSP forbids inline scripts; the
+/// bridge reproduces its behavior), and inject the external bridge script so it
+/// runs before the deferred app module.
+fn inline_admin_ui_html(raw: &str, base_url: &str) -> String {
+    let abs_assets = raw.replace("\"/ui/", &format!("\"{base_url}/ui/"));
+    let no_inline = strip_bare_inline_scripts(&abs_assets);
+    let bridge_tag = format!(
+        "<head>\n  <script src=\"{base_url}{path}\"></script>",
+        path = crate::ui_assets::MCP_BRIDGE_PATH
+    );
+    if no_inline.contains("<head>") {
+        no_inline.replacen("<head>", &bridge_tag, 1)
+    } else {
+        format!("{bridge_tag}\n{no_inline}")
+    }
+}
+
+/// Remove every bare `<script>...</script>` block (one with no attributes).
+/// Attributed scripts such as `<script type="module" ...>` and
+/// `<script src=...>` are preserved.
+fn strip_bare_inline_scripts(html: &str) -> String {
+    const OPEN: &str = "<script>";
+    const CLOSE: &str = "</script>";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        match rest[start..].find(CLOSE) {
+            Some(end_rel) => {
+                let end = start + end_rel + CLOSE.len();
+                rest = &rest[end..];
+            }
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Fallback shell used when the SPA assets are not present (e.g. a bare
+/// `cargo build` that never built the UI). `open_admin_ui` already fails loudly
+/// in that case, but `resources/read` must still return valid HTML.
+fn fallback_admin_ui_html(base_url: &str) -> String {
     let ui_url = format!("{base_url}/ui/");
     format!(
         "<!doctype html>\n\
 <html lang=\"en\">\n\
 <head>\n\
 <meta charset=\"utf-8\">\n\
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
 <title>Drasi Server Admin</title>\n\
-<style>\n\
-  html, body {{ margin: 0; padding: 0; height: 100%; width: 100%; background: #171717; }}\n\
-  iframe {{ position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }}\n\
-  .fallback {{ color: #fafafa; font-family: system-ui, sans-serif; padding: 16px; }}\n\
-  .fallback a {{ color: #7aa2f7; }}\n\
-</style>\n\
 </head>\n\
-<body>\n\
-<iframe src=\"{ui_url}\" title=\"Drasi Server Admin UI\" allow=\"clipboard-write\"></iframe>\n\
-<noscript><div class=\"fallback\">Open the Drasi admin UI: <a href=\"{ui_url}\">{ui_url}</a></div></noscript>\n\
+<body style=\"font-family:system-ui,sans-serif;padding:16px;background:#171717;color:#fafafa\">\n\
+<p>The admin UI assets were not found. Build the UI (<code>make build-ui</code>) and restart, \
+then open <a href=\"{ui_url}\">{ui_url}</a>.</p>\n\
 </body>\n\
 </html>\n"
     )
 }
 
 /// Build the `_meta` for the admin UI resource, declaring the CSP needed to
-/// frame the local admin UI origin. Without `frameDomains` the host's default
-/// `frame-src 'none'` would block the nested iframe.
+/// load the SPA's scripts/styles (`resourceDomains`) and make its API/SSE
+/// requests (`connectDomains`) against the local Drasi Server origin. Without
+/// these the host's restrictive default CSP would block both.
 fn admin_ui_resource_meta(base_url: &str) -> Meta {
     let mut meta = Meta::new();
     meta.insert(
         "ui".to_string(),
         serde_json::json!({
-            "csp": { "frameDomains": [base_url] },
+            "csp": {
+                "connectDomains": [base_url],
+                "resourceDomains": [base_url],
+            },
             "prefersBorder": false
         }),
     );

@@ -31,9 +31,15 @@ server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
   The `open_admin_ui` tool boots them and renders the admin UI as an **MCP App**
   (SEP-1865, `io.modelcontextprotocol/ui`): the server advertises the `resources`
   capability, the tool declares `_meta.ui.resourceUri = ui://drasi/admin`, and the
-  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — HTML that
-  iframes `http://127.0.0.1:<port>/ui/` with `_meta.ui.csp.frameDomains` set so the
-  host permits framing the local origin. The `ServerHandler` is implemented
+  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — an
+  inlined copy of the admin SPA shell whose entry script/stylesheet are loaded
+  cross-origin from `http://127.0.0.1:<port>/ui/assets/...` (declared via
+  `_meta.ui.csp.resourceDomains`) and whose root-relative API/SSE calls are
+  rewritten to that origin by an injected bridge script served at `/__mcp/bridge.js`
+  (declared via `_meta.ui.csp.connectDomains`); the server's permissive CORS
+  (`Access-Control-Allow-Origin: *`) lets those cross-origin loads succeed.
+  Hosts block nested iframes to arbitrary origins, which is why the SPA is
+  inlined rather than framed. The `ServerHandler` is implemented
   manually (not via `#[tool_handler]`) so `list_tools` can inject the tool `_meta`
   and `list_resources`/`read_resource` can serve the UI resource. Binding is forced
   to private `127.0.0.1` on an ephemeral port (override `--port`). `open_admin_ui`

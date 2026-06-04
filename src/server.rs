@@ -1017,6 +1017,16 @@ impl DrasiServer {
             info!("Web UI is disabled by configuration");
         }
 
+        // Serve the MCP App bridge script alongside the UI. It is only used when
+        // the admin UI is rendered as an MCP App (different sandbox origin), but
+        // is harmless to expose whenever the UI is enabled.
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
+            app = app.route(
+                crate::ui_assets::MCP_BRIDGE_PATH,
+                get(crate::ui_assets::serve_mcp_bridge),
+            );
+        }
+
         let cors_layer = if self.cors_allowed_origins.is_empty() {
             CorsLayer::permissive()
         } else {

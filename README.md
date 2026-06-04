@@ -357,12 +357,17 @@ Drasi Server as a set of tools, and render its admin UI as an embedded MCP App.
   `io.modelcontextprotocol/ui` extension): the server advertises the `resources`
   capability, the `open_admin_ui` tool declares `_meta.ui.resourceUri =
   ui://drasi/admin`, and the `ui://drasi/admin` resource is served as
-  `text/html;profile=mcp-app`. That HTML embeds the live admin UI
-  (`http://127.0.0.1:<port>/ui/`) in an iframe, with `_meta.ui.csp.frameDomains`
-  set so the host permits framing the local origin. The binding is always forced
-  to a private `127.0.0.1` address on an OS-assigned ephemeral port (override
-  with `--port`). The tool result also includes the URL as JSON for hosts that
-  do not render MCP Apps.
+  `text/html;profile=mcp-app`. Hosts block nested iframes to arbitrary origins,
+  so rather than framing `/ui/`, that HTML is an **inlined** copy of the admin
+  SPA shell: the app's entry script and stylesheet are loaded cross-origin
+  directly from `http://127.0.0.1:<port>/ui/assets/...` (permitted via
+  `_meta.ui.csp.resourceDomains`), and a small injected bridge script rewrites
+  the app's root-relative API/SSE requests to that absolute origin (permitted
+  via `_meta.ui.csp.connectDomains`). The Drasi Server responds with permissive
+  CORS (`Access-Control-Allow-Origin: *`), so the cross-origin loads succeed.
+  The binding is always forced to a private `127.0.0.1` address on an OS-assigned
+  ephemeral port (override with `--port`). The tool result also includes the URL
+  as JSON for hosts that do not render MCP Apps.
 - The admin UI assets must be built for the app to render. A bare `cargo build`
   does **not** build them, so `open_admin_ui` checks that `/ui/` serves and fails
   with a clear message if not — build the UI with `make build-ui`, or use a
@@ -397,17 +402,21 @@ Example session (host calls, simplified):
 
 ```text
 → open_admin_ui {"config_path": "config/server.yaml"}
-← MCP App resource (ui://drasi/admin, text/html;profile=mcp-app) embedding http://127.0.0.1:54123/ui/
+← MCP App resource (ui://drasi/admin, text/html;profile=mcp-app) inlining the admin SPA from http://127.0.0.1:54123/ui/
 → create_query {"definition": {"id": "q1", "query": "MATCH (n) RETURN n", "queryLanguage": "Cypher", "sources": []}}
 ← {"success": true, ...}
 → stop_server {}
 ← Drasi Server stopped.
 ```
 
-> **Host compatibility:** the embedded `http://127.0.0.1:<port>/ui/` iframe works
-> for local/native MCP hosts on the same machine. Remote or HTTPS-only hosts may
-> block the local HTTP iframe (mixed-content/CSP); the CRUD/lifecycle tools remain
-> fully usable regardless.
+> **Host compatibility:** the admin UI is inlined and loads its assets/API
+> cross-origin from the local `http://127.0.0.1:<port>` server, declared via
+> `_meta.ui.csp` (`resourceDomains` + `connectDomains`). This works for
+> local/native MCP hosts on the same machine. Remote or HTTPS-only hosts may
+> block the local HTTP origin (mixed-content/CSP); the CRUD/lifecycle tools
+> remain fully usable regardless. The Monaco-based query editor relies on web
+> workers that a strict host `worker-src` policy may block, but the rest of the
+> UI renders normally.
 
 ### Environment Variables
 

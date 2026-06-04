@@ -872,6 +872,12 @@ fn mcp_apps_resource_contract_is_satisfied() {
     // Boot the server so the resource can reference the live port.
     let resp = client.call(3, "open_admin_ui", json!({}));
     assert!(resp.get("result").is_some(), "open_admin_ui failed: {resp}");
+    let info = open_ui_info(&resp);
+    let ui_url = info
+        .get("uiUrl")
+        .and_then(Value::as_str)
+        .expect("open_admin_ui info missing uiUrl")
+        .to_string();
 
     // resources/list must include the UI resource.
     client.send(&json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list", "params": {}}));
@@ -907,15 +913,33 @@ fn mcp_apps_resource_contract_is_satisfied() {
         .get("text")
         .and_then(Value::as_str)
         .expect("html text");
-    assert!(html.contains("<iframe"), "read HTML missing iframe: {html}");
+    // The admin UI is inlined (not framed): the SPA entry module is loaded
+    // cross-origin from the live Drasi Server, and the MCP bridge is injected.
     assert!(
-        contents
-            .pointer("/_meta/ui/csp/frameDomains")
-            .and_then(Value::as_array)
-            .map(|a| !a.is_empty())
-            .unwrap_or(false),
-        "read resource missing _meta.ui.csp.frameDomains: {contents}"
+        !html.contains("<iframe"),
+        "MCP App HTML must not use a nested iframe: {html}"
     );
+    let base = ui_url.trim_end_matches("/ui/");
+    assert!(
+        html.contains(&format!("{base}/ui/assets/")),
+        "read HTML missing absolute SPA asset URL ({base}/ui/assets/...): {html}"
+    );
+    assert!(
+        html.contains(&format!("{base}/__mcp/bridge.js")),
+        "read HTML missing MCP bridge script: {html}"
+    );
+    let csp = contents
+        .pointer("/_meta/ui/csp")
+        .expect("read resource missing _meta.ui.csp");
+    for key in ["connectDomains", "resourceDomains"] {
+        assert!(
+            csp.get(key)
+                .and_then(Value::as_array)
+                .map(|a| !a.is_empty())
+                .unwrap_or(false),
+            "read resource missing non-empty _meta.ui.csp.{key}: {contents}"
+        );
+    }
 
     // An unknown resource URI is rejected, not panicked.
     client.send(&json!({
