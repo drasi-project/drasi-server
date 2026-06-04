@@ -1,0 +1,90 @@
+/*
+ * Copyright 2025 The Drasi Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Styles required by the drasi-react components.
+ *
+ * Import once in your application (for example in your root stylesheet or
+ * entry module):
+ *
+ *   import 'drasi-react/styles.css';
+ *
+ * The row-change animation classes (`price-up`, `price-down`, `status-change`)
+ * are applied by `QueryTable`/`useRowAnimation`; the dialog animation classes
+ * are used by `CodeViewerDialog`.
+ */
+
+/* Row value-change animations */
+.price-up {
+  animation: drasi-flash-green 0.5s ease-in-out;
+}
+
+.price-down {
+  animation: drasi-flash-red 0.5s ease-in-out;
+}
+
+.status-change {
+  animation: drasi-flash-blue 0.5s ease-in-out;
+}
+
+@keyframes drasi-flash-green {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(16, 185, 129, 0.2); }
+}
+
+@keyframes drasi-flash-red {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(239, 68, 68, 0.2); }
+}
+
+@keyframes drasi-flash-blue {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(59, 130, 246, 0.25); }
+}
+
+/* Dialog animations */
+@keyframes drasi-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drasi-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: drasi-fade-in 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: drasi-slide-up 0.25s ease-out;
+}
+
+/* Force all text in an expanded table to inherit the container font size */
+.expanded-table-text {
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.expanded-table-text * {
+  font-size: inherit !important;
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
