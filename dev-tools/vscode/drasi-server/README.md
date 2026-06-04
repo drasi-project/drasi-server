@@ -42,6 +42,12 @@ Use the **Drasi** view in the activity bar:
 
 To edit the active server URL, choose **Edit server URL**.
 
+### Delete a Server
+
+1. Right-click the server entry you want to remove
+2. Select **Delete server**
+3. Confirm the deletion when prompted
+
 ### Launch a Server
 
 Open a Drasi config YAML file (one with `apiVersion: drasi.io/v1`). A **▶ Launch Server** code lens appears at the top. Click it to:

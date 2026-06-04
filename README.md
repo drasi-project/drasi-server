@@ -1955,7 +1955,7 @@ npm run package
 
 **Managing Servers:**
 1. Open the **Drasi** view in the Activity Bar
-2. Right-click to add/edit server connections
+2. Right-click to add/edit/delete server connections
 3. Click the plug icon to switch active server
 
 **Launching the Server:**
