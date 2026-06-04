@@ -520,32 +520,55 @@ fn duplicate_create_query_surfaces_structured_error() {
 }
 
 #[test]
-fn single_flight_boot_serves_concurrent_tool_call() {
+fn single_flight_concurrent_boots_share_one_server() {
     let dir = TempDir::new().expect("tempdir");
     let config = write_config(&dir);
 
     let mut client = McpClient::spawn();
     client.initialize();
 
-    // Fire the boot and a component tool back-to-back WITHOUT awaiting the boot.
-    // The component tool must wait for readiness and succeed, not race to a
-    // "not started" error.
+    // Fire two open_admin_ui calls concurrently (same config) WITHOUT awaiting
+    // the first. Regardless of which task acquires the state lock first, the
+    // single-flight machine guarantees exactly one server boots: one call boots
+    // it, the other observes `Starting` and waits for the same server. Both must
+    // succeed and report the SAME base URL (proving no double-boot).
     client.send_call(2, "open_admin_ui", json!({"config_path": config}));
-    client.send_call(3, "list_sources", json!({}));
+    client.send_call(3, "open_admin_ui", json!({"config_path": config}));
 
-    let boot = client.recv_id(2);
-    assert!(boot.get("result").is_some(), "boot failed: {boot}");
-
-    let list = client.recv_id(3);
-    let body = serde_json::to_string(&list)
-        .unwrap_or_default()
-        .to_lowercase();
+    let first = client.recv_id(2);
+    let second = client.recv_id(3);
+    assert!(first.get("result").is_some(), "first boot failed: {first}");
     assert!(
-        list.get("result").is_some() && !body.contains("not started"),
-        "concurrent list_sources should succeed after single-flight boot: {list}"
+        second.get("result").is_some(),
+        "second boot failed: {second}"
     );
 
-    client.call(4, "stop_server", json!({}));
+    let base_of = |resp: &Value| -> String {
+        result_texts(resp)
+            .into_iter()
+            .find_map(|t| {
+                serde_json::from_str::<Value>(&t)
+                    .ok()
+                    .and_then(|v| v.get("baseUrl").and_then(Value::as_str).map(str::to_string))
+            })
+            .unwrap_or_default()
+    };
+    let base_a = base_of(&first);
+    let base_b = base_of(&second);
+    assert!(!base_a.is_empty(), "missing baseUrl in first: {first}");
+    assert_eq!(
+        base_a, base_b,
+        "concurrent boots produced different servers (double-boot): {base_a} vs {base_b}"
+    );
+
+    // After the boot has settled, a normal awaited tool call succeeds.
+    let list = client.call(4, "list_sources", json!({}));
+    assert!(
+        list.get("result").is_some(),
+        "list_sources after boot failed: {list}"
+    );
+
+    client.call(5, "stop_server", json!({}));
     client.shutdown();
 }
 
@@ -694,4 +717,60 @@ fn validate_rejects_port_zero_for_normal_config() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn open_admin_ui_without_config_boots_empty_default() {
+    // Regression: launched with no --config and called with no config_path
+    // (as Claude Desktop does), open_admin_ui must boot an empty in-memory
+    // configuration and render the UI, not fail trying to read a missing file.
+    let mut client = McpClient::spawn(); // spawned with just `mcp`, no --config
+    client.initialize();
+
+    let resp = client.call(2, "open_admin_ui", json!({}));
+    let content = resp
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("open_admin_ui (no config) failed: {resp}"));
+
+    let ui_url = content
+        .iter()
+        .find(|c| c.get("type").and_then(Value::as_str) == Some("resource"))
+        .and_then(|c| c.get("resource"))
+        .and_then(|r| r.get("text"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("missing UI resource: {resp}"));
+    assert!(
+        ui_url.starts_with("http://127.0.0.1:") && ui_url.ends_with("/ui/"),
+        "unexpected UI url: {ui_url}"
+    );
+
+    // The empty default has no queries; listing should succeed (mutations are
+    // allowed in memory even without a config file).
+    let resp = client.call(3, "list_queries", json!({}));
+    assert!(
+        resp.get("result").is_some(),
+        "list_queries failed on empty default: {resp}"
+    );
+
+    // And a query can be created in the in-memory config.
+    let resp = client.call(
+        4,
+        "create_query",
+        json!({"definition": {
+            "id": "q1",
+            "query": "MATCH (n) RETURN n",
+            "queryLanguage": "Cypher",
+            "sources": []
+        }}),
+    );
+    let texts = result_texts(&resp);
+    assert!(
+        texts.iter().any(|t| t.contains("\"success\":true")),
+        "create_query on empty default failed: {resp}"
+    );
+
+    client.call(5, "stop_server", json!({}));
+    client.shutdown();
 }

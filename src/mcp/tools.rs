@@ -30,9 +30,10 @@ use super::DrasiMcpServer;
 /// Arguments for the `open_admin_ui` startup tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OpenAdminUiArgs {
-    /// Path to the Drasi Server configuration file to boot the server against.
-    /// If omitted, the `--config` value provided when the MCP server was
-    /// launched is used.
+    /// Optional path to the Drasi Server configuration file to boot against. If
+    /// omitted, the `--config` value provided when the MCP server was launched is
+    /// used; if neither is set, the server boots from an empty in-memory default
+    /// configuration.
     #[serde(default)]
     pub config_path: Option<String>,
 }
@@ -133,9 +134,11 @@ impl DrasiMcpServer {
     // ---- UI app / lifecycle -------------------------------------------------
 
     #[tool(
-        description = "Boot the Drasi Server (if not already running) against a config file and \
-        render its admin web UI as an MCP app. Returns an MCP-UI resource pointing at the local \
-        admin UI plus the base URL. Call this first before using other tools."
+        description = "Boot the Drasi Server (if not already running) and render its admin web UI \
+        as an MCP app. Returns an MCP-UI resource pointing at the local admin UI plus the base URL. \
+        Call this first before using other tools. The `config_path` argument is optional: if \
+        omitted (and no default --config was set at launch) the server starts from an empty \
+        in-memory configuration that you can populate with the source/query/reaction tools."
     )]
     pub async fn open_admin_ui(
         &self,

@@ -348,7 +348,11 @@ JSON-RPC over stdin/stdout. It lets MCP-capable hosts (e.g. AI assistants) drive
 Drasi Server as a set of tools, and render its admin UI as an embedded MCP-UI app.
 
 - The Drasi runtime and HTTP API/UI are **not** started immediately. They boot
-  **on demand** when the `open_admin_ui` tool is called with a `config_path`.
+  **on demand** when the `open_admin_ui` tool is called. A `config_path` is
+  optional: if it (and the launch-time `--config`) are omitted, the server boots
+  from an **empty in-memory configuration** that you can populate with the
+  source/query/reaction tools. This makes `open_admin_ui {}` work out-of-the-box
+  in hosts like Claude Desktop that launch `drasi-server mcp` with no arguments.
 - That tool returns an MCP-UI resource (`text/uri-list`) pointing at the local
   admin UI (`http://127.0.0.1:<port>/ui/`), which MCP-UI-capable hosts render in
   an iframe. The binding is always forced to a private `127.0.0.1` address on an
@@ -357,17 +361,17 @@ Drasi Server as a set of tools, and render its admin UI as an embedded MCP-UI ap
   lifecycle, including `upsert_source` / `upsert_reaction` via PUT), query
   results, instances, plugins, and the solutions catalog.
 - A server boots against exactly one config at a time. Calling `open_admin_ui`
-  again with the **same** `config_path` is idempotent; calling it with a
-  **different** config while a server is running is rejected — call `stop_server`
-  first. Concurrent tool calls issued during a boot wait for readiness rather
-  than racing it (single-flight).
+  again with the **same** config is idempotent; calling it with a **different**
+  config while a server is running is rejected — call `stop_server` first.
+  Concurrent `open_admin_ui` calls coalesce onto a single boot (single-flight),
+  so duplicate calls never start a second server.
 - API errors are surfaced as structured tool errors: non-2xx responses are
   emitted as JSON `{ httpStatus, code, message, details }` (preserving the full
   `details`) plus a short text summary, with `isError` set.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--config <PATH>` | (none) | Default config used when a tool omits `config_path` |
+| `--config <PATH>` | (none) | Default config used when a tool omits `config_path`; if unset the server boots an empty in-memory config |
 | `--port <PORT>` | `0` (ephemeral) | Port for the local HTTP API/UI |
 | `--plugins-dir <DIR>` | `./plugins` | Directory to scan for plugin libraries |
 | `--skip-verification` | `false` | Disable cosign signature verification for plugins |

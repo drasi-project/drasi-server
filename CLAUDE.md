@@ -28,9 +28,19 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
 
 - **Boot-on-demand:** the Drasi runtime + HTTP API/UI are not started at launch.
-  The `open_admin_ui` tool boots them against a `config_path` and returns an
-  MCP-UI resource (`text/uri-list`) pointing at `http://127.0.0.1:<port>/ui/`.
-  Binding is forced to private `127.0.0.1` on an ephemeral port (override `--port`).
+  The `open_admin_ui` tool boots them and returns an MCP-UI resource
+  (`text/uri-list`) pointing at `http://127.0.0.1:<port>/ui/`. Binding is forced
+  to private `127.0.0.1` on an ephemeral port (override `--port`).
+- **Optional config:** `open_admin_ui`'s `config_path` is optional; if it and the
+  launch-time `--config` are both unset the server boots from
+  `DrasiServerConfig::default()` (empty, persistence disabled, mutations allowed
+  in-memory) so hosts like Claude Desktop that launch `drasi-server mcp` with no
+  args work immediately. Implemented via `DrasiServer::new_with_bind_override`
+  taking `Option<PathBuf>` → `new_inner` builds a default config when `None`
+  (`config_file_path: None` ⇒ persistence off; `file_writable: true` ⇒ not
+  read-only). The global `--config` clap arg is `Option<PathBuf>` with **no
+  default** so the subcommand can distinguish "unset" (the default is applied
+  only in the bare-run and plugin paths).
 - **Tools call the live HTTP API** via `reqwest` to reuse all existing API logic
   (sources/queries/reactions CRUD + lifecycle incl. `upsert_source`/
   `upsert_reaction` via PUT, query results, instances, plugins, solutions
@@ -64,9 +74,10 @@ server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
   stdout carries only JSON-RPC, tools are advertised, `open_admin_ui` boots and
   returns a localhost UI resource, CRUD round-trips, plus hardening cases:
   tool-before-boot errors, bad-config-path doesn't panic, config-switch
-  rejection, duplicate-create structured 409, single-flight concurrency,
-  failed-boot retry, `stop_server` doesn't hang, upsert routing/id-check, and a
-  regression that normal configs still reject `port: 0`.
+  rejection, duplicate-create structured 409, single-flight concurrent boots
+  share one server, failed-boot retry, `stop_server` doesn't hang, upsert
+  routing/id-check, no-config boots an empty in-memory default, and a regression
+  that normal configs still reject `port: 0`.
 
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.

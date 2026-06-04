@@ -47,8 +47,8 @@ struct Cli {
     command: Option<Commands>,
 
     /// Path to the configuration file
-    #[arg(short, long, default_value = "config/server.yaml", global = true)]
-    config: PathBuf,
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
 
     /// Override the server port
     #[arg(short, long, global = true)]
@@ -188,7 +188,10 @@ async fn main() -> Result<()> {
             init::run_init(output, force, cli.plugins_dir).await
         }
         Some(Commands::Plugin { action }) => {
-            plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
+            let config = cli
+                .config
+                .unwrap_or_else(|| PathBuf::from("config/server.yaml"));
+            plugin::run_plugin_command(action, config, cli.plugins_dir).await
         }
         Some(Commands::Mcp {
             config,
@@ -197,7 +200,7 @@ async fn main() -> Result<()> {
             skip_verification,
         }) => {
             run_mcp(
-                config,
+                config.or(cli.config),
                 port,
                 plugins_dir.or(cli.plugins_dir),
                 skip_verification,
@@ -214,7 +217,8 @@ async fn main() -> Result<()> {
                 None
             };
             run_server(
-                cli.config,
+                cli.config
+                    .unwrap_or_else(|| PathBuf::from("config/server.yaml")),
                 cli.port,
                 cli.plugins_dir,
                 cli.skip_verification,

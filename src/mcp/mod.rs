@@ -80,7 +80,7 @@ enum ServerSlot {
     Running {
         running: RunningServer,
         base_url: String,
-        config_path: PathBuf,
+        config_path: Option<PathBuf>,
     },
 }
 
@@ -124,16 +124,12 @@ impl DrasiMcpServer {
     }
 
     /// Resolve the effective config path from the tool argument or CLI default.
-    fn effective_config(&self, config_path: Option<String>) -> Result<PathBuf, McpError> {
+    /// Returns `None` when neither is set, in which case the server boots from an
+    /// in-memory default configuration (empty, non-persistent).
+    fn effective_config(&self, config_path: Option<String>) -> Option<PathBuf> {
         config_path
             .map(PathBuf::from)
             .or_else(|| self.options.config.clone())
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    "No config path provided and no default --config was set when launching the MCP server",
-                    None,
-                )
-            })
     }
 
     /// Boot the server against `config_path` if it is not already running, and
@@ -145,7 +141,7 @@ impl DrasiMcpServer {
     /// `stop_server` first (no implicit reboot, which would abort in-flight
     /// requests). The slot only becomes `Running` once the API is health-ready.
     async fn ensure_started(&self, config_path: Option<String>) -> Result<String, McpError> {
-        let effective = self.effective_config(config_path)?;
+        let effective = self.effective_config(config_path);
 
         loop {
             let mut slot = self.state.lock().await;
@@ -158,10 +154,13 @@ impl DrasiMcpServer {
                     if config_path == &effective {
                         return Ok(base_url.clone());
                     }
+                    let running_desc = match config_path {
+                        Some(p) => format!("'{}'", p.display()),
+                        None => "an in-memory default configuration".to_string(),
+                    };
                     return Err(McpError::invalid_request(
                         format!(
-                            "A Drasi Server is already running against '{}'. Call stop_server before starting a different config.",
-                            config_path.display()
+                            "A Drasi Server is already running against {running_desc}. Call stop_server before starting a different config.",
                         ),
                         None,
                     ));
@@ -179,7 +178,7 @@ impl DrasiMcpServer {
                     self.notify_change();
                     drop(slot);
 
-                    let booted = self.boot(&effective).await;
+                    let booted = self.boot(effective.as_deref()).await;
 
                     let mut slot = self.state.lock().await;
                     match booted {
@@ -205,9 +204,12 @@ impl DrasiMcpServer {
 
     /// Build, start and health-check a server. On readiness failure the
     /// partially-started server is shut down before returning the error.
-    async fn boot(&self, effective: &std::path::Path) -> Result<(RunningServer, String), McpError> {
+    async fn boot(
+        &self,
+        effective: Option<&std::path::Path>,
+    ) -> Result<(RunningServer, String), McpError> {
         let server = DrasiServer::new_with_bind_override(
-            effective.to_path_buf(),
+            effective.map(|p| p.to_path_buf()),
             self.options.plugins_dir.clone(),
             self.options.skip_verification,
             true, // UI is required for the admin-UI tool
@@ -300,7 +302,10 @@ impl DrasiMcpServer {
         let config_loaded = {
             let slot = self.state.lock().await;
             match &*slot {
-                ServerSlot::Running { config_path, .. } => config_path.display().to_string(),
+                ServerSlot::Running { config_path, .. } => match config_path {
+                    Some(p) => p.display().to_string(),
+                    None => "(in-memory default configuration)".to_string(),
+                },
                 _ => String::new(),
             }
         };

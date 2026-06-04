@@ -27,7 +27,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
-use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, SecretStoreConfig};
 use crate::factories::{
     build_config_resolver_context, build_identity_provider_map, config_resolver_callback,
     create_reaction_locked, create_secret_store_from_registry, create_source_locked,
@@ -122,7 +122,7 @@ impl DrasiServer {
         enable_ui: bool,
     ) -> Result<Self> {
         Self::new_inner(
-            config_path,
+            Some(config_path),
             port,
             plugins_dir,
             skip_verification,
@@ -139,8 +139,12 @@ impl DrasiServer {
     /// regardless of what the loaded config specifies. The config's host/port
     /// are not validated (they are intentionally unused); all other config
     /// validation still runs.
+    ///
+    /// When `config_path` is `None`, the server starts from an in-memory default
+    /// configuration (no components, persistence disabled) so the admin UI can be
+    /// rendered without a config file on disk.
     pub async fn new_with_bind_override(
-        config_path: PathBuf,
+        config_path: Option<PathBuf>,
         plugins_dir: PathBuf,
         skip_verification: bool,
         enable_ui: bool,
@@ -160,14 +164,21 @@ impl DrasiServer {
     }
 
     async fn new_inner(
-        config_path: PathBuf,
+        config_path: Option<PathBuf>,
         port: u16,
         plugins_dir: PathBuf,
         skip_verification: bool,
         enable_ui: bool,
         bind_override: Option<(String, u16)>,
     ) -> Result<Self> {
-        let mut config = load_config_file(&config_path)?;
+        // When a config path is provided, load it from disk. Otherwise start from
+        // an in-memory default configuration (no sources/queries/reactions). The
+        // latter is used by MCP mode so the admin UI can be rendered immediately
+        // without requiring a config file on disk.
+        let mut config = match &config_path {
+            Some(path) => load_config_file(path)?,
+            None => DrasiServerConfig::default(),
+        };
         config.validate_with(crate::config::ValidateOptions {
             skip_bind: bind_override.is_some(),
         })?;
@@ -440,7 +451,12 @@ impl DrasiServer {
         // Determine persistence and read-only status
         // Read-only mode is ONLY enabled when the config file is not writable
         // persist_config: false means "don't save changes" but still allows API mutations
-        let file_writable = Self::check_write_access(&config_path);
+        // When there is no config file (in-memory default), mutations are allowed
+        // in memory but nothing is persisted.
+        let file_writable = match &config_path {
+            Some(path) => Self::check_write_access(path),
+            None => true,
+        };
         let persistence_enabled = resolved_settings.persist_config;
         let read_only = !file_writable; // Only read-only if file is not writable
 
@@ -659,7 +675,9 @@ impl DrasiServer {
             enable_ui,
             host,
             port,
-            config_file_path: Some(config_path.to_string_lossy().to_string()),
+            config_file_path: config_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             read_only: Arc::new(read_only),
             plugin_registry,
             plugin_orchestrator,
