@@ -27,6 +27,36 @@ use serde::Deserialize;
 
 use super::DrasiMcpServer;
 
+/// Defensively unwrap a JSON value that an MCP client double-serialized as a
+/// string. Some clients (observed with Claude Desktop) render a free-form
+/// object-valued tool parameter as a JSON *string* containing the object
+/// (e.g. `"{\"id\":\"x\"}"`) instead of a native JSON object. If `value` is a
+/// string whose trimmed content parses as a JSON object or array, return the
+/// parsed value; otherwise return it unchanged.
+fn coerce_json_value(value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::String(s) = &value {
+        let trimmed = s.trim_start();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                if parsed.is_object() || parsed.is_array() {
+                    return parsed;
+                }
+            }
+        }
+    }
+    value
+}
+
+/// Serde `deserialize_with` adapter that applies [`coerce_json_value`] so an
+/// object-valued field survives a client that stringifies it.
+fn de_lenient_json<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(coerce_json_value(value))
+}
+
 /// Arguments for the `open_admin_ui` startup tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OpenAdminUiArgs {
@@ -64,7 +94,9 @@ pub struct CreateComponentArgs {
     #[serde(default)]
     pub instance_id: Option<String>,
     /// The component definition (same JSON body accepted by the REST API
-    /// `POST` endpoint for this component type).
+    /// `POST` endpoint for this component type). Pass a JSON object, not a
+    /// stringified object.
+    #[serde(deserialize_with = "de_lenient_json")]
     pub definition: serde_json::Value,
 }
 
@@ -78,7 +110,9 @@ pub struct UpsertComponentArgs {
     /// if that body carries one.
     pub id: String,
     /// The component definition (same JSON body accepted by the REST API
-    /// `PUT` endpoint for this component type).
+    /// `PUT` endpoint for this component type). Pass a JSON object, not a
+    /// stringified object.
+    #[serde(deserialize_with = "de_lenient_json")]
     pub definition: serde_json::Value,
 }
 
@@ -95,7 +129,9 @@ pub struct DeploySolutionArgs {
     /// Optional DrasiLib instance id. Defaults to the first instance.
     #[serde(default)]
     pub instance_id: Option<String>,
-    /// The solution deployment body accepted by the REST API.
+    /// The solution deployment body accepted by the REST API. Pass a JSON
+    /// object, not a stringified object.
+    #[serde(deserialize_with = "de_lenient_json")]
     pub body: serde_json::Value,
 }
 
@@ -518,5 +554,61 @@ impl DrasiMcpServer {
             Some(args.body),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_args_accept_native_object_definition() {
+        let args: CreateComponentArgs = serde_json::from_value(serde_json::json!({
+            "definition": { "id": "s1", "kind": "postgres" }
+        }))
+        .expect("native object definition should deserialize");
+        assert!(args.definition.is_object());
+        assert_eq!(args.definition["kind"], "postgres");
+    }
+
+    #[test]
+    fn create_args_coerce_stringified_object_definition() {
+        // Some MCP clients double-serialize a free-form object param as a JSON
+        // string. The lenient deserializer must unwrap it back to an object.
+        let args: CreateComponentArgs = serde_json::from_value(serde_json::json!({
+            "definition": "{\"id\":\"s1\",\"kind\":\"postgres\"}"
+        }))
+        .expect("stringified definition should deserialize");
+        assert!(
+            args.definition.is_object(),
+            "stringified object must be coerced back to an object"
+        );
+        assert_eq!(args.definition["id"], "s1");
+    }
+
+    #[test]
+    fn upsert_id_check_sees_coerced_object() {
+        let args: UpsertComponentArgs = serde_json::from_value(serde_json::json!({
+            "id": "s1",
+            "definition": "{\"id\":\"s2\",\"kind\":\"postgres\"}"
+        }))
+        .expect("stringified definition should deserialize");
+        // After coercion the id-mismatch check can actually inspect the body.
+        assert!(check_upsert_id(&args.definition, &args.id).is_err());
+    }
+
+    #[test]
+    fn coerce_leaves_plain_strings_untouched() {
+        let v = coerce_json_value(serde_json::Value::String("hello".into()));
+        assert_eq!(v, serde_json::Value::String("hello".into()));
+    }
+
+    #[test]
+    fn install_args_accept_ref_alias() {
+        let args: InstallPluginArgs = serde_json::from_value(serde_json::json!({
+            "ref": "source/postgres"
+        }))
+        .expect("ref alias should deserialize");
+        assert_eq!(args.plugin_ref, "source/postgres");
     }
 }
