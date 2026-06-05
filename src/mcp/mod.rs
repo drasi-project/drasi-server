@@ -68,8 +68,9 @@ const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
 /// `connect-src http://localhost:<port>` / `script-src ...` checks because
 /// `127.0.0.1` and `localhost` are distinct CSP origins. We therefore present
 /// the server to the sandbox as `localhost` so the app's origin matches the CSP
-/// the host derives. The server still *binds* to `127.0.0.1`; `localhost`
-/// resolves there (browsers fall back to IPv4 when `::1` is unused).
+/// the host derives. The server binds *both* loopback families (`127.0.0.1` and
+/// `[::1]`, see `server.rs`), so `localhost` is reachable however the host's
+/// browser resolves it.
 fn sandbox_base_url(base_url: &str) -> String {
     base_url.replace("127.0.0.1", "localhost")
 }

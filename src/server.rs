@@ -1056,10 +1056,41 @@ impl DrasiServer {
             info!("Drasi Server Admin UI at http://{local_addr}/ui/");
         }
 
-        let server_task = tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                error!("Web API server error: {e}");
+        // Collect all listeners that should serve this router. When bound to the
+        // IPv4 loopback (e.g. MCP mode forces `127.0.0.1`), also bind the IPv6
+        // loopback `[::1]` on the same port: clients that resolve `localhost` to
+        // `::1` first (Electron/Chromium, used by MCP App hosts) cannot reach an
+        // IPv4-only listener and would silently fail to load the admin UI.
+        let mut listeners = vec![listener];
+        if self.host == "127.0.0.1" {
+            let v6_addr = format!("[::1]:{}", local_addr.port());
+            match tokio::net::TcpListener::bind(&v6_addr).await {
+                Ok(v6) => {
+                    info!(
+                        "Also listening on http://{v6_addr} (IPv6 loopback for localhost clients)"
+                    );
+                    listeners.push(v6);
+                }
+                Err(e) => {
+                    warn!("Could not bind IPv6 loopback {v6_addr}: {e}. Clients resolving localhost to ::1 may fail to connect.");
+                }
             }
+        }
+
+        let server_task = tokio::spawn(async move {
+            // A JoinSet ties the per-listener serve tasks to this task's
+            // lifetime: aborting `server_task` drops the set and stops them all,
+            // so stop_server cleanly releases every loopback port.
+            let mut serves = tokio::task::JoinSet::new();
+            for l in listeners {
+                let app = app.clone();
+                serves.spawn(async move {
+                    if let Err(e) = axum::serve(l, app).await {
+                        error!("Web API server error: {e}");
+                    }
+                });
+            }
+            while serves.join_next().await.is_some() {}
         });
 
         Ok((local_addr, server_task))
