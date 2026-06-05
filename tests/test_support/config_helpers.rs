@@ -27,6 +27,7 @@ pub fn mock_source(id: impl Into<String>) -> SourceConfig {
         kind: "mock".to_string(),
         id: id.into(),
         auto_start: true,
+        identity_provider: None,
         bootstrap_provider: None,
         config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
     }
@@ -38,6 +39,7 @@ pub fn mock_source_manual(id: impl Into<String>) -> SourceConfig {
         kind: "mock".to_string(),
         id: id.into(),
         auto_start: false,
+        identity_provider: None,
         bootstrap_provider: None,
         config: serde_json::json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
     }
@@ -65,6 +67,7 @@ pub fn log_reaction(id: impl Into<String>, queries: Vec<String>) -> ReactionConf
         id: id.into(),
         queries,
         auto_start: true,
+        identity_provider: None,
         config: serde_json::json!({"routes": {}}),
     }
 }
@@ -76,6 +79,7 @@ pub fn log_reaction_manual(id: impl Into<String>, queries: Vec<String>) -> React
         id: id.into(),
         queries,
         auto_start: false,
+        identity_provider: None,
         config: serde_json::json!({"routes": {}}),
     }
 }

@@ -338,6 +338,7 @@ pub async fn create_solution_template(
                 id: source_snap.id.clone(),
                 auto_start: source_snap.auto_start,
                 bootstrap_provider,
+                identity_provider: None,
                 config: properties_json,
             };
 
@@ -386,6 +387,7 @@ pub async fn create_solution_template(
                 id: reaction_snap.id.clone(),
                 queries: reaction_snap.queries.clone(),
                 auto_start: reaction_snap.auto_start,
+                identity_provider: None,
                 config: properties_json,
             };
 

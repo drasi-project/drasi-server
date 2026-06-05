@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::api::models::bootstrap::BootstrapProviderConfig;
-use crate::api::models::{ConfigValue, QueryConfigDto};
+use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
     TrustedIdentity,
@@ -42,6 +42,17 @@ struct PreservedServerSettings {
     hot_reload_plugins: bool,
     hot_reload_debounce_ms: u64,
     cors_allowed_origins: Vec<String>,
+    /// Top-level `identityProviders` from the original single-instance config.
+    ///
+    /// Identity providers are config-only (they have no runtime ComponentGraph
+    /// representation) so they cannot be recovered from `snapshot_configuration()`.
+    /// They must be preserved here and re-emitted by `save()`.
+    identity_providers: Vec<IdentityProviderConfig>,
+    /// Per-instance `identityProviders` keyed by instance id, captured from the
+    /// original multi-instance config. Used to repopulate the field for any
+    /// instance that was declared statically rather than created dynamically
+    /// via `register_instance`.
+    identity_providers_by_instance: IndexMap<String, Vec<IdentityProviderConfig>>,
 }
 
 /// Snapshot-based persistence for DrasiServerConfig.
@@ -66,6 +77,21 @@ pub struct ConfigPersistence {
     preserved: PreservedServerSettings,
     /// Instance configs for dynamic instances
     instance_configs: Arc<RwLock<IndexMap<String, DrasiLibInstanceConfig>>>,
+    /// Per-component `identityProvider` references for sources, keyed by
+    /// `(instance_id, source_id)`. Seeded from the original config and
+    /// kept current by the API handlers via
+    /// [`ConfigPersistence::register_source_identity_provider`] /
+    /// [`ConfigPersistence::unregister_source_identity_provider`].
+    ///
+    /// Source/reaction `identityProvider` is a string reference (the id of an
+    /// entry in `identityProviders`) that is not stored on the runtime
+    /// component, so `snapshot_configuration()` cannot recover it. Without
+    /// this map the first `save()` would erase every `identityProvider: <id>`
+    /// line from the YAML.
+    source_identity_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
+    /// Per-component `identityProvider` references for reactions, keyed by
+    /// `(instance_id, reaction_id)`. See `source_identity_provider`.
+    reaction_identity_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
 }
 
 impl ConfigPersistence {
@@ -86,6 +112,55 @@ impl ConfigPersistence {
         solutions_dir: Option<String>,
         original_config: &DrasiServerConfig,
     ) -> Self {
+        // Build per-(instance, component) identity-provider lookup maps so
+        // `save()` can re-emit `identityProvider: <id>` references that aren't
+        // part of `snapshot_configuration()`. We resolve `ConfigValue` ids by
+        // their Static form only; env-var / secret ids cannot be matched
+        // reliably here so those components silently fall through to the
+        // existing (lossy) behaviour.
+        let top_level_instance_id = match &original_config.id {
+            ConfigValue::Static(s) => Some(s.clone()),
+            _ => None,
+        };
+
+        let mut source_identity_provider_by_instance: IndexMap<(String, String), String> =
+            IndexMap::new();
+        let mut reaction_identity_provider_by_instance: IndexMap<(String, String), String> =
+            IndexMap::new();
+
+        if let Some(inst_id) = &top_level_instance_id {
+            for src in &original_config.sources {
+                if let Some(ip) = src.identity_provider() {
+                    source_identity_provider_by_instance
+                        .insert((inst_id.clone(), src.id.clone()), ip.to_string());
+                }
+            }
+            for r in &original_config.reactions {
+                if let Some(ip) = r.identity_provider() {
+                    reaction_identity_provider_by_instance
+                        .insert((inst_id.clone(), r.id.clone()), ip.to_string());
+                }
+            }
+        }
+
+        for inst in &original_config.instances {
+            let ConfigValue::Static(inst_id) = &inst.id else {
+                continue;
+            };
+            for src in &inst.sources {
+                if let Some(ip) = src.identity_provider() {
+                    source_identity_provider_by_instance
+                        .insert((inst_id.clone(), src.id.clone()), ip.to_string());
+                }
+            }
+            for r in &inst.reactions {
+                if let Some(ip) = r.identity_provider() {
+                    reaction_identity_provider_by_instance
+                        .insert((inst_id.clone(), r.id.clone()), ip.to_string());
+                }
+            }
+        }
+
         Self {
             config_file_path,
             registry,
@@ -105,9 +180,119 @@ impl ConfigPersistence {
                 hot_reload_plugins: original_config.hot_reload_plugins,
                 hot_reload_debounce_ms: original_config.hot_reload_debounce_ms,
                 cors_allowed_origins: original_config.cors_allowed_origins.clone(),
+                identity_providers: original_config.identity_providers.clone(),
+                // Seed per-instance identity providers from the original config so
+                // they survive a save in multi-instance format. The top-level
+                // `identityProviders` block (single-instance format) is folded in
+                // under the top-level instance id so that if a save later emits
+                // the multi-instance format the providers migrate into
+                // `instances[<top-level>].identityProviders` rather than being
+                // silently dropped.
+                identity_providers_by_instance: {
+                    let mut by_instance: IndexMap<String, Vec<IdentityProviderConfig>> =
+                        original_config
+                            .instances
+                            .iter()
+                            .filter_map(|inst| match &inst.id {
+                                ConfigValue::Static(id) if !inst.identity_providers.is_empty() => {
+                                    Some((id.clone(), inst.identity_providers.clone()))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                    if !original_config.identity_providers.is_empty() {
+                        if let Some(inst_id) = &top_level_instance_id {
+                            by_instance
+                                .entry(inst_id.clone())
+                                .or_insert_with(|| original_config.identity_providers.clone());
+                        }
+                    }
+                    by_instance
+                },
             },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
+            source_identity_provider: Arc::new(RwLock::new(source_identity_provider_by_instance)),
+            reaction_identity_provider: Arc::new(RwLock::new(
+                reaction_identity_provider_by_instance,
+            )),
         }
+    }
+
+    /// Register an `identityProvider` reference for a source.
+    ///
+    /// Called by the source create/upsert API handlers so that the reference
+    /// survives the next `save()` (since `snapshot_configuration()` does not
+    /// carry it). A `None` value removes the entry. No-op when persistence
+    /// is disabled.
+    pub async fn register_source_identity_provider(
+        &self,
+        instance_id: &str,
+        source_id: &str,
+        identity_provider: Option<&str>,
+    ) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.source_identity_provider.write().await;
+        match identity_provider {
+            Some(ip) => {
+                map.insert(
+                    (instance_id.to_string(), source_id.to_string()),
+                    ip.to_string(),
+                );
+            }
+            None => {
+                map.shift_remove(&(instance_id.to_string(), source_id.to_string()));
+            }
+        }
+    }
+
+    /// Remove any preserved `identityProvider` reference for a source.
+    /// Called by the source delete handler.
+    pub async fn unregister_source_identity_provider(&self, instance_id: &str, source_id: &str) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.source_identity_provider.write().await;
+        map.shift_remove(&(instance_id.to_string(), source_id.to_string()));
+    }
+
+    /// Register an `identityProvider` reference for a reaction. See
+    /// [`Self::register_source_identity_provider`].
+    pub async fn register_reaction_identity_provider(
+        &self,
+        instance_id: &str,
+        reaction_id: &str,
+        identity_provider: Option<&str>,
+    ) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.reaction_identity_provider.write().await;
+        match identity_provider {
+            Some(ip) => {
+                map.insert(
+                    (instance_id.to_string(), reaction_id.to_string()),
+                    ip.to_string(),
+                );
+            }
+            None => {
+                map.shift_remove(&(instance_id.to_string(), reaction_id.to_string()));
+            }
+        }
+    }
+
+    /// Remove any preserved `identityProvider` reference for a reaction.
+    pub async fn unregister_reaction_identity_provider(
+        &self,
+        instance_id: &str,
+        reaction_id: &str,
+    ) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.reaction_identity_provider.write().await;
+        map.shift_remove(&(instance_id.to_string(), reaction_id.to_string()));
     }
 
     /// Register a new instance config for persistence
@@ -142,6 +327,8 @@ impl ConfigPersistence {
         );
 
         let dynamic_instance_configs = self.instance_configs.read().await;
+        let source_identity_provider = self.source_identity_provider.read().await;
+        let reaction_identity_provider = self.reaction_identity_provider.read().await;
 
         let mut instance_configs = Vec::new();
 
@@ -167,6 +354,9 @@ impl ConfigPersistence {
                         kind: s.source_type.clone(),
                         id: s.id.clone(),
                         auto_start: s.auto_start,
+                        identity_provider: source_identity_provider
+                            .get(&(id.clone(), s.id.clone()))
+                            .cloned(),
                         bootstrap_provider: s.bootstrap_provider.as_ref().map(|bp| {
                             let mut bp_config = serde_json::Map::new();
                             for (k, v) in &bp.properties {
@@ -209,6 +399,9 @@ impl ConfigPersistence {
                         id: r.id.clone(),
                         queries: r.queries.clone(),
                         auto_start: r.auto_start,
+                        identity_provider: reaction_identity_provider
+                            .get(&(id.clone(), r.id.clone()))
+                            .cloned(),
                         config: serde_json::Value::Object(config_map),
                     }
                 })
@@ -220,6 +413,7 @@ impl ConfigPersistence {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
                     state_store: dynamic_config.state_store.clone(),
+                    secret_store: dynamic_config.secret_store.clone(),
                     default_priority_queue_capacity: dynamic_config
                         .default_priority_queue_capacity
                         .clone(),
@@ -229,17 +423,39 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
+                    // Identity providers are config-only and never appear in
+                    // `snapshot_configuration()`. Prefer the dynamic config's
+                    // list (set when the instance was registered via the API),
+                    // and fall back to what the original config declared for
+                    // this instance id so static identityProviders survive a
+                    // save triggered by an unrelated mutation.
+                    identity_providers: if !dynamic_config.identity_providers.is_empty() {
+                        dynamic_config.identity_providers.clone()
+                    } else {
+                        self.preserved
+                            .identity_providers_by_instance
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_default()
+                    },
                 }
             } else {
                 DrasiLibInstanceConfig {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
                     state_store: None,
+                    secret_store: None,
                     default_priority_queue_capacity: None,
                     default_dispatch_buffer_capacity: None,
                     sources,
                     reactions,
                     queries,
+                    identity_providers: self
+                        .preserved
+                        .identity_providers_by_instance
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_default(),
                 }
             };
             instance_configs.push(instance_config);
@@ -249,6 +465,15 @@ impl ConfigPersistence {
         let wrapper_config = if instance_configs.len() == 1 {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
+            // In single-instance format, identityProviders move to the top
+            // level so they read naturally next to the other root component
+            // lists. Prefer the (now-promoted) instance value; if none was
+            // captured, fall back to the original top-level value.
+            let identity_providers = if !instance.identity_providers.is_empty() {
+                instance.identity_providers.clone()
+            } else {
+                self.preserved.identity_providers.clone()
+            };
             DrasiServerConfig {
                 api_version: None,
                 id: instance.id,
@@ -260,6 +485,7 @@ impl ConfigPersistence {
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
+                secret_store: instance.secret_store,
                 default_priority_queue_capacity: instance.default_priority_queue_capacity,
                 default_dispatch_buffer_capacity: instance.default_dispatch_buffer_capacity,
                 plugin_registry: self.preserved.plugin_registry.clone(),
@@ -273,6 +499,7 @@ impl ConfigPersistence {
                 sources: instance.sources,
                 queries: instance.queries,
                 reactions: instance.reactions,
+                identity_providers,
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -295,7 +522,8 @@ impl ConfigPersistence {
                 persist_index: false, // Per-instance setting in multi-instance mode
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
-                state_store: None, // Per-instance setting in multi-instance mode
+                state_store: None,  // Per-instance setting in multi-instance mode
+                secret_store: None, // Per-instance setting in multi-instance mode
                 default_priority_queue_capacity: None,
                 default_dispatch_buffer_capacity: None,
                 plugin_registry: self.preserved.plugin_registry.clone(),
@@ -309,6 +537,12 @@ impl ConfigPersistence {
                 sources: Vec::new(),
                 queries: Vec::new(),
                 reactions: Vec::new(),
+                // In multi-instance format, identityProviders live per-instance
+                // (inside the `instances` array). Any top-level providers from
+                // the original single-instance config are migrated into the
+                // top-level instance's `identityProviders` at construction time
+                // (see `new()`), so the top-level field stays empty here.
+                identity_providers: Vec::new(),
                 instances: instance_configs,
             }
         };
@@ -448,6 +682,7 @@ mod tests {
                 receiver,
                 bootstrap_receiver: None,
                 position_handle: None,
+                bootstrap_result_receiver: None,
             })
         }
         fn as_any(&self) -> &dyn std::any::Any {

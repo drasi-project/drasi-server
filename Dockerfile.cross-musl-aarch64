@@ -1,6 +1,6 @@
 FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5 AS toolchain
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Remove symlink that conflicts with COPY from toolchain
 RUN rm -rf /usr/local/man
@@ -13,7 +13,7 @@ COPY --from=toolchain /qemu-runner /qemu-runner
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gcc libc6-dev \
-    perl make autoconf automake libtool \
+    perl make cmake autoconf automake libtool \
     protobuf-compiler libprotobuf-dev \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -34,6 +34,9 @@ ENV JQ_INCLUDE_DIR=/usr/local/musl-jq/include
 ENV CFLAGS_aarch64_unknown_linux_musl="-I/usr/local/musl-jq/include"
 ENV LIBJQ_STATIC=1
 ENV LIBONIG_STATIC=1
+
+# Force aws-lc-sys to use CMake builder (avoids GCC memcmp bug in ubuntu:20.04's gcc)
+ENV AWS_LC_SYS_CMAKE_BUILDER=1
 
 # Create a linker wrapper that appends necessary libraries at the end
 RUN printf '#!/bin/sh\nexec aarch64-linux-musl-gcc "$@" -Wl,--no-as-needed -lpthread -ldl -lm -lc\n' \

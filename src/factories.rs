@@ -12,22 +12,144 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Factory functions for creating source, reaction, and state store instances from config.
+//! Factory functions for creating source, reaction, state store, and secret store instances from config.
 //!
 //! This module provides factory functions that use the PluginRegistry to look up
 //! descriptors and create instances from generic config structs.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use drasi_lib::identity::{IdentityProvider, PasswordIdentityProvider};
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{Reaction, Source};
 use log::info;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
-use crate::api::models::BootstrapProviderConfig;
-use crate::config::{ReactionConfig, SourceConfig, StateStoreConfig};
+use crate::api::models::{
+    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, BUILTIN_PASSWORD_KIND,
+};
+use crate::config::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
+
+use drasi_host_sdk::{ConfigResolverFn, SecretStoreValueResolverAdapter};
+use drasi_plugin_sdk::ffi::secret_store::FfiGetSecretResult;
+use drasi_plugin_sdk::ffi::FfiStr;
+use drasi_plugin_sdk::resolver::{EnvironmentVariableResolver, ValueResolver};
+use drasi_plugin_sdk::ConfigValue as SdkConfigValue;
+
+// ============================================================================
+// Host-side config value resolver (FFI callback for plugins)
+// ============================================================================
+
+/// Context passed to the host config resolver callback.
+///
+/// Contains a channel sender to dispatch resolution requests to a dedicated
+/// resolver thread that owns the SDK resolvers (EnvironmentVariableResolver,
+/// SecretStoreValueResolverAdapter).
+pub struct ConfigResolverContext {
+    resolver_tx: std::sync::mpsc::SyncSender<ResolveRequest>,
+}
+
+/// A request sent to the dedicated resolver thread.
+struct ResolveRequest {
+    config_value: SdkConfigValue<String>,
+    response_tx: std::sync::mpsc::SyncSender<Result<String, String>>,
+}
+
+/// Host-side `extern "C"` callback that plugins invoke (via `DtoMapper`) to
+/// resolve `ConfigValue` references (secrets, env vars) back through the host.
+///
+/// The plugin serializes the `ConfigValue` to JSON and passes it here.
+/// The host deserializes it and dispatches to the appropriate SDK resolver.
+pub extern "C" fn host_resolve_config_value(
+    ctx: *const c_void,
+    config_value_json: FfiStr,
+) -> FfiGetSecretResult {
+    if ctx.is_null() {
+        return FfiGetSecretResult::err("Config resolver context is null".to_string());
+    }
+
+    let context = unsafe { &*(ctx as *const ConfigResolverContext) };
+    let json_str = unsafe { config_value_json.to_string() };
+
+    // Deserialize into SDK ConfigValue using the same serde logic the SDK uses.
+    let config_value: SdkConfigValue<String> = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return FfiGetSecretResult::err(format!("Invalid config value JSON: {e}"));
+        }
+    };
+
+    // Static values don't need resolution — return directly.
+    if let SdkConfigValue::Static(ref s) = config_value {
+        return FfiGetSecretResult::ok(s.clone());
+    }
+
+    // Dispatch to the resolver thread for Secret and EnvironmentVariable variants.
+    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let request = ResolveRequest {
+        config_value,
+        response_tx,
+    };
+
+    if context.resolver_tx.send(request).is_err() {
+        return FfiGetSecretResult::err("Config resolver thread is no longer running".to_string());
+    }
+
+    match response_rx.recv() {
+        Ok(Ok(value)) => FfiGetSecretResult::ok(value),
+        Ok(Err(e)) => FfiGetSecretResult::err(e),
+        Err(_) => {
+            FfiGetSecretResult::err("Config resolver thread dropped response channel".to_string())
+        }
+    }
+}
+
+/// Build a leaked `ConfigResolverContext` pointer for injection into plugins.
+///
+/// Spawns a dedicated resolver thread that uses the SDK's `ValueResolver`
+/// implementations to handle all `ConfigValue` variants. The returned pointer
+/// is intentionally leaked (process-lifetime) because plugins store it globally.
+pub fn build_config_resolver_context(
+    provider: Arc<dyn SecretStoreProvider>,
+    runtime_handle: tokio::runtime::Handle,
+) -> *mut c_void {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<ResolveRequest>(64);
+
+    // Build the SDK resolvers
+    let env_resolver = EnvironmentVariableResolver;
+    let secret_resolver = SecretStoreValueResolverAdapter::new(provider);
+
+    // Spawn a dedicated OS thread that runs resolution using the SDK resolvers.
+    std::thread::Builder::new()
+        .name("config-resolver".to_string())
+        .spawn(move || {
+            while let Ok(req) = rx.recv() {
+                let result = match &req.config_value {
+                    SdkConfigValue::EnvironmentVariable { .. } => runtime_handle
+                        .block_on(env_resolver.resolve_to_string(&req.config_value))
+                        .map_err(|e| e.to_string()),
+                    SdkConfigValue::Secret { .. } => runtime_handle
+                        .block_on(secret_resolver.resolve_to_string(&req.config_value))
+                        .map_err(|e| e.to_string()),
+                    SdkConfigValue::Static(s) => Ok(s.clone()),
+                };
+                let _ = req.response_tx.send(result);
+            }
+        })
+        .expect("Failed to spawn config-resolver thread");
+
+    let ctx = Box::new(ConfigResolverContext { resolver_tx: tx });
+    Box::into_raw(ctx) as *mut c_void
+}
+
+/// Get the config resolver callback function pointer.
+pub fn config_resolver_callback() -> ConfigResolverFn {
+    host_resolve_config_value
+}
 
 /// Create a source instance from a SourceConfig using the plugin registry.
 ///
@@ -229,6 +351,38 @@ pub fn create_state_store_provider(
     }
 }
 
+/// Create a secret store provider from a SecretStoreConfig using the plugin registry.
+///
+/// Looks up the `SecretStorePluginDescriptor` by kind from the registry,
+/// then calls `create_secret_store()` with the config JSON.
+pub async fn create_secret_store_from_registry(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: &SecretStoreConfig,
+) -> Result<Arc<dyn SecretStoreProvider>> {
+    let descriptor = {
+        let reg = registry.read().await;
+        reg.get_secret_store(&config.kind).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No secret store plugin registered for kind '{}'. \
+                     Available: {:?}. Make sure the plugin is loaded.",
+                config.kind,
+                reg.secret_store_kinds()
+            )
+        })?
+    };
+
+    info!(
+        "Creating secret store provider (kind: {}, config_version: {})",
+        descriptor.kind(),
+        descriptor.config_version()
+    );
+
+    let provider = descriptor.create_secret_store(&config.config).await?;
+    // Box<dyn SecretStoreProvider> → Arc<dyn SecretStoreProvider>
+    let arc: Arc<dyn SecretStoreProvider> = Arc::from(provider);
+    Ok(arc)
+}
+
 /// Get plugin metadata for a source kind from the registry.
 ///
 /// Returns a HashMap with `pluginId` and `pluginVersion`
@@ -271,6 +425,146 @@ pub fn get_reaction_plugin_metadata(
         }
     }
     meta
+}
+
+/// Create a single identity provider instance from configuration.
+///
+/// For the built-in `password` kind, this constructs a
+/// `PasswordIdentityProvider` directly from drasi-lib without consulting the
+/// plugin registry. All other kinds are resolved via
+/// `PluginRegistry::get_identity_provider(kind)` and built through the
+/// plugin's `create_identity_provider` factory.
+pub async fn create_identity_provider(
+    registry: &PluginRegistry,
+    config: &IdentityProviderConfig,
+) -> Result<Arc<dyn IdentityProvider>> {
+    if config.kind == BUILTIN_PASSWORD_KIND {
+        // Deserialize the inner config into a typed DTO so that `username` and
+        // `password` participate in the `ConfigValue` envelope system. This
+        // allows them to be supplied as plain strings, `${ENV_VAR}` POSIX
+        // references, or structured `{kind: Secret, name: ...}` /
+        // `{kind: EnvironmentVariable, ...}` objects — same as every other
+        // plugin-provided config field. Without this, secrets and env vars
+        // would be read as their literal text.
+        #[derive(serde::Deserialize)]
+        struct PasswordIdpDto {
+            username: ConfigValue<String>,
+            password: ConfigValue<String>,
+        }
+
+        let dto: PasswordIdpDto =
+            serde_json::from_value(config.config.clone()).with_context(|| {
+                format!(
+                    "identity provider '{}': invalid 'password' configuration \
+                     (expected 'username' and 'password' fields)",
+                    config.id
+                )
+            })?;
+
+        let mapper = DtoMapper::new();
+        let username = mapper.resolve_string(&dto.username).with_context(|| {
+            format!(
+                "identity provider '{}': failed to resolve 'username'",
+                config.id
+            )
+        })?;
+        let password = mapper.resolve_string(&dto.password).with_context(|| {
+            format!(
+                "identity provider '{}': failed to resolve 'password'",
+                config.id
+            )
+        })?;
+
+        return Ok(Arc::new(PasswordIdentityProvider::new(
+            &username, &password,
+        )));
+    }
+
+    let descriptor = registry
+        .get_identity_provider(&config.kind)
+        .cloned()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown identity provider kind: '{}'. Available: {:?}",
+                config.kind,
+                registry.identity_provider_kinds()
+            )
+        })?;
+
+    let provider = descriptor
+        .create_identity_provider(&config.config)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create identity provider '{}' (kind '{}')",
+                config.id, config.kind,
+            )
+        })?;
+
+    Ok(Arc::from(provider))
+}
+
+/// Acquire the registry read lock and create a single identity provider.
+pub async fn create_identity_provider_locked(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    config: &IdentityProviderConfig,
+) -> Result<Arc<dyn IdentityProvider>> {
+    if config.kind == BUILTIN_PASSWORD_KIND {
+        let reg = registry.read().await;
+        return create_identity_provider(&reg, config).await;
+    }
+
+    // For plugin-backed providers, clone the descriptor under the lock and
+    // drop the guard before awaiting plugin construction.
+    let descriptor = {
+        let reg = registry.read().await;
+        reg.get_identity_provider(&config.kind)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown identity provider kind: '{}'. Available: {:?}",
+                    config.kind,
+                    reg.identity_provider_kinds()
+                )
+            })?
+    };
+
+    let provider = descriptor
+        .create_identity_provider(&config.config)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create identity provider '{}' (kind '{}')",
+                config.id, config.kind,
+            )
+        })?;
+
+    Ok(Arc::from(provider))
+}
+
+/// Build a `{id -> provider}` map from a slice of identity-provider configs.
+///
+/// Fails on duplicate ids or if any plugin-backed kind is not registered.
+pub async fn build_identity_provider_map(
+    registry: &tokio::sync::RwLock<PluginRegistry>,
+    configs: &[IdentityProviderConfig],
+) -> Result<HashMap<String, Arc<dyn IdentityProvider>>> {
+    let mut map: HashMap<String, Arc<dyn IdentityProvider>> = HashMap::new();
+    for cfg in configs {
+        if map.contains_key(&cfg.id) {
+            return Err(anyhow::anyhow!(
+                "Duplicate identityProvider id '{}'",
+                cfg.id
+            ));
+        }
+        let provider = create_identity_provider_locked(registry, cfg).await?;
+        info!(
+            "Configured identity provider '{}' (kind '{}')",
+            cfg.id, cfg.kind
+        );
+        map.insert(cfg.id.clone(), provider);
+    }
+    Ok(map)
 }
 
 #[cfg(test)]
@@ -345,6 +639,7 @@ mod tests {
             id: "test".to_string(),
             auto_start: true,
             bootstrap_provider: None,
+            identity_provider: None,
             config: serde_json::json!({}),
         };
 
@@ -365,6 +660,7 @@ mod tests {
             id: "test".to_string(),
             queries: vec![],
             auto_start: true,
+            identity_provider: None,
             config: serde_json::json!({}),
         };
 
@@ -374,6 +670,113 @@ mod tests {
         assert!(
             err_msg.contains("Unknown reaction kind"),
             "Unexpected error: {err_msg}"
+        );
+    }
+
+    // ==========================================================================
+    // Built-in Password Identity Provider — ConfigValue Envelope Tests
+    // ==========================================================================
+
+    #[tokio::test]
+    async fn test_password_identity_provider_static_values() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-static".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": "s3cret",
+            }),
+        };
+
+        create_identity_provider(&registry, &config)
+            .await
+            .expect("static values should work");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_env_var_reference() {
+        // SAFETY: tests are single-threaded per-process for env var manipulation
+        // but cargo test runs them in parallel by default. Use a unique var name
+        // to avoid collisions.
+        let var_name = "DRASI_TEST_PG_PASSWORD_ENVELOPE_ENV";
+        std::env::set_var(var_name, "resolved-from-env");
+
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-env".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": format!("${{{var_name}}}"),
+            }),
+        };
+
+        let result = create_identity_provider(&registry, &config).await;
+        std::env::remove_var(var_name);
+        result.expect("`${VAR}` reference should resolve via ConfigValue envelope");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_env_var_with_default() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-default".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": "${DRASI_DEFINITELY_UNSET_VAR:-fallback-pw}",
+            }),
+        };
+
+        create_identity_provider(&registry, &config)
+            .await
+            .expect("`${VAR:-default}` should fall back to the default");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_structured_env_var() {
+        let var_name = "DRASI_TEST_PG_PASSWORD_STRUCTURED_ENV";
+        std::env::set_var(var_name, "structured-resolved");
+
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-structured".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                "password": {
+                    "kind": "EnvironmentVariable",
+                    "name": var_name,
+                },
+            }),
+        };
+
+        let result = create_identity_provider(&registry, &config).await;
+        std::env::remove_var(var_name);
+        result.expect("structured EnvironmentVariable reference should resolve");
+    }
+
+    #[tokio::test]
+    async fn test_password_identity_provider_missing_field_errors() {
+        let registry = test_registry();
+        let config = IdentityProviderConfig {
+            kind: BUILTIN_PASSWORD_KIND.to_string(),
+            id: "pg-missing".to_string(),
+            config: serde_json::json!({
+                "username": "drasi",
+                // password missing
+            }),
+        };
+
+        let err = match create_identity_provider(&registry, &config).await {
+            Ok(_) => panic!("missing password field must be rejected"),
+            Err(e) => e,
+        };
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("password") || msg.contains("invalid"),
+            "Unexpected error: {msg}"
         );
     }
 }

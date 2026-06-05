@@ -40,6 +40,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - drasi-network
+
+networks:
+  drasi-network:
+    name: drasi-network
 
 volumes:
   getting_started_postgres_data:

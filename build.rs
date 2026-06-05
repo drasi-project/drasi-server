@@ -14,6 +14,22 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-env-changed=TARGET");
 
+    // Track UI dist directory so recompilation picks up new UI assets.
+    // Ensure the directory exists so rust-embed doesn't fail at compile time.
+    // This runs unconditionally because build.rs executes before runtime config
+    // is known — the `enableUi` setting is a runtime concern, not a build concern.
+    // An empty directory simply means no assets are embedded.
+    let ui_dist = std::path::Path::new("ui/dist");
+    println!("cargo:rerun-if-changed=ui/dist");
+    if !ui_dist.exists() {
+        if let Err(e) = std::fs::create_dir_all(ui_dist) {
+            println!(
+                "cargo:warning=Failed to create ui/dist directory: {e}. \
+                 Embedded UI assets will not be available."
+            );
+        }
+    }
+
     let rustc_version = Command::new("rustc")
         .arg("--version")
         .output()
@@ -131,6 +147,12 @@ fn download_vendor(target: &str, vendor_dir: &std::path::Path) -> Result<(), Str
     use flate2::read::GzDecoder;
     use sha2::{Digest, Sha256};
     use tar::Archive;
+
+    // ureq is built with `rustls-no-provider`, so we must install a default
+    // CryptoProvider before any TLS call or rustls will panic. Ignore the
+    // error — a provider may already be installed by another build script
+    // running in the same process.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let repo = format!("{VENDOR_REPO_PREFIX}/{target}");
     let base_url = format!("https://{VENDOR_REGISTRY}/v2/{repo}");

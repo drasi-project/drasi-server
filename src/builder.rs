@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::state_store::StateStoreProvider;
 use drasi_lib::{DrasiError, DrasiLib, DrasiLibBuilder, Query};
 use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceTrait};
@@ -107,6 +108,16 @@ impl DrasiServerBuilder {
     pub fn with_state_store_provider(mut self, provider: Arc<dyn StateStoreProvider>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder).with_state_store_provider(provider);
+        self
+    }
+
+    /// Add a secret store provider for resolving ConfigValue::Secret references
+    ///
+    /// When set, component configs can use `{ kind: Secret, name: "..." }` values
+    /// whose actual values are resolved at runtime by the configured provider.
+    pub fn with_secret_store_provider(mut self, provider: Arc<dyn SecretStoreProvider>) -> Self {
+        let builder = self.primary_builder_mut();
+        *builder = std::mem::take(builder).with_secret_store_provider(provider);
         self
     }
 
