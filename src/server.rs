@@ -1017,6 +1017,16 @@ impl DrasiServer {
             info!("Web UI is disabled by configuration");
         }
 
+        // Serve the MCP App bridge script alongside the UI. Used only when the
+        // admin UI renders as an MCP App (different sandbox origin); harmless to
+        // expose whenever the UI is enabled.
+        if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
+            app = app.route(
+                crate::ui_assets::MCP_BRIDGE_PATH,
+                get(crate::ui_assets::serve_mcp_bridge),
+            );
+        }
+
         let cors_layer = if self.cors_allowed_origins.is_empty() {
             CorsLayer::permissive()
         } else {
@@ -1030,6 +1040,12 @@ impl DrasiServer {
                 .allow_origin(AllowOrigin::list(origins))
                 .allow_methods(tower_http::cors::Any)
                 .allow_headers(tower_http::cors::Any)
+        };
+
+        let app = if std::env::var("DRASI_HTTP_LOG").is_ok() {
+            app.layer(axum::middleware::from_fn(log_http_request))
+        } else {
+            app
         };
 
         let app = app.layer(cors_layer);
@@ -1085,6 +1101,29 @@ impl DrasiServer {
 
         Ok((local_addr, server_task))
     }
+}
+
+/// Axum middleware that logs each HTTP request as `method uri -> status`.
+/// Enabled when `DRASI_HTTP_LOG` is set (e.g. MCP mode), giving ground-truth
+/// visibility into what an MCP App host's webview actually fetches.
+async fn log_http_request(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let origin = req
+        .headers()
+        .get(axum::http::header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("-")
+        .to_string();
+    let response = next.run(req).await;
+    info!(
+        "[http] {method} {uri} (origin: {origin}) -> {}",
+        response.status().as_u16()
+    );
+    response
 }
 
 /// Register plugins that are always available regardless of feature flags.

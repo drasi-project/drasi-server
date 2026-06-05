@@ -32,16 +32,16 @@ server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
   (SEP-1865, `io.modelcontextprotocol/ui`): the server advertises the `resources`
   capability, the tool declares `_meta.ui.resourceUri = ui://drasi/admin`, and the
   `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — an
-  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — a
-  self-contained shell rendered in the host's sandboxed `srcdoc` iframe. Because
-  static `<script src>` tags do not execute in `srcdoc`, the SPA stylesheet and
-  the bridge script are **inlined**, and the app's entry module is booted via a
-  dynamic `import()` of `http://127.0.0.1:<port>/ui/assets/index-*.js` (declared
-  via `_meta.ui.csp.resourceDomains`; the import resolves the app's code-split
-  chunks against that same origin). The inlined bridge rewrites the app's
-  root-relative API/SSE calls to that origin (declared via
-  `_meta.ui.csp.connectDomains`); the server's permissive CORS
-  (`Access-Control-Allow-Origin: *`) lets those cross-origin loads succeed.
+  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app`. The host
+  renders it in a sandboxed iframe on a different origin. Observed Claude Desktop
+  behavior drives the addressing split: cross-origin **subresources** (entry
+  `<script src>`, stylesheet, bridge) load fine from an explicit `127.0.0.1`
+  origin (declared via `_meta.ui.csp.resourceDomains`), but the host
+  **normalizes `connect-src` to `localhost`** — so the injected bridge rewrites
+  the app's root-relative API/SSE calls to the `localhost` variant (declared via
+  `connectDomains`). The server binds both loopback families (`127.0.0.1` and
+  `[::1]`) and answers with permissive CORS (`Access-Control-Allow-Origin: *`),
+  so both asset loads and API calls succeed.
   The `ServerHandler` is implemented
   manually (not via `#[tool_handler]`) so `list_tools` can inject the tool `_meta`
   and `list_resources`/`read_resource` can serve the UI resource. Binding is forced

@@ -357,16 +357,19 @@ Drasi Server as a set of tools, and render its admin UI as an embedded MCP App.
   `io.modelcontextprotocol/ui` extension): the server advertises the `resources`
   capability, the `open_admin_ui` tool declares `_meta.ui.resourceUri =
   ui://drasi/admin`, and the `ui://drasi/admin` resource is served as
-  `text/html;profile=mcp-app`. Hosts render that HTML in a sandboxed `srcdoc`
-  iframe where static `<script src>` tags do not execute, so the resource is a
-  self-contained shell: the SPA stylesheet and a small bridge script are
-  **inlined**, and the app's entry module is booted with a dynamic `import()` of
-  `http://127.0.0.1:<port>/ui/assets/index-*.js` (permitted via
-  `_meta.ui.csp.resourceDomains`; dynamic import resolves the app's code-split
-  chunks against that same origin). The inlined bridge rewrites the app's
-  root-relative API/SSE requests to that absolute origin (permitted via
-  `_meta.ui.csp.connectDomains`). The Drasi Server responds with permissive
-  CORS (`Access-Control-Allow-Origin: *`), so the cross-origin loads succeed.
+  `text/html;profile=mcp-app`. The host renders that HTML in a sandboxed iframe
+  on a different origin. Observed Claude Desktop behavior drives the addressing
+  split: the host loads cross-origin **subresources** (the SPA's entry
+  `<script>`, stylesheet, and the bridge) fine from an explicit `127.0.0.1`
+  origin (declared via `_meta.ui.csp.resourceDomains`), but **normalizes
+  `connect-src` to `localhost`**. So the assets load from
+  `http://127.0.0.1:<port>/ui/assets/...`, and a small injected bridge script
+  rewrites the app's root-relative API/SSE requests to the `localhost` variant
+  (declared via `connectDomains`). The server binds **both** loopback families
+  (`127.0.0.1` and `[::1]`) so `localhost` is reachable however the host's
+  browser resolves it, and answers with permissive CORS
+  (`Access-Control-Allow-Origin: *`), so both the asset loads and the API calls
+  succeed.
   The binding is always forced to a private `127.0.0.1` address on an OS-assigned
   ephemeral port (override with `--port`). The tool result also includes the URL
   as JSON for hosts that do not render MCP Apps.

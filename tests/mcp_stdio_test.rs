@@ -913,46 +913,51 @@ fn mcp_apps_resource_contract_is_satisfied() {
         .get("text")
         .and_then(Value::as_str)
         .expect("html text");
-    // The admin UI is inlined (not framed): the SPA entry module is loaded
-    // cross-origin from the live Drasi Server via dynamic import(), and the MCP
-    // bridge is inlined (static <script src> does not execute in srcdoc).
+    // The admin UI is inlined (not framed): the SPA entry script + stylesheet
+    // load cross-origin from the live Drasi Server via static tags, and an
+    // external bridge script is injected.
     assert!(
         !html.contains("<iframe"),
         "MCP App HTML must not use a nested iframe: {html}"
     );
-    // The host canonicalizes 127.0.0.1 -> localhost in the sandbox CSP, so the
-    // embedded app must address the server as localhost to satisfy connect-src.
-    let base = ui_url
-        .trim_end_matches("/ui/")
-        .replace("127.0.0.1", "localhost");
-    // The entry module is booted via dynamic import() of the absolute localhost
-    // asset URL (static <script src> is ignored inside a srcdoc sandbox).
+    // Assets load from the explicit 127.0.0.1 origin (the host honors this for
+    // subresources); the bridge rewrites API calls to localhost (the host
+    // normalizes connect-src to localhost).
+    let asset_base = ui_url.trim_end_matches("/ui/").to_string();
+    let api_base = asset_base.replace("127.0.0.1", "localhost");
     assert!(
-        html.contains(&format!("import(\"{base}/ui/assets/")),
-        "read HTML missing dynamic import() of localhost SPA entry ({base}/ui/assets/...): {html}"
-    );
-    // The bridge is inlined with the localhost origin baked in (no external src).
-    assert!(
-        html.contains(&format!("var base = \"{base}\"")),
-        "read HTML missing inlined bridge with localhost base: {html}"
+        html.contains(&format!("{asset_base}/ui/assets/")),
+        "read HTML missing 127.0.0.1 SPA asset URL ({asset_base}/ui/assets/...): {html}"
     );
     assert!(
-        !html.contains("/__mcp/bridge.js"),
-        "MCP App HTML must inline the bridge, not reference it externally: {html}"
+        html.contains(&format!("{asset_base}/__mcp/bridge.js")),
+        "read HTML missing external MCP bridge script: {html}"
     );
     let csp = contents
         .pointer("/_meta/ui/csp")
         .expect("read resource missing _meta.ui.csp");
-    for key in ["connectDomains", "resourceDomains"] {
-        let domains = csp
-            .get(key)
-            .and_then(Value::as_array)
-            .unwrap_or_else(|| panic!("missing _meta.ui.csp.{key}: {contents}"));
-        assert!(
-            domains.iter().any(|d| d.as_str() == Some(base.as_str())),
-            "_meta.ui.csp.{key} must include localhost origin {base}: {contents}"
-        );
-    }
+    // resourceDomains must allow loading scripts/styles from the 127.0.0.1
+    // origin; connectDomains must allow API/SSE to the localhost origin.
+    let resource_domains = csp
+        .get("resourceDomains")
+        .and_then(Value::as_array)
+        .expect("missing _meta.ui.csp.resourceDomains");
+    assert!(
+        resource_domains
+            .iter()
+            .any(|d| d.as_str() == Some(asset_base.as_str())),
+        "_meta.ui.csp.resourceDomains must include 127.0.0.1 origin {asset_base}: {contents}"
+    );
+    let connect_domains = csp
+        .get("connectDomains")
+        .and_then(Value::as_array)
+        .expect("missing _meta.ui.csp.connectDomains");
+    assert!(
+        connect_domains
+            .iter()
+            .any(|d| d.as_str() == Some(api_base.as_str())),
+        "_meta.ui.csp.connectDomains must include localhost origin {api_base}: {contents}"
+    );
 
     // An unknown resource URI is rejected, not panicked.
     client.send(&json!({

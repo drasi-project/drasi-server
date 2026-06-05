@@ -44,34 +44,27 @@ pub fn index_html() -> Option<String> {
     UiAssets::get("index.html").map(|f| String::from_utf8_lossy(&f.data).into_owned())
 }
 
-/// Returns the textual contents of an embedded UI asset (e.g. a CSS file), if
-/// present. Used by the MCP App resource to inline the SPA stylesheet so it
-/// renders inside a host `srcdoc` sandbox without an external `<link>`.
-pub fn asset_text(path: &str) -> Option<String> {
-    UiAssets::get(path).map(|f| String::from_utf8_lossy(&f.data).into_owned())
-}
+/// Path at which the MCP App bridge script is served.
+pub const MCP_BRIDGE_PATH: &str = "/__mcp/bridge.js";
 
-/// Placeholder replaced with the absolute Drasi Server origin when the bridge
-/// is inlined into the MCP App resource.
-const MCP_BRIDGE_BASE_PLACEHOLDER: &str = "__DRASI_BASE__";
-
-/// Client-side bridge inlined into the admin UI when it runs as an MCP App.
+/// Client-side bridge injected into the admin UI when it runs as an MCP App.
 ///
-/// MCP Apps run inside a host-controlled `srcdoc` sandbox iframe on a
-/// *different* origin than the Drasi Server. The admin SPA issues root-relative
-/// requests (`/api/v1/...`, SSE via `EventSource`, etc.) that would otherwise
-/// resolve against the (opaque) sandbox origin. This classic script runs before
-/// the app module and rewrites those requests to the absolute Drasi Server
-/// origin (injected as `base`). It also applies the saved theme, mirroring the
-/// SPA's normal inline bootstrap.
-///
-/// Note: static `<script src=...>` tags do not execute inside a `srcdoc`
-/// iframe, so this bridge is inlined and the app entry is loaded via dynamic
-/// `import()` (see the MCP module). Build the runtime form with
-/// [`mcp_bridge_js`].
-const MCP_BRIDGE_JS: &str = r#"(function () {
+/// MCP Apps run inside a host-controlled sandbox iframe on a *different* origin
+/// than the Drasi Server. This classic (non-module, non-deferred) script runs
+/// before the deferred app module. It derives the **asset origin** from its own
+/// `src` (the explicit `127.0.0.1` origin the host loaded it from) and computes
+/// the **API origin** as the `localhost` variant — because the host normalizes
+/// `connect-src` to `localhost`, so the app's API/SSE calls must target
+/// `localhost` to pass CSP. It rewrites the SPA's root-relative requests
+/// (`/api/v1/...`, SSE via `EventSource`, WebSocket) to that API origin, and
+/// applies the saved theme (mirroring the SPA's inline bootstrap, which is
+/// stripped).
+pub const MCP_BRIDGE_JS: &str = r#"(function () {
   try {
-    var base = "__DRASI_BASE__";
+    var me = document.currentScript;
+    var assetBase = me ? new URL(me.src).origin : window.location.origin;
+    // The host normalizes connect-src to localhost, so address the API there.
+    var base = assetBase.replace('127.0.0.1', 'localhost');
 
     try {
       var t = localStorage.getItem('drasi-theme');
@@ -152,10 +145,17 @@ const MCP_BRIDGE_JS: &str = r#"(function () {
 })();
 "#;
 
-/// Build the runtime MCP App bridge script with the Drasi Server origin
-/// inlined as `base`.
-pub fn mcp_bridge_js(base_url: &str) -> String {
-    MCP_BRIDGE_JS.replace(MCP_BRIDGE_BASE_PLACEHOLDER, base_url)
+/// Serve the MCP App bridge script (see [`MCP_BRIDGE_JS`]).
+pub async fn serve_mcp_bridge() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(MCP_BRIDGE_JS))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 /// Creates axum routes that serve the embedded UI assets under `/ui`.
