@@ -468,14 +468,67 @@ impl DrasiMcpServer {
         }
     }
 
-    /// Return the base URL only if a server is currently running, without
-    /// waiting for an in-progress boot. Used by `resources/read`, which a host
-    /// may call before the boot tool completes (returns `None` in that case).
+    /// Return the running base URL, awaiting an in-progress (or imminent) boot.
+    ///
+    /// Used by `resources/read`: hosts (e.g. Claude Desktop) eagerly read the
+    /// admin-UI resource the instant `open_admin_ui` is invoked — *before* the
+    /// boot finishes — and render whatever that first read returns without
+    /// re-reading. If we returned the "not running yet" placeholder during the
+    /// boot window the app would render blank.
+    ///
+    /// Two race windows must be covered, because the read and the
+    /// `open_admin_ui` tool call are dispatched concurrently and may be
+    /// scheduled in either order:
+    ///
+    /// 1. The read arrives while the boot is already `Starting`/`Running` — we
+    ///    simply await the transition to `Running`.
+    /// 2. The read arrives while the slot is still `Stopped` because the
+    ///    concurrent `open_admin_ui` task has not yet been scheduled to flip it
+    ///    to `Starting`. Returning `None` here is what caused the blank UI. We
+    ///    instead wait a short grace window for a boot to begin, then await it.
+    ///
+    /// We intentionally do *not* trigger the boot ourselves here: the read
+    /// carries no `config_path`, and booting a default config would preempt an
+    /// `open_admin_ui(config_path)` call (rejected as a config switch). Waiting
+    /// for the real boot keeps the operator's chosen config authoritative.
+    ///
+    /// Returns `None` only when no boot materializes within the grace window (a
+    /// genuine standalone read with no `open_admin_ui` in flight) or the boot
+    /// itself times out.
     async fn current_base_url(&self) -> Option<String> {
-        let slot = self.state.lock().await;
-        match &*slot {
-            ServerSlot::Running { base_url, .. } => Some(base_url.clone()),
-            _ => None,
+        let start = tokio::time::Instant::now();
+        // Covers OS scheduling jitter between the two concurrently-dispatched
+        // requests; far longer than the sub-millisecond ordering gap observed
+        // in practice, while keeping a genuine standalone read responsive.
+        let grace = Duration::from_secs(5);
+        // Generous overall bound: a cold boot may download and cosign-verify
+        // plugins.
+        let boot_timeout = Duration::from_secs(120);
+        loop {
+            let (rx, stopped) = {
+                let slot = self.state.lock().await;
+                match &*slot {
+                    ServerSlot::Running { base_url, .. } => return Some(base_url.clone()),
+                    // Subscribe while holding the lock so the transition the
+                    // booting task publishes cannot be missed after we unlock.
+                    ServerSlot::Starting => (self.progress.subscribe(), false),
+                    ServerSlot::Stopped => (self.progress.subscribe(), true),
+                }
+            };
+            let deadline = if stopped {
+                start + grace
+            } else {
+                start + boot_timeout
+            };
+            let mut rx = rx;
+            if tokio::time::timeout_at(deadline, rx.changed())
+                .await
+                .is_err()
+            {
+                // Stopped: no boot began within the grace window (standalone
+                // read). Starting: the boot exceeded its timeout.
+                return None;
+            }
         }
     }
 

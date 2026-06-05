@@ -896,11 +896,11 @@ fn mcp_apps_resource_contract_is_satisfied() {
     );
     client.send(&json!({
         "jsonrpc": "2.0",
-        "id": 6,
+        "id": 7,
         "method": "resources/read",
         "params": {"uri": boot_uri}
     }));
-    let boot_rr = client.recv_id(6);
+    let boot_rr = client.recv_id(7);
     assert_eq!(
         boot_rr
             .pointer("/result/contents/0/uri")
@@ -1009,6 +1009,50 @@ fn mcp_apps_resource_contract_is_satisfied() {
         "unknown resource read should error: {bad}"
     );
 
-    client.call(7, "stop_server", json!({}));
+    client.call(8, "stop_server", json!({}));
+    client.shutdown();
+}
+
+/// Regression: the host eagerly reads the admin-UI resource the instant
+/// `open_admin_ui` is invoked — before the boot completes — and renders
+/// whatever that first read returns without re-reading. `resources/read` must
+/// therefore await the in-flight boot and return the *live* MCP App HTML, not
+/// the "not running yet" placeholder. (Manifested as a blank UI once a slow
+/// plugin install pushed the boot past the read.)
+#[test]
+fn resource_read_during_boot_returns_live_html() {
+    let mut client = McpClient::spawn();
+    client.initialize();
+
+    // Pipeline the read immediately after the boot call, without first reading
+    // the boot result — mirroring the host's concurrent prefetch.
+    client.send_call(3, "open_admin_ui", json!({}));
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "resources/read",
+        "params": {"uri": "ui://drasi/admin"}
+    }));
+
+    // The read must resolve to live app HTML, not the placeholder.
+    let rr = client.recv_id(5);
+    let html = rr
+        .pointer("/result/contents/0/text")
+        .and_then(Value::as_str)
+        .expect("resources/read missing html text");
+    assert!(
+        !html.contains("not running yet"),
+        "resources/read during boot returned the placeholder instead of the live app: {html}"
+    );
+    assert!(
+        html.contains("/ui/assets/") && html.contains("/__mcp/bridge.js"),
+        "resources/read during boot did not return the live MCP App HTML: {html}"
+    );
+
+    // The boot result still arrives successfully.
+    let resp = client.recv_id(3);
+    assert!(resp.get("result").is_some(), "open_admin_ui failed: {resp}");
+
+    client.call(8, "stop_server", json!({}));
     client.shutdown();
 }
