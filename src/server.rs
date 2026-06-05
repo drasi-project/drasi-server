@@ -1021,10 +1021,15 @@ impl DrasiServer {
         // admin UI renders as an MCP App (different sandbox origin); harmless to
         // expose whenever the UI is enabled.
         if self.enable_ui && (has_filesystem_ui || has_embedded_ui) {
-            app = app.route(
-                crate::ui_assets::MCP_BRIDGE_PATH,
-                get(crate::ui_assets::serve_mcp_bridge),
-            );
+            app = app
+                .route(
+                    crate::ui_assets::MCP_BRIDGE_PATH,
+                    get(crate::ui_assets::serve_mcp_bridge),
+                )
+                .route(
+                    crate::ui_assets::MCP_DIAG_PATH,
+                    axum::routing::post(crate::ui_assets::serve_mcp_diag),
+                );
         }
 
         let cors_layer = if self.cors_allowed_origins.is_empty() {

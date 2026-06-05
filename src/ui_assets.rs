@@ -71,6 +71,50 @@ pub const MCP_BRIDGE_JS: &str = r#"(function () {
       if (t !== 'light') document.documentElement.classList.add('dark');
     } catch (e) {}
 
+    // --- Diagnostics: report sandbox DOM state + errors back to the server so
+    // they surface in the MCP server log (the sandbox console is not otherwise
+    // observable). Remove once MCP App rendering is confirmed working.
+    var __diag = { errors: [] };
+    function __report(phase) {
+      try {
+        var root = document.getElementById('root');
+        var b = document.body;
+        var cs = b && window.getComputedStyle ? window.getComputedStyle(b) : null;
+        var payload = {
+          phase: phase,
+          href: location.href,
+          readyState: document.readyState,
+          rootExists: !!root,
+          rootChildren: root ? root.childElementCount : -1,
+          rootHtmlLen: root ? root.innerHTML.length : -1,
+          bodyW: b ? b.clientWidth : -1,
+          bodyH: b ? b.clientHeight : -1,
+          docH: document.documentElement ? document.documentElement.scrollHeight : -1,
+          innerW: window.innerWidth,
+          innerH: window.innerHeight,
+          bg: cs ? cs.backgroundColor : '',
+          htmlClass: document.documentElement ? document.documentElement.className : '',
+          errors: __diag.errors.slice(0, 12)
+        };
+        var msg = JSON.stringify(payload);
+        if (navigator.sendBeacon) { navigator.sendBeacon(base + '/__mcp/diag', msg); }
+        else if (window.fetch) { fetch(base + '/__mcp/diag', { method: 'POST', body: msg }); }
+      } catch (e) {}
+    }
+    window.addEventListener('error', function (ev) {
+      try {
+        __diag.errors.push(String(ev.message) + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''));
+      } catch (e) {}
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      try { __diag.errors.push('promise: ' + String(ev.reason)); } catch (e) {}
+    });
+    window.addEventListener('load', function () {
+      __report('load');
+      setTimeout(function () { __report('load+3s'); }, 3000);
+    });
+    setTimeout(function () { __report('t6s'); }, 6000);
+
     function rewrite(url) {
       try {
         if (typeof url !== 'string') return url;
@@ -155,6 +199,21 @@ pub async fn serve_mcp_bridge() -> Response {
         )
         .header(header::CACHE_CONTROL, "no-store")
         .body(Body::from(MCP_BRIDGE_JS))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Path at which the MCP App bridge posts diagnostics.
+pub const MCP_DIAG_PATH: &str = "/__mcp/diag";
+
+/// Receive a diagnostic snapshot posted by the MCP App bridge and log it (so it
+/// surfaces in the MCP server log). Diagnoses why a fully-loaded SPA may render
+/// blank inside the host sandbox.
+pub async fn serve_mcp_diag(body: String) -> Response {
+    log::info!("[mcp-diag] {body}");
+    Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::empty())
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
