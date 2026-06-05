@@ -77,18 +77,24 @@ fn sandbox_base_url(base_url: &str) -> String {
 
 /// Build the HTML for the admin UI MCP App resource.
 ///
-/// MCP Apps run inside a host-controlled sandbox iframe on a *different* origin
-/// than the Drasi Server, and hosts block nested iframes to arbitrary origins
-/// (the inner sandbox is `allow-scripts allow-same-origin allow-forms`, with no
-/// frame escape). So rather than embedding the live `/ui/` in a nested iframe,
-/// we serve an *inlined* variant of the SPA shell: the app's entry script and
-/// stylesheet are loaded cross-origin directly from the Drasi Server
-/// (`<base_url>/ui/assets/...`), permitted via `_meta.ui.csp.resourceDomains`,
-/// and the app's API/SSE calls are permitted via `connectDomains` and rewritten
-/// to the absolute origin by the injected bridge script
-/// (`crate::ui_assets::MCP_BRIDGE_JS`). The Drasi Server already responds with
-/// permissive CORS (`Access-Control-Allow-Origin: *`), so cross-origin loads
-/// succeed without a stable `_meta.ui.domain`.
+/// MCP Apps render inside a host-controlled **`srcdoc` sandbox iframe** on a
+/// *different*, opaque origin than the Drasi Server. Two host constraints shape
+/// this document:
+///
+/// 1. Static `<script src=...>` tags **do not execute** inside a `srcdoc`
+///    iframe. So the SPA entry cannot be referenced with a `<script src>` tag;
+///    instead we boot it with a dynamic `import()` of the absolute
+///    `<base_url>/ui/assets/index-*.js` URL (dynamic import works in `srcdoc`
+///    and resolves the app's code-split chunks against that same origin).
+/// 2. The app's bootstrap (theme) and stylesheet must be inlined: the bridge is
+///    an inline `<script>` and the SPA CSS is inlined as a `<style>` block, so
+///    nothing depends on parser-inserted external resources.
+///
+/// The app's API/SSE calls are permitted via `_meta.ui.csp.connectDomains` and
+/// rewritten from root-relative to the absolute Drasi Server origin by the
+/// inlined bridge; script/style/font loads are permitted via `resourceDomains`.
+/// The Drasi Server responds with permissive CORS (`Access-Control-Allow-Origin:
+/// *`), so the cross-origin `import()` and fetches succeed.
 fn admin_ui_resource_html(base_url: &str) -> String {
     match crate::ui_assets::index_html() {
         Some(raw) => inline_admin_ui_html(&raw, base_url),
@@ -96,48 +102,77 @@ fn admin_ui_resource_html(base_url: &str) -> String {
     }
 }
 
-/// Transform the SPA `index.html` into an MCP-App-ready document:
-/// rewrite root-relative `/ui/` asset URLs to absolute `<base_url>/ui/...`,
-/// strip the bare inline `<script>` (host CSP forbids inline scripts; the
-/// bridge reproduces its behavior), and inject the external bridge script so it
-/// runs before the deferred app module.
-fn inline_admin_ui_html(raw: &str, base_url: &str) -> String {
-    let abs_assets = raw.replace("\"/ui/", &format!("\"{base_url}/ui/"));
-    let no_inline = strip_bare_inline_scripts(&abs_assets);
-    let bridge_tag = format!(
-        "<head>\n  <script src=\"{base_url}{path}\"></script>",
-        path = crate::ui_assets::MCP_BRIDGE_PATH
-    );
-    if no_inline.contains("<head>") {
-        no_inline.replacen("<head>", &bridge_tag, 1)
-    } else {
-        format!("{bridge_tag}\n{no_inline}")
-    }
+/// Extract the substring immediately following `needle` up to the next `"`.
+fn extract_quoted_after(html: &str, needle: &str) -> Option<String> {
+    let start = html.find(needle)? + needle.len();
+    let rest = &html[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
-/// Remove every bare `<script>...</script>` block (one with no attributes).
-/// Attributed scripts such as `<script type="module" ...>` and
-/// `<script src=...>` are preserved.
-fn strip_bare_inline_scripts(html: &str) -> String {
-    const OPEN: &str = "<script>";
-    const CLOSE: &str = "</script>";
-    let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while let Some(start) = rest.find(OPEN) {
-        out.push_str(&rest[..start]);
-        match rest[start..].find(CLOSE) {
-            Some(end_rel) => {
-                let end = start + end_rel + CLOSE.len();
-                rest = &rest[end..];
-            }
-            None => {
-                rest = "";
-                break;
-            }
+/// Find the SPA stylesheet path (relative to `ui/dist`, e.g.
+/// `assets/index-ABC.css`) referenced by an `href="/ui/..."` link.
+fn extract_css_path(html: &str) -> Option<String> {
+    const NEEDLE: &str = "href=\"/ui/";
+    let mut idx = 0;
+    while let Some(rel) = html[idx..].find(NEEDLE) {
+        let start = idx + rel + NEEDLE.len();
+        let rest = &html[start..];
+        let end = rest.find('"')?;
+        let path = &rest[..end];
+        if path.ends_with(".css") {
+            return Some(path.to_string());
         }
+        idx = start + end;
     }
-    out.push_str(rest);
-    out
+    None
+}
+
+/// Build the `srcdoc`-ready MCP App document from the SPA `index.html`:
+/// inline the bridge + stylesheet and dynamically `import()` the entry module
+/// from the absolute Drasi Server origin. Falls back to a static notice if the
+/// entry script cannot be located.
+fn inline_admin_ui_html(raw: &str, base_url: &str) -> String {
+    // Vite emits the entry as `<script type="module" ... src="/ui/assets/index-*.js">`.
+    let js_path = match extract_quoted_after(raw, "src=\"/ui/") {
+        Some(p) => p,
+        None => return fallback_admin_ui_html(base_url),
+    };
+    let entry_url = format!("{base_url}/ui/{js_path}");
+
+    let style_block = extract_css_path(raw)
+        .and_then(|p| crate::ui_assets::asset_text(&p))
+        .map(|css| {
+            // Rewrite root-relative asset URLs (fonts/images) to absolute so
+            // they resolve against the server, not the opaque sandbox origin.
+            let css = css.replace("/ui/assets/", &format!("{base_url}/ui/assets/"));
+            format!("<style>{css}</style>")
+        })
+        .unwrap_or_default();
+
+    let bridge = crate::ui_assets::mcp_bridge_js(base_url);
+
+    format!(
+        "<!doctype html>\n\
+<html lang=\"en\">\n\
+<head>\n\
+<meta charset=\"utf-8\">\n\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\
+<title>Drasi Server Admin</title>\n\
+{style_block}\n\
+<script>{bridge}</script>\n\
+</head>\n\
+<body class=\"bg-drasi-bg text-drasi-text-primary\">\n\
+<div id=\"root\"></div>\n\
+<script type=\"module\">\n\
+import({entry_url:?}).catch(function (e) {{\n\
+  document.getElementById('root').innerHTML =\n\
+    '<pre style=\"color:#fafafa;padding:16px;white-space:pre-wrap\">Failed to load Drasi admin UI from ' + {entry_url:?} + '\\n' + e + '</pre>';\n\
+}});\n\
+</script>\n\
+</body>\n\
+</html>\n",
+    )
 }
 
 /// Fallback shell used when the SPA assets are not present (e.g. a bare

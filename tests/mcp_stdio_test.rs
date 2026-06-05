@@ -914,7 +914,8 @@ fn mcp_apps_resource_contract_is_satisfied() {
         .and_then(Value::as_str)
         .expect("html text");
     // The admin UI is inlined (not framed): the SPA entry module is loaded
-    // cross-origin from the live Drasi Server, and the MCP bridge is injected.
+    // cross-origin from the live Drasi Server via dynamic import(), and the MCP
+    // bridge is inlined (static <script src> does not execute in srcdoc).
     assert!(
         !html.contains("<iframe"),
         "MCP App HTML must not use a nested iframe: {html}"
@@ -924,13 +925,20 @@ fn mcp_apps_resource_contract_is_satisfied() {
     let base = ui_url
         .trim_end_matches("/ui/")
         .replace("127.0.0.1", "localhost");
+    // The entry module is booted via dynamic import() of the absolute localhost
+    // asset URL (static <script src> is ignored inside a srcdoc sandbox).
     assert!(
-        html.contains(&format!("{base}/ui/assets/")),
-        "read HTML missing localhost SPA asset URL ({base}/ui/assets/...): {html}"
+        html.contains(&format!("import(\"{base}/ui/assets/")),
+        "read HTML missing dynamic import() of localhost SPA entry ({base}/ui/assets/...): {html}"
+    );
+    // The bridge is inlined with the localhost origin baked in (no external src).
+    assert!(
+        html.contains(&format!("var base = \"{base}\"")),
+        "read HTML missing inlined bridge with localhost base: {html}"
     );
     assert!(
-        html.contains(&format!("{base}/__mcp/bridge.js")),
-        "read HTML missing MCP bridge script: {html}"
+        !html.contains("/__mcp/bridge.js"),
+        "MCP App HTML must inline the bridge, not reference it externally: {html}"
     );
     let csp = contents
         .pointer("/_meta/ui/csp")

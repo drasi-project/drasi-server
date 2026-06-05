@@ -32,14 +32,17 @@ server, speaking JSON-RPC over stdin/stdout (`src/mcp/`). Key points:
   (SEP-1865, `io.modelcontextprotocol/ui`): the server advertises the `resources`
   capability, the tool declares `_meta.ui.resourceUri = ui://drasi/admin`, and the
   `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — an
-  inlined copy of the admin SPA shell whose entry script/stylesheet are loaded
-  cross-origin from `http://127.0.0.1:<port>/ui/assets/...` (declared via
-  `_meta.ui.csp.resourceDomains`) and whose root-relative API/SSE calls are
-  rewritten to that origin by an injected bridge script served at `/__mcp/bridge.js`
-  (declared via `_meta.ui.csp.connectDomains`); the server's permissive CORS
+  `ui://drasi/admin` resource is served as `text/html;profile=mcp-app` — a
+  self-contained shell rendered in the host's sandboxed `srcdoc` iframe. Because
+  static `<script src>` tags do not execute in `srcdoc`, the SPA stylesheet and
+  the bridge script are **inlined**, and the app's entry module is booted via a
+  dynamic `import()` of `http://127.0.0.1:<port>/ui/assets/index-*.js` (declared
+  via `_meta.ui.csp.resourceDomains`; the import resolves the app's code-split
+  chunks against that same origin). The inlined bridge rewrites the app's
+  root-relative API/SSE calls to that origin (declared via
+  `_meta.ui.csp.connectDomains`); the server's permissive CORS
   (`Access-Control-Allow-Origin: *`) lets those cross-origin loads succeed.
-  Hosts block nested iframes to arbitrary origins, which is why the SPA is
-  inlined rather than framed. The `ServerHandler` is implemented
+  The `ServerHandler` is implemented
   manually (not via `#[tool_handler]`) so `list_tools` can inject the tool `_meta`
   and `list_resources`/`read_resource` can serve the UI resource. Binding is forced
   to private `127.0.0.1` on an ephemeral port (override `--port`). `open_admin_ui`

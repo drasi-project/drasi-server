@@ -357,13 +357,15 @@ Drasi Server as a set of tools, and render its admin UI as an embedded MCP App.
   `io.modelcontextprotocol/ui` extension): the server advertises the `resources`
   capability, the `open_admin_ui` tool declares `_meta.ui.resourceUri =
   ui://drasi/admin`, and the `ui://drasi/admin` resource is served as
-  `text/html;profile=mcp-app`. Hosts block nested iframes to arbitrary origins,
-  so rather than framing `/ui/`, that HTML is an **inlined** copy of the admin
-  SPA shell: the app's entry script and stylesheet are loaded cross-origin
-  directly from `http://127.0.0.1:<port>/ui/assets/...` (permitted via
-  `_meta.ui.csp.resourceDomains`), and a small injected bridge script rewrites
-  the app's root-relative API/SSE requests to that absolute origin (permitted
-  via `_meta.ui.csp.connectDomains`). The Drasi Server responds with permissive
+  `text/html;profile=mcp-app`. Hosts render that HTML in a sandboxed `srcdoc`
+  iframe where static `<script src>` tags do not execute, so the resource is a
+  self-contained shell: the SPA stylesheet and a small bridge script are
+  **inlined**, and the app's entry module is booted with a dynamic `import()` of
+  `http://127.0.0.1:<port>/ui/assets/index-*.js` (permitted via
+  `_meta.ui.csp.resourceDomains`; dynamic import resolves the app's code-split
+  chunks against that same origin). The inlined bridge rewrites the app's
+  root-relative API/SSE requests to that absolute origin (permitted via
+  `_meta.ui.csp.connectDomains`). The Drasi Server responds with permissive
   CORS (`Access-Control-Allow-Origin: *`), so the cross-origin loads succeed.
   The binding is always forced to a private `127.0.0.1` address on an OS-assigned
   ephemeral port (override with `--port`). The tool result also includes the URL
