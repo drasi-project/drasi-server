@@ -285,14 +285,16 @@ fn open_admin_ui_boots_server_and_crud_round_trips() {
     let mut client = McpClient::spawn();
     client.initialize();
 
-    // Boot on demand. Rendering is driven by the tool's _meta.ui.resourceUri;
-    // the result also carries _meta.ui.resourceUri for hosts that read it there.
+    // Boot on demand. Rendering is driven by the result's _meta.ui.resourceUri,
+    // which is a per-boot, port-scoped URI (cache-busting across restarts).
     let resp = client.call(3, "open_admin_ui", json!({"config_path": config}));
-    assert_eq!(
-        resp.pointer("/result/_meta/ui/resourceUri")
-            .and_then(Value::as_str),
-        Some("ui://drasi/admin"),
-        "open_admin_ui result missing _meta.ui.resourceUri: {resp}"
+    let result_uri = resp
+        .pointer("/result/_meta/ui/resourceUri")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        result_uri.starts_with("ui://drasi/admin/"),
+        "open_admin_ui result _meta.ui.resourceUri should be a per-boot URI: {resp}"
     );
 
     // The JSON info block carries the localhost UI URL (forced private binding
@@ -772,13 +774,15 @@ fn open_admin_ui_without_config_boots_empty_default() {
 
     let resp = client.call(2, "open_admin_ui", json!({}));
 
-    // Rendering is driven by the tool/result _meta.ui.resourceUri; the URL is in
-    // the JSON info block.
-    assert_eq!(
-        resp.pointer("/result/_meta/ui/resourceUri")
-            .and_then(Value::as_str),
-        Some("ui://drasi/admin"),
-        "no-config boot result missing _meta.ui.resourceUri: {resp}"
+    // Rendering is driven by the result's _meta.ui.resourceUri (a per-boot,
+    // port-scoped URI); the URL is in the JSON info block.
+    let result_uri = resp
+        .pointer("/result/_meta/ui/resourceUri")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        result_uri.starts_with("ui://drasi/admin/"),
+        "no-config boot result _meta.ui.resourceUri should be a per-boot URI: {resp}"
     );
     let info = open_ui_info(&resp);
     let ui_url = info["uiUrl"].as_str().expect("uiUrl");
@@ -878,6 +882,39 @@ fn mcp_apps_resource_contract_is_satisfied() {
         .and_then(Value::as_str)
         .expect("open_admin_ui info missing uiUrl")
         .to_string();
+
+    // The result carries a per-boot, port-scoped resource URI that must be
+    // readable (cache-busting URI used by the host to render the app).
+    let boot_uri = resp
+        .pointer("/result/_meta/ui/resourceUri")
+        .and_then(Value::as_str)
+        .expect("open_admin_ui result missing _meta.ui.resourceUri")
+        .to_string();
+    assert!(
+        boot_uri.starts_with("ui://drasi/admin/"),
+        "expected per-boot resource URI, got {boot_uri}"
+    );
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "resources/read",
+        "params": {"uri": boot_uri}
+    }));
+    let boot_rr = client.recv_id(6);
+    assert_eq!(
+        boot_rr
+            .pointer("/result/contents/0/uri")
+            .and_then(Value::as_str),
+        Some(boot_uri.as_str()),
+        "per-boot resources/read must echo the requested URI: {boot_rr}"
+    );
+    assert_eq!(
+        boot_rr
+            .pointer("/result/contents/0/mimeType")
+            .and_then(Value::as_str),
+        Some("text/html;profile=mcp-app"),
+        "per-boot resources/read wrong mimeType: {boot_rr}"
+    );
 
     // resources/list must include the UI resource.
     client.send(&json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list", "params": {}}));

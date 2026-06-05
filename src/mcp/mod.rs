@@ -189,12 +189,35 @@ fn admin_ui_resource_meta(base_url: &str) -> Meta {
 ///
 /// `base_url` is the raw server origin (`http://127.0.0.1:<port>`); assets load
 /// from it directly while the bridge/meta derive the `localhost` API origin.
-fn admin_ui_resource_contents(base_url: &str) -> ResourceContents {
+/// `uri` is echoed back as the content's `uri` so it matches whatever the host
+/// requested (which may be the per-boot [`boot_resource_uri`]).
+fn admin_ui_resource_contents(base_url: &str, uri: &str) -> ResourceContents {
     ResourceContents::TextResourceContents {
-        uri: ADMIN_UI_RESOURCE_URI.to_string(),
+        uri: uri.to_string(),
         mime_type: Some(MCP_APP_MIME_TYPE.to_string()),
         text: admin_ui_resource_html(base_url),
         meta: Some(admin_ui_resource_meta(base_url)),
+    }
+}
+
+/// Per-boot resource URI for the admin UI MCP App.
+///
+/// The admin UI HTML embeds absolute, port-specific asset URLs, but the base
+/// MCP resource URI (`ui://drasi/admin`) is static — and hosts (e.g. Claude
+/// Desktop) cache resource *content* by URI, even across MCP server restarts
+/// (the spec explicitly permits prefetch/caching). After a restart the server
+/// gets a new ephemeral port, so a cached copy of the static URI would still
+/// reference the now-dead old port and render blank. Embedding the live port in
+/// the URI makes each boot's resource unique, so the host always fetches fresh
+/// content for the current port.
+fn boot_resource_uri(base_url: &str) -> String {
+    match base_url
+        .rsplit(':')
+        .next()
+        .filter(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        Some(port) => format!("{ADMIN_UI_RESOURCE_URI}/{port}"),
+        None => ADMIN_UI_RESOURCE_URI.to_string(),
     }
 }
 
@@ -487,12 +510,12 @@ impl DrasiMcpServer {
             }
         };
 
-        // Rendering is driven by the `open_admin_ui` tool's
-        // `_meta.ui.resourceUri` (declared in `list_tools`): the host fetches
-        // `ui://drasi/admin` via `resources/read` and renders it as an MCP App.
-        // The tool result itself is plain text/JSON (matching the MCP Apps
-        // reference servers), with `_meta.ui.resourceUri` also set on the result
-        // so hosts that associate the view via the tool call can find it.
+        // Rendering is driven by `_meta.ui.resourceUri`. We point it at a
+        // *per-boot* URI (embedding the live port) rather than the static base
+        // URI, because hosts cache resource content by URI across restarts: a
+        // static URI would let the host re-render a stale, dead-port copy and
+        // show a blank app. A port-scoped URI is always fetched fresh.
+        let resource_uri = boot_resource_uri(&base_url);
         let summary = Content::text(format!(
             "Drasi Server admin UI is ready at {ui_url} (config: {config_loaded})."
         ));
@@ -506,7 +529,7 @@ impl DrasiMcpServer {
         let mut meta = Meta::new();
         meta.insert(
             "ui".to_string(),
-            serde_json::json!({ "resourceUri": ADMIN_UI_RESOURCE_URI }),
+            serde_json::json!({ "resourceUri": resource_uri }),
         );
         result.meta = Some(meta);
         Ok(result)
@@ -745,7 +768,14 @@ impl ServerHandler for DrasiMcpServer {
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, McpError> {
-        if request.uri != ADMIN_UI_RESOURCE_URI {
+        // Accept both the static base URI (advertised in `list_resources` and
+        // the tool meta) and any per-boot, port-scoped URI produced by
+        // `boot_resource_uri` (e.g. `ui://drasi/admin/58737`).
+        if request.uri != ADMIN_UI_RESOURCE_URI
+            && !request
+                .uri
+                .starts_with(&format!("{ADMIN_UI_RESOURCE_URI}/"))
+        {
             return Err(McpError::resource_not_found(
                 "Unknown resource",
                 Some(serde_json::json!({ "uri": request.uri })),
@@ -754,12 +784,13 @@ impl ServerHandler for DrasiMcpServer {
 
         let contents = match self.current_base_url().await {
             // Pass the raw 127.0.0.1 origin: assets load from it directly, while
-            // the bridge/meta derive the localhost origin for API calls.
-            Some(base_url) => admin_ui_resource_contents(&base_url),
+            // the bridge/meta derive the localhost origin for API calls. Echo
+            // the requested URI back so it matches what the host asked for.
+            Some(base_url) => admin_ui_resource_contents(&base_url, &request.uri),
             // The server hasn't been booted yet (host prefetched the resource).
             // Return a valid MCP App page that prompts the user to start it.
             None => ResourceContents::TextResourceContents {
-                uri: ADMIN_UI_RESOURCE_URI.to_string(),
+                uri: request.uri.clone(),
                 mime_type: Some(MCP_APP_MIME_TYPE.to_string()),
                 text: "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
                        <title>Drasi Server</title></head>\
@@ -933,5 +964,32 @@ fn redirect_stdout_to_stderr() -> Result<tokio::fs::File> {
         // File transfers ownership (it must not be closed separately).
         let std_file = std::fs::File::from_raw_handle(saved as _);
         Ok(tokio::fs::File::from_std(std_file))
+    }
+}
+
+#[cfg(test)]
+mod resource_uri_tests {
+    use super::{boot_resource_uri, ADMIN_UI_RESOURCE_URI};
+
+    #[test]
+    fn boot_uri_embeds_port() {
+        assert_eq!(
+            boot_resource_uri("http://127.0.0.1:58737"),
+            "ui://drasi/admin/58737"
+        );
+    }
+
+    #[test]
+    fn boot_uri_changes_with_port() {
+        // Distinct ports must yield distinct URIs so a host cannot serve a
+        // stale, dead-port cache after a restart.
+        let a = boot_resource_uri("http://127.0.0.1:5001");
+        let b = boot_resource_uri("http://127.0.0.1:5002");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn boot_uri_falls_back_without_port() {
+        assert_eq!(boot_resource_uri("http://localhost"), ADMIN_UI_RESOURCE_URI);
     }
 }
