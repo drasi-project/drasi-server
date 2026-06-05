@@ -60,6 +60,20 @@ const ADMIN_UI_RESOURCE_NAME: &str = "drasi_admin_ui";
 /// MIME type for MCP Apps HTML resources (SEP-1865 / `io.modelcontextprotocol/ui`).
 const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
 
+/// Convert a server base URL into one safe to embed in the MCP App resource.
+///
+/// Hosts (e.g. Claude Desktop) canonicalize `127.0.0.1` to `localhost` when
+/// constructing the sandbox CSP from `_meta.ui.csp`. If the embedded app then
+/// addresses the server as `http://127.0.0.1:<port>`, its requests fail the
+/// `connect-src http://localhost:<port>` / `script-src ...` checks because
+/// `127.0.0.1` and `localhost` are distinct CSP origins. We therefore present
+/// the server to the sandbox as `localhost` so the app's origin matches the CSP
+/// the host derives. The server still *binds* to `127.0.0.1`; `localhost`
+/// resolves there (browsers fall back to IPv4 when `::1` is unused).
+fn sandbox_base_url(base_url: &str) -> String {
+    base_url.replace("127.0.0.1", "localhost")
+}
+
 /// Build the HTML for the admin UI MCP App resource.
 ///
 /// MCP Apps run inside a host-controlled sandbox iframe on a *different* origin
@@ -729,7 +743,7 @@ impl ServerHandler for DrasiMcpServer {
         }
 
         let contents = match self.current_base_url().await {
-            Some(base_url) => admin_ui_resource_contents(&base_url),
+            Some(base_url) => admin_ui_resource_contents(&sandbox_base_url(&base_url)),
             // The server hasn't been booted yet (host prefetched the resource).
             // Return a valid MCP App page that prompts the user to start it.
             None => ResourceContents::TextResourceContents {

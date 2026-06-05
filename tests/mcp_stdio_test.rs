@@ -919,10 +919,14 @@ fn mcp_apps_resource_contract_is_satisfied() {
         !html.contains("<iframe"),
         "MCP App HTML must not use a nested iframe: {html}"
     );
-    let base = ui_url.trim_end_matches("/ui/");
+    // The host canonicalizes 127.0.0.1 -> localhost in the sandbox CSP, so the
+    // embedded app must address the server as localhost to satisfy connect-src.
+    let base = ui_url
+        .trim_end_matches("/ui/")
+        .replace("127.0.0.1", "localhost");
     assert!(
         html.contains(&format!("{base}/ui/assets/")),
-        "read HTML missing absolute SPA asset URL ({base}/ui/assets/...): {html}"
+        "read HTML missing localhost SPA asset URL ({base}/ui/assets/...): {html}"
     );
     assert!(
         html.contains(&format!("{base}/__mcp/bridge.js")),
@@ -932,12 +936,13 @@ fn mcp_apps_resource_contract_is_satisfied() {
         .pointer("/_meta/ui/csp")
         .expect("read resource missing _meta.ui.csp");
     for key in ["connectDomains", "resourceDomains"] {
+        let domains = csp
+            .get(key)
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("missing _meta.ui.csp.{key}: {contents}"));
         assert!(
-            csp.get(key)
-                .and_then(Value::as_array)
-                .map(|a| !a.is_empty())
-                .unwrap_or(false),
-            "read resource missing non-empty _meta.ui.csp.{key}: {contents}"
+            domains.iter().any(|d| d.as_str() == Some(base.as_str())),
+            "_meta.ui.csp.{key} must include localhost origin {base}: {contents}"
         );
     }
 
