@@ -71,6 +71,126 @@ pub const MCP_BRIDGE_JS: &str = r#"(function () {
       if (t !== 'light') document.documentElement.classList.add('dark');
     } catch (e) {}
 
+    // --- MCP App host handshake + sizing ---------------------------------
+    // MCP Apps run inside a host-controlled sandbox iframe. Per the MCP Apps
+    // spec, the host will NOT size the iframe (nor send the View any messages)
+    // until the View completes the `ui/initialize` handshake and sends an
+    // `initialized` notification. For a *flexible* / *unbounded* height
+    // container the View is responsible for telling the host its desired
+    // height via `ui/notifications/size-changed` — the host then resizes the
+    // iframe to match. The drasi admin UI is a fixed-viewport (100vh / h-screen)
+    // SPA, whose intrinsic content height is therefore circular (== iframe
+    // height); without this handshake the host leaves the iframe at a tiny
+    // default (~150px) and the UI appears blank. We pick a concrete target
+    // height (the host's maxHeight when flexible, else a sane default) and
+    // report it; 100vh content then fills the resized iframe.
+    (function () {
+      try {
+        if (window.parent === window) return; // not embedded
+        var hostWin = window.parent;
+        var INIT_ID = 'drasi-ui-init';
+        var sizeMode = null; // 'fixed' | 'flexible' | 'unbounded'
+        var maxH = null;
+        var reportedH = 0;
+
+        function notify(method, params) {
+          try {
+            hostWin.postMessage(
+              { jsonrpc: '2.0', method: method, params: params || {} },
+              '*'
+            );
+          } catch (e) {}
+        }
+
+        function applyContainer(cd) {
+          if (cd && typeof cd.height === 'number') {
+            sizeMode = 'fixed';
+            try { document.documentElement.style.height = '100vh'; } catch (e) {}
+          } else if (cd && typeof cd.maxHeight === 'number') {
+            sizeMode = 'flexible';
+            maxH = cd.maxHeight;
+          } else {
+            sizeMode = 'unbounded';
+          }
+        }
+
+        function reportSize() {
+          if (sizeMode === 'fixed') return; // host controls the height
+          var h = maxH ? maxH : 900;
+          if (h && h !== reportedH) {
+            reportedH = h;
+            // Give the SPA a concrete height so its 100vh content fills the
+            // iframe once the host grows it to match.
+            try { document.documentElement.style.height = h + 'px'; } catch (e) {}
+            try { if (document.body) document.body.style.minHeight = h + 'px'; } catch (e) {}
+            notify('ui/notifications/size-changed', { height: h });
+          }
+        }
+
+        function applyHostContext(ctx) {
+          if (!ctx) return;
+          try {
+            applyContainer(ctx.containerDimensions);
+            if (ctx.theme === 'dark') document.documentElement.classList.add('dark');
+            else if (ctx.theme === 'light') document.documentElement.classList.remove('dark');
+          } catch (e) {}
+        }
+
+        var handshakeDone = false;
+        function finishHandshake(ctx) {
+          if (handshakeDone) { applyHostContext(ctx); reportSize(); return; }
+          handshakeDone = true;
+          applyHostContext(ctx);
+          notify('ui/notifications/initialized', {});
+          reportSize();
+          // Re-report after layout/React have settled.
+          setTimeout(reportSize, 300);
+          setTimeout(reportSize, 1500);
+          setTimeout(reportSize, 4000);
+        }
+
+        window.addEventListener('message', function (ev) {
+          var d = ev.data;
+          if (!d) return;
+          if (d.id === INIT_ID && (d.result || d.error)) {
+            finishHandshake(d.result ? d.result.hostContext : null);
+          } else if (d.method === 'ui/notifications/host-context-changed') {
+            // Params carry changed host-context fields (theme, dimensions...).
+            applyHostContext(d.params && d.params.hostContext ? d.params.hostContext : d.params);
+            reportSize();
+          }
+        });
+
+        try {
+          hostWin.postMessage(
+            {
+              jsonrpc: '2.0',
+              id: INIT_ID,
+              method: 'ui/initialize',
+              params: {
+                protocolVersion: '2026-01-26',
+                clientInfo: { name: 'drasi-admin-ui', version: '1.0.0' },
+                capabilities: {},
+                appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }
+              }
+            },
+            '*'
+          );
+        } catch (e) {}
+
+        // Fallback: if the host never answers (older / non-conforming host),
+        // assume unbounded and grow anyway so the UI isn't stuck at ~150px.
+        setTimeout(function () {
+          if (!handshakeDone) {
+            sizeMode = sizeMode || 'unbounded';
+            reportSize();
+          }
+        }, 1500);
+      } catch (e) {
+        try { console.error('drasi mcp host handshake failed', e); } catch (e2) {}
+      }
+    })();
+
     // --- Diagnostics: report sandbox DOM state + errors back to the server so
     // they surface in the MCP server log (the sandbox console is not otherwise
     // observable). Remove once MCP App rendering is confirmed working.
