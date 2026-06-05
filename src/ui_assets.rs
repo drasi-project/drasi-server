@@ -114,9 +114,15 @@ pub const MCP_BRIDGE_JS: &str = r#"(function () {
           }
         }
 
+        // Preferred height for the admin UI. It is a single-screen dashboard
+        // (sidebar + content, h-screen), so we target one comfortable viewport
+        // rather than filling the host's (often huge) maxHeight, which would
+        // make the iframe several pages tall.
+        var TARGET_HEIGHT = 720;
+
         function reportSize() {
           if (sizeMode === 'fixed') return; // host controls the height
-          var h = maxH ? maxH : 900;
+          var h = maxH ? Math.min(maxH, TARGET_HEIGHT) : TARGET_HEIGHT;
           if (h && h !== reportedH) {
             reportedH = h;
             // Give the SPA a concrete height so its 100vh content fills the

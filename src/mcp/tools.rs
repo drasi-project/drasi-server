@@ -102,8 +102,15 @@ pub struct DeploySolutionArgs {
 /// Installs a plugin from a remote OCI registry.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstallPluginArgs {
-    /// The plugin install body accepted by `POST /api/v1/plugins/install`.
-    pub body: serde_json::Value,
+    /// Plugin reference identifying the kind to install, in the form
+    /// `<category>/<kind>` — e.g. `source/postgres`, `reaction/http`, or
+    /// `bootstrap/noop`.
+    #[serde(alias = "ref")]
+    pub plugin_ref: String,
+    /// Optional OCI registry override (e.g. `ghcr.io/drasi-project`). When
+    /// omitted, the server's configured default registry is used.
+    #[serde(default)]
+    pub registry: Option<String>,
 }
 
 /// Builds the component route prefix for an optional instance scope.
@@ -469,13 +476,18 @@ impl DrasiMcpServer {
         self.api_get("/api/v1/plugins/kinds").await
     }
 
-    #[tool(description = "Install a plugin from a remote OCI registry.")]
+    #[tool(
+        description = "Install a plugin (source/reaction/bootstrap connector) from the configured OCI registry. Provide `plugin_ref` like `source/postgres`."
+    )]
     pub async fn install_plugin(
         &self,
         Parameters(args): Parameters<InstallPluginArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.api_post("/api/v1/plugins/install", Some(args.body))
-            .await
+        let mut body = serde_json::json!({ "ref": args.plugin_ref });
+        if let Some(registry) = args.registry {
+            body["registry"] = serde_json::Value::String(registry);
+        }
+        self.api_post("/api/v1/plugins/install", Some(body)).await
     }
 
     // ---- Solutions catalog --------------------------------------------------
