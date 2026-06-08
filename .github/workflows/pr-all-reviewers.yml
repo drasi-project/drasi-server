@@ -4,7 +4,8 @@ name: pr-all-reviewers
 #
 # Each reviewer is a reusable workflow (declares `on: workflow_call`).
 # This file chains them as jobs that `uses:` the reviewer's compiled
-# `.lock.yml`, with `needs:` ensuring sequential execution. No polling,
+# `.lock.yml`, with `needs:` ensuring sequential execution. No polling
+# no extra GitHub App permissions, native pass/fail propagation.
 
 on:
   pull_request_target:
