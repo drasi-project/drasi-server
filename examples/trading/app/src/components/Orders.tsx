@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction } from './QueryTable';
+import { QueryTable, ColumnDef, RowAction, useDrasiQuery } from '@drasi/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { DeleteIcon, AddIcon, ConfirmDialog, DetailItem } from './shared';
 import { LimitOrderResult, OrderAlert } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
 import { OrderDialog, OrderFormData } from './OrderDialog';
-import { useQuery } from '@/hooks/useDrasi';
 import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
@@ -58,8 +58,14 @@ interface DeletingOrder {
  * TEMPORARY: In the future, a postgres reaction will handle this automatically.
  */
 const useOrderStatusUpdates = () => {
-  const { data: staleAlerts } = useQuery<OrderAlert>('stale-orders-query');
-  const { data: expiredAlerts } = useQuery<OrderAlert>('expiring-orders-query');
+  const { data: staleAlerts } = useDrasiQuery<OrderAlert>(
+    'stale-orders-query',
+    tradingQueryOptions<OrderAlert>('stale-orders-query'),
+  );
+  const { data: expiredAlerts } = useDrasiQuery<OrderAlert>(
+    'expiring-orders-query',
+    tradingQueryOptions<OrderAlert>('expiring-orders-query'),
+  );
   
   // Track which orders we've already updated to avoid duplicate API calls
   const [updatedStaleIds, setUpdatedStaleIds] = useState<Set<number>>(new Set());
@@ -269,6 +275,7 @@ export const Orders: React.FC = () => {
     <>
       <QueryTable<LimitOrderResult>
         queryId="active-orders-query"
+        queryOptions={tradingQueryOptions<LimitOrderResult>('active-orders-query')}
         title="Limit Orders"
         columns={columns}
         rowKey={(row) => String(row.id)}
