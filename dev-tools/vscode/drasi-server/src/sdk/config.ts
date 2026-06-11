@@ -73,6 +73,20 @@ export class ConnectionRegistry {
     return connection;
   }
 
+  async removeConnection(connectionId: string) {
+    const connections = this.getConnections();
+    const remaining = connections.filter((connection) => connection.id !== connectionId);
+    if (remaining.length === connections.length) {
+      return;
+    }
+    await this.setConnections(remaining);
+
+    if (this.getCurrentConnectionId() === connectionId) {
+      const nextId = remaining.length > 0 ? remaining[0].id : '';
+      await this.setCurrentConnectionId(nextId);
+    }
+  }
+
   async updateCurrentConnectionUrl(url: string) {
     const connections = this.getConnections();
     const currentId = this.getCurrentConnectionId();
