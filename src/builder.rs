@@ -19,6 +19,12 @@ use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceT
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Name under which drasi-server registers its persistent (RocksDB) index
+/// provider when `persist_index` is enabled. Queries with no explicit
+/// `storage_backend` are backed by this provider via
+/// `DrasiLibBuilder::with_default_index_provider`.
+pub const PERSISTENT_INDEX_PROVIDER_NAME: &str = "rocksdb";
+
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
     core_builders: Vec<DrasiLibBuilder>,
@@ -78,10 +84,13 @@ impl DrasiServerBuilder {
     /// Add an index provider for persistent storage
     ///
     /// By default, DrasiLib uses in-memory indexes. Use this method to inject
-    /// a persistent index provider like RocksDB.
+    /// a persistent index provider like RocksDB. The provider is registered as
+    /// the default backend, so every query without an explicit `storage_backend`
+    /// is persisted to it.
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_index_provider(provider);
+        *builder = std::mem::take(builder)
+            .with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, provider);
         self
     }
 
