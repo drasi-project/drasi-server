@@ -33,7 +33,7 @@ jobs:
         run: echo "${{ github.event.pull_request.number }}" > pr_number.txt
 
       - name: Upload PR number
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: review-info
           path: pr_number.txt
