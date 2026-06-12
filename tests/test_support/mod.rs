@@ -19,8 +19,6 @@ pub mod config_helpers;
 #[allow(dead_code)]
 pub mod mock_components;
 #[allow(dead_code)]
-pub mod redis_helpers;
-#[allow(dead_code)]
 pub mod solution_helpers;
 
 // Re-export commonly used helpers
@@ -28,7 +26,5 @@ pub mod solution_helpers;
 pub use config_helpers::*;
 #[allow(unused_imports)]
 pub use mock_components::*;
-#[allow(unused_imports)]
-pub use redis_helpers::*;
 #[allow(unused_imports)]
 pub use solution_helpers::*;
