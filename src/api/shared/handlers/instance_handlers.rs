@@ -25,6 +25,7 @@ use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
+use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -90,7 +91,7 @@ pub async fn create_instance(
 
     // Set up RocksDB persistent indexing if requested
     if persist_index {
-        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+        let safe_id = instance_storage_key(&instance_id);
         let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
         log::info!(
             "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
@@ -102,6 +103,14 @@ pub async fn create_instance(
             false, // direct_io - use OS page cache
         );
         builder = builder.with_index_provider(Arc::new(rocksdb_provider));
+    }
+
+    // WAL provider for durable source event persistence
+    {
+        let safe_id = instance_storage_key(&instance_id);
+        let wal_path = std::path::PathBuf::from(format!("./data/{safe_id}/wal"));
+        let wal_provider = Arc::new(drasi_wal_redb::RedbWalProvider::new(&wal_path));
+        builder = builder.with_wal_provider(wal_provider);
     }
 
     let core = builder.build().await.map_err(|e| {
