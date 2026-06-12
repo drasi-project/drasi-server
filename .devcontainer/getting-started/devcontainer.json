@@ -9,7 +9,7 @@
             "configureZshAsDefaultShell": true
         }
     },
-    "initializeCommand": "docker network inspect drasi-network >/dev/null 2>&1 || docker network create drasi-network >/dev/null",
+    "initializeCommand": "docker network inspect drasi-network || docker network create drasi-network",
     "postCreateCommand": "bash .devcontainer/getting-started/post-create.sh",
     "runArgs": [
         "--network=drasi-network"
