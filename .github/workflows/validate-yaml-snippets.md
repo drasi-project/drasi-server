@@ -15,6 +15,9 @@ tools:
   bash:
     - "cargo build --release"
     - "cargo run -- --config *"
+    - "cargo test readme_examples*"
+    - "cargo test example_configs*"
+    - "cargo test config_parsing_failure*"
     - "find . -name '*.md' -type f"
     - "cat *"
 safe-outputs:
@@ -43,6 +46,11 @@ You are an AI agent that validates YAML configuration snippets found in markdown
    - For each valid-looking config snippet, save it to a temporary file
    - Try to start the server with that config: `cargo run -- --config /path/to/temp-config.yaml`
    - Check if the server starts without errors or if it reports validation issues
+   - Run the repository's existing snippet/config validation tests, which already
+     cover the documented examples:
+     - `cargo test readme_examples`
+     - `cargo test example_configs`
+     - `cargo test config_parsing_failure`
 
 5. **Report findings**:
    - If all YAML snippets are valid, comment: "✅ All YAML snippets validated successfully!"
