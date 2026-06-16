@@ -36,7 +36,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.8.4", features = [
+drasi-lib = { version = "0.8.6", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,29 +47,29 @@ drasi-lib = { version = "0.8.4", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.5.3"
+drasi-core = "0.5.4"
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.2.5"
-drasi-bootstrap-application = "0.2.5"
+drasi-bootstrap-noop = "0.2.7"
+drasi-bootstrap-application = "0.2.7"
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.3.3"
+drasi-reaction-application = "0.3.5"
 
 # Index plugins
-drasi-index-rocksdb = "0.5.4"
+drasi-index-rocksdb = "0.5.5"
 
 # State store plugins
 drasi-state-store-redb = "0.2.1"
 
 # WAL plugins
-drasi-wal-redb = "0.2.0"
+drasi-wal-redb = "0.2.3"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.8.4"
+drasi-plugin-sdk = "0.9.0"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.8.4", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { version = "0.9.0", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -150,20 +150,15 @@ type_complexity = "allow"
 large_enum_variant = "allow"
 
 
-# Pin drasi-core crates to the upstream revision that includes WAL builder support.
-[patch.crates-io]
-drasi-plugin-sdk = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-ffi-primitives = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-core = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-lib = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-query-ast = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-query-cypher = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-query-gql = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-functions-cypher = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-functions-gql = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-middleware = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-bootstrap-application = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-bootstrap-noop = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-reaction-application = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-index-rocksdb = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
-drasi-host-sdk = { git = "https://github.com/drasi-project/drasi-core.git", rev = "0a9ddc14e6d6dec9268d914a1c80a0db32adb9dc" }
+# Local development: use path-based dependencies
+# [patch.crates-io]
+# drasi-core = { path = "../drasi-core/core" }
+# drasi-lib = { path = "../drasi-core/lib" }
+# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
+# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
+# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
+# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
+# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
+# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
+# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }

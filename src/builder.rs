@@ -81,7 +81,7 @@ impl DrasiServerBuilder {
     /// a persistent index provider like RocksDB.
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder).with_index_provider(provider);
+        *builder = std::mem::take(builder).with_default_index_provider("rocksdb", provider);
         self
     }
 
