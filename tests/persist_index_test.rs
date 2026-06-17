@@ -18,7 +18,7 @@
 //! - RocksDB index provider can be created and used
 //! - DrasiLib builder accepts index provider
 //! - persist_index config setting is properly parsed and applied
-//! - DrasiServerBuilder with_rocksdb_index_provider method works correctly
+//! - DrasiServerBuilder with_default_index_provider method works correctly
 
 use anyhow::Result;
 use drasi_index_rocksdb::RocksDbIndexProvider;
@@ -120,7 +120,7 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
 
 /// Test DrasiServerBuilder with RocksDB index provider
 #[tokio::test]
-async fn test_drasi_server_builder_with_rocksdb_index_provider() -> Result<()> {
+async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
     use drasi_server::DrasiServerBuilder;
 
     let temp_dir = TempDir::new()?;
@@ -131,7 +131,10 @@ async fn test_drasi_server_builder_with_rocksdb_index_provider() -> Result<()> {
     // Build using DrasiServerBuilder
     let core = DrasiServerBuilder::new()
         .with_id("test-server-persist")
-        .with_rocksdb_index_provider(Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .build_core()
         .await?;
 

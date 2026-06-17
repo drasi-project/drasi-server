@@ -19,8 +19,6 @@ use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceT
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
-
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
     core_builders: Vec<DrasiLibBuilder>,
@@ -77,23 +75,24 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Register a RocksDB-backed index provider as the instance default.
+    /// Register a named index backend provider and make it the instance default.
     ///
     /// By default, DrasiLib uses in-memory indexes. Use this method to inject a
-    /// persistent RocksDB provider. It is registered under the name
-    /// [`PERSISTENT_INDEX_PROVIDER_NAME`] (`"rocksdb"`) and marked as the
-    /// instance default, so every query without an explicit `storageBackend`
-    /// setting is persisted to it. When a per-query `storageBackend` references a
-    /// named provider, it must specify `"rocksdb"` as the name.
+    /// persistent provider (e.g. RocksDB) under `name` and mark it as the default
+    /// backend: every query without an explicit `storageBackend` is persisted to
+    /// it. When a per-query `storageBackend` references a named provider, it must
+    /// specify this same `name`.
     ///
-    /// This method is intended specifically for the RocksDB backend. To register
-    /// a non-RocksDB provider, or to register a provider under a different name,
-    /// call [`DrasiLibBuilder::with_default_index_provider`] directly with an
-    /// explicit name.
-    pub fn with_rocksdb_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
+    /// This mirrors [`DrasiLibBuilder::with_default_index_provider`]. drasi-server
+    /// registers its built-in RocksDB provider under
+    /// [`crate::PERSISTENT_INDEX_PROVIDER_NAME`] (`"rocksdb"`).
+    pub fn with_default_index_provider(
+        mut self,
+        name: impl Into<String>,
+        provider: Arc<dyn IndexBackendPlugin>,
+    ) -> Self {
         let builder = self.primary_builder_mut();
-        *builder = std::mem::take(builder)
-            .with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, provider);
+        *builder = std::mem::take(builder).with_default_index_provider(name, provider);
         self
     }
 
