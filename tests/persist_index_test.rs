@@ -292,13 +292,20 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
     core.stop().await?;
 
     // The query has no explicit storage_backend, so it is only backed by RocksDB
-    // because the provider was registered as the default. RocksDB creates the
-    // index directory at `{index_path}/{query_id}` when the query starts, so its
-    // existence proves the default provider actually served the query.
+    // because the provider was registered as the default. When the query starts,
+    // RocksDB materializes on-disk index storage under `index_path`, so a
+    // non-empty index directory proves the default provider actually served the
+    // query. We assert the directory is populated rather than checking for a
+    // specific child path, to avoid coupling the test to drasi-index-rocksdb's
+    // internal on-disk layout (e.g. the per-query subdirectory naming scheme).
+    let index_entry_count = std::fs::read_dir(&index_path)
+        .map(|entries| entries.count())
+        .unwrap_or(0);
     assert!(
-        index_path.join("test-query").exists(),
-        "RocksDB index directory for the query should exist, proving the default \
-         provider backed a query with no explicit storage_backend"
+        index_entry_count > 0,
+        "RocksDB index directory '{}' should be populated, proving the default \
+         provider backed a query with no explicit storage_backend",
+        index_path.display()
     );
 
     Ok(())
