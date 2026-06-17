@@ -14,7 +14,6 @@
 
 use axum::{extract::Extension, response::Json};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -88,23 +87,10 @@ pub async fn create_instance(
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
 
-    // Set up RocksDB persistent indexing if requested
+    // Register the persistent RocksDB index provider as the instance default
+    // when requested.
     if persist_index {
-        let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
-        let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
-        log::info!(
-            "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
-            instance_id,
-            index_path.display()
-        );
-        let rocksdb_provider = drasi_index_rocksdb::RocksDbIndexProvider::new(
-            index_path, true,  // enable_archive - support for past() function
-            false, // direct_io - use OS page cache
-        );
-        builder = builder.with_default_index_provider(
-            crate::builder::PERSISTENT_INDEX_PROVIDER_NAME,
-            Arc::new(rocksdb_provider),
-        );
+        builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id);
     }
 
     let core = builder.build().await.map_err(|e| {

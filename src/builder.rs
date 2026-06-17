@@ -19,11 +19,7 @@ use drasi_lib::{IndexBackendPlugin, Reaction as ReactionTrait, Source as SourceT
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Name under which drasi-server registers its persistent (RocksDB) index
-/// provider when `persist_index` is enabled. Queries with no explicit
-/// `storage_backend` are backed by this provider via
-/// `DrasiLibBuilder::with_default_index_provider`.
-pub const PERSISTENT_INDEX_PROVIDER_NAME: &str = "rocksdb";
+use crate::index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
 
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
@@ -81,23 +77,20 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add an index provider for persistent storage.
+    /// Register a RocksDB-backed index provider as the instance default.
     ///
-    /// By default, DrasiLib uses in-memory indexes. Use this method to inject
-    /// a persistent index provider like RocksDB.
+    /// By default, DrasiLib uses in-memory indexes. Use this method to inject a
+    /// persistent RocksDB provider. It is registered under the name
+    /// [`PERSISTENT_INDEX_PROVIDER_NAME`] (`"rocksdb"`) and marked as the
+    /// instance default, so every query without an explicit `storageBackend`
+    /// setting is persisted to it. When a per-query `storageBackend` references a
+    /// named provider, it must specify `"rocksdb"` as the name.
     ///
-    /// Regardless of the concrete provider type, it is registered under the
-    /// fixed name [`PERSISTENT_INDEX_PROVIDER_NAME`] (`"rocksdb"`) and marked as
-    /// the instance default, so every query without an explicit `storage_backend`
-    /// is persisted to it. Per-query `storageBackend` overrides that reference a
-    /// named provider must use that same name.
-    ///
-    /// **Note:** Because the registration name is hardcoded, this method is
-    /// intended solely for the RocksDB-backed provider. Passing a non-RocksDB
-    /// backend would still register it as `"rocksdb"`, which is misleading. To
-    /// register a custom backend under an explicit name, call
-    /// [`DrasiLibBuilder::with_default_index_provider`] directly instead.
-    pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
+    /// This method is intended specifically for the RocksDB backend. To register
+    /// a non-RocksDB provider, or to register a provider under a different name,
+    /// call [`DrasiLibBuilder::with_default_index_provider`] directly with an
+    /// explicit name.
+    pub fn with_rocksdb_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder)
             .with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, provider);
