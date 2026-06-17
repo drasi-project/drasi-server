@@ -41,6 +41,20 @@ on:
         required: false
         type: boolean
         default: false
+  # Allow other workflows (e.g. a drasi-core release pipeline) to invoke this
+  # version sync as a reusable workflow once an upstream release is published.
+  workflow_call:
+    inputs:
+      version_override:
+        description: 'Override package version (e.g. for a server-only fix). Leave blank to mirror the latest drasi-lib version.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Dry run — compute and apply changes locally but do not open a PR'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -176,10 +190,9 @@ jobs:
         if: steps.changes.outputs.changed == 'true' && inputs.dry_run == false
         uses: peter-evans/create-pull-request@v7
         with:
-          # Use a dedicated token if available so the PR triggers CI checks;
-          # fall back to GITHUB_TOKEN (note: PRs opened with GITHUB_TOKEN do not
-          # automatically trigger other workflows).
-          token: ${{ secrets.VERSION_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          # PRs opened with GITHUB_TOKEN do not automatically trigger other
+          # workflows; re-run CI on the PR manually if needed.
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/version-sync
           delete-branch: true
           base: main
