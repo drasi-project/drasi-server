@@ -60,7 +60,9 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-edit
-        run: cargo install cargo-edit --locked
+        # Pin to 0.13.10: newer releases (0.13.11+) require rustc 1.92+, but the
+        # repo's rust-toolchain.toml pins the toolchain to 1.88.0.
+        run: cargo install cargo-edit --version 0.13.10 --locked
 
       - name: Determine target version
         id: version
