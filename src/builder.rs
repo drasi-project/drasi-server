@@ -91,6 +91,12 @@ impl DrasiServerBuilder {
     /// the instance default, so every query without an explicit `storage_backend`
     /// is persisted to it. Per-query `storageBackend` overrides that reference a
     /// named provider must use that same name.
+    ///
+    /// **Note:** Because the registration name is hardcoded, this method is
+    /// intended solely for the RocksDB-backed provider. Passing a non-RocksDB
+    /// backend would still register it as `"rocksdb"`, which is misleading. To
+    /// register a custom backend under an explicit name, call
+    /// [`DrasiLibBuilder::with_default_index_provider`] directly instead.
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder)
