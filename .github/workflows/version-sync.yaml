@@ -50,6 +50,12 @@ jobs:
   version-sync:
     name: Sync version with drasi-lib
     runs-on: ubuntu-latest
+    # This job only edits Cargo.toml / Cargo.lock — it never compiles
+    # drasi-server — so it is safe to ignore the repo's pinned toolchain
+    # (rust-toolchain.toml -> 1.88.0) and use a newer stable. Recent cargo-edit
+    # releases pull in transitive deps (e.g. smol_str) that require rustc 1.89+.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -60,9 +66,7 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-edit
-        # Pin to 0.13.10: newer releases (0.13.11+) require rustc 1.92+, but the
-        # repo's rust-toolchain.toml pins the toolchain to 1.88.0.
-        run: cargo install cargo-edit --version 0.13.10 --locked
+        run: cargo install cargo-edit --locked
 
       - name: Determine target version
         id: version
