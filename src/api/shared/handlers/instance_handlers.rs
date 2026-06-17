@@ -108,7 +108,12 @@ pub async fn create_instance(
     // WAL provider for durable source event persistence
     {
         let safe_id = instance_storage_key(&instance_id);
-        let wal_path = std::path::PathBuf::from(format!("./data/{safe_id}/wal"));
+        let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
+        log::info!(
+            "Enabling WAL provider for instance '{}' at: {}",
+            instance_id,
+            wal_path.display()
+        );
         let wal_provider = Arc::new(drasi_wal_redb::RedbWalProvider::new(&wal_path));
         builder = builder.with_wal_provider(wal_provider);
     }
