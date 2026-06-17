@@ -454,9 +454,11 @@ impl DrasiServer {
                 builder = builder.with_dispatch_buffer_capacity(capacity);
             }
 
+            // Filesystem-safe key shared by the persistent index and WAL paths.
+            let safe_id = instance_storage_key(&instance.id);
+
             // Create and add RocksDB index provider if persist_index is enabled
             if instance.persist_index {
-                let safe_id = instance_storage_key(&instance.id);
                 let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
                 info!(
                     "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
@@ -484,7 +486,6 @@ impl DrasiServer {
 
             // Create WAL provider for durable source event persistence
             {
-                let safe_id = instance_storage_key(&instance.id);
                 let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
                 info!(
                     "Enabling WAL provider for instance '{}' at: {}",

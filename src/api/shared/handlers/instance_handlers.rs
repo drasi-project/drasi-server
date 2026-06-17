@@ -89,9 +89,11 @@ pub async fn create_instance(
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
 
+    // Filesystem-safe key shared by the persistent index and WAL paths.
+    let safe_id = instance_storage_key(&instance_id);
+
     // Set up RocksDB persistent indexing if requested
     if persist_index {
-        let safe_id = instance_storage_key(&instance_id);
         let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
         log::info!(
             "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
@@ -107,7 +109,6 @@ pub async fn create_instance(
 
     // WAL provider for durable source event persistence
     {
-        let safe_id = instance_storage_key(&instance_id);
         let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
         log::info!(
             "Enabling WAL provider for instance '{}' at: {}",

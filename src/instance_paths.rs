@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// Converts an arbitrary instance ID into a filesystem-safe storage key.
+///
+/// Each byte of the ID is hex-encoded as two lowercase digits and prefixed with
+/// `id-`. Hex encoding is used (rather than naive character substitution) because
+/// it is injective: it prevents path traversal (e.g. `../tenant` →
+/// `id-2e2e2f74656e616e74`), eliminates separator collisions (e.g. `a/b` and
+/// `a_b` map to distinct keys), and always yields a valid single-segment
+/// directory name on every platform. Used to derive the per-instance index and
+/// WAL directories under `./data/`.
 pub(crate) fn instance_storage_key(instance_id: &str) -> String {
     let mut key = String::with_capacity(3 + instance_id.len() * 2);
     key.push_str("id-");
@@ -34,6 +43,16 @@ mod tests {
     fn instance_storage_key_is_collision_resistant_for_separator_variants() {
         assert_ne!(instance_storage_key("a/b"), instance_storage_key("a_b"));
         assert_ne!(instance_storage_key("a\\b"), instance_storage_key("a_b"));
+    }
+
+    #[test]
+    fn instance_storage_key_encodes_empty_id() {
+        assert_eq!(instance_storage_key(""), "id-");
+    }
+
+    #[test]
+    fn instance_storage_key_encodes_ascii_id() {
+        assert_eq!(instance_storage_key("default"), "id-64656661756c74");
     }
 
     #[test]
