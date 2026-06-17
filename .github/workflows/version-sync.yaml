@@ -1,0 +1,191 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Version Sync
+#
+# Part 1 of the two-part release process. This workflow keeps drasi-server's
+# package version in lockstep with the upstream drasi-lib crate:
+#
+#   1. Fetches the latest stable drasi-lib version from crates.io.
+#   2. Bumps every drasi-* dependency in Cargo.toml to its latest published
+#      version (allowing incompatible/major bumps).
+#   3. Mirrors the package version to the latest drasi-lib version (exact
+#      mirror), unless a manual version_override is provided.
+#   4. Opens a pull request with the changes.
+#
+# Part 2: once the PR is reviewed and merged, run the "Build and Release"
+# workflow (release.yaml), which reads the new version from Cargo.toml.
+
+name: Version Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Override package version (e.g. for a server-only fix). Leave blank to mirror the latest drasi-lib version.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run — compute and apply changes locally but do not open a PR'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-sync:
+    name: Sync version with drasi-lib
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit --locked
+
+      - name: Determine target version
+        id: version
+        run: |
+          set -euo pipefail
+
+          OVERRIDE='${{ inputs.version_override }}'
+          if [ -n "$OVERRIDE" ]; then
+            NEW_VERSION="$OVERRIDE"
+            echo "Using manual version_override: ${NEW_VERSION}"
+          else
+            # crates.io requires a descriptive User-Agent.
+            NEW_VERSION=$(curl -sSL \
+              -H "User-Agent: drasi-server-version-sync (https://github.com/drasi-project/drasi-server)" \
+              https://crates.io/api/v1/crates/drasi-lib | jq -r '.crate.max_stable_version')
+            echo "Latest stable drasi-lib on crates.io: ${NEW_VERSION}"
+          fi
+
+          if [ -z "$NEW_VERSION" ] || [ "$NEW_VERSION" = "null" ]; then
+            echo "::error::Could not determine target version (got '${NEW_VERSION}')."
+            exit 1
+          fi
+
+          if ! echo "$NEW_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$'; then
+            echo "::error::Resolved version '${NEW_VERSION}' is not a valid semver."
+            exit 1
+          fi
+
+          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Current drasi-server version: ${CURRENT_VERSION}"
+
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "current_version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump drasi-* dependencies to latest
+        run: |
+          set -euo pipefail
+
+          # All drasi-* crates published on crates.io that drasi-server depends
+          # on (including dev-dependencies). cargo upgrade updates every
+          # occurrence in Cargo.toml. --incompatible allows pre-1.0 minor bumps
+          # (e.g. 0.8.x -> 0.9.0).
+          DRASI_PACKAGES=(
+            drasi-lib
+            drasi-core
+            drasi-bootstrap-noop
+            drasi-bootstrap-application
+            drasi-reaction-application
+            drasi-index-rocksdb
+            drasi-state-store-redb
+            drasi-plugin-sdk
+            drasi-host-sdk
+          )
+
+          UPGRADE_ARGS=()
+          for pkg in "${DRASI_PACKAGES[@]}"; do
+            UPGRADE_ARGS+=(--package "$pkg")
+          done
+
+          echo "Upgrading drasi-* dependency requirements..."
+          cargo upgrade --incompatible "${UPGRADE_ARGS[@]}"
+
+          echo "Refreshing Cargo.lock for upgraded packages..."
+          UPDATE_ARGS=()
+          for pkg in "${DRASI_PACKAGES[@]}"; do
+            UPDATE_ARGS+=(--package "$pkg")
+          done
+          cargo update "${UPDATE_ARGS[@]}"
+
+      - name: Set package version
+        run: |
+          set -euo pipefail
+          cargo set-version "${{ steps.version.outputs.new_version }}"
+
+      - name: Detect changes and build summary
+        id: changes
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- Cargo.toml Cargo.lock; then
+            echo "No version or dependency changes detected — nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Version Sync"
+            echo ""
+            echo "Package version: \`${{ steps.version.outputs.current_version }}\` → \`${{ steps.version.outputs.new_version }}\`"
+            echo ""
+            echo "### Changed dependency requirements"
+            echo ""
+            echo '```diff'
+            git diff -- Cargo.toml | grep -E '^[+-]drasi-' || echo "(no drasi-* requirement changes)"
+            echo '```'
+            echo ""
+            echo "Merging this PR updates the version read by the **Build and Release** workflow."
+            echo "After merge, run that workflow to publish the release."
+          } > pr-body.md
+
+          echo "Summary:"
+          cat pr-body.md
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.changed == 'true' && inputs.dry_run == false
+        uses: peter-evans/create-pull-request@v7
+        with:
+          # Use a dedicated token if available so the PR triggers CI checks;
+          # fall back to GITHUB_TOKEN (note: PRs opened with GITHUB_TOKEN do not
+          # automatically trigger other workflows).
+          token: ${{ secrets.VERSION_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: automation/version-sync
+          delete-branch: true
+          base: main
+          commit-message: "chore: sync version to ${{ steps.version.outputs.new_version }}"
+          title: "chore: sync version to ${{ steps.version.outputs.new_version }}"
+          body-path: pr-body.md
+          labels: |
+            automation
+            dependencies
+
+      - name: Dry run summary
+        if: steps.changes.outputs.changed == 'true' && inputs.dry_run == true
+        run: |
+          echo "Dry run enabled — changes applied locally but no PR was opened."
+          git --no-pager diff -- Cargo.toml
