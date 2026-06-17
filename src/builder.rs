@@ -81,12 +81,16 @@ impl DrasiServerBuilder {
         self
     }
 
-    /// Add an index provider for persistent storage
+    /// Add an index provider for persistent storage.
     ///
     /// By default, DrasiLib uses in-memory indexes. Use this method to inject
-    /// a persistent index provider like RocksDB. The provider is registered as
-    /// the default backend, so every query without an explicit `storage_backend`
-    /// is persisted to it.
+    /// a persistent index provider like RocksDB.
+    ///
+    /// Regardless of the concrete provider type, it is registered under the
+    /// fixed name [`PERSISTENT_INDEX_PROVIDER_NAME`] (`"rocksdb"`) and marked as
+    /// the instance default, so every query without an explicit `storage_backend`
+    /// is persisted to it. Per-query `storageBackend` overrides that reference a
+    /// named provider must use that same name.
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder)

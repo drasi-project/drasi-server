@@ -784,7 +784,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
-| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` and makes it the **default** index backend for every query in the instance (stored under `./data/<instanceId>/index`). When `false`, queries use in-memory indexes. Individual queries can override this via their `storageBackend` field. |
+| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` and makes it the **default** index backend for every query in the instance (stored under `./data/<instanceId>/index`, where `<instanceId>` is sanitized for filesystem safety — `/`, `\`, and `..` are each replaced with `_`). When `false`, queries use in-memory indexes. Individual queries can override this via their `storageBackend` field. |
 | `stateStore` | object | (none) | State store provider for plugin state persistence |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
