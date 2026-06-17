@@ -19,6 +19,10 @@ port: 8280
 logLevel: info
 persistConfig: false
 verifyPlugins: false
+# Plugins (source/http, source/postgres, bootstrap/scriptfile, bootstrap/postgres)
+# are downloaded from the OCI registry (ghcr.io/drasi-project) on first server
+# startup. No manual `cargo install` or `make build-local-plugins` required.
+autoInstallPlugins: true
 sources:
 - kind: http
   id: price-feed
@@ -33,8 +37,12 @@ sources:
 - kind: postgres
   id: postgres-stocks
   autoStart: true
-  host: localhost
-  port: 5632
+  # Bare-metal default: localhost:5632 (docker-compose publishes 5432 -> 5632).
+  # Dev container overrides via POSTGRES_HOST=trading-postgres / POSTGRES_PORT=5432
+  # (set in .devcontainer/trading/devcontainer.json) so drasi-server reaches
+  # postgres over the shared `drasi-network`.
+  host: "${POSTGRES_HOST:-localhost}"
+  port: "${POSTGRES_PORT:-5632}"
   database: trading_demo
   user: drasi_user
   password: drasi_password
@@ -60,8 +68,8 @@ sources:
 - kind: postgres
   id: postgres-broker
   autoStart: true
-  host: localhost
-  port: 5632
+  host: "${POSTGRES_HOST:-localhost}"
+  port: "${POSTGRES_PORT:-5632}"
   database: trading_demo
   user: drasi_user
   password: drasi_password

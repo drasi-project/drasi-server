@@ -831,9 +831,11 @@ impl DrasiServer {
         );
 
         // Build the plugin management sub-router
-        let plugin_router = api::v1::plugin_routes()
-            .layer(axum::extract::Extension(self.plugin_orchestrator.clone()))
-            .layer(axum::extract::Extension(registry.clone()));
+        let plugin_router = api::v1::build_plugin_router(
+            self.plugin_orchestrator.clone(),
+            registry.clone(),
+            self.read_only.clone(),
+        );
 
         // Build the main application router
         let mut app = Router::new()

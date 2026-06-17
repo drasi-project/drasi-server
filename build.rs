@@ -148,6 +148,12 @@ fn download_vendor(target: &str, vendor_dir: &std::path::Path) -> Result<(), Str
     use sha2::{Digest, Sha256};
     use tar::Archive;
 
+    // ureq is built with `rustls-no-provider`, so we must install a default
+    // CryptoProvider before any TLS call or rustls will panic. Ignore the
+    // error — a provider may already be installed by another build script
+    // running in the same process.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let repo = format!("{VENDOR_REPO_PREFIX}/{target}");
     let base_url = format!("https://{VENDOR_REGISTRY}/v2/{repo}");
 

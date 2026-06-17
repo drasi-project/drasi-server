@@ -789,7 +789,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
 | `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
-| `verifyPlugins` | boolean | `false` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
+| `verifyPlugins` | boolean | `true` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 

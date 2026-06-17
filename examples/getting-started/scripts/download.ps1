@@ -20,7 +20,7 @@ Write-Host "Detected: Windows ($Arch)"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 # Download drasi-server
-$ServerBinary = "drasi-server-x86_64-windows.exe"
+$ServerBinary = "drasi-server-x86_64-windows-msvc.exe"
 $ServerPath = Join-Path $InstallDir "drasi-server.exe"
 Write-Host "Downloading: $ServerBinary"
 try {

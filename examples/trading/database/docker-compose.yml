@@ -22,7 +22,7 @@ services:
       POSTGRES_DB: trading_demo
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres_admin
-    command: 
+    command:
       - "postgres"
       - "-c"
       - "wal_level=logical"
@@ -33,13 +33,24 @@ services:
     ports:
       - "5632:5432"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ${HOST_WORKSPACE_FOLDER:-../../..}/examples/trading/database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - trading_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U drasi_user -d trading_demo"]
+      test: [ "CMD-SHELL", "pg_isready -U drasi_user -d trading_demo" ]
       interval: 5s
       timeout: 5s
       retries: 5
+    # Attach to the shared drasi-network so the dev container (and any other
+    # container on this network) can reach postgres by its container hostname
+    # `trading-postgres` on its native port 5432. The 5632 host port mapping
+    # above stays for direct access from the host machine.
+    networks:
+      - default
+      - drasi-network
+
+networks:
+  drasi-network:
+    external: true
 
 volumes:
   trading_postgres_data:
