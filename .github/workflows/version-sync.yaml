@@ -37,7 +37,7 @@ on:
         required: false
         default: ''
       dry_run:
-        description: 'Dry run — compute and apply changes locally but do not open a PR'
+        description: 'Dry run — write changes to Cargo.toml/Cargo.lock locally without opening a PR'
         required: false
         type: boolean
         default: false
@@ -51,7 +51,7 @@ on:
         type: string
         default: ''
       dry_run:
-        description: 'Dry run — compute and apply changes locally but do not open a PR'
+        description: 'Dry run — write changes to Cargo.toml/Cargo.lock locally without opening a PR'
         required: false
         type: boolean
         default: false
@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     # This job only edits Cargo.toml / Cargo.lock — it never compiles
     # drasi-server — so it is safe to ignore the repo's pinned toolchain
-    # (rust-toolchain.toml -> 1.88.0) and use a newer stable. Recent cargo-edit
+    # (rust-toolchain.toml pins 1.88.0) and use a newer stable. Recent cargo-edit
     # releases pull in transitive deps (e.g. smol_str) that require rustc 1.89+.
     env:
       RUSTUP_TOOLCHAIN: stable
@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
 
@@ -84,10 +84,16 @@ jobs:
 
       - name: Determine target version
         id: version
+        # Pass the untrusted input via the environment, never via ${{ }}
+        # interpolation directly into the shell script — template expansion
+        # happens before the shell runs, so interpolated values could inject
+        # arbitrary shell commands.
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
         run: |
           set -euo pipefail
 
-          OVERRIDE='${{ inputs.version_override }}'
+          OVERRIDE="${VERSION_OVERRIDE}"
           if [ -n "$OVERRIDE" ]; then
             NEW_VERSION="$OVERRIDE"
             echo "Using manual version_override: ${NEW_VERSION}"
@@ -104,12 +110,13 @@ jobs:
             exit 1
           fi
 
-          if ! echo "$NEW_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$'; then
+          if ! echo "$NEW_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
             echo "::error::Resolved version '${NEW_VERSION}' is not a valid semver."
             exit 1
           fi
 
           CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          [ -n "$CURRENT_VERSION" ] || { echo "::error::Could not parse current version from Cargo.toml"; exit 1; }
           echo "Current drasi-server version: ${CURRENT_VERSION}"
 
           echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
@@ -119,22 +126,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          # All drasi-* crates published on crates.io that drasi-server depends
-          # on (including dev-dependencies). cargo upgrade updates every
-          # occurrence in Cargo.toml. --incompatible allows pre-1.0 minor bumps
-          # (e.g. 0.8.x -> 0.9.0).
-          DRASI_PACKAGES=(
-            drasi-lib
-            drasi-core
-            drasi-bootstrap-noop
-            drasi-bootstrap-application
-            drasi-reaction-application
-            drasi-index-rocksdb
-            drasi-state-store-redb
-            drasi-plugin-sdk
-            drasi-host-sdk
+          # Derive the list of drasi-* dependencies directly from the manifest
+          # (via cargo metadata) so it stays authoritative — adding a new
+          # drasi-* dependency to Cargo.toml requires no change here. Covers
+          # normal, dev, and build dependencies across all workspace members.
+          mapfile -t DRASI_PACKAGES < <(
+            cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[].dependencies[].name' \
+              | grep '^drasi-' \
+              | sort -u
           )
 
+          if [ "${#DRASI_PACKAGES[@]}" -eq 0 ]; then
+            echo "::error::No drasi-* dependencies found in Cargo.toml."
+            exit 1
+          fi
+
+          echo "drasi-* dependencies to upgrade: ${DRASI_PACKAGES[*]}"
+
+          # cargo upgrade updates every occurrence in Cargo.toml. --incompatible
+          # allows pre-1.0 minor bumps (e.g. 0.8.x -> 0.9.0).
           UPGRADE_ARGS=()
           for pkg in "${DRASI_PACKAGES[@]}"; do
             UPGRADE_ARGS+=(--package "$pkg")
@@ -150,10 +161,19 @@ jobs:
           done
           cargo update "${UPDATE_ARGS[@]}"
 
+      - name: Validate upgraded dependencies compile
+        # cargo upgrade --incompatible can pull in API-breaking minor bumps
+        # (e.g. 0.8.x -> 0.9.0). Compile with the project's pinned toolchain to
+        # catch breakage here — opening a PR that fails to build is worse than
+        # opening no PR at all.
+        run: cargo check --workspace --locked
+
       - name: Set package version
+        env:
+          NEW_VERSION_OUTPUT: ${{ steps.version.outputs.new_version }}
         run: |
           set -euo pipefail
-          cargo set-version "${{ steps.version.outputs.new_version }}"
+          cargo set-version "${NEW_VERSION_OUTPUT}"
 
       - name: Detect changes and build summary
         id: changes
@@ -180,7 +200,7 @@ jobs:
             echo '```'
             echo ""
             echo "Merging this PR updates the version read by the **Build and Release** workflow."
-            echo "After merge, run that workflow to publish the release."
+            echo "After merge, manually trigger the **Build and Release** workflow (\`release.yaml\`) via GitHub Actions to publish the release."
           } > pr-body.md
 
           echo "Summary:"
@@ -188,7 +208,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true' && inputs.dry_run == false
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.8
         with:
           # PRs opened with GITHUB_TOKEN do not automatically trigger other
           # workflows; re-run CI on the PR manually if needed.
@@ -199,6 +219,12 @@ jobs:
           commit-message: "chore: sync version to ${{ steps.version.outputs.new_version }}"
           title: "chore: sync version to ${{ steps.version.outputs.new_version }}"
           body-path: pr-body.md
+          # Only stage the manifest changes. Without this, the action stages all
+          # modified/untracked files (including the generated pr-body.md) into
+          # the PR.
+          add-paths: |
+            Cargo.toml
+            Cargo.lock
           labels: |
             automation
             dependencies
