@@ -28,7 +28,7 @@ use super::{
     ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::SourceConfig;
 use crate::factories::create_source_locked;
@@ -79,7 +79,7 @@ pub async fn create_source_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -162,7 +162,7 @@ pub async fn upsert_source_handler(
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -486,7 +486,7 @@ pub async fn push_source_data(
     Extension(core): Extension<Arc<DrasiLib>>,
     Extension(http_client): Extension<reqwest::Client>,
     Path(id): Path<String>,
-    Json(body): Json<serde_json::Value>,
+    ConfigBody(body): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let info = core
         .get_source_info(&id)

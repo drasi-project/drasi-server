@@ -8,6 +8,7 @@ use drasi_lib::{
     DrasiLib, Query, QueryConfig,
 };
 use drasi_server::api::models::query::{QueryConfigDto, SourceSubscriptionConfigDto};
+use drasi_server::api::shared::error::ConfigBody;
 use drasi_server::api::shared::handlers::create_query;
 use std::sync::Arc;
 use test_support::mock_components::create_mock_source;
@@ -95,7 +96,7 @@ async fn test_create_query_with_joins_via_handler() {
         Extension(read_only.clone()),
         Extension(config_persistence),
         Extension("test-server".to_string()),
-        axum::Json(cfg_dto),
+        ConfigBody(cfg_dto),
     )
     .await
     .expect("handler should return Ok");

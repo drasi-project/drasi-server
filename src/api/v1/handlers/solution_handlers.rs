@@ -25,7 +25,7 @@ use crate::api::models::solution::{
     CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, SolutionDeployRequest,
     SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
 };
-use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
 use crate::api::shared::handlers as shared;
 use crate::api::shared::solutions;
 use crate::api::shared::ApiResponse;
@@ -92,7 +92,7 @@ pub async fn create_solution_template(
     Extension(persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(solutions_dir): Extension<Option<String>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    Json(request): Json<CreateSolutionTemplateRequest>,
+    ConfigBody(request): ConfigBody<CreateSolutionTemplateRequest>,
 ) -> Result<Json<ApiResponse<CreateSolutionTemplateResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -136,7 +136,7 @@ pub async fn deploy_solution(
     Extension(solutions_dir): Extension<Option<String>>,
     Extension(plugin_registry): Extension<Arc<RwLock<crate::plugin_registry::PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    Json(request): Json<SolutionDeployRequest>,
+    ConfigBody(request): ConfigBody<SolutionDeployRequest>,
 ) -> Result<Json<ApiResponse<SolutionDeployResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -180,7 +180,7 @@ pub async fn clone_instance(
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    Json(request): Json<shared::CloneInstanceRequest>,
+    ConfigBody(request): ConfigBody<shared::CloneInstanceRequest>,
 ) -> Result<Json<ApiResponse<shared::CloneInstanceResponse>>, ErrorResponse> {
     shared::clone_instance(
         registry,

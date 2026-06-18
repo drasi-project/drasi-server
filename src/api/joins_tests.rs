@@ -20,7 +20,8 @@ mod api_query_joins_tests {
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use async_trait::async_trait;
-    use axum::{Extension, Json};
+    use crate::api::shared::error::ConfigBody;
+    use axum::Extension;
     use drasi_lib::{
         channels::{
             dispatcher::{ChangeDispatcher, ChannelChangeDispatcher},
@@ -188,7 +189,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config.clone())),
+            ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -247,7 +248,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config.clone())),
+            ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -275,7 +276,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config.clone())),
+            ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -304,7 +305,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config.clone())),
+            ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await;
 
@@ -348,7 +349,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence.clone()),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config.clone())),
+            ConfigBody(query_config_to_dto(query_config.clone())),
         )
         .await
         .unwrap();
@@ -480,7 +481,7 @@ mod api_query_joins_tests {
             Extension(read_only),
             Extension(config_persistence),
             Extension("test-server".to_string()),
-            Json(query_config_to_dto(query_config)),
+            ConfigBody(query_config_to_dto(query_config)),
         )
         .await;
 

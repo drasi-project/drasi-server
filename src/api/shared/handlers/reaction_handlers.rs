@@ -28,7 +28,7 @@ use super::{
     ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::ReactionConfig;
 use crate::factories::create_reaction_locked;
@@ -78,7 +78,7 @@ pub async fn create_reaction_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
@@ -159,7 +159,7 @@ pub async fn upsert_reaction_handler(
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path_id): Path<String>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
