@@ -1657,6 +1657,21 @@ sources:
 
 The server exposes a REST API at `http://localhost:8080` (default). For complete API documentation with all request/response schemas, see the interactive Swagger UI at `/api/v1/docs/`.
 
+#### Request Body Formats (JSON and YAML)
+
+Every endpoint that accepts a request body accepts **both JSON and YAML** payloads
+interchangeably. The format is selected from the request's `Content-Type` header:
+send `application/json` (the default) for JSON, or one of `application/yaml`,
+`application/x-yaml`, or `text/yaml` for YAML. When no `Content-Type` is provided,
+the body is parsed as JSON.
+
+```bash
+# Create a query using a YAML body
+curl -X POST http://localhost:8080/api/v1/queries \
+  -H "Content-Type: application/yaml" \
+  --data-binary $'id: high-values\nquery: "MATCH (n) WHERE n.value > 75 RETURN n"\nautoStart: true'
+```
+
 ### API Documentation
 
 | Endpoint | Description |
