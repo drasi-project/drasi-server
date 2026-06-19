@@ -79,7 +79,10 @@ impl DrasiServerBuilder {
     ///
     /// By default, DrasiLib uses in-memory indexes. Use this method to inject
     /// a persistent index provider like RocksDB. The provider is registered as
-    /// the default index backend under the name `"rocksdb"`.
+    /// the default index backend under the fixed name `"rocksdb"`, which is the
+    /// name surfaced in logs and diagnostics. Callers who need a different
+    /// backend name should use the underlying
+    /// [`DrasiLibBuilder::with_default_index_provider`] directly.
     pub fn with_index_provider(mut self, provider: Arc<dyn IndexBackendPlugin>) -> Self {
         let builder = self.primary_builder_mut();
         *builder = std::mem::take(builder).with_default_index_provider("rocksdb", provider);
