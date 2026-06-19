@@ -93,7 +93,7 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     // Build DrasiLib with the RocksDB provider
     let core = DrasiLib::builder()
         .with_id("test-persist-index")
-        .with_index_provider(Arc::new(provider))
+        .with_default_index_provider("rocksdb", Arc::new(provider))
         .build()
         .await?;
 
@@ -267,7 +267,7 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     let core = DrasiLib::builder()
         .with_id("test-directory-creation")
-        .with_index_provider(Arc::new(provider))
+        .with_default_index_provider("rocksdb", Arc::new(provider))
         .with_query(query)
         .build()
         .await?;
@@ -318,13 +318,13 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
     // Build two independent cores
     let core1 = DrasiLib::builder()
         .with_id("test-isolation-1")
-        .with_index_provider(Arc::new(provider1))
+        .with_default_index_provider("rocksdb", Arc::new(provider1))
         .build()
         .await?;
 
     let core2 = DrasiLib::builder()
         .with_id("test-isolation-2")
-        .with_index_provider(Arc::new(provider2))
+        .with_default_index_provider("rocksdb", Arc::new(provider2))
         .build()
         .await?;
 
