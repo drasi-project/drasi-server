@@ -159,8 +159,20 @@ This starts PostgreSQL with:
 ```bash
 # From drasi-server root directory
 cargo build --release
-./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
+./target/release/drasi-server \
+    --config examples/trading/server/trading-sources-only.yaml \
+    --plugins-dir examples/trading/plugins
 ```
+
+The `--plugins-dir` flag points at an example-specific directory that holds
+only the 5 plugins this demo uses (`source/http`, `source/postgres`,
+`bootstrap/scriptfile`, `bootstrap/postgres`, `reaction/sse`). With
+`autoInstallPlugins: true` set in the YAML, the server downloads them from
+the OCI registry on first start if the directory is empty. Pointing at the
+global `target/release/plugins/` instead would attempt to load every plugin
+in drasi-core (~50 of them) and crash on macOS with `errno=24` (too many
+open files) because the default per-process file descriptor limit is only
+256. The `start-demo.sh` script handles this for you automatically.
 
 The server starts with two sources pre-configured:
 - `postgres-stocks`: CDC source monitoring stocks and portfolio tables

@@ -19,10 +19,26 @@ port: 8280
 logLevel: info
 persistConfig: false
 verifyPlugins: false
-# Plugins (source/http, source/postgres, bootstrap/scriptfile, bootstrap/postgres)
-# are downloaded from the OCI registry (ghcr.io/drasi-project) on first server
-# startup. No manual `cargo install` or `make build-local-plugins` required.
+# Plugins (source/http, source/postgres, bootstrap/scriptfile, bootstrap/postgres,
+# reaction/sse) are downloaded from the OCI registry (ghcr.io/drasi-project) on
+# first server startup. No manual `cargo install` or `make build-local-plugins`
+# required.
+#
+# Declaring the exact set under `plugins:` is important: without it, the demo
+# would either fall back to scanning a directory containing ALL ~50 drasi-core
+# plugins (which exhausts macOS's default 256 file-descriptor limit and crashes
+# the server with errno=24 / EMFILE), or autoInstallPlugins would have nothing
+# to download (auto-install only fetches refs that are declared here).
 autoInstallPlugins: true
+plugins:
+  - ref: source/http
+  - ref: source/postgres
+  - ref: bootstrap/scriptfile
+  - ref: bootstrap/postgres
+  # `reaction/sse` is created at runtime by the React app via the Drasi REST API
+  # (see app/src/drasi/config.ts), so it must be present in the plugins dir even
+  # though the YAML below has no entry under `reactions:`.
+  - ref: reaction/sse
 sources:
 - kind: http
   id: price-feed
