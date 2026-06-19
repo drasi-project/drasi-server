@@ -19,6 +19,7 @@ pub mod config;
 pub mod dynamic_loading;
 pub mod factories;
 pub mod index_provider;
+mod instance_paths;
 pub mod instance_registry;
 pub mod persistence;
 pub mod plugin_install;

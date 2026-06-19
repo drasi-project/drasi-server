@@ -27,6 +27,8 @@ use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLibBuilder;
 use log::info;
 
+use crate::instance_paths::instance_storage_key;
+
 /// Name under which drasi-server registers its persistent (RocksDB) index
 /// provider when `persist_index` is enabled.
 ///
@@ -38,10 +40,11 @@ pub const PERSISTENT_INDEX_PROVIDER_NAME: &str = "rocksdb";
 
 /// Compute the on-disk RocksDB index directory for an instance.
 ///
-/// The instance id is sanitized for filesystem safety: `/`, `\`, and `..` are
-/// each replaced with `_` so the path cannot escape `./data`.
+/// The instance id is converted to a filesystem-safe, path-traversal-safe
+/// storage key via [`instance_storage_key`], shared with the WAL directory so
+/// both live under the same `./data/<storage-key>/` parent.
 pub(crate) fn instance_index_dir(instance_id: &str) -> PathBuf {
-    let safe_id = instance_id.replace(['/', '\\'], "_").replace("..", "_");
+    let safe_id = instance_storage_key(instance_id);
     PathBuf::from(format!("./data/{safe_id}/index"))
 }
 

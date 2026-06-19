@@ -14,6 +14,7 @@
 
 use axum::{extract::Extension, response::Json};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -24,6 +25,7 @@ use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
+use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
@@ -87,10 +89,25 @@ pub async fn create_instance(
         builder = builder.with_dispatch_buffer_capacity(capacity);
     }
 
+    // Filesystem-safe key shared by the persistent index and WAL paths.
+    let safe_id = instance_storage_key(&instance_id);
+
     // Register the persistent RocksDB index provider as the instance default
     // when requested.
     if persist_index {
         builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id);
+    }
+
+    // WAL provider for durable source event persistence
+    {
+        let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
+        log::info!(
+            "Enabling WAL provider for instance '{}' at: {}",
+            instance_id,
+            wal_path.display()
+        );
+        let wal_provider = Arc::new(drasi_wal_redb::RedbWalProvider::new(&wal_path));
+        builder = builder.with_wal_provider(wal_provider);
     }
 
     let core = builder.build().await.map_err(|e| {

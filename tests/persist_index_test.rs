@@ -523,7 +523,18 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
     use tower::ServiceExt;
 
     const INSTANCE_ID: &str = "http-persist-index-instance";
-    let data_dir = std::path::PathBuf::from(format!("./data/{INSTANCE_ID}"));
+    // The server derives the on-disk directory from a filesystem-safe storage
+    // key (`id-` followed by the hex encoding of the instance id), shared by the
+    // index and WAL paths. Replicate that here to locate the index directory.
+    let storage_key = {
+        let mut key = String::from("id-");
+        for byte in INSTANCE_ID.bytes() {
+            key.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
+            key.push(char::from(b"0123456789abcdef"[usize::from(byte & 0x0f)]));
+        }
+        key
+    };
+    let data_dir = std::path::PathBuf::from(format!("./data/{storage_key}"));
     let _ = std::fs::remove_dir_all(&data_dir);
     let _guard = DataDirGuard(data_dir.clone());
 
