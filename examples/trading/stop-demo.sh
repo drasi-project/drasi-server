@@ -163,3 +163,17 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     rm -f /tmp/drasi-server.log /tmp/react-app.log /tmp/price-generator.log
     echo -e "Log files removed ${GREEN}✓${NC}"
 fi
+
+# Optional: Clean up the trading-example-specific plugins directory.
+# These are the 5 cdylib plugins start-demo.sh either builds from drasi-core
+# or auto-installs from the OCI registry; removing them frees a few hundred MB
+# but means the next start will download/build them again.
+PLUGINS_DIR="$SCRIPT_DIR/plugins"
+if [ -d "$PLUGINS_DIR" ]; then
+    read -p "Do you want to remove the trading-example plugin binaries in $PLUGINS_DIR? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$PLUGINS_DIR"
+        echo -e "Trading-example plugin binaries removed ${GREEN}✓${NC}"
+    fi
+fi
