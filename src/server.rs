@@ -33,6 +33,7 @@ use crate::factories::{
     create_reaction_locked, create_secret_store_from_registry, create_source_locked,
     create_state_store_provider,
 };
+use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::load_config_file;
 use crate::persistence::ConfigPersistence;
@@ -43,6 +44,7 @@ use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
+use drasi_wal_redb::RedbWalProvider;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
@@ -452,9 +454,11 @@ impl DrasiServer {
                 builder = builder.with_dispatch_buffer_capacity(capacity);
             }
 
+            // Filesystem-safe key shared by the persistent index and WAL paths.
+            let safe_id = instance_storage_key(&instance.id);
+
             // Create and add RocksDB index provider if persist_index is enabled
             if instance.persist_index {
-                let safe_id = instance.id.replace(['/', '\\'], "_").replace("..", "_");
                 let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
                 info!(
                     "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
@@ -465,7 +469,8 @@ impl DrasiServer {
                     index_path, true,  // enable_archive - support for past() function
                     false, // direct_io - use OS page cache
                 );
-                builder = builder.with_default_index_provider("rocksdb", Arc::new(rocksdb_provider));
+                builder =
+                    builder.with_default_index_provider("rocksdb", Arc::new(rocksdb_provider));
             }
 
             // Create and add state store provider if configured
@@ -479,6 +484,17 @@ impl DrasiServer {
                 builder = builder.with_state_store_provider(state_store_provider);
             }
 
+            // Create WAL provider for durable source event persistence
+            {
+                let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
+                info!(
+                    "Enabling WAL provider for instance '{}' at: {}",
+                    instance.id,
+                    wal_path.display()
+                );
+                let wal_provider = Arc::new(RedbWalProvider::new(&wal_path));
+                builder = builder.with_wal_provider(wal_provider);
+            }
             // Attach the process-wide secret store provider to this instance's builder
             if instance.secret_store.is_some() {
                 if let Some(ref provider) = process_secret_store {
@@ -490,7 +506,6 @@ impl DrasiServer {
             // reactions can reference entries here via `identityProvider: <id>`.
             let identity_providers =
                 build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
-
             // Create and add sources from config
             info!(
                 "Loading {} source(s) from configuration for instance '{}'",

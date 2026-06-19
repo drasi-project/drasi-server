@@ -62,6 +62,9 @@ drasi-index-rocksdb = "0.5.7"
 # State store plugins
 drasi-state-store-redb = "0.2.3"
 
+# WAL plugins
+drasi-wal-redb = "0.2.5"
+
 # Plugin SDK
 drasi-plugin-sdk = "0.9.1"
 

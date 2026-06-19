@@ -1448,6 +1448,7 @@ dependencies = [
  "drasi-plugin-sdk",
  "drasi-reaction-application",
  "drasi-state-store-redb",
+ "drasi-wal-redb",
  "flate2",
  "futures",
  "futures-util",
@@ -1503,6 +1504,23 @@ dependencies = [
  "log",
  "redb",
  "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "drasi-wal-redb"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4575dcce032e6304effdd22a4be8e1cbb76be386d190285e56d5591f007dbc7b"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "drasi-core",
+ "drasi-lib",
+ "log",
+ "ordered-float",
+ "redb",
+ "serde",
  "tokio",
 ]
 

@@ -822,6 +822,16 @@ queries: []
 reactions: []
 ```
 
+> **Write-ahead log (always on):** Every instance maintains a durable
+> write-ahead log (WAL) for source events, backed by redb. It is written to
+> `./data/<instance-key>/wal/` (where `<instance-key>` is a hex-encoded form of
+> the instance ID), relative to the server's working directory. The WAL is
+> always enabled and there is currently no configuration option to disable it,
+> so account for this directory when planning disk usage and, in containerized
+> deployments, mount a volume for `./data/` to persist it across restarts. This
+> is separate from the optional `persistIndex` (query indexes) and `stateStore`
+> (plugin state) storage.
+
 ### Plugins Configuration
 
 The `plugins` section declares plugin dependencies that can be installed with `drasi-server plugin install --from-config`. Each entry specifies a plugin reference that supports three URI formats:
