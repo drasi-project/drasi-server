@@ -18,7 +18,7 @@
 //! - RocksDB index provider can be created and used
 //! - DrasiLib builder accepts index provider
 //! - persist_index config setting is properly parsed and applied
-//! - DrasiServerBuilder with_index_provider method works correctly
+//! - DrasiServerBuilder with_default_index_provider method works correctly
 
 use anyhow::Result;
 use drasi_index_rocksdb::RocksDbIndexProvider;
@@ -93,7 +93,10 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     // Build DrasiLib with the RocksDB provider
     let core = DrasiLib::builder()
         .with_id("test-persist-index")
-        .with_default_index_provider("rocksdb", Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .build()
         .await?;
 
@@ -115,9 +118,9 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     Ok(())
 }
 
-/// Test DrasiServerBuilder with index provider
+/// Test DrasiServerBuilder with RocksDB index provider
 #[tokio::test]
-async fn test_drasi_server_builder_with_index_provider() -> Result<()> {
+async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
     use drasi_server::DrasiServerBuilder;
 
     let temp_dir = TempDir::new()?;
@@ -128,7 +131,10 @@ async fn test_drasi_server_builder_with_index_provider() -> Result<()> {
     // Build using DrasiServerBuilder
     let core = DrasiServerBuilder::new()
         .with_id("test-server-persist")
-        .with_index_provider(Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .build_core()
         .await?;
 
@@ -267,7 +273,10 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     let core = DrasiLib::builder()
         .with_id("test-directory-creation")
-        .with_default_index_provider("rocksdb", Arc::new(provider))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
         .with_query(query)
         .build()
         .await?;
@@ -285,11 +294,21 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     core.stop().await?;
 
-    // The index directory should now exist (RocksDB creates it when queries start)
-    // Note: The exact directory structure depends on RocksDB implementation
+    // The query has no explicit storage_backend, so it is only backed by RocksDB
+    // because the provider was registered as the default. When the query starts,
+    // RocksDB materializes on-disk index storage under `index_path`, so a
+    // non-empty index directory proves the default provider actually served the
+    // query. We assert the directory is populated rather than checking for a
+    // specific child path, to avoid coupling the test to drasi-index-rocksdb's
+    // internal on-disk layout (e.g. the per-query subdirectory naming scheme).
+    let index_entry_count = std::fs::read_dir(&index_path)
+        .map(|entries| entries.count())
+        .unwrap_or(0);
     assert!(
-        temp_dir.path().exists(),
-        "Temp directory should still exist after test"
+        index_entry_count > 0,
+        "RocksDB index directory '{}' should be populated, proving the default \
+         provider backed a query with no explicit storage_backend",
+        index_path.display()
     );
 
     Ok(())
@@ -318,13 +337,19 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
     // Build two independent cores
     let core1 = DrasiLib::builder()
         .with_id("test-isolation-1")
-        .with_default_index_provider("rocksdb", Arc::new(provider1))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider1),
+        )
         .build()
         .await?;
 
     let core2 = DrasiLib::builder()
         .with_id("test-isolation-2")
-        .with_default_index_provider("rocksdb", Arc::new(provider2))
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider2),
+        )
         .build()
         .await?;
 
@@ -354,6 +379,233 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
 
     core1.stop().await?;
     core2.stop().await?;
+
+    Ok(())
+}
+
+/// A per-query `storageBackend` override is honored even when the instance has a
+/// RocksDB default provider: a query that inherits the default is persisted,
+/// while a query that explicitly overrides to an in-memory backend is not.
+#[tokio::test]
+async fn test_per_query_storage_backend_override() -> Result<()> {
+    use drasi_lib::{Query, StorageBackendRef, StorageBackendSpec};
+
+    let temp_dir = TempDir::new()?;
+    let index_path = temp_dir.path().join("drasi-index");
+    let provider = RocksDbIndexProvider::new(index_path.clone(), true, false);
+
+    // Inherits the instance default (RocksDB).
+    let persisted = Query::cypher("persisted-query")
+        .query("MATCH (n) RETURN n")
+        .build();
+    // Explicitly overrides back to in-memory, despite the RocksDB default.
+    let volatile = Query::cypher("volatile-query")
+        .query("MATCH (n) RETURN n")
+        .with_storage_backend(StorageBackendRef::Inline(StorageBackendSpec::Memory {
+            enable_archive: true,
+        }))
+        .build();
+
+    let core = DrasiLib::builder()
+        .with_id("test-per-query-override")
+        .with_default_index_provider(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME,
+            Arc::new(provider),
+        )
+        .with_query(persisted)
+        .with_query(volatile)
+        .build()
+        .await?;
+
+    core.start().await?;
+    drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "__component_graph__",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("component graph should reach Running");
+    core.stop().await?;
+
+    // RocksDB materializes one on-disk database per persisted query under
+    // `index_path` (`{index_path}/{query_id}`). Exactly one entry must exist:
+    // the inheriting query persisted, the explicit in-memory override did not.
+    let entries: Vec<_> = std::fs::read_dir(&index_path)
+        .map(|dir| dir.filter_map(|e| e.ok()).map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        entries.len(),
+        1,
+        "exactly one query (the default-backed one) should have persisted index \
+         storage; the in-memory override must not persist. Found: {entries:?}"
+    );
+
+    Ok(())
+}
+
+/// A query that references the named `rocksdb` backend when no provider is
+/// registered must fail query startup, rather than silently falling back to
+/// in-memory indexes (the documented contract for unregistered named backends).
+#[tokio::test]
+async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
+    use drasi_lib::{Query, StorageBackendRef};
+
+    let query = Query::cypher("needs-rocksdb")
+        .query("MATCH (n) RETURN n")
+        .with_storage_backend(StorageBackendRef::Named(
+            drasi_server::index_provider::PERSISTENT_INDEX_PROVIDER_NAME.to_string(),
+        ))
+        .build();
+
+    // No index provider registered at all.
+    let build_result = DrasiLib::builder()
+        .with_id("test-unregistered-backend")
+        .with_query(query)
+        .build()
+        .await;
+
+    let core = match build_result {
+        // Rejected at build time — an acceptable failure.
+        Err(_) => return Ok(()),
+        Ok(core) => core,
+    };
+
+    // Otherwise the failure must surface at startup: either start() errors, or
+    // the query never reaches Running (it must not silently use in-memory).
+    if core.start().await.is_err() {
+        return Ok(());
+    }
+
+    let reached_running = drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "needs-rocksdb",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(3),
+    )
+    .await
+    .is_ok();
+    let _ = core.stop().await;
+
+    assert!(
+        !reached_running,
+        "a query referencing the unregistered 'rocksdb' backend must fail query \
+         startup, not silently fall back to in-memory indexes"
+    );
+
+    Ok(())
+}
+
+/// Cleanup guard that removes a `./data/<id>` directory created by the
+/// create-instance handler when `persistIndex` is enabled.
+struct DataDirGuard(std::path::PathBuf);
+
+impl Drop for DataDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The `POST /instances` handler must honor `persistIndex: true` end-to-end: a
+/// query added to the created instance is backed by RocksDB on disk. This guards
+/// against a regression in the JSON `persistIndex` -> `persist_index` mapping,
+/// which the builder-level tests above would not catch.
+#[tokio::test]
+async fn test_create_instance_persist_index_via_http() -> Result<()> {
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Request, StatusCode};
+    use axum::Router;
+    use drasi_lib::Query;
+    use drasi_server::api::v1::handlers;
+    use drasi_server::api::v1::routes::build_v1_router;
+    use drasi_server::instance_registry::InstanceRegistry;
+    use drasi_server::plugin_registry::PluginRegistry;
+    use tower::ServiceExt;
+
+    const INSTANCE_ID: &str = "http-persist-index-instance";
+    // The server derives the on-disk directory from a filesystem-safe storage
+    // key (`id-` followed by the hex encoding of the instance id), shared by the
+    // index and WAL paths. Replicate that here to locate the index directory.
+    let storage_key = {
+        let mut key = String::from("id-");
+        for byte in INSTANCE_ID.bytes() {
+            key.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
+            key.push(char::from(b"0123456789abcdef"[usize::from(byte & 0x0f)]));
+        }
+        key
+    };
+    let data_dir = std::path::PathBuf::from(format!("./data/{storage_key}"));
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _guard = DataDirGuard(data_dir.clone());
+
+    // Empty registry; retain a clone to reach the instance created by the handler.
+    let registry = InstanceRegistry::new();
+    let mut plugin_registry = PluginRegistry::new();
+    drasi_server::register_core_plugins(&mut plugin_registry);
+
+    let router = Router::new()
+        .route("/health", axum::routing::get(handlers::health_check))
+        .merge(build_v1_router(
+            registry.clone(),
+            Arc::new(false),
+            None,
+            Arc::new(tokio::sync::RwLock::new(plugin_registry)),
+            None,
+        ));
+
+    // Create the instance with persistent indexing enabled.
+    let body = serde_json::json!({ "id": INSTANCE_ID, "persistIndex": true });
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/instances")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await
+        .expect("create-instance request should complete");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "creating an instance with persistIndex:true should succeed, body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    // Add an auto-starting query to the (running) instance; it opens its RocksDB
+    // index, materializing `./data/<id>/index/<query_id>`.
+    let core = registry
+        .get(INSTANCE_ID)
+        .await
+        .expect("created instance should be registered");
+    core.add_query(
+        Query::cypher("http-persist-query")
+            .query("MATCH (n) RETURN n")
+            .auto_start(true)
+            .build(),
+    )
+    .await?;
+    drasi_lib::wait_for_status(
+        &core.component_graph(),
+        "http-persist-query",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("query should reach Running");
+    core.stop().await?;
+
+    let index_path = data_dir.join("index");
+    let populated = std::fs::read_dir(&index_path)
+        .map(|dir| dir.count() > 0)
+        .unwrap_or(false);
+    assert!(
+        populated,
+        "persistIndex:true via HTTP should persist the query's index under {}",
+        index_path.display()
+    );
 
     Ok(())
 }

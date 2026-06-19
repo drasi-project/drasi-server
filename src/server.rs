@@ -40,7 +40,6 @@ use crate::persistence::ConfigPersistence;
 use crate::plugin_orchestrator::PluginOrchestrator;
 use crate::plugin_registry::PluginRegistry;
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
-use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::secret_store::SecretStoreProvider;
 use drasi_lib::DrasiLib;
 use drasi_plugin_sdk::{BootstrapPluginDescriptor, ReactionPluginDescriptor};
@@ -457,20 +456,10 @@ impl DrasiServer {
             // Filesystem-safe key shared by the persistent index and WAL paths.
             let safe_id = instance_storage_key(&instance.id);
 
-            // Create and add RocksDB index provider if persist_index is enabled
+            // Register the persistent RocksDB index provider as the instance
+            // default when persist_index is enabled.
             if instance.persist_index {
-                let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
-                info!(
-                    "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
-                    instance.id,
-                    index_path.display()
-                );
-                let rocksdb_provider = RocksDbIndexProvider::new(
-                    index_path, true,  // enable_archive - support for past() function
-                    false, // direct_io - use OS page cache
-                );
-                builder =
-                    builder.with_default_index_provider("rocksdb", Arc::new(rocksdb_provider));
+                builder = crate::index_provider::apply_rocksdb_index(builder, &instance.id);
             }
 
             // Create and add state store provider if configured

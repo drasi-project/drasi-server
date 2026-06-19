@@ -92,19 +92,10 @@ pub async fn create_instance(
     // Filesystem-safe key shared by the persistent index and WAL paths.
     let safe_id = instance_storage_key(&instance_id);
 
-    // Set up RocksDB persistent indexing if requested
+    // Register the persistent RocksDB index provider as the instance default
+    // when requested.
     if persist_index {
-        let index_path = PathBuf::from(format!("./data/{safe_id}/index"));
-        log::info!(
-            "Enabling persistent indexing for instance '{}' with RocksDB at: {}",
-            instance_id,
-            index_path.display()
-        );
-        let rocksdb_provider = drasi_index_rocksdb::RocksDbIndexProvider::new(
-            index_path, true,  // enable_archive - support for past() function
-            false, // direct_io - use OS page cache
-        );
-        builder = builder.with_default_index_provider("rocksdb", Arc::new(rocksdb_provider));
+        builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id);
     }
 
     // WAL provider for durable source event persistence
