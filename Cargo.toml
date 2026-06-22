@@ -18,7 +18,7 @@ exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Drasi Project"]
 description = "Standalone Drasi server for data change processing"
