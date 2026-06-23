@@ -7,7 +7,7 @@ on:
 
 jobs:
   lint:
-    uses: drasi-project/.github/.github/workflows/rust-lint.yaml@main
+    uses: drasi-project/.github/.github/workflows/rust-lint.yaml@rust195
     with:
       install-jq: true
       install-protobuf: true

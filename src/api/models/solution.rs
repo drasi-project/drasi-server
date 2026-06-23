@@ -486,7 +486,7 @@ fn extract_line_comment(line: &str) -> Option<String> {
         let single_quotes = before_hash.matches('\'').count();
 
         // If quotes are balanced, the # is a comment
-        if double_quotes % 2 == 0 && single_quotes % 2 == 0 {
+        if double_quotes.is_multiple_of(2) && single_quotes.is_multiple_of(2) {
             let comment = line[hash_pos + 1..].trim();
             if !comment.is_empty() {
                 return Some(comment.to_string());
