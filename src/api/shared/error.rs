@@ -155,9 +155,42 @@ impl ErrorResponse {
 /// `Result<Json<T>, ErrorResponse>` — the error branch automatically
 /// sets the HTTP status code from the error code and serializes the
 /// structured JSON body.
+///
+/// As a diagnosability safety net, every error response is logged here at the
+/// boundary so a failure can never be completely silent: server errors (5xx)
+/// are logged at `error` level (operators must see these), and client errors
+/// (4xx) at `debug` level. This guarantees a log line even for errors that
+/// propagate via `?`/`From` conversions without an explicit per-handler log.
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> axum::response::Response {
         let status = status_from_code(&self.code);
+        let technical = self
+            .details
+            .as_ref()
+            .and_then(|d| d.technical_details.as_deref());
+        if status.is_server_error() {
+            match technical {
+                Some(t) => log::error!(
+                    "Returning HTTP {} [{}]: {} (details: {t})",
+                    status.as_u16(),
+                    self.code,
+                    self.message
+                ),
+                None => log::error!(
+                    "Returning HTTP {} [{}]: {}",
+                    status.as_u16(),
+                    self.code,
+                    self.message
+                ),
+            }
+        } else {
+            log::debug!(
+                "Returning HTTP {} [{}]: {}",
+                status.as_u16(),
+                self.code,
+                self.message
+            );
+        }
         (status, axum::Json(self)).into_response()
     }
 }

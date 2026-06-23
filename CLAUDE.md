@@ -210,6 +210,23 @@ The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-ins
 
 **Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
 
+### Write-Ahead Log (WAL)
+
+Every DrasiLib instance is unconditionally wired with a durable, redb-backed
+write-ahead log for source events (`drasi-wal-redb::RedbWalProvider`, attached
+via `builder.with_wal_provider(...)`). The WAL is created under
+`./data/<instance-key>/wal/`, where `<instance-key>` is `instance_storage_key()`
+applied to the instance ID (a hex-encoded, path-traversal-safe form). The
+per-source redb files inside that directory are created lazily on first append.
+
+Unlike `persistIndex` (RocksDB query indexes) and `stateStore` (plugin state),
+the WAL is **always on** and there is currently no config field to disable it.
+This is an intentional design choice: durability of source events is treated as
+a baseline guarantee rather than an opt-in. The wiring lives in `server.rs`
+(config/startup path) and `instance_handlers.rs` (REST API create path).
+Operators should account for this directory in disk-usage planning and mount a
+volume for `./data/` in containerized deployments.
+
 ### Configuration Persistence
 
 Persistence uses a snapshot-based approach: when saving, `ConfigPersistence::save()` calls `snapshot_configuration()` on each DrasiLib instance via the ComponentGraph. The ComponentGraph is the single source of truth — there are no shadow caches or separate registration steps. Mutations flow through the ComponentGraph, and the persisted YAML is reconstructed from the current graph state at save time.

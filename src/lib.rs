@@ -18,6 +18,8 @@ pub mod builder_result;
 pub mod config;
 pub mod dynamic_loading;
 pub mod factories;
+pub mod index_provider;
+mod instance_paths;
 pub mod instance_registry;
 pub mod persistence;
 pub mod plugin_install;
@@ -37,6 +39,7 @@ pub use config::{
     ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
+pub use index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
 pub use plugin_registry::PluginRegistry;
 pub use server::register_core_plugins;
 pub use server::DrasiServer;
