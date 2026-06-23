@@ -17,10 +17,10 @@
 mod api_query_joins_tests {
     use crate::api::models::query::QueryConfigDto;
     use crate::api::shared::error::error_codes;
+    use crate::api::shared::extractor::ConfigBody;
     use crate::api::shared::handlers::*;
     use crate::persistence::ConfigPersistence;
     use async_trait::async_trait;
-    use crate::api::shared::extractor::ConfigBody;
     use axum::Extension;
     use drasi_lib::{
         channels::{

@@ -56,11 +56,7 @@ pub(crate) fn is_yaml_content_type(content_type: &str) -> bool {
         .to_ascii_lowercase();
     matches!(
         essence.as_str(),
-        "application/yaml"
-            | "application/x-yaml"
-            | "text/yaml"
-            | "text/x-yaml"
-            | "text/vnd.yaml"
+        "application/yaml" | "application/x-yaml" | "text/yaml" | "text/x-yaml" | "text/vnd.yaml"
     )
 }
 
@@ -187,24 +183,20 @@ where
             .map(is_yaml_content_type)
             .unwrap_or(false);
 
-        let bytes = Bytes::from_request(req, state)
-            .await
-            .map_err(|rejection| {
-                // Preserve the inner extractor's status (e.g. 413 Payload Too
-                // Large) rather than collapsing every body-read failure to 400.
-                let status = rejection.status();
-                log::debug!("Failed to read request body: {}", rejection.body_text());
-                let body = ErrorResponse::new(
-                    error_codes::INVALID_REQUEST,
-                    "Failed to read request body",
-                )
-                .with_details(ErrorDetail {
-                    component_type: None,
-                    component_id: None,
-                    technical_details: Some(rejection.body_text()),
-                });
-                (status, axum::Json(body))
-            })?;
+        let bytes = Bytes::from_request(req, state).await.map_err(|rejection| {
+            // Preserve the inner extractor's status (e.g. 413 Payload Too
+            // Large) rather than collapsing every body-read failure to 400.
+            let status = rejection.status();
+            log::debug!("Failed to read request body: {}", rejection.body_text());
+            let body =
+                ErrorResponse::new(error_codes::INVALID_REQUEST, "Failed to read request body")
+                    .with_details(ErrorDetail {
+                        component_type: None,
+                        component_id: None,
+                        technical_details: Some(rejection.body_text()),
+                    });
+            (status, axum::Json(body))
+        })?;
 
         if is_yaml {
             // Reject anchor/alias-based expansion attacks before serde_yaml
@@ -283,13 +275,17 @@ mod tests {
         assert!(!contains_yaml_anchor_or_alias("company: AT&T"));
         assert!(!contains_yaml_anchor_or_alias("note: see * for footnote"));
         assert!(!contains_yaml_anchor_or_alias("glob: *.log"));
-        assert!(!contains_yaml_anchor_or_alias("id: high-temp\nq: MATCH (n)"));
+        assert!(!contains_yaml_anchor_or_alias(
+            "id: high-temp\nq: MATCH (n)"
+        ));
     }
 
     #[test]
     fn does_not_flag_quoted_or_commented_tokens() {
         assert!(!contains_yaml_anchor_or_alias("query: \"RETURN *\""));
         assert!(!contains_yaml_anchor_or_alias("expr: 'a & b and *c'"));
-        assert!(!contains_yaml_anchor_or_alias("k: v  # &anchor *alias here"));
+        assert!(!contains_yaml_anchor_or_alias(
+            "k: v  # &anchor *alias here"
+        ));
     }
 }

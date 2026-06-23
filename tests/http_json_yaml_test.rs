@@ -257,9 +257,7 @@ async fn test_instance_scoped_route_accepts_yaml() {
 
     let body = "id: instance-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
     let resp = client
-        .post(format!(
-            "{base_url}/api/v1/instances/{instance_id}/queries"
-        ))
+        .post(format!("{base_url}/api/v1/instances/{instance_id}/queries"))
         .header("content-type", "application/yaml")
         .body(body)
         .send()
