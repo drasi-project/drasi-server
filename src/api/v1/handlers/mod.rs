@@ -36,7 +36,7 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::api::shared::error::ConfigBody;
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers as shared;
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, HealthResponse, InstanceListItem, StatusResponse,

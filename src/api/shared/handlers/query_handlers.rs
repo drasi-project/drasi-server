@@ -28,7 +28,8 @@ use super::{
 };
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::persistence::ConfigPersistence;
 use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};

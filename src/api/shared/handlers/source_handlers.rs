@@ -28,7 +28,8 @@ use super::{
     ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::SourceConfig;
 use crate::factories::create_source_locked;
@@ -486,7 +487,7 @@ pub async fn push_source_data(
     Extension(core): Extension<Arc<DrasiLib>>,
     Extension(http_client): Extension<reqwest::Client>,
     Path(id): Path<String>,
-    ConfigBody(body): ConfigBody<serde_json::Value>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let info = core
         .get_source_info(&id)

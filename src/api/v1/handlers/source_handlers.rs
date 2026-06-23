@@ -24,7 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::instance_registry::InstanceRegistry;
@@ -422,7 +423,7 @@ pub async fn push_source_data(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(http_client): Extension<reqwest::Client>,
     Path(ResourcePath { instance_id, id }): Path<ResourcePath>,
-    ConfigBody(body): ConfigBody<serde_json::Value>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let core = registry
         .get(&instance_id)
@@ -432,7 +433,7 @@ pub async fn push_source_data(
         Extension(core),
         Extension(http_client),
         Path(id),
-        ConfigBody(body),
+        Json(body),
     )
     .await
 }

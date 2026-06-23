@@ -1662,8 +1662,8 @@ The server exposes a REST API at `http://localhost:8080` (default). For complete
 Every endpoint that accepts a request body accepts **both JSON and YAML** payloads
 interchangeably. The format is selected from the request's `Content-Type` header:
 send `application/json` (the default) for JSON, or one of `application/yaml`,
-`application/x-yaml`, or `text/yaml` for YAML. When no `Content-Type` is provided,
-the body is parsed as JSON.
+`application/x-yaml`, `text/yaml`, `text/x-yaml`, or `text/vnd.yaml` for YAML.
+When no `Content-Type` is provided, the body is parsed as JSON.
 
 ```bash
 # Create a query using a YAML body

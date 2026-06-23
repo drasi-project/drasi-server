@@ -25,7 +25,8 @@ use crate::api::models::solution::{
     CreateSolutionTemplateRequest, CreateSolutionTemplateResponse, SolutionDeployRequest,
     SolutionDeployResponse, SolutionTemplateDetail, SolutionTemplateSummary,
 };
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers as shared;
 use crate::api::shared::solutions;
 use crate::api::shared::ApiResponse;

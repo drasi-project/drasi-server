@@ -24,7 +24,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::instance_registry::InstanceRegistry;

@@ -15,9 +15,11 @@
 //! HTTP content-negotiation integration tests.
 //!
 //! These tests spin up a *real* HTTP server (bound to a TCP port) and exercise
-//! the REST API with both JSON and YAML request payloads, verifying that every
-//! body-accepting route accepts the two formats interchangeably based on the
-//! `Content-Type` header.
+//! the REST API with both JSON and YAML request payloads, verifying that body-
+//! accepting routes (query, source, and reaction; convenience and instance-
+//! scoped) accept the two formats interchangeably based on the `Content-Type`
+//! header, default to JSON when no `Content-Type` is present, and reject
+//! malformed payloads and YAML anchor/alias expansion attacks.
 
 #![allow(clippy::unwrap_used)]
 
@@ -34,14 +36,8 @@ use drasi_server::plugin_registry::PluginRegistry;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Find a free TCP port by binding to port 0.
-fn find_free_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind to port 0");
-    listener.local_addr().unwrap().port()
-}
-
 /// Build the production API router backed by a DrasiLib instance with a single
-/// mock source, then start a real HTTP server on a random free port.
+/// mock source, then start a real HTTP server on an OS-assigned free port.
 ///
 /// Returns the base URL the server is listening on.
 async fn start_real_server() -> String {
@@ -75,11 +71,14 @@ async fn start_real_server() -> String {
         .route("/health", axum::routing::get(handlers::health_check))
         .nest("/api/v1", v1_router);
 
-    let port = find_free_port();
-    let base_url = format!("http://127.0.0.1:{port}");
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+    // Bind to port 0 once and keep the listener alive through `axum::serve`.
+    // Reading the port from a separately-dropped listener would open a TOCTOU
+    // window where another process could claim the port before we re-bind.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind tcp listener");
+    let port = listener.local_addr().unwrap().port();
+    let base_url = format!("http://127.0.0.1:{port}");
 
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
@@ -101,6 +100,32 @@ async fn start_real_server() -> String {
     }
 
     base_url
+}
+
+/// Asserts that a YAML request body was accepted and parsed by the `ConfigBody`
+/// extractor and reached the route's handler logic.
+///
+/// A handler that is still wired with `axum::Json` would reject a YAML body with
+/// `415 Unsupported Media Type` before the handler runs; a body that failed to
+/// deserialize into the DTO would yield a `400 INVALID_REQUEST`. So as long as
+/// the response is neither of those, the extractor handed a parsed value to the
+/// handler (which may then succeed or fail for component-specific reasons such
+/// as an unregistered plugin kind).
+async fn assert_yaml_reached_handler(resp: reqwest::Response) {
+    let status = resp.status();
+    assert_ne!(
+        status,
+        reqwest::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "YAML body was rejected as unsupported media type — route is not wired with ConfigBody",
+    );
+    if status.is_success() {
+        return;
+    }
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_ne!(
+        json["code"], "INVALID_REQUEST",
+        "YAML body should have parsed and reached the handler, got a parse error: {json}",
+    );
 }
 
 /// Creating a query with a JSON body (`Content-Type: application/json`) works.
@@ -247,4 +272,153 @@ async fn test_instance_scoped_route_accepts_yaml() {
         "instance-scoped YAML payload should be accepted: {}",
         resp.text().await.unwrap_or_default()
     );
+}
+
+/// The `application/x-yaml` media type is recognised as YAML.
+#[tokio::test]
+async fn test_create_query_with_application_x_yaml_payload() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "id: x-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let resp = client
+        .post(format!("{base_url}/api/v1/queries"))
+        .header("content-type", "application/x-yaml")
+        .body(body)
+        .send()
+        .await
+        .expect("POST query (application/x-yaml)");
+
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::OK,
+        "application/x-yaml payload should be accepted: {}",
+        resp.text().await.unwrap_or_default()
+    );
+}
+
+/// The `text/vnd.yaml` media type is recognised as YAML.
+#[tokio::test]
+async fn test_create_query_with_text_vnd_yaml_payload() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "id: vnd-yaml-query\nquery: \"MATCH (n) RETURN n\"\n";
+    let resp = client
+        .post(format!("{base_url}/api/v1/queries"))
+        .header("content-type", "text/vnd.yaml")
+        .body(body)
+        .send()
+        .await
+        .expect("POST query (text/vnd.yaml)");
+
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::OK,
+        "text/vnd.yaml payload should be accepted: {}",
+        resp.text().await.unwrap_or_default()
+    );
+}
+
+/// With no `Content-Type` header at all, the body is parsed as JSON (documented
+/// default). A regression to a YAML default would break every headerless client.
+#[tokio::test]
+async fn test_missing_content_type_defaults_to_json() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = r#"{"id":"no-ct-query","query":"MATCH (n) RETURN n"}"#;
+    let resp = client
+        .post(format!("{base_url}/api/v1/queries"))
+        // reqwest's `.body()` does not set a Content-Type on its own.
+        .body(body)
+        .send()
+        .await
+        .expect("POST query (no content-type)");
+
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::OK,
+        "JSON body without Content-Type should be accepted: {}",
+        resp.text().await.unwrap_or_default()
+    );
+}
+
+/// A malformed JSON body returns a structured 400 error (mirrors the YAML path).
+#[tokio::test]
+async fn test_invalid_json_payload_returns_400() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "{not valid json";
+    let resp = client
+        .post(format!("{base_url}/api/v1/queries"))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("POST query (bad json)");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["code"], "INVALID_REQUEST");
+}
+
+/// A YAML body using anchors/aliases is rejected before serde expands it,
+/// guarding against "billion laughs" expansion DoS.
+#[tokio::test]
+async fn test_yaml_anchor_alias_payload_rejected() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "id: &a anchor-query\nquery: *a\n";
+    let resp = client
+        .post(format!("{base_url}/api/v1/queries"))
+        .header("content-type", "application/yaml")
+        .body(body)
+        .send()
+        .await
+        .expect("POST query (yaml anchors)");
+
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["code"], "INVALID_REQUEST");
+}
+
+/// The source create route accepts a YAML body (confirms `ConfigBody` wiring on
+/// the source resource, not just queries).
+#[tokio::test]
+async fn test_source_route_accepts_yaml() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "kind: mock\nid: yaml-source\nautoStart: false\n";
+    let resp = client
+        .post(format!("{base_url}/api/v1/sources"))
+        .header("content-type", "application/yaml")
+        .body(body)
+        .send()
+        .await
+        .expect("POST source (yaml)");
+
+    assert_yaml_reached_handler(resp).await;
+}
+
+/// The reaction create route accepts a YAML body (confirms `ConfigBody` wiring
+/// on the reaction resource).
+#[tokio::test]
+async fn test_reaction_route_accepts_yaml() {
+    let base_url = start_real_server().await;
+    let client = reqwest::Client::new();
+
+    let body = "kind: log\nid: yaml-reaction\nqueries: []\nautoStart: false\n";
+    let resp = client
+        .post(format!("{base_url}/api/v1/reactions"))
+        .header("content-type", "application/yaml")
+        .body(body)
+        .send()
+        .await
+        .expect("POST reaction (yaml)");
+
+    assert_yaml_reached_handler(resp).await;
 }

@@ -29,94 +29,11 @@
 //! - **Layer 3 (drasi-lib):** Returns `DrasiError` which is converted to
 //!   `ErrorResponse` via `From<DrasiError>` with proper status code mapping.
 
-use axum::async_trait;
-use axum::body::Bytes;
-use axum::extract::FromRequest;
-use axum::http::header::CONTENT_TYPE;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use drasi_lib::DrasiError;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
-
-/// A request-body extractor that accepts both JSON and YAML payloads.
-///
-/// The body format is selected from the request's `Content-Type` header:
-/// YAML media types (`application/yaml`, `application/x-yaml`, `text/yaml`,
-/// `text/x-yaml`, `text/vnd.yaml`) are parsed with `serde_yaml`; everything
-/// else (including a missing `Content-Type`) defaults to JSON. This lets every
-/// HTTP route on the API accept JSON and YAML interchangeably.
-///
-/// On failure it returns a structured `ErrorResponse` with the serde error
-/// details included (HTTP 400 via the `INVALID_REQUEST` code).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ConfigBody<T>(pub T);
-
-/// Returns `true` when the supplied `Content-Type` value denotes a YAML media type.
-fn is_yaml_content_type(content_type: &str) -> bool {
-    // Ignore any parameters (e.g. "; charset=utf-8") and surrounding whitespace.
-    let essence = content_type
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    matches!(
-        essence.as_str(),
-        "application/yaml"
-            | "application/x-yaml"
-            | "text/yaml"
-            | "text/x-yaml"
-            | "text/vnd.yaml"
-    )
-}
-
-#[async_trait]
-impl<T, S> FromRequest<S> for ConfigBody<T>
-where
-    T: DeserializeOwned,
-    S: Send + Sync,
-{
-    type Rejection = ErrorResponse;
-
-    async fn from_request(
-        req: axum::http::Request<axum::body::Body>,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let is_yaml = req
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(is_yaml_content_type)
-            .unwrap_or(false);
-
-        let bytes = Bytes::from_request(req, state).await.map_err(|rejection| {
-            log::debug!("Failed to read request body: {}", rejection.body_text());
-            ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "Failed to read request body".to_string(),
-            )
-        })?;
-
-        if is_yaml {
-            serde_yaml::from_slice(&bytes).map(ConfigBody).map_err(|e| {
-                log::debug!("YAML extraction failed: {e}");
-                ErrorResponse::new(
-                    error_codes::INVALID_REQUEST,
-                    format!("Failed to parse YAML request body: {e}"),
-                )
-            })
-        } else {
-            serde_json::from_slice(&bytes).map(ConfigBody).map_err(|e| {
-                log::debug!("JSON extraction failed: {e}");
-                ErrorResponse::new(
-                    error_codes::INVALID_REQUEST,
-                    format!("Failed to parse JSON request body: {e}"),
-                )
-            })
-        }
-    }
-}
 
 /// Error codes for API responses
 pub mod error_codes {

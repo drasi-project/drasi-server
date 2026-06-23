@@ -23,7 +23,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::instance_registry::InstanceRegistry;

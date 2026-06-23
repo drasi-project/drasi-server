@@ -8,7 +8,7 @@ use drasi_lib::{
     DrasiLib, Query, QueryConfig,
 };
 use drasi_server::api::models::query::{QueryConfigDto, SourceSubscriptionConfigDto};
-use drasi_server::api::shared::error::ConfigBody;
+use drasi_server::api::shared::extractor::ConfigBody;
 use drasi_server::api::shared::handlers::create_query;
 use std::sync::Arc;
 use test_support::mock_components::create_mock_source;

@@ -28,7 +28,8 @@ use super::{
     ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ConfigBody, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::ReactionConfig;
 use crate::factories::create_reaction_locked;
