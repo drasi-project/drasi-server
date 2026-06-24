@@ -178,7 +178,7 @@ build-cross-release:
 	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --release --target $(TARGET)
 
 clippy:
-	cargo clippy --all-targets
+	cargo clippy --all-targets -- -D warnings
 
 fmt:
 	cargo fmt

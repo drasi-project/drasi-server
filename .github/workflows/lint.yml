@@ -12,4 +12,5 @@ jobs:
       install-jq: true
       install-protobuf: true
       clippy-command: "make clippy"
+      clippy-args: ""
       fmt-command: "make fmt-check"
