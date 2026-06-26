@@ -1,16 +1,26 @@
 # drasi-react
 
-Reusable [React](https://react.dev/) building blocks for creating real‑time UIs
-on top of a [Drasi](https://drasi.io) Server.
+Reusable [React](https://react.dev/) building blocks for UIs whose content is
+kept continuously up to date by [Drasi](https://drasi.io) Continuous Queries.
 
-Drasi continuously evaluates queries over your data and pushes changes as they
-happen. `drasi-react` turns that stream into idiomatic React state:
+[Drasi](https://drasi.io) is an open-source Data Change Processing platform that
+simplifies building change-driven solutions. You declare a **Continuous Query** —
+an [openCypher](https://opencypher.org/) or GQL query describing exactly the data
+you care about — and Drasi incrementally maintains that query's result set as the
+underlying sources change, without polling or re-scanning them. Each change to the
+result set is delivered to subscribed **Reactions** as a precise set of added,
+updated, and deleted rows. A single query can span multiple sources, and the
+meaning of "a change" is defined by your query rather than by the source systems.
+
+`drasi-react` is the client side of that picture: it binds a React app to one or
+more Continuous Queries through Drasi Server's **SSE Reaction** and surfaces each
+query's live result set as idiomatic React state:
 
 - **One shared connection.** A single [SSE](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
-  connection is opened to a Drasi SSE reaction and **multiplexed** across every
-  continuous query in your app — not one connection per table.
-- **Hooks for live results.** `useDrasiQuery` accumulates a query's
-  added/updated/deleted changes into a ready‑to‑render array.
+  connection is opened to a Drasi SSE Reaction and **multiplexed** across every
+  Continuous Query in your app — not one connection per query.
+- **Hooks for live results.** `useDrasiQuery` folds a query's added/updated/
+  deleted result changes into a ready‑to‑render array.
 - **A batteries‑included table.** `QueryTable` renders a sortable, animated,
   full‑screen‑capable table bound to a query, with a built‑in “view the code”
   dialog.
@@ -70,7 +80,7 @@ import {
 } from '@drasi/react';
 import '@drasi/react/styles.css';
 
-// 1. Describe the continuous queries to run on the Drasi Server.
+// 1. Describe the Continuous Queries to run on the Drasi Server.
 const QUERIES: QueryDefinition[] = [
   {
     id: 'stocks-query',
@@ -83,7 +93,7 @@ const QUERIES: QueryDefinition[] = [
   },
 ];
 
-// 2. Describe the SSE reaction that streams those queries.
+// 2. Describe the SSE Reaction that delivers those queries' result changes.
 const REACTION: ReactionDefinition = {
   id: 'sse-stream',
   host: '0.0.0.0',
@@ -134,13 +144,13 @@ When the provider mounts it:
 
 ## Concepts
 
-**Multiplexed connection.** Drasi's SSE reaction can stream many queries over a
-single connection. `drasi-react` opens that connection once
+**Multiplexed connection.** A Drasi SSE Reaction can deliver the result changes
+for many queries over a single connection. `drasi-react` opens that connection once
 ([`DrasiSSEClient`](#low-level-classes)) and routes each batch to the right
 subscribers by query id, so adding more `QueryTable`s does not add more sockets.
 
-**Content routing for aggregations.** Some Drasi change events (for example
-aggregation results) arrive without a query id. The library cannot know which
+**Content routing for aggregations.** Some Drasi result changes (for example from
+aggregating queries) arrive without a query id. The library cannot know which
 query they belong to, so you may supply a `routeUnidentified` callback that
 inspects a row and decides which query id(s) it belongs to. This keeps all
 application‑specific shape knowledge in your app.
@@ -160,9 +170,9 @@ it once near the root of your tree.
 | Prop | Type | Description |
 | --- | --- | --- |
 | `serverUrl` | `string` | Base URL of the Drasi Server REST API. Default `http://localhost:8280`. |
-| `queries` | `QueryDefinition[]` | Queries to ensure exist and stream. **Required.** |
-| `reaction` | `ReactionDefinition` | The SSE reaction that multiplexes the queries. **Required.** |
-| `routeUnidentified` | `(rows, deliver) => void` | Optional router for change payloads that arrive without a query id. Call `deliver(queryId, rows)` for each matching query. |
+| `queries` | `QueryDefinition[]` | Continuous Queries to ensure exist and run. **Required.** |
+| `reaction` | `ReactionDefinition` | The SSE Reaction that delivers the queries' result changes. **Required.** |
+| `routeUnidentified` | `(rows, deliver) => void` | Optional router for result-change payloads that arrive without a query id. Call `deliver(queryId, rows)` for each matching query. |
 | `children` | `ReactNode` | Your application. |
 
 `QueryDefinition`:
@@ -358,10 +368,10 @@ step is required:
 - **TypeScript** maps the same path (`tsconfig.json` `paths`).
 - **Tailwind** includes `../drasi-react/src/**/*` in its `content` globs.
 
-All trading‑specific behaviour (the query list, the SSE reaction, the
-content‑router for aggregation events, and per‑query key/transform/sort options)
-lives in the app under `src/drasi/`, demonstrating how an application supplies its
-domain knowledge to these otherwise‑generic components.
+All trading‑specific behaviour (the query list, the SSE Reaction, the
+content‑router for aggregation result changes, and per‑query key/transform/sort
+options) lives in the app under `src/drasi/`, demonstrating how an application
+supplies its domain knowledge to these otherwise‑generic components.
 
 ## License
 
