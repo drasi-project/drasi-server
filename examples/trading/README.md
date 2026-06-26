@@ -159,8 +159,20 @@ This starts PostgreSQL with:
 ```bash
 # From drasi-server root directory
 cargo build --release
-./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
+./target/release/drasi-server \
+    --config examples/trading/server/trading-sources-only.yaml \
+    --plugins-dir examples/trading/plugins
 ```
+
+The `--plugins-dir` flag points at an example-specific directory that holds
+only the 5 plugins this demo uses (`source/http`, `source/postgres`,
+`bootstrap/scriptfile`, `bootstrap/postgres`, `reaction/sse`). With
+`autoInstallPlugins: true` set in the YAML, the server downloads them from
+the OCI registry on first start if the directory is empty. Pointing at the
+global `target/release/plugins/` instead would attempt to load every plugin
+in drasi-core (~50 of them) and crash on macOS with `errno=24` (too many
+open files) because the default per-process file descriptor limit is only
+256. The `start-demo.sh` script handles this for you automatically.
 
 The server starts with two sources pre-configured:
 - `postgres-stocks`: CDC source monitoring stocks and portfolio tables
@@ -214,7 +226,7 @@ RETURN p.symbol, s.name, sp.price, ...
 There's no `OWNS_STOCK` or `HAS_PRICE` relationship in PostgreSQL. Instead, the query defines these relationships:
 
 ```typescript
-// In DrasiClient.ts
+// In services/queries.ts
 const hasPrice: QueryJoin = {
   id: 'HAS_PRICE',
   keys: [
@@ -234,21 +246,82 @@ This lets you:
 
 ### The React Integration
 
-The `useDrasi.ts` hook provides a simple interface:
+The UI is built on a **standalone, reusable component package**,
+[`drasi-react`](./drasi-react), which lives alongside the app but is completely
+independent of it. The app consumes it exactly like an external dependency
+(`@drasi/react`). The package provides a single multiplexed SSE connection, React
+hooks for live query results, and a ready‑made `QueryTable` component.
+
+A component subscribes to a continuous query with the `useDrasiQuery` hook (or by
+dropping in a `QueryTable`):
 
 ```typescript
-// Subscribe to a continuous query
-const { data, loading, lastUpdate } = useQuery<Stock>('watchlist-query');
+import { useDrasiQuery } from '@drasi/react';
+
+// Subscribe to a continuous query over the shared connection
+const { data, loading, lastUpdate } = useDrasiQuery<Stock>('watchlist-query');
 
 // data updates automatically when query results change
 // No polling. No manual refetching. No WebSocket plumbing.
 ```
 
+The shared connection is established once near the root of the app by wrapping it
+in `<DrasiProvider>` (see `app/src/main.tsx`):
+
+```tsx
+import { DrasiProvider } from '@drasi/react';
+import { TRADING_QUERIES, TRADING_REACTION, routeTradingData } from '@/drasi/config';
+
+<DrasiProvider
+  serverUrl="http://localhost:8280"
+  queries={TRADING_QUERIES}
+  reaction={TRADING_REACTION}
+  routeUnidentified={routeTradingData}
+>
+  <App />
+</DrasiProvider>
+```
+
 Under the hood:
-1. `DrasiClient` creates queries and an SSE reaction via REST API
-2. `DrasiSSEClient` maintains an EventSource connection
-3. Query results flow as Server-Sent Events
-4. The hook updates component state when relevant data changes
+1. `DrasiProvider` (via the package's `DrasiClient`) creates the queries and the
+   SSE reaction through the REST API
+2. The package's `DrasiSSEClient` maintains a **single** EventSource connection
+   and multiplexes every query over it
+3. Query results flow as Server-Sent Events and are fanned out to subscribers by
+   query id
+4. `useDrasiQuery` updates component state when the relevant query changes
+
+All the trading‑specific knowledge — the list of queries, the SSE reaction
+settings, how to route aggregation events, and per‑query key/transform/sort
+rules — lives in the app under `app/src/drasi/`, so the package itself stays
+generic and reusable. See [Reusable `drasi-react` components](#reusable-drasi-react-components)
+for details.
+
+### Reusable `drasi-react` components
+
+The [`drasi-react`](./drasi-react) directory is an independent, documented React
+package extracted from this example so it can be reused in any Drasi application:
+
+| Export | Purpose |
+|--------|---------|
+| `DrasiProvider` | Opens one shared SSE connection and multiplexes all queries over it |
+| `useDrasiQuery` | Subscribe to a query; returns its accumulated, live result set |
+| `useDrasiConnectionStatus` | Track connection/reconnection state |
+| `QueryTable` | Sortable, animated table bound to a query, with a code viewer |
+| `DrasiClient` / `DrasiSSEClient` | Low-level orchestrator and SSE multiplexer |
+
+It is wired into the app for the demo with **no build step** via a Vite alias and
+a matching TypeScript path (`@drasi/react` → `../drasi-react/src`), and it can
+also be built independently:
+
+```bash
+cd drasi-react
+npm install
+npm run build   # type-check and emit ESM + .d.ts to ./dist
+```
+
+Full API documentation, usage, styling, and build instructions are in
+[`drasi-react/README.md`](./drasi-react/README.md).
 
 ## Code Examples
 
@@ -368,8 +441,10 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 | `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
-| `app/src/services/DrasiClient.ts` | Query definitions and Drasi integration |
-| `app/src/hooks/useDrasi.ts` | React hook for consuming Drasi queries |
+| `drasi-react/` | Reusable React components (provider, hooks, `QueryTable`) — see [`drasi-react/README.md`](./drasi-react/README.md) |
+| `app/src/services/queries.ts` | Continuous query definitions |
+| `app/src/drasi/config.ts` | App-specific Drasi config: query list, SSE reaction, content routing |
+| `app/src/drasi/queryOptions.ts` | Per-query key/transform/sort options passed to the shared components |
 | `mock-generator/simple_price_generator.py` | Simulated market data feed |
 
 ## Troubleshooting

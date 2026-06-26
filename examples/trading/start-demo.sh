@@ -94,12 +94,90 @@ elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
     make build-ui
 fi
 
-# Ensure local plugins are built (required when using [patch.crates-io] with local drasi-core)
-PLUGINS_DIR="$DRASI_SERVER_ROOT/target/release/plugins"
-if [ ! -d "$PLUGINS_DIR" ] || [ -z "$(ls -A "$PLUGINS_DIR"/*.dylib "$PLUGINS_DIR"/*.so "$PLUGINS_DIR"/*.dll 2>/dev/null)" ]; then
-    echo -e "${YELLOW}No local plugins found. Building from drasi-core...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-local-plugins
+# Ensure the trading example's plugins are available in an example-specific
+# directory. We deliberately do NOT use the global target/release/plugins/ dir
+# here: that directory tends to accumulate ~50 cdylib plugins (from
+# `make build-local-plugins`) and loading all of them at startup exhausts
+# macOS's default 256 file-descriptor limit, causing the server to fail with
+# errno=24 (EMFILE) — see logs/drasi-server.log of a failing run.
+#
+# The trading demo only needs 5 plugins; we either build just those from a
+# local ../drasi-core checkout (for ABI compatibility with [patch.crates-io]
+# overrides) or let the server's autoInstallPlugins fetch them from the OCI
+# registry on first start (when there's no local drasi-core).
+PLUGINS_DIR="$SCRIPT_DIR/plugins"
+mkdir -p "$PLUGINS_DIR"
+
+# Detect the host platform's dynamic-library extension/prefix so the script
+# works on macOS (.dylib), Linux (.so) and Windows/MSYS (.dll).
+UNAME_S="$(uname -s)"
+case "$UNAME_S" in
+    Darwin)  PLUGIN_EXT="dylib"; PLUGIN_PREFIX="lib" ;;
+    Linux)   PLUGIN_EXT="so";    PLUGIN_PREFIX="lib" ;;
+    MINGW*|MSYS*|CYGWIN*) PLUGIN_EXT="dll"; PLUGIN_PREFIX="" ;;
+    *)       PLUGIN_EXT="so";    PLUGIN_PREFIX="lib" ;;
+esac
+
+# Required plugins for the trading demo. Each entry is the drasi-core crate
+# name plus the cdylib filename suffix the cargo build produces.
+#   crate                          | produces
+#   drasi-source-http              | libdrasi_source_http.<ext>
+#   drasi-source-postgres          | libdrasi_source_postgres.<ext>
+#   drasi-bootstrap-scriptfile     | libdrasi_bootstrap_scriptfile.<ext>
+#   drasi-bootstrap-postgres       | libdrasi_bootstrap_postgres.<ext>
+#   drasi-reaction-sse             | libdrasi_reaction_sse.<ext>  (created at runtime by the app)
+REQUIRED_PLUGIN_CRATES=(
+    drasi-source-http
+    drasi-source-postgres
+    drasi-bootstrap-scriptfile
+    drasi-bootstrap-postgres
+    drasi-reaction-sse
+)
+REQUIRED_PLUGIN_FILES=(
+    "${PLUGIN_PREFIX}drasi_source_http.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_source_postgres.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_bootstrap_scriptfile.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_bootstrap_postgres.${PLUGIN_EXT}"
+    "${PLUGIN_PREFIX}drasi_reaction_sse.${PLUGIN_EXT}"
+)
+
+missing_plugins=()
+for f in "${REQUIRED_PLUGIN_FILES[@]}"; do
+    if [ ! -f "$PLUGINS_DIR/$f" ]; then
+        missing_plugins+=("$f")
+    fi
+done
+
+DRASI_CORE_DIR="$DRASI_SERVER_ROOT/../drasi-core"
+if [ ${#missing_plugins[@]} -gt 0 ]; then
+    if [ -d "$DRASI_CORE_DIR" ]; then
+        # Local drasi-core checkout exists: build only the plugins this demo
+        # needs from source. This matches the [patch.crates-io] override path
+        # documented in CLAUDE.md — registry-downloaded plugins are NOT
+        # ABI-compatible with local drasi-core changes.
+        echo -e "${YELLOW}Building ${#missing_plugins[@]} required plugin(s) from $DRASI_CORE_DIR...${NC}"
+        cd "$DRASI_CORE_DIR"
+        for crate in "${REQUIRED_PLUGIN_CRATES[@]}"; do
+            cargo build --release --lib -p "$crate" --features "$crate/dynamic-plugin"
+        done
+        echo "Copying required plugins to $PLUGINS_DIR..."
+        for f in "${REQUIRED_PLUGIN_FILES[@]}"; do
+            if [ -f "$DRASI_CORE_DIR/target/release/$f" ]; then
+                cp "$DRASI_CORE_DIR/target/release/$f" "$PLUGINS_DIR/$f"
+            else
+                echo -e "${RED}Error: built plugin not found: target/release/$f${NC}"
+                exit 1
+            fi
+        done
+        echo -e "${GREEN}Trading-example plugins ready in $PLUGINS_DIR${NC}"
+        cd "$DRASI_SERVER_ROOT"
+    else
+        # No local drasi-core: rely on the server's autoInstallPlugins flag
+        # (configured in trading-sources-only.yaml) to fetch the 5 required
+        # plugins from the OCI registry on first start.
+        echo -e "${YELLOW}No local drasi-core checkout found at $DRASI_CORE_DIR.${NC}"
+        echo "Drasi Server will auto-install the required plugins from the OCI registry on startup."
+    fi
 fi
 
 echo -e "${GREEN}All prerequisites met!${NC}"
@@ -155,7 +233,10 @@ echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamica
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
-    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
+    ./target/release/drasi-server \
+        --config "examples/trading/server/trading-sources-only.yaml" \
+        --plugins-dir "$PLUGINS_DIR" \
+        > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
 echo "Replication source will bootstrap initial data from PostgreSQL..."
