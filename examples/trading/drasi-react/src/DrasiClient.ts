@@ -51,6 +51,7 @@ export class DrasiClient {
   private reaction: ReactionDefinition;
   private reactionId: string;
   private initialized = false;
+  private initPromise: Promise<void> | null = null;
   private instanceId: string | null = null;
 
   constructor(options: DrasiClientOptions) {
@@ -77,7 +78,22 @@ export class DrasiClient {
     if (this.initialized) {
       return;
     }
+    // Coalesce concurrent callers (e.g. React StrictMode's double-invoked
+    // effect) onto a single in-flight initialization so the queries and the
+    // reaction are only created once.
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    this.initPromise = this.doInitialize();
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
+  }
 
+  /** Perform the actual initialization work exactly once. */
+  private async doInitialize(): Promise<void> {
     // Check server health
     const healthResponse = await fetch(`${this.baseUrl}/health`);
     if (!healthResponse.ok) {
@@ -131,7 +147,7 @@ export class DrasiClient {
    * Ensure the SSE reaction exists and return its public endpoint URL.
    */
   private async ensureReaction(): Promise<string> {
-    const checkResponse = await fetch(
+    let checkResponse = await fetch(
       `${this.baseUrl}/api/v1/reactions/${this.reactionId}?view=full`,
     );
 
@@ -155,15 +171,22 @@ export class DrasiClient {
         body: JSON.stringify(reactionConfig),
       });
 
-      if (!createResponse.ok) {
+      if (createResponse.ok) {
+        // The server auto-starts reactions created with autoStart, so there is
+        // no separate start call here (it would race the auto-start and 500).
+        return this.reactionEndpoint();
+      }
+
+      // A non-409 failure is fatal; 409 means a concurrent initializer created
+      // it first, so re-read it and fall through to the existing-reaction path.
+      if (createResponse.status !== 409) {
         const error = await createResponse.text();
         throw new Error(`Failed to create reaction ${this.reactionId}: ${error}`);
       }
 
-      await fetch(`${this.baseUrl}/api/v1/reactions/${this.reactionId}/start`, {
-        method: 'POST',
-      });
-      return this.reactionEndpoint();
+      checkResponse = await fetch(
+        `${this.baseUrl}/api/v1/reactions/${this.reactionId}?view=full`,
+      );
     }
 
     if (checkResponse.ok) {
@@ -222,14 +245,14 @@ export class DrasiClient {
         body: JSON.stringify(queryConfig),
       });
 
-      if (!createResponse.ok) {
+      // 409 means a concurrent initializer created it first — treat as success.
+      // The server auto-starts components created with autoStart, so there is no
+      // separate start call here (a redundant start races the auto-start and
+      // returns 500).
+      if (!createResponse.ok && createResponse.status !== 409) {
         const error = await createResponse.text();
         throw new Error(`Failed to create query ${queryDef.id}: ${error}`);
       }
-
-      await fetch(`${this.baseUrl}/api/v1/queries/${queryDef.id}/start`, {
-        method: 'POST',
-      });
     } else if (checkResponse.ok) {
       const query = await checkResponse.json();
       const payload = query.data ?? query;
