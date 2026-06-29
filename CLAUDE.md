@@ -59,6 +59,7 @@ This repository contains only the server wrapper functionality:
    - `v1/` - API version 1 handlers, routes, and OpenAPI spec
    - `v1/plugin_handlers.rs` - Plugin management API endpoints
    - `shared/` - Common handlers, error types, and response types shared across versions
+   - `shared/extractor.rs` - `ConfigBody<T>` request-body extractor (JSON/YAML content negotiation). New handlers that accept a config request body should use `ConfigBody<T>` rather than `axum::Json<T>` so JSON and YAML are accepted interchangeably. Data-plane proxy endpoints (e.g. `push_source_data`) stay on `axum::Json` to avoid silent YAML→JSON coercion.
    - `version.rs` - API version constants and utilities
    - `models/` - Data Transfer Objects (DTOs)
    - `mappings/` - DTO to domain model conversions

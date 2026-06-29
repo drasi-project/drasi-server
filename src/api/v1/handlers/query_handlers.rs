@@ -23,7 +23,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto, QueryConfigDto};
-use crate::api::shared::error::{error_codes, ErrorResponse, JsonBody};
+use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::instance_registry::InstanceRegistry;
@@ -80,7 +81,7 @@ pub async fn create_query(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    JsonBody(config): JsonBody<QueryConfigDto>,
+    ConfigBody(config): ConfigBody<QueryConfigDto>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     let core = registry
         .get(&instance_id)
@@ -91,7 +92,7 @@ pub async fn create_query(
         Extension(read_only),
         Extension(config_persistence),
         Extension(instance_id),
-        Json(config),
+        ConfigBody(config),
     )
     .await
 }

@@ -25,6 +25,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 
 use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::instance_registry::InstanceRegistry;
 use crate::plugin_orchestrator::PluginOrchestrator;
 
@@ -190,7 +191,7 @@ pub async fn list_kinds(
 pub async fn load_plugin(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Json(body): Json<LoadPluginRequest>,
+    ConfigBody(body): ConfigBody<LoadPluginRequest>,
 ) -> impl IntoResponse {
     if *read_only {
         return ErrorResponse::new(
@@ -267,7 +268,7 @@ pub async fn load_plugin(
 pub async fn install_plugin(
     Extension(read_only): Extension<Arc<bool>>,
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
-    Json(body): Json<InstallPluginRequest>,
+    ConfigBody(body): ConfigBody<InstallPluginRequest>,
 ) -> impl IntoResponse {
     if *read_only {
         return ErrorResponse::new(

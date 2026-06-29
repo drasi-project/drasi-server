@@ -25,6 +25,7 @@ use tokio::sync::RwLock;
 
 use crate::api::models::{ComponentEventDto, LogMessageDto};
 use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers::{ComponentViewQuery, ObservabilityQuery};
 use crate::api::shared::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::instance_registry::InstanceRegistry;
@@ -98,7 +99,7 @@ pub async fn create_reaction_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(InstancePath { instance_id }): Path<InstancePath>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     let core = registry
         .get(&instance_id)
@@ -110,7 +111,7 @@ pub async fn create_reaction_handler(
         Extension(config_persistence),
         Extension(instance_id),
         Extension(plugin_registry),
-        Json(config_json),
+        ConfigBody(config_json),
     )
     .await
 }
@@ -150,7 +151,7 @@ pub async fn upsert_reaction_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
     Path(path): Path<ResourcePath>,
-    Json(config_json): Json<serde_json::Value>,
+    ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     let core = registry
         .get(&path.instance_id)
@@ -163,7 +164,7 @@ pub async fn upsert_reaction_handler(
         Extension(path.instance_id),
         Extension(plugin_registry),
         Path(path.id),
-        Json(config_json),
+        ConfigBody(config_json),
     )
     .await
 }
