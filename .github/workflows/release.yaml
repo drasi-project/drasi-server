@@ -80,7 +80,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       # Install cross from a pinned git commit: the last tagged release (0.2.5,
       # March 2022) ships container images based on glibc 2.27, which is too old
@@ -176,7 +176,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -262,7 +262,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       - name: Pull vendored native libraries
         shell: bash
@@ -311,7 +311,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       # See note in build-linux about why we install cross from a pinned commit.
       - name: Install cross
@@ -404,7 +404,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -444,7 +444,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.95.0
 
       # See note in build-linux about why we install cross from a pinned commit.
       - name: Install cross

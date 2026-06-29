@@ -35,7 +35,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Build Rust Binary
 # =============================================================================
-FROM rust:1.88-slim-bookworm AS builder
+FROM rust:1.95-slim-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
