@@ -37,7 +37,7 @@ echo "Adding message from '$FROM_NAME': '$MESSAGE_TEXT'"
 
 # Insert message
 docker exec getting-started-postgres psql -U drasi_user -d getting_started -c \
-    "INSERT INTO message (\"from\", message) VALUES ('$FROM_NAME', '$MESSAGE_TEXT') RETURNING messageid, \"from\", message, created_at;"
+    "INSERT INTO \"Message\" (\"from\", message) VALUES ('$FROM_NAME', '$MESSAGE_TEXT') RETURNING messageid, \"from\", message, created_at;"
 
 echo
 echo "Message added successfully!"
