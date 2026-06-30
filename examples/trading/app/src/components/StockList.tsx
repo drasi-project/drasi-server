@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React from 'react';
-import { QueryTable, ColumnDef } from './QueryTable';
+import { QueryTable, ColumnDef } from '@drasi/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
 import { Stock } from '@/types';
 import { formatCurrency, formatVolume } from '@/utils/formatters';
@@ -122,6 +123,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
   return (
     <QueryTable<Stock>
       queryId={queryId}
+      queryOptions={tradingQueryOptions<Stock>(queryId)}
       title={title}
       columns={columns}
       rowKey={(row) => row.symbol}

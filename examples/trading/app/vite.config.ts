@@ -19,8 +19,15 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    // Resolve React (and other shared peers) to a single copy so the
+    // source-consumed `@drasi/react` package shares the app's instances.
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@drasi/react': path.resolve(__dirname, '../drasi-react/src'),
+      react: path.resolve(__dirname, './node_modules/react'),
+      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
+      clsx: path.resolve(__dirname, './node_modules/clsx'),
     },
   },
   server: {
