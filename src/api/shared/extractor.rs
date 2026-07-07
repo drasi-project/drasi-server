@@ -199,18 +199,28 @@ where
         })?;
 
         if is_yaml {
+            // Reject non-UTF-8 bodies immediately.  serde_yaml/libyaml can
+            // also parse UTF-16/UTF-32 (BOM-detected) from raw bytes, so
+            // letting non-UTF-8 bodies reach serde_yaml::from_slice would
+            // bypass the anchor/alias scan below and reopen the DoS vector.
+            let text = std::str::from_utf8(&bytes).map_err(|e| {
+                log::debug!("YAML body is not valid UTF-8: {e}");
+                parse_error("YAML", "request body is not valid UTF-8")
+            })?;
+
             // Reject anchor/alias-based expansion attacks before serde_yaml
             // eagerly expands them.
-            if let Ok(text) = std::str::from_utf8(&bytes) {
-                if contains_yaml_anchor_or_alias(text) {
-                    return Err(ErrorResponse::new(
-                        error_codes::INVALID_REQUEST,
-                        "YAML anchors and aliases are not permitted in request bodies",
-                    )
-                    .with_status());
-                }
+            if contains_yaml_anchor_or_alias(text) {
+                return Err(ErrorResponse::new(
+                    error_codes::INVALID_REQUEST,
+                    "YAML anchors and aliases are not permitted in request bodies",
+                )
+                .with_status());
             }
-            serde_yaml::from_slice(&bytes).map(ConfigBody).map_err(|e| {
+
+            // Parse from &str (not raw bytes) so serde_yaml always sees
+            // validated UTF-8 and cannot fall back to UTF-16/UTF-32 decoding.
+            serde_yaml::from_str(text).map(ConfigBody).map_err(|e| {
                 log::debug!("YAML extraction failed: {e}");
                 parse_error("YAML", e)
             })
