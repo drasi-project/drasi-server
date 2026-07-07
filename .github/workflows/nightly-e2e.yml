@@ -1,0 +1,177 @@
+name: Nightly E2E (Consumer)
+
+# Consumer half of the end-to-end nightly pipeline. Triggered by drasi-core's
+# nightly.yml via repository_dispatch. It builds drasi-server against a specific
+# drasi-core `main` commit (overlaid with [patch.crates-io]) and runs the
+# integration test against the plugins drasi-core published to the nightly OCI
+# tag that same run.
+#
+# Payload from drasi-core (event_type: nightly-e2e):
+#   client_payload.core_sha    - drasi-core main HEAD SHA to build against
+#   client_payload.plugin_tag  - base OCI tag for nightly plugins (drasi-nightly-test)
+#   client_payload.registry    - OCI registry (ghcr.io/drasi-project)
+#
+# See drasi-core docs/nightly-e2e/README.md for the full design.
+
+on:
+  repository_dispatch:
+    types: [nightly-e2e]
+  workflow_dispatch:
+    inputs:
+      core_sha:
+        description: 'drasi-core main SHA (or branch/tag) to build against'
+        required: false
+        type: string
+        default: 'main'
+      plugin_tag:
+        description: 'Base OCI tag for nightly plugins'
+        required: false
+        type: string
+        default: 'drasi-nightly-test'
+      registry:
+        description: 'OCI registry to pull plugins from'
+        required: false
+        type: string
+        default: 'ghcr.io/drasi-project'
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Runner is linux/amd64; drasi-core publishes per-arch tags (the arch suffix is
+  # always appended, there is no multi-arch index), so plugins live under
+  # <tag>-linux-amd64.
+  ARCH_SUFFIX: linux-amd64
+
+jobs:
+  nightly-e2e:
+    name: Nightly E2E (server + latest core)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: getting_started
+          POSTGRES_USER: drasi_user
+          POSTGRES_PASSWORD: drasi_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          # repository_dispatch carries values under github.event.client_payload;
+          # workflow_dispatch carries them under github.event.inputs. Prefer the
+          # dispatch payload, fall back to manual inputs / defaults.
+          CORE_SHA='${{ github.event.client_payload.core_sha || inputs.core_sha || 'main' }}'
+          PLUGIN_TAG='${{ github.event.client_payload.plugin_tag || inputs.plugin_tag || 'drasi-nightly-test' }}'
+          REGISTRY='${{ github.event.client_payload.registry || inputs.registry || 'ghcr.io/drasi-project' }}'
+          echo "core_sha=$CORE_SHA" >> "$GITHUB_OUTPUT"
+          echo "plugin_tag=$PLUGIN_TAG" >> "$GITHUB_OUTPUT"
+          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "Building drasi-server against drasi-core @ $CORE_SHA"
+          echo "Pulling plugins from $REGISTRY with tag ${PLUGIN_TAG}-${ARCH_SUFFIX}"
+
+      - name: Checkout drasi-server
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler postgresql-client
+
+      - name: Set JQ_LIB_DIR
+        run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      # Overlay the drasi-core crates from the target commit without touching the
+      # committed dependency versions. Every drasi-* crate the server pulls from
+      # crates.io is redirected to the same drasi-core commit, so the build tests
+      # tonight's core. Auto-generated from the manifest so it stays in sync as
+      # dependencies are added/removed.
+      - name: Apply [patch.crates-io] overlay to drasi-core commit
+        env:
+          CORE_SHA: ${{ steps.inputs.outputs.core_sha }}
+        run: |
+          set -euo pipefail
+          REPO="https://github.com/drasi-project/drasi-core"
+          CRATES=$(grep -oE '^drasi-[a-z0-9-]+' Cargo.toml | sort -u)
+          if [ -z "$CRATES" ]; then
+            echo "::error::No drasi-* crates found in Cargo.toml to patch"
+            exit 1
+          fi
+          {
+            echo ""
+            echo "# --- nightly-e2e overlay (CI only) ---"
+            echo "[patch.crates-io]"
+            for c in $CRATES; do
+              echo "$c = { git = \"$REPO\", rev = \"$CORE_SHA\" }"
+            done
+          } >> Cargo.toml
+          echo "=== Applied overlay ==="
+          tail -n 20 Cargo.toml
+
+      - name: Build Drasi Server against patched core
+        run: cargo build --release
+
+      - name: Setup PostgreSQL database
+        run: |
+          export RESTART_CONTAINER=true
+          ./tests/integration/getting-started/setup-postgres.sh
+
+      # Option A: disable auto-install and install each plugin explicitly with the
+      # nightly OCI tag, so we exercise tonight's freshly published plugins rather
+      # than the released ones. Signature verification is skipped because the
+      # nightly -test channel is unsigned.
+      - name: Install nightly plugins
+        env:
+          PLUGIN_TAG: ${{ steps.inputs.outputs.plugin_tag }}
+          REGISTRY: ${{ steps.inputs.outputs.registry }}
+        run: |
+          set -euo pipefail
+          BIN=target/release/drasi-server
+          TAG="${PLUGIN_TAG}-${ARCH_SUFFIX}"
+          for ref in source/postgres bootstrap/postgres reaction/log; do
+            echo "=== Installing ${ref}:${TAG} from ${REGISTRY} ==="
+            "$BIN" plugin install "${ref}:${TAG}" \
+              --registry "${REGISTRY}" \
+              --skip-verification
+          done
+
+      # Reuse the existing getting-started test, but with a config that has
+      # auto-install disabled so the server loads the plugins we installed above.
+      - name: Prepare nightly config (disable auto-install)
+        run: |
+          set -euo pipefail
+          SRC=tests/integration/getting-started/config.yaml
+          DST=tests/integration/getting-started/config.nightly.yaml
+          sed 's/^autoInstallPlugins:.*/autoInstallPlugins: false/' "$SRC" > "$DST"
+          echo "=== nightly config plugin/install settings ==="
+          grep -E 'autoInstallPlugins|verifyPlugins' "$DST"
+
+      - name: Run integration tests
+        env:
+          CONFIG_FILE: ${{ github.workspace }}/tests/integration/getting-started/config.nightly.yaml
+        run: ./tests/integration/getting-started/run-integration-test.sh
+
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server logs ==="
+          if [ -f tests/integration/getting-started/server.log ]; then
+            cat tests/integration/getting-started/server.log
+          else
+            echo "No server log file found"
+          fi
