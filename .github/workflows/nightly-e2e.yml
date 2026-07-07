@@ -14,6 +14,9 @@ name: Nightly E2E (Consumer)
 # See drasi-core docs/nightly-e2e/README.md for the full design.
 
 on:
+  push:
+    branches:
+      - drasi-e2e-nightly
   repository_dispatch:
     types: [nightly-e2e]
   workflow_dispatch:
@@ -110,7 +113,7 @@ jobs:
           echo "plugin_tag=$PLUGIN_TAG" >> "$GITHUB_OUTPUT"
           echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
           echo "Building drasi-server against drasi-core @ $CORE_SHA"
-          echo "Pulling plugins from $REGISTRY with tag ${PLUGIN_TAG}-${ARCH_SUFFIX}"
+          echo "Pulling plugins from $REGISTRY with base tag ${PLUGIN_TAG} (resolver appends arch suffix, e.g. -${ARCH_SUFFIX})"
 
       - name: Checkout drasi-server
         uses: actions/checkout@v6
@@ -178,7 +181,11 @@ jobs:
         run: |
           set -euo pipefail
           BIN=target/release/drasi-server
-          TAG="${PLUGIN_TAG}-${ARCH_SUFFIX}"
+          # Pass the BASE tag only. The plugin resolver automatically appends the
+          # platform arch suffix (e.g. -linux-amd64) when pulling, so the images
+          # published as drasi-nightly-test-linux-amd64 are matched. Passing the
+          # arch-suffixed tag here would double it (…-linux-amd64-linux-amd64).
+          TAG="${PLUGIN_TAG}"
           for ref in source/postgres bootstrap/postgres reaction/log; do
             echo "=== Installing ${ref}:${TAG} from ${REGISTRY} ==="
             "$BIN" plugin install "${ref}:${TAG}" \
