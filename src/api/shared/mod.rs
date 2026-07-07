@@ -18,10 +18,12 @@
 //! that are shared between API versions (v1, v2, etc.).
 
 pub mod error;
+pub mod extractor;
 pub mod handlers;
 pub mod responses;
 pub mod solutions;
 
 pub use error::*;
+pub use extractor::*;
 pub use handlers::*;
 pub use responses::*;
