@@ -33,6 +33,36 @@ on:
         required: false
         type: string
         default: 'ghcr.io/drasi-project'
+  # Called directly by drasi-core's nightly.yml (uses: .../nightly-e2e.yml@<ref>).
+  # When called cross-repo the job runs in the CALLER's context, so server_repo /
+  # server_ref are required to check out drasi-server (not drasi-core).
+  workflow_call:
+    inputs:
+      core_sha:
+        description: 'drasi-core SHA/branch/tag to build against'
+        required: false
+        type: string
+        default: 'main'
+      plugin_tag:
+        description: 'Base OCI tag for nightly plugins'
+        required: false
+        type: string
+        default: 'drasi-nightly-test'
+      registry:
+        description: 'OCI registry to pull plugins from'
+        required: false
+        type: string
+        default: 'ghcr.io/drasi-project'
+      server_repo:
+        description: 'drasi-server repository to check out (owner/name)'
+        required: false
+        type: string
+        default: 'drasi-project/drasi-server'
+      server_ref:
+        description: 'drasi-server ref to check out (branch/tag/SHA)'
+        required: false
+        type: string
+        default: 'main'
 
 permissions:
   contents: read
@@ -85,6 +115,12 @@ jobs:
       - name: Checkout drasi-server
         uses: actions/checkout@v6
         with:
+          # For native triggers (repository_dispatch / workflow_dispatch) inputs
+          # are unset, so these fall back to this repo at the triggering ref. For
+          # a cross-repo workflow_call the caller passes server_repo/server_ref so
+          # we check out drasi-server rather than the caller (drasi-core).
+          repository: ${{ inputs.server_repo || github.repository }}
+          ref: ${{ inputs.server_ref || github.ref }}
           submodules: recursive
 
       - name: Install system dependencies
