@@ -1,24 +1,21 @@
 name: Nightly E2E (Consumer)
 
-# Consumer half of the end-to-end nightly pipeline. Triggered by drasi-core's
-# nightly.yml via repository_dispatch. It builds drasi-server against a specific
-# drasi-core `main` commit (overlaid with [patch.crates-io]) and runs the
-# integration test against the plugins drasi-core published to the nightly OCI
-# tag that same run.
+# Consumer half of the end-to-end nightly pipeline. Called by drasi-core's
+# nightly.yml via a cross-repo `workflow_call`. It builds drasi-server against a
+# specific drasi-core commit (by rewriting the drasi-* dependencies to git deps
+# pinned at that commit) and runs the integration test against the plugins
+# drasi-core published to the nightly OCI tag in that same run.
 #
-# Payload from drasi-core (event_type: nightly-e2e):
-#   client_payload.core_sha    - drasi-core main HEAD SHA to build against
-#   client_payload.plugin_tag  - base OCI tag for nightly plugins (drasi-nightly-test)
-#   client_payload.registry    - OCI registry (ghcr.io/drasi-project)
+# Inputs (from drasi-core, or from workflow_dispatch for manual runs):
+#   core_sha    - drasi-core SHA/branch/tag to build against
+#   plugin_tag  - base OCI tag for nightly plugins (drasi-nightly-test)
+#   registry    - OCI registry (ghcr.io/drasi-project)
+#   server_repo / server_ref - which drasi-server checkout to build (workflow_call
+#                 runs in the CALLER's context, so these are required cross-repo)
 #
 # See drasi-core docs/nightly-e2e/README.md for the full design.
 
 on:
-  push:
-    branches:
-      - drasi-e2e-nightly
-  repository_dispatch:
-    types: [nightly-e2e]
   workflow_dispatch:
     inputs:
       core_sha:
@@ -103,12 +100,11 @@ jobs:
       - name: Resolve inputs
         id: inputs
         run: |
-          # repository_dispatch carries values under github.event.client_payload;
-          # workflow_dispatch carries them under github.event.inputs. Prefer the
-          # dispatch payload, fall back to manual inputs / defaults.
-          CORE_SHA='${{ github.event.client_payload.core_sha || inputs.core_sha || 'main' }}'
-          PLUGIN_TAG='${{ github.event.client_payload.plugin_tag || inputs.plugin_tag || 'drasi-nightly-test' }}'
-          REGISTRY='${{ github.event.client_payload.registry || inputs.registry || 'ghcr.io/drasi-project' }}'
+          # Values come from workflow_call (drasi-core) or workflow_dispatch
+          # (manual); both surface as `inputs.*`. Defaults cover a bare manual run.
+          CORE_SHA='${{ inputs.core_sha || 'main' }}'
+          PLUGIN_TAG='${{ inputs.plugin_tag || 'drasi-nightly-test' }}'
+          REGISTRY='${{ inputs.registry || 'ghcr.io/drasi-project' }}'
           echo "core_sha=$CORE_SHA" >> "$GITHUB_OUTPUT"
           echo "plugin_tag=$PLUGIN_TAG" >> "$GITHUB_OUTPUT"
           echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
@@ -118,10 +114,10 @@ jobs:
       - name: Checkout drasi-server
         uses: actions/checkout@v6
         with:
-          # For native triggers (repository_dispatch / workflow_dispatch) inputs
-          # are unset, so these fall back to this repo at the triggering ref. For
-          # a cross-repo workflow_call the caller passes server_repo/server_ref so
-          # we check out drasi-server rather than the caller (drasi-core).
+          # For a manual workflow_dispatch run these fall back to this repo at the
+          # triggering ref. For a cross-repo workflow_call the caller passes
+          # server_repo/server_ref so we check out drasi-server rather than the
+          # caller (drasi-core).
           repository: ${{ inputs.server_repo || github.repository }}
           ref: ${{ inputs.server_ref || github.ref }}
           submodules: recursive
