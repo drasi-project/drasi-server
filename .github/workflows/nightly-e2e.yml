@@ -34,8 +34,10 @@ on:
         type: string
         default: 'ghcr.io/drasi-project'
   # Called directly by drasi-core's nightly.yml (uses: .../nightly-e2e.yml@<ref>).
-  # When called cross-repo the job runs in the CALLER's context, so server_repo /
-  # server_ref are required to check out drasi-server (not drasi-core).
+  # A cross-repo workflow_call runs in the CALLER's context, so server_repo /
+  # server_ref control which drasi-server checkout to build. They are optional:
+  # the defaults (drasi-project/drasi-server @ main) already target this repo, and
+  # a caller only overrides them to build a different branch/SHA.
   workflow_call:
     inputs:
       core_sha:
@@ -99,15 +101,31 @@ jobs:
     steps:
       - name: Resolve inputs
         id: inputs
+        env:
+          # Pass inputs via env (not direct ${{ }} interpolation into the script)
+          # so untrusted values can't break out of the shell / inject GITHUB_OUTPUT.
+          INPUT_CORE_SHA: ${{ inputs.core_sha }}
+          INPUT_PLUGIN_TAG: ${{ inputs.plugin_tag }}
+          INPUT_REGISTRY: ${{ inputs.registry }}
         run: |
-          # Values come from workflow_call (drasi-core) or workflow_dispatch
-          # (manual); both surface as `inputs.*`. Defaults cover a bare manual run.
-          CORE_SHA='${{ inputs.core_sha || 'main' }}'
-          PLUGIN_TAG='${{ inputs.plugin_tag || 'drasi-nightly-test' }}'
-          REGISTRY='${{ inputs.registry || 'ghcr.io/drasi-project' }}'
-          echo "core_sha=$CORE_SHA" >> "$GITHUB_OUTPUT"
-          echo "plugin_tag=$PLUGIN_TAG" >> "$GITHUB_OUTPUT"
-          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Values come from workflow_call (drasi-core) or workflow_dispatch (manual);
+          # defaults cover a bare manual run.
+          CORE_SHA="${INPUT_CORE_SHA:-main}"
+          PLUGIN_TAG="${INPUT_PLUGIN_TAG:-drasi-nightly-test}"
+          REGISTRY="${INPUT_REGISTRY:-ghcr.io/drasi-project}"
+
+          # Strip any newlines to prevent injection into $GITHUB_OUTPUT.
+          CORE_SHA="${CORE_SHA//$'\n'/}"
+          PLUGIN_TAG="${PLUGIN_TAG//$'\n'/}"
+          REGISTRY="${REGISTRY//$'\n'/}"
+
+          {
+            printf 'core_sha=%s\n' "$CORE_SHA"
+            printf 'plugin_tag=%s\n' "$PLUGIN_TAG"
+            printf 'registry=%s\n' "$REGISTRY"
+          } >> "$GITHUB_OUTPUT"
+
           echo "Building drasi-server against drasi-core @ $CORE_SHA"
           echo "Pulling plugins from $REGISTRY with base tag ${PLUGIN_TAG} (resolver appends arch suffix, e.g. -${ARCH_SUFFIX})"
 
