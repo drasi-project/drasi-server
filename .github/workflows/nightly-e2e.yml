@@ -127,7 +127,13 @@ jobs:
           submodules: recursive
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler postgresql-client
+        run: |
+          # The Microsoft apt repos preinstalled on GitHub runners intermittently
+          # serve a broken InRelease signature (NOSPLIT), failing apt-get update.
+          # We don't use them, so remove before updating.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/azure-cli.sources 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler postgresql-client
 
       - name: Set JQ_LIB_DIR
         run: echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
@@ -135,32 +141,49 @@ jobs:
       - name: Install Rust toolchain
         run: rustup show
 
-      # Overlay the drasi-core crates from the target commit without touching the
-      # committed dependency versions. Every drasi-* crate the server pulls from
-      # crates.io is redirected to the same drasi-core commit, so the build tests
-      # tonight's core. Auto-generated from the manifest so it stays in sync as
-      # dependencies are added/removed.
-      - name: Apply [patch.crates-io] overlay to drasi-core commit
+      # Point every drasi-* dependency at the target drasi-core commit by rewriting
+      # them to direct git dependencies. We do NOT use [patch.crates-io] here: a
+      # patch is silently ignored when the git version doesn't satisfy the crate's
+      # crates.io version requirement (e.g. server requires drasi-plugin-sdk 0.9.1
+      # but main is 0.10.0), which leaves TWO versions of the SDK in the graph and
+      # breaks trait resolution. A direct git dependency has no version gate, so all
+      # drasi crates resolve to drasi-core's exact versions from the same workspace
+      # checkout — a single version of each. Committed versions/features are
+      # preserved except the source; nothing is relaxed.
+      - name: Overlay drasi-core deps to target commit (git deps)
         env:
           CORE_SHA: ${{ steps.inputs.outputs.core_sha }}
         run: |
           set -euo pipefail
-          REPO="https://github.com/drasi-project/drasi-core"
-          CRATES=$(grep -oE '^drasi-[a-z0-9-]+' Cargo.toml | sort -u)
-          if [ -z "$CRATES" ]; then
-            echo "::error::No drasi-* crates found in Cargo.toml to patch"
-            exit 1
-          fi
-          {
-            echo ""
-            echo "# --- nightly-e2e overlay (CI only) ---"
-            echo "[patch.crates-io]"
-            for c in $CRATES; do
-              echo "$c = { git = \"$REPO\", rev = \"$CORE_SHA\" }"
-            done
-          } >> Cargo.toml
-          echo "=== Applied overlay ==="
-          tail -n 20 Cargo.toml
+          python3 - "$CORE_SHA" <<'PY'
+          import re, sys
+          sha = sys.argv[1]
+          repo = "https://github.com/drasi-project/drasi-core"
+          text = open("Cargo.toml").read()
+
+          # Match top-level (non-comment) drasi-* dependency declarations, either
+          #   drasi-x = "1.2.3"
+          # or an inline/multi-line table
+          #   drasi-x = { version = "1.2.3", features = [ ... ] }
+          # The table body has no nested '}', so [^}]* spans the multi-line features.
+          pattern = re.compile(r'^(drasi-[a-z0-9-]+)\s*=\s*("[^"]*"|\{[^}]*\})', re.M)
+
+          def repl(m):
+              name, body = m.group(1), m.group(2)
+              feat = ""
+              fm = re.search(r'features\s*=\s*(\[[^\]]*\])', body, re.S)
+              if fm:
+                  feat = f', features = {fm.group(1)}'
+              return f'{name} = {{ git = "{repo}", rev = "{sha}"{feat} }}'
+
+          new = pattern.sub(repl, text)
+          if new == text:
+              print("::error::No drasi-* dependencies were rewritten", file=sys.stderr)
+              sys.exit(1)
+          open("Cargo.toml", "w").write(new)
+          PY
+          echo "=== Rewritten drasi-* dependencies ==="
+          grep -nE '^drasi-[a-z0-9-]+ *=' Cargo.toml || true
 
       - name: Build Drasi Server against patched core
         run: cargo build --release
