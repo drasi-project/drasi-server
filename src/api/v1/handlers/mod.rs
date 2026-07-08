@@ -36,7 +36,7 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::api::shared::error::JsonBody;
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::handlers as shared;
 use crate::api::shared::{
     ApiResponse, ApiVersionsResponse, HealthResponse, InstanceListItem, StatusResponse,
@@ -130,13 +130,13 @@ pub async fn create_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    JsonBody(request): JsonBody<shared::CreateInstanceRequest>,
+    ConfigBody(request): ConfigBody<shared::CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, crate::api::shared::error::ErrorResponse> {
     shared::create_instance(
         Extension(registry),
         Extension(read_only),
         Extension(config_persistence),
-        Json(request),
+        ConfigBody(request),
     )
     .await
 }

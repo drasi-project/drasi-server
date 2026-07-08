@@ -22,6 +22,7 @@ use super::persist_after_operation;
 use crate::api::models::BootstrapProviderConfig;
 use crate::api::models::ConfigValue;
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
+use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
 use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
@@ -57,7 +58,7 @@ pub async fn create_instance(
     Extension(registry): Extension<InstanceRegistry>,
     Extension(read_only): Extension<Arc<bool>>,
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
-    Json(request): Json<CreateInstanceRequest>,
+    ConfigBody(request): ConfigBody<CreateInstanceRequest>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
         return Err(ErrorResponse::new(
