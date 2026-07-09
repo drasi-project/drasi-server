@@ -1106,9 +1106,9 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-application"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7aa8273ff71b5a18fc0d7081b902563e25c062232596bd8a3018a0d984fdef3f"
+checksum = "f236957c60a58cf2e2e700377127b094f57ca683911ed64998405da6491f4906"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1132,9 +1132,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0279277bd95f9023982ae43f62f9d426f58a21fd614f82957e59cc17797ff8b4"
+checksum = "334a37ff1cc887f5366505f17b04926501fc71752f66ac6e78ef97eb7d8bcc09"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1158,9 +1158,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "557116d4a488ad21b907c93128760552a9a01b943a2db7dd678463c58afc0a2d"
+checksum = "fae0da1b998ef09ab1115cc5b8c09b4d82305d8d432961c869db700ef69fbc19"
 dependencies = [
  "approx",
  "async-recursion",
@@ -1200,33 +1200,33 @@ dependencies = [
 
 [[package]]
 name = "drasi-ffi-primitives"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cf6703142e81a5319bf0f36a79278a0eeaa2a1da0aa8b5ae44fa10d4d4d4eb7"
+checksum = "34fcfb2ad8c4d0140eda6dfaabaf5fad996923f9bdb7cd6e6a4d44e3a1b28088"
 
 [[package]]
 name = "drasi-functions-cypher"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2163186f93b3210767027ebe4c12a13844a48d1327d007bcced94ec0900feb3a"
+checksum = "839da21be5fc2115fa11599f72df6e37cec89391b35d2a0e6defc42098e205a3"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-functions-gql"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20fbd7789bd8a509ec8079e4a2ab6390724bcca753300a1cb31212f19d81b83b"
+checksum = "33fa471da6c513979dabc7ddb7c2b69df75d07fa7e6856c0afb9ce57a87dee76"
 dependencies = [
  "drasi-core",
 ]
 
 [[package]]
 name = "drasi-host-sdk"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f99c2ac70c4a6990fcb7516e87871eccfad8245e29b74360f1c806095c41b8"
+checksum = "0d4a628bf170705d0e8b3f6aa769e20ec82e3a2f223f4d5dc3f24dcbe5eacb85"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1260,9 +1260,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3664915df61918bbfe69ac258b7c2540839662e8ad165f4395c113525b8b426c"
+checksum = "ac63be55f0699830a14ef87b06196d7dd67ec608f84bccafb5fc965a90858c35"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1287,9 +1287,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.8.8"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db1af2fcaa6cabf8f6519b637f10979157123d6d48ef5e2eb29fcb0b344655be"
+checksum = "863f443ed29d748b3ddf8a65f6cdbcd752e59bf74f9db467cd817bee35896621"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1325,9 +1325,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-middleware"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25e182f72e2e52d3e869a1954aaedd93d7ac25bff2d97fce49e19bf99fb5cdc9"
+checksum = "b2f0f50afaee2d7a562f7cc736832a48e93c2daf3d22db59ebd793eec5bfb257"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1344,9 +1344,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-plugin-sdk"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b58ed8a5a1c70cebcc7eb66ac4bffa2cdb2cdb30be253fed2d7721f82869a5b0"
+checksum = "f3026bcee8fbf28618480509625183ddaa71c13ad5411d64836e37a15213b49e"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1357,6 +1357,7 @@ dependencies = [
  "drasi-ffi-primitives",
  "drasi-lib",
  "log",
+ "rmp-serde",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1405,9 +1406,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e6ac66d96d781a222528c40f834b7542fbb2b960508e8885588f4afbff1c09"
+checksum = "9b25e4d2a58f8efde8f0f2ac9121a1fe8cd78fca5d882c769aadd3aea0d229eb"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1495,9 +1496,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-state-store-redb"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92cb574ffeab802e20c1af313c5cc8003eaca839d964be814eb3747d730c5c8e"
+checksum = "40014f64c97cd42edd5260deea70caff8dbc87798b0f5d32348e8bc4fe9237e2"
 dependencies = [
  "async-trait",
  "drasi-lib",
@@ -1509,9 +1510,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-wal-redb"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4575dcce032e6304effdd22a4be8e1cbb76be386d190285e56d5591f007dbc7b"
+checksum = "dc4028e577dafd6f3342d8822871b405f17c75a225101a3719aaaf7ac42ff5d6"
 dependencies = [
  "async-trait",
  "bincode",
@@ -3490,6 +3491,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
+ "rand 0.8.6",
+ "serde",
 ]
 
 [[package]]
@@ -4076,6 +4079,7 @@ dependencies = [
  "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "serde",
 ]
 
 [[package]]
@@ -4170,6 +4174,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.17",
+ "serde",
 ]
 
 [[package]]
