@@ -35,9 +35,10 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library (all middleware, using system libjq instead of bundled-jq)
+# Drasi core library (all middleware, using bundled-jq so the binary statically
+# links jq/oniguruma and needs no system libjq at runtime).
 drasi-lib = { version = "0.8.8", features = [
-  "middleware-jq",
+  "middleware-bundled-jq",
   "middleware-decoder",
   "middleware-map",
   "middleware-parse-json",
