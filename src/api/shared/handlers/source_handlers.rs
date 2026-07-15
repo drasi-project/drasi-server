@@ -115,8 +115,18 @@ pub async fn create_source_handler(
             log::info!("Source '{source_id}' created successfully");
 
             if auto_start {
-                if let Err(e) = core.start_source(&source_id).await {
-                    log::warn!("Failed to auto-start source '{source_id}': {e}");
+                // `add_source_with_metadata` already auto-starts the source
+                // when the server is running, so it is usually already starting
+                // or running by now. Only start it here if it is still Stopped
+                // (i.e. `add` did not auto-start it), and report genuine start
+                // failures as errors rather than warnings.
+                if matches!(
+                    core.get_source_status(&source_id).await,
+                    Ok(ComponentStatus::Stopped)
+                ) {
+                    if let Err(e) = core.start_source(&source_id).await {
+                        log::error!("Failed to auto-start source '{source_id}': {e}");
+                    }
                 }
             }
 
@@ -248,8 +258,18 @@ pub async fn upsert_source_handler(
             log::info!("Source '{source_id}' created successfully");
 
             if auto_start {
-                if let Err(e) = core.start_source(&source_id).await {
-                    log::warn!("Failed to auto-start source '{source_id}': {e}");
+                // `add_source_with_metadata` already auto-starts the source
+                // when the server is running, so it is usually already starting
+                // or running by now. Only start it here if it is still Stopped
+                // (i.e. `add` did not auto-start it), and report genuine start
+                // failures as errors rather than warnings.
+                if matches!(
+                    core.get_source_status(&source_id).await,
+                    Ok(ComponentStatus::Stopped)
+                ) {
+                    if let Err(e) = core.start_source(&source_id).await {
+                        log::error!("Failed to auto-start source '{source_id}': {e}");
+                    }
                 }
             }
 
