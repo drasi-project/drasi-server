@@ -23,8 +23,8 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SecretStoreConfig,
-    SourceConfig, StateStoreConfig,
+    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig,
+    SecretStoreConfig, SourceConfig, StateStoreConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -142,6 +142,10 @@ pub struct DrasiServerConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub identity_providers: Vec<IdentityProviderConfig>,
+    /// Bootstrap provider configurations (referenced by sources via `bootstrapProvider: <id>`)
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -175,6 +179,7 @@ impl Default for DrasiServerConfig {
             queries: Vec::new(),
             reactions: Vec::new(),
             identity_providers: Vec::new(),
+            bootstrap_providers: Vec::new(),
             instances: Vec::new(),
         }
     }
@@ -296,6 +301,10 @@ pub struct DrasiLibInstanceConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub identity_providers: Vec<IdentityProviderConfig>,
+    /// Bootstrap provider configurations referenced by sources via `bootstrapProvider: <id>`.
+    #[serde(default)]
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -311,6 +320,7 @@ pub struct ResolvedInstanceConfig {
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
     pub identity_providers: Vec<IdentityProviderConfig>,
+    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -365,6 +375,7 @@ impl DrasiServerConfig {
                 queries: self.queries.clone(),
                 reactions: self.reactions.clone(),
                 identity_providers: self.identity_providers.clone(),
+                bootstrap_providers: self.bootstrap_providers.clone(),
             }]
         } else {
             self.instances.clone()
@@ -404,6 +415,33 @@ impl DrasiServerConfig {
                 .map(|dto| mapper.map_with(dto, &query_mapper))
                 .collect::<Result<Vec<_>, _>>()?;
 
+            // Validate top-level bootstrap providers and any source references
+            // to them so dangling references are caught before startup.
+            let mut bootstrap_ids: HashSet<String> = HashSet::new();
+            for bp in &instance.bootstrap_providers {
+                let bp_id = bp.id().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Instance '{id}': top-level bootstrapProvider (kind '{}') is missing required 'id'",
+                        bp.kind()
+                    )
+                })?;
+                if !bootstrap_ids.insert(bp_id.to_string()) {
+                    return Err(anyhow::anyhow!(
+                        "Instance '{id}': duplicate bootstrapProvider id '{bp_id}'"
+                    ));
+                }
+            }
+            for src in &instance.sources {
+                if let Some(bp_ref) = src.bootstrap_provider().and_then(|r| r.as_reference()) {
+                    if !bootstrap_ids.contains(bp_ref) {
+                        return Err(anyhow::anyhow!(
+                            "Instance '{id}': source '{}' references unknown bootstrapProvider '{bp_ref}'",
+                            src.id()
+                        ));
+                    }
+                }
+            }
+
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
@@ -415,6 +453,7 @@ impl DrasiServerConfig {
                 queries,
                 reactions: instance.reactions.clone(),
                 identity_providers: instance.identity_providers.clone(),
+                bootstrap_providers: instance.bootstrap_providers.clone(),
             });
         }
 

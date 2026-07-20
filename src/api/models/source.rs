@@ -18,7 +18,7 @@ use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::bootstrap::BootstrapProviderConfig;
+use super::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 
 /// Source configuration with kind discriminator.
 ///
@@ -47,7 +47,7 @@ pub struct SourceConfig {
     pub kind: String,
     pub id: String,
     pub auto_start: bool,
-    pub bootstrap_provider: Option<BootstrapProviderConfig>,
+    pub bootstrap_provider: Option<BootstrapProviderRef>,
     /// Reference (by `id`) to an entry in the top-level
     /// `identityProviders` block. When set, the resolved provider is
     /// attached to the source via `Source::set_identity_provider` after
@@ -67,7 +67,14 @@ impl Serialize for SourceConfig {
         map.serialize_entry("id", &self.id)?;
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(bp) = &self.bootstrap_provider {
-            map.serialize_entry("bootstrapProvider", bp)?;
+            match bp {
+                BootstrapProviderRef::Reference(id) => {
+                    map.serialize_entry("bootstrapProvider", id)?;
+                }
+                BootstrapProviderRef::Inline(config) => {
+                    map.serialize_entry("bootstrapProvider", config)?;
+                }
+            }
         }
         if let Some(ip) = &self.identity_provider {
             map.serialize_entry("identityProvider", ip)?;
@@ -172,16 +179,32 @@ impl<'de> Deserialize<'de> for SourceConfig {
 
                 let remaining_value = serde_json::Value::Object(remaining);
 
-                // Deserialize bootstrap_provider if present, inheriting from source when applicable.
-                let bootstrap_provider: Option<BootstrapProviderConfig> = bootstrap_provider
-                    .map(|value| {
-                        merge_bootstrap_provider_with_source(&kind, value, &remaining_value)
-                    })
-                    .map(serde_json::from_value)
-                    .transpose()
-                    .map_err(|e| {
-                        de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
-                    })?;
+                // Resolve bootstrapProvider: a string is a reference to a
+                // top-level `bootstrapProviders` entry; a mapping is an inline
+                // definition (which may inherit fields from the source).
+                let bootstrap_provider: Option<BootstrapProviderRef> = match bootstrap_provider {
+                    None => None,
+                    Some(serde_json::Value::String(id)) => {
+                        Some(BootstrapProviderRef::Reference(id))
+                    }
+                    Some(value @ serde_json::Value::Object(_)) => {
+                        let merged =
+                            merge_bootstrap_provider_with_source(&kind, value, &remaining_value);
+                        let config: BootstrapProviderConfig = serde_json::from_value(merged)
+                            .map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in source '{id}' bootstrapProvider: {e}"
+                                ))
+                            })?;
+                        Some(BootstrapProviderRef::Inline(config))
+                    }
+                    Some(_) => {
+                        return Err(de::Error::custom(format!(
+                            "in source '{id}' bootstrapProvider: expected a string reference \
+                             to a top-level bootstrapProviders entry or an inline mapping"
+                        )));
+                    }
+                };
 
                 Ok(SourceConfig {
                     kind,
@@ -214,8 +237,9 @@ impl SourceConfig {
         self.auto_start = value;
     }
 
-    /// Get the bootstrap provider configuration if any
-    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
+    /// Get the bootstrap provider reference if any (inline definition or a
+    /// reference to a top-level `bootstrapProviders` entry).
+    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderRef> {
         self.bootstrap_provider.as_ref()
     }
 
@@ -570,7 +594,8 @@ bootstrapProvider:
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
         let bp = source
             .bootstrap_provider()
-            .expect("Expected bootstrap provider");
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // After merge_bootstrap_provider_with_source, inherited fields should be present
@@ -604,7 +629,8 @@ bootstrapProvider:
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
         let bp = source
             .bootstrap_provider()
-            .expect("Expected bootstrap provider");
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // Overridden fields

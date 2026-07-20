@@ -171,7 +171,11 @@ pub async fn create_source(
         )
     })?;
 
-    let bootstrap_descriptor = if let Some(bootstrap_config) = &config.bootstrap_provider {
+    let bootstrap_descriptor = if let Some(bootstrap_config) = config
+        .bootstrap_provider
+        .as_ref()
+        .and_then(|r| r.as_inline())
+    {
         let kind = bootstrap_config.kind();
         Some(registry.get_bootstrapper(kind).cloned().ok_or_else(|| {
             anyhow::anyhow!(
@@ -189,9 +193,13 @@ pub async fn create_source(
         .create_source(&config.id, &config.config, config.auto_start)
         .await?;
 
-    if let (Some(bootstrap_config), Some(bp_descriptor)) =
-        (&config.bootstrap_provider, bootstrap_descriptor)
-    {
+    if let (Some(bootstrap_config), Some(bp_descriptor)) = (
+        config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline()),
+        bootstrap_descriptor,
+    ) {
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
@@ -217,7 +225,11 @@ pub async fn create_source_locked(
                 reg.source_kinds()
             )
         })?;
-        let bp_desc = if let Some(bp_config) = &config.bootstrap_provider {
+        let bp_desc = if let Some(bp_config) = config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline())
+        {
             let kind = bp_config.kind();
             Some(reg.get_bootstrapper(kind).cloned().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -237,9 +249,13 @@ pub async fn create_source_locked(
         .create_source(&config.id, &config.config, config.auto_start)
         .await?;
 
-    if let (Some(bootstrap_config), Some(bp_descriptor)) =
-        (&config.bootstrap_provider, bootstrap_descriptor)
-    {
+    if let (Some(bootstrap_config), Some(bp_descriptor)) = (
+        config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline()),
+        bootstrap_descriptor,
+    ) {
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
@@ -268,6 +284,62 @@ pub async fn create_bootstrap_provider(
     descriptor
         .create_bootstrap_provider(&bootstrap_config.config, source_config_json)
         .await
+}
+
+/// Build a `{id -> BootstrapProviderConfig}` map from a slice of top-level
+/// bootstrap provider configs.
+///
+/// Each entry must carry an `id`. Fails on a missing id or a duplicate id.
+/// Unlike identity providers, bootstrap provider *instances* are not built
+/// here: because `Source::set_bootstrap_provider` takes an owned value, each
+/// referencing source instantiates its own provider from the shared config at
+/// source-creation time.
+pub fn build_bootstrap_provider_config_map(
+    configs: &[BootstrapProviderConfig],
+) -> Result<HashMap<String, BootstrapProviderConfig>> {
+    let mut map: HashMap<String, BootstrapProviderConfig> = HashMap::new();
+    for cfg in configs {
+        let id = cfg.id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Top-level bootstrapProvider (kind '{}') is missing required 'id'",
+                cfg.kind()
+            )
+        })?;
+        if map.contains_key(id) {
+            return Err(anyhow::anyhow!("Duplicate bootstrapProvider id '{id}'"));
+        }
+        map.insert(id.to_string(), cfg.clone());
+    }
+    Ok(map)
+}
+
+/// Resolve a source's `bootstrapProvider` reference (if any) against the
+/// top-level bootstrap provider config map, rewriting it to an inline
+/// definition so the source-creation path can instantiate it.
+///
+/// Inline bootstrap providers and sources without a bootstrap provider are
+/// left unchanged. Returns an error if the referenced id is not declared.
+pub fn resolve_source_bootstrap_provider(
+    config: &mut SourceConfig,
+    bootstrap_providers: &HashMap<String, BootstrapProviderConfig>,
+) -> Result<()> {
+    if let Some(id) = config
+        .bootstrap_provider
+        .as_ref()
+        .and_then(|r| r.as_reference())
+        .map(str::to_string)
+    {
+        let resolved = bootstrap_providers.get(&id).cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Source '{}' references unknown bootstrapProvider '{id}'. Declared providers: {:?}",
+                config.id(),
+                bootstrap_providers.keys().collect::<Vec<_>>()
+            )
+        })?;
+        config.bootstrap_provider =
+            Some(crate::api::models::BootstrapProviderRef::Inline(resolved));
+    }
+    Ok(())
 }
 
 /// Create a reaction instance from a ReactionConfig using the plugin registry.
@@ -618,6 +690,7 @@ mod tests {
         let registry = test_registry();
         let bootstrap_config = BootstrapProviderConfig {
             kind: "noop".to_string(),
+            id: None,
             config: serde_json::json!({}),
         };
         let source_config_json = serde_json::json!({});

@@ -129,6 +129,15 @@ pub async fn create_source_handler(
                     config.identity_provider(),
                 )
                 .await;
+                // Track a reference-form bootstrapProvider so it round-trips
+                // as a reference. Inline definitions pass `None` and are
+                // recovered from the runtime snapshot.
+                p.register_source_bootstrap_provider(
+                    &instance_id,
+                    &source_id,
+                    config.bootstrap_provider().and_then(|r| r.as_reference()),
+                )
+                .await;
             }
 
             persist_after_operation(&config_persistence, "creating source").await?;
@@ -224,6 +233,12 @@ pub async fn upsert_source_handler(
                 config.identity_provider(),
             )
             .await;
+            p.register_source_bootstrap_provider(
+                &instance_id,
+                &source_id,
+                config.bootstrap_provider().and_then(|r| r.as_reference()),
+            )
+            .await;
         }
 
         persist_after_operation(&config_persistence, "upserting source").await?;
@@ -258,6 +273,12 @@ pub async fn upsert_source_handler(
                     &instance_id,
                     &source_id,
                     config.identity_provider(),
+                )
+                .await;
+                p.register_source_bootstrap_provider(
+                    &instance_id,
+                    &source_id,
+                    config.bootstrap_provider().and_then(|r| r.as_reference()),
                 )
                 .await;
             }
@@ -435,6 +456,8 @@ pub async fn delete_source(
         Ok(_) => {
             if let Some(p) = &config_persistence {
                 p.unregister_source_identity_provider(&instance_id, &id)
+                    .await;
+                p.unregister_source_bootstrap_provider(&instance_id, &id)
                     .await;
             }
             persist_after_operation(&config_persistence, "deleting source").await?;

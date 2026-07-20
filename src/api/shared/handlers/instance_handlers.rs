@@ -19,8 +19,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::persist_after_operation;
-use crate::api::models::BootstrapProviderConfig;
 use crate::api::models::ConfigValue;
+use crate::api::models::{BootstrapProviderConfig, BootstrapProviderRef};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
@@ -155,6 +155,7 @@ pub async fn create_instance(
             reactions: Vec::new(),
             queries: Vec::new(),
             identity_providers: Vec::new(),
+            bootstrap_providers: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -257,10 +258,11 @@ pub async fn clone_instance(
         let bootstrap_provider = src_snap.bootstrap_provider.as_ref().map(|bp| {
             let bp_config_json = serde_json::to_value(&bp.properties)
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-            BootstrapProviderConfig {
+            BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: bp.kind.clone(),
+                id: None,
                 config: bp_config_json,
-            }
+            })
         });
 
         let source_config = SourceConfig {

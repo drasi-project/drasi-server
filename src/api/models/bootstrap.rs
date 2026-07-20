@@ -31,6 +31,10 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq)]
 pub struct BootstrapProviderConfig {
     pub kind: String,
+    /// Optional identifier. Required for top-level `bootstrapProviders`
+    /// entries (which sources reference via `bootstrapProvider: <id>`).
+    /// Inline bootstrap providers nested under a source leave this `None`.
+    pub id: Option<String>,
     pub config: serde_json::Value,
 }
 
@@ -38,6 +42,44 @@ impl BootstrapProviderConfig {
     /// Get the kind string for this bootstrap provider config.
     pub fn kind(&self) -> &str {
         &self.kind
+    }
+
+    /// Get the optional id of this bootstrap provider config.
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+}
+
+/// A source's bootstrap provider: either a reference (by id) to a top-level
+/// `bootstrapProviders` entry, or an inline definition nested under the source.
+///
+/// The reference form (a YAML/JSON string) enables sharing a single top-level
+/// bootstrap provider configuration across multiple sources. The inline form
+/// (a mapping) preserves the legacy behaviour where the bootstrap provider can
+/// inherit fields from the owning source's config.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BootstrapProviderRef {
+    /// Reference to a top-level `bootstrapProviders` entry by id.
+    Reference(String),
+    /// Inline bootstrap provider definition.
+    Inline(BootstrapProviderConfig),
+}
+
+impl BootstrapProviderRef {
+    /// Return the inline config, if this is the inline form.
+    pub fn as_inline(&self) -> Option<&BootstrapProviderConfig> {
+        match self {
+            Self::Inline(config) => Some(config),
+            Self::Reference(_) => None,
+        }
+    }
+
+    /// Return the referenced id, if this is the reference form.
+    pub fn as_reference(&self) -> Option<&str> {
+        match self {
+            Self::Reference(id) => Some(id.as_str()),
+            Self::Inline(_) => None,
+        }
     }
 }
 
@@ -49,6 +91,9 @@ impl Serialize for BootstrapProviderConfig {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("kind", &self.kind)?;
+        if let Some(id) = &self.id {
+            map.serialize_entry("id", id)?;
+        }
         if let serde_json::Value::Object(config_map) = &self.config {
             for (k, v) in config_map {
                 map.serialize_entry(k, v)?;
@@ -77,6 +122,7 @@ impl<'de> Deserialize<'de> for BootstrapProviderConfig {
                 M: MapAccess<'de>,
             {
                 let mut provider_kind: Option<String> = None;
+                let mut id: Option<String> = None;
                 let mut remaining = serde_json::Map::new();
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -86,6 +132,12 @@ impl<'de> Deserialize<'de> for BootstrapProviderConfig {
                                 return Err(de::Error::duplicate_field("kind"));
                             }
                             provider_kind = Some(map.next_value()?);
+                        }
+                        "id" => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
+                            }
+                            id = Some(map.next_value()?);
                         }
                         other => {
                             let value: serde_json::Value = map.next_value()?;
@@ -98,7 +150,7 @@ impl<'de> Deserialize<'de> for BootstrapProviderConfig {
 
                 let config = serde_json::Value::Object(remaining);
 
-                Ok(BootstrapProviderConfig { kind, config })
+                Ok(BootstrapProviderConfig { kind, id, config })
             }
         }
 
@@ -140,6 +192,7 @@ filePaths:
     fn test_serialization_roundtrip() {
         let config = BootstrapProviderConfig {
             kind: "scriptfile".to_string(),
+            id: None,
             config: serde_json::json!({
                 "filePaths": ["/test.jsonl"]
             }),

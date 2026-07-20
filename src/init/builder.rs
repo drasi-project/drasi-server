@@ -91,6 +91,7 @@ pub fn build_config(
         queries,
         reactions,
         identity_providers: Vec::new(),
+        bootstrap_providers: Vec::new(),
         instances: vec![], // Empty = use single-instance mode
     }
 }

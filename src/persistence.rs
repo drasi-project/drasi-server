@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::bootstrap::BootstrapProviderConfig;
+use crate::api::models::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
@@ -53,6 +53,16 @@ struct PreservedServerSettings {
     /// instance that was declared statically rather than created dynamically
     /// via `register_instance`.
     identity_providers_by_instance: IndexMap<String, Vec<IdentityProviderConfig>>,
+    /// Top-level `bootstrapProviders` from the original single-instance config.
+    ///
+    /// Like identity providers, top-level bootstrap providers are config-only
+    /// (they have no runtime ComponentGraph representation) so they cannot be
+    /// recovered from `snapshot_configuration()`. They must be preserved here
+    /// and re-emitted by `save()`.
+    bootstrap_providers: Vec<BootstrapProviderConfig>,
+    /// Per-instance `bootstrapProviders` keyed by instance id, captured from
+    /// the original multi-instance config. See `identity_providers_by_instance`.
+    bootstrap_providers_by_instance: IndexMap<String, Vec<BootstrapProviderConfig>>,
 }
 
 /// Snapshot-based persistence for DrasiServerConfig.
@@ -92,6 +102,13 @@ pub struct ConfigPersistence {
     /// Per-component `identityProvider` references for reactions, keyed by
     /// `(instance_id, reaction_id)`. See `source_identity_provider`.
     reaction_identity_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
+    /// Per-component `bootstrapProvider` *references* for sources, keyed by
+    /// `(instance_id, source_id)`. Only reference-form bootstrap providers are
+    /// tracked here; inline definitions are recovered from
+    /// `snapshot_configuration()`. Without this map the first `save()` would
+    /// rewrite a `bootstrapProvider: <id>` reference as an inline block (since
+    /// the runtime source only carries the resolved inline config).
+    source_bootstrap_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
 }
 
 impl ConfigPersistence {
@@ -127,12 +144,18 @@ impl ConfigPersistence {
             IndexMap::new();
         let mut reaction_identity_provider_by_instance: IndexMap<(String, String), String> =
             IndexMap::new();
+        let mut source_bootstrap_provider_by_instance: IndexMap<(String, String), String> =
+            IndexMap::new();
 
         if let Some(inst_id) = &top_level_instance_id {
             for src in &original_config.sources {
                 if let Some(ip) = src.identity_provider() {
                     source_identity_provider_by_instance
                         .insert((inst_id.clone(), src.id.clone()), ip.to_string());
+                }
+                if let Some(bp_ref) = src.bootstrap_provider().and_then(|r| r.as_reference()) {
+                    source_bootstrap_provider_by_instance
+                        .insert((inst_id.clone(), src.id.clone()), bp_ref.to_string());
                 }
             }
             for r in &original_config.reactions {
@@ -151,6 +174,10 @@ impl ConfigPersistence {
                 if let Some(ip) = src.identity_provider() {
                     source_identity_provider_by_instance
                         .insert((inst_id.clone(), src.id.clone()), ip.to_string());
+                }
+                if let Some(bp_ref) = src.bootstrap_provider().and_then(|r| r.as_reference()) {
+                    source_bootstrap_provider_by_instance
+                        .insert((inst_id.clone(), src.id.clone()), bp_ref.to_string());
                 }
             }
             for r in &inst.reactions {
@@ -209,12 +236,39 @@ impl ConfigPersistence {
                     }
                     by_instance
                 },
+                bootstrap_providers: original_config.bootstrap_providers.clone(),
+                // Seed per-instance bootstrap providers from the original config
+                // so they survive a save in multi-instance format, folding the
+                // top-level single-instance block under the top-level instance
+                // id. Mirrors `identity_providers_by_instance`.
+                bootstrap_providers_by_instance: {
+                    let mut by_instance: IndexMap<String, Vec<BootstrapProviderConfig>> =
+                        original_config
+                            .instances
+                            .iter()
+                            .filter_map(|inst| match &inst.id {
+                                ConfigValue::Static(id) if !inst.bootstrap_providers.is_empty() => {
+                                    Some((id.clone(), inst.bootstrap_providers.clone()))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                    if !original_config.bootstrap_providers.is_empty() {
+                        if let Some(inst_id) = &top_level_instance_id {
+                            by_instance
+                                .entry(inst_id.clone())
+                                .or_insert_with(|| original_config.bootstrap_providers.clone());
+                        }
+                    }
+                    by_instance
+                },
             },
             instance_configs: Arc::new(RwLock::new(IndexMap::new())),
             source_identity_provider: Arc::new(RwLock::new(source_identity_provider_by_instance)),
             reaction_identity_provider: Arc::new(RwLock::new(
                 reaction_identity_provider_by_instance,
             )),
+            source_bootstrap_provider: Arc::new(RwLock::new(source_bootstrap_provider_by_instance)),
         }
     }
 
@@ -295,6 +349,47 @@ impl ConfigPersistence {
         map.shift_remove(&(instance_id.to_string(), reaction_id.to_string()));
     }
 
+    /// Register a reference-form `bootstrapProvider` for a source so it
+    /// round-trips through `save()`.
+    ///
+    /// `bootstrap_provider` should be the referenced top-level id (i.e. the
+    /// value of a string-form `bootstrapProvider`). Inline bootstrap providers
+    /// must pass `None` here — they are recovered from
+    /// `snapshot_configuration()`. A `None` value removes any existing entry.
+    /// No-op when persistence is disabled.
+    pub async fn register_source_bootstrap_provider(
+        &self,
+        instance_id: &str,
+        source_id: &str,
+        bootstrap_provider: Option<&str>,
+    ) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.source_bootstrap_provider.write().await;
+        match bootstrap_provider {
+            Some(bp) => {
+                map.insert(
+                    (instance_id.to_string(), source_id.to_string()),
+                    bp.to_string(),
+                );
+            }
+            None => {
+                map.shift_remove(&(instance_id.to_string(), source_id.to_string()));
+            }
+        }
+    }
+
+    /// Remove any preserved `bootstrapProvider` reference for a source.
+    /// Called by the source delete handler.
+    pub async fn unregister_source_bootstrap_provider(&self, instance_id: &str, source_id: &str) {
+        if !self.persist_config {
+            return;
+        }
+        let mut map = self.source_bootstrap_provider.write().await;
+        map.shift_remove(&(instance_id.to_string(), source_id.to_string()));
+    }
+
     /// Register a new instance config for persistence
     pub async fn register_instance(&self, config: DrasiLibInstanceConfig) {
         if !self.persist_config {
@@ -329,6 +424,7 @@ impl ConfigPersistence {
         let dynamic_instance_configs = self.instance_configs.read().await;
         let source_identity_provider = self.source_identity_provider.read().await;
         let reaction_identity_provider = self.reaction_identity_provider.read().await;
+        let source_bootstrap_provider = self.source_bootstrap_provider.read().await;
 
         let mut instance_configs = Vec::new();
 
@@ -357,16 +453,29 @@ impl ConfigPersistence {
                         identity_provider: source_identity_provider
                             .get(&(id.clone(), s.id.clone()))
                             .cloned(),
-                        bootstrap_provider: s.bootstrap_provider.as_ref().map(|bp| {
-                            let mut bp_config = serde_json::Map::new();
-                            for (k, v) in &bp.properties {
-                                bp_config.insert(k.clone(), v.clone());
-                            }
-                            BootstrapProviderConfig {
-                                kind: bp.kind.clone(),
-                                config: serde_json::Value::Object(bp_config),
-                            }
-                        }),
+                        // Prefer a tracked reference-form bootstrapProvider so a
+                        // `bootstrapProvider: <id>` reference round-trips as a
+                        // reference rather than being rewritten inline. Fall
+                        // back to reconstructing the inline form from the
+                        // runtime snapshot (this also fixes the historical
+                        // drop of inline bootstrap providers on persist).
+                        bootstrap_provider: source_bootstrap_provider
+                            .get(&(id.clone(), s.id.clone()))
+                            .cloned()
+                            .map(BootstrapProviderRef::Reference)
+                            .or_else(|| {
+                                s.bootstrap_provider.as_ref().map(|bp| {
+                                    let mut bp_config = serde_json::Map::new();
+                                    for (k, v) in &bp.properties {
+                                        bp_config.insert(k.clone(), v.clone());
+                                    }
+                                    BootstrapProviderRef::Inline(BootstrapProviderConfig {
+                                        kind: bp.kind.clone(),
+                                        id: None,
+                                        config: serde_json::Value::Object(bp_config),
+                                    })
+                                })
+                            }),
                         config: serde_json::Value::Object(config_map),
                     }
                 })
@@ -438,6 +547,15 @@ impl ConfigPersistence {
                             .cloned()
                             .unwrap_or_default()
                     },
+                    bootstrap_providers: if !dynamic_config.bootstrap_providers.is_empty() {
+                        dynamic_config.bootstrap_providers.clone()
+                    } else {
+                        self.preserved
+                            .bootstrap_providers_by_instance
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_default()
+                    },
                 }
             } else {
                 DrasiLibInstanceConfig {
@@ -453,6 +571,12 @@ impl ConfigPersistence {
                     identity_providers: self
                         .preserved
                         .identity_providers_by_instance
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    bootstrap_providers: self
+                        .preserved
+                        .bootstrap_providers_by_instance
                         .get(&id)
                         .cloned()
                         .unwrap_or_default(),
@@ -473,6 +597,12 @@ impl ConfigPersistence {
                 instance.identity_providers.clone()
             } else {
                 self.preserved.identity_providers.clone()
+            };
+            // Same promotion for bootstrapProviders in single-instance format.
+            let bootstrap_providers = if !instance.bootstrap_providers.is_empty() {
+                instance.bootstrap_providers.clone()
+            } else {
+                self.preserved.bootstrap_providers.clone()
             };
             DrasiServerConfig {
                 api_version: None,
@@ -500,6 +630,7 @@ impl ConfigPersistence {
                 queries: instance.queries,
                 reactions: instance.reactions,
                 identity_providers,
+                bootstrap_providers,
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -543,6 +674,9 @@ impl ConfigPersistence {
                 // top-level instance's `identityProviders` at construction time
                 // (see `new()`), so the top-level field stays empty here.
                 identity_providers: Vec::new(),
+                // Same as identityProviders: bootstrapProviders live per-instance
+                // in multi-instance format.
+                bootstrap_providers: Vec::new(),
                 instances: instance_configs,
             }
         };

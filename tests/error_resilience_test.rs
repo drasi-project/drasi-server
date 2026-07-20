@@ -71,6 +71,7 @@ async fn test_unknown_bootstrap_kind_returns_helpful_error() {
     let registry = core_registry();
     let bootstrap_config = BootstrapProviderConfig {
         kind: "imaginary-bootstrap".to_string(),
+        id: None,
         config: serde_json::json!({}),
     };
     let source_config_json = serde_json::json!({});

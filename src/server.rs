@@ -29,9 +29,10 @@ use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
 use crate::factories::{
-    build_config_resolver_context, build_identity_provider_map, config_resolver_callback,
-    create_reaction_locked, create_secret_store_from_registry, create_source_locked,
-    create_state_store_provider,
+    build_bootstrap_provider_config_map, build_config_resolver_context,
+    build_identity_provider_map, config_resolver_callback, create_reaction_locked,
+    create_secret_store_from_registry, create_source_locked, create_state_store_provider,
+    resolve_source_bootstrap_provider,
 };
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
@@ -495,13 +496,19 @@ impl DrasiServer {
             // reactions can reference entries here via `identityProvider: <id>`.
             let identity_providers =
                 build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
+            // Build the bootstrap-provider config map for this instance. Sources
+            // can reference entries here via `bootstrapProvider: <id>`; each
+            // referencing source instantiates its own provider from the config.
+            let bootstrap_providers =
+                build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
             // Create and add sources from config
             info!(
                 "Loading {} source(s) from configuration for instance '{}'",
                 instance.sources.len(),
                 instance.id
             );
-            for source_config in instance.sources.clone() {
+            for mut source_config in instance.sources.clone() {
+                resolve_source_bootstrap_provider(&mut source_config, &bootstrap_providers)?;
                 let identity_ref = source_config.identity_provider().map(str::to_string);
                 let (source, plugin_meta) =
                     create_source_locked(&plugin_registry, source_config).await?;
@@ -739,6 +746,7 @@ impl DrasiServer {
                                 queries: config.queries.clone(),
                                 reactions: config.reactions.clone(),
                                 identity_providers: config.identity_providers.clone(),
+                                bootstrap_providers: config.bootstrap_providers.clone(),
                             }]
                         } else {
                             config.instances.clone()
