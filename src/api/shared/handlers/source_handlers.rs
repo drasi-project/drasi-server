@@ -193,6 +193,7 @@ pub async fn create_source_handler(
 }
 
 /// Upsert a source (create or update)
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Extension(read_only): Extension<Arc<bool>>,
