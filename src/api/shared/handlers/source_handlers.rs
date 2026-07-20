@@ -89,8 +89,11 @@ async fn resolve_source_bootstrap_ref(
 ) -> Result<SourceConfig, ErrorResponse> {
     let mut resolved = config.clone();
     let providers = instance_registry.bootstrap_providers(instance_id).await;
+    // A dangling / unknown `bootstrapProvider: <id>` reference is a client
+    // configuration error, so surface it as INVALID_REQUEST (HTTP 400) rather
+    // than SOURCE_CREATE_FAILED (HTTP 500).
     resolve_source_bootstrap_provider(&mut resolved, &providers)
-        .map_err(|e| ErrorResponse::new(error_codes::SOURCE_CREATE_FAILED, e.to_string()))?;
+        .map_err(|e| ErrorResponse::new(error_codes::INVALID_REQUEST, e.to_string()))?;
     Ok(resolved)
 }
 
