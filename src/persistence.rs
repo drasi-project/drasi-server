@@ -147,8 +147,10 @@ impl ConfigPersistence {
             IndexMap::new();
         let mut reaction_identity_provider_by_instance: IndexMap<(String, String), String> =
             IndexMap::new();
-        let mut source_bootstrap_provider_by_instance: IndexMap<(String, String), BootstrapProviderRef> =
-            IndexMap::new();
+        let mut source_bootstrap_provider_by_instance: IndexMap<
+            (String, String),
+            BootstrapProviderRef,
+        > = IndexMap::new();
 
         if let Some(inst_id) = &top_level_instance_id {
             for src in &original_config.sources {
@@ -1018,6 +1020,111 @@ mod tests {
         assert!(ids.contains(&"src-a"));
         assert!(ids.contains(&"src-b"));
         assert!(ids.contains(&"src-c"));
+    }
+
+    #[tokio::test]
+    async fn test_save_preserves_inline_bootstrap_provider() {
+        // Regression test for #105: an inline `bootstrapProvider` must survive
+        // `save()`. It was previously dropped because it isn't recovered from
+        // `snapshot_configuration()`; it is now round-tripped via the tracked
+        // `source_bootstrap_provider` map seeded from the original config.
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+
+        let original = DrasiServerConfig {
+            id: ConfigValue::Static("inst1".to_string()),
+            persist_config: true,
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "src1".to_string(),
+                auto_start: false,
+                identity_provider: None,
+                bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    id: None,
+                    config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+                })),
+                config: serde_json::json!({ "host": "db.local" }),
+            }],
+            ..DrasiServerConfig::default()
+        };
+
+        let core = build_core(
+            "inst1",
+            vec![TestSource::new("src1", "postgres")],
+            vec![],
+            vec![],
+        )
+        .await;
+        let p = make_persistence_with_config(core, "inst1", cfg_path.clone(), true, &original);
+        p.save().await.unwrap();
+
+        let val = read_yaml(&cfg_path);
+        let sources = val["sources"].as_sequence().unwrap();
+        let bp = &sources[0]["bootstrapProvider"];
+        assert!(
+            bp.is_mapping(),
+            "inline bootstrapProvider must be preserved as a mapping, got: {bp:?}"
+        );
+        assert_eq!(bp["kind"].as_str().unwrap(), "postgres");
+        assert_eq!(bp["host"].as_str().unwrap(), "db.local");
+        assert_eq!(bp["tables"][0].as_str().unwrap(), "Message");
+    }
+
+    #[tokio::test]
+    async fn test_save_preserves_toplevel_bootstrap_provider_reference() {
+        // #112: a source referencing a top-level `bootstrapProvider` persists as
+        // a string reference (NOT re-inlined), and the top-level
+        // `bootstrapProviders` block is retained across a save.
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+
+        let original = DrasiServerConfig {
+            id: ConfigValue::Static("inst1".to_string()),
+            persist_config: true,
+            bootstrap_providers: vec![BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                id: Some("pg-bootstrap".to_string()),
+                config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+            }],
+            sources: vec![SourceConfig {
+                kind: "postgres".to_string(),
+                id: "src1".to_string(),
+                auto_start: false,
+                identity_provider: None,
+                bootstrap_provider: Some(BootstrapProviderRef::Reference(
+                    "pg-bootstrap".to_string(),
+                )),
+                config: serde_json::json!({ "host": "db.local" }),
+            }],
+            ..DrasiServerConfig::default()
+        };
+
+        let core = build_core(
+            "inst1",
+            vec![TestSource::new("src1", "postgres")],
+            vec![],
+            vec![],
+        )
+        .await;
+        let p = make_persistence_with_config(core, "inst1", cfg_path.clone(), true, &original);
+        p.save().await.unwrap();
+
+        let val = read_yaml(&cfg_path);
+
+        // The source keeps a string reference, not an inlined mapping.
+        let bp = &val["sources"].as_sequence().unwrap()[0]["bootstrapProvider"];
+        assert!(
+            bp.is_string(),
+            "reference must persist as a string, got: {bp:?}"
+        );
+        assert_eq!(bp.as_str().unwrap(), "pg-bootstrap");
+
+        // The top-level bootstrapProviders block is retained with the entry.
+        let providers = val["bootstrapProviders"].as_sequence().unwrap();
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0]["id"].as_str().unwrap(), "pg-bootstrap");
+        assert_eq!(providers[0]["kind"].as_str().unwrap(), "postgres");
     }
 
     #[tokio::test]

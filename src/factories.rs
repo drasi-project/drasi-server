@@ -700,6 +700,137 @@ mod tests {
         assert!(result.is_ok(), "Failed to create noop bootstrap provider");
     }
 
+    #[test]
+    fn test_build_bootstrap_provider_config_map() {
+        let configs = vec![
+            BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                id: Some("pg".to_string()),
+                config: serde_json::json!({ "host": "db.local" }),
+            },
+            BootstrapProviderConfig {
+                kind: "scriptfile".to_string(),
+                id: Some("seed".to_string()),
+                config: serde_json::json!({ "filePaths": ["/data/seed.jsonl"] }),
+            },
+        ];
+        let map = build_bootstrap_provider_config_map(&configs).unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("pg").unwrap().kind(), "postgres");
+        assert_eq!(map.get("seed").unwrap().kind(), "scriptfile");
+    }
+
+    #[test]
+    fn test_build_bootstrap_provider_config_map_rejects_missing_id() {
+        let configs = vec![BootstrapProviderConfig {
+            kind: "postgres".to_string(),
+            id: None, // top-level entries require an id
+            config: serde_json::json!({}),
+        }];
+        let err = build_bootstrap_provider_config_map(&configs).unwrap_err();
+        assert!(err.to_string().contains("missing required 'id'"));
+    }
+
+    #[test]
+    fn test_build_bootstrap_provider_config_map_rejects_duplicate_id() {
+        let configs = vec![
+            BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                id: Some("dup".to_string()),
+                config: serde_json::json!({}),
+            },
+            BootstrapProviderConfig {
+                kind: "scriptfile".to_string(),
+                id: Some("dup".to_string()),
+                config: serde_json::json!({}),
+            },
+        ];
+        let err = build_bootstrap_provider_config_map(&configs).unwrap_err();
+        assert!(err.to_string().contains("Duplicate bootstrapProvider id"));
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_reference_to_inline() {
+        // Guards the runtime-wiring fix ("Option A"): a source referencing a
+        // top-level provider is rewritten to an inline definition so the
+        // source-creation path can instantiate and wire it live.
+        let mut source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
+                "pg-bootstrap".to_string(),
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "pg-bootstrap".to_string(),
+            BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                id: Some("pg-bootstrap".to_string()),
+                config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+            },
+        );
+
+        resolve_source_bootstrap_provider(&mut source, &providers).unwrap();
+
+        let inline = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .expect("reference should be resolved to an inline provider");
+        assert_eq!(inline.kind(), "postgres");
+        assert_eq!(inline.config["host"], "db.local");
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_unknown_reference_errors() {
+        let mut source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
+                "does-not-exist".to_string(),
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        let err = resolve_source_bootstrap_provider(&mut source, &HashMap::new()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("references unknown bootstrapProvider 'does-not-exist'"));
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_inline_untouched() {
+        // Inline providers (and sources without one) are left unchanged.
+        let mut source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Inline(
+                BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    id: None,
+                    config: serde_json::json!({ "host": "inline.local" }),
+                },
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        resolve_source_bootstrap_provider(&mut source, &HashMap::new()).unwrap();
+
+        let inline = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .unwrap();
+        assert_eq!(inline.config["host"], "inline.local");
+    }
+
     // ==========================================================================
     // Error Handling Tests
     // ==========================================================================
