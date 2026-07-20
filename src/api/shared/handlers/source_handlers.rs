@@ -32,7 +32,8 @@ use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::SourceConfig;
-use crate::factories::create_source_locked;
+use crate::factories::{create_source_locked, resolve_source_bootstrap_provider};
+use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_lib::channels::ComponentStatus;
@@ -73,6 +74,26 @@ pub async fn list_sources(
     Ok(Json(ApiResponse::success(items)))
 }
 
+/// Resolve a source's `bootstrapProvider: <id>` reference (if any) against the
+/// instance's declared top-level bootstrap providers, returning a config whose
+/// bootstrap provider is inlined so it can be instantiated and wired live.
+///
+/// Inline definitions and sources without a bootstrap provider are returned
+/// unchanged. Returns an error when the referenced id is not declared for the
+/// instance. The caller keeps the original config (with the reference intact)
+/// for persistence so the reference — not an inlined copy — is written back.
+async fn resolve_source_bootstrap_ref(
+    instance_registry: &InstanceRegistry,
+    instance_id: &str,
+    config: &SourceConfig,
+) -> Result<SourceConfig, ErrorResponse> {
+    let mut resolved = config.clone();
+    let providers = instance_registry.bootstrap_providers(instance_id).await;
+    resolve_source_bootstrap_provider(&mut resolved, &providers)
+        .map_err(|e| ErrorResponse::new(error_codes::SOURCE_CREATE_FAILED, e.to_string()))?;
+    Ok(resolved)
+}
+
 /// Create a new source
 pub async fn create_source_handler(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
@@ -80,6 +101,7 @@ pub async fn create_source_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
+    Extension(instance_registry): Extension<InstanceRegistry>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
     if *read_only {
@@ -100,7 +122,13 @@ pub async fn create_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, config.clone())
+    // Resolve any top-level `bootstrapProvider: <id>` reference against this
+    // instance's declared providers so the source is wired (and bootstraps)
+    // live. The original `config` retains the reference for persistence.
+    let create_config =
+        resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
+
+    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
         .await
         .map_err(|e| {
             log::error!("Failed to create source instance: {e}");
@@ -171,6 +199,7 @@ pub async fn upsert_source_handler(
     Extension(config_persistence): Extension<Option<Arc<ConfigPersistence>>>,
     Extension(instance_id): Extension<String>,
     Extension(plugin_registry): Extension<Arc<RwLock<PluginRegistry>>>,
+    Extension(instance_registry): Extension<InstanceRegistry>,
     Path(path_id): Path<String>,
     ConfigBody(config_json): ConfigBody<serde_json::Value>,
 ) -> Result<Json<ApiResponse<StatusResponse>>, ErrorResponse> {
@@ -202,12 +231,17 @@ pub async fn upsert_source_handler(
     let source_id = config.id().to_string();
     let auto_start = config.auto_start();
 
+    // Resolve any top-level `bootstrapProvider: <id>` reference so the source
+    // is wired live; `config` keeps the reference for persistence.
+    let create_config =
+        resolve_source_bootstrap_ref(&instance_registry, &instance_id, &config).await?;
+
     // Check if source already exists
     let exists = core.get_source_status(&source_id).await.is_ok();
 
     if exists {
         // Create a new source instance and use update_source to replace in place
-        let (new_source, _meta) = create_source_locked(&plugin_registry, config.clone())
+        let (new_source, _meta) = create_source_locked(&plugin_registry, create_config)
             .await
             .map_err(|e| {
                 log::error!("Failed to create source instance for update: {e}");
@@ -248,7 +282,7 @@ pub async fn upsert_source_handler(
         })));
     }
 
-    let (source, plugin_meta) = create_source_locked(&plugin_registry, config.clone())
+    let (source, plugin_meta) = create_source_locked(&plugin_registry, create_config)
         .await
         .map_err(|e| {
             log::error!("Failed to create source instance: {e}");

@@ -16,6 +16,7 @@ use anyhow::Result;
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,6 +28,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::api::models::BootstrapProviderConfig;
 use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
 use crate::factories::{
     build_bootstrap_provider_config_map, build_config_resolver_context,
@@ -64,6 +66,11 @@ struct PreparedInstance {
     id_hint: Option<String>,
     persist_index: bool,
     core: DrasiLib,
+    /// Top-level bootstrap provider configs declared for this instance,
+    /// keyed by provider id. Registered into the `InstanceRegistry` so
+    /// runtime-created sources can resolve `bootstrapProvider: <id>`
+    /// references. Empty for programmatically built instances.
+    bootstrap_providers: HashMap<String, BootstrapProviderConfig>,
 }
 
 impl DrasiServer {
@@ -558,6 +565,7 @@ impl DrasiServer {
                 id_hint: Some(instance.id),
                 persist_index: instance.persist_index,
                 core,
+                bootstrap_providers,
             });
         }
 
@@ -595,6 +603,7 @@ impl DrasiServer {
                 id_hint: None,
                 persist_index: false,
                 core,
+                bootstrap_providers: HashMap::new(),
             }],
             enable_api,
             enable_ui,
@@ -624,6 +633,7 @@ impl DrasiServer {
                 id_hint,
                 persist_index,
                 core,
+                bootstrap_providers: HashMap::new(),
             })
             .collect();
 
@@ -671,11 +681,14 @@ impl DrasiServer {
 
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
         let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
+        let mut bootstrap_providers_by_id: Vec<(String, HashMap<String, BootstrapProviderConfig>)> =
+            Vec::new();
 
         // Take ownership of instances to avoid partial move of self
         let instances = std::mem::take(&mut self.instances);
         for instance in instances {
             let core = instance.core;
+            let bootstrap_providers = instance.bootstrap_providers;
             let id = match instance.id_hint {
                 Some(id) => id,
                 None => core
@@ -688,6 +701,7 @@ impl DrasiServer {
             let core = Arc::new(core);
             core.start().await?;
             persist_settings.insert(id.clone(), instance.persist_index);
+            bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
             instance_map.insert(id, core);
         }
 
@@ -702,6 +716,13 @@ impl DrasiServer {
 
         // Create the instance registry from the map
         let registry = InstanceRegistry::from_map((*instances).clone());
+
+        // Record each instance's top-level bootstrap provider configs so the
+        // source create/upsert handlers can resolve `bootstrapProvider: <id>`
+        // references for sources created at runtime.
+        for (id, providers) in bootstrap_providers_by_id {
+            registry.set_bootstrap_providers(id, providers).await;
+        }
 
         // Initialize persistence and extract solutions_dir if config file is provided
         let (config_persistence, solutions_dir) = if let Some(config_file) = &self.config_file_path

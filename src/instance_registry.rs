@@ -18,10 +18,13 @@
 //! allowing dynamic creation and deletion of instances at runtime.
 
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use drasi_lib::DrasiLib;
+
+use crate::api::models::BootstrapProviderConfig;
 
 /// Thread-safe registry for managing DrasiLib instances.
 ///
@@ -29,6 +32,13 @@ use drasi_lib::DrasiLib;
 #[derive(Clone)]
 pub struct InstanceRegistry {
     instances: Arc<RwLock<IndexMap<String, Arc<DrasiLib>>>>,
+    /// Per-instance top-level bootstrap provider configs, keyed by
+    /// `instance_id` then by bootstrap provider `id`. Populated at startup
+    /// from each instance's `bootstrapProviders`. Consulted by the source
+    /// create/upsert handlers so a source created at runtime that references
+    /// a top-level bootstrap provider (`bootstrapProvider: <id>`) can be
+    /// resolved and wired live.
+    bootstrap_providers: Arc<RwLock<IndexMap<String, HashMap<String, BootstrapProviderConfig>>>>,
 }
 
 impl InstanceRegistry {
@@ -36,6 +46,7 @@ impl InstanceRegistry {
     pub fn new() -> Self {
         Self {
             instances: Arc::new(RwLock::new(IndexMap::new())),
+            bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
         }
     }
 
@@ -43,6 +54,7 @@ impl InstanceRegistry {
     pub fn from_map(instances: IndexMap<String, Arc<DrasiLib>>) -> Self {
         Self {
             instances: Arc::new(RwLock::new(instances)),
+            bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
         }
     }
 
@@ -109,6 +121,31 @@ impl InstanceRegistry {
     pub async fn is_empty(&self) -> bool {
         let instances = self.instances.read().await;
         instances.is_empty()
+    }
+
+    /// Record the top-level bootstrap provider configs for an instance.
+    ///
+    /// Keyed by bootstrap provider `id`. Overwrites any existing entry for
+    /// the instance. Called at startup once the instance's configured
+    /// `bootstrapProviders` have been collected.
+    pub async fn set_bootstrap_providers(
+        &self,
+        instance_id: String,
+        providers: HashMap<String, BootstrapProviderConfig>,
+    ) {
+        let mut map = self.bootstrap_providers.write().await;
+        map.insert(instance_id, providers);
+    }
+
+    /// Get the top-level bootstrap provider configs for an instance (keyed by
+    /// provider `id`). Returns an empty map when the instance declared none
+    /// (including dynamically created instances).
+    pub async fn bootstrap_providers(
+        &self,
+        instance_id: &str,
+    ) -> HashMap<String, BootstrapProviderConfig> {
+        let map = self.bootstrap_providers.read().await;
+        map.get(instance_id).cloned().unwrap_or_default()
     }
 }
 
