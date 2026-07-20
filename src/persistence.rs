@@ -102,13 +102,16 @@ pub struct ConfigPersistence {
     /// Per-component `identityProvider` references for reactions, keyed by
     /// `(instance_id, reaction_id)`. See `source_identity_provider`.
     reaction_identity_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
-    /// Per-component `bootstrapProvider` *references* for sources, keyed by
-    /// `(instance_id, source_id)`. Only reference-form bootstrap providers are
-    /// tracked here; inline definitions are recovered from
-    /// `snapshot_configuration()`. Without this map the first `save()` would
-    /// rewrite a `bootstrapProvider: <id>` reference as an inline block (since
-    /// the runtime source only carries the resolved inline config).
-    source_bootstrap_provider: Arc<RwLock<IndexMap<(String, String), String>>>,
+    /// Per-component `bootstrapProvider` for sources, keyed by
+    /// `(instance_id, source_id)`. Stores the full [`BootstrapProviderRef`]
+    /// (either a top-level reference or an inline definition).
+    ///
+    /// drasi-lib's `snapshot_configuration()` does not reliably carry a
+    /// source's bootstrap provider, so without this map the first `save()`
+    /// would drop both inline `bootstrapProvider:` blocks (issue #105) and
+    /// `bootstrapProvider: <id>` references. Seeded from the original config
+    /// and kept current by the source API handlers.
+    source_bootstrap_provider: Arc<RwLock<IndexMap<(String, String), BootstrapProviderRef>>>,
 }
 
 impl ConfigPersistence {
@@ -144,7 +147,7 @@ impl ConfigPersistence {
             IndexMap::new();
         let mut reaction_identity_provider_by_instance: IndexMap<(String, String), String> =
             IndexMap::new();
-        let mut source_bootstrap_provider_by_instance: IndexMap<(String, String), String> =
+        let mut source_bootstrap_provider_by_instance: IndexMap<(String, String), BootstrapProviderRef> =
             IndexMap::new();
 
         if let Some(inst_id) = &top_level_instance_id {
@@ -153,9 +156,9 @@ impl ConfigPersistence {
                     source_identity_provider_by_instance
                         .insert((inst_id.clone(), src.id.clone()), ip.to_string());
                 }
-                if let Some(bp_ref) = src.bootstrap_provider().and_then(|r| r.as_reference()) {
+                if let Some(bp) = src.bootstrap_provider() {
                     source_bootstrap_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), bp_ref.to_string());
+                        .insert((inst_id.clone(), src.id.clone()), bp.clone());
                 }
             }
             for r in &original_config.reactions {
@@ -175,9 +178,9 @@ impl ConfigPersistence {
                     source_identity_provider_by_instance
                         .insert((inst_id.clone(), src.id.clone()), ip.to_string());
                 }
-                if let Some(bp_ref) = src.bootstrap_provider().and_then(|r| r.as_reference()) {
+                if let Some(bp) = src.bootstrap_provider() {
                     source_bootstrap_provider_by_instance
-                        .insert((inst_id.clone(), src.id.clone()), bp_ref.to_string());
+                        .insert((inst_id.clone(), src.id.clone()), bp.clone());
                 }
             }
             for r in &inst.reactions {
@@ -349,19 +352,18 @@ impl ConfigPersistence {
         map.shift_remove(&(instance_id.to_string(), reaction_id.to_string()));
     }
 
-    /// Register a reference-form `bootstrapProvider` for a source so it
-    /// round-trips through `save()`.
+    /// Track a source's `bootstrapProvider` so it round-trips through `save()`.
     ///
-    /// `bootstrap_provider` should be the referenced top-level id (i.e. the
-    /// value of a string-form `bootstrapProvider`). Inline bootstrap providers
-    /// must pass `None` here — they are recovered from
-    /// `snapshot_configuration()`. A `None` value removes any existing entry.
-    /// No-op when persistence is disabled.
+    /// Accepts the full [`BootstrapProviderRef`] — either a top-level reference
+    /// or an inline definition — because drasi-lib's `snapshot_configuration()`
+    /// does not reliably carry it (this is what caused issue #105 for inline
+    /// providers). A `None` value removes any existing entry. No-op when
+    /// persistence is disabled.
     pub async fn register_source_bootstrap_provider(
         &self,
         instance_id: &str,
         source_id: &str,
-        bootstrap_provider: Option<&str>,
+        bootstrap_provider: Option<&BootstrapProviderRef>,
     ) {
         if !self.persist_config {
             return;
@@ -369,10 +371,7 @@ impl ConfigPersistence {
         let mut map = self.source_bootstrap_provider.write().await;
         match bootstrap_provider {
             Some(bp) => {
-                map.insert(
-                    (instance_id.to_string(), source_id.to_string()),
-                    bp.to_string(),
-                );
+                map.insert((instance_id.to_string(), source_id.to_string()), bp.clone());
             }
             None => {
                 map.shift_remove(&(instance_id.to_string(), source_id.to_string()));
@@ -453,16 +452,14 @@ impl ConfigPersistence {
                         identity_provider: source_identity_provider
                             .get(&(id.clone(), s.id.clone()))
                             .cloned(),
-                        // Prefer a tracked reference-form bootstrapProvider so a
-                        // `bootstrapProvider: <id>` reference round-trips as a
-                        // reference rather than being rewritten inline. Fall
-                        // back to reconstructing the inline form from the
-                        // runtime snapshot (this also fixes the historical
-                        // drop of inline bootstrap providers on persist).
+                        // Prefer the tracked bootstrapProvider (inline or
+                        // reference) so it round-trips faithfully. Fall back to
+                        // reconstructing an inline form from the runtime
+                        // snapshot only if nothing was tracked (e.g. a source
+                        // whose provider was attached out-of-band).
                         bootstrap_provider: source_bootstrap_provider
                             .get(&(id.clone(), s.id.clone()))
                             .cloned()
-                            .map(BootstrapProviderRef::Reference)
                             .or_else(|| {
                                 s.bootstrap_provider.as_ref().map(|bp| {
                                     let mut bp_config = serde_json::Map::new();

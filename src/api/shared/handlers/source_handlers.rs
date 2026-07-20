@@ -129,13 +129,13 @@ pub async fn create_source_handler(
                     config.identity_provider(),
                 )
                 .await;
-                // Track a reference-form bootstrapProvider so it round-trips
-                // as a reference. Inline definitions pass `None` and are
-                // recovered from the runtime snapshot.
+                // Track the source's bootstrapProvider (inline or reference)
+                // so it round-trips through persistence — snapshot_configuration()
+                // does not reliably carry it (issue #105).
                 p.register_source_bootstrap_provider(
                     &instance_id,
                     &source_id,
-                    config.bootstrap_provider().and_then(|r| r.as_reference()),
+                    config.bootstrap_provider(),
                 )
                 .await;
             }
@@ -236,7 +236,7 @@ pub async fn upsert_source_handler(
             p.register_source_bootstrap_provider(
                 &instance_id,
                 &source_id,
-                config.bootstrap_provider().and_then(|r| r.as_reference()),
+                config.bootstrap_provider(),
             )
             .await;
         }
@@ -278,7 +278,7 @@ pub async fn upsert_source_handler(
                 p.register_source_bootstrap_provider(
                     &instance_id,
                     &source_id,
-                    config.bootstrap_provider().and_then(|r| r.as_reference()),
+                    config.bootstrap_provider(),
                 )
                 .await;
             }
