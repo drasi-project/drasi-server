@@ -327,10 +327,12 @@ pub async fn create_solution_template(
             let bootstrap_provider = source_snap.bootstrap_provider.as_ref().map(|bp| {
                 let bp_config_json = serde_json::to_value(&bp.properties)
                     .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-                crate::api::models::BootstrapProviderConfig {
-                    kind: bp.kind.clone(),
-                    config: bp_config_json,
-                }
+                crate::api::models::BootstrapProviderRef::Inline(
+                    crate::api::models::BootstrapProviderConfig {
+                        kind: bp.kind.clone(),
+                        config: bp_config_json,
+                    },
+                )
             });
 
             let source_dto = SourceConfig {

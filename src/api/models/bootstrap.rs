@@ -28,6 +28,11 @@ use std::fmt;
 /// Bootstrap providers handle initial data delivery for newly subscribed queries.
 /// This generic struct stores the provider kind and plugin-specific configuration
 /// as a JSON value, similar to SourceConfig and ReactionConfig.
+///
+/// This type is intentionally **id-free**: it describes an inline bootstrap
+/// provider nested under a source. Top-level, referenceable providers are
+/// represented by [`TopLevelBootstrapProviderConfig`], which adds a required
+/// `id`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BootstrapProviderConfig {
     pub kind: String,
@@ -38,6 +43,63 @@ impl BootstrapProviderConfig {
     /// Get the kind string for this bootstrap provider config.
     pub fn kind(&self) -> &str {
         &self.kind
+    }
+}
+
+/// A top-level, referenceable bootstrap provider: a [`BootstrapProviderConfig`]
+/// plus a required `id`. Sources reference these via `bootstrapProvider: <id>`.
+///
+/// Keeping the `id` in a dedicated wrapper (rather than an optional field on
+/// [`BootstrapProviderConfig`]) lets the "top-level entries require an id"
+/// constraint be enforced structurally instead of via runtime validation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TopLevelBootstrapProviderConfig {
+    pub id: String,
+    pub inner: BootstrapProviderConfig,
+}
+
+impl TopLevelBootstrapProviderConfig {
+    /// Get the id of this top-level bootstrap provider.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Get the kind of this top-level bootstrap provider.
+    pub fn kind(&self) -> &str {
+        self.inner.kind()
+    }
+}
+
+/// A source's bootstrap provider: either a reference (by id) to a top-level
+/// `bootstrapProviders` entry, or an inline definition nested under the source.
+///
+/// The reference form (a YAML/JSON string) enables sharing a single top-level
+/// bootstrap provider configuration across multiple sources. The inline form
+/// (a mapping) preserves the legacy behavior where the bootstrap provider can
+/// inherit fields from the owning source's config.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BootstrapProviderRef {
+    /// Reference to a top-level `bootstrapProviders` entry by id.
+    Reference(String),
+    /// Inline bootstrap provider definition.
+    Inline(BootstrapProviderConfig),
+}
+
+impl BootstrapProviderRef {
+    /// Return the inline config, if this is the inline form.
+    pub fn as_inline(&self) -> Option<&BootstrapProviderConfig> {
+        match self {
+            Self::Inline(config) => Some(config),
+            Self::Reference(_) => None,
+        }
+    }
+
+    /// Return the referenced id, if this is the reference form.
+    pub fn as_reference(&self) -> Option<&str> {
+        match self {
+            Self::Reference(id) => Some(id.as_str()),
+            Self::Inline(_) => None,
+        }
     }
 }
 
@@ -106,6 +168,84 @@ impl<'de> Deserialize<'de> for BootstrapProviderConfig {
     }
 }
 
+impl Serialize for TopLevelBootstrapProviderConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("kind", &self.inner.kind)?;
+        map.serialize_entry("id", &self.id)?;
+        if let serde_json::Value::Object(config_map) = &self.inner.config {
+            for (k, v) in config_map {
+                map.serialize_entry(k, v)?;
+            }
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TopLevelBootstrapProviderConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TopLevelVisitor;
+
+        impl<'de> Visitor<'de> for TopLevelVisitor {
+            type Value = TopLevelBootstrapProviderConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a top-level bootstrap provider with 'kind' and 'id' fields")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut provider_kind: Option<String> = None;
+                let mut id: Option<String> = None;
+                let mut remaining = serde_json::Map::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "kind" => {
+                            if provider_kind.is_some() {
+                                return Err(de::Error::duplicate_field("kind"));
+                            }
+                            provider_kind = Some(map.next_value()?);
+                        }
+                        "id" => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
+                            }
+                            id = Some(map.next_value()?);
+                        }
+                        other => {
+                            let value: serde_json::Value = map.next_value()?;
+                            remaining.insert(other.to_string(), value);
+                        }
+                    }
+                }
+
+                let kind = provider_kind.ok_or_else(|| de::Error::missing_field("kind"))?;
+                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+
+                Ok(TopLevelBootstrapProviderConfig {
+                    id,
+                    inner: BootstrapProviderConfig {
+                        kind,
+                        config: serde_json::Value::Object(remaining),
+                    },
+                })
+            }
+        }
+
+        deserializer.deserialize_map(TopLevelVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +290,33 @@ filePaths:
 
         let deserialized: BootstrapProviderConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_top_level_roundtrip_and_requires_id() {
+        let yaml = r#"
+kind: postgres
+id: pg-bootstrap
+host: localhost
+tables:
+  - Message
+"#;
+        let cfg: TopLevelBootstrapProviderConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.id(), "pg-bootstrap");
+        assert_eq!(cfg.kind(), "postgres");
+        assert_eq!(cfg.inner.config["host"], "localhost");
+
+        // Round-trips through serialize/deserialize.
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: TopLevelBootstrapProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfg, back);
+
+        // Missing id is a hard error (structurally enforced).
+        let err = serde_yaml::from_str::<TopLevelBootstrapProviderConfig>("kind: postgres\n")
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("id"),
+            "expected missing id error: {err}"
+        );
     }
 }

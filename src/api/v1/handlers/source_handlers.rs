@@ -111,6 +111,7 @@ pub async fn create_source_handler(
         Extension(config_persistence),
         Extension(instance_id),
         Extension(plugin_registry),
+        Extension(registry),
         ConfigBody(config_json),
     )
     .await
@@ -164,6 +165,7 @@ pub async fn upsert_source_handler(
         Extension(config_persistence),
         Extension(path.instance_id),
         Extension(plugin_registry),
+        Extension(registry),
         Path(path.id),
         ConfigBody(config_json),
     )
