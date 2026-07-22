@@ -514,8 +514,9 @@ impl DrasiServer {
                 instance.sources.len(),
                 instance.id
             );
-            for mut source_config in instance.sources.clone() {
-                resolve_source_bootstrap_provider(&mut source_config, &bootstrap_providers)?;
+            for source_config in instance.sources.clone() {
+                let source_config =
+                    resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
                 let identity_ref = source_config.identity_provider().map(str::to_string);
                 let (source, plugin_meta) =
                     create_source_locked(&plugin_registry, source_config).await?;

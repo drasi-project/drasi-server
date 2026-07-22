@@ -162,8 +162,8 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
     for bp in &all_bootstrap_providers {
         requirements.push(PluginRequirement {
             category: "bootstrap".to_string(),
-            kind: bp.kind.clone(),
-            referenced_by: format!("bootstrapProvider '{}'", bp.id().unwrap_or("<missing id>")),
+            kind: bp.kind().to_string(),
+            referenced_by: format!("bootstrapProvider '{}'", bp.id()),
         });
     }
 
@@ -278,11 +278,8 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
     }
 
     for bp in &all_bootstrap_providers {
-        let prefix = format!(
-            "bootstrapProviders['{}']",
-            bp.id().unwrap_or("<missing id>")
-        );
-        walk_json_env_refs(&bp.config, &prefix, &mut warnings);
+        let prefix = format!("bootstrapProviders['{}']", bp.id());
+        walk_json_env_refs(&bp.inner.config, &prefix, &mut warnings);
     }
 
     for rxn in &all_reactions {
@@ -479,7 +476,7 @@ pub(crate) fn collect_all_identity_providers(
 /// Collect all top-level bootstrap providers from config (top-level + instances).
 pub(crate) fn collect_all_bootstrap_providers(
     config: &DrasiServerConfig,
-) -> Vec<crate::api::models::BootstrapProviderConfig> {
+) -> Vec<crate::api::models::TopLevelBootstrapProviderConfig> {
     let mut providers = config.bootstrap_providers.clone();
     for inst in &config.instances {
         providers.extend(inst.bootstrap_providers.clone());
@@ -631,7 +628,6 @@ mod tests {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: bp_kind.to_string(),
-                id: None,
                 config: serde_json::json!({}),
             })),
             config: serde_json::json!({}),

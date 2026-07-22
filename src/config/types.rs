@@ -23,8 +23,8 @@ use std::str::FromStr;
 // Import the config enums from api::models
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
-    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig,
-    SecretStoreConfig, SourceConfig, StateStoreConfig,
+    ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SecretStoreConfig,
+    SourceConfig, StateStoreConfig, TopLevelBootstrapProviderConfig,
 };
 use drasi_lib::config::QueryConfig;
 
@@ -142,10 +142,10 @@ pub struct DrasiServerConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub identity_providers: Vec<IdentityProviderConfig>,
-    /// Bootstrap provider configurations (referenced by sources via `bootstrapProvider: <id>`)
+    /// Top-level bootstrap provider configurations referenced by sources via `bootstrapProvider: <id>`.
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
-    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
+    pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -304,7 +304,7 @@ pub struct DrasiLibInstanceConfig {
     /// Bootstrap provider configurations referenced by sources via `bootstrapProvider: <id>`.
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
-    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
+    pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -320,7 +320,7 @@ pub struct ResolvedInstanceConfig {
     pub queries: Vec<QueryConfig>,
     pub reactions: Vec<ReactionConfig>,
     pub identity_providers: Vec<IdentityProviderConfig>,
-    pub bootstrap_providers: Vec<BootstrapProviderConfig>,
+    pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -416,18 +416,16 @@ impl DrasiServerConfig {
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Validate top-level bootstrap providers and any source references
-            // to them so dangling references are caught before startup.
+            // to them so dangling references are caught before startup. The
+            // required `id` is enforced structurally by
+            // `TopLevelBootstrapProviderConfig`, so only duplicate ids and
+            // dangling references need checking here.
             let mut bootstrap_ids: HashSet<String> = HashSet::new();
             for bp in &instance.bootstrap_providers {
-                let bp_id = bp.id().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Instance '{id}': top-level bootstrapProvider (kind '{}') is missing required 'id'",
-                        bp.kind()
-                    )
-                })?;
-                if !bootstrap_ids.insert(bp_id.to_string()) {
+                if !bootstrap_ids.insert(bp.id().to_string()) {
                     return Err(anyhow::anyhow!(
-                        "Instance '{id}': duplicate bootstrapProvider id '{bp_id}'"
+                        "Instance '{id}': duplicate bootstrapProvider id '{}'",
+                        bp.id()
                     ));
                 }
             }

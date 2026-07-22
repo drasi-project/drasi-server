@@ -260,7 +260,6 @@ pub async fn clone_instance(
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
             BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: bp.kind.clone(),
-                id: None,
                 config: bp_config_json,
             })
         });
@@ -303,6 +302,19 @@ pub async fn clone_instance(
                 &src_snap.id,
                 rb,
             ));
+        }
+
+        // Track the cloned source's bootstrap provider so it survives the next
+        // save(). Without this the source_bootstrap_provider map has no entry
+        // and save() would fall back to the unreliable snapshot reconstruction
+        // path, silently dropping the provider (issue #105).
+        if let Some(p) = &config_persistence {
+            p.register_source_bootstrap_provider(
+                target_instance_id,
+                &src_snap.id,
+                source_config.bootstrap_provider(),
+            )
+            .await;
         }
 
         sources_created.push(src_snap.id.clone());

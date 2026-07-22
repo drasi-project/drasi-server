@@ -339,7 +339,6 @@ fn prompt_bootstrap_provider_for_postgres(
         BootstrapType::None => Ok(None),
         BootstrapType::Postgres => Ok(Some(BootstrapProviderConfig {
             kind: "postgres".to_string(),
-            id: None,
             config: serde_json::json!({
                 "host": host,
                 "port": port,
@@ -550,7 +549,6 @@ fn prompt_scriptfile_bootstrap() -> Result<Option<BootstrapProviderConfig>> {
 
     Ok(Some(BootstrapProviderConfig {
         kind: "scriptfile".to_string(),
-        id: None,
         config: serde_json::json!({
             "filePaths": [file_path]
         }),
@@ -877,7 +875,6 @@ pub fn attach_bootstrap_to_source(
 
             Some(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
-                id: None,
                 config: serde_json::json!({
                     "host": host,
                     "port": port,
@@ -898,7 +895,6 @@ pub fn attach_bootstrap_to_source(
                 serde_json::from_str(&config_json).unwrap_or_else(|_| serde_json::json!({}));
             Some(BootstrapProviderConfig {
                 kind: bootstrap_kind.to_string(),
-                id: None,
                 config,
             })
         }

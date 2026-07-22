@@ -330,7 +330,6 @@ pub async fn create_solution_template(
                 crate::api::models::BootstrapProviderRef::Inline(
                     crate::api::models::BootstrapProviderConfig {
                         kind: bp.kind.clone(),
-                        id: None,
                         config: bp_config_json,
                     },
                 )

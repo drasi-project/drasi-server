@@ -94,18 +94,15 @@ pub fn validate_component_configs(
 
     // Validate top-level bootstrap providers against their plugin schemas.
     for bp in &all_bootstrap_providers {
-        if let Some(descriptor) = registry.get_bootstrapper(&bp.kind) {
+        if let Some(descriptor) = registry.get_bootstrapper(bp.kind()) {
             let schema_json = descriptor.config_schema_json();
             let schema_name = descriptor.config_schema_name().to_string();
-            let errors = validate_against_schema(&schema_json, &schema_name, &bp.config);
+            let errors = validate_against_schema(&schema_json, &schema_name, &bp.inner.config);
             if !errors.is_empty() {
                 reports.push(ComponentValidationReport {
                     component_type: "bootstrap".to_string(),
-                    component_id: format!(
-                        "bootstrapProvider '{}'",
-                        bp.id().unwrap_or("<missing id>")
-                    ),
-                    plugin_kind: bp.kind.clone(),
+                    component_id: format!("bootstrapProvider '{}'", bp.id()),
+                    plugin_kind: bp.kind().to_string(),
                     errors,
                 });
             }
@@ -640,7 +637,6 @@ mod tests {
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
-                    id: None,
                     config: serde_json::json!({
                         "filePaths": ["/data/file1.jsonl"]
                     }),
@@ -668,7 +664,6 @@ mod tests {
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
-                    id: None,
                     config: serde_json::json!({}), // missing filePaths
                 })),
                 config: serde_json::json!({

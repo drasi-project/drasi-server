@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::api::models::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
+use crate::api::models::bootstrap::{
+    BootstrapProviderConfig, BootstrapProviderRef, TopLevelBootstrapProviderConfig,
+};
 use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
 use crate::config::{
     DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
@@ -59,10 +61,10 @@ struct PreservedServerSettings {
     /// (they have no runtime ComponentGraph representation) so they cannot be
     /// recovered from `snapshot_configuration()`. They must be preserved here
     /// and re-emitted by `save()`.
-    bootstrap_providers: Vec<BootstrapProviderConfig>,
+    bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
     /// Per-instance `bootstrapProviders` keyed by instance id, captured from
     /// the original multi-instance config. See `identity_providers_by_instance`.
-    bootstrap_providers_by_instance: IndexMap<String, Vec<BootstrapProviderConfig>>,
+    bootstrap_providers_by_instance: IndexMap<String, Vec<TopLevelBootstrapProviderConfig>>,
 }
 
 /// Snapshot-based persistence for DrasiServerConfig.
@@ -247,7 +249,7 @@ impl ConfigPersistence {
                 // top-level single-instance block under the top-level instance
                 // id. Mirrors `identity_providers_by_instance`.
                 bootstrap_providers_by_instance: {
-                    let mut by_instance: IndexMap<String, Vec<BootstrapProviderConfig>> =
+                    let mut by_instance: IndexMap<String, Vec<TopLevelBootstrapProviderConfig>> =
                         original_config
                             .instances
                             .iter()
@@ -470,7 +472,6 @@ impl ConfigPersistence {
                                     }
                                     BootstrapProviderRef::Inline(BootstrapProviderConfig {
                                         kind: bp.kind.clone(),
-                                        id: None,
                                         config: serde_json::Value::Object(bp_config),
                                     })
                                 })
@@ -1041,7 +1042,6 @@ mod tests {
                 identity_provider: None,
                 bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                     kind: "postgres".to_string(),
-                    id: None,
                     config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
                 })),
                 config: serde_json::json!({ "host": "db.local" }),
@@ -1082,10 +1082,12 @@ mod tests {
         let original = DrasiServerConfig {
             id: ConfigValue::Static("inst1".to_string()),
             persist_config: true,
-            bootstrap_providers: vec![BootstrapProviderConfig {
-                kind: "postgres".to_string(),
-                id: Some("pg-bootstrap".to_string()),
-                config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+            bootstrap_providers: vec![TopLevelBootstrapProviderConfig {
+                id: "pg-bootstrap".to_string(),
+                inner: BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+                },
             }],
             sources: vec![SourceConfig {
                 kind: "postgres".to_string(),

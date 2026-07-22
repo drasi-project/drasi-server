@@ -384,7 +384,6 @@ fn test_postgres_source_generates_valid_yaml() {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
-                id: None,
                 config: serde_json::json!({
                     "host": "localhost",
                     "port": 5432,
@@ -479,7 +478,6 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
-                id: None,
                 config: serde_json::json!({
                     "host": "localhost",
                     "port": 5432,
@@ -556,7 +554,6 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
-                id: None,
                 config: serde_json::json!({
                     "filePaths": ["/data/init.jsonl"]
                 }),
@@ -619,7 +616,6 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "noop".to_string(),
-                id: None,
                 config: serde_json::json!({}),
             })),
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
@@ -968,7 +964,6 @@ fn test_full_config_roundtrip() {
             identity_provider: None,
             bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
-                id: None,
                 config: serde_json::json!({
                     "filePaths": ["/data/init.jsonl"]
                 }),

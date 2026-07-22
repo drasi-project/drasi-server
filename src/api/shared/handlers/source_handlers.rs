@@ -28,7 +28,7 @@ use super::{
     ComponentViewQuery, ObservabilityQuery,
 };
 use crate::api::models::{ComponentEventDto, LogMessageDto};
-use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::config::SourceConfig;
@@ -87,14 +87,24 @@ async fn resolve_source_bootstrap_ref(
     instance_id: &str,
     config: &SourceConfig,
 ) -> Result<SourceConfig, ErrorResponse> {
-    let mut resolved = config.clone();
     let providers = instance_registry.bootstrap_providers(instance_id).await;
     // A dangling / unknown `bootstrapProvider: <id>` reference is a client
     // configuration error, so surface it as INVALID_REQUEST (HTTP 400) rather
-    // than SOURCE_CREATE_FAILED (HTTP 500).
-    resolve_source_bootstrap_provider(&mut resolved, &providers)
-        .map_err(|e| ErrorResponse::new(error_codes::INVALID_REQUEST, e.to_string()))?;
-    Ok(resolved)
+    // than SOURCE_CREATE_FAILED (HTTP 500). The high-level message stays in
+    // `message`; the underlying resolver error goes in `technical_details`.
+    // `config` is cloned so the caller keeps the original (with the reference
+    // intact) for persistence.
+    resolve_source_bootstrap_provider(config.clone(), &providers).map_err(|e| {
+        ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            "Source references an unknown bootstrapProvider",
+        )
+        .with_details(ErrorDetail {
+            component_type: Some("source".to_string()),
+            component_id: Some(config.id().to_string()),
+            technical_details: Some(e.to_string()),
+        })
+    })
 }
 
 /// Create a new source
