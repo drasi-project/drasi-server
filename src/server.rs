@@ -62,6 +62,7 @@ pub struct DrasiServer {
 struct PreparedInstance {
     id_hint: Option<String>,
     persist_index: bool,
+    enable_archive: bool,
     core: DrasiLib,
 }
 
@@ -459,7 +460,11 @@ impl DrasiServer {
             // Register the persistent RocksDB index provider as the instance
             // default when persist_index is enabled.
             if instance.persist_index {
-                builder = crate::index_provider::apply_rocksdb_index(builder, &instance.id);
+                builder = crate::index_provider::apply_rocksdb_index(
+                    builder,
+                    &instance.id,
+                    instance.enable_archive,
+                );
             }
 
             // Create and add state store provider if configured
@@ -550,6 +555,7 @@ impl DrasiServer {
             instances.push(PreparedInstance {
                 id_hint: Some(instance.id),
                 persist_index: instance.persist_index,
+                enable_archive: instance.enable_archive,
                 core,
             });
         }
@@ -587,6 +593,7 @@ impl DrasiServer {
             instances: vec![PreparedInstance {
                 id_hint: None,
                 persist_index: false,
+                enable_archive: false,
                 core,
             }],
             enable_api,
@@ -616,6 +623,7 @@ impl DrasiServer {
             .map(|(core, id_hint, persist_index)| PreparedInstance {
                 id_hint,
                 persist_index,
+                enable_archive: false,
                 core,
             })
             .collect();
@@ -664,6 +672,7 @@ impl DrasiServer {
 
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
         let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
+        let mut archive_settings: IndexMap<String, bool> = IndexMap::new();
 
         // Take ownership of instances to avoid partial move of self
         let instances = std::mem::take(&mut self.instances);
@@ -681,6 +690,7 @@ impl DrasiServer {
             let core = Arc::new(core);
             core.start().await?;
             persist_settings.insert(id.clone(), instance.persist_index);
+            archive_settings.insert(id.clone(), instance.enable_archive);
             instance_map.insert(id, core);
         }
 
@@ -717,6 +727,7 @@ impl DrasiServer {
                         resolved_settings.log_level,
                         true, // persist_config = true
                         persist_settings.clone(),
+                        archive_settings.clone(),
                         config.solutions_dir.clone(),
                         &config,
                     ));
@@ -727,6 +738,7 @@ impl DrasiServer {
                             vec![DrasiLibInstanceConfig {
                                 id: config.id.clone(),
                                 persist_index: config.persist_index,
+                                enable_archive: config.enable_archive,
                                 state_store: config.state_store.clone(),
                                 secret_store: config.secret_store.clone(),
                                 default_priority_queue_capacity: config

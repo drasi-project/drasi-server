@@ -44,6 +44,11 @@ pub struct CreateInstanceRequest {
     #[serde(default)]
     pub persist_index: Option<bool>,
 
+    /// Whether persistent queries also maintain the archive index for past()
+    /// functions. Default: false.
+    #[serde(default)]
+    pub enable_archive: Option<bool>,
+
     /// Default capacity for priority queues (cascades to queries/reactions)
     #[serde(default)]
     pub default_priority_queue_capacity: Option<usize>,
@@ -69,6 +74,7 @@ pub async fn create_instance(
 
     let instance_id = request.id.clone();
     let persist_index = request.persist_index.unwrap_or(false);
+    let enable_archive = request.enable_archive.unwrap_or(false);
 
     // Check if instance already exists
     if registry.contains(&instance_id).await {
@@ -96,7 +102,7 @@ pub async fn create_instance(
     // Register the persistent RocksDB index provider as the instance default
     // when requested.
     if persist_index {
-        builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id);
+        builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id, enable_archive);
     }
 
     // WAL provider for durable source event persistence
@@ -143,6 +149,7 @@ pub async fn create_instance(
         let instance_config = DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
+            enable_archive,
             state_store: None,
             secret_store: None,
             default_priority_queue_capacity: request

@@ -64,6 +64,12 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the archive index (element version history for past() functions)
+    /// on persistent queries. Default: false. Every element update is also
+    /// written to the archive when enabled, and the archive has no retention,
+    /// so leave this off unless queries use the past() functions.
+    #[serde(default = "default_enable_archive")]
+    pub enable_archive: bool,
     /// Enable the web UI at /ui (default: true)
     #[serde(default = "default_enable_ui")]
     pub enable_ui: bool,
@@ -157,6 +163,7 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_archive: false,
             enable_ui: true,
             solutions_dir: None,
             state_store: None,
@@ -198,6 +205,10 @@ fn default_log_level() -> ConfigValue<String> {
 
 fn default_persist_config() -> bool {
     true
+}
+
+fn default_enable_archive() -> bool {
+    false
 }
 
 fn default_persist_index() -> bool {
@@ -263,6 +274,10 @@ pub struct DrasiLibInstanceConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the archive index for past() functions on this instance's
+    /// persistent queries (default: false).
+    #[serde(default = "default_enable_archive")]
+    pub enable_archive: bool,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -303,6 +318,7 @@ pub struct DrasiLibInstanceConfig {
 pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
+    pub enable_archive: bool,
     pub state_store: Option<StateStoreConfig>,
     pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
@@ -357,6 +373,7 @@ impl DrasiServerConfig {
             vec![DrasiLibInstanceConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
+                enable_archive: self.enable_archive,
                 state_store: self.state_store.clone(),
                 secret_store: self.secret_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
@@ -407,6 +424,7 @@ impl DrasiServerConfig {
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
+                enable_archive: instance.enable_archive,
                 state_store: instance.state_store.clone(),
                 secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
