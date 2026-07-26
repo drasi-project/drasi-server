@@ -63,7 +63,7 @@ jobs:
           else
             # Extract version from Cargo.toml
             VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-            TAG="v${VERSION}"
+            TAG="${VERSION}"
             echo "Using version from Cargo.toml: ${TAG}"
             echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
@@ -808,17 +808,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ needs.determine-version.outputs.tag }}"
-          
+
+          # Mark versions carrying a -preview suffix (e.g. 1.4.0-preview.1) as
+          # GitHub pre-releases; everything else is published as a full release.
+          if [[ "$TAG" == *-preview* ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+
           if gh release view "${TAG}" --repo ${{ github.repository }} 2>/dev/null; then
             echo "Release ${TAG} already exists. Updating with new artifacts..."
             gh release upload "${TAG}" release-assets/* --repo ${{ github.repository }} --clobber
+            gh release edit "${TAG}" --repo ${{ github.repository }} --prerelease="${PRERELEASE}"
           else
-            echo "Creating new release ${TAG}..."
+            echo "Creating new release ${TAG} (prerelease=${PRERELEASE})..."
             gh release create "${TAG}" \
               release-assets/* \
               --repo ${{ github.repository }} \
               --title "Release ${TAG}" \
-              --notes-file release-notes.md
+              --notes-file release-notes.md \
+              --prerelease="${PRERELEASE}"
           fi
 
       - name: Create or update 'latest' GitHub Release
