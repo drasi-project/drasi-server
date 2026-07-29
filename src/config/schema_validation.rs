@@ -22,8 +22,8 @@ use log::warn;
 use serde_json::Value;
 
 use super::plugin_validation::{
-    collect_all_reactions, collect_all_sources, schema_error_codes, ComponentValidationReport,
-    FieldError,
+    collect_all_bootstrap_providers, collect_all_reactions, collect_all_sources,
+    schema_error_codes, ComponentValidationReport, FieldError,
 };
 use crate::config::types::DrasiServerConfig;
 use crate::plugin_registry::PluginRegistry;
@@ -41,6 +41,7 @@ pub fn validate_component_configs(
 
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
+    let all_bootstrap_providers = collect_all_bootstrap_providers(config);
 
     for src in &all_sources {
         if let Some(descriptor) = registry.get_source(&src.kind) {
@@ -58,7 +59,7 @@ pub fn validate_component_configs(
         }
 
         // Also validate bootstrap provider config if plugin is available
-        if let Some(bp) = &src.bootstrap_provider {
+        if let Some(bp) = src.bootstrap_provider().and_then(|r| r.as_inline()) {
             if let Some(descriptor) = registry.get_bootstrapper(&bp.kind) {
                 let schema_json = descriptor.config_schema_json();
                 let schema_name = descriptor.config_schema_name().to_string();
@@ -85,6 +86,23 @@ pub fn validate_component_configs(
                     component_type: "reaction".to_string(),
                     component_id: rxn.id.clone(),
                     plugin_kind: rxn.kind.clone(),
+                    errors,
+                });
+            }
+        }
+    }
+
+    // Validate top-level bootstrap providers against their plugin schemas.
+    for bp in &all_bootstrap_providers {
+        if let Some(descriptor) = registry.get_bootstrapper(bp.kind()) {
+            let schema_json = descriptor.config_schema_json();
+            let schema_name = descriptor.config_schema_name().to_string();
+            let errors = validate_against_schema(&schema_json, &schema_name, &bp.inner.config);
+            if !errors.is_empty() {
+                reports.push(ComponentValidationReport {
+                    component_type: "bootstrap".to_string(),
+                    component_id: format!("bootstrapProvider '{}'", bp.id()),
+                    plugin_kind: bp.kind().to_string(),
                     errors,
                 });
             }
@@ -237,7 +255,9 @@ fn rewrite_refs(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
+    use crate::api::models::{
+        BootstrapProviderConfig, BootstrapProviderRef, ReactionConfig, SourceConfig,
+    };
     use crate::config::types::DrasiServerConfig;
     use async_trait::async_trait;
     use drasi_plugin_sdk::{
@@ -615,12 +635,12 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 identity_provider: None,
-                bootstrap_provider: Some(BootstrapProviderConfig {
+                bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
                     config: serde_json::json!({
                         "filePaths": ["/data/file1.jsonl"]
                     }),
-                }),
+                })),
                 config: serde_json::json!({
                     "host": "localhost",
                     "database": "mydb"
@@ -642,10 +662,10 @@ mod tests {
                 id: "pg1".to_string(),
                 auto_start: true,
                 identity_provider: None,
-                bootstrap_provider: Some(BootstrapProviderConfig {
+                bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                     kind: "scriptfile".to_string(),
                     config: serde_json::json!({}), // missing filePaths
-                }),
+                })),
                 config: serde_json::json!({
                     "host": "localhost",
                     "database": "mydb"

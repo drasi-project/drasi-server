@@ -46,7 +46,9 @@ pub mod source;
 pub mod state_store;
 
 // Re-export all DTO types for convenient access
-pub use bootstrap::BootstrapProviderConfig;
+pub use bootstrap::{
+    BootstrapProviderConfig, BootstrapProviderRef, TopLevelBootstrapProviderConfig,
+};
 pub use drasi_plugin_sdk::config_value::*;
 pub use identity_provider::{IdentityProviderConfig, BUILTIN_PASSWORD_KIND};
 pub use observability::*;
