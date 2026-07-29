@@ -37,29 +37,32 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// File patterns for discovering cdylib plugins.
-/// Includes both Unix (`lib` prefix) and Windows (no prefix) naming conventions.
-/// Also includes both hyphenated and underscored variants for secret-store plugins,
-/// since OCI registry artifacts use hyphens (e.g. `libdrasi_secret-store_file.so`).
-const PLUGIN_FILE_PATTERNS: &[&str] = &[
-    "libdrasi_source_*",
-    "libdrasi_reaction_*",
-    "libdrasi_bootstrap_*",
-    "libdrasi_secret_store_*",
-    "libdrasi_secret-store_*",
-    "libdrasi_identity_*",
-    "drasi_source_*",
-    "drasi_reaction_*",
-    "drasi_bootstrap_*",
-    "drasi_secret_store_*",
-    "drasi_secret-store_*",
-    "drasi_identity_*",
-];
+///
+/// Matches on the Drasi plugin filename prefix rather than enumerating every
+/// plugin type.  This means a new plugin type is never silently skipped just
+/// because its type name was not added to this list.
+///
+/// Any matched file still has to export `drasi_plugin_metadata()` — files that
+/// do not are logged and skipped by `PluginLoader::load_all`, so matching more
+/// broadly costs at most one extra `dlopen` rather than loading something that
+/// is not a plugin.
+///
+/// The two entries cover:
+/// - Unix shared libraries (`libdrasi_<type>_<name>.so` / `.dylib`)
+/// - Windows DLLs (`drasi_<type>_<name>.dll`)
+/// Both underscored and hyphenated type names (e.g. `secret_store` vs
+/// `secret-store`) are matched because both begin with the `drasi_` prefix.
+const PLUGIN_FILE_PATTERNS: &[&str] = &["libdrasi_*", "drasi_*"];
 
 /// Statistics from a cdylib plugin loading operation.
 #[derive(Debug, Default)]
 pub struct PluginLoadStats {
     pub plugins_loaded: usize,
     pub plugins_failed: usize,
+    /// Number of shared-library files in the plugin directory that did not
+    /// match any plugin file pattern and were therefore not attempted.
+    /// A non-zero value may indicate a misconfigured or unrecognised plugin.
+    pub plugins_skipped: usize,
     pub source_descriptors: usize,
     pub reaction_descriptors: usize,
     pub bootstrap_descriptors: usize,
@@ -132,6 +135,17 @@ pub fn load_plugins(
 
     info!("Loading cdylib plugins from: {}", dir.display());
 
+    // Count shared-library files in the directory that are not matched by any
+    // plugin file pattern so callers can distinguish an empty directory from
+    // one that contains unrecognised libraries.
+    let skipped_count = count_unmatched_shared_libs(dir, PLUGIN_FILE_PATTERNS);
+    if skipped_count > 0 {
+        warn!(
+            "{skipped_count} shared-library file(s) in '{}' did not match any plugin file pattern and will not be loaded",
+            dir.display()
+        );
+    }
+
     let config = if let Some(allowed) = allowed_files {
         // When an allowlist is provided, only load verified plugins.
         // Warn about any plugin files on disk that are being skipped.
@@ -171,7 +185,10 @@ pub fn load_plugins(
         callbacks::default_lifecycle_callback_fn(),
     )?;
 
-    let mut stats = PluginLoadStats::default();
+    let mut stats = PluginLoadStats {
+        plugins_skipped: skipped_count,
+        ..PluginLoadStats::default()
+    };
 
     for mut plugin in loaded {
         let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
@@ -309,8 +326,9 @@ pub fn load_plugins(
 
     if stats.plugins_loaded > 0 {
         info!(
-            "cdylib plugin loading complete: {} loaded, {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores, {} identity providers)",
+            "cdylib plugin loading complete: {} loaded, {} skipped, {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores, {} identity providers)",
             stats.plugins_loaded,
+            stats.plugins_skipped,
             total_descriptors,
             stats.source_descriptors,
             stats.reaction_descriptors,
@@ -325,11 +343,149 @@ pub fn load_plugins(
     Ok(stats)
 }
 
+/// Returns the number of shared-library files in `dir` whose names do not
+/// match any of the given `patterns`.
+///
+/// A "shared library" is any regular file whose name ends with `.so`, `.dylib`,
+/// or `.dll` (case-sensitive, matching the file-system conventions on each
+/// platform).  Only filenames that look like shared libraries are considered —
+/// other directory entries (directories, README files, etc.) are ignored.
+fn count_unmatched_shared_libs(dir: &Path, patterns: &[&str]) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            is_shared_lib(&name) && !patterns.iter().any(|pat| matches_glob(pat, &name))
+        })
+        .count()
+}
+
+/// Returns `true` if `name` looks like a shared-library filename.
+fn is_shared_lib(name: &str) -> bool {
+    name.ends_with(".so") || name.contains(".so.") || name.ends_with(".dylib") || name.ends_with(".dll")
+}
+
 /// Simple glob pattern matching for plugin file patterns (e.g., `libdrasi_source_*`).
 fn matches_glob(pattern: &str, name: &str) -> bool {
     if let Some(prefix) = pattern.strip_suffix('*') {
         name.starts_with(prefix)
     } else {
         name == pattern
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── matches_glob ────────────────────────────────────────────────────────
+
+    #[test]
+    fn matches_glob_prefix_wildcard() {
+        assert!(matches_glob("libdrasi_*", "libdrasi_source_mock.so"));
+        assert!(matches_glob("libdrasi_*", "libdrasi_reaction_log.so"));
+        assert!(matches_glob("libdrasi_*", "libdrasi_secret-store_file.so"));
+        assert!(matches_glob("drasi_*", "drasi_source_mock.dll"));
+    }
+
+    #[test]
+    fn matches_glob_prefix_wildcard_no_false_positives() {
+        assert!(!matches_glob("libdrasi_*", "notdrasi_source_mock.so"));
+        assert!(!matches_glob("drasi_*", "libdrasi_source_mock.so"));
+    }
+
+    #[test]
+    fn matches_glob_exact() {
+        assert!(matches_glob("exact_name.so", "exact_name.so"));
+        assert!(!matches_glob("exact_name.so", "other_name.so"));
+    }
+
+    // ── is_shared_lib ───────────────────────────────────────────────────────
+
+    #[test]
+    fn is_shared_lib_recognises_platforms() {
+        assert!(is_shared_lib("libfoo.so"));
+        assert!(is_shared_lib("libfoo.so.1"));
+        assert!(is_shared_lib("libfoo.so.1.2.3"));
+        assert!(is_shared_lib("libfoo.dylib"));
+        assert!(is_shared_lib("foo.dll"));
+    }
+
+    #[test]
+    fn is_shared_lib_ignores_other_files() {
+        assert!(!is_shared_lib("README.md"));
+        assert!(!is_shared_lib("plugin.yaml"));
+        assert!(!is_shared_lib("libfoo.a"));
+        assert!(!is_shared_lib("libfoo.rlib"));
+    }
+
+    // ── PLUGIN_FILE_PATTERNS covers all known plugin types ──────────────────
+
+    #[test]
+    fn plugin_file_patterns_cover_all_known_types() {
+        let known_files = [
+            // underscored type names
+            "libdrasi_source_mock.so",
+            "libdrasi_reaction_log.so",
+            "libdrasi_bootstrap_postgres.so",
+            "libdrasi_secret_store_file.so",
+            "libdrasi_identity_provider_oidc.so",
+            // hyphenated type names (OCI registry convention)
+            "libdrasi_secret-store_file.so",
+            // Windows / no lib prefix
+            "drasi_source_mock.dll",
+            "drasi_reaction_log.dll",
+            "drasi_bootstrap_postgres.dll",
+            "drasi_secret_store_file.dll",
+            "drasi_identity_provider_oidc.dll",
+        ];
+        for file in &known_files {
+            let matched = PLUGIN_FILE_PATTERNS
+                .iter()
+                .any(|pat| matches_glob(pat, file));
+            assert!(matched, "PLUGIN_FILE_PATTERNS did not match {file}");
+        }
+    }
+
+    // ── count_unmatched_shared_libs ─────────────────────────────────────────
+
+    #[test]
+    fn count_unmatched_shared_libs_counts_unrecognised_libraries() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+
+        // A drasi plugin — should be matched and NOT counted as skipped.
+        std::fs::write(p.join("libdrasi_source_mock.so"), b"").unwrap();
+        // A non-drasi shared library — should be counted as skipped.
+        std::fs::write(p.join("libsomething_else.so"), b"").unwrap();
+        // A non-library file — should be ignored entirely.
+        std::fs::write(p.join("README.md"), b"").unwrap();
+
+        let skipped = count_unmatched_shared_libs(p, PLUGIN_FILE_PATTERNS);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
+    fn count_unmatched_shared_libs_returns_zero_when_all_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        std::fs::write(p.join("libdrasi_source_mock.so"), b"").unwrap();
+        std::fs::write(p.join("libdrasi_reaction_log.so"), b"").unwrap();
+
+        let skipped = count_unmatched_shared_libs(p, PLUGIN_FILE_PATTERNS);
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn count_unmatched_shared_libs_returns_zero_for_missing_dir() {
+        let skipped = count_unmatched_shared_libs(
+            std::path::Path::new("/nonexistent/path"),
+            PLUGIN_FILE_PATTERNS,
+        );
+        assert_eq!(skipped, 0);
     }
 }
