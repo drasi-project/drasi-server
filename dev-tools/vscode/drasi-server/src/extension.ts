@@ -13,6 +13,8 @@ let drasiClient: DrasiClient | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   const registry = new ConnectionRegistry();
+  // Promote legacy workspace-scoped connection settings to user settings (#78).
+  await registry.migrateWorkspaceSettingsToGlobal();
   await registry.ensureDefaultConnection();
   drasiClient = new DrasiClient(registry);
 

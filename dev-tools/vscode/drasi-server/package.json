@@ -3,7 +3,7 @@
   "displayName": "Drasi Server",
   "publisher": "DrasiProject",
   "description": "The Drasi Server Visual Studio Code Extension",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "icon": "resources/drasi.png",
   "repository": {
     "type": "git",
@@ -373,17 +373,20 @@
         "drasiServer.url": {
           "type": "string",
           "default": "http://localhost:8080",
-          "description": "Base URL for the Drasi Server API."
+          "scope": "application",
+          "description": "Legacy base URL used only to seed the first connection. Prefer drasiServer.connections."
         },
         "drasiServer.instanceId": {
           "type": "string",
           "default": "",
-          "description": "Optional instance ID to use. If empty, the first instance is selected."
+          "scope": "application",
+          "description": "Legacy instance ID used only to seed the first connection. Prefer drasiServer.connections."
         },
         "drasiServer.connections": {
           "type": "array",
           "default": [],
-          "description": "Saved Drasi Server connections.",
+          "scope": "application",
+          "description": "Saved Drasi Server connections (user settings).",
           "items": {
             "type": "object",
             "properties": {
@@ -397,12 +400,14 @@
         "drasiServer.currentConnectionId": {
           "type": "string",
           "default": "",
-          "description": "Active Drasi Server connection ID."
+          "scope": "application",
+          "description": "Active Drasi Server connection ID (user settings)."
         },
         "drasiServer.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the drasi-server binary. Used by the Launch Server command."
+          "scope": "machine",
+          "description": "Path to the drasi-server binary. Used by the Launch Server command (user/machine settings)."
         }
       }
     }
