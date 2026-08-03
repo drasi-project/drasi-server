@@ -11,29 +11,6 @@ export interface ServerConnectionConfig {
 export class ConnectionRegistry {
   private readonly configurationSection = 'drasiServer';
 
-  /**
-   * Move personal connection settings from workspace scope to user (global)
-   * scope and clear any leftover workspace values so they stop shadowing.
-   *
-   * Safe to call repeatedly — no-ops when workspace has nothing set.
-   */
-  async migrateWorkspaceSettingsToGlobal(): Promise<boolean> {
-    const config = vscode.workspace.getConfiguration(this.configurationSection);
-    let migrated = false;
-
-    migrated =
-      (await this.migrateSettingToGlobal<ServerConnectionConfig[]>(config, 'connections', (value) =>
-        Array.isArray(value) && value.length > 0
-      )) || migrated;
-
-    migrated =
-      (await this.migrateSettingToGlobal<string>(config, 'currentConnectionId', (value) =>
-        typeof value === 'string' && value.length > 0
-      )) || migrated;
-
-    return migrated;
-  }
-
   async ensureDefaultConnection(): Promise<ServerConnectionConfig> {
     const connections = this.getConnections();
     if (connections.length > 0) {
@@ -134,49 +111,5 @@ export class ConnectionRegistry {
   private async setConnections(connections: ServerConnectionConfig[]) {
     const config = vscode.workspace.getConfiguration(this.configurationSection);
     await config.update('connections', connections, vscode.ConfigurationTarget.Global);
-  }
-
-  private async migrateSettingToGlobal<T>(
-    config: vscode.WorkspaceConfiguration,
-    key: string,
-    isPresent: (value: T | undefined) => boolean
-  ): Promise<boolean> {
-    const inspected = config.inspect<T>(key);
-    if (!inspected) {
-      return false;
-    }
-
-    const workspaceValue = inspected.workspaceValue;
-    const workspaceFolderValue = inspected.workspaceFolderValue;
-    const hasWorkspace = isPresent(workspaceValue);
-    const hasWorkspaceFolder = isPresent(workspaceFolderValue);
-
-    if (!hasWorkspace && !hasWorkspaceFolder) {
-      return false;
-    }
-
-    // Prefer existing user settings; only promote workspace values when global is empty.
-    if (!isPresent(inspected.globalValue)) {
-      const valueToPromote = hasWorkspace ? workspaceValue : workspaceFolderValue;
-      await config.update(key, valueToPromote, vscode.ConfigurationTarget.Global);
-    }
-
-    // Clearing may fail for application-scoped settings; ignore so activation still succeeds.
-    if (hasWorkspace) {
-      try {
-        await config.update(key, undefined, vscode.ConfigurationTarget.Workspace);
-      } catch {
-        // ignore
-      }
-    }
-    if (hasWorkspaceFolder) {
-      try {
-        await config.update(key, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
-      } catch {
-        // ignore
-      }
-    }
-
-    return true;
   }
 }
