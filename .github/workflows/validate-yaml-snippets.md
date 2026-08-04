@@ -20,6 +20,7 @@ steps:
     run: |
       set +e
       mkdir -p /tmp/gh-aw/agent
+      sudo apt-get update -y
       RESULTS=/tmp/gh-aw/agent/validation-results.txt
       : > "$RESULTS"
       run_step() {
@@ -34,6 +35,7 @@ steps:
       }
       echo "# Runtime validation results" >> "$RESULTS"
       echo >> "$RESULTS"
+      run_step "install libjq (build dependency)" sudo apt-get install -y libjq-dev libonig-dev
       run_step "cargo build --release" cargo build --release
       run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
       run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
@@ -60,22 +62,17 @@ You are an AI agent that validates YAML configuration snippets found in markdown
    - Check if the YAML fields match the serde-serialized Rust types
    - Look for common issues: typos, wrong types, missing required fields, extra fields
 
-4. **Review runtime validation results** (already computed for you):
-   - Before you started, a deterministic setup step built the server
-     (`cargo build --release`) and ran the repository's existing snippet/config
-     validation tests, which already cover the documented examples:
-     - `cargo test --test readme_examples_validation_test`
-     - `cargo test --test example_configs_validation_test`
-     - `cargo test --test config_parsing_failure_test`
-   - Read the results file at `/tmp/gh-aw/agent/validation-results.txt`. Each
-     section shows a command, its full output, and an `exit_code` line
-     (`exit_code=0` means it passed; any non-zero value means it failed).
-   - Base your runtime findings on this file. **Do NOT attempt to run `cargo`,
-     build, or start the server yourself** — shell execution of build/test
-     commands is blocked in your environment, and the results are already
-     provided for you. If the file is missing, or any section reports a
-     non-zero `exit_code`, surface that as a finding (quote the relevant
-     failing output).
+4. **Review runtime validation results**:
+   - A setup step has already built the server and run the repository's existing
+     snippet/config validation tests that cover the documented examples
+     (`readme_examples_validation_test`, `example_configs_validation_test`,
+     `config_parsing_failure_test`).
+   - Their combined output is saved at `/tmp/gh-aw/agent/validation-results.txt`,
+     with an `exit_code=` line after each command (`exit_code=0` means it passed;
+     any non-zero value means it failed).
+   - Read that file and incorporate the results into your findings. If the file
+     is missing or a section reports a non-zero exit code, note it as a finding
+     and quote the relevant failing output.
 
 5. **Report findings**:
    - If all YAML snippets are valid, comment: "✅ All YAML snippets validated successfully!"
@@ -90,6 +87,6 @@ You are an AI agent that validates YAML configuration snippets found in markdown
 - Focus on YAML snippets that look like server configuration (not random YAML)
 - Be specific about which Rust struct the YAML should match
 - If a snippet is intentionally incomplete or an example fragment, note that
-- For runtime validation, rely on the pre-computed results file at `/tmp/gh-aw/agent/validation-results.txt`; do not run or start the server yourself
+- For runtime validation, use the pre-computed results file at `/tmp/gh-aw/agent/validation-results.txt`
 - Only comment if you find issues OR if explicitly running validation on valid configs
 - Be concise and actionable in your feedback
