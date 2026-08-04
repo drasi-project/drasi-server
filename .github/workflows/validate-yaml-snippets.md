@@ -13,8 +13,8 @@ tools:
   github:
     toolsets: [default]
   bash:
-    - "find . -name"
-    - "cat"
+    - "find . -name '*.md' -type f"
+    - "cat /tmp/gh-aw/agent/validation-results.txt"
 steps:
   - name: Build server and run config validation tests
     run: |
@@ -36,11 +36,15 @@ steps:
       echo "# Runtime validation results" >> "$RESULTS"
       echo >> "$RESULTS"
       run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
-      export JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu
+      export JQ_LIB_DIR=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)
       run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
       run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
       run_step "cargo test --test config_parsing_failure_test" cargo test --test config_parsing_failure_test
       cat "$RESULTS"
+      if grep -Eq '^exit_code=[^0]' "$RESULTS"; then
+        echo "One or more validation steps failed (see non-zero exit_code markers above)." >&2
+        exit 1
+      fi
 safe-outputs:
   add-comment:
     max: 1
