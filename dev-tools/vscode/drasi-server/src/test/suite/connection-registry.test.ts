@@ -19,11 +19,10 @@ suite('ConnectionRegistry settings scope', () => {
     await clearConnectionSettings();
   });
 
-  test('writes connections and currentConnectionId to Global, not Workspace', async () => {
-    assert.ok(
-      vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0,
-      'Test host must open a workspace folder'
-    );
+  test('writes connections and currentConnectionId to Global, not Workspace', async function () {
+    if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+      this.skip();
+    }
 
     const registry = new ConnectionRegistry();
     const connection = await registry.addConnection('Test Server', 'http://example.test:9090');

@@ -28,9 +28,9 @@ Connection and binary settings are stored in **user** settings (not workspace), 
 |---------|-------|-------------|
 | `drasiServer.connections` | User | Saved server connections |
 | `drasiServer.currentConnectionId` | User | Active connection ID |
-| `drasiServer.binaryPath` | User (machine) | Path to the `drasi-server` binary (used by the Launch Server command) |
-| `drasiServer.url` | User (legacy) | Seed URL for the first connection only (default: `http://localhost:8080`) |
-| `drasiServer.instanceId` | User (legacy) | Seed instance ID for the first connection only |
+| `drasiServer.binaryPath` | User | Path to the `drasi-server` binary (used by the Launch Server command) |
+| `drasiServer.url` | User | Seed URL for the first connection only — **legacy**, prefer `drasiServer.connections` (default: `http://localhost:8080`) |
+| `drasiServer.instanceId` | User | Seed instance ID for the first connection only — **legacy**, prefer `drasiServer.connections` |
 
 ## Getting Started
 

@@ -373,20 +373,20 @@
         "drasiServer.url": {
           "type": "string",
           "default": "http://localhost:8080",
-          "scope": "application",
+          "scope": "machine",
           "description": "Legacy base URL used only to seed the first connection. Prefer drasiServer.connections."
         },
         "drasiServer.instanceId": {
           "type": "string",
           "default": "",
-          "scope": "application",
+          "scope": "machine",
           "description": "Legacy instance ID used only to seed the first connection. Prefer drasiServer.connections."
         },
         "drasiServer.connections": {
           "type": "array",
           "default": [],
-          "scope": "application",
-          "description": "Saved Drasi Server connections (user settings).",
+          "scope": "machine",
+          "description": "Saved Drasi Server connections.",
           "items": {
             "type": "object",
             "properties": {
@@ -400,14 +400,14 @@
         "drasiServer.currentConnectionId": {
           "type": "string",
           "default": "",
-          "scope": "application",
-          "description": "Active Drasi Server connection ID (user settings)."
+          "scope": "machine",
+          "description": "Active Drasi Server connection ID."
         },
         "drasiServer.binaryPath": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Path to the drasi-server binary. Used by the Launch Server command (user/machine settings)."
+          "description": "Path to the drasi-server binary. Used by the Launch Server command."
         }
       }
     }
