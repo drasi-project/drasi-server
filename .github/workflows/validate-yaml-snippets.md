@@ -37,7 +37,6 @@ steps:
       echo >> "$RESULTS"
       run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
       export JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu
-      run_step "cargo build --release" cargo build --release
       run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
       run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
       run_step "cargo test --test config_parsing_failure_test" cargo test --test config_parsing_failure_test
@@ -45,7 +44,7 @@ steps:
 safe-outputs:
   add-comment:
     max: 1
-timeout-minutes: 15
+timeout-minutes: 30
 ---
 
 # YAML Snippet Validator
@@ -64,7 +63,7 @@ You are an AI agent that validates YAML configuration snippets found in markdown
    - Look for common issues: typos, wrong types, missing required fields, extra fields
 
 4. **Review runtime validation results**:
-   - A setup step has already built the server and run the repository's existing
+   - A setup step has already run the repository's existing
      snippet/config validation tests that cover the documented examples
      (`readme_examples_validation_test`, `example_configs_validation_test`,
      `config_parsing_failure_test`).
