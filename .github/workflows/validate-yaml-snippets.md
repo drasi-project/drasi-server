@@ -18,7 +18,7 @@ tools:
     - "cargo test --test readme_examples_validation_test*"
     - "cargo test --test example_configs_validation_test*"
     - "cargo test --test config_parsing_failure_test*"
-    - "find . -name '*.md' -type f"
+    - "find . -name"
     - "cat *"
 safe-outputs:
   add-comment:
