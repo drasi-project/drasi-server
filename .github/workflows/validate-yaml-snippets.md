@@ -35,7 +35,8 @@ steps:
       }
       echo "# Runtime validation results" >> "$RESULTS"
       echo >> "$RESULTS"
-      run_step "install libjq (build dependency)" sudo apt-get install -y libjq-dev libonig-dev
+      run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
+      export JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu
       run_step "cargo build --release" cargo build --release
       run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
       run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
