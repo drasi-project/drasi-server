@@ -47,6 +47,8 @@ steps:
 safe-outputs:
   add-comment:
     max: 1
+  noop:
+    report-as-issue: false
   threat-detection:
     prompt: |
       The agent prompt for this workflow is trusted, first-party content authored by
