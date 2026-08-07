@@ -20,7 +20,9 @@ use anyhow::Result;
 use inquire::{Confirm, MultiSelect, Password, Select, Text};
 
 use drasi_server::api::models::StateStoreConfig;
-use drasi_server::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
+use drasi_server::api::models::{
+    BootstrapProviderConfig, BootstrapProviderRef, ReactionConfig, SourceConfig,
+};
 use drasi_server::plugin_operations::PluginOperations;
 
 /// Print a dim-colored description line before a prompt, with a blank line separator.
@@ -294,7 +296,7 @@ fn prompt_postgres_source() -> Result<SourceConfig> {
         kind: "postgres".to_string(),
         id,
         auto_start: true,
-        bootstrap_provider,
+        bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
         config: serde_json::json!({
             "host": host,
@@ -433,7 +435,7 @@ fn prompt_http_source() -> Result<SourceConfig> {
         kind: "http".to_string(),
         id,
         auto_start: true,
-        bootstrap_provider,
+        bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
         config: serde_json::json!({
             "host": host,
@@ -465,7 +467,7 @@ fn prompt_grpc_source() -> Result<SourceConfig> {
         kind: "grpc".to_string(),
         id,
         auto_start: true,
-        bootstrap_provider,
+        bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         identity_provider: None,
         config: serde_json::json!({
             "host": host,
@@ -841,7 +843,7 @@ fn prompt_generic_source(kind: &str) -> Result<SourceConfig> {
         id,
         auto_start: true,
         identity_provider: None,
-        bootstrap_provider,
+        bootstrap_provider: bootstrap_provider.map(BootstrapProviderRef::Inline),
         config,
     })
 }
@@ -897,7 +899,7 @@ pub fn attach_bootstrap_to_source(
             })
         }
     };
-    source.bootstrap_provider = bootstrap;
+    source.bootstrap_provider = bootstrap.map(BootstrapProviderRef::Inline);
     Ok(source)
 }
 
