@@ -9,41 +9,73 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
+  copilot-requests: write
 tools:
   github:
     toolsets: [default]
   bash:
     - "cat /tmp/gh-aw/agent/validation-results.txt"
+# Pull the results produced by the isolated build_validation job into the path
+# the agent reads. The agent job never runs untrusted PR code itself.
 steps:
-  - name: Build server and run config validation tests
-    run: |
-      set +e
-      mkdir -p /tmp/gh-aw/agent
-      sudo apt-get update -y
-      RESULTS=/tmp/gh-aw/agent/validation-results.txt
-      : > "$RESULTS"
-      run_step() {
-        local title="$1"; shift
-        echo "## $title" >> "$RESULTS"
-        echo '```' >> "$RESULTS"
-        "$@" >> "$RESULTS" 2>&1
-        local rc=$?
-        echo '```' >> "$RESULTS"
-        echo "exit_code=$rc" >> "$RESULTS"
-        echo >> "$RESULTS"
-      }
-      echo "# Runtime validation results" >> "$RESULTS"
-      echo >> "$RESULTS"
-      run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
-      export JQ_LIB_DIR=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)
-      run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
-      run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
-      run_step "cargo test --test config_parsing_failure_test" cargo test --test config_parsing_failure_test
-      cat "$RESULTS"
-      if grep -Eq '^exit_code=[^0]' "$RESULTS"; then
-        echo "One or more validation steps failed (see non-zero exit_code markers above)." >&2
-        exit 1
-      fi
+  - name: Download validation results
+    uses: actions/download-artifact@v4
+    with:
+      name: validation-results
+      path: /tmp/gh-aw/agent
+# Untrusted PR code (cargo test / build.rs / proc-macros) runs here, in a job
+# with no write token, isolated from the token-bearing agent and safe-outputs jobs.
+jobs:
+  build_validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build server and run config validation tests
+        run: |
+          set +e
+          mkdir -p /tmp/gh-aw/agent
+          sudo apt-get update -y
+          RESULTS=/tmp/gh-aw/agent/validation-results.txt
+          : > "$RESULTS"
+          run_step() {
+            local title="$1"; shift
+            echo "## $title" >> "$RESULTS"
+            echo '```' >> "$RESULTS"
+            "$@" >> "$RESULTS" 2>&1
+            local rc=$?
+            echo '```' >> "$RESULTS"
+            echo "exit_code=$rc" >> "$RESULTS"
+            echo >> "$RESULTS"
+          }
+          echo "# Runtime validation results" >> "$RESULTS"
+          echo >> "$RESULTS"
+          run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
+          export JQ_LIB_DIR=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+          run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
+          run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test
+          run_step "cargo test --test config_parsing_failure_test" cargo test --test config_parsing_failure_test
+          cat "$RESULTS"
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: /tmp/gh-aw/agent/validation-results.txt
+          retention-days: 7
+      - name: Fail if any validation step failed
+        if: always()
+        run: |
+          if grep -Eq '^exit_code=[^0]' /tmp/gh-aw/agent/validation-results.txt; then
+            echo "One or more validation steps failed (see non-zero exit_code markers above)." >&2
+            exit 1
+          fi
+  # Wait for the isolated build, but still run (and comment) even when it fails.
+  agent:
+    needs: [build_validation]
+    if: ${{ !cancelled() }}
 safe-outputs:
   add-comment:
     max: 1
