@@ -61,9 +61,8 @@ pub(crate) fn apply_rocksdb_index(builder: DrasiLibBuilder, instance_id: &str) -
         "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {}",
         index_path.display()
     );
-    let provider = RocksDbIndexProvider::new(
-        index_path, true,  // enable_archive - support for past() function
-        false, // direct_io - use OS page cache
-    );
+    let enable_archive = false; // double-written on every element update, only temporal queries read it
+    let direct_io = false; // use OS page cache
+    let provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
     builder.with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, Arc::new(provider))
 }
