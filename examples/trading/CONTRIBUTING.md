@@ -181,7 +181,7 @@ These are more substantial features that would improve the demo for everyone.
 **Files to modify**:
 
 - New: `app/src/components/QueryInspector.tsx`
-- `drasi-react/src/DrasiSSEClient.ts` - Add event hooks
+- `dev-tools/react/src/client/DrasiSSEClient.ts` - Add event hooks
 - `app/src/App.tsx` - Add toggle button
 
 #### 3. Custom Screener Builder
@@ -230,7 +230,7 @@ These are more substantial features that would improve the demo for everyone.
 
 **Files to modify**:
 
-- `drasi-react/src/DrasiSSEClient.ts` - Expose more status info
+- `dev-tools/react/src/client/DrasiSSEClient.ts` - Expose more status info
 - `app/src/App.tsx` - Add notification system
 
 #### 6. Mobile-Responsive Layout

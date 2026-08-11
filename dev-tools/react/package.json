@@ -1,0 +1,81 @@
+{
+  "name": "@drasi/react",
+  "version": "0.1.0",
+  "description": "Reusable React building blocks for UIs driven by Drasi Continuous Queries: a shared SSE connection that multiplexes queries, hooks for live result sets, and a sortable QueryTable component.",
+  "license": "Apache-2.0",
+  "author": "The Drasi Authors",
+  "homepage": "https://github.com/drasi-project/drasi-server/tree/main/dev-tools/react#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drasi-project/drasi-server.git",
+    "directory": "dev-tools/react"
+  },
+  "bugs": {
+    "url": "https://github.com/drasi-project/drasi-server/issues"
+  },
+  "keywords": [
+    "drasi",
+    "react",
+    "sse",
+    "continuous-query",
+    "change-driven",
+    "data-change-processing",
+    "hooks",
+    "realtime"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./styles.css": "./styles.css"
+  },
+  "files": [
+    "dist",
+    "styles.css",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-dom": ">=17.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

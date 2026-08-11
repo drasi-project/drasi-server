@@ -19,7 +19,7 @@ import {
   QueryResult,
   ReactionDefinition,
   RouteUnidentified,
-} from './types';
+} from '../types';
 
 /** Configuration for {@link DrasiClient}. */
 export interface DrasiClientOptions {

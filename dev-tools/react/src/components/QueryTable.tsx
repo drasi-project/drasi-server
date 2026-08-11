@@ -19,8 +19,8 @@ import {
   useDrasiQuery,
   useDrasiQueryDefinition,
   useDrasiServerUiUrl,
-} from './context';
-import { useRowAnimation, AnimationDirection } from './useRowAnimation';
+} from '../react/DrasiContext';
+import { useRowAnimation, AnimationDirection } from '../react/useRowAnimation';
 import { CodeViewerDialog } from './CodeViewerDialog';
 import { CodeIcon, ExpandIcon, CollapseIcon } from './icons';
 import {
@@ -28,9 +28,9 @@ import {
   RowAction,
   SortConfig,
   UseDrasiQueryOptions,
-} from './types';
+} from '../types';
 
-export type { ColumnDef, RowAction, SortConfig } from './types';
+export type { ColumnDef, RowAction, SortConfig } from '../types';
 
 /** Props for the {@link QueryTable} component. */
 export interface QueryTableProps<T> {

@@ -235,10 +235,11 @@ This lets you:
 ### The React Integration
 
 The UI is built on a **standalone, reusable component package**,
-[`drasi-react`](./drasi-react), which lives alongside the app but is completely
-independent of it. The app consumes it exactly like an external dependency
-(`@drasi/react`). The package provides a single multiplexed SSE connection, React
-hooks for live query results, and a ready‑made `QueryTable` component.
+[`@drasi/react`](../../dev-tools/react), which lives in the repo's
+`dev-tools/react` directory but is completely independent of this example. The app
+consumes it exactly like an external dependency (`@drasi/react`). The package
+provides a single multiplexed SSE connection, React hooks for live query results,
+and a ready‑made `QueryTable` component.
 
 A component subscribes to a continuous query with the `useDrasiQuery` hook (or by
 dropping in a `QueryTable`):
@@ -280,15 +281,16 @@ Under the hood:
 4. `useDrasiQuery` updates component state when the relevant query changes
 
 All the trading‑specific knowledge — the list of queries, the SSE reaction
-settings, how to route aggregation events, and per‑query key/transform/sort
-rules — lives in the app under `app/src/drasi/`, so the package itself stays
-generic and reusable. See [Reusable `drasi-react` components](#reusable-drasi-react-components)
+settings, how to route aggregation result changes, and per‑query
+key/transform/sort rules — lives in the app under `app/src/drasi/`, so the package
+itself stays generic and reusable. See [Reusable React components](#reusable-react-components)
 for details.
 
-### Reusable `drasi-react` components
+### Reusable React components
 
-The [`drasi-react`](./drasi-react) directory is an independent, documented React
-package extracted from this example so it can be reused in any Drasi application:
+The [`@drasi/react`](../../dev-tools/react) package (in the repo's
+`dev-tools/react` directory) is an independent, documented React package extracted
+from this example so it can be reused in any Drasi application:
 
 | Export | Purpose |
 |--------|---------|
@@ -299,17 +301,17 @@ package extracted from this example so it can be reused in any Drasi application
 | `DrasiClient` / `DrasiSSEClient` | Low-level orchestrator and SSE multiplexer |
 
 It is wired into the app for the demo with **no build step** via a Vite alias and
-a matching TypeScript path (`@drasi/react` → `../drasi-react/src`), and it can
-also be built independently:
+a matching TypeScript path (`@drasi/react` → `../../../dev-tools/react/src`), and
+it can also be built independently:
 
 ```bash
-cd drasi-react
+cd ../../dev-tools/react
 npm install
-npm run build   # type-check and emit ESM + .d.ts to ./dist
+npm run build   # bundle ESM + CJS + .d.ts to ./dist
 ```
 
 Full API documentation, usage, styling, and build instructions are in
-[`drasi-react/README.md`](./drasi-react/README.md).
+[`dev-tools/react/README.md`](../../dev-tools/react/README.md).
 
 ## Code Examples
 
@@ -429,7 +431,7 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 | `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
-| `drasi-react/` | Reusable React components (provider, hooks, `QueryTable`) — see [`drasi-react/README.md`](./drasi-react/README.md) |
+| `../../dev-tools/react/` | Reusable React components (provider, hooks, `QueryTable`) — see [`dev-tools/react/README.md`](../../dev-tools/react/README.md) |
 | `app/src/services/queries.ts` | Continuous query definitions |
 | `app/src/drasi/config.ts` | App-specific Drasi config: query list, SSE reaction, content routing |
 | `app/src/drasi/queryOptions.ts` | Per-query key/transform/sort options passed to the shared components |

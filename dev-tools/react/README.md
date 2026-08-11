@@ -1,4 +1,4 @@
-# drasi-react
+# @drasi/react
 
 Reusable [React](https://react.dev/) building blocks for UIs whose content is
 kept continuously up to date by [Drasi](https://drasi.io) Continuous Queries.
@@ -12,7 +12,7 @@ result set is delivered to subscribed **Reactions** as a precise set of added,
 updated, and deleted rows. A single query can span multiple sources, and the
 meaning of "a change" is defined by your query rather than by the source systems.
 
-`drasi-react` is the client side of that picture: it binds a React app to one or
+`@drasi/react` is the client side of that picture: it binds a React app to one or
 more Continuous Queries through Drasi Server's **SSE Reaction** and surfaces each
 query's live result set as idiomatic React state:
 
@@ -29,9 +29,11 @@ The library is **completely application agnostic**: it knows nothing about your
 queries, your data shapes, or how rows should be keyed/sorted. You provide all of
 that through props and options, which makes it reusable across any Drasi project.
 
-> This package lives inside the Drasi `examples/trading` example, where it is
-> consumed by the Trading dashboard exactly as an external, independent
-> dependency (`@drasi/react`). See [Using it in the Trading example](#using-it-in-the-trading-example).
+> This package currently lives at `dev-tools/react` in the
+> [drasi-server](https://github.com/drasi-project/drasi-server) repository — it is
+> a developer tool and may move to a permanent home later. The Trading dashboard
+> under `examples/trading` consumes it as `@drasi/react`. See
+> [Using it in the Trading example](#using-it-in-the-trading-example).
 
 ## Table of contents
 
@@ -47,7 +49,9 @@ that through props and options, which makes it reusable across any Drasi project
   - [`QueryTable`](#querytable)
   - [Low‑level classes](#low-level-classes)
 - [Styling](#styling)
+- [Project structure](#project-structure)
 - [Building from source](#building-from-source)
+- [Publishing](#publishing)
 - [Using it in the Trading example](#using-it-in-the-trading-example)
 - [License](#license)
 
@@ -55,12 +59,13 @@ that through props and options, which makes it reusable across any Drasi project
 
 ```bash
 npm install @drasi/react
-# peer dependencies
-npm install react react-dom clsx
+# peer dependencies (use your app's existing copies)
+npm install react react-dom
 ```
 
-`react`, `react-dom`, and `clsx` are **peer dependencies** so the library always
-uses your application's single copy of React.
+`react` and `react-dom` are **peer dependencies** so the library always uses your
+application's single copy of React. `clsx` is a regular dependency and is
+installed automatically.
 
 Import the stylesheet once (for the row/dialog animations):
 
@@ -145,7 +150,7 @@ When the provider mounts it:
 ## Concepts
 
 **Multiplexed connection.** A Drasi SSE Reaction can deliver the result changes
-for many queries over a single connection. `drasi-react` opens that connection once
+for many queries over a single connection. `@drasi/react` opens that connection once
 ([`DrasiSSEClient`](#low-level-classes)) and routes each batch to the right
 subscribers by query id, so adding more `QueryTable`s does not add more sockets.
 
@@ -340,23 +345,79 @@ Every visual element is also overridable through the `className`,
 `tableClassName`, `headerClassName`, `rowClassName`, and per‑column `className`
 props, so you can match any design system.
 
+## Project structure
+
+The source is organized so the public API is a single barrel (`src/index.ts`)
+re‑exporting three groups:
+
+```
+src/
+  index.ts          # public barrel
+  types.ts          # shared public types
+  client/           # framework-agnostic core (no React): DrasiClient, DrasiSSEClient
+  react/            # React bindings: DrasiProvider, hooks, useRowAnimation
+  components/       # ready-made UI: QueryTable, CodeViewerDialog, icons
+```
+
+Consumers only ever import from the package root (`@drasi/react`); the internal
+folders are an implementation detail.
+
 ## Building from source
 
 ```bash
-# from this directory (examples/trading/drasi-react)
-npm install      # install dev dependencies (TypeScript + React types)
-npm run build    # type-check and emit ESM + .d.ts to ./dist
+# from this directory (dev-tools/react)
+npm install      # install dev dependencies (tsup, TypeScript, React types)
+npm run build    # bundle ESM + CJS + .d.ts to ./dist
 ```
 
 Other scripts:
 
 | Script | Description |
 | --- | --- |
+| `npm run dev` | Rebuild on change (`tsup --watch`). |
 | `npm run typecheck` | Type-check without emitting. |
 | `npm run clean` | Remove `dist/`. |
 
-The build emits ES modules and TypeScript declarations to `dist/`. Both `dist/`
-and `node_modules/` are git‑ignored.
+The build (via [`tsup`](https://tsup.egoist.dev/)) emits ES modules
+(`dist/index.js`), CommonJS (`dist/index.cjs`), and TypeScript declarations to
+`dist/`. Both `dist/` and `node_modules/` are git‑ignored.
+
+## Publishing
+
+The package is published to npm as the scoped, public package `@drasi/react`.
+
+**Prerequisites**
+
+- Membership in the `@drasi` npm organization with publish rights.
+- `npm login` completed locally (or an `NPM_TOKEN` configured in CI).
+
+**Steps** (from `dev-tools/react`):
+
+```bash
+# 1. Bump the version (updates package.json and creates a git tag).
+npm version <patch|minor|major>
+
+# 2. Update CHANGELOG.md for the new version.
+
+# 3. Inspect what will be shipped.
+npm pack --dry-run        # expect: dist/, styles.css, README.md, LICENSE, NOTICE
+
+# 4. Publish. `prepublishOnly` runs clean + build automatically, and
+#    publishConfig.access=public publishes the scoped package publicly.
+npm publish
+
+# 5. Push the tag created by `npm version`.
+git push --follow-tags
+```
+
+Publishing from CI is recommended so releases carry npm provenance:
+
+```bash
+npm publish --provenance --access public
+```
+
+(`--provenance` requires a trusted CI environment such as GitHub Actions with
+OIDC; it will fail when run locally.)
 
 ## Using it in the Trading example
 
@@ -364,9 +425,9 @@ The Trading dashboard (`examples/trading/app`) consumes this package as
 `@drasi/react`. For the demo it is wired up as source so no separate publish/build
 step is required:
 
-- **Vite** aliases `@drasi/react` to `../drasi-react/src` (`vite.config.ts`).
+- **Vite** aliases `@drasi/react` to `../../../dev-tools/react/src` (`vite.config.ts`).
 - **TypeScript** maps the same path (`tsconfig.json` `paths`).
-- **Tailwind** includes `../drasi-react/src/**/*` in its `content` globs.
+- **Tailwind** includes `../../../dev-tools/react/src/**/*` in its `content` globs.
 
 All trading‑specific behaviour (the query list, the SSE Reaction, the
 content‑router for aggregation result changes, and per‑query key/transform/sort

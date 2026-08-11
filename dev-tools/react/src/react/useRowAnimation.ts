@@ -37,7 +37,7 @@ export interface UseRowAnimationResult<T> {
  *
  * For numeric values it emits an 'up' or 'down' direction; for string values it
  * emits a neutral 'change'. Apply the resulting class (`price-up`, `price-down`,
- * `status-change`) to the row. These classes ship in `drasi-react/styles.css`.
+ * `status-change`) to the row. These classes ship in `@drasi/react/styles.css`.
  */
 export function useRowAnimation<T>(
   options: UseRowAnimationOptions<T>,

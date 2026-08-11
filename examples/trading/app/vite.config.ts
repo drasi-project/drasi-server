@@ -24,7 +24,7 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@drasi/react': path.resolve(__dirname, '../drasi-react/src'),
+      '@drasi/react': path.resolve(__dirname, '../../../dev-tools/react/src'),
       react: path.resolve(__dirname, './node_modules/react'),
       'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       clsx: path.resolve(__dirname, './node_modules/clsx'),

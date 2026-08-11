@@ -15,12 +15,12 @@
  */
 
 /*
- * Styles required by the drasi-react components.
+ * Styles required by the @drasi/react components.
  *
  * Import once in your application (for example in your root stylesheet or
  * entry module):
  *
- *   import 'drasi-react/styles.css';
+ *   import '@drasi/react/styles.css';
  *
  * The row-change animation classes (`price-up`, `price-down`, `status-change`)
  * are applied by `QueryTable`/`useRowAnimation`; the dialog animation classes

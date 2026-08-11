@@ -15,7 +15,7 @@
 /**
  * Trading-specific options for `useDrasiQuery`/`QueryTable`.
  *
- * The reusable `drasi-react` library accumulates query results generically; the
+ * The reusable `@drasi/react` library accumulates query results generically; the
  * Trading example supplies how to key rows, normalize them, and sort/filter the
  * accumulated set through these options. This keeps all domain knowledge in the
  * application while the components stay generic.
