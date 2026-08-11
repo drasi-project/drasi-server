@@ -94,14 +94,6 @@ elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
     make build-ui
 fi
 
-# Ensure local plugins are built (required when using [patch.crates-io] with local drasi-core)
-PLUGINS_DIR="$DRASI_SERVER_ROOT/target/release/plugins"
-if [ ! -d "$PLUGINS_DIR" ] || [ -z "$(ls -A "$PLUGINS_DIR"/*.dylib "$PLUGINS_DIR"/*.so "$PLUGINS_DIR"/*.dll 2>/dev/null)" ]; then
-    echo -e "${YELLOW}No local plugins found. Building from drasi-core...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-local-plugins
-fi
-
 echo -e "${GREEN}All prerequisites met!${NC}"
 echo ""
 
