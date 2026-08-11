@@ -13,7 +13,7 @@
 // limitations under the License.
 
 /**
- * Trading-application configuration for the reusable `drasi-react` package.
+ * Trading-application configuration for the reusable `@drasi/react` package.
  *
  * Everything in this file is specific to the Trading example: the set of
  * continuous queries, the SSE reaction that multiplexes them, and the

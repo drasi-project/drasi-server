@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ConnectionStatus, QueryResult, RouteUnidentified } from './types';
+import { ConnectionStatus, QueryResult, RouteUnidentified } from '../types';
 
 const DEBUG_SSE =
   (globalThis as any)?.process?.env?.NODE_ENV === 'development';

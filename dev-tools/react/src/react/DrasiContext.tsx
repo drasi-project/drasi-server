@@ -20,7 +20,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { DrasiClient } from './DrasiClient';
+import { DrasiClient } from '../client/DrasiClient';
 import {
   ConnectionStatus,
   QueryDefinition,
@@ -28,7 +28,7 @@ import {
   ReactionDefinition,
   RouteUnidentified,
   UseDrasiQueryOptions,
-} from './types';
+} from '../types';
 
 interface DrasiContextValue {
   client: DrasiClient | null;
