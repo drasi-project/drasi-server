@@ -29,11 +29,11 @@ The library is **completely application agnostic**: it knows nothing about your
 queries, your data shapes, or how rows should be keyed/sorted. You provide all of
 that through props and options, which makes it reusable across any Drasi project.
 
-> This package currently lives at `dev-tools/react` in the
-> [drasi-server](https://github.com/drasi-project/drasi-server) repository — it is
-> a developer tool and may move to a permanent home later. The Trading dashboard
-> under `examples/trading` consumes it as `@drasi/react`. See
-> [Using it in the Trading example](#using-it-in-the-trading-example).
+> This is currently an **unpublished, private staging package** at
+> `dev-tools/react` in the
+> [drasi-server](https://github.com/drasi-project/drasi-server) repository. The
+> Trading example installs and builds it through a local `file:` dependency so
+> the same exports used by a future npm consumer are exercised now.
 
 ## Table of contents
 
@@ -51,23 +51,36 @@ that through props and options, which makes it reusable across any Drasi project
 - [Styling](#styling)
 - [Project structure](#project-structure)
 - [Building from source](#building-from-source)
-- [Publishing](#publishing)
+- [Future publishing](#future-publishing)
 - [Using it in the Trading example](#using-it-in-the-trading-example)
 - [License](#license)
 
 ## Installation
 
+The package is not published to npm yet. Inside this repository, install its
+development dependencies and build it first:
+
 ```bash
-npm install @drasi/react
-# peer dependencies (use your app's existing copies)
-npm install react react-dom
+cd dev-tools/react
+npm install
+npm run build
 ```
 
-`react` and `react-dom` are **peer dependencies** so the library always uses your
-application's single copy of React. `clsx` is a regular dependency and is
-installed automatically.
+Repository consumers declare it as a local dependency:
 
-Import the stylesheet once (for the row/dialog animations):
+```json
+{
+  "dependencies": {
+    "@drasi/react": "file:../../../dev-tools/react"
+  }
+}
+```
+
+After it is moved to its own repository and published, the intended installation
+command will be `npm install @drasi/react`. React 18 or newer and `react-dom` are
+peer dependencies, ensuring the library uses the application's copies.
+
+Import the complete component stylesheet once:
 
 ```ts
 import '@drasi/react/styles.css';
@@ -143,9 +156,12 @@ When the provider mounts it:
 
 1. checks the Drasi Server is healthy,
 2. ensures every query in `queries` exists and is running,
-3. seeds each query's current results from the REST API,
-4. ensures the SSE `reaction` exists and is running, and
-5. opens **one** SSE connection and fans updates out to each `useDrasiQuery`.
+3. ensures the SSE `reaction` exists and is running, and
+4. opens **one** SSE connection and fans updates out to each `useDrasiQuery`.
+
+Each query hook subscribes to live changes before requesting its REST snapshot.
+Changes received while that request is in flight are buffered and replayed after
+the snapshot, avoiding a gap between initial state and live updates.
 
 ## Concepts
 
@@ -178,6 +194,9 @@ it once near the root of your tree.
 | `queries` | `QueryDefinition[]` | Continuous Queries to ensure exist and run. **Required.** |
 | `reaction` | `ReactionDefinition` | The SSE Reaction that delivers the queries' result changes. **Required.** |
 | `routeUnidentified` | `(rows, deliver) => void` | Optional router for result-change payloads that arrive without a query id. Call `deliver(queryId, rows)` for each matching query. |
+| `fetch` | `typeof fetch` | Optional fetch implementation for authentication, polyfills, or tests. |
+| `eventSourceFactory` | `(url) => EventSourceLike` | Optional EventSource implementation for polyfills or tests. |
+| `reconnect` | `object` | Optional maximum-attempt and backoff overrides. |
 | `children` | `ReactNode` | Your application. |
 
 `QueryDefinition`:
@@ -200,7 +219,7 @@ interface ReactionDefinition {
   id?: string;                   // defaults to 'sse-stream'
   kind?: string;                 // defaults to 'sse'
   host?: string;                 // defaults to '0.0.0.0'
-  port?: number;
+  port: number;
   ssePath?: string;              // defaults to '/events'
   heartbeatIntervalMs?: number;
   endpoint?: string;             // override the computed public SSE URL
@@ -278,6 +297,7 @@ Key props (see `QueryTableProps<T>` for the full list):
 | `defaultSort` | `{ column: string; direction: 'asc' \| 'desc' }` | Initial sort. |
 | `animateOnChange` | `keyof T` | Field whose changes trigger the row flash animation. |
 | `actions` | `RowAction<T>[]` | Per‑row action buttons. |
+| `actionsWidth` | `string` | CSS width for the actions column, such as `3rem`. |
 | `headerActions` | `ReactNode` | Header slot (e.g. an “add” button). |
 | `emptyMessage` | `string` | Shown when there are no rows. |
 | `codeSnippet` | `string` | Consumer code shown in the “view code” dialog. |
@@ -294,7 +314,7 @@ interface ColumnDef<T> {
   align?: 'left' | 'center' | 'right';
   className?: string | ((value: any, row: T) => string);
   headerClassName?: string;
-  width?: string;
+  width?: string;                  // CSS width, e.g. '5rem' or '120px'
 }
 ```
 
@@ -318,30 +338,15 @@ const unsubscribe = client.subscribe('stocks-query', (result) => {
 
 ## Styling
 
-The components use [Tailwind](https://tailwindcss.com/) utility classes for
-layout and a small `styles.css` for the value‑change/dialog animations.
+The package ships complete, namespaced component CSS. Consumers do not need
+Tailwind and do not need to scan package source:
 
-1. Import the animations once:
+```ts
+import '@drasi/react/styles.css';
+```
 
-   ```ts
-   import '@drasi/react/styles.css';
-   ```
-
-2. If you build your own CSS with Tailwind and consume this package **as source**
-   (for example via a path alias in a monorepo), add it to your Tailwind
-   `content` globs so the utility classes are generated:
-
-   ```js
-   // tailwind.config.js
-   module.exports = {
-     content: [
-       './src/**/*.{js,ts,jsx,tsx}',
-       './node_modules/@drasi/react/dist/**/*.js',
-     ],
-   };
-   ```
-
-Every visual element is also overridable through the `className`,
+Colors and the default table height are themeable through the `--drasi-*` CSS
+custom properties. Visual elements are also overridable through the `className`,
 `tableClassName`, `headerClassName`, `rowClassName`, and per‑column `className`
 props, so you can match any design system.
 
@@ -376,58 +381,31 @@ Other scripts:
 | --- | --- |
 | `npm run dev` | Rebuild on change (`tsup --watch`). |
 | `npm run typecheck` | Type-check without emitting. |
+| `npm test` | Run client, hook, lifecycle, and component regression tests. |
 | `npm run clean` | Remove `dist/`. |
 
 The build (via [`tsup`](https://tsup.egoist.dev/)) emits ES modules
 (`dist/index.js`), CommonJS (`dist/index.cjs`), and TypeScript declarations to
-`dist/`. Both `dist/` and `node_modules/` are git‑ignored.
+`dist/`. `styles.css` is shipped alongside those artifacts. Both `dist/` and
+`node_modules/` are git‑ignored.
 
-## Publishing
+## Future publishing
 
-The package is published to npm as the scoped, public package `@drasi/react`.
-
-**Prerequisites**
-
-- Membership in the `@drasi` npm organization with publish rights.
-- `npm login` completed locally (or an `NPM_TOKEN` configured in CI).
-
-**Steps** (from `dev-tools/react`):
-
-```bash
-# 1. Bump the version (updates package.json and creates a git tag).
-npm version <patch|minor|major>
-
-# 2. Update CHANGELOG.md for the new version.
-
-# 3. Inspect what will be shipped.
-npm pack --dry-run        # expect: dist/, styles.css, README.md, LICENSE, NOTICE
-
-# 4. Publish. `prepublishOnly` runs clean + build automatically, and
-#    publishConfig.access=public publishes the scoped package publicly.
-npm publish
-
-# 5. Push the tag created by `npm version`.
-git push --follow-tags
-```
-
-Publishing from CI is recommended so releases carry npm provenance:
-
-```bash
-npm publish --provenance --access public
-```
-
-(`--provenance` requires a trusted CI environment such as GitHub Actions with
-OIDC; it will fail when run locally.)
+Publishing is intentionally outside the scope of the current staging work.
+`package.json` is marked `"private": true` so it cannot be published
+accidentally. The later repository move must update repository links, remove the
+private flag, choose the initial version, reserve the npm scope, and add a
+trusted release workflow with npm provenance. `prepack` already performs a clean
+build, and CI verifies the packed artifact before that transition.
 
 ## Using it in the Trading example
 
 The Trading dashboard (`examples/trading/app`) consumes this package as
-`@drasi/react`. For the demo it is wired up as source so no separate publish/build
-step is required:
-
-- **Vite** aliases `@drasi/react` to `../../../dev-tools/react/src` (`vite.config.ts`).
-- **TypeScript** maps the same path (`tsconfig.json` `paths`).
-- **Tailwind** includes `../../../dev-tools/react/src/**/*` in its `content` globs.
+`@drasi/react` through a local `file:../../../dev-tools/react` dependency. Its
+`predev` and `prebuild` scripts build the package first, and the app imports the
+package stylesheet. There are no Vite or TypeScript source aliases and no
+consumer Tailwind scanning, so broken exports, declarations, or styles cannot be
+hidden by monorepo-only configuration.
 
 All trading‑specific behaviour (the query list, the SSE Reaction, the
 content‑router for aggregation result changes, and per‑query key/transform/sort

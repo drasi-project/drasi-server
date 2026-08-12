@@ -15,152 +15,286 @@
 import { ConnectionStatus, QueryResult, RouteUnidentified } from '../types';
 
 const DEBUG_SSE =
-  (globalThis as any)?.process?.env?.NODE_ENV === 'development';
+  (
+    globalThis as typeof globalThis & {
+      process?: { env?: { NODE_ENV?: string } };
+    }
+  ).process?.env?.NODE_ENV === 'development';
+
+export interface EventSourceLike {
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  addEventListener(type: string, listener: EventListener): void;
+  close(): void;
+}
+
+export type EventSourceFactory = (url: string) => EventSourceLike;
+
+export interface DrasiSSEClientOptions {
+  routeUnidentified?: RouteUnidentified;
+  eventSourceFactory?: EventSourceFactory;
+  maxReconnectAttempts?: number;
+  initialReconnectDelayMs?: number;
+  maxReconnectDelayMs?: number;
+}
+
+interface PendingConnection {
+  generation: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  cleanupAbort: () => void;
+}
+
+function abortError(message = 'SSE connection aborted'): Error {
+  return new DOMException(message, 'AbortError');
+}
 
 /**
- * DrasiSSEClient maintains a single shared `EventSource` connection to a Drasi
- * SSE reaction endpoint and multiplexes the updates for every active query
- * across it. Components subscribe per query id and only receive the batches for
- * the query they care about.
- *
- * The client is intentionally application agnostic: it understands the wire
- * formats emitted by the Drasi SSE reaction (query-id keyed batches and
- * added/updated/deleted change sets) but contains no knowledge of any specific
- * data model. When a payload arrives without a query id, the optional
- * {@link RouteUnidentified} callback supplied by the host application decides
- * which query(s) the rows belong to.
+ * Maintains one explicitly managed EventSource connection and multiplexes
+ * result batches to query-specific subscribers.
  */
 export class DrasiSSEClient {
-  private eventSource: EventSource | null = null;
-  private subscribers: Map<string, Set<(result: QueryResult) => void>> = new Map();
+  private eventSource: EventSourceLike | null = null;
+  private readonly subscribers = new Map<
+    string,
+    Set<(result: QueryResult) => void>
+  >();
   private connectionStatus: ConnectionStatus = { connected: false };
-  private statusListeners: Set<(status: ConnectionStatus) => void> = new Set();
+  private readonly statusListeners = new Set<
+    (status: ConnectionStatus) => void
+  >();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
-  private reconnectDelay = 1000; // Start with 1 second
+  private readonly maxReconnectAttempts: number;
+  private readonly initialReconnectDelayMs: number;
+  private readonly maxReconnectDelayMs: number;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private sseEndpoint: string | null = null;
-  private queryCache: Map<string, QueryResult> = new Map();
-  private routeUnidentified?: RouteUnidentified;
+  private readonly routeUnidentified?: RouteUnidentified;
+  private readonly eventSourceFactory: EventSourceFactory;
+  private generation = 0;
+  private manuallyDisconnected = true;
+  private pendingConnection: PendingConnection | null = null;
 
-  constructor(routeUnidentified?: RouteUnidentified) {
-    this.routeUnidentified = routeUnidentified;
+  constructor(options: DrasiSSEClientOptions = {}) {
+    this.routeUnidentified = options.routeUnidentified;
+    this.eventSourceFactory =
+      options.eventSourceFactory ??
+      ((url) => new EventSource(url) as EventSourceLike);
+    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
+    this.initialReconnectDelayMs = options.initialReconnectDelayMs ?? 1000;
+    this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30000;
   }
 
   /**
-   * Connect to the Drasi reaction's SSE stream.
-   *
-   * @param queryIds The queries multiplexed over this connection.
-   * @param sseEndpoint The SSE endpoint URL.
-   * @param initialResults Optional REST-seeded results delivered once on open.
+   * Connect to the Drasi reaction's SSE stream. Native EventSource retries are
+   * disabled by closing a failed source before scheduling the library's own
+   * bounded exponential-backoff retry.
    */
   async connect(
-    queryIds: string[],
+    _queryIds: string[],
     sseEndpoint: string,
-    initialResults?: Record<string, any[]>,
+    signal?: AbortSignal,
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        this.sseEndpoint = sseEndpoint;
-        DEBUG_SSE && console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
+    this.stopConnection(abortError('SSE connection replaced'));
 
-        // Close existing connection if any
-        if (this.eventSource) {
-          this.eventSource.close();
+    this.manuallyDisconnected = false;
+    this.sseEndpoint = sseEndpoint;
+    this.reconnectAttempts = 0;
+    const generation = ++this.generation;
+
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        if (generation === this.generation) {
+          this.stopConnection(abortError());
         }
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
 
-        // Create new EventSource connection
-        this.eventSource = new EventSource(this.sseEndpoint);
+      this.pendingConnection = {
+        generation,
+        resolve,
+        reject,
+        cleanupAbort: () => signal?.removeEventListener('abort', onAbort),
+      };
 
-        // Handle connection open
-        this.eventSource.onopen = () => {
-          DEBUG_SSE && console.log('SSE connection established');
-          this.reconnectAttempts = 0;
-          this.reconnectDelay = 1000;
-          this.updateConnectionStatus({ connected: true });
-          // Seed initial results if provided
-          if (initialResults) {
-            Object.entries(initialResults).forEach(([queryId, results]) => {
-              this.handleQueryResult({
-                queryId,
-                data: results,
-                timestamp: Date.now(),
-              });
-            });
-          }
-          resolve();
-        };
-
-        // Handle incoming messages
-        this.eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            this.handleSSEMessage(data);
-          } catch (error) {
-            console.error('Failed to parse SSE message:', error, event.data);
-          }
-        };
-
-        // Handle errors
-        this.eventSource.onerror = (error) => {
-          console.error('SSE connection error:', error);
-          this.updateConnectionStatus({
-            connected: false,
-            error: 'SSE connection lost',
-          });
-
-          // Attempt reconnection with exponential backoff
-          if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            const delay = Math.min(
-              this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
-              30000,
-            );
-            DEBUG_SSE &&
-              console.log(
-                `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
-              );
-
-            setTimeout(() => {
-              if (this.sseEndpoint) {
-                this.connect(queryIds, this.sseEndpoint);
-              }
-            }, delay);
-          } else {
-            reject(new Error('Max reconnection attempts reached'));
-          }
-        };
-
-        // Named events emitted by some reaction configurations
-        this.eventSource.addEventListener('query-result', (event: MessageEvent) => {
-          try {
-            const data = JSON.parse(event.data);
-            this.handleQueryResult(data);
-          } catch (error) {
-            console.error('Failed to parse query-result event:', error);
-          }
-        });
-
-        this.eventSource.addEventListener('heartbeat', (event: MessageEvent) => {
-          DEBUG_SSE && console.log('>>> Heartbeat event received:', event.data);
-        });
-      } catch (error) {
-        console.error('Failed to create SSE connection:', error);
-        reject(error);
+      if (signal?.aborted) {
+        onAbort();
+        return;
       }
+
+      this.openConnection(generation);
     });
   }
 
-  /**
-   * Interpret a parsed SSE payload and dispatch it to the right subscribers.
-   */
-  private handleSSEMessage(data: any) {
-    // Heartbeat keep-alive messages
+  private openConnection(generation: number): void {
+    if (
+      generation !== this.generation ||
+      this.manuallyDisconnected ||
+      !this.sseEndpoint
+    ) {
+      return;
+    }
+
+    try {
+      DEBUG_SSE &&
+        console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
+      const source = this.eventSourceFactory(this.sseEndpoint);
+      this.eventSource = source;
+
+      source.onopen = () => {
+        if (generation !== this.generation || source !== this.eventSource) {
+          source.close();
+          return;
+        }
+        this.reconnectAttempts = 0;
+        this.updateConnectionStatus({
+          connected: true,
+          reconnecting: false,
+          lastConnected: new Date(),
+        });
+        this.resolvePendingConnection(generation);
+      };
+
+      source.onmessage = (event) => {
+        if (generation !== this.generation || source !== this.eventSource) {
+          return;
+        }
+        this.parseMessage(event.data, 'SSE message');
+      };
+
+      source.onerror = () => {
+        if (
+          generation !== this.generation ||
+          this.manuallyDisconnected ||
+          source !== this.eventSource
+        ) {
+          return;
+        }
+        this.handleConnectionError(generation, source);
+      };
+
+      source.addEventListener('query-result', ((event: MessageEvent) => {
+        if (generation !== this.generation || source !== this.eventSource) {
+          return;
+        }
+        this.parseMessage(event.data, 'query-result event');
+      }) as EventListener);
+
+      source.addEventListener('heartbeat', ((event: MessageEvent) => {
+        if (generation !== this.generation || source !== this.eventSource) {
+          return;
+        }
+        DEBUG_SSE && console.log('Heartbeat received:', event.data);
+      }) as EventListener);
+    } catch (error) {
+      this.handleConnectionFailure(generation, error);
+    }
+  }
+
+  private parseMessage(rawData: string, description: string): void {
+    try {
+      this.handleSSEMessage(JSON.parse(rawData));
+    } catch (error) {
+      console.error(`Failed to parse ${description}:`, error);
+    }
+  }
+
+  private handleConnectionError(
+    generation: number,
+    source: EventSourceLike,
+  ): void {
+    source.close();
+    if (source === this.eventSource) {
+      this.eventSource = null;
+    }
+    this.handleConnectionFailure(
+      generation,
+      new Error('SSE connection lost'),
+    );
+  }
+
+  private handleConnectionFailure(
+    generation: number,
+    error: unknown,
+  ): void {
+    if (generation !== this.generation || this.manuallyDisconnected) {
+      return;
+    }
+
+    const connectionError =
+      error instanceof Error ? error : new Error(String(error));
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.updateConnectionStatus({
+        connected: false,
+        reconnecting: false,
+        error: connectionError.message,
+      });
+      this.rejectPendingConnection(generation, connectionError);
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    const delay = Math.min(
+      this.initialReconnectDelayMs *
+        Math.pow(2, this.reconnectAttempts - 1),
+      this.maxReconnectDelayMs,
+    );
+    this.updateConnectionStatus({
+      connected: false,
+      reconnecting: true,
+      error: connectionError.message,
+    });
+
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openConnection(generation);
+    }, delay);
+  }
+
+  private resolvePendingConnection(generation: number): void {
+    const pending = this.pendingConnection;
+    if (!pending || pending.generation !== generation) return;
+    this.pendingConnection = null;
+    pending.cleanupAbort();
+    pending.resolve();
+  }
+
+  private rejectPendingConnection(generation: number, error: Error): void {
+    const pending = this.pendingConnection;
+    if (!pending || pending.generation !== generation) return;
+    this.pendingConnection = null;
+    pending.cleanupAbort();
+    pending.reject(error);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private stopConnection(error: Error): void {
+    this.clearReconnectTimer();
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    const pending = this.pendingConnection;
+    if (pending) {
+      this.pendingConnection = null;
+      pending.cleanupAbort();
+      pending.reject(error);
+    }
+  }
+
+  private handleSSEMessage(data: any): void {
     if (data.type === 'heartbeat') {
       return;
     }
 
-    // Streaming change-set format: { addedResults, updatedResults, deletedResults }.
-    // These payloads do not carry a query id, so rows are routed by content.
     if (
       data.addedResults !== undefined ||
       data.updatedResults !== undefined ||
@@ -191,28 +325,22 @@ export class DrasiSSEClient {
       return;
     }
 
-    // Drasi SSE reaction format keyed by `query_id` (snake_case).
     if (data.query_id) {
       this.handleKeyedBatch(data.query_id, data);
       return;
     }
 
-    // Alternative format keyed by `queryId` (camelCase).
     if (data.queryId) {
       this.handleKeyedBatch(data.queryId, data);
       return;
     }
 
-    // Single row pushed without a query id — route by content.
     if (data && typeof data === 'object' && Object.keys(data).length > 0) {
       this.routeContentBasedResults([data]);
     }
   }
 
-  /**
-   * Handle a batch of results that is explicitly keyed by a query id.
-   */
-  private handleKeyedBatch(queryId: string, data: any) {
+  private handleKeyedBatch(queryId: string, data: any): void {
     if (Array.isArray(data.results)) {
       const extractedData = data.results
         .map((result: any) => this.extractRow(result))
@@ -222,7 +350,9 @@ export class DrasiSSEClient {
         this.handleQueryResult({
           queryId,
           data: extractedData,
-          timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
+          timestamp: data.timestamp
+            ? new Date(data.timestamp).getTime()
+            : Date.now(),
         });
       }
       return;
@@ -232,7 +362,9 @@ export class DrasiSSEClient {
       this.handleQueryResult({
         queryId,
         data: [data.data],
-        timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
+        timestamp: data.timestamp
+          ? new Date(data.timestamp).getTime()
+          : Date.now(),
       });
       return;
     }
@@ -241,48 +373,44 @@ export class DrasiSSEClient {
       this.handleQueryResult({
         queryId,
         data: Array.isArray(data.data) ? data.data : [data.data],
-        timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
+        timestamp: data.timestamp
+          ? new Date(data.timestamp).getTime()
+          : Date.now(),
       });
     }
   }
 
-  /**
-   * Normalize a single result entry from any of the supported change formats
-   * (CDC `op`, aggregation before/after, typed add/update/delete) into a plain
-   * row. Deleted rows are flagged with `_deleted: true`.
-   */
   private extractRow(result: any): any {
     if (result == null || typeof result !== 'object') {
       return result;
     }
-
-    // Aggregation results carry before/after snapshots.
     if (result.type === 'aggregation' && result.after) {
       return result.after;
     }
-    // CDC delete (op: d, or op: u with no after).
     if (result.op === 'd' || (result.op === 'u' && !result.after)) {
       if (result.before) {
         return { ...result.before, _deleted: true };
       }
     }
-    // CDC insert/read/update.
-    if ((result.op === 'c' || result.op === 'r' || result.op === 'u') && result.after) {
+    if (
+      (result.op === 'c' || result.op === 'r' || result.op === 'u') &&
+      result.after
+    ) {
       return result.after;
     }
-    // Typed delete.
     if (result.type === 'delete' || result.type === 'DELETE') {
       const deleteData = result.before || result.data;
       if (deleteData) {
         return { ...deleteData, _deleted: true };
       }
     }
-    // Typed add.
     if ((result.type === 'add' || result.type === 'ADD') && result.data) {
       return result.data;
     }
-    // Typed update.
-    if ((result.type === 'update' || result.type === 'UPDATE') && result.after) {
+    if (
+      (result.type === 'update' || result.type === 'UPDATE') &&
+      result.after
+    ) {
       return result.after;
     }
     if (result.data !== undefined) {
@@ -291,14 +419,15 @@ export class DrasiSSEClient {
     return result;
   }
 
-  /**
-   * Route rows that arrived without a query id using the host-supplied routing
-   * callback. When no callback is configured the rows are dropped with a
-   * warning.
-   */
-  private routeContentBasedResults(rows: any[]) {
+  private routeContentBasedResults(rows: any[]): void {
     if (this.routeUnidentified) {
-      this.routeUnidentified(rows, (queryId, data) => this.deliverToQuery(queryId, data));
+      try {
+        this.routeUnidentified(rows, (queryId, data) =>
+          this.deliverToQuery(queryId, data),
+        );
+      } catch (error) {
+        console.error('Failed to route unidentified SSE results:', error);
+      }
       return;
     }
     DEBUG_SSE &&
@@ -308,100 +437,82 @@ export class DrasiSSEClient {
       );
   }
 
-  /**
-   * Deliver data to a specific query's subscribers.
-   */
-  private deliverToQuery(queryId: string, data: any[]) {
+  private deliverToQuery(queryId: string, data: any[]): void {
     this.handleQueryResult({ queryId, data, timestamp: Date.now() });
   }
 
-  /**
-   * Cache and dispatch a query result batch to its subscribers.
-   */
-  private handleQueryResult(result: QueryResult) {
-    this.queryCache.set(result.queryId, result);
-
+  private handleQueryResult(result: QueryResult): void {
     const subscribers = this.subscribers.get(result.queryId);
-    if (subscribers && subscribers.size > 0) {
-      subscribers.forEach((callback) => {
-        try {
-          callback(result);
-        } catch (error) {
-          console.error(`Error in subscriber callback for ${result.queryId}:`, error);
-        }
-      });
-    }
+    if (!subscribers) return;
+
+    subscribers.forEach((callback) => {
+      try {
+        callback(result);
+      } catch (error) {
+        console.error(
+          `Error in subscriber callback for ${result.queryId}:`,
+          error,
+        );
+      }
+    });
   }
 
-  /**
-   * Subscribe to a query's result batches. Returns an unsubscribe function.
-   */
-  subscribe(queryId: string, callback: (result: QueryResult) => void): () => void {
-    if (!this.subscribers.has(queryId)) {
-      this.subscribers.set(queryId, new Set());
+  subscribe(
+    queryId: string,
+    callback: (result: QueryResult) => void,
+  ): () => void {
+    let callbacks = this.subscribers.get(queryId);
+    if (!callbacks) {
+      callbacks = new Set();
+      this.subscribers.set(queryId, callbacks);
     }
-    this.subscribers.get(queryId)!.add(callback);
-
-    // Deliver cached data (if any) immediately so late subscribers catch up.
-    const cachedResult = this.queryCache.get(queryId);
-    if (cachedResult) {
-      setTimeout(() => {
-        try {
-          callback(cachedResult);
-        } catch (error) {
-          console.error(`Error delivering cached result for ${queryId}:`, error);
-        }
-      }, 0);
-    }
+    callbacks.add(callback);
 
     return () => {
-      const callbacks = this.subscribers.get(queryId);
-      if (callbacks) {
-        callbacks.delete(callback);
-        if (callbacks.size === 0) {
-          this.subscribers.delete(queryId);
-        }
+      const currentCallbacks = this.subscribers.get(queryId);
+      currentCallbacks?.delete(callback);
+      if (currentCallbacks?.size === 0) {
+        this.subscribers.delete(queryId);
       }
     };
   }
 
-  /** Current connection status. */
   getConnectionStatus(): ConnectionStatus {
     return { ...this.connectionStatus };
   }
 
-  /** Subscribe to connection status changes. Returns an unsubscribe function. */
-  onConnectionStatusChange(callback: (status: ConnectionStatus) => void): () => void {
+  onConnectionStatusChange(
+    callback: (status: ConnectionStatus) => void,
+  ): () => void {
     this.statusListeners.add(callback);
-    callback(this.connectionStatus);
+    callback({ ...this.connectionStatus });
     return () => {
       this.statusListeners.delete(callback);
     };
   }
 
-  private updateConnectionStatus(status: ConnectionStatus) {
+  private updateConnectionStatus(status: ConnectionStatus): void {
     this.connectionStatus = status;
     this.statusListeners.forEach((listener) => {
       try {
-        listener(status);
+        listener({ ...status });
       } catch (error) {
         console.error('Error in status listener:', error);
       }
     });
   }
 
-  /** Disconnect from the SSE stream and clear all subscribers. */
   async disconnect(): Promise<void> {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-    this.updateConnectionStatus({ connected: false });
+    this.manuallyDisconnected = true;
+    this.generation += 1;
+    this.stopConnection(abortError('SSE client disconnected'));
+    this.sseEndpoint = null;
+    this.reconnectAttempts = 0;
+    this.updateConnectionStatus({ connected: false, reconnecting: false });
     this.subscribers.clear();
     this.statusListeners.clear();
   }
 
-  /** Whether the shared connection is currently open. */
   isConnected(): boolean {
     return this.connectionStatus.connected;
   }

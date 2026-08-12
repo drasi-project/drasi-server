@@ -17,7 +17,6 @@ module.exports = {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
-    "../../../dev-tools/react/src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {

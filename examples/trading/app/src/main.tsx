@@ -22,6 +22,7 @@ import {
   TRADING_REACTION,
   routeTradingData,
 } from '@/drasi/config';
+import '@drasi/react/styles.css';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

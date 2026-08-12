@@ -96,7 +96,7 @@ export const Watchlist: React.FC = () => {
       key: 'symbol',
       label: 'Symbol',
       className: 'font-medium',
-      width: 'w-20',
+      width: '5rem',
     },
     {
       key: 'name',
@@ -160,7 +160,7 @@ export const Watchlist: React.FC = () => {
         animateOnChange="price"
         defaultSort={{ column: 'symbol', direction: 'asc' }}
         actions={actions}
-        actionsWidth="w-10"
+        actionsWidth="2.5rem"
         headerActions={headerActions}
         emptyMessage="No stocks in watchlist. Click + to add."
         codeSnippet={CODE_SNIPPET}

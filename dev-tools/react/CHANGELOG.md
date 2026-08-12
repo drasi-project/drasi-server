@@ -13,11 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tsup`-based build emitting ESM, CommonJS, and TypeScript declarations.
 - Source reorganized into `client/` (framework-agnostic core), `react/`
   (provider + hooks), and `components/` (ready-made UI) with barrel exports.
-
-## [0.1.0]
-
-### Added
 - Initial release: `DrasiProvider`, `useDrasiQuery`, `useDrasiConnectionStatus`,
   `useDrasiServerUiUrl`, `useDrasiQueryDefinition`, `QueryTable`,
   `CodeViewerDialog`, `useRowAnimation`, and the low-level `DrasiClient` /
   `DrasiSSEClient` classes.
+- Package-owned namespaced CSS, lifecycle-safe SSE reconnection, race-free
+  snapshot handoff, and package/consumer CI.

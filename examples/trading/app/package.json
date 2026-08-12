@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@drasi/react": "file:../../../dev-tools/react",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.10.0",
@@ -23,7 +24,10 @@
     "postcss": "^8.4.0"
   },
   "scripts": {
+    "drasi-react:prepare": "npm --prefix ../../../dev-tools/react install --ignore-scripts --prefer-offline && npm --prefix ../../../dev-tools/react run build",
+    "predev": "npm run drasi-react:prepare",
     "dev": "vite",
+    "prebuild": "npm run drasi-react:prepare",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "clean": "rm -rf node_modules dist",

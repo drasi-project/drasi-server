@@ -20,3 +20,8 @@
 export { DrasiClient } from './DrasiClient';
 export type { DrasiClientOptions } from './DrasiClient';
 export { DrasiSSEClient } from './DrasiSSEClient';
+export type {
+  DrasiSSEClientOptions,
+  EventSourceFactory,
+  EventSourceLike,
+} from './DrasiSSEClient';

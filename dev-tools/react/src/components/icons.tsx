@@ -19,7 +19,9 @@ interface IconProps {
 }
 
 /** Expand/maximize icon for expanding the table to full screen. */
-export const ExpandIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
+export const ExpandIcon: React.FC<IconProps> = ({
+  className = 'drasi-icon',
+}) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
@@ -31,7 +33,9 @@ export const ExpandIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
 );
 
 /** Collapse/minimize icon for collapsing the expanded table. */
-export const CollapseIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
+export const CollapseIcon: React.FC<IconProps> = ({
+  className = 'drasi-icon',
+}) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
@@ -43,7 +47,9 @@ export const CollapseIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => 
 );
 
 /** Code icon used to open the query/source code viewer. */
-export const CodeIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
+export const CodeIcon: React.FC<IconProps> = ({
+  className = 'drasi-icon',
+}) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"

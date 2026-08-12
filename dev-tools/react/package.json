@@ -1,6 +1,7 @@
 {
   "name": "@drasi/react",
   "version": "0.1.0",
+  "private": true,
   "description": "Reusable React building blocks for UIs driven by Drasi Continuous Queries: a shared SSE connection that multiplexes queries, hooks for live result sets, and a sortable QueryTable component.",
   "license": "Apache-2.0",
   "author": "The Drasi Authors",
@@ -57,12 +58,15 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepare": "npm run build",
+    "prepack": "npm run clean && npm run build"
   },
   "peerDependencies": {
-    "react": ">=17.0.0",
-    "react-dom": ">=17.0.0"
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "dependencies": {
     "clsx": "^2.0.0"
@@ -70,10 +74,14 @@
   "devDependencies": {
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "jsdom": "^26.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   },
   "publishConfig": {
     "access": "public"

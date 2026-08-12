@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useId,
+} from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 
@@ -48,6 +55,9 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('cypher');
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousBodyOverflowRef = useRef<string | null>(null);
+  const titleId = useId();
 
   // Freeze the code content while the dialog is open.
   const memoizedReactCode = useMemo(() => reactCode, [isOpen ? null : reactCode]);
@@ -65,11 +75,15 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   useEffect(() => {
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
+      previousBodyOverflowRef.current = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
     }
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      if (previousBodyOverflowRef.current !== null) {
+        document.body.style.overflow = previousBodyOverflowRef.current;
+        previousBodyOverflowRef.current = null;
+      }
     };
   }, [isOpen, handleKeyDown]);
 
@@ -85,11 +99,22 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimerRef.current = null;
+      }, 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
 
   const handleOverlayClick = (event: React.MouseEvent) => {
     if (event.target === event.currentTarget) {
@@ -103,23 +128,35 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fade-in"
+      className="drasi-code-dialog__overlay"
       onClick={handleOverlayClick}
     >
-      <div className="bg-[#1e2433] border border-[#1f2937]/50 rounded-lg w-[90vw] h-[85vh] max-w-6xl flex flex-col shadow-2xl animate-slide-up">
+      <div
+        className="drasi-code-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-[#1f2937]/50 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-white">{title}</h2>
+        <div className="drasi-code-dialog__header">
+          <div className="drasi-code-dialog__title-group">
+            <h2 id={titleId} className="drasi-code-dialog__title">
+              {title}
+            </h2>
             {drasiUiUrl && (
               <a
                 href={drasiUiUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1 text-sm rounded bg-[#1f2937]/30 hover:bg-[#1f2937]/50 text-[#3b82f6] hover:text-blue-300 transition-colors"
+                className="drasi-code-dialog__external-link"
                 title="Open in Drasi Server UI"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  className="drasi-icon"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -132,11 +169,18 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded hover:bg-[#1f2937]/50 transition-colors text-gray-400 hover:text-white"
+            className="drasi-icon-button"
             title="Close"
+            aria-label="Close"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              className="drasi-icon drasi-icon--medium"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -148,44 +192,56 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-[#1f2937] flex-shrink-0">
+        <div className="drasi-code-dialog__tabs" role="tablist">
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'cypher'}
             onClick={() => setActiveTab('cypher')}
             className={clsx(
-              'px-6 py-3 text-sm font-medium transition-colors',
+              'drasi-code-dialog__tab',
               activeTab === 'cypher'
-                ? 'text-[#3b82f6] border-b-2 border-[#3b82f6] bg-[#1f2937]/20'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-[#1f2937]/10',
+                ? 'drasi-code-dialog__tab--active'
+                : 'drasi-code-dialog__tab--inactive',
             )}
           >
             Query Definition
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'react'}
             onClick={() => setActiveTab('react')}
             className={clsx(
-              'px-6 py-3 text-sm font-medium transition-colors',
+              'drasi-code-dialog__tab',
               activeTab === 'react'
-                ? 'text-[#3b82f6] border-b-2 border-[#3b82f6] bg-[#1f2937]/20'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-[#1f2937]/10',
+                ? 'drasi-code-dialog__tab--active'
+                : 'drasi-code-dialog__tab--inactive',
             )}
           >
             React Code
           </button>
 
           {/* Copy button */}
-          <div className="ml-auto flex items-center pr-4">
+          <div className="drasi-code-dialog__copy-container">
             <button
+              type="button"
               onClick={handleCopy}
               className={clsx(
-                'px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2',
+                'drasi-code-dialog__copy-button',
                 copied
-                  ? 'bg-[#10b981]/20 text-[#10b981]'
-                  : 'bg-[#1f2937]/30 hover:bg-[#1f2937]/50 text-gray-300',
+                  ? 'drasi-code-dialog__copy-button--copied'
+                  : 'drasi-code-dialog__copy-button--idle',
               )}
             >
               {copied ? (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg
+                    className="drasi-icon"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -197,7 +253,12 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg
+                    className="drasi-icon"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -213,8 +274,8 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
         </div>
 
         {/* Code content */}
-        <div className="flex-1 overflow-auto p-6 bg-[#0d1117]">
-          <pre className="text-2xl leading-relaxed font-mono whitespace-pre-wrap text-gray-200">
+        <div className="drasi-code-dialog__content">
+          <pre className="drasi-code-dialog__code">
             <code>{currentCode}</code>
           </pre>
         </div>

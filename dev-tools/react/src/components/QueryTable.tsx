@@ -58,7 +58,7 @@ export interface QueryTableProps<T> {
   headerClassName?: string;
   /** Body row className (static or per-row function). */
   rowClassName?: string | ((row: T, index: number) => string);
-  /** Fixed height for the card (default: 'h-[400px]'). */
+  /** Additional height class. The package default is 400px. */
   height?: string;
 
   // Sorting
@@ -70,7 +70,7 @@ export interface QueryTableProps<T> {
   // Actions
   /** Row actions (edit, delete, etc.). */
   actions?: RowAction<T>[];
-  /** Actions column width. */
+  /** CSS width for the actions column (for example, `3rem`). */
   actionsWidth?: string;
   /** Header actions slot (e.g., add button). */
   headerActions?: React.ReactNode;
@@ -106,7 +106,12 @@ const SortIndicator: React.FC<{ direction: 'asc' | 'desc' | null; active: boolea
 }) => {
   if (!active) {
     return (
-      <svg className="w-3 h-3 ml-1 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg
+        className="drasi-sort-indicator drasi-sort-indicator--inactive"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -119,14 +124,22 @@ const SortIndicator: React.FC<{ direction: 'asc' | 'desc' | null; active: boolea
 
   if (direction === 'asc') {
     return (
-      <svg className="w-3 h-3 ml-1 text-[#3b82f6]" fill="currentColor" viewBox="0 0 20 20">
+      <svg
+        className="drasi-sort-indicator drasi-sort-indicator--active"
+        fill="currentColor"
+        viewBox="0 0 20 20"
+      >
         <path d="M10 5l5 7H5l5-7z" />
       </svg>
     );
   }
 
   return (
-    <svg className="w-3 h-3 ml-1 text-[#3b82f6]" fill="currentColor" viewBox="0 0 20 20">
+    <svg
+      className="drasi-sort-indicator drasi-sort-indicator--active"
+      fill="currentColor"
+      viewBox="0 0 20 20"
+    >
       <path d="M10 15l-5-7h10l-5 7z" />
     </svg>
   );
@@ -134,14 +147,14 @@ const SortIndicator: React.FC<{ direction: 'asc' | 'desc' | null; active: boolea
 
 /** Loading spinner component. */
 const LoadingSpinner: React.FC = () => (
-  <div className="flex items-center justify-center flex-1">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3b82f6]"></div>
+  <div className="drasi-loading">
+    <div className="drasi-spinner drasi-spinner--large" />
   </div>
 );
 
 /** Small inline loading spinner for actions. */
 const ActionSpinner: React.FC = () => (
-  <div className="w-4 h-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent"></div>
+  <div className="drasi-spinner drasi-spinner--small" />
 );
 
 /** Format a query config object into a readable, YAML-like string. */
@@ -263,11 +276,11 @@ export function QueryTable<T extends Record<string, any>>({
   tableClassName,
   headerClassName,
   rowClassName,
-  height = 'h-[400px]',
+  height,
   defaultSort,
   onSortChange,
   actions,
-  actionsWidth = 'w-20',
+  actionsWidth,
   headerActions,
   animateOnChange,
   renderRow,
@@ -275,7 +288,17 @@ export function QueryTable<T extends Record<string, any>>({
   headerSlot,
   codeSnippet,
 }: QueryTableProps<T>): React.ReactElement {
-  const { data, loading, error } = useDrasiQuery<T>(queryId, queryOptions);
+  const effectiveQueryOptions = useMemo<UseDrasiQueryOptions<T>>(
+    () => ({
+      ...queryOptions,
+      getKey: queryOptions?.getKey ?? ((row: any) => rowKey(row as T)),
+    }),
+    [queryOptions, rowKey],
+  );
+  const { data, loading, error } = useDrasiQuery<T>(
+    queryId,
+    effectiveQueryOptions,
+  );
   const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
   const [showCodeViewer, setShowCodeViewer] = useState(false);
   const drasiUiUrl = useDrasiServerUiUrl();
@@ -285,26 +308,71 @@ export function QueryTable<T extends Record<string, any>>({
   const [expanded, setExpanded] = useState(false);
   const [expandRect, setExpandRect] = useState<DOMRect | null>(null);
   const [animating, setAnimating] = useState(false);
+  const animationFramesRef = useRef<number[]>([]);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousBodyOverflowRef = useRef<string | null>(null);
 
   const handleExpand = useCallback(() => {
     if (containerRef.current) {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
+      }
       setExpandRect(containerRef.current.getBoundingClientRect());
       setExpanded(true);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setAnimating(true));
+      const firstFrame = requestAnimationFrame(() => {
+        const secondFrame = requestAnimationFrame(() => setAnimating(true));
+        animationFramesRef.current.push(secondFrame);
       });
+      animationFramesRef.current.push(firstFrame);
+      previousBodyOverflowRef.current = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
     }
   }, []);
 
   const handleCollapse = useCallback(() => {
+    animationFramesRef.current.forEach(cancelAnimationFrame);
+    animationFramesRef.current = [];
     setAnimating(false);
-    setTimeout(() => {
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    collapseTimerRef.current = setTimeout(() => {
       setExpanded(false);
       setExpandRect(null);
-      document.body.style.overflow = '';
+      document.body.style.overflow =
+        previousBodyOverflowRef.current ?? '';
+      previousBodyOverflowRef.current = null;
+      collapseTimerRef.current = null;
     }, 350);
   }, []);
+
+  useEffect(
+    () => () => {
+      animationFramesRef.current.forEach(cancelAnimationFrame);
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+      }
+      if (previousBodyOverflowRef.current !== null) {
+        document.body.style.overflow = previousBodyOverflowRef.current;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!error || !expanded) return;
+
+    animationFramesRef.current.forEach(cancelAnimationFrame);
+    animationFramesRef.current = [];
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+    setAnimating(false);
+    setExpanded(false);
+    setExpandRect(null);
+    document.body.style.overflow = previousBodyOverflowRef.current ?? '';
+    previousBodyOverflowRef.current = null;
+  }, [error, expanded]);
 
   // Escape key to collapse
   useEffect(() => {
@@ -317,25 +385,32 @@ export function QueryTable<T extends Record<string, any>>({
   }, [expanded, handleCollapse]);
 
   // Fetch the full query config from the Drasi Server
-  const { config: queryConfig, loading: configLoading } = useDrasiQueryDefinition(queryId);
+  const {
+    config: queryConfig,
+    loading: configLoading,
+    error: configError,
+  } = useDrasiQueryDefinition(queryId);
   const displayConfig = useMemo(() => {
     if (configLoading) return 'Loading query definition...';
+    if (configError) return `Unable to load query definition: ${configError}`;
     if (!queryConfig) return 'Query not found';
     return formatQueryConfig(queryConfig);
-  }, [queryConfig, configLoading]);
+  }, [queryConfig, configLoading, configError]);
 
   // Animation hook
+  const getAnimatedValue = useCallback(
+    (row: T) => {
+      if (!animateOnChange) return undefined;
+      const value = row[animateOnChange];
+      return typeof value === 'number' || typeof value === 'string'
+        ? value
+        : undefined;
+    },
+    [animateOnChange],
+  );
   const { animations, updateData } = useRowAnimation<T>({
     rowKey,
-    getValue: animateOnChange
-      ? (row) => {
-          const val = row[animateOnChange];
-          if (typeof val === 'number' || typeof val === 'string') {
-            return val;
-          }
-          return undefined;
-        }
-      : () => undefined,
+    getValue: getAnimatedValue,
   });
 
   // Update animation tracking when data changes
@@ -439,10 +514,10 @@ export function QueryTable<T extends Record<string, any>>({
       <tr
         key={key}
         className={clsx(
-          'border-b border-[#1f2937]/50 hover:bg-[#1f2937]/20 transition-colors',
-          animation === 'up' && 'price-up',
-          animation === 'down' && 'price-down',
-          animation === 'change' && 'status-change',
+          'drasi-query-table__row',
+          animation === 'up' && 'drasi-row--up',
+          animation === 'down' && 'drasi-row--down',
+          animation === 'change' && 'drasi-row--change',
           getRowClassName(row, index),
         )}
       >
@@ -450,9 +525,9 @@ export function QueryTable<T extends Record<string, any>>({
           <td
             key={String(column.key)}
             className={clsx(
-              'py-3 px-2',
-              column.align === 'right' && 'text-right',
-              column.align === 'center' && 'text-center',
+              'drasi-query-table__cell',
+              column.align === 'right' && 'drasi-align--right',
+              column.align === 'center' && 'drasi-align--center',
               getCellClassName(row, column),
             )}
           >
@@ -460,26 +535,29 @@ export function QueryTable<T extends Record<string, any>>({
           </td>
         ))}
         {actions && actions.length > 0 && (
-          <td className="py-3 px-2">
-            <div className="flex gap-1 justify-end">
+          <td className="drasi-query-table__cell">
+            <div className="drasi-query-table__actions">
               {actions.map((action, actionIndex) => {
                 const isDisabled = action.disabled?.(row) ?? false;
                 const isLoading = action.loading?.(row) ?? false;
 
                 return (
                   <button
+                    type="button"
                     key={actionIndex}
                     onClick={() => !isDisabled && !isLoading && action.onClick(row)}
                     disabled={isDisabled || isLoading}
                     className={clsx(
-                      'p-1 rounded transition-colors',
-                      action.className || 'text-gray-500',
+                      'drasi-action-button',
+                      action.className,
                       !isDisabled &&
                         !isLoading &&
-                        (action.hoverClassName || 'hover:bg-[#1f2937]/50 hover:text-[#3b82f6]'),
-                      (isDisabled || isLoading) && 'opacity-50 cursor-not-allowed',
+                        action.hoverClassName,
+                      (isDisabled || isLoading) &&
+                        'drasi-action-button--disabled',
                     )}
                     title={action.label}
+                    aria-label={action.label}
                   >
                     {isLoading ? <ActionSpinner /> : action.icon}
                   </button>
@@ -523,12 +601,12 @@ export function QueryTable<T extends Record<string, any>>({
     return (
       <div
         className={clsx(
-          'bg-[#131825] rounded-lg p-6 border border-[#1f2937] flex flex-col',
+          'drasi-query-table drasi-query-table--state',
           height,
           className,
         )}
       >
-        {title && <h2 className="text-xl font-bold mb-4">{title}</h2>}
+        {title && <h2 className="drasi-query-table__state-title">{title}</h2>}
         <LoadingSpinner />
       </div>
     );
@@ -537,9 +615,15 @@ export function QueryTable<T extends Record<string, any>>({
   // Error state
   if (error) {
     return (
-      <div className={clsx('bg-[#131825] rounded-lg p-6 border border-[#1f2937]', height, className)}>
-        {title && <h2 className="text-xl font-bold mb-4">{title}</h2>}
-        <div className="text-[#ef4444]">Error: {error}</div>
+      <div
+        className={clsx(
+          'drasi-query-table drasi-query-table--state',
+          height,
+          className,
+        )}
+      >
+        {title && <h2 className="drasi-query-table__state-title">{title}</h2>}
+        <div className="drasi-query-table__error">Error: {error}</div>
       </div>
     );
   }
@@ -547,22 +631,26 @@ export function QueryTable<T extends Record<string, any>>({
   // Expand button shown in normal view
   const expandButton = (
     <button
+      type="button"
       onClick={handleExpand}
-      className="p-1.5 rounded hover:bg-[#1f2937]/50 transition-colors text-gray-500 hover:text-[#3b82f6]"
+      className="drasi-icon-button"
       title="Expand table"
+      aria-label="Expand table"
     >
-      <ExpandIcon className="w-5 h-5" />
+      <ExpandIcon className="drasi-icon drasi-icon--medium" />
     </button>
   );
 
   // Collapse button shown in expanded view
   const collapseButton = (
     <button
+      type="button"
       onClick={handleCollapse}
-      className="p-1.5 rounded hover:bg-[#1f2937]/50 transition-colors text-gray-500 hover:text-[#3b82f6]"
+      className="drasi-icon-button"
       title="Collapse table"
+      aria-label="Collapse table"
     >
-      <CollapseIcon className="w-5 h-5" />
+      <CollapseIcon className="drasi-icon drasi-icon--medium" />
     </button>
   );
 
@@ -571,13 +659,13 @@ export function QueryTable<T extends Record<string, any>>({
     <>
       {/* Header */}
       {(title || headerActions || codeSnippet) && (
-        <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="drasi-query-table__header">
+          <div className="drasi-query-table__header-main">
             {title && (
               <h2
                 className={clsx(
-                  'font-bold transition-all duration-300',
-                  isAnimating ? 'text-5xl' : 'text-xl',
+                  'drasi-query-table__title',
+                  isAnimating && 'drasi-query-table__title--expanded',
                 )}
               >
                 {title}
@@ -585,14 +673,16 @@ export function QueryTable<T extends Record<string, any>>({
             )}
             {headerActions}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="drasi-query-table__header-controls">
             {codeSnippet && (
               <button
+                type="button"
                 onClick={() => setShowCodeViewer(true)}
-                className="p-1.5 rounded hover:bg-[#1f2937]/50 transition-colors text-gray-500 hover:text-[#3b82f6]"
+                className="drasi-icon-button"
                 title="View code"
+                aria-label="View code"
               >
-                <CodeIcon className="w-5 h-5" />
+                <CodeIcon className="drasi-icon drasi-icon--medium" />
               </button>
             )}
             {isExpanded ? collapseButton : expandButton}
@@ -602,7 +692,12 @@ export function QueryTable<T extends Record<string, any>>({
 
       {/* Header slot (e.g., summary stats) */}
       {headerSlot && (
-        <div className={clsx('px-6 pb-4 flex-shrink-0', isAnimating && 'text-3xl expanded-table-text')}>
+        <div
+          className={clsx(
+            'drasi-query-table__header-slot',
+            isAnimating && 'drasi-expanded-text',
+          )}
+        >
           {headerSlot}
         </div>
       )}
@@ -610,14 +705,19 @@ export function QueryTable<T extends Record<string, any>>({
       {/* Table */}
       <div
         className={clsx(
-          'overflow-y-auto overflow-x-hidden flex-1 px-6 pb-6',
-          isAnimating && 'text-3xl expanded-table-text',
+          'drasi-query-table__scroll',
+          isAnimating && 'drasi-expanded-text',
           tableClassName,
         )}
       >
-        <table className="w-full">
-          <thead className={clsx('sticky top-0 bg-[#131825] z-10', headerClassName)}>
-            <tr className="border-b border-[#1f2937]">
+        <table className="drasi-query-table__table">
+          <thead
+            className={clsx(
+              'drasi-query-table__thead',
+              headerClassName,
+            )}
+          >
+            <tr className="drasi-query-table__header-row">
               {columns.map((column) => {
                 const isSortable = column.sortable !== false;
                 const isActive = sort?.column === String(column.key);
@@ -625,22 +725,43 @@ export function QueryTable<T extends Record<string, any>>({
                 return (
                   <th
                     key={String(column.key)}
+                    style={column.width ? { width: column.width } : undefined}
                     className={clsx(
-                      'py-2 px-2 font-medium text-gray-400',
-                      isAnimating ? 'text-2xl' : 'text-sm',
-                      column.align === 'right' && 'text-right',
-                      column.align === 'center' && 'text-center',
-                      column.align !== 'right' && column.align !== 'center' && 'text-left',
-                      column.width,
+                      'drasi-query-table__heading',
+                      isAnimating &&
+                        'drasi-query-table__heading--expanded',
+                      column.align === 'right' && 'drasi-align--right',
+                      column.align === 'center' && 'drasi-align--center',
+                      column.align !== 'right' &&
+                        column.align !== 'center' &&
+                        'drasi-align--left',
                       column.headerClassName,
-                      isSortable && 'cursor-pointer hover:text-gray-200 select-none',
+                      isSortable && 'drasi-query-table__heading--sortable',
                     )}
                     onClick={() => isSortable && handleHeaderClick(column)}
+                    onKeyDown={(event) => {
+                      if (
+                        isSortable &&
+                        (event.key === 'Enter' || event.key === ' ')
+                      ) {
+                        event.preventDefault();
+                        handleHeaderClick(column);
+                      }
+                    }}
+                    tabIndex={isSortable ? 0 : undefined}
+                    aria-sort={
+                      isActive
+                        ? sort!.direction === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : undefined
+                    }
                   >
                     <span
                       className={clsx(
-                        'inline-flex items-center',
-                        column.align === 'right' && 'justify-end w-full',
+                        'drasi-query-table__heading-content',
+                        column.align === 'right' &&
+                          'drasi-query-table__heading-content--right',
                       )}
                     >
                       {column.label}
@@ -654,7 +775,12 @@ export function QueryTable<T extends Record<string, any>>({
                   </th>
                 );
               })}
-              {actions && actions.length > 0 && <th className={actionsWidth}></th>}
+              {actions && actions.length > 0 && (
+                <th
+                  className="drasi-query-table__actions-heading"
+                  style={actionsWidth ? { width: actionsWidth } : undefined}
+                />
+              )}
             </tr>
           </thead>
           <tbody>
@@ -674,7 +800,7 @@ export function QueryTable<T extends Record<string, any>>({
               <tr>
                 <td
                   colSpan={columns.length + (actions?.length ? 1 : 0)}
-                  className="py-8 text-center text-gray-500"
+                  className="drasi-query-table__empty"
                 >
                   {emptyMessage}
                 </td>
@@ -704,10 +830,10 @@ export function QueryTable<T extends Record<string, any>>({
       <div
         ref={containerRef}
         className={clsx(
-          'bg-[#131825] rounded-lg border border-[#1f2937] flex flex-col',
+          'drasi-query-table',
           height,
           className,
-          expanded && 'invisible',
+          expanded && 'drasi-query-table--hidden',
         )}
       >
         {renderTableCard(false, false)}
@@ -719,7 +845,7 @@ export function QueryTable<T extends Record<string, any>>({
           <>
             {/* Backdrop */}
             <div
-              className="fixed inset-0 z-50"
+              className="drasi-query-table__backdrop"
               style={{
                 backgroundColor: animating ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
                 transition: 'background-color 0.35s ease',
@@ -728,7 +854,7 @@ export function QueryTable<T extends Record<string, any>>({
             />
             {/* Expanded card */}
             <div
-              className="bg-[#131825] rounded-lg border border-[#1f2937] flex flex-col"
+              className="drasi-query-table drasi-query-table--expanded"
               style={expandedStyle}
             >
               {renderTableCard(true, animating)}

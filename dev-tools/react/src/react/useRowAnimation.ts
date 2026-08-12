@@ -36,8 +36,9 @@ export interface UseRowAnimationResult<T> {
  * Track value changes across rows and trigger CSS animations.
  *
  * For numeric values it emits an 'up' or 'down' direction; for string values it
- * emits a neutral 'change'. Apply the resulting class (`price-up`, `price-down`,
- * `status-change`) to the row. These classes ship in `@drasi/react/styles.css`.
+ * emits a neutral 'change'. `QueryTable` maps these values to the
+ * `drasi-row--up`, `drasi-row--down`, and `drasi-row--change` classes shipped in
+ * `@drasi/react/styles.css`.
  */
 export function useRowAnimation<T>(
   options: UseRowAnimationOptions<T>,
@@ -59,15 +60,28 @@ export function useRowAnimation<T>(
 
   const updateData = useCallback(
     (data: T[]) => {
-      if (!data || data.length === 0) return;
-
       const newAnimations = new Map<string, AnimationDirection>();
       const prevValues = prevValuesRef.current;
+      const nextValues = new Map<string, number | string>();
+      const currentKeys = new Set<string>();
+
+      if (!data || data.length === 0) {
+        timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+        timeoutsRef.current.clear();
+        prevValuesRef.current.clear();
+        setAnimations((prev) => (prev.size === 0 ? prev : new Map()));
+        return;
+      }
 
       data.forEach((row) => {
         const key = rowKey(row);
+        currentKeys.add(key);
         const currentValue = getValue(row);
         const prevValue = prevValues.get(key);
+
+        if (currentValue !== undefined) {
+          nextValues.set(key, currentValue);
+        }
 
         if (
           currentValue !== undefined &&
@@ -90,8 +104,9 @@ export function useRowAnimation<T>(
 
           const timeout = setTimeout(() => {
             setAnimations((prev) => {
+              if (!prev.has(key)) return prev;
               const updated = new Map(prev);
-              updated.set(key, null);
+              updated.delete(key);
               return updated;
             });
             timeoutsRef.current.delete(key);
@@ -101,22 +116,30 @@ export function useRowAnimation<T>(
         }
       });
 
-      if (newAnimations.size > 0) {
-        setAnimations((prev) => {
-          const updated = new Map(prev);
-          newAnimations.forEach((value, key) => {
-            updated.set(key, value);
-          });
-          return updated;
-        });
-      }
+      timeoutsRef.current.forEach((timeout, key) => {
+        if (!currentKeys.has(key)) {
+          clearTimeout(timeout);
+          timeoutsRef.current.delete(key);
+        }
+      });
 
-      prevValuesRef.current = new Map(
-        data.map((row) => {
-          const val = getValue(row);
-          return [rowKey(row), val ?? (typeof val === 'number' ? 0 : '')];
-        }),
-      );
+      setAnimations((prev) => {
+        const updated = new Map(
+          Array.from(prev).filter(([key]) => currentKeys.has(key)),
+        );
+        newAnimations.forEach((value, key) => updated.set(key, value));
+        if (
+          updated.size === prev.size &&
+          Array.from(updated).every(
+            ([key, value]) => prev.get(key) === value,
+          )
+        ) {
+          return prev;
+        }
+        return updated;
+      });
+
+      prevValuesRef.current = nextValues;
     },
     [rowKey, getValue, animationDuration],
   );

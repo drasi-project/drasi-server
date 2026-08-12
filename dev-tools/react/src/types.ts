@@ -25,6 +25,8 @@ export interface QueryResult<T = any> {
   data: T[];
   /** Epoch milliseconds of when the result was produced/received. */
   timestamp: number;
+  /** Whether this batch is a complete REST snapshot rather than an SSE delta. */
+  snapshot?: boolean;
 }
 
 /** Live status of the shared connection to the Drasi Server. */
@@ -136,7 +138,7 @@ export interface ColumnDef<T> {
   className?: string | ((value: any, row: T) => string);
   /** Additional CSS classes for the header cell. */
   headerClassName?: string;
-  /** Width hint (e.g., 'w-20', 'w-32'). */
+  /** CSS width for the header cell (for example, `5rem` or `120px`). */
   width?: string;
 }
 

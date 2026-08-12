@@ -12,24 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/**
- * React bindings: the provider that owns the shared connection and the hooks
- * that expose each query's live result set as React state.
- */
+import { defineConfig } from 'vitest/config';
 
-export {
-  DrasiProvider,
-  useDrasiClient,
-  useDrasiQuery,
-  useDrasiConnectionStatus,
-  useDrasiServerUiUrl,
-  useDrasiQueryDefinition,
-} from './DrasiContext';
-export type { DrasiProviderProps } from './DrasiContext';
-export type { DrasiContextValue } from './DrasiContext';
-export { useRowAnimation } from './useRowAnimation';
-export type {
-  AnimationDirection,
-  UseRowAnimationOptions,
-  UseRowAnimationResult,
-} from './useRowAnimation';
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    clearMocks: true,
+    restoreMocks: true,
+    setupFiles: ['./test/setup.ts'],
+  },
+});
