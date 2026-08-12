@@ -1158,9 +1158,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-core"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fae0da1b998ef09ab1115cc5b8c09b4d82305d8d432961c869db700ef69fbc19"
+checksum = "cc8377915e909144b748f0944d1f024d9ed7931c82b1609520b58f8447ac8813"
 dependencies = [
  "approx",
  "async-recursion",
