@@ -300,14 +300,22 @@ from this example so it can be reused in any Drasi application:
 | `QueryTable` | Sortable, animated table bound to a query, with a code viewer |
 | `DrasiClient` / `DrasiSSEClient` | Low-level orchestrator and SSE multiplexer |
 
-It is wired into the app for the demo with **no build step** via a Vite alias and
-a matching TypeScript path (`@drasi/react` → `../../../dev-tools/react/src`), and
-it can also be built independently:
+The app declares `@drasi/react` as
+`file:../../../dev-tools/react`. Its `predev` and `prebuild` scripts build the
+package before Vite runs, and `app/src/main.tsx` imports
+`@drasi/react/styles.css`. There are no package source aliases or consumer
+Tailwind content scans: the app consumes the package's built JavaScript,
+declarations, and self-contained stylesheet.
+
+Validate the package independently before consuming it:
 
 ```bash
 cd ../../dev-tools/react
-npm install
-npm run build   # bundle ESM + CJS + .d.ts to ./dist
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm pack --dry-run
 ```
 
 Full API documentation, usage, styling, and build instructions are in
