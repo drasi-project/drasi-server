@@ -669,7 +669,11 @@ impl DrasiServer {
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
         println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
-        println!("  Plugin SDK: {}", env!("DRASI_PLUGIN_SDK_VERSION"));
+        println!("  Plugin SDK crate: {}", env!("DRASI_PLUGIN_SDK_VERSION"));
+        println!(
+            "  Plugin ABI: {}",
+            drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION
+        );
         if let Some(config_file) = &self.config_file_path {
             println!("  Config file: {config_file}");
         }

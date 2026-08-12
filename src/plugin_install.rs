@@ -21,15 +21,18 @@
 //! Supports a lockfile (`plugins.lock`) for reproducible installs.
 
 use crate::config::{DrasiServerConfig, PluginDependency};
-use crate::plugin_lockfile::{LockedPlugin, PluginLockfile, PluginSignatureInfo};
+use crate::plugin_lockfile::{
+    compute_file_hash, LockedPlugin, PluginLockfile, PluginSignatureInfo,
+};
 use crate::plugin_operations::PluginOperations;
 use anyhow::{bail, Context, Result};
+use drasi_host_sdk::loader::{plugin_kind_from_filename, scan_plugin_metadata};
 use drasi_host_sdk::registry::{
-    CosignVerifier, OciRegistryClient, PluginResolver, RegistryConfig, ResolvedPlugin,
-    SignatureStatus,
+    CosignVerifier, DownloadResult, OciRegistryClient, PluginResolver, RegistryConfig,
+    ResolvedPlugin, SignatureStatus,
 };
 use log::{info, warn};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Install missing plugins declared in the server configuration.
 ///
@@ -101,6 +104,7 @@ pub async fn auto_install_plugins(
 
     let mut resolved = Vec::new();
     let mut lockfile_updated = false;
+    let mut install_failures = Vec::new();
 
     for plugin_dep in &config.plugins {
         match install_if_missing(
@@ -154,6 +158,7 @@ pub async fn auto_install_plugins(
             }
             Err(e) => {
                 warn!("Failed to install plugin '{}': {}", plugin_dep.reference, e);
+                install_failures.push(format!("{}: {e}", plugin_dep.reference));
             }
         }
     }
@@ -161,6 +166,13 @@ pub async fn auto_install_plugins(
     // Write updated lockfile (only when not in locked mode)
     if lockfile_updated && !locked {
         lockfile.write(lockfile_dir)?;
+    }
+
+    if !install_failures.is_empty() {
+        bail!(
+            "failed to install required plugin(s):\n  - {}",
+            install_failures.join("\n  - ")
+        );
     }
 
     if !resolved.is_empty() {
@@ -171,6 +183,231 @@ pub async fn auto_install_plugins(
     }
 
     Ok(resolved)
+}
+
+fn major_minor(version: &str) -> Option<(u64, u64)> {
+    let mut parts = version.split('.');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+fn lock_entry_matches_resolution(entry: &LockedPlugin, resolved: &ResolvedPlugin) -> bool {
+    entry.reference == resolved.reference
+        && entry.version == resolved.version
+        && entry.digest == resolved.digest
+        && entry.sdk_version == resolved.sdk_version
+        && entry.core_version == resolved.core_version
+        && entry.lib_version == resolved.lib_version
+        && entry.platform == resolved.platform
+        && entry.filename == resolved.filename
+}
+
+fn validate_plugin_binary(path: &Path, expected_version: Option<&str>) -> Result<()> {
+    let metadata = scan_plugin_metadata(path)
+        .with_context(|| format!("could not read embedded metadata from {}", path.display()))?;
+    let plugin_abi = major_minor(&metadata.sdk_version).with_context(|| {
+        format!(
+            "plugin '{}' reports invalid ABI version '{}'",
+            path.display(),
+            metadata.sdk_version
+        )
+    })?;
+    let host_abi_version = drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION;
+    let host_abi = major_minor(host_abi_version)
+        .with_context(|| format!("server reports invalid ABI version '{host_abi_version}'"))?;
+
+    if plugin_abi != host_abi {
+        bail!(
+            "plugin ABI mismatch: plugin={}, server={} (major.minor must match)",
+            metadata.sdk_version,
+            host_abi_version
+        );
+    }
+    if metadata.target_triple != env!("TARGET_TRIPLE") {
+        bail!(
+            "plugin target mismatch: plugin={}, server={}",
+            metadata.target_triple,
+            env!("TARGET_TRIPLE")
+        );
+    }
+    if let Some(expected) = expected_version {
+        if !expected.is_empty() && metadata.version != expected {
+            bail!(
+                "plugin version mismatch: cached={}, resolved={}",
+                metadata.version,
+                expected
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn plugin_compatibility_errors(dir: &Path) -> Vec<(PathBuf, String)> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return vec![(
+                dir.to_path_buf(),
+                format!("unable to read plugin directory: {error}"),
+            )];
+        }
+    };
+
+    let mut errors = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push((
+                    dir.to_path_buf(),
+                    format!("unable to read plugin directory entry: {error}"),
+                ));
+                continue;
+            }
+        };
+        let filename = entry.file_name();
+        let filename = filename.to_string_lossy();
+        if plugin_kind_from_filename(&filename).is_none() {
+            continue;
+        }
+
+        let path = entry.path();
+        if let Err(error) = validate_plugin_binary(&path, None) {
+            errors.push((path, error.to_string()));
+        }
+    }
+    errors
+}
+
+fn validate_cached_plugin(
+    path: &Path,
+    resolved: &ResolvedPlugin,
+    locked_entry: Option<&LockedPlugin>,
+) -> Result<()> {
+    let entry = locked_entry.context("no matching plugins.lock entry")?;
+    if !lock_entry_matches_resolution(entry, resolved) {
+        bail!("plugins.lock entry does not match the resolved plugin");
+    }
+
+    let expected_hash = entry
+        .file_hash
+        .as_deref()
+        .context("plugins.lock entry has no file hash")?;
+    let actual_hash = compute_file_hash(path)?;
+    if actual_hash != expected_hash {
+        bail!(
+            "plugin file hash mismatch: expected {}, got {}",
+            expected_hash,
+            actual_hash
+        );
+    }
+
+    validate_plugin_binary(path, Some(&resolved.version))?;
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_staged_file(staged_path: &Path, destination: &Path, backup: &Path) -> Result<()> {
+    let _ = backup;
+    std::fs::rename(staged_path, destination).with_context(|| {
+        format!(
+            "failed to atomically install replacement plugin {}",
+            destination.display()
+        )
+    })
+}
+
+#[cfg(windows)]
+fn replace_staged_file(staged_path: &Path, destination: &Path, backup: &Path) -> Result<()> {
+    let had_destination = destination.exists();
+    if had_destination {
+        std::fs::rename(destination, backup).with_context(|| {
+            format!(
+                "failed to stage existing plugin {} for replacement",
+                destination.display()
+            )
+        })?;
+    }
+
+    if let Err(error) = std::fs::rename(staged_path, destination) {
+        if had_destination {
+            let _ = std::fs::rename(backup, destination);
+        }
+        return Err(error).with_context(|| {
+            format!(
+                "failed to install replacement plugin {}",
+                destination.display()
+            )
+        });
+    }
+
+    if had_destination {
+        std::fs::remove_file(backup)
+            .with_context(|| format!("failed to remove plugin backup {}", backup.display()))?;
+    }
+    Ok(())
+}
+
+async fn download_plugin_replacing(
+    client: &OciRegistryClient,
+    reference: &str,
+    plugins_dir: &Path,
+    filename: &str,
+) -> Result<DownloadResult> {
+    std::fs::create_dir_all(plugins_dir).context("failed to create plugins directory")?;
+    let operation_id = uuid::Uuid::new_v4();
+    let staging_dir = plugins_dir.join(format!(".plugin-download-{operation_id}"));
+    let backup_path = plugins_dir.join(format!(".plugin-backup-{operation_id}"));
+
+    let download = match client
+        .download_plugin(reference, &staging_dir, filename)
+        .await
+    {
+        Ok(download) => download,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+    };
+
+    let destination = plugins_dir.join(filename);
+    let replacement = replace_staged_file(&download.path, &destination, &backup_path);
+    let _ = std::fs::remove_dir_all(&staging_dir);
+    replacement?;
+
+    Ok(DownloadResult {
+        path: destination,
+        verification: download.verification,
+    })
+}
+
+fn copy_plugin_replacing(source: &Path, plugins_dir: &Path, filename: &str) -> Result<PathBuf> {
+    std::fs::create_dir_all(plugins_dir).context("failed to create plugins directory")?;
+    let operation_id = uuid::Uuid::new_v4();
+    let staging_path = plugins_dir.join(format!(".plugin-copy-{operation_id}"));
+    let backup_path = plugins_dir.join(format!(".plugin-backup-{operation_id}"));
+    let destination = plugins_dir.join(filename);
+
+    std::fs::copy(source, &staging_path).with_context(|| {
+        format!(
+            "failed to stage local plugin {} for installation",
+            source.display()
+        )
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&staging_path, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    if let Err(error) = replace_staged_file(&staging_path, &destination, &backup_path) {
+        let _ = std::fs::remove_file(&staging_path);
+        return Err(error);
+    }
+
+    Ok(destination)
 }
 
 /// Install a single plugin if it's not already present.
@@ -206,16 +443,25 @@ async fn install_if_missing(
 
         let dest_path = plugins_dir.join(&resolved.filename);
         if dest_path.exists() {
-            // Best-effort verification for existing plugins
-            let verification = client
-                .verifier()
-                .verify_plugin(&resolved.reference, &client.auth())
-                .await;
-            info!(
-                "  ✓ {} v{} — already installed (locked)",
-                dep.reference, resolved.version
-            );
-            return Ok((resolved, verification));
+            match validate_cached_plugin(&dest_path, &resolved, Some(locked_entry)) {
+                Ok(()) => {
+                    let verification = client
+                        .verifier()
+                        .verify_plugin(&resolved.reference, &client.auth())
+                        .await;
+                    info!(
+                        "  ✓ {} v{} — already installed (locked)",
+                        dep.reference, resolved.version
+                    );
+                    return Ok((resolved, verification));
+                }
+                Err(error) => {
+                    warn!(
+                        "  ↻ {} v{} — replacing invalid cache: {}",
+                        dep.reference, resolved.version, error
+                    );
+                }
+            }
         }
 
         // Download using the locked digest reference
@@ -224,10 +470,10 @@ async fn install_if_missing(
             dep.reference, resolved.version
         );
 
-        let download = client
-            .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
-            .await
-            .with_context(|| format!("failed to download '{}'", dep.reference))?;
+        let download =
+            download_plugin_replacing(client, &resolved.reference, plugins_dir, &resolved.filename)
+                .await
+                .with_context(|| format!("failed to download '{}'", dep.reference))?;
 
         info!(
             "  ✓ {} v{} — installed → {}",
@@ -246,16 +492,25 @@ async fn install_if_missing(
     // Check if binary already exists
     let dest_path = plugins_dir.join(&resolved.filename);
     if dest_path.exists() {
-        // Best-effort verification for existing plugins
-        let verification = client
-            .verifier()
-            .verify_plugin(&resolved.reference, &client.auth())
-            .await;
-        info!(
-            "  ✓ {} v{} — already installed",
-            dep.reference, resolved.version
-        );
-        return Ok((resolved, verification));
+        match validate_cached_plugin(&dest_path, &resolved, lockfile.get(&dep.reference)) {
+            Ok(()) => {
+                let verification = client
+                    .verifier()
+                    .verify_plugin(&resolved.reference, &client.auth())
+                    .await;
+                info!(
+                    "  ✓ {} v{} — already installed",
+                    dep.reference, resolved.version
+                );
+                return Ok((resolved, verification));
+            }
+            Err(error) => {
+                warn!(
+                    "  ↻ {} v{} — replacing invalid cache: {}",
+                    dep.reference, resolved.version, error
+                );
+            }
+        }
     }
 
     // Download the binary
@@ -264,10 +519,10 @@ async fn install_if_missing(
         dep.reference, resolved.version, resolved.platform
     );
 
-    let download = client
-        .download_plugin(&resolved.reference, plugins_dir, &resolved.filename)
-        .await
-        .with_context(|| format!("failed to download '{}'", dep.reference))?;
+    let download =
+        download_plugin_replacing(client, &resolved.reference, plugins_dir, &resolved.filename)
+            .await
+            .with_context(|| format!("failed to download '{}'", dep.reference))?;
 
     info!(
         "  ✓ {} v{} — installed → {}",
@@ -295,12 +550,28 @@ async fn auto_install_from_local_dir(
     let mut lockfile = PluginLockfile::read(lockfile_dir)?.unwrap_or_default();
     let mut lockfile_updated = false;
     let mut resolved = Vec::new();
+    let mut install_failures = Vec::new();
 
     for plugin_dep in &config.plugins {
         match local.resolve(&plugin_dep.reference) {
             Ok(info) => {
+                validate_plugin_binary(&info.file_path, Some(&info.version)).with_context(
+                    || {
+                        format!(
+                            "local plugin '{}' is incompatible with this Drasi Server",
+                            plugin_dep.reference
+                        )
+                    },
+                )?;
+
                 let dest_path = plugins_dir.join(&info.filename);
-                if dest_path.exists() {
+                let source_hash = compute_file_hash(&info.file_path)?;
+                let destination_matches = dest_path.exists()
+                    && compute_file_hash(&dest_path)
+                        .map(|destination_hash| destination_hash == source_hash)
+                        .unwrap_or(false);
+
+                if destination_matches {
                     info!("  ✓ {} — already installed (local)", plugin_dep.reference);
                 } else {
                     info!(
@@ -308,12 +579,13 @@ async fn auto_install_from_local_dir(
                         plugin_dep.reference,
                         dir.display()
                     );
-                    local.install(&info, plugins_dir).with_context(|| {
-                        format!(
-                            "failed to install '{}' from local dir",
-                            plugin_dep.reference
-                        )
-                    })?;
+                    copy_plugin_replacing(&info.file_path, plugins_dir, &info.filename)
+                        .with_context(|| {
+                            format!(
+                                "failed to install '{}' from local dir",
+                                plugin_dep.reference
+                            )
+                        })?;
                     info!(
                         "  ✓ {} — installed → {}",
                         plugin_dep.reference, info.filename
@@ -359,12 +631,20 @@ async fn auto_install_from_local_dir(
                     "Failed to install plugin '{}' from local dir: {}",
                     plugin_dep.reference, e
                 );
+                install_failures.push(format!("{}: {e}", plugin_dep.reference));
             }
         }
     }
 
     if lockfile_updated {
         lockfile.write(lockfile_dir)?;
+    }
+
+    if !install_failures.is_empty() {
+        bail!(
+            "failed to install required plugin(s) from local directory:\n  - {}",
+            install_failures.join("\n  - ")
+        );
     }
 
     if !resolved.is_empty() {
@@ -375,4 +655,128 @@ async fn auto_install_from_local_dir(
     }
 
     Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resolved_plugin() -> ResolvedPlugin {
+        ResolvedPlugin {
+            reference: "ghcr.io/drasi-project/source/http@sha256:abc".to_string(),
+            version: "0.2.8".to_string(),
+            sdk_version: "0.10.0".to_string(),
+            core_version: "0.5.8".to_string(),
+            lib_version: "0.8.9".to_string(),
+            platform: "darwin/arm64".to_string(),
+            digest: "sha256:abc".to_string(),
+            filename: "libdrasi_source_http.dylib".to_string(),
+        }
+    }
+
+    fn locked_plugin() -> LockedPlugin {
+        let resolved = resolved_plugin();
+        LockedPlugin {
+            reference: resolved.reference,
+            version: resolved.version,
+            digest: resolved.digest,
+            sdk_version: resolved.sdk_version,
+            core_version: resolved.core_version,
+            lib_version: resolved.lib_version,
+            platform: resolved.platform,
+            filename: resolved.filename,
+            file_hash: Some("hash".to_string()),
+            git_commit: None,
+            build_timestamp: None,
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn parses_major_minor_version() {
+        assert_eq!(major_minor("0.13.0"), Some((0, 13)));
+        assert_eq!(major_minor("1.2"), Some((1, 2)));
+        assert_eq!(major_minor("invalid"), None);
+    }
+
+    #[test]
+    fn matching_lock_entry_can_reuse_resolved_plugin() {
+        assert!(lock_entry_matches_resolution(
+            &locked_plugin(),
+            &resolved_plugin()
+        ));
+    }
+
+    #[test]
+    fn changed_digest_invalidates_lock_entry() {
+        let mut resolved = resolved_plugin();
+        resolved.digest = "sha256:def".to_string();
+        assert!(!lock_entry_matches_resolution(&locked_plugin(), &resolved));
+    }
+
+    #[test]
+    fn reports_unreadable_plugin_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = dir.path().join("libdrasi_source_invalid.dylib");
+        std::fs::write(&plugin, b"not a dynamic library").unwrap();
+        std::fs::write(dir.path().join("unrelated.dylib"), b"ignored").unwrap();
+
+        let errors = plugin_compatibility_errors(dir.path());
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, plugin);
+        assert!(errors[0]
+            .1
+            .contains("could not read embedded metadata from"));
+    }
+
+    #[test]
+    fn rejects_hash_mismatch_before_reading_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = dir.path().join("libdrasi_source_http.dylib");
+        std::fs::write(&plugin, b"not a dynamic library").unwrap();
+        let locked = locked_plugin();
+
+        let error = validate_cached_plugin(&plugin, &resolved_plugin(), Some(&locked)).unwrap_err();
+
+        assert!(error.to_string().contains("plugin file hash mismatch"));
+    }
+
+    #[test]
+    fn replaces_existing_plugin_from_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join(".staged");
+        let destination = dir.path().join("libdrasi_source_http.dylib");
+        let backup = dir.path().join(".backup");
+        std::fs::write(&staged, b"new").unwrap();
+        std::fs::write(&destination, b"old").unwrap();
+
+        replace_staged_file(&staged, &destination, &backup).unwrap();
+
+        assert_eq!(std::fs::read(destination).unwrap(), b"new");
+        assert!(!staged.exists());
+        assert!(!backup.exists());
+    }
+
+    #[tokio::test]
+    async fn missing_local_plugin_is_fatal() {
+        let registry = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let config = DrasiServerConfig {
+            plugin_registry: Some(registry.path().to_string_lossy().into_owned()),
+            auto_install_plugins: true,
+            plugins: vec![PluginDependency {
+                reference: "reaction/sse".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let error = auto_install_plugins(&config, destination.path(), false)
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("failed to install required plugin(s) from local directory"));
+        assert!(message.contains("reaction/sse"));
+    }
 }
