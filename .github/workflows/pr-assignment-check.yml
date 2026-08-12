@@ -26,15 +26,24 @@ jobs:
       issues: write
     steps:
       - name: Check PR has linked issue and author is assigned
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
             const prAuthor = context.payload.pull_request.user.login;
+            const prAuthorType = context.payload.pull_request.user.type;
             const prBody = context.payload.pull_request.body || '';
 
-            console.log(`Checking PR #${prNumber} by @${prAuthor}`);
+            console.log(`Checking PR #${prNumber} by @${prAuthor} (${prAuthorType})`);
+
+            // The assignment policy is for human contributors. GitHub App/bot
+            // authors such as Copilot are not valid usernames for the
+            // collaborator-permission API and cannot be assigned to issues.
+            if (prAuthorType !== 'User') {
+              console.log(`@${prAuthor} has type '${prAuthorType}' - skipping assignment check`);
+              return;
+            }
 
             // Skip check for maintainers (write or admin access)
             const { data: permData } = await github.rest.repos.getCollaboratorPermissionLevel({
@@ -44,7 +53,7 @@ jobs:
             });
             const permission = permData.permission;
             if (permission === 'admin' || permission === 'write') {
-              console.log(`@${prAuthor} has '${permission}' access — skipping assignment check`);
+              console.log(`@${prAuthor} has '${permission}' access - skipping assignment check`);
               return;
             }
 
