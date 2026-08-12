@@ -52,10 +52,10 @@ export class ServerLauncher {
     }
 
     const selected = result[0].fsPath;
-    const target = vscode.workspace.workspaceFolders
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
-    await vscode.workspace.getConfiguration().update(BINARY_PATH_SETTING, selected, target);
+    // Machine-local binary path belongs in user settings, not the workspace (#78).
+    await vscode.workspace
+      .getConfiguration()
+      .update(BINARY_PATH_SETTING, selected, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`Drasi Server binary set to: ${selected}`);
   }
 
@@ -77,10 +77,9 @@ export class ServerLauncher {
     }
 
     const selected = result[0].fsPath;
-    const target = vscode.workspace.workspaceFolders
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
-    await vscode.workspace.getConfiguration().update(BINARY_PATH_SETTING, selected, target);
+    await vscode.workspace
+      .getConfiguration()
+      .update(BINARY_PATH_SETTING, selected, vscode.ConfigurationTarget.Global);
     return selected;
   }
 }
