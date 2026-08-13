@@ -29,17 +29,16 @@ middleware:
       target_property: body
       pattern: '(?s)^WorkGraphEvent/v1\s*\n```json\s*(?<payload>.*?)\s*```'
       capture_group: payload
-      output_property: event_payload
+      output_property: workgraph_event
       on_missing: passthrough
       on_no_match: passthrough
       on_error: fail
   - name: parse-event
     kind: parse_json
     config:
-      target_property: event_payload
-      output_property: event
+      target_property: workgraph_event
       on_missing: passthrough
-      on_error: fail
+      on_error: skip
   - name: derive-workgraph
     kind: jq
     config:
@@ -52,12 +51,14 @@ middleware:
             - elementType: Node
               label: '"WorkGraphEvent"'
               id: .id
-              query: .
+              query: >-
+                if (.workgraph_event | type) == "object" then .workgraph_event else empty end
           update:
             - elementType: Node
               label: '"WorkGraphEvent"'
               id: .id
-              query: .
+              query: >-
+                if (.workgraph_event | type) == "object" then .workgraph_event else empty end
 "#;
 
     let dto: QueryConfigDto =
@@ -67,12 +68,32 @@ middleware:
         .expect("WorkGraph middleware config should map");
 
     assert_eq!(
+        config.middleware[0].config["output_property"],
+        "workgraph_event"
+    );
+    assert_eq!(
+        config.middleware[1].config["target_property"],
+        "workgraph_event"
+    );
+    assert_eq!(
         config.middleware[1].config["on_missing"], "passthrough",
         "parse_json must preserve changes without the extracted property"
+    );
+    assert_eq!(
+        config.middleware[1].config["on_error"], "skip",
+        "parse_json must preserve malformed edits for reconciliation"
+    );
+    assert!(
+        !config.middleware[1].config.contains_key("output_property"),
+        "parse_json must replace workgraph_event in place"
     );
     assert_eq!(config.middleware[2].config["preserve_input"], true);
     assert_eq!(config.middleware[2].config["include_source_metadata"], true);
     assert_eq!(config.middleware[2].config["reconcile"], true);
+    assert_eq!(
+        config.middleware[2].config["mappings"]["WorkGraphEvent"]["update"][0]["query"],
+        r#"if (.workgraph_event | type) == "object" then .workgraph_event else empty end"#
+    );
 
     let core = DrasiLib::builder()
         .build()
