@@ -35,7 +35,7 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library (all middleware, using system libjq instead of bundled-jq)
+# Phase 2 dogfood consumes the integrated drasi-core workspace at ../drasi-core.
 drasi-lib = { path = "../drasi-core/lib", features = [
   "middleware-jq",
   "middleware-decoder",
@@ -126,7 +126,6 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = { path = "../drasi-core/core" }
 
 [lints.rust]
 warnings = "deny"
@@ -149,17 +148,3 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
-
-
-# Local development: use path-based dependencies
-# [patch.crates-io]
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
-# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
-# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
