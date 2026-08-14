@@ -42,10 +42,12 @@ use std::sync::Arc;
 /// plugin type.  This means a new plugin type is never silently skipped just
 /// because its type name was not added to this list.
 ///
-/// Any matched file still has to export `drasi_plugin_metadata()` — files that
-/// do not are logged and skipped by `PluginLoader::load_all`, so matching more
-/// broadly costs at most one extra `dlopen` rather than loading something that
-/// is not a plugin.
+/// Filename matching only selects candidates. `PluginLoader::load_all` opens
+/// each candidate and, when `drasi_plugin_metadata()` is available, validates
+/// its SDK version and target platform. Missing or null metadata produces a
+/// warning but does not reject the candidate; the loader continues by resolving
+/// and invoking the required `drasi_plugin_init()` entry point. The candidate is
+/// accepted only if initialization succeeds and returns a plugin registration.
 ///
 /// The two entries cover:
 /// - Unix shared libraries (`libdrasi_<type>_<name>.so` / `.dylib`)
