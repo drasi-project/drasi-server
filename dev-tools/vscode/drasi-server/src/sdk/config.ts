@@ -90,8 +90,7 @@ export class ConnectionRegistry {
 
   async setCurrentConnectionId(connectionId: string) {
     const config = vscode.workspace.getConfiguration(this.configurationSection);
-    const target = this.getConfigurationTarget();
-    await config.update('currentConnectionId', connectionId, target);
+    await config.update('currentConnectionId', connectionId, vscode.ConfigurationTarget.Global);
   }
 
   async setCurrentInstanceId(instanceId: string) {
@@ -111,13 +110,6 @@ export class ConnectionRegistry {
 
   private async setConnections(connections: ServerConnectionConfig[]) {
     const config = vscode.workspace.getConfiguration(this.configurationSection);
-    const target = this.getConfigurationTarget();
-    await config.update('connections', connections, target);
-  }
-
-  private getConfigurationTarget(): vscode.ConfigurationTarget {
-    return vscode.workspace.workspaceFolders
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
+    await config.update('connections', connections, vscode.ConfigurationTarget.Global);
   }
 }
