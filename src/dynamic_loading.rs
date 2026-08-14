@@ -399,7 +399,7 @@ fn is_shared_lib(name: &str) -> bool {
     }
     // Versioned Linux shared library: `.so.` followed immediately by a digit.
     if let Some((_, version)) = name.split_once(".so.") {
-        return version.starts_with(|c: char| c.is_ascii_digit());
+        return version.chars().next().is_some_and(|c| c.is_ascii_digit());
     }
     false
 }
@@ -533,10 +533,10 @@ mod tests {
 
     #[test]
     fn count_unmatched_shared_libs_returns_zero_for_missing_dir() {
-        let skipped = count_unmatched_shared_libs(
-            std::path::Path::new("/nonexistent/path"),
-            PLUGIN_FILE_PATTERNS,
-        );
+        let dir = tempfile::tempdir().unwrap();
+        let missing_dir = dir.path().join("missing");
+
+        let skipped = count_unmatched_shared_libs(&missing_dir, PLUGIN_FILE_PATTERNS);
         assert_eq!(skipped, 0);
     }
 }
