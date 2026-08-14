@@ -50,6 +50,7 @@ use std::sync::Arc;
 /// The two entries cover:
 /// - Unix shared libraries (`libdrasi_<type>_<name>.so` / `.dylib`)
 /// - Windows DLLs (`drasi_<type>_<name>.dll`)
+///
 /// Both underscored and hyphenated type names (e.g. `secret_store` vs
 /// `secret-store`) are matched because both begin with the `drasi_` prefix.
 ///
@@ -376,7 +377,9 @@ fn count_unmatched_shared_libs(dir: &Path, patterns: &[&str]) -> usize {
             let is_regular_file = e.file_type().map(|t| t.is_file()).unwrap_or(false);
             let name = e.file_name();
             let name = name.to_string_lossy();
-            is_regular_file && is_shared_lib(&name) && !patterns.iter().any(|pat| matches_glob(pat, &name))
+            is_regular_file
+                && is_shared_lib(&name)
+                && !patterns.iter().any(|pat| matches_glob(pat, &name))
         })
         .count()
 }
