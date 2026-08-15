@@ -16,6 +16,7 @@ use anyhow::Result;
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,11 +28,13 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
+use crate::api::models::BootstrapProviderConfig;
 use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
 use crate::factories::{
-    build_config_resolver_context, build_identity_provider_map, config_resolver_callback,
-    create_reaction_locked, create_secret_store_from_registry, create_source_locked,
-    create_state_store_provider,
+    build_bootstrap_provider_config_map, build_config_resolver_context,
+    build_identity_provider_map, config_resolver_callback, create_reaction_locked,
+    create_secret_store_from_registry, create_source_locked, create_state_store_provider,
+    resolve_source_bootstrap_provider,
 };
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
@@ -64,6 +67,11 @@ struct PreparedInstance {
     persist_index: bool,
     enable_archive: bool,
     core: DrasiLib,
+    /// Top-level bootstrap provider configs declared for this instance,
+    /// keyed by provider id. Registered into the `InstanceRegistry` so
+    /// runtime-created sources can resolve `bootstrapProvider: <id>`
+    /// references. Empty for programmatically built instances.
+    bootstrap_providers: HashMap<String, BootstrapProviderConfig>,
 }
 
 impl DrasiServer {
@@ -500,6 +508,11 @@ impl DrasiServer {
             // reactions can reference entries here via `identityProvider: <id>`.
             let identity_providers =
                 build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
+            // Build the bootstrap-provider config map for this instance. Sources
+            // can reference entries here via `bootstrapProvider: <id>`; each
+            // referencing source instantiates its own provider from the config.
+            let bootstrap_providers =
+                build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
             // Create and add sources from config
             info!(
                 "Loading {} source(s) from configuration for instance '{}'",
@@ -507,6 +520,8 @@ impl DrasiServer {
                 instance.id
             );
             for source_config in instance.sources.clone() {
+                let source_config =
+                    resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
                 let identity_ref = source_config.identity_provider().map(str::to_string);
                 let (source, plugin_meta) =
                     create_source_locked(&plugin_registry, source_config).await?;
@@ -557,6 +572,7 @@ impl DrasiServer {
                 persist_index: instance.persist_index,
                 enable_archive: instance.enable_archive,
                 core,
+                bootstrap_providers,
             });
         }
 
@@ -595,6 +611,7 @@ impl DrasiServer {
                 persist_index: false,
                 enable_archive: false,
                 core,
+                bootstrap_providers: HashMap::new(),
             }],
             enable_api,
             enable_ui,
@@ -625,6 +642,7 @@ impl DrasiServer {
                 persist_index,
                 enable_archive: false,
                 core,
+                bootstrap_providers: HashMap::new(),
             })
             .collect();
 
@@ -673,11 +691,14 @@ impl DrasiServer {
         let mut instance_map: IndexMap<String, Arc<DrasiLib>> = IndexMap::new();
         let mut persist_settings: IndexMap<String, bool> = IndexMap::new();
         let mut archive_settings: IndexMap<String, bool> = IndexMap::new();
+        let mut bootstrap_providers_by_id: Vec<(String, HashMap<String, BootstrapProviderConfig>)> =
+            Vec::new();
 
         // Take ownership of instances to avoid partial move of self
         let instances = std::mem::take(&mut self.instances);
         for instance in instances {
             let core = instance.core;
+            let bootstrap_providers = instance.bootstrap_providers;
             let id = match instance.id_hint {
                 Some(id) => id,
                 None => core
@@ -691,6 +712,7 @@ impl DrasiServer {
             core.start().await?;
             persist_settings.insert(id.clone(), instance.persist_index);
             archive_settings.insert(id.clone(), instance.enable_archive);
+            bootstrap_providers_by_id.push((id.clone(), bootstrap_providers));
             instance_map.insert(id, core);
         }
 
@@ -705,6 +727,13 @@ impl DrasiServer {
 
         // Create the instance registry from the map
         let registry = InstanceRegistry::from_map((*instances).clone());
+
+        // Record each instance's top-level bootstrap provider configs so the
+        // source create/upsert handlers can resolve `bootstrapProvider: <id>`
+        // references for sources created at runtime.
+        for (id, providers) in bootstrap_providers_by_id {
+            registry.set_bootstrap_providers(id, providers).await;
+        }
 
         // Initialize persistence and extract solutions_dir if config file is provided
         let (config_persistence, solutions_dir) = if let Some(config_file) = &self.config_file_path
@@ -751,6 +780,7 @@ impl DrasiServer {
                                 queries: config.queries.clone(),
                                 reactions: config.reactions.clone(),
                                 identity_providers: config.identity_providers.clone(),
+                                bootstrap_providers: config.bootstrap_providers.clone(),
                             }]
                         } else {
                             config.instances.clone()

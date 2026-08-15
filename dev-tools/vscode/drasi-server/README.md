@@ -22,13 +22,15 @@ The **Drasi Server** extension provides tools for managing and debugging Drasi S
 
 ## Configuration
 
-| Setting | Description |
-|---------|-------------|
-| `drasiServer.url` | Base URL for the Drasi Server API (default: `http://localhost:8080`) |
-| `drasiServer.instanceId` | Optional instance ID to use; if empty, the first instance is selected |
-| `drasiServer.connections` | Saved server connections |
-| `drasiServer.currentConnectionId` | Active connection ID |
-| `drasiServer.binaryPath` | Path to the `drasi-server` binary (used by the Launch Server command) |
+Connection and binary settings are stored in **user** settings (not workspace), so personal server URLs are not written to `.vscode/settings.json`.
+
+| Setting | Scope | Description |
+|---------|-------|-------------|
+| `drasiServer.connections` | User | Saved server connections |
+| `drasiServer.currentConnectionId` | User | Active connection ID |
+| `drasiServer.binaryPath` | User | Path to the `drasi-server` binary (used by the Launch Server command) |
+| `drasiServer.url` | User | Seed URL for the first connection only — **legacy**, prefer `drasiServer.connections` (default: `http://localhost:8080`) |
+| `drasiServer.instanceId` | User | Seed instance ID for the first connection only — **legacy**, prefer `drasiServer.connections` |
 
 ## Getting Started
 

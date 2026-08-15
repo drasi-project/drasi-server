@@ -65,10 +65,7 @@ pub(crate) fn apply_rocksdb_index(
         "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} (archive: {enable_archive})",
         index_path.display()
     );
-    let provider = RocksDbIndexProvider::new(
-        index_path,
-        enable_archive, // archive index for past() functions, off by default
-        false,          // direct_io - use OS page cache
-    );
+    let direct_io = false; // use OS page cache
+    let provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
     builder.with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, Arc::new(provider))
 }

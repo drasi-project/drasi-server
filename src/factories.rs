@@ -29,7 +29,8 @@ use std::sync::Arc;
 
 use crate::api::mappings::DtoMapper;
 use crate::api::models::{
-    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, BUILTIN_PASSWORD_KIND,
+    BootstrapProviderConfig, ConfigValue, IdentityProviderConfig, TopLevelBootstrapProviderConfig,
+    BUILTIN_PASSWORD_KIND,
 };
 use crate::config::{ReactionConfig, SecretStoreConfig, SourceConfig, StateStoreConfig};
 use crate::plugin_registry::PluginRegistry;
@@ -171,7 +172,11 @@ pub async fn create_source(
         )
     })?;
 
-    let bootstrap_descriptor = if let Some(bootstrap_config) = &config.bootstrap_provider {
+    let bootstrap_descriptor = if let Some(bootstrap_config) = config
+        .bootstrap_provider
+        .as_ref()
+        .and_then(|r| r.as_inline())
+    {
         let kind = bootstrap_config.kind();
         Some(registry.get_bootstrapper(kind).cloned().ok_or_else(|| {
             anyhow::anyhow!(
@@ -189,9 +194,13 @@ pub async fn create_source(
         .create_source(&config.id, &config.config, config.auto_start)
         .await?;
 
-    if let (Some(bootstrap_config), Some(bp_descriptor)) =
-        (&config.bootstrap_provider, bootstrap_descriptor)
-    {
+    if let (Some(bootstrap_config), Some(bp_descriptor)) = (
+        config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline()),
+        bootstrap_descriptor,
+    ) {
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
@@ -217,7 +226,11 @@ pub async fn create_source_locked(
                 reg.source_kinds()
             )
         })?;
-        let bp_desc = if let Some(bp_config) = &config.bootstrap_provider {
+        let bp_desc = if let Some(bp_config) = config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline())
+        {
             let kind = bp_config.kind();
             Some(reg.get_bootstrapper(kind).cloned().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -237,9 +250,13 @@ pub async fn create_source_locked(
         .create_source(&config.id, &config.config, config.auto_start)
         .await?;
 
-    if let (Some(bootstrap_config), Some(bp_descriptor)) =
-        (&config.bootstrap_provider, bootstrap_descriptor)
-    {
+    if let (Some(bootstrap_config), Some(bp_descriptor)) = (
+        config
+            .bootstrap_provider
+            .as_ref()
+            .and_then(|r| r.as_inline()),
+        bootstrap_descriptor,
+    ) {
         let provider = bp_descriptor
             .create_bootstrap_provider(&bootstrap_config.config, &config.config)
             .await?;
@@ -268,6 +285,73 @@ pub async fn create_bootstrap_provider(
     descriptor
         .create_bootstrap_provider(&bootstrap_config.config, source_config_json)
         .await
+}
+
+/// Build a `{id -> BootstrapProviderConfig}` map from a slice of top-level
+/// bootstrap provider configs.
+///
+/// The `id` is guaranteed to be present by the type; this only fails on a
+/// duplicate id. Unlike identity providers, bootstrap provider *instances* are
+/// not built here: because `Source::set_bootstrap_provider` takes an owned
+/// value, each referencing source instantiates its own provider from the
+/// shared config at source-creation time.
+pub fn build_bootstrap_provider_config_map(
+    configs: &[TopLevelBootstrapProviderConfig],
+) -> Result<HashMap<String, BootstrapProviderConfig>> {
+    let mut map: HashMap<String, BootstrapProviderConfig> = HashMap::new();
+    for cfg in configs {
+        if map.contains_key(cfg.id()) {
+            return Err(anyhow::anyhow!(
+                "Duplicate bootstrapProvider id '{}'",
+                cfg.id()
+            ));
+        }
+        map.insert(cfg.id().to_string(), cfg.inner.clone());
+    }
+    Ok(map)
+}
+
+/// Resolve a source's `bootstrapProvider` reference (if any) against the
+/// top-level bootstrap provider config map, returning a new [`SourceConfig`]
+/// whose reference has been rewritten to an inline definition so the
+/// source-creation path can instantiate it.
+///
+/// Takes the config **by value** and returns the resolved copy, so a caller
+/// that needs the original (e.g. to persist the reference rather than the
+/// inlined copy) keeps its own value explicitly — the ownership split is
+/// enforced by the compiler rather than by convention.
+///
+/// Inline bootstrap providers and sources without a bootstrap provider are
+/// returned unchanged. Returns an error if the referenced id is not declared.
+pub fn resolve_source_bootstrap_provider(
+    mut config: SourceConfig,
+    bootstrap_providers: &HashMap<String, BootstrapProviderConfig>,
+) -> Result<SourceConfig> {
+    if let Some(id) = config
+        .bootstrap_provider
+        .as_ref()
+        .and_then(|r| r.as_reference())
+        .map(str::to_string)
+    {
+        let resolved = bootstrap_providers.get(&id).cloned().ok_or_else(|| {
+            // Do NOT enumerate the declared provider ids in the returned error:
+            // it flows into API error responses and would let a caller probe
+            // for the full set of configured providers. Log them server-side
+            // (debug only) for operator troubleshooting instead.
+            log::debug!(
+                "Unknown bootstrapProvider '{id}' referenced by source '{}'. Declared providers: {:?}",
+                config.id(),
+                bootstrap_providers.keys().collect::<Vec<_>>()
+            );
+            anyhow::anyhow!(
+                "Source '{}' references unknown bootstrapProvider '{id}'",
+                config.id(),
+            )
+        })?;
+        config.bootstrap_provider =
+            Some(crate::api::models::BootstrapProviderRef::Inline(resolved));
+    }
+    Ok(config)
 }
 
 /// Create a reaction instance from a ReactionConfig using the plugin registry.
@@ -625,6 +709,132 @@ mod tests {
         let result =
             create_bootstrap_provider(&registry, &bootstrap_config, &source_config_json).await;
         assert!(result.is_ok(), "Failed to create noop bootstrap provider");
+    }
+
+    #[test]
+    fn test_build_bootstrap_provider_config_map() {
+        let configs = vec![
+            TopLevelBootstrapProviderConfig {
+                id: "pg".to_string(),
+                inner: BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    config: serde_json::json!({ "host": "db.local" }),
+                },
+            },
+            TopLevelBootstrapProviderConfig {
+                id: "seed".to_string(),
+                inner: BootstrapProviderConfig {
+                    kind: "scriptfile".to_string(),
+                    config: serde_json::json!({ "filePaths": ["/data/seed.jsonl"] }),
+                },
+            },
+        ];
+        let map = build_bootstrap_provider_config_map(&configs).unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("pg").unwrap().kind(), "postgres");
+        assert_eq!(map.get("seed").unwrap().kind(), "scriptfile");
+    }
+
+    #[test]
+    fn test_build_bootstrap_provider_config_map_rejects_duplicate_id() {
+        let configs = vec![
+            TopLevelBootstrapProviderConfig {
+                id: "dup".to_string(),
+                inner: BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    config: serde_json::json!({}),
+                },
+            },
+            TopLevelBootstrapProviderConfig {
+                id: "dup".to_string(),
+                inner: BootstrapProviderConfig {
+                    kind: "scriptfile".to_string(),
+                    config: serde_json::json!({}),
+                },
+            },
+        ];
+        let err = build_bootstrap_provider_config_map(&configs).unwrap_err();
+        assert!(err.to_string().contains("Duplicate bootstrapProvider id"));
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_reference_to_inline() {
+        // Guards the runtime-wiring fix ("Option A"): a source referencing a
+        // top-level provider is rewritten to an inline definition so the
+        // source-creation path can instantiate and wire it live.
+        let source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
+                "pg-bootstrap".to_string(),
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "pg-bootstrap".to_string(),
+            BootstrapProviderConfig {
+                kind: "postgres".to_string(),
+                config: serde_json::json!({ "host": "db.local", "tables": ["Message"] }),
+            },
+        );
+
+        let source = resolve_source_bootstrap_provider(source, &providers).unwrap();
+
+        let inline = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .expect("reference should be resolved to an inline provider");
+        assert_eq!(inline.kind(), "postgres");
+        assert_eq!(inline.config["host"], "db.local");
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_unknown_reference_errors() {
+        let source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Reference(
+                "does-not-exist".to_string(),
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        let err = resolve_source_bootstrap_provider(source, &HashMap::new()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("references unknown bootstrapProvider 'does-not-exist'"));
+    }
+
+    #[test]
+    fn test_resolve_source_bootstrap_provider_inline_untouched() {
+        // Inline providers (and sources without one) are left unchanged.
+        let source = SourceConfig {
+            kind: "postgres".to_string(),
+            id: "src1".to_string(),
+            auto_start: true,
+            bootstrap_provider: Some(crate::api::models::BootstrapProviderRef::Inline(
+                BootstrapProviderConfig {
+                    kind: "postgres".to_string(),
+                    config: serde_json::json!({ "host": "inline.local" }),
+                },
+            )),
+            identity_provider: None,
+            config: serde_json::json!({}),
+        };
+
+        let source = resolve_source_bootstrap_provider(source, &HashMap::new()).unwrap();
+
+        let inline = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .unwrap();
+        assert_eq!(inline.config["host"], "inline.local");
     }
 
     // ==========================================================================

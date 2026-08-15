@@ -136,6 +136,7 @@ fn test_empty_config_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -155,6 +156,7 @@ fn test_empty_config_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -175,6 +177,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: true,
+        enable_archive: false,
         enable_ui: true,
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
@@ -196,6 +199,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -223,6 +227,7 @@ fn test_mock_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -249,6 +254,7 @@ fn test_mock_source_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -272,6 +278,7 @@ fn test_http_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -298,6 +305,7 @@ fn test_http_source_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -320,6 +328,7 @@ fn test_grpc_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -346,6 +355,7 @@ fn test_grpc_source_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -367,6 +377,7 @@ fn test_postgres_source_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -377,7 +388,7 @@ fn test_postgres_source_generates_valid_yaml() {
             id: "postgres-source".to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
                 config: serde_json::json!({
                     "host": "localhost",
@@ -391,7 +402,7 @@ fn test_postgres_source_generates_valid_yaml() {
                     "sslMode": "prefer",
                     "tableKeys": [{"table": "users", "keyColumns": ["id"]}]
                 }),
-            }),
+            })),
             config: json!({
                 "host": "localhost",
                 "port": 5432,
@@ -418,6 +429,7 @@ fn test_postgres_source_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -460,6 +472,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -470,7 +483,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
             id: "mock-source".to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "postgres".to_string(),
                 config: serde_json::json!({
                     "host": "localhost",
@@ -484,7 +497,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
                     "sslMode": "prefer",
                     "tableKeys": [{"table": "users", "keyColumns": ["id"]}]
                 }),
-            }),
+            })),
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
@@ -500,6 +513,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -535,6 +549,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -545,12 +560,12 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
             id: "mock-source".to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
                 config: serde_json::json!({
                     "filePaths": ["/data/init.jsonl"]
                 }),
-            }),
+            })),
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
@@ -566,6 +581,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -596,6 +612,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -606,10 +623,10 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
             id: "mock-source".to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "noop".to_string(),
                 config: serde_json::json!({}),
-            }),
+            })),
             config: json!({"dataType": {"type": "generic"}, "intervalMs": 5000}),
         }],
         queries: vec![],
@@ -625,6 +642,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -653,6 +671,7 @@ fn test_log_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -679,6 +698,7 @@ fn test_log_reaction_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -701,6 +721,7 @@ fn test_http_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -727,6 +748,7 @@ fn test_http_reaction_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -750,6 +772,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -776,6 +799,7 @@ fn test_sse_reaction_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -802,6 +826,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -828,6 +853,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -859,6 +885,7 @@ fn test_query_generates_valid_yaml() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,
+        enable_archive: false,
         enable_ui: true,
         state_store: None,
         secret_store: None,
@@ -899,6 +926,7 @@ fn test_query_generates_valid_yaml() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");
@@ -936,6 +964,7 @@ fn test_full_config_roundtrip() {
         log_level: ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: true,
+        enable_archive: false,
         enable_ui: true,
         state_store: Some(StateStoreConfig::Redb {
             path: ConfigValue::Static("./data/state.redb".to_string()),
@@ -948,12 +977,12 @@ fn test_full_config_roundtrip() {
             id: "mock-source".to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: "scriptfile".to_string(),
                 config: serde_json::json!({
                     "filePaths": ["/data/init.jsonl"]
                 }),
-            }),
+            })),
             config: json!({"dataType": {"type": "sensorReading", "sensorCount": 5}, "intervalMs": 5000}),
         }],
         queries: vec![QueryConfigDto {
@@ -997,6 +1026,7 @@ fn test_full_config_roundtrip() {
         cors_allowed_origins: Vec::new(),
         solutions_dir: None,
         identity_providers: vec![],
+        bootstrap_providers: vec![],
     };
 
     let yaml = serde_yaml::to_string(&config).expect("Should serialize to YAML");

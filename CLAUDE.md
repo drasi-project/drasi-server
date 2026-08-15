@@ -151,6 +151,32 @@ enableUi: true       # Enable the web UI at /ui (default: true)
 #   - "http://localhost:3000"
 #   - "https://dashboard.example.com"
 
+# Optional top-level bootstrap providers, referenced by sources via
+# `bootstrapProvider: <id>`. Declaring a provider here lets multiple sources
+# share one definition. Each referencing source instantiates its own provider
+# instance from this config (non-singleton).
+# bootstrapProviders:
+#   - kind: postgres
+#     id: pg-bootstrap
+#     host: localhost
+#     port: 5432
+#     database: mydb
+#     user: drasi
+#     password: "${PG_PASSWORD}"
+#     tables: [Message]
+#
+# A source then references it by id (see the sources block below):
+#   sources:
+#     - kind: postgres
+#       id: my-source
+#       bootstrapProvider: pg-bootstrap   # reference to the top-level entry
+#
+# Sources may also define a bootstrap provider INLINE (a mapping instead of a
+# string). An inline provider of the SAME kind as its source inherits the
+# source's connection fields, so it needs no duplication:
+#   bootstrapProvider:
+#     kind: postgres
+
 # Sources (parsed into plugin instances)
 sources:
   - kind: mock

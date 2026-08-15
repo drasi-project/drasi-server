@@ -139,6 +139,7 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
     let all_identity_providers = collect_all_identity_providers(config);
+    let all_bootstrap_providers = collect_all_bootstrap_providers(config);
 
     for src in &all_sources {
         requirements.push(PluginRequirement {
@@ -147,13 +148,23 @@ pub fn extract_plugin_requirements(config: &DrasiServerConfig) -> Vec<PluginRequ
             referenced_by: format!("source '{}'", src.id),
         });
 
-        if let Some(bp) = &src.bootstrap_provider {
+        if let Some(bp) = src.bootstrap_provider().and_then(|r| r.as_inline()) {
             requirements.push(PluginRequirement {
                 category: "bootstrap".to_string(),
                 kind: bp.kind.clone(),
                 referenced_by: format!("source '{}' bootstrapProvider", src.id),
             });
         }
+    }
+
+    // Top-level bootstrap providers are referenced by sources via
+    // `bootstrapProvider: <id>`. Their plugin kinds must be available too.
+    for bp in &all_bootstrap_providers {
+        requirements.push(PluginRequirement {
+            category: "bootstrap".to_string(),
+            kind: bp.kind().to_string(),
+            referenced_by: format!("bootstrapProvider '{}'", bp.id()),
+        });
     }
 
     for rxn in &all_reactions {
@@ -255,14 +266,20 @@ pub fn check_config_references(config: &DrasiServerConfig) -> Vec<ReferenceWarni
     let all_sources = collect_all_sources(config);
     let all_reactions = collect_all_reactions(config);
     let all_identity_providers = collect_all_identity_providers(config);
+    let all_bootstrap_providers = collect_all_bootstrap_providers(config);
 
     for src in &all_sources {
         let prefix = format!("sources['{}']", src.id);
         walk_json_env_refs(&src.config, &prefix, &mut warnings);
-        if let Some(bp) = &src.bootstrap_provider {
+        if let Some(bp) = src.bootstrap_provider().and_then(|r| r.as_inline()) {
             let bp_prefix = format!("{prefix}.bootstrapProvider");
             walk_json_env_refs(&bp.config, &bp_prefix, &mut warnings);
         }
+    }
+
+    for bp in &all_bootstrap_providers {
+        let prefix = format!("bootstrapProviders['{}']", bp.id());
+        walk_json_env_refs(&bp.inner.config, &prefix, &mut warnings);
     }
 
     for rxn in &all_reactions {
@@ -456,6 +473,17 @@ pub(crate) fn collect_all_identity_providers(
     providers
 }
 
+/// Collect all top-level bootstrap providers from config (top-level + instances).
+pub(crate) fn collect_all_bootstrap_providers(
+    config: &DrasiServerConfig,
+) -> Vec<crate::api::models::TopLevelBootstrapProviderConfig> {
+    let mut providers = config.bootstrap_providers.clone();
+    for inst in &config.instances {
+        providers.extend(inst.bootstrap_providers.clone());
+    }
+    providers
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -463,7 +491,9 @@ pub(crate) fn collect_all_identity_providers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{BootstrapProviderConfig, ReactionConfig, SourceConfig};
+    use crate::api::models::{
+        BootstrapProviderConfig, BootstrapProviderRef, ReactionConfig, SourceConfig,
+    };
     use async_trait::async_trait;
     use drasi_plugin_sdk::{
         BootstrapPluginDescriptor, ReactionPluginDescriptor, SourcePluginDescriptor,
@@ -596,10 +626,10 @@ mod tests {
             id: id.to_string(),
             auto_start: true,
             identity_provider: None,
-            bootstrap_provider: Some(BootstrapProviderConfig {
+            bootstrap_provider: Some(BootstrapProviderRef::Inline(BootstrapProviderConfig {
                 kind: bp_kind.to_string(),
                 config: serde_json::json!({}),
-            }),
+            })),
             config: serde_json::json!({}),
         }
     }

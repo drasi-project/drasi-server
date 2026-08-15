@@ -18,7 +18,7 @@ use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::bootstrap::BootstrapProviderConfig;
+use super::bootstrap::{BootstrapProviderConfig, BootstrapProviderRef};
 
 /// Source configuration with kind discriminator.
 ///
@@ -47,7 +47,7 @@ pub struct SourceConfig {
     pub kind: String,
     pub id: String,
     pub auto_start: bool,
-    pub bootstrap_provider: Option<BootstrapProviderConfig>,
+    pub bootstrap_provider: Option<BootstrapProviderRef>,
     /// Reference (by `id`) to an entry in the top-level
     /// `identityProviders` block. When set, the resolved provider is
     /// attached to the source via `Source::set_identity_provider` after
@@ -67,7 +67,14 @@ impl Serialize for SourceConfig {
         map.serialize_entry("id", &self.id)?;
         map.serialize_entry("autoStart", &self.auto_start)?;
         if let Some(bp) = &self.bootstrap_provider {
-            map.serialize_entry("bootstrapProvider", bp)?;
+            match bp {
+                BootstrapProviderRef::Reference(id) => {
+                    map.serialize_entry("bootstrapProvider", id)?;
+                }
+                BootstrapProviderRef::Inline(config) => {
+                    map.serialize_entry("bootstrapProvider", config)?;
+                }
+            }
         }
         if let Some(ip) = &self.identity_provider {
             map.serialize_entry("identityProvider", ip)?;
@@ -172,16 +179,32 @@ impl<'de> Deserialize<'de> for SourceConfig {
 
                 let remaining_value = serde_json::Value::Object(remaining);
 
-                // Deserialize bootstrap_provider if present, inheriting from source when applicable.
-                let bootstrap_provider: Option<BootstrapProviderConfig> = bootstrap_provider
-                    .map(|value| {
-                        merge_bootstrap_provider_with_source(&kind, value, &remaining_value)
-                    })
-                    .map(serde_json::from_value)
-                    .transpose()
-                    .map_err(|e| {
-                        de::Error::custom(format!("in source '{id}' bootstrapProvider: {e}"))
-                    })?;
+                // Resolve bootstrapProvider: a string is a reference to a
+                // top-level `bootstrapProviders` entry; a mapping is an inline
+                // definition (which may inherit fields from the source).
+                let bootstrap_provider: Option<BootstrapProviderRef> = match bootstrap_provider {
+                    None => None,
+                    Some(serde_json::Value::String(id)) => {
+                        Some(BootstrapProviderRef::Reference(id))
+                    }
+                    Some(value @ serde_json::Value::Object(_)) => {
+                        let merged =
+                            merge_bootstrap_provider_with_source(&kind, value, &remaining_value);
+                        let config: BootstrapProviderConfig = serde_json::from_value(merged)
+                            .map_err(|e| {
+                                de::Error::custom(format!(
+                                    "in source '{id}' bootstrapProvider: {e}"
+                                ))
+                            })?;
+                        Some(BootstrapProviderRef::Inline(config))
+                    }
+                    Some(_) => {
+                        return Err(de::Error::custom(format!(
+                            "in source '{id}' bootstrapProvider: expected a string reference \
+                             to a top-level bootstrapProviders entry or an inline mapping"
+                        )));
+                    }
+                };
 
                 Ok(SourceConfig {
                     kind,
@@ -214,8 +237,9 @@ impl SourceConfig {
         self.auto_start = value;
     }
 
-    /// Get the bootstrap provider configuration if any
-    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderConfig> {
+    /// Get the bootstrap provider reference if any (inline definition or a
+    /// reference to a top-level `bootstrapProviders` entry).
+    pub fn bootstrap_provider(&self) -> Option<&BootstrapProviderRef> {
         self.bootstrap_provider.as_ref()
     }
 
@@ -246,47 +270,32 @@ fn merge_bootstrap_provider_with_source(
         _ => return serde_json::Value::Object(bootstrap_map),
     };
 
+    // Inheritance only applies when the bootstrap provider is the SAME kind as
+    // the source, since they then share a config schema. For mix-and-match
+    // (a different bootstrapper kind) the provider must be configured
+    // explicitly — inheriting source fields into a different schema would be
+    // meaningless or wrong.
     if bootstrap_kind != source_kind {
         return serde_json::Value::Object(bootstrap_map);
     }
-
-    let Some(allowed_fields) = allowed_bootstrap_provider_fields(bootstrap_kind) else {
-        return serde_json::Value::Object(bootstrap_map);
-    };
 
     let serde_json::Value::Object(source_map) = source_config else {
         return serde_json::Value::Object(bootstrap_map);
     };
 
-    for field in allowed_fields {
-        if !bootstrap_map.contains_key(*field) {
-            if let Some(value) = source_map.get(*field) {
-                bootstrap_map.insert((*field).to_string(), value.clone());
-            }
+    // Inherit every source field the bootstrap provider hasn't already set.
+    // This is generic across all plugin kinds — there is no per-kind allowlist —
+    // so, e.g., a MySQL source with an inline `{ kind: mysql }` bootstrap
+    // provider automatically reuses the same connection settings without any
+    // server-side changes. Fields explicitly set on the bootstrap provider
+    // always take precedence.
+    for (field, value) in source_map {
+        if !bootstrap_map.contains_key(field) {
+            bootstrap_map.insert(field.clone(), value.clone());
         }
     }
 
     serde_json::Value::Object(bootstrap_map)
-}
-
-fn allowed_bootstrap_provider_fields(kind: &str) -> Option<&'static [&'static str]> {
-    match kind {
-        "postgres" => Some(&[
-            "host",
-            "port",
-            "database",
-            "user",
-            "password",
-            "tables",
-            "slotName",
-            "publicationName",
-            "sslMode",
-            "tableKeys",
-        ]),
-        "scriptfile" => Some(&["filePaths"]),
-        "application" | "noop" => Some(&[]),
-        _ => None,
-    }
 }
 
 // =============================================================================
@@ -570,7 +579,8 @@ bootstrapProvider:
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
         let bp = source
             .bootstrap_provider()
-            .expect("Expected bootstrap provider");
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // After merge_bootstrap_provider_with_source, inherited fields should be present
@@ -604,7 +614,8 @@ bootstrapProvider:
         let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
         let bp = source
             .bootstrap_provider()
-            .expect("Expected bootstrap provider");
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
         assert_eq!(bp.kind(), "postgres");
 
         // Overridden fields
@@ -612,6 +623,71 @@ bootstrapProvider:
         assert_eq!(bp.config["user"], "bootstrap_user");
         // Inherited field
         assert_eq!(bp.config["password"], "drasi_pass");
+    }
+
+    #[test]
+    fn test_bootstrap_provider_inherits_generic_kind() {
+        // Inheritance is generic across plugin kinds (no hardcoded allowlist):
+        // a same-kind inline bootstrap provider inherits ALL source fields it
+        // does not itself set. This exercises a kind that was never special-cased.
+        let yaml = r#"
+kind: mysql
+id: mysql-source
+host: db.internal
+port: 3306
+database: shop
+user: app
+password: s3cret
+tables:
+- Orders
+bootstrapProvider:
+  kind: mysql
+"#;
+
+        let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
+        let bp = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
+        assert_eq!(bp.kind(), "mysql");
+        // Every source field is inherited without any per-kind configuration.
+        assert_eq!(bp.config["host"], "db.internal");
+        assert_eq!(bp.config["port"], 3306);
+        assert_eq!(bp.config["database"], "shop");
+        assert_eq!(bp.config["user"], "app");
+        assert_eq!(bp.config["password"], "s3cret");
+        assert_eq!(bp.config["tables"][0], "Orders");
+    }
+
+    #[test]
+    fn test_bootstrap_provider_different_kind_does_not_inherit() {
+        // Mix-and-match: a bootstrap provider of a DIFFERENT kind than the
+        // source must be configured explicitly and inherits nothing.
+        let yaml = r#"
+kind: mysql
+id: mysql-source
+host: db.internal
+port: 3306
+database: shop
+user: app
+password: s3cret
+bootstrapProvider:
+  kind: scriptfile
+  filePaths:
+  - /data/seed.jsonl
+"#;
+
+        let source: SourceConfig = serde_yaml::from_str(yaml).unwrap();
+        let bp = source
+            .bootstrap_provider()
+            .and_then(|r| r.as_inline())
+            .expect("Expected inline bootstrap provider");
+        assert_eq!(bp.kind(), "scriptfile");
+        assert_eq!(bp.config["filePaths"][0], "/data/seed.jsonl");
+        // No source fields leak into a different-kind bootstrap provider.
+        assert!(bp.config.get("host").is_none());
+        assert!(bp.config.get("database").is_none());
+        assert!(bp.config.get("password").is_none());
     }
 
     #[test]
