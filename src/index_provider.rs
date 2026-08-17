@@ -55,13 +55,16 @@ pub(crate) fn instance_index_dir(instance_id: &str) -> PathBuf {
 /// by both server startup and the create-instance API handler. Every query in
 /// the instance without an explicit `storageBackend` is persisted to
 /// `./data/<instanceId>/index` (see [`instance_index_dir`]).
-pub(crate) fn apply_rocksdb_index(builder: DrasiLibBuilder, instance_id: &str) -> DrasiLibBuilder {
+pub(crate) fn apply_rocksdb_index(
+    builder: DrasiLibBuilder,
+    instance_id: &str,
+    enable_archive: bool,
+) -> DrasiLibBuilder {
     let index_path = instance_index_dir(instance_id);
     info!(
-        "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {}",
+        "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} (archive: {enable_archive})",
         index_path.display()
     );
-    let enable_archive = false; // double-written on every element update, only temporal queries read it
     let direct_io = false; // use OS page cache
     let provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
     builder.with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, Arc::new(provider))
