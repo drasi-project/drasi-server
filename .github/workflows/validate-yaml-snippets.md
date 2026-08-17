@@ -10,6 +10,15 @@ permissions:
   pull-requests: read
   issues: read
   copilot-requests: write
+# The compiled workflow invokes the Copilot CLI by absolute path
+# (/usr/local/bin/copilot), but install_copilot_cli.sh only prepends to PATH when it
+# reuses a runner toolcache copy, so the agent job dies with ENOENT on a cache hit.
+# Requesting an explicit version forces an exact-match toolcache miss and a fresh
+# download into /usr/local/bin. Bump this if the compat window moves past 1.0.80, and
+# avoid pinning a version the runner image already caches.
+engine:
+  id: copilot
+  version: "1.0.80"
 tools:
   github:
     toolsets: [default]
