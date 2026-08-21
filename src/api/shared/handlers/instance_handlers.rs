@@ -94,8 +94,9 @@ pub async fn create_instance(
     let enable_archive = request.enable_archive.unwrap_or(false);
     let memory_budget_mib = request.memory_budget_mib;
 
-    crate::index_provider::memory_budget_bytes(persist_index, memory_budget_mib)
-        .map_err(|error| invalid_memory_budget_error(&instance_id, error))?;
+    let memory_budget_bytes =
+        crate::index_provider::memory_budget_bytes(persist_index, memory_budget_mib)
+            .map_err(|error| invalid_memory_budget_error(&instance_id, error))?;
 
     // Check if instance already exists
     if registry.contains(&instance_id).await {
@@ -127,7 +128,7 @@ pub async fn create_instance(
             builder,
             &instance_id,
             enable_archive,
-            memory_budget_mib,
+            memory_budget_bytes,
         )
         .map_err(|error| invalid_memory_budget_error(&instance_id, error))?;
     }

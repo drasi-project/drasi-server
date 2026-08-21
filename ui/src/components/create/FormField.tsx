@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface FormFieldProps {
   label: string;
   field: string;
@@ -25,6 +27,8 @@ export default function FormField({
   placeholder,
   helpText,
 }: FormFieldProps) {
+  const inputId = useId();
+
   if (type === "toggle") {
     return (
       <div className="flex items-center justify-between py-2">
@@ -36,6 +40,7 @@ export default function FormField({
         </div>
         <button
           type="button"
+          aria-label={label}
           onClick={() => onChange(field, !value)}
           className={`relative w-10 h-5 rounded-full transition-colors ${
             value ? "bg-drasi-running" : "bg-drasi-border"
@@ -53,12 +58,16 @@ export default function FormField({
 
   return (
     <div className="space-y-1">
-      <label className="flex items-center gap-1 text-xs font-medium text-drasi-text-secondary uppercase tracking-wider">
+      <label
+        htmlFor={inputId}
+        className="flex items-center gap-1 text-xs font-medium text-drasi-text-secondary uppercase tracking-wider"
+      >
         {label}
         {required && <span className="text-drasi-error">*</span>}
       </label>
       {type === "textarea" ? (
         <textarea
+          id={inputId}
           value={String(value ?? "")}
           onChange={(e) => onChange(field, e.target.value)}
           placeholder={placeholder}
@@ -71,18 +80,12 @@ export default function FormField({
         />
       ) : (
         <input
+          id={inputId}
           type={type === "password" ? "password" : type === "number" ? "number" : "text"}
           min={type === "number" ? min : undefined}
           step={type === "number" ? step : undefined}
           value={String(value ?? "")}
-          onChange={(e) =>
-            onChange(
-              field,
-              type === "number" && e.target.value !== ""
-                ? Number(e.target.value)
-                : e.target.value,
-            )
-          }
+          onChange={(e) => onChange(field, e.target.value)}
           placeholder={placeholder}
           className={`w-full bg-drasi-card border rounded-lg px-3 py-2 text-sm text-drasi-text-primary placeholder:text-drasi-text-secondary/50 focus:outline-none focus:ring-1 transition-colors ${
             error

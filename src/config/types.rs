@@ -345,7 +345,7 @@ pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
     pub enable_archive: bool,
-    pub memory_budget_mib: Option<usize>,
+    pub memory_budget_bytes: Option<usize>,
     pub state_store: Option<StateStoreConfig>,
     pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
@@ -449,8 +449,11 @@ impl DrasiServerConfig {
             } else {
                 None
             };
-            crate::index_provider::memory_budget_bytes(instance.persist_index, memory_budget_mib)
-                .map_err(|error| anyhow::anyhow!("Instance '{id}': {error}"))?;
+            let memory_budget_bytes = crate::index_provider::memory_budget_bytes(
+                instance.persist_index,
+                memory_budget_mib,
+            )
+            .map_err(|error| anyhow::anyhow!("Instance '{id}': {error}"))?;
 
             // Map query DTOs to QueryConfig
             let query_mapper = QueryConfigMapper;
@@ -489,7 +492,7 @@ impl DrasiServerConfig {
                 id,
                 persist_index: instance.persist_index,
                 enable_archive: instance.enable_archive,
-                memory_budget_mib,
+                memory_budget_bytes,
                 state_store: instance.state_store.clone(),
                 secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
@@ -515,6 +518,8 @@ impl DrasiServerConfig {
     pub fn validate(&self) -> Result<()> {
         use crate::api::mappings::map_server_settings;
 
+        // Explicit instances are self-contained. Reject a root budget instead of
+        // silently ignoring a setting that operators rely on as a memory bound.
         if !self.instances.is_empty() && self.memory_budget_mib.is_some() {
             return Err(anyhow::anyhow!(
                 "Root memoryBudgetMiB cannot be used with explicit instances; \
@@ -644,7 +649,7 @@ mod tests {
         config.validate().unwrap();
         let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
 
-        assert_eq!(instances[0].memory_budget_mib, Some(512));
+        assert_eq!(instances[0].memory_budget_bytes, Some(512 * 1024 * 1024));
     }
 
     #[test]
@@ -658,7 +663,7 @@ mod tests {
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
 
-        assert_eq!(instances[0].memory_budget_mib, Some(384));
+        assert_eq!(instances[0].memory_budget_bytes, Some(384 * 1024 * 1024));
     }
 
     #[test]
@@ -725,8 +730,8 @@ mod tests {
         let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
         let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
 
-        assert_eq!(instances[0].memory_budget_mib, Some(128));
-        assert_eq!(instances[1].memory_budget_mib, None);
+        assert_eq!(instances[0].memory_budget_bytes, Some(128 * 1024 * 1024));
+        assert_eq!(instances[1].memory_budget_bytes, None);
     }
 
     #[test]

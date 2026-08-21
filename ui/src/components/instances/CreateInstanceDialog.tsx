@@ -102,7 +102,7 @@ export default function CreateInstanceDialog({
               min={1}
               step={1}
               placeholder="256"
-              helpText="Optional shared RocksDB budget for all queries in this instance"
+              helpText="Optional shared RocksDB memory budget for all queries in this instance"
             />
           )}
         </div>

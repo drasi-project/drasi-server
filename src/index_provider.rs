@@ -79,15 +79,14 @@ pub(crate) fn instance_index_dir(instance_id: &str) -> PathBuf {
 /// Centralizes the id sanitization, path construction, and provider wiring used
 /// by both server startup and the create-instance API handler. Every query in
 /// the instance without an explicit `storageBackend` is persisted to
-/// `./data/<instanceId>/index` (see [`instance_index_dir`]).
+/// `./data/<instance-key>/index` (see [`instance_index_dir`]).
 pub(crate) fn apply_rocksdb_index(
     builder: DrasiLibBuilder,
     instance_id: &str,
     enable_archive: bool,
-    memory_budget_mib: Option<usize>,
+    memory_budget_bytes: Option<usize>,
 ) -> Result<DrasiLibBuilder> {
     let index_path = instance_index_dir(instance_id);
-    let memory_budget_bytes = memory_budget_bytes(true, memory_budget_mib)?;
     let direct_io = false; // use OS page cache
     let mut provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
     if let Some(memory_budget_bytes) = memory_budget_bytes {
@@ -96,11 +95,12 @@ pub(crate) fn apply_rocksdb_index(
             .context("invalid RocksDB memory budget")?;
     }
 
-    match memory_budget_mib {
-        Some(memory_budget_mib) => info!(
+    match memory_budget_bytes {
+        Some(memory_budget_bytes) => info!(
             "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} \
-             (archive: {enable_archive}, memory budget: {memory_budget_mib} MiB)",
+             (archive: {enable_archive}, memory budget: {} MiB)",
             provider.path().display(),
+            memory_budget_bytes / BYTES_PER_MIB,
         ),
         None => info!(
             "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} \

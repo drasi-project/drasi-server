@@ -230,6 +230,37 @@ async fn test_create_instance_rejects_memory_budget_without_persistent_index() {
     );
 }
 
+#[tokio::test]
+async fn test_create_instance_rejects_zero_memory_budget() {
+    let router = create_test_router().await;
+    let request_body = serde_json::json!({
+        "id": "zero-memory-budget-instance",
+        "persistIndex": true,
+        "memoryBudgetMiB": 0
+    });
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/instances")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&request_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], "INVALID_REQUEST");
+    assert_eq!(
+        json["details"]["technical_details"],
+        "memoryBudgetMiB must be greater than zero"
+    );
+}
+
 #[test]
 fn test_openapi_spec_includes_plugin_paths() {
     let spec = ApiDocV1::openapi();

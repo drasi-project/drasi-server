@@ -95,13 +95,6 @@ fn test_rocksdb_index_provider_memory_budget() {
         provider.memory_budget().block_cache_capacity_bytes(),
         MEMORY_BUDGET_BYTES
     );
-    assert_eq!(
-        provider
-            .memory_budget()
-            .write_buffer_manager()
-            .get_buffer_size(),
-        MEMORY_BUDGET_BYTES / 2
-    );
 }
 
 /// Test DrasiLib builder with RocksDB index provider

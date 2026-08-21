@@ -472,7 +472,7 @@ impl DrasiServer {
                     builder,
                     &instance.id,
                     instance.enable_archive,
-                    instance.memory_budget_mib,
+                    instance.memory_budget_bytes,
                 )?;
             }
 
