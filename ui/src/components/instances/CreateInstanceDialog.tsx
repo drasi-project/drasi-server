@@ -5,6 +5,7 @@ interface CreateInstanceDialogProps {
   onSave: (data: {
     id: string;
     persistIndex?: boolean;
+    memoryBudgetMiB?: number;
     defaultPriorityQueueCapacity?: number;
     defaultDispatchBufferCapacity?: number;
   }) => Promise<void>;
@@ -20,7 +21,9 @@ export default function CreateInstanceDialog({
 }: CreateInstanceDialogProps) {
   const [id, setId] = useState(initialId ?? "");
   const [persistIndex, setPersistIndex] = useState(false);
+  const [memoryBudgetMiB, setMemoryBudgetMiB] = useState("");
   const [error, setError] = useState("");
+  const [memoryBudgetError, setMemoryBudgetError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -28,11 +31,21 @@ export default function CreateInstanceDialog({
       setError("Required");
       return;
     }
+    const parsedMemoryBudget =
+      memoryBudgetMiB === "" ? undefined : Number(memoryBudgetMiB);
+    if (
+      parsedMemoryBudget !== undefined &&
+      (!Number.isSafeInteger(parsedMemoryBudget) || parsedMemoryBudget <= 0)
+    ) {
+      setMemoryBudgetError("Must be a positive whole number");
+      return;
+    }
     setSaving(true);
     try {
-      await onSave({ 
-        id: id.trim(), 
+      await onSave({
+        id: id.trim(),
         persistIndex,
+        memoryBudgetMiB: persistIndex ? parsedMemoryBudget : undefined,
       });
     } catch {
       setError("Failed to create instance");
@@ -64,10 +77,34 @@ export default function CreateInstanceDialog({
             label="Persist Index (RocksDB)"
             field="persistIndex"
             value={persistIndex}
-            onChange={(_, v) => setPersistIndex(Boolean(v))}
+            onChange={(_, v) => {
+              const enabled = Boolean(v);
+              setPersistIndex(enabled);
+              if (!enabled) {
+                setMemoryBudgetMiB("");
+                setMemoryBudgetError("");
+              }
+            }}
             type="toggle"
             helpText="Use RocksDB for persistent query indexes"
           />
+          {persistIndex && (
+            <FormField
+              label="Memory Budget (MiB)"
+              field="memoryBudgetMiB"
+              value={memoryBudgetMiB}
+              onChange={(_, v) => {
+                setMemoryBudgetMiB(String(v));
+                setMemoryBudgetError("");
+              }}
+              error={memoryBudgetError}
+              type="number"
+              min={1}
+              step={1}
+              placeholder="256"
+              helpText="Optional shared RocksDB budget for all queries in this instance"
+            />
+          )}
         </div>
 
         <div className="flex justify-end gap-2 mt-6">

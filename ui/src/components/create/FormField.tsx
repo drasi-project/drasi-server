@@ -6,6 +6,8 @@ interface FormFieldProps {
   error?: string;
   required?: boolean;
   type?: "text" | "number" | "password" | "toggle" | "textarea";
+  min?: number;
+  step?: number;
   placeholder?: string;
   helpText?: string;
 }
@@ -18,6 +20,8 @@ export default function FormField({
   error,
   required = false,
   type = "text",
+  min,
+  step,
   placeholder,
   helpText,
 }: FormFieldProps) {
@@ -68,11 +72,15 @@ export default function FormField({
       ) : (
         <input
           type={type === "password" ? "password" : type === "number" ? "number" : "text"}
+          min={type === "number" ? min : undefined}
+          step={type === "number" ? step : undefined}
           value={String(value ?? "")}
           onChange={(e) =>
             onChange(
               field,
-              type === "number" ? Number(e.target.value) || 0 : e.target.value,
+              type === "number" && e.target.value !== ""
+                ? Number(e.target.value)
+                : e.target.value,
             )
           }
           placeholder={placeholder}

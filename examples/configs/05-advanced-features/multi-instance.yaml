@@ -61,6 +61,7 @@ instances:
   # Instance 1: Analytics workload
   - id: analytics
     persistIndex: true  # Use RocksDB for persistence
+    memoryBudgetMiB: 512 # Shared RocksDB budget for this instance
 
     sources:
       - kind: mock

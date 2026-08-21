@@ -75,6 +75,10 @@ fn test_openapi_has_create_instance_endpoint() {
             "Inline schema should have 'persistIndex' property"
         );
         assert!(
+            content["properties"]["memoryBudgetMiB"].is_object(),
+            "Inline schema should have 'memoryBudgetMiB' property"
+        );
+        assert!(
             content["properties"]["defaultPriorityQueueCapacity"].is_object(),
             "Inline schema should have 'defaultPriorityQueueCapacity' property"
         );
@@ -126,6 +130,13 @@ fn test_openapi_create_instance_request_has_all_fields() {
         properties.as_object().map(|o| o.keys().collect::<Vec<_>>())
     );
     assert!(
+        properties["memoryBudgetMiB"].is_object(),
+        "Schema should have 'memoryBudgetMiB' property. Properties: {:?}",
+        properties.as_object().map(|o| o.keys().collect::<Vec<_>>())
+    );
+    assert_eq!(properties["memoryBudgetMiB"]["type"], "integer");
+    assert_eq!(properties["memoryBudgetMiB"]["minimum"], 1);
+    assert!(
         properties["defaultPriorityQueueCapacity"].is_object(),
         "Schema should have 'defaultPriorityQueueCapacity' property"
     );
@@ -133,6 +144,22 @@ fn test_openapi_create_instance_request_has_all_fields() {
         properties["defaultDispatchBufferCapacity"].is_object(),
         "Schema should have 'defaultDispatchBufferCapacity' property"
     );
+}
+
+#[test]
+fn test_openapi_config_memory_budget_uses_config_value_schema() {
+    let openapi = ApiDocV1::openapi();
+    let json = serde_json::to_value(&openapi).unwrap();
+    let schemas = &json["components"]["schemas"];
+
+    for schema_name in ["DrasiServerConfig", "DrasiLibInstanceConfig"] {
+        let property = &schemas[schema_name]["properties"]["memoryBudgetMiB"];
+        let serialized = serde_json::to_string(property).unwrap();
+        assert!(
+            serialized.contains("#/components/schemas/ConfigValueUsize"),
+            "{schema_name}.memoryBudgetMiB should reference ConfigValueUsize, got: {property}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -170,6 +197,37 @@ async fn test_create_instance_accepts_full_request() {
 
     assert_eq!(status, StatusCode::OK, "Create instance should succeed");
     assert_eq!(json["success"], true, "Response should indicate success");
+}
+
+#[tokio::test]
+async fn test_create_instance_rejects_memory_budget_without_persistent_index() {
+    let router = create_test_router().await;
+    let request_body = serde_json::json!({
+        "id": "invalid-memory-budget-instance",
+        "persistIndex": false,
+        "memoryBudgetMiB": 512
+    });
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/instances")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&request_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], "INVALID_REQUEST");
+    assert_eq!(
+        json["details"]["technical_details"],
+        "memoryBudgetMiB requires persistIndex: true"
+    );
 }
 
 #[test]
