@@ -458,6 +458,72 @@ async fn test_reaction_lifecycle_via_api() {
     assert!(json["data"]["links"]["full"].is_string());
 }
 
+/// Creating a reaction with `autoStart: true` via the API must leave it in the
+/// `Running` state. `DrasiLib::add_reaction_with_metadata` already auto-starts
+/// the reaction when the server is running, so the handler must not report a
+/// spurious failure for the (redundant) start that follows. See the issue
+/// "Incorrect log messages starting up Drasi Server".
+#[tokio::test]
+async fn test_create_reaction_auto_start_via_api() {
+    let (router, core, _registry) = create_test_router().await;
+    let base = "/instances/test-server";
+    let graph = core.component_graph();
+
+    // POST a new reaction with autoStart enabled, subscribing to an existing query.
+    let body = serde_json::json!({
+        "kind": "application",
+        "id": "post-auto-reaction",
+        "queries": ["reaction-query"],
+        "autoStart": true,
+    });
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("{base}/reactions"))
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+
+    // The reaction should be auto-started and reach Running without any failure.
+    drasi_lib::wait_for_status(
+        &graph,
+        "post-auto-reaction",
+        &[drasi_lib::channels::ComponentStatus::Running],
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("post-auto-reaction should reach Running after creation");
+
+    // Confirm via the API that the reaction is reported as Running.
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/reactions/post-auto-reaction"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+    assert_eq!(json["data"]["status"], "Running");
+}
+
 #[tokio::test]
 async fn test_source_logs_snapshot_via_api() {
     // Use unique instance ID to avoid interference with parallel tests
