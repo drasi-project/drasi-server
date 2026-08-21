@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction } from './QueryTable';
+import { QueryTable, ColumnDef, RowAction } from '@drasi/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator, RemoveIcon, AddIcon, SelectDialog } from './shared';
 import { Stock } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
@@ -95,7 +96,7 @@ export const Watchlist: React.FC = () => {
       key: 'symbol',
       label: 'Symbol',
       className: 'font-medium',
-      width: 'w-20',
+      width: '5rem',
     },
     {
       key: 'name',
@@ -152,13 +153,14 @@ export const Watchlist: React.FC = () => {
       
       <QueryTable<Stock>
         queryId="watchlist-query"
+        queryOptions={tradingQueryOptions<Stock>('watchlist-query')}
         title="Watchlist"
         columns={columns}
         rowKey={(row) => row.symbol}
         animateOnChange="price"
         defaultSort={{ column: 'symbol', direction: 'asc' }}
         actions={actions}
-        actionsWidth="w-10"
+        actionsWidth="2.5rem"
         headerActions={headerActions}
         emptyMessage="No stocks in watchlist. Click + to add."
         codeSnippet={CODE_SNIPPET}
