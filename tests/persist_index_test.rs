@@ -82,6 +82,21 @@ fn test_rocksdb_index_provider_is_persistent() {
     );
 }
 
+#[test]
+fn test_rocksdb_index_provider_memory_budget() {
+    const MEMORY_BUDGET_BYTES: usize = 512 * 1024 * 1024;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let provider = RocksDbIndexProvider::new(temp_dir.path().join("index"), false, false)
+        .with_memory_budget_bytes(MEMORY_BUDGET_BYTES)
+        .expect("memory budget should be valid");
+
+    assert_eq!(
+        provider.memory_budget().block_cache_capacity_bytes(),
+        MEMORY_BUDGET_BYTES
+    );
+}
+
 /// Test DrasiLib builder with RocksDB index provider
 #[tokio::test]
 async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
@@ -510,8 +525,10 @@ impl Drop for DataDirGuard {
 /// query added to the created instance is backed by RocksDB on disk. This guards
 /// against a regression in the JSON `persistIndex` -> `persist_index` mapping,
 /// which the builder-level tests above would not catch.
-#[tokio::test]
-async fn test_create_instance_persist_index_via_http() -> Result<()> {
+async fn assert_create_instance_persist_index_via_http(
+    instance_id: &str,
+    memory_budget_mib: Option<usize>,
+) -> Result<()> {
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use axum::Router;
@@ -522,13 +539,12 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
     use drasi_server::plugin_registry::PluginRegistry;
     use tower::ServiceExt;
 
-    const INSTANCE_ID: &str = "http-persist-index-instance";
     // The server derives the on-disk directory from a filesystem-safe storage
     // key (`id-` followed by the hex encoding of the instance id), shared by the
     // index and WAL paths. Replicate that here to locate the index directory.
     let storage_key = {
         let mut key = String::from("id-");
-        for byte in INSTANCE_ID.bytes() {
+        for byte in instance_id.bytes() {
             key.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
             key.push(char::from(b"0123456789abcdef"[usize::from(byte & 0x0f)]));
         }
@@ -554,7 +570,10 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
         ));
 
     // Create the instance with persistent indexing enabled.
-    let body = serde_json::json!({ "id": INSTANCE_ID, "persistIndex": true });
+    let mut body = serde_json::json!({ "id": instance_id, "persistIndex": true });
+    if let Some(memory_budget_mib) = memory_budget_mib {
+        body["memoryBudgetMiB"] = serde_json::json!(memory_budget_mib);
+    }
     let response = router
         .oneshot(
             Request::builder()
@@ -577,11 +596,12 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
     // Add an auto-starting query to the (running) instance; it opens its RocksDB
     // index, materializing `./data/<id>/index/<query_id>`.
     let core = registry
-        .get(INSTANCE_ID)
+        .get(instance_id)
         .await
         .expect("created instance should be registered");
+    let query_id = format!("{instance_id}-query");
     core.add_query(
-        Query::cypher("http-persist-query")
+        Query::cypher(query_id.clone())
             .query("MATCH (n) RETURN n")
             .auto_start(true)
             .build(),
@@ -589,7 +609,7 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
     .await?;
     drasi_lib::wait_for_status(
         &core.component_graph(),
-        "http-persist-query",
+        &query_id,
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
@@ -608,4 +628,15 @@ async fn test_create_instance_persist_index_via_http() -> Result<()> {
     );
 
     Ok(())
+}
+
+#[tokio::test]
+async fn test_create_instance_persist_index_via_http() -> Result<()> {
+    assert_create_instance_persist_index_via_http("http-persist-index-instance", None).await
+}
+
+#[tokio::test]
+async fn test_create_instance_memory_budget_via_http() -> Result<()> {
+    assert_create_instance_persist_index_via_http("http-persist-index-budget-instance", Some(64))
+        .await
 }
