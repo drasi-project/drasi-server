@@ -57,7 +57,7 @@ drasi-bootstrap-application = "0.2.11"
 drasi-reaction-application = "0.3.9"
 
 # Index plugins
-drasi-index-rocksdb = "0.6.0"
+drasi-index-rocksdb = "0.6.1"
 
 # State store plugins
 drasi-state-store-redb = "0.2.5"
