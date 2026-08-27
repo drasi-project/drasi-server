@@ -66,6 +66,7 @@ pub fn build_config(
     };
 
     DrasiServerConfig {
+        enable_archive: false,
         api_version: None,
         id: ConfigValue::Static(server_id),
         host: ConfigValue::Static(server_settings.host),

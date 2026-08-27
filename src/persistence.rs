@@ -84,6 +84,7 @@ pub struct ConfigPersistence {
     log_level: String,
     persist_config: bool,
     persist_settings: IndexMap<String, bool>,
+    archive_settings: IndexMap<String, bool>,
     solutions_dir: Option<String>,
     /// Server-level settings preserved from the original config file.
     preserved: PreservedServerSettings,
@@ -131,6 +132,7 @@ impl ConfigPersistence {
         log_level: String,
         persist_config: bool,
         persist_settings: IndexMap<String, bool>,
+        archive_settings: IndexMap<String, bool>,
         solutions_dir: Option<String>,
         original_config: &DrasiServerConfig,
     ) -> Self {
@@ -203,6 +205,7 @@ impl ConfigPersistence {
             log_level,
             persist_config,
             persist_settings,
+            archive_settings,
             solutions_dir,
             preserved: PreservedServerSettings {
                 enable_ui: original_config.enable_ui,
@@ -438,6 +441,7 @@ impl ConfigPersistence {
                 .map_err(|e| anyhow::anyhow!("Failed to snapshot instance '{id}': {e}"))?;
 
             let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
+            let enable_archive = *self.archive_settings.get(&id).unwrap_or(&false);
 
             // Map snapshot sources to SourceConfig, filtering internal sources
             let sources: Vec<SourceConfig> = snapshot
@@ -521,6 +525,7 @@ impl ConfigPersistence {
                 DrasiLibInstanceConfig {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
+                    enable_archive: dynamic_config.enable_archive,
                     state_store: dynamic_config.state_store.clone(),
                     secret_store: dynamic_config.secret_store.clone(),
                     default_priority_queue_capacity: dynamic_config
@@ -561,6 +566,7 @@ impl ConfigPersistence {
                 DrasiLibInstanceConfig {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
+                    enable_archive,
                     state_store: None,
                     secret_store: None,
                     default_priority_queue_capacity: None,
@@ -612,6 +618,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: instance.persist_index,
+                enable_archive: instance.enable_archive,
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
@@ -651,6 +658,7 @@ impl ConfigPersistence {
                 log_level: ConfigValue::Static(self.log_level.clone()),
                 persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
+                enable_archive: false, // Per-instance setting in multi-instance mode
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: None,  // Per-instance setting in multi-instance mode
@@ -936,6 +944,7 @@ mod tests {
             8080,
             "info".to_string(),
             persist,
+            IndexMap::new(),
             IndexMap::new(),
             None,
             original_config,
