@@ -6,6 +6,7 @@ on:
       - '**.md'
   workflow_dispatch:
 permissions:
+  copilot-requests: write
   contents: read
   pull-requests: read
   issues: read
