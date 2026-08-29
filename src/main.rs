@@ -21,6 +21,7 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
 use drasi_lib::get_or_init_global_registry;
 use drasi_server::api::mappings::{map_server_settings, DtoMapper};
@@ -31,17 +32,26 @@ mod cli_styles;
 mod init;
 mod plugin;
 
+fn long_version() -> &'static str {
+    static LONG_VERSION: OnceLock<String> = OnceLock::new();
+    LONG_VERSION
+        .get_or_init(|| {
+            format!(
+                "{}\nrustc: {}\nplugin-sdk crate: {}\nplugin ABI: {}",
+                env!("CARGO_PKG_VERSION"),
+                env!("DRASI_RUSTC_VERSION"),
+                env!("DRASI_PLUGIN_SDK_VERSION"),
+                drasi_plugin_sdk::ffi::metadata::FFI_SDK_VERSION,
+            )
+        })
+        .as_str()
+}
+
 #[derive(Parser)]
 #[command(name = "drasi-server")]
 #[command(about = "Standalone Drasi server for data change processing")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(long_version = concat!(
-    env!("CARGO_PKG_VERSION"),
-    "\nrustc: ",
-    env!("DRASI_RUSTC_VERSION"),
-    "\nplugin-sdk: ",
-    env!("DRASI_PLUGIN_SDK_VERSION"),
-))]
+#[command(long_version = long_version())]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -424,6 +434,9 @@ fn validate_config(
             mp.requirement.category, mp.requirement.kind, mp.requirement.referenced_by
         );
     }
+    for (path, error) in &result.plugin_compatibility_errors {
+        println!("  [ERR] {} — {}", path.display(), error);
+    }
     println!();
 
     // Config validation
@@ -460,7 +473,9 @@ fn validate_config(
     println!();
 
     // Summary
-    let error_count = result.env_warnings.len() + result.config_errors.len();
+    let error_count = result.env_warnings.len()
+        + result.config_errors.len()
+        + result.plugin_compatibility_errors.len();
     let warning_count = result.missing_plugins.len();
     let instance_count = instances.len();
 
