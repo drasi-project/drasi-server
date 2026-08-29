@@ -1227,9 +1227,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59207ac804d9aa14c3e66827c5e99e1931f315d7957be9ec3ea196263517ba38"
+checksum = "66f84e6b9f5df5679ad9e0a934a67757d91039473a8cc4602097b093ad74d739"
 dependencies = [
  "async-stream",
  "async-trait",

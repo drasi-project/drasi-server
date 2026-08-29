@@ -74,6 +74,7 @@ pub fn build_config(
         log_level: ConfigValue::Static(server_settings.log_level),
         persist_config: true,
         persist_index: server_settings.persist_index,
+        memory_budget_mib: None,
         enable_ui: true,     // Enable web UI by default
         solutions_dir: None, // Use default
         state_store: server_settings.state_store,

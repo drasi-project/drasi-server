@@ -326,6 +326,7 @@ export default function App() {
     async (data: {
       id: string;
       persistIndex?: boolean;
+      memoryBudgetMiB?: number;
     }) => {
       try {
         await createInstanceApi(data);

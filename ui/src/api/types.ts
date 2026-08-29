@@ -157,6 +157,7 @@ export interface InstanceInfo {
 export interface CreateInstanceRequest {
   id: string;
   persistIndex?: boolean;
+  memoryBudgetMiB?: number;
   defaultPriorityQueueCapacity?: number;
   defaultDispatchBufferCapacity?: number;
 }
