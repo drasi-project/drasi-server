@@ -12,20 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+/**
+ * React bindings: the provider that owns the shared connection and the hooks
+ * that expose each query's live result set as React state.
+ */
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    dedupe: ['react', 'react-dom'],
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  server: {
-    host: '0.0.0.0',
-    port: 5273,
-  },
-});
+export {
+  DrasiProvider,
+  useDrasiClient,
+  useDrasiQuery,
+  useDrasiConnectionStatus,
+  useDrasiServerUiUrl,
+  useDrasiQueryDefinition,
+} from './DrasiContext';
+export type { DrasiProviderProps } from './DrasiContext';
+export type { DrasiContextValue } from './DrasiContext';
+export { useRowAnimation } from './useRowAnimation';
+export type {
+  AnimationDirection,
+  UseRowAnimationOptions,
+  UseRowAnimationResult,
+} from './useRowAnimation';

@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    dedupe: ['react', 'react-dom'],
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  server: {
-    host: '0.0.0.0',
-    port: 5273,
-  },
+  entry: ['src/index.ts'],
+  // Ship both modern ESM and CommonJS so the package works in any toolchain.
+  format: ['esm', 'cjs'],
+  // Emit TypeScript declarations (.d.ts / .d.cts) alongside the JS.
+  dts: true,
+  sourcemap: true,
+  clean: true,
+  treeshake: true,
+  target: 'es2020',
+  // React and clsx must come from the consumer's app, never bundled in, so a
+  // single copy of React is shared across the tree.
+  external: ['react', 'react-dom', 'react/jsx-runtime', 'clsx'],
 });
