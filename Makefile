@@ -159,7 +159,7 @@ build: build-ui
 	cargo build
 
 build-release: build-ui
-	cargo build --release
+	cargo build --release --locked
 
 build-cross:
 	@if [ -z "$(TARGET)" ]; then \

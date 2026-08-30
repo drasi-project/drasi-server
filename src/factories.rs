@@ -461,10 +461,75 @@ pub async fn create_secret_store_from_registry(
         descriptor.config_version()
     );
 
-    let provider = descriptor.create_secret_store(&config.config).await?;
+    // The secret store must be created before the host can inject its full
+    // secret-aware resolver into plugins. Environment references are still safe
+    // to resolve during this bootstrap step.
+    let resolved_config = resolve_environment_references(&config.config, "secretStore")?;
+    let provider = descriptor.create_secret_store(&resolved_config).await?;
     // Box<dyn SecretStoreProvider> → Arc<dyn SecretStoreProvider>
     let arc: Arc<dyn SecretStoreProvider> = Arc::from(provider);
     Ok(arc)
+}
+
+fn resolve_environment_references(
+    value: &serde_json::Value,
+    path: &str,
+) -> Result<serde_json::Value> {
+    match value {
+        serde_json::Value::String(value) => {
+            let config_value: ConfigValue<String> =
+                serde_json::from_value(serde_json::Value::String(value.clone()))
+                    .with_context(|| format!("invalid environment reference at '{path}'"))?;
+            match config_value {
+                ConfigValue::EnvironmentVariable { .. } => DtoMapper::new()
+                    .resolve_string(&config_value)
+                    .map(serde_json::Value::String)
+                    .with_context(|| {
+                        format!("failed to resolve environment reference at '{path}'")
+                    }),
+                ConfigValue::Static(_) => Ok(serde_json::Value::String(value.clone())),
+                ConfigValue::Secret { .. } => unreachable!("string values cannot encode secrets"),
+            }
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                resolve_environment_references(value, &format!("{path}[{index}]"))
+            })
+            .collect(),
+        serde_json::Value::Object(values)
+            if matches!(
+                values.get("kind").and_then(serde_json::Value::as_str),
+                Some("EnvironmentVariable")
+            ) =>
+        {
+            let config_value: ConfigValue<String> = serde_json::from_value(value.clone())
+                .with_context(|| format!("invalid environment reference at '{path}'"))?;
+            DtoMapper::new()
+                .resolve_string(&config_value)
+                .map(serde_json::Value::String)
+                .with_context(|| format!("failed to resolve environment reference at '{path}'"))
+        }
+        serde_json::Value::Object(values)
+            if matches!(
+                values.get("kind").and_then(serde_json::Value::as_str),
+                Some("Secret")
+            ) =>
+        {
+            anyhow::bail!(
+                "secret store bootstrap config at '{path}' cannot reference the secret store itself"
+            )
+        }
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| {
+                resolve_environment_references(value, &format!("{path}.{key}"))
+                    .map(|resolved| (key.clone(), resolved))
+            })
+            .collect(),
+        _ => Ok(value.clone()),
+    }
 }
 
 /// Get plugin metadata for a source kind from the registry.
@@ -835,6 +900,44 @@ mod tests {
             .and_then(|r| r.as_inline())
             .unwrap();
         assert_eq!(inline.config["host"], "inline.local");
+    }
+
+    #[test]
+    fn test_secret_store_environment_defaults_are_resolved_recursively() {
+        let config = serde_json::json!({
+            "path": "${DRASI_TEST_SECRET_STORE_PATH_UNSET:-./data/secrets.json}",
+            "options": {
+                "backup": {
+                    "kind": "EnvironmentVariable",
+                    "name": "DRASI_TEST_SECRET_STORE_BACKUP_UNSET",
+                    "default": "./data/secrets.backup.json"
+                }
+            },
+            "labels": ["static", "${DRASI_TEST_SECRET_STORE_LABEL_UNSET:-resolved}"]
+        });
+
+        let resolved = resolve_environment_references(&config, "secretStore").unwrap();
+
+        assert_eq!(resolved["path"], "./data/secrets.json");
+        assert_eq!(resolved["options"]["backup"], "./data/secrets.backup.json");
+        assert_eq!(resolved["labels"][0], "static");
+        assert_eq!(resolved["labels"][1], "resolved");
+    }
+
+    #[test]
+    fn test_secret_store_bootstrap_rejects_secret_self_reference() {
+        let config = serde_json::json!({
+            "path": {
+                "kind": "Secret",
+                "name": "secret-store-path"
+            }
+        });
+
+        let error = resolve_environment_references(&config, "secretStore").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot reference the secret store itself"));
     }
 
     // ==========================================================================

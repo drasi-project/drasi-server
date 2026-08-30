@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 /// ```yaml
 /// secretStore:
 ///   kind: file
-///   path: ./secrets.json
+///   path: ${SECRET_STORE_PATH:-./secrets.json}
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +37,9 @@ pub struct SecretStoreConfig {
     pub kind: String,
 
     /// Opaque configuration passed to the plugin's `create_secret_store()`.
+    /// Environment references are resolved recursively to string values before
+    /// plugin creation. Secret references are rejected because the provider does
+    /// not exist yet.
     /// All fields except `kind` are collected here.
     #[serde(flatten)]
     pub config: serde_json::Value,

@@ -35,8 +35,8 @@ name = "drasi-server"
 path = "src/main.rs"
 
 [dependencies]
-# Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.9.0", features = [
+# WorkGraph prototype development uses the sibling drasi-core checkout.
+drasi-lib = { path = "../drasi-core/lib", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,29 +47,29 @@ drasi-lib = { version = "0.9.0", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.5.8"
+drasi-core = { path = "../drasi-core/core" }
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.2.11"
-drasi-bootstrap-application = "0.2.11"
+drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
+drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.3.9"
+drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
 
 # Index plugins
-drasi-index-rocksdb = "0.6.0"
+drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
 
 # State store plugins
-drasi-state-store-redb = "0.2.5"
+drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
 
 # WAL plugins
-drasi-wal-redb = "0.2.7"
+drasi-wal-redb = { path = "../drasi-core/components/wals/redb" }
 
 # Plugin SDK
-drasi-plugin-sdk = "0.11.0"
+drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.11.0", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { path = "../drasi-core/components/host-sdk", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -125,7 +125,6 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.5.8"
 
 [lints.rust]
 warnings = "deny"
@@ -148,17 +147,3 @@ module_inception = "allow"
 ptr_arg = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
-
-
-# Local development: use path-based dependencies
-# [patch.crates-io]
-# drasi-core = { path = "../drasi-core/core" }
-# drasi-lib = { path = "../drasi-core/lib" }
-# drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
-# drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }
-# drasi-reaction-application = { path = "../drasi-core/components/reactions/application" }
-# drasi-index-rocksdb = { path = "../drasi-core/components/indexes/rocksdb" }
-# drasi-index-garnet = { path = "../drasi-core/components/indexes/garnet" }
-# drasi-state-store-redb = { path = "../drasi-core/components/state_stores/redb" }
-# drasi-plugin-sdk = { path = "../drasi-core/components/plugin-sdk" }
-# drasi-host-sdk = { path = "../drasi-core/components/host-sdk" }
