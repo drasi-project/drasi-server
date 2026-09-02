@@ -23,6 +23,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::{bail, Context, Result};
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::DrasiLibBuilder;
 use log::info;
@@ -37,6 +38,30 @@ use crate::instance_paths::instance_storage_key;
 /// `storageBackend` overrides that reference a named provider must use this
 /// same name.
 pub const PERSISTENT_INDEX_PROVIDER_NAME: &str = "rocksdb";
+
+const BYTES_PER_MIB: usize = 1024 * 1024;
+
+/// Validate an optional per-instance RocksDB memory budget and convert it to bytes.
+pub(crate) fn memory_budget_bytes(
+    persist_index: bool,
+    memory_budget_mib: Option<usize>,
+) -> Result<Option<usize>> {
+    let Some(memory_budget_mib) = memory_budget_mib else {
+        return Ok(None);
+    };
+
+    if !persist_index {
+        bail!("memoryBudgetMiB requires persistIndex: true");
+    }
+    if memory_budget_mib == 0 {
+        bail!("memoryBudgetMiB must be greater than zero");
+    }
+
+    memory_budget_mib
+        .checked_mul(BYTES_PER_MIB)
+        .map(Some)
+        .context("memoryBudgetMiB is too large")
+}
 
 /// Compute the on-disk RocksDB index directory for an instance.
 ///
@@ -54,18 +79,70 @@ pub(crate) fn instance_index_dir(instance_id: &str) -> PathBuf {
 /// Centralizes the id sanitization, path construction, and provider wiring used
 /// by both server startup and the create-instance API handler. Every query in
 /// the instance without an explicit `storageBackend` is persisted to
-/// `./data/<instanceId>/index` (see [`instance_index_dir`]).
+/// `./data/<instance-key>/index` (see [`instance_index_dir`]).
 pub(crate) fn apply_rocksdb_index(
     builder: DrasiLibBuilder,
     instance_id: &str,
     enable_archive: bool,
-) -> DrasiLibBuilder {
+    memory_budget_bytes: Option<usize>,
+) -> Result<DrasiLibBuilder> {
     let index_path = instance_index_dir(instance_id);
-    info!(
-        "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} (archive: {enable_archive})",
-        index_path.display()
-    );
     let direct_io = false; // use OS page cache
-    let provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
-    builder.with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, Arc::new(provider))
+    let mut provider = RocksDbIndexProvider::new(index_path, enable_archive, direct_io);
+    if let Some(memory_budget_bytes) = memory_budget_bytes {
+        provider = provider
+            .with_memory_budget_bytes(memory_budget_bytes)
+            .context("invalid RocksDB memory budget")?;
+    }
+
+    match memory_budget_bytes {
+        Some(memory_budget_bytes) => info!(
+            "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} \
+             (archive: {enable_archive}, memory budget: {} MiB)",
+            provider.path().display(),
+            memory_budget_bytes / BYTES_PER_MIB,
+        ),
+        None => info!(
+            "Enabling persistent indexing for instance '{instance_id}' with RocksDB at: {} \
+             (archive: {enable_archive}, default memory budget)",
+            provider.path().display(),
+        ),
+    }
+
+    Ok(builder.with_default_index_provider(PERSISTENT_INDEX_PROVIDER_NAME, Arc::new(provider)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_memory_budget_mib_to_bytes() {
+        assert_eq!(
+            memory_budget_bytes(true, Some(512)).unwrap(),
+            Some(512 * BYTES_PER_MIB)
+        );
+    }
+
+    #[test]
+    fn rejects_memory_budget_without_persistent_index() {
+        let error = memory_budget_bytes(false, Some(512)).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("memoryBudgetMiB requires persistIndex: true"));
+    }
+
+    #[test]
+    fn rejects_zero_memory_budget() {
+        let error = memory_budget_bytes(true, Some(0)).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("memoryBudgetMiB must be greater than zero"));
+    }
+
+    #[test]
+    fn rejects_memory_budget_overflow() {
+        let error = memory_budget_bytes(true, Some(usize::MAX)).unwrap_err();
+        assert!(error.to_string().contains("memoryBudgetMiB is too large"));
+    }
 }
