@@ -1353,6 +1353,38 @@ queries:
 
 **Important Limitation**: `ORDER BY`, `TOP`, and `LIMIT` clauses are not supported in continuous queries.
 
+#### Source Priority
+
+Each entry in a query's `sources` list accepts an optional `priority` (signed
+64-bit integer). Lower values are evaluated first when events from different
+sources have the same timestamp:
+
+```yaml
+queries:
+  - id: ranked-orders
+    query: MATCH (o:Order) RETURN o
+    sources:
+      - sourceId: orders-db
+        priority: 10
+      - sourceId: audit-log
+        priority: -5
+```
+
+Here, `audit-log` ranks before `orders-db` on timestamp ties. An omitted priority
+uses that source's zero-based position in the list. Explicit and implicit values
+are ordered together by `(priority or list index, list index)`, so list order
+breaks equal priorities. Negative values and zero are valid.
+
+Priority is per query subscription, not a setting on the source itself. It does
+not override timestamp ordering and has no effect for single-source queries.
+The REST API accepts the same field in YAML or JSON; query configuration responses
+and persisted YAML retain explicit values and omit unspecified priorities.
+
+This requires the DrasiLib changes in [drasi-core PR #860](https://github.com/drasi-project/drasi-core/pull/860).
+Until a release includes them, use the local development patches in `Cargo.toml`
+with a compatible `../drasi-core` checkout. Rebuild runtime plugins from that
+checkout with `make build-local-plugins`; registry plugins may not be ABI-compatible.
+
 #### Per-Query Index Backend
 
 By default, every query uses the instance's index backend: in-memory when `persistIndex` is `false`, or the persistent `rocksdb` provider when `persistIndex` is `true`. The optional `storageBackend` field lets an individual query override that default.

@@ -52,6 +52,7 @@ pub fn build_config(
                 nodes: vec![],
                 relations: vec![],
                 pipeline: vec![],
+                priority: None,
             }],
             joins: None,
             priority_queue_capacity: None,

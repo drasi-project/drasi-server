@@ -74,7 +74,7 @@ mod api_query_joins_tests {
             settings: SourceSubscriptionSettings,
         ) -> anyhow::Result<SubscriptionResponse> {
             let dispatcher =
-                ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(10);
+                ChannelChangeDispatcher::<drasi_lib::channels::StampedSourceEvent>::new(10);
             let receiver = dispatcher.create_receiver().await?;
             Ok(SubscriptionResponse {
                 query_id: settings.query_id,
@@ -138,6 +138,7 @@ mod api_query_joins_tests {
                     nodes: s.nodes.clone(),
                     relations: s.relations.clone(),
                     pipeline: s.pipeline.clone(),
+                    priority: s.priority,
                 })
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,

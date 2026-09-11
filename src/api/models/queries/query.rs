@@ -68,6 +68,10 @@ pub struct SourceSubscriptionConfigDto {
     pub relations: Vec<String>,
     #[serde(default)]
     pub pipeline: Vec<String>,
+    /// Same-timestamp tie-break priority within this query (lower first).
+    /// Defaults to the source's list index; list order breaks remaining ties.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
 }
 
 /// Source middleware configuration DTO with camelCase serialization
@@ -137,6 +141,7 @@ impl TryFrom<QueryConfig> for QueryConfigDto {
                     nodes: s.nodes,
                     relations: s.relations,
                     pipeline: s.pipeline,
+                    priority: s.priority,
                 })
                 .collect(),
             enable_bootstrap: config.enable_bootstrap,

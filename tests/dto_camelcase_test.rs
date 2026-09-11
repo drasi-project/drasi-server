@@ -23,6 +23,7 @@ fn test_query_config_dto_serializes_camelcase() {
             nodes: vec![],
             relations: vec![],
             pipeline: vec![],
+            priority: None,
         }],
         enable_bootstrap: true,
         bootstrap_buffer_size: 500,

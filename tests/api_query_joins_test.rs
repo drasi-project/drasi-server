@@ -52,6 +52,7 @@ fn query_config_to_dto(config: QueryConfig) -> QueryConfigDto {
                 nodes: s.nodes.clone(),
                 relations: s.relations.clone(),
                 pipeline: s.pipeline.clone(),
+                priority: s.priority,
             })
             .collect(),
         enable_bootstrap: config.enable_bootstrap,

@@ -72,6 +72,73 @@ async fn get_json(router: Router, uri: &str) -> (StatusCode, serde_json::Value) 
 }
 
 #[tokio::test]
+async fn test_source_priority_survives_yaml_api_and_snapshot() {
+    let router = build_snapshot_test_router(
+        "ranked-instance",
+        vec![
+            create_mock_source("first"),
+            create_mock_source("second"),
+            create_mock_source("third"),
+        ],
+        vec![],
+        vec![],
+    )
+    .await;
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/instances/ranked-instance/queries")
+                .header("content-type", "application/yaml")
+                .body(Body::from(concat!(
+                    "id: ranked-query\n",
+                    "query: MATCH (n) RETURN n\n",
+                    "sources:\n",
+                    "  - sourceId: first\n",
+                    "    priority: 10\n",
+                    "  - sourceId: second\n",
+                    "  - sourceId: third\n",
+                    "    priority: -5\n",
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let response_status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        response_status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, json) = get_json(
+        router.clone(),
+        "/instances/ranked-instance/queries/ranked-query?view=full",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let subscriptions = &json["data"]["config"]["sources"];
+    assert_eq!(subscriptions[0]["sourceId"], "first");
+    assert_eq!(subscriptions[0]["priority"], 10);
+    assert_eq!(subscriptions[1]["sourceId"], "second");
+    assert!(subscriptions[1].get("priority").is_none());
+    assert_eq!(subscriptions[2]["sourceId"], "third");
+    assert_eq!(subscriptions[2]["priority"], -5);
+
+    let (status, json) = get_json(router, "/instances/ranked-instance/snapshot").await;
+    assert_eq!(status, StatusCode::OK);
+    let subscriptions = &json["data"]["queries"][0]["config"]["sources"];
+    assert_eq!(subscriptions[0]["source_id"], "first");
+    assert_eq!(subscriptions[0]["priority"], 10);
+    assert_eq!(subscriptions[1]["source_id"], "second");
+    assert!(subscriptions[1].get("priority").is_none());
+    assert_eq!(subscriptions[2]["source_id"], "third");
+    assert_eq!(subscriptions[2]["priority"], -5);
+}
+
+#[tokio::test]
 async fn test_snapshot_returns_all_components() {
     let instance_id = "snap-all-components";
 

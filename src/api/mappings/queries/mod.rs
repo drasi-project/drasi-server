@@ -110,5 +110,56 @@ fn map_source_subscription(
         nodes: dto.nodes.clone(),
         relations: dto.relations.clone(),
         pipeline: dto.pipeline.clone(),
+        priority: dto.priority,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_priority_roundtrip() {
+        for priority in [
+            None,
+            Some(-10),
+            Some(0),
+            Some(10),
+            Some(i64::MIN),
+            Some(i64::MAX),
+        ] {
+            let mut yaml =
+                "sourceId: sensors\nnodes: [Sensor]\nrelations: [LINK]\npipeline: [filter]\n"
+                    .to_string();
+            if let Some(priority) = priority {
+                yaml.push_str(&format!("priority: {priority}\n"));
+            }
+            let dto: SourceSubscriptionConfigDto = serde_yaml::from_str(&yaml).unwrap();
+            let mut query_dto: QueryConfigDto =
+                serde_yaml::from_str("id: test-query\nquery: MATCH (n) RETURN n\n").unwrap();
+            query_dto.sources = vec![dto.clone()];
+            let query = QueryConfigMapper
+                .map(&query_dto, &DtoMapper::new())
+                .unwrap();
+            assert_eq!(query.sources[0].priority, priority);
+            let restored = QueryConfigDto::try_from(query).unwrap();
+            assert_eq!(restored.sources, vec![dto]);
+            let json = serde_json::to_value(&restored.sources[0]).unwrap();
+            assert_eq!(
+                json.get("priority"),
+                priority.map(serde_json::Value::from).as_ref()
+            );
+            let yaml = serde_yaml::to_string(&restored.sources[0]).unwrap();
+            let reloaded: SourceSubscriptionConfigDto = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(reloaded.priority, priority);
+        }
+    }
+
+    #[test]
+    fn source_priority_rejects_invalid_values() {
+        for value in ["1.5", "high", "9223372036854775808", "-9223372036854775809"] {
+            let yaml = format!("sourceId: sensors\npriority: {value}\n");
+            assert!(serde_yaml::from_str::<SourceSubscriptionConfigDto>(&yaml).is_err());
+        }
+    }
 }
