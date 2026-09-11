@@ -1380,11 +1380,6 @@ not override timestamp ordering and has no effect for single-source queries.
 The REST API accepts the same field in YAML or JSON; query configuration responses
 and persisted YAML retain explicit values and omit unspecified priorities.
 
-This requires the DrasiLib changes in [drasi-core PR #860](https://github.com/drasi-project/drasi-core/pull/860).
-Until a release includes them, use the local development patches in `Cargo.toml`
-with a compatible `../drasi-core` checkout. Rebuild runtime plugins from that
-checkout with `make build-local-plugins`; registry plugins may not be ABI-compatible.
-
 #### Per-Query Index Backend
 
 By default, every query uses the instance's index backend: in-memory when `persistIndex` is `false`, or the persistent `rocksdb` provider when `persistIndex` is `true`. The optional `storageBackend` field lets an individual query override that default.
