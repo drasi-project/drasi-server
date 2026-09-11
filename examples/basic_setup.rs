@@ -89,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the configuration structure
     // Note: Sources and reactions can be defined in the config file using the tagged enum format
     let config = drasi_server::DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: drasi_server::models::ConfigValue::Static(uuid::Uuid::new_v4().to_string()),
         host: drasi_server::models::ConfigValue::Static("0.0.0.0".to_string()),

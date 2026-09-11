@@ -24,7 +24,7 @@ use crate::api::models::{BootstrapProviderConfig, BootstrapProviderRef};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
-use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
+use crate::config::{DrasiLibInstanceConfig, ExecutionModeConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
@@ -37,6 +37,9 @@ use drasi_lib::{ConfigurationSnapshot, DrasiLib};
 #[serde(rename_all = "camelCase")]
 #[schema(as = CreateInstanceRequest)]
 pub struct CreateInstanceRequest {
+    /// Execution engine; omitted values inherit the server default.
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionModeConfig>,
     /// Unique identifier for the new instance
     pub id: String,
 
@@ -90,6 +93,15 @@ pub async fn create_instance(
     }
 
     let instance_id = request.id.clone();
+    let execution_mode = registry
+        .execution_mode_policy()
+        .resolve(request.execution_mode)
+        .map_err(|_| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "executionMode conflicts with the server's forced execution mode",
+            )
+        })?;
     let persist_index = request.persist_index.unwrap_or(false);
     let enable_archive = request.enable_archive.unwrap_or(false);
     let memory_budget_mib = request.memory_budget_mib;
@@ -108,7 +120,9 @@ pub async fn create_instance(
     }
 
     // Create a new DrasiLib instance with optional configuration
-    let mut builder = DrasiLib::builder().with_id(&instance_id);
+    let mut builder = DrasiLib::builder()
+        .with_id(&instance_id)
+        .with_execution_mode(execution_mode.into());
 
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
@@ -175,6 +189,7 @@ pub async fn create_instance(
     // Persist configuration if enabled
     if let Some(persistence) = &config_persistence {
         let instance_config = DrasiLibInstanceConfig {
+            execution_mode: Some(execution_mode),
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
             enable_archive,

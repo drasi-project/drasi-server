@@ -129,6 +129,7 @@ fn assert_camel_case_fields(yaml: &str) {
 #[test]
 fn test_empty_config_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -171,6 +172,7 @@ fn test_empty_config_generates_valid_yaml() {
 #[test]
 fn test_config_with_state_store_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -222,6 +224,7 @@ fn test_config_with_state_store_generates_valid_yaml() {
 #[test]
 fn test_mock_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -274,6 +277,7 @@ fn test_mock_source_generates_valid_yaml() {
 #[test]
 fn test_http_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -325,6 +329,7 @@ fn test_http_source_generates_valid_yaml() {
 #[test]
 fn test_grpc_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -375,6 +380,7 @@ fn test_grpc_source_generates_valid_yaml() {
 #[test]
 fn test_postgres_source_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -471,6 +477,7 @@ fn test_postgres_source_generates_valid_yaml() {
 #[test]
 fn test_postgres_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -549,6 +556,7 @@ fn test_postgres_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -613,6 +621,7 @@ fn test_scriptfile_bootstrap_provider_generates_valid_yaml() {
 
 fn test_noop_bootstrap_provider_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -673,6 +682,7 @@ fn test_noop_bootstrap_provider_generates_valid_yaml() {
 #[test]
 fn test_log_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -724,6 +734,7 @@ fn test_log_reaction_generates_valid_yaml() {
 #[test]
 fn test_http_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -776,6 +787,7 @@ fn test_http_reaction_generates_valid_yaml() {
 #[test]
 fn test_sse_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -831,6 +843,7 @@ fn test_sse_reaction_generates_valid_yaml() {
 #[test]
 fn test_grpc_reaction_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -891,6 +904,7 @@ fn test_grpc_reaction_generates_valid_yaml() {
 #[test]
 fn test_query_generates_valid_yaml() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),
@@ -971,6 +985,7 @@ fn test_query_generates_valid_yaml() {
 #[test]
 fn test_full_config_roundtrip() {
     let config = DrasiServerConfig {
+        execution_mode: Default::default(),
         api_version: None,
         id: ConfigValue::Static("full-test-server".to_string()),
         host: ConfigValue::Static("0.0.0.0".to_string()),

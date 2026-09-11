@@ -299,6 +299,7 @@ drasi-server [OPTIONS] [COMMAND]
 |--------|-------|---------|-------------|
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
+| `--execution-mode <MODE>` | | (from config) | Force `component-graph` or `computation-graph` for all instances |
 | `--verify-plugins` | | `false` | Enable cosign signature verification for downloaded plugins |
 | `--enable-ui` | | | Enable Web UI (overrides config) |
 | `--disable-ui` | | | Disable Web UI (overrides config) |
@@ -334,6 +335,75 @@ drasi-server validate --config config/server.yaml --show-resolved
 drasi-server doctor
 drasi-server doctor --all  # Include optional deps
 ```
+
+### Execution Engine
+
+The legacy `ComponentGraph` engine remains the default. Opt into native
+`ComputationGraph` execution without changing source, query, reaction, or plugin
+configuration:
+
+```bash
+drasi-server --config config/server.yaml --execution-mode computation-graph
+```
+
+This selects the implementation behind the **ordinary** source/query/reaction
+CRUD, lifecycle, results, and status APIs; it does not create a side graph while
+leaving queries on the legacy engine. Existing plugin ABI entrypoints and loader
+verification policy are unchanged.
+
+For file-based selection, use camelCase values:
+
+```yaml
+executionMode: computationGraph
+instances:
+  - id: native
+  - id: legacy
+    executionMode: componentGraph
+```
+
+Precedence is **CLI force > instance `executionMode` > root `executionMode` >
+`componentGraph`**. API-created instances inherit the stable server-level default
+(root plus CLI), not whichever instance happens to be first. An explicit REST
+override is allowed unless it conflicts with a CLI-forced mode, in which case
+creation returns HTTP 400. Configuration persistence records the actual running
+engine and retains the root default independently of per-instance overrides.
+Omitted legacy selections remain omitted in serialized configuration.
+
+Inspect the live instance, rather than relying on a configuration echo:
+
+```bash
+curl http://localhost:8080/api/v1/instances/native/runtime
+# data: {"instanceId":"native","executionMode":"computationGraph","running":true}
+```
+
+Startup also prints each instance's actual execution mode. The existing UI,
+component endpoints, and snapshots continue to use their existing shapes.
+Programmatic callers can select all builders with
+`DrasiServerBuilder::with_execution_mode(ExecutionMode::ComputationGraph)`;
+without that override, explicitly supplied instance builders retain their modes.
+
+This development branch pins the complete Drasi dependency family to immutable
+core revision `c0d24bdd7360293c4473a23ee7a95a2a24acef0f`. Build reproducibly with
+`cargo build --locked --bin drasi-server`. Runtime plugins are separate shared
+libraries: use matching target/SDK artifacts built from that same revision
+(SDK/host Cargo packages 0.11.1; exported FFI protocol 0.14.0), not an automatic
+download from a moving registry tag. The plugin API's `sdkVersion` reports that
+FFI compatibility version, not the Cargo package version. Cargo's pin
+does not rebuild or replace plugin binaries.
+
+For a real binary/plugin regression, independently verify the hashes/provenance of
+matching HTTP source and log reaction cdylibs, place them in a directory, then run:
+
+```bash
+DRASI_NATIVE_TEST_PLUGINS=./plugins cargo test --locked --test execution_mode_test \
+  native_binary_loads_plugins_and_processes_http_events -- --ignored --exact
+```
+
+This uses isolated temporary storage and loopback ports, checks the live native
+runtime endpoint, and sends an HTTP event through the loaded source, ordinary
+query API, and loaded log reaction. It explicitly uses `--skip-verification`
+because local build artifacts are not cosign-signed; SDK/target/ABI checks remain
+active. Normal server startup still requires verified plugins by default.
 
 ### Environment Variables
 

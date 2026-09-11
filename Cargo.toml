@@ -36,7 +36,8 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.9.1", features = [
+drasi-lib = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f", features = [
+  "computation",
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,29 +48,29 @@ drasi-lib = { version = "0.9.1", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.5.8"
+drasi-core = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.2.12"
-drasi-bootstrap-application = "0.2.12"
+drasi-bootstrap-noop = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
+drasi-bootstrap-application = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.3.10"
+drasi-reaction-application = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # Index plugins
-drasi-index-rocksdb = "0.6.1"
+drasi-index-rocksdb = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # State store plugins
-drasi-state-store-redb = "0.2.5"
+drasi-state-store-redb = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # WAL plugins
-drasi-wal-redb = "0.2.8"
+drasi-wal-redb = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # Plugin SDK
-drasi-plugin-sdk = "0.11.0"
+drasi-plugin-sdk = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.11.0", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -125,7 +126,8 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.5.8"
+drasi-core = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
+drasi-source-application = { git = "https://github.com/drasi-project/drasi-core", rev = "c0d24bdd7360293c4473a23ee7a95a2a24acef0f" }
 
 [lints.rust]
 warnings = "deny"

@@ -32,6 +32,7 @@
 //! println!("Server configuration loaded successfully");
 //! ```
 
+pub mod execution_mode;
 pub mod loader;
 pub mod plugin_validation;
 pub mod schema_validation;
@@ -39,6 +40,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export commonly used types
+pub use execution_mode::{ExecutionModeConfig, ExecutionModePolicy};
 pub use loader::{from_json_str, from_yaml_str, load_config_file, save_config_file, ConfigError};
 pub use plugin_validation::{
     check_config_references, check_plugin_availability, extract_plugin_requirements,

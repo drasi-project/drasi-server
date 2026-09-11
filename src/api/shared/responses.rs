@@ -69,6 +69,15 @@ pub struct InstanceListItem {
     pub links: InstanceLinks,
 }
 
+/// Runtime facts read from the live DrasiLib instance, not configuration hints.
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceRuntimeInfo {
+    pub instance_id: String,
+    pub execution_mode: crate::config::ExecutionModeConfig,
+    pub running: bool,
+}
+
 /// HATEOAS links for an instance
 #[derive(Serialize, ToSchema)]
 pub struct InstanceLinks {

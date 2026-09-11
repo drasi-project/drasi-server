@@ -142,6 +142,34 @@ pub async fn create_instance(
     .await
 }
 
+/// Inspect the actual engine behind this instance's ordinary component APIs.
+#[utoipa::path(
+    get,
+    path = "/api/v1/instances/{instanceId}/runtime",
+    params(("instanceId" = String, Path, description = "DrasiLib instance ID")),
+    responses(
+        (status = 200, description = "Live runtime information", body = ApiResponse),
+        (status = 404, description = "Instance not found", body = ErrorResponse),
+    ),
+    tag = "Instances"
+)]
+pub async fn get_instance_runtime(
+    Extension(registry): Extension<InstanceRegistry>,
+    Path(InstancePath { instance_id }): Path<InstancePath>,
+) -> Result<
+    Json<ApiResponse<crate::api::shared::InstanceRuntimeInfo>>,
+    crate::api::shared::ErrorResponse,
+> {
+    let core = shared::get_instance_or_error(&registry, &instance_id).await?;
+    Ok(Json(ApiResponse::success(
+        crate::api::shared::InstanceRuntimeInfo {
+            instance_id,
+            execution_mode: core.execution_mode().into(),
+            running: core.is_running().await,
+        },
+    )))
+}
+
 /// Get a configuration snapshot of an instance
 ///
 /// Returns an atomic point-in-time snapshot of all components (sources, queries,

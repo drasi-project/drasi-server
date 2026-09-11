@@ -82,6 +82,7 @@ fn build_dynamic_instance_router() -> Router {
     Router::new()
         // Instance snapshot
         .route("/snapshot", get(handlers::get_instance_snapshot))
+        .route("/runtime", get(handlers::get_instance_runtime))
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))

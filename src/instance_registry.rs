@@ -25,12 +25,14 @@ use tokio::sync::RwLock;
 use drasi_lib::DrasiLib;
 
 use crate::api::models::BootstrapProviderConfig;
+use crate::config::ExecutionModePolicy;
 
 /// Thread-safe registry for managing DrasiLib instances.
 ///
 /// Supports dynamic instance creation and lookup at runtime.
 #[derive(Clone)]
 pub struct InstanceRegistry {
+    execution_mode_policy: ExecutionModePolicy,
     instances: Arc<RwLock<IndexMap<String, Arc<DrasiLib>>>>,
     /// Per-instance top-level bootstrap provider configs, keyed by
     /// `instance_id` then by bootstrap provider `id`. Populated at startup
@@ -45,6 +47,7 @@ impl InstanceRegistry {
     /// Create a new empty instance registry.
     pub fn new() -> Self {
         Self {
+            execution_mode_policy: ExecutionModePolicy::default(),
             instances: Arc::new(RwLock::new(IndexMap::new())),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
         }
@@ -53,9 +56,20 @@ impl InstanceRegistry {
     /// Create a registry from an existing instance map.
     pub fn from_map(instances: IndexMap<String, Arc<DrasiLib>>) -> Self {
         Self {
+            execution_mode_policy: ExecutionModePolicy::default(),
             instances: Arc::new(RwLock::new(instances)),
             bootstrap_providers: Arc::new(RwLock::new(IndexMap::new())),
         }
+    }
+
+    /// Set the server default and optional forced mode for future instances.
+    pub fn with_execution_mode_policy(mut self, policy: ExecutionModePolicy) -> Self {
+        self.execution_mode_policy = policy;
+        self
+    }
+
+    pub fn execution_mode_policy(&self) -> ExecutionModePolicy {
+        self.execution_mode_policy
     }
 
     /// Get an instance by ID.

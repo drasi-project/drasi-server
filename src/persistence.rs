@@ -17,8 +17,8 @@ use crate::api::models::bootstrap::{
 };
 use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
 use crate::config::{
-    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
-    TrustedIdentity,
+    DrasiLibInstanceConfig, DrasiServerConfig, ExecutionModeConfig, PluginDependency,
+    ReactionConfig, SourceConfig, TrustedIdentity,
 };
 use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
@@ -35,6 +35,7 @@ use tokio::sync::RwLock;
 /// configuration on the first persist operation.
 #[derive(Clone)]
 struct PreservedServerSettings {
+    default_execution_mode: ExecutionModeConfig,
     enable_ui: bool,
     memory_budget_mib_by_instance: IndexMap<String, ConfigValue<usize>>,
     plugin_registry: Option<String>,
@@ -209,6 +210,7 @@ impl ConfigPersistence {
             archive_settings,
             solutions_dir,
             preserved: PreservedServerSettings {
+                default_execution_mode: original_config.execution_mode,
                 enable_ui: original_config.enable_ui,
                 memory_budget_mib_by_instance: {
                     let mut by_instance: IndexMap<String, ConfigValue<usize>> = original_config
@@ -458,6 +460,9 @@ impl ConfigPersistence {
         let mut instance_configs = Vec::new();
 
         for (id, core) in self.registry.list().await {
+            let actual_mode = ExecutionModeConfig::from(core.execution_mode());
+            let execution_mode =
+                (actual_mode != self.preserved.default_execution_mode).then_some(actual_mode);
             let snapshot = core
                 .snapshot_configuration()
                 .await
@@ -546,6 +551,7 @@ impl ConfigPersistence {
             // Check if this is a dynamically created instance
             let instance_config = if let Some(dynamic_config) = dynamic_instance_configs.get(&id) {
                 DrasiLibInstanceConfig {
+                    execution_mode,
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
                     enable_archive: dynamic_config.enable_archive,
@@ -588,6 +594,7 @@ impl ConfigPersistence {
                 }
             } else {
                 DrasiLibInstanceConfig {
+                    execution_mode,
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
                     enable_archive,
@@ -620,8 +627,12 @@ impl ConfigPersistence {
             instance_configs.push(instance_config);
         }
 
-        // Dynamic format selection based on instance count
-        let wrapper_config = if instance_configs.len() == 1 {
+        // Keep a distinct root default even when only one overridden instance remains.
+        let flatten_single = matches!(
+            instance_configs.as_slice(),
+            [instance] if instance.execution_mode.is_none()
+        );
+        let wrapper_config = if flatten_single {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
             // In single-instance format, identityProviders move to the top
@@ -640,6 +651,7 @@ impl ConfigPersistence {
                 self.preserved.bootstrap_providers.clone()
             };
             DrasiServerConfig {
+                execution_mode: self.preserved.default_execution_mode,
                 api_version: None,
                 id: instance.id,
                 host: ConfigValue::Static(self.host.clone()),
@@ -681,6 +693,7 @@ impl ConfigPersistence {
                 .unwrap_or_default();
 
             DrasiServerConfig {
+                execution_mode: self.preserved.default_execution_mode,
                 api_version: None,
                 id: ConfigValue::Static(first_id),
                 host: ConfigValue::Static(self.host.clone()),

@@ -22,6 +22,7 @@ use std::sync::Arc;
 /// Builder for creating a DrasiServer instance programmatically
 pub struct DrasiServerBuilder {
     core_builders: Vec<DrasiLibBuilder>,
+    execution_mode: Option<drasi_lib::ExecutionMode>,
     enable_api: bool,
     enable_ui: bool,
     port: Option<u16>,
@@ -33,6 +34,7 @@ impl Default for DrasiServerBuilder {
     fn default() -> Self {
         Self {
             core_builders: vec![DrasiLib::builder()],
+            execution_mode: None,
             enable_api: false,
             enable_ui: true,
             port: Some(8080),
@@ -52,6 +54,13 @@ impl DrasiServerBuilder {
     /// Create a new DrasiServerBuilder with default settings
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Select the engine for all instances built by this server builder.
+    /// Without an override, supplied instance builders keep their own selection.
+    pub fn with_execution_mode(mut self, mode: drasi_lib::ExecutionMode) -> Self {
+        self.execution_mode = Some(mode);
+        self
     }
 
     /// Set the server ID
@@ -207,6 +216,10 @@ impl DrasiServerBuilder {
             .into_iter()
             .next()
             .expect("At least one DrasiLibBuilder should be configured");
+        let primary = match self.execution_mode {
+            Some(mode) => primary.with_execution_mode(mode),
+            None => primary,
+        };
         primary.build().await
     }
 
@@ -227,12 +240,16 @@ impl DrasiServerBuilder {
         // Build all configured cores
         let mut cores = Vec::new();
         for builder in self.core_builders {
+            let builder = match self.execution_mode {
+                Some(mode) => builder.with_execution_mode(mode),
+                None => builder,
+            };
             let core = builder.build().await?;
             cores.push((core, None, false));
         }
 
         // Create the full server with optional features
-        let server = crate::server::DrasiServer::from_cores(
+        let mut server = crate::server::DrasiServer::from_cores(
             cores,
             api_enabled,
             ui_enabled,
@@ -240,6 +257,9 @@ impl DrasiServerBuilder {
             port,
             config_file,
         );
+        if let Some(mode) = self.execution_mode {
+            server.set_default_execution_mode(mode);
+        }
 
         Ok(server)
     }
@@ -255,6 +275,10 @@ impl DrasiServerBuilder {
         let mut primary: Option<Arc<DrasiLib>> = None;
 
         for builder in self.core_builders {
+            let builder = match self.execution_mode {
+                Some(mode) => builder.with_execution_mode(mode),
+                None => builder,
+            };
             let core = builder.build().await?;
             core.start().await?;
             let id = core

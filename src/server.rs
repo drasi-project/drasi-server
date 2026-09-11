@@ -29,7 +29,9 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::api;
 use crate::api::mappings::{map_server_settings, DtoMapper};
 use crate::api::models::BootstrapProviderConfig;
-use crate::config::{DrasiLibInstanceConfig, SecretStoreConfig};
+use crate::config::{
+    DrasiLibInstanceConfig, ExecutionModeConfig, ExecutionModePolicy, SecretStoreConfig,
+};
 use crate::factories::{
     build_bootstrap_provider_config_map, build_config_resolver_context,
     build_identity_provider_map, config_resolver_callback, create_reaction_locked,
@@ -50,6 +52,7 @@ use drasi_wal_redb::RedbWalProvider;
 
 pub struct DrasiServer {
     instances: Vec<PreparedInstance>,
+    execution_mode_policy: ExecutionModePolicy,
     enable_api: bool,
     enable_ui: bool,
     host: String,
@@ -83,7 +86,38 @@ impl DrasiServer {
         skip_verification: bool,
         enable_ui: bool,
     ) -> Result<Self> {
+        Self::new_with_execution_mode(
+            config_path,
+            port,
+            plugins_dir,
+            skip_verification,
+            enable_ui,
+            None,
+        )
+        .await
+    }
+
+    /// Create a server with an optional command-line execution-mode override.
+    /// An override forces every configured and subsequently created instance.
+    pub async fn new_with_execution_mode(
+        config_path: PathBuf,
+        port: u16,
+        plugins_dir: PathBuf,
+        skip_verification: bool,
+        enable_ui: bool,
+        execution_mode_override: Option<ExecutionModeConfig>,
+    ) -> Result<Self> {
         let mut config = load_config_file(&config_path)?;
+        if let Some(mode) = execution_mode_override {
+            config.execution_mode = mode;
+            for instance in &mut config.instances {
+                instance.execution_mode = Some(mode);
+            }
+        }
+        let execution_mode_policy = ExecutionModePolicy {
+            default_mode: config.execution_mode,
+            forced_mode: execution_mode_override,
+        };
         config.validate()?;
 
         // CLI --skip-verification flag overrides config (disables when set)
@@ -452,7 +486,9 @@ impl DrasiServer {
         };
 
         for instance in resolved_instances {
-            let mut builder = DrasiLib::builder().with_id(&instance.id);
+            let mut builder = DrasiLib::builder()
+                .with_id(&instance.id)
+                .with_execution_mode(instance.execution_mode);
 
             // Set capacity defaults if configured (resolve env vars)
             if let Some(capacity) = instance.default_priority_queue_capacity {
@@ -579,6 +615,7 @@ impl DrasiServer {
 
         Ok(Self {
             instances,
+            execution_mode_policy,
             enable_api: true,
             enable_ui,
             host: resolved_settings.host,
@@ -606,7 +643,12 @@ impl DrasiServer {
         let plugin_registry = Arc::new(RwLock::new(plugin_registry));
         let lifecycle = Arc::new(PluginLifecycleManager::new(plugin_registry.clone()));
         let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
+        let execution_mode_policy = ExecutionModePolicy {
+            default_mode: core.execution_mode().into(),
+            forced_mode: None,
+        };
         Self {
+            execution_mode_policy,
             instances: vec![PreparedInstance {
                 id_hint: None,
                 persist_index: false,
@@ -654,6 +696,7 @@ impl DrasiServer {
         let plugin_orchestrator = Arc::new(PluginOrchestrator::new(lifecycle));
         Self {
             instances,
+            execution_mode_policy: ExecutionModePolicy::default(),
             enable_api,
             enable_ui,
             host,
@@ -665,6 +708,11 @@ impl DrasiServer {
             cors_allowed_origins: Vec::new(), // Permissive by default for programmatic usage
             watcher_handle: None,
         }
+    }
+
+    /// Set the default for API-created instances from the programmatic builder.
+    pub(crate) fn set_default_execution_mode(&mut self, mode: drasi_lib::ExecutionMode) {
+        self.execution_mode_policy.default_mode = mode.into();
     }
 
     /// Check if we have write access to the config file
@@ -710,6 +758,14 @@ impl DrasiServer {
             };
 
             let core = Arc::new(core);
+            info!(
+                "Instance '{id}' execution mode: {:?}",
+                core.execution_mode()
+            );
+            println!(
+                "  Instance '{id}' execution mode: {:?}",
+                core.execution_mode()
+            );
             core.start().await?;
             persist_settings.insert(id.clone(), instance.persist_index);
             archive_settings.insert(id.clone(), instance.enable_archive);
@@ -727,7 +783,8 @@ impl DrasiServer {
         let instances = Arc::new(instance_map);
 
         // Create the instance registry from the map
-        let registry = InstanceRegistry::from_map((*instances).clone());
+        let registry = InstanceRegistry::from_map((*instances).clone())
+            .with_execution_mode_policy(self.execution_mode_policy);
 
         // Record each instance's top-level bootstrap provider configs so the
         // source create/upsert handlers can resolve `bootstrapProvider: <id>`
@@ -741,7 +798,8 @@ impl DrasiServer {
         {
             if !*self.read_only {
                 // Need to reload config to check persist_config flag and get initial configs
-                let config = load_config_file(PathBuf::from(config_file))?;
+                let mut config = load_config_file(PathBuf::from(config_file))?;
+                config.execution_mode = self.execution_mode_policy.default_mode;
                 let solutions_dir = config.solutions_dir.clone();
                 let mapper = DtoMapper::new();
                 let resolved_settings = map_server_settings(&config, &mapper)?;
@@ -766,6 +824,7 @@ impl DrasiServer {
                     let initial_instances: Vec<DrasiLibInstanceConfig> =
                         if config.instances.is_empty() {
                             vec![DrasiLibInstanceConfig {
+                                execution_mode: None,
                                 id: config.id.clone(),
                                 persist_index: config.persist_index,
                                 enable_archive: config.enable_archive,
@@ -988,4 +1047,111 @@ pub fn register_core_plugins(registry: &mut PluginRegistry) {
     let desc = drasi_reaction_application::descriptor::ApplicationReactionDescriptor;
     info!("  [static/core] reaction: {}", desc.kind());
     registry.register_reaction(Arc::new(desc));
+}
+
+#[cfg(test)]
+mod execution_mode_tests {
+    use super::*;
+    use drasi_lib::ExecutionMode;
+
+    #[tokio::test]
+    async fn config_and_cli_select_actual_runtimes() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_path = directory.path().join("server.yaml");
+        let plugins = directory.path().join("plugins");
+        std::fs::create_dir(&plugins).unwrap();
+        std::fs::write(
+            &config_path,
+            "executionMode: computationGraph\ninstances:\n  - id: configured-native\n  - id: configured-legacy\n    executionMode: componentGraph\n",
+        ).unwrap();
+
+        let configured = DrasiServer::new(config_path.clone(), 8080, plugins.clone(), false, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            configured.instances[0].core.execution_mode(),
+            ExecutionMode::ComputationGraph
+        );
+        assert_eq!(
+            configured.instances[1].core.execution_mode(),
+            ExecutionMode::ComponentGraph
+        );
+        assert_eq!(
+            configured.execution_mode_policy.default_mode,
+            ExecutionModeConfig::ComputationGraph
+        );
+        for forced in [
+            ExecutionModeConfig::ComponentGraph,
+            ExecutionModeConfig::ComputationGraph,
+        ] {
+            let server = DrasiServer::new_with_execution_mode(
+                config_path.clone(),
+                8080,
+                plugins.clone(),
+                false,
+                false,
+                Some(forced),
+            )
+            .await
+            .unwrap();
+            for instance in &server.instances {
+                assert_eq!(instance.core.execution_mode(), forced.into());
+            }
+            assert_eq!(server.execution_mode_policy.default_mode, forced);
+            assert_eq!(server.execution_mode_policy.forced_mode, Some(forced));
+        }
+    }
+
+    #[tokio::test]
+    async fn prebuilt_instances_and_server_builder_preserve_actual_modes() {
+        let native = DrasiLib::builder()
+            .with_execution_mode(ExecutionMode::ComputationGraph)
+            .build()
+            .await
+            .unwrap();
+        let server = DrasiServer::from_core(native, false, false, "127.0.0.1".into(), 8080, None);
+        assert_eq!(
+            server.instances[0].core.execution_mode(),
+            ExecutionMode::ComputationGraph
+        );
+
+        let server = crate::DrasiServerBuilder::new()
+            .with_execution_mode(ExecutionMode::ComputationGraph)
+            .add_instance_builder(DrasiLib::builder().with_id("second"))
+            .build()
+            .await
+            .unwrap();
+        for instance in &server.instances {
+            assert_eq!(
+                instance.core.execution_mode(),
+                ExecutionMode::ComputationGraph
+            );
+        }
+        assert_eq!(
+            server.execution_mode_policy.default_mode,
+            ExecutionModeConfig::ComputationGraph
+        );
+
+        let server = crate::DrasiServerBuilder::new()
+            .add_instance_builder(
+                DrasiLib::builder()
+                    .with_id("native")
+                    .with_execution_mode(ExecutionMode::ComputationGraph),
+            )
+            .build()
+            .await
+            .unwrap();
+        assert_eq!(
+            server.instances[0].core.execution_mode(),
+            ExecutionMode::ComponentGraph
+        );
+        assert_eq!(
+            server.instances[1].core.execution_mode(),
+            ExecutionMode::ComputationGraph
+        );
+        assert_eq!(
+            server.execution_mode_policy.default_mode,
+            ExecutionModeConfig::ComponentGraph
+        );
+    }
 }

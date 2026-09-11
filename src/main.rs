@@ -54,6 +54,10 @@ struct Cli {
     #[arg(short, long, global = true)]
     port: Option<u16>,
 
+    /// Force the engine behind ordinary source/query/reaction APIs for all instances
+    #[arg(long, global = true, value_enum)]
+    execution_mode: Option<drasi_server::config::ExecutionModeConfig>,
+
     /// Directory to scan for plugin shared libraries (defaults to binary directory)
     #[arg(long, global = true)]
     plugins_dir: Option<PathBuf>,
@@ -150,7 +154,15 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            run_server(config, port, plugins_dir, skip_verification, ui_override).await
+            run_server(
+                config,
+                port,
+                plugins_dir,
+                skip_verification,
+                ui_override,
+                cli.execution_mode,
+            )
+            .await
         }
         Some(Commands::Validate {
             config,
@@ -182,6 +194,7 @@ async fn main() -> Result<()> {
                 cli.plugins_dir,
                 cli.skip_verification,
                 ui_override,
+                cli.execution_mode,
             )
             .await
         }
@@ -195,6 +208,7 @@ async fn run_server(
     plugins_dir: Option<PathBuf>,
     skip_verification: bool,
     ui_override: Option<bool>,
+    execution_mode_override: Option<drasi_server::config::ExecutionModeConfig>,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
@@ -313,12 +327,13 @@ async fn run_server(
     };
     info!("Plugins directory: {}", plugins_dir.display());
 
-    let server = DrasiServer::new(
+    let server = DrasiServer::new_with_execution_mode(
         config_path,
         final_port,
         plugins_dir,
         skip_verification,
         final_enable_ui,
+        execution_mode_override,
     )
     .await?;
     server.run().await?;
