@@ -86,7 +86,7 @@ impl SourceTrait for BootstrapMockSource {
     ) -> anyhow::Result<SubscriptionResponse> {
         // Create the change event channel (for streaming CDC events)
         let dispatcher =
-            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+            ChannelChangeDispatcher::<drasi_lib::channels::StampedSourceEvent>::new(100);
         let receiver = dispatcher.create_receiver().await?;
 
         // Create a bootstrap channel and send bootstrap elements

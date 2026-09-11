@@ -847,7 +847,7 @@ mod tests {
             settings: SourceSubscriptionSettings,
         ) -> anyhow::Result<SubscriptionResponse> {
             let dispatcher =
-                ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(10);
+                ChannelChangeDispatcher::<drasi_lib::channels::StampedSourceEvent>::new(10);
             let receiver = dispatcher.create_receiver().await?;
             Ok(SubscriptionResponse {
                 query_id: settings.query_id,
@@ -993,6 +993,81 @@ mod tests {
     }
 
     // ─── Tests ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_source_priority_survives_startup_and_snapshot_persistence() {
+        for multi_instance in [false, true] {
+            let mut config: DrasiServerConfig = serde_yaml::from_str(
+                r#"
+id: inst1
+queries:
+  - id: ranked
+    query: MATCH (n) RETURN n
+    sources:
+      - sourceId: src1
+        priority: 10
+      - sourceId: src2
+      - sourceId: src3
+        priority: -5
+      - sourceId: src4
+        priority: 10
+"#,
+            )
+            .unwrap();
+            if multi_instance {
+                let mut instance: DrasiLibInstanceConfig =
+                    serde_yaml::from_str("id: inst1").unwrap();
+                instance.queries = std::mem::take(&mut config.queries);
+                config.instances.push(instance);
+            }
+            let mut instances = config
+                .resolved_instances(&crate::api::mappings::DtoMapper::new())
+                .unwrap();
+            let queries = std::mem::take(&mut instances[0].queries);
+            assert_eq!(
+                queries[0]
+                    .sources
+                    .iter()
+                    .map(|source| source.priority)
+                    .collect::<Vec<_>>(),
+                vec![Some(10), None, Some(-5), Some(10)],
+            );
+            let core = build_core(
+                "inst1",
+                vec![
+                    TestSource::new("src1", "mock"),
+                    TestSource::new("src2", "mock"),
+                    TestSource::new("src3", "mock"),
+                    TestSource::new("src4", "mock"),
+                ],
+                queries,
+                vec![],
+            )
+            .await;
+            let tmp = TempDir::new().unwrap();
+            let path = tmp.path().join("priority.yaml");
+            let persistence =
+                make_persistence_with_config(core, "inst1", path.clone(), true, &config);
+            persistence.save().await.unwrap();
+            let reloaded = crate::load_config_file(&path).unwrap();
+            let instances = reloaded
+                .resolved_instances(&crate::api::mappings::DtoMapper::new())
+                .unwrap();
+            let subscriptions = &instances[0].queries[0].sources;
+            assert_eq!(
+                subscriptions
+                    .iter()
+                    .map(|source| (source.source_id.as_str(), source.priority))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("src1", Some(10)),
+                    ("src2", None),
+                    ("src3", Some(-5)),
+                    ("src4", Some(10))
+                ],
+            );
+        }
+    }
 
     #[tokio::test]
     async fn test_save_writes_valid_yaml() {

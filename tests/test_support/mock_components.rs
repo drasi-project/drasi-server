@@ -109,7 +109,7 @@ impl SourceTrait for MockSource {
     ) -> anyhow::Result<SubscriptionResponse> {
         use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
         let dispatcher =
-            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+            ChannelChangeDispatcher::<drasi_lib::channels::StampedSourceEvent>::new(100);
         let receiver = dispatcher.create_receiver().await?;
         Ok(SubscriptionResponse {
             query_id: settings.query_id,
