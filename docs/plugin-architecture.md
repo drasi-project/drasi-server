@@ -1,19 +1,30 @@
 # Drasi Plugin Architecture
 
-This document describes the plugin system architecture for Drasi Server, covering both
-the static (builtin) and dynamic (cdylib) plugin loading approaches.
+This document preserves the plugin system's architectural rationale and design
+sketches. For current build, installation, verification, and run commands, use
+the [Server setup guide](setup.md).
+
+**Status:** The normal Server build now loads cdylib plugins at runtime; the old
+static/dynamic Server feature modes are retired. The FFI layouts and authoring
+snippets below are illustrative design notes, not a current, complete SDK
+implementation tutorial. Use the matching sibling Core
+[`plugin-sdk`](https://github.com/drasi-project/drasi-core/tree/workgraph-generic-recovery/components/plugin-sdk)
+and [`host-sdk`](https://github.com/drasi-project/drasi-core/tree/workgraph-generic-recovery/components/host-sdk)
+source for exact interfaces.
 
 ## Overview
 
-Drasi Server supports two build modes for plugins:
+The current host uses two kinds of registration, not two Cargo build modes:
 
-| Mode | Feature Flag | How Plugins Are Loaded |
-|------|-------------|----------------------|
-| **Static** (default) | `builtin-plugins` | Plugins are statically linked into the server binary |
-| **Dynamic** | `dynamic-plugins` | Plugins are self-contained `.so`/`.dylib`/`.dll` files loaded at runtime |
+| Registration | How it is used |
+|--------------|----------------|
+| Small static core | `register_core_plugins` registers no-op/application bootstrappers and the application reaction |
+| Runtime plugins | The host SDK loads `.so`/`.dylib`/`.dll` libraries from the configured plugin directory |
 
-Both modes use the same plugin source code — the `export_plugin!` macro generates FFI
-entry points only when the `dynamic-plugin` feature is enabled on a plugin crate.
+Generic plugin crates live in sibling `drasi-core`; their `dynamic-plugin`
+feature is a plugin-crate build setting, not a Server feature. WorkGraph-specific
+plugins belong to `drasi-workgraph`; see its [host setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/host.md).
+The former `builtin-plugins` and `dynamic-plugins` Server flags no longer exist.
 
 ## Architecture Diagram
 
@@ -24,9 +35,9 @@ entry points only when the `dynamic-plugin` feature is enabled on a plugin crate
 │  API routes, config persistence, OpenAPI spec, server lifecycle  │
 │  Uses DrasiLib for query processing                              │
 │                                                                  │
-│  Build modes:                                                    │
-│  • builtin-plugins (default): static linking, no FFI overhead    │
-│  • dynamic-plugins: uses drasi-host-sdk to load cdylib plugins   │
+│  Registration:                                                   │
+│  • Small application/no-op core registered statically            │
+│  • drasi-host-sdk loads connector cdylib plugins at runtime       │
 ├──────────────────────────────────────────────────────────────────┤
 │                      drasi-host-sdk (library crate)              │
 │                                                                  │
@@ -71,7 +82,9 @@ entry points only when the `dynamic-plugin` feature is enabled on a plugin crate
 
 ## Plugin Types
 
-Drasi supports three types of plugins:
+The original design below focuses on sources, reactions, and bootstrappers.
+The current [Server loader](../src/dynamic_loading.rs) also registers secret-store
+and identity-provider plugins; their exact interfaces live in the sibling SDK.
 
 ### Source Plugins
 Ingest data from external systems (PostgreSQL, HTTP, gRPC, etc.) and emit `SourceChange` events.
@@ -96,7 +109,7 @@ Provide initial data snapshots to populate queries when sources are connected.
 ### Loading Sequence
 
 ```
-1. Server starts with --features dynamic-plugins
+1. Server reads config and applies its startup plugin verification policy
    ↓
 2. PluginLoader scans plugin directory for matching .so/.dylib/.dll files
    ↓
@@ -117,9 +130,15 @@ Provide initial data snapshots to populate queries when sources are connected.
    descriptor.create_source(id, config_json, auto_start) → SourceProxy
 ```
 
+The default plugin directory is `plugins/` beside the executable; override it
+with `--plugins-dir`. Signature verification defaults to on and can exclude
+unsigned local libraries before loading. See [local plugin setup](setup.md#6-add-generic-plugins-for-examples)
+for the narrowly scoped development exception and compatibility requirements.
+
 ### Plugin Entry Points
 
-Every cdylib plugin exports exactly two symbols:
+The original design centers on two primary entry points, sketched here.
+Current SDKs may expose additional entry points:
 
 ```rust
 // Returns version/compatibility metadata (safe to call with any ABI)
@@ -131,7 +150,13 @@ pub extern "C" fn drasi_plugin_metadata() -> *const PluginMetadata
 pub extern "C" fn drasi_plugin_init() -> *mut FfiPluginRegistration
 ```
 
-### Version Validation
+### Version Validation (Design Summary)
+
+These checks describe the original compatibility design. The current host
+reports SDK, Core, library, and target versions through
+[`PluginOperations::host_version_info`](../src/plugin_operations.rs) and delegates
+loading checks to Core's host SDK. Version labels alone do not prove that two
+locally modified builds have compatible layouts; rebuild matching binaries.
 
 | Field | Check | Severity | Rationale |
 |-------|-------|----------|-----------|
@@ -253,7 +278,11 @@ Plugin: log::info!("connected")
 The `tracing` crate's `log` feature causes tracing events to fall back to `log` records
 when no tracing subscriber is set in the plugin's cdylib, so both logging frameworks work.
 
-## Plugin Development Guide
+## Plugin Development Sketches (Historical)
+
+These partial examples retain the original trait/factory/export design. They
+omit fields and signatures needed by current SDK versions and are not
+copy-and-build setup instructions.
 
 ### Creating a New Source Plugin
 
@@ -334,15 +363,9 @@ drasi_plugin_sdk::export_plugin!(
 );
 ```
 
-5. **Build**:
-
-```sh
-# Static (linked into server binary):
-cargo build  # with drasi-server's builtin-plugins feature
-
-# Dynamic (standalone .so):
-cargo build --lib -p drasi-source-mydb --features drasi-source-mydb/dynamic-plugin
-```
+5. **Build in the owning plugin workspace**, using its current SDK and
+   `dynamic-plugin` support. See [generic plugin build commands](setup.md#6-add-generic-plugins-for-examples)
+   rather than the removed Server static/dynamic build switches.
 
 ### Creating a Reaction Plugin
 
@@ -398,43 +421,31 @@ config_schema_json() → JSON string  →  Parse JSON
 
 ## Build System
 
-### Static Build (default)
+The [setup guide](setup.md#3-build-the-server-and-optionally-the-ui) is the
+canonical build path. Build the host with Cargo (and the UI first if wanted);
+use `make build-local-plugins` or `make build-local-plugins-debug` in Server to
+delegate generic plugin builds to sibling Core. Server's `cargo xtask` manages
+vendored native libraries, not plugin discovery/builds.
 
-```sh
-cargo build                    # debug
-cargo build --release          # release
-```
-
-All plugins are statically linked. No `.so` files needed.
-
-### Dynamic Build
-
-```sh
-make build-dynamic             # build server + all plugins (debug)
-make build-dynamic-release     # build server + all plugins (release)
-make build-dynamic-server      # server only
-make build-dynamic-plugins     # plugins only
-```
-
-Plugins are built individually (not in batch) to avoid feature unification issues
-where adaptive plugins inherit cdylib entry points from their base dependencies.
+**Historical build rationale:** Plugins were built individually to avoid
+feature-unification issues where adaptive plugins inherited cdylib entry points
+from base dependencies. Keep that rationale when working on the Core plugin
+builder; the obsolete `make build-dynamic*` commands are not retained here as
+runnable instructions.
 
 ### Testing
 
 ```sh
-# Static tests
-cargo test --lib                                                    # 196 tests
-cargo test --test error_resilience_test                             # 11 tests
+# Server library tests
+cargo test --lib
 
-# Dynamic tests (requires: make build-dynamic-plugins)
-cargo test --no-default-features --features dynamic-plugins --lib   # 185 tests
-
-# Host-SDK integration tests (requires pre-built cdylib plugins)
-cd ../drasi-core && cargo test -p drasi-host-sdk --test integration_test  # 22 tests
-
-# Smoke tests (builds and runs server with all plugins)
+# Smoke tests build and start a server; not a read-only documentation check
 make test-smoke
 ```
+
+For SDK/FFI integration testing, use Core's
+`components/host-sdk/tests/integration_test.rs` with its matching prebuilt
+plugins. See [tests/README.md](../tests/README.md) for the Server suites.
 
 ## FAQ
 
@@ -446,8 +457,10 @@ The original `dylib` approach required:
 - Single-invocation build (to prevent symbol hash mismatches)
 - `libstd-*.so` copying alongside plugins
 
-The `cdylib` approach eliminates all of these constraints. Each plugin is fully
-self-contained with a stable C ABI boundary.
+The `cdylib` approach reduces Rust symbol and shared-runtime coupling through a
+C ABI boundary. It does not make arbitrary host/plugin builds compatible:
+opaque Rust values still need matching layouts. Follow the current setup
+guide's same-checkout/toolchain policy for local development.
 
 ### Can plugins use different tokio versions?
 

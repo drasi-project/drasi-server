@@ -2,6 +2,12 @@
 
 This directory contains practical examples demonstrating different features and use cases of Drasi Server.
 
+First complete the [local Server setup](../docs/setup.md), including native
+dependencies and matching runtime plugins. These examples exercise the generic
+host; they do not install WorkGraph or create its Sandbox repository. For that,
+use [WorkGraph setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md)
+and [Sandbox setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/sandbox.md).
+
 ## Available Examples
 
 ### 🚀 [getting-started/](getting-started/)
@@ -62,20 +68,18 @@ Comprehensive example demonstrating advanced features and production patterns.
 
 ## Quick Start
 
-Each example includes:
-- `server-config.yaml` - Drasi Server configuration
-- `scripts/` - Helper scripts for setup and testing
-- `README.md` - Detailed documentation and instructions
+Each example has its own README and layout. The
+[configuration collection](configs/README.md) contains standalone YAML examples;
+the tutorials also include apps, databases, or scripts as needed.
 
-To run an example:
+Use private copies of example configs, not tracked files or live host configs.
+Review bind addresses, ports, external services, `autoInstallPlugins`, and
+`persistConfig` before running them. Several examples intentionally enable OCI
+installation and bind to all interfaces. For the first pipeline, follow the
+[local mock/log recipe](../docs/setup.md#6-add-generic-plugins-for-examples).
 
-```bash
-# Navigate to the example directory
-cd examples/getting-started
-
-# Follow the instructions in the example's README.md
-cat README.md
-```
+Helper scripts can start services, download artifacts, mutate sample data, or
+remove demo volumes; read the individual tutorial before executing them.
 
 ## Example Progression
 
@@ -85,11 +89,12 @@ cat README.md
 
 ## Plugin Signature Verification
 
-You can enable cosign signature verification for downloaded plugins by adding `--verify-plugins`:
-
-```bash
-cargo run -- --verify-plugins --config examples/getting-started/server-config.yaml
-```
+Startup signature verification is **enabled by default** (`verifyPlugins: true`).
+There is no `--verify-plugins` flag. Trusted, self-built unsigned plugins require
+the development-only `--skip-verification` exception and an explicit plugin
+directory; see [plugin setup](../docs/setup.md#6-add-generic-plugins-for-examples).
+Do not disable verification to work around an unavailable or incompatible
+registry artifact.
 
 ## Common Patterns
 

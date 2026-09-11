@@ -1,5 +1,11 @@
 # Drasi Sandbox UI Design Suggestions
 
+> **Historical design notes:** This document preserves the original playground
+> UI design rationale and sketches. It is not a current deployment guide or the
+> WorkGraph Sandbox repository kit. Use [Server setup](../../../docs/setup.md)
+> for the generic host and [WorkGraph Sandbox setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/sandbox.md)
+> for the disposable repository used in WorkGraph testing.
+
 ## Design Philosophy
 
 The design follows these core principles:

@@ -2,6 +2,10 @@
 
 This directory contains a progressive learning collection of configuration examples that demonstrate the features and capabilities of Drasi Server.
 
+For checkout layout, native dependencies, UI, and plugin installation, follow
+the [Server setup guide](../../docs/setup.md) first. These are generic data
+pipelines, not the [WorkGraph host or Sandbox setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md).
+
 ## Learning Path
 
 The examples are organized into numbered folders representing a progression from basic to advanced concepts:
@@ -74,17 +78,16 @@ Complete real-world use case examples.
 
 ## Running Examples
 
-Each example can be run with:
+Use a private copy rather than starting a tracked YAML file unchanged. Review
+its `host`, plugin listener ports, environment references, `persistConfig`, and
+`autoInstallPlugins`: examples may bind to all interfaces, contact external
+services, or download registry plugins.
 
-```bash
-cargo run -- --config examples/configs/<folder>/<filename>.yaml
-```
-
-For example:
-
-```bash
-cargo run -- --config examples/configs/01-fundamentals/hello-world.yaml
-```
+For `hello-world.yaml`, the [local mock/log walkthrough](../../docs/setup.md#6-add-generic-plugins-for-examples)
+shows how to reuse its pipeline with a loopback-only config and matching
+self-built plugins. The same explicit `--config` / `--plugins-dir` pattern
+applies to other examples after provisioning their required services and kinds.
+`--port` changes the Server API port, not plugin listener ports.
 
 ## Configuration Schema Reference
 

@@ -4,6 +4,14 @@ This tutorial helps you create your first change-driven solution using Drasi Ser
 
 This tutorial mirrors the [Drasi Platform getting-started tutorial](https://drasi.io/getting-started/) but demonstrates the standalone Drasi Server approach without Kubernetes.
 
+**Scope:** This is a generic PostgreSQL/CDC demo, not a WorkGraph host or Sandbox
+repository. First complete the [Server source setup](../../docs/setup.md) for the
+sibling Core checkout, pinned Rust/native prerequisites, and matching plugins.
+For WorkGraph, use its [setup guide](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md)
+and [Sandbox repository guide](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/sandbox.md).
+The commands below start services and modify demo data; they are not read-only
+setup checks.
+
 ## What You'll Build
 
 A message tracking system that:
@@ -45,8 +53,8 @@ Before you begin, ensure you have:
 
 - **Docker**: Required to run PostgreSQL
   - [Install Docker](https://docs.docker.com/get-docker/)
-- **Rust/Cargo**: Required to build Drasi Server
-  - [Install Rust](https://rustup.rs/)
+- **Server source-build prerequisites**: Rust 1.95.0, sibling `../drasi-core`,
+  native libraries, and matching plugins as described in [local setup](../../docs/setup.md)
 - **psql** (optional): For manual database queries
   - macOS: `brew install postgresql`
   - Ubuntu: `sudo apt-get install postgresql-client`
@@ -513,13 +521,12 @@ After completing this tutorial, explore:
    - `grpc` for gRPC streaming
 
 3. **Multiple Sources**: Add sources like:
-   - `http` for REST API polling
+   - `http` for HTTP webhook ingestion
    - `grpc` for gRPC streaming
    - `platform` for Redis Streams integration
 
 4. **Other Examples**:
    - [Trading Demo](../trading/) - Multi-source with React UI
-   - [Drasi Platform Integration](../drasi-platform/) - Redis Streams
 
 ## Files in This Example
 

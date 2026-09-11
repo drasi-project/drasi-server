@@ -2,6 +2,14 @@
 
 Drasi Server is a standalone server for real-time data change processing. It monitors your data sources, runs continuous queries, and triggers automated reactions when results change—all through a simple YAML configuration or visual Web UI.
 
+**Setting up this checkout?** Follow the [local Server setup guide](docs/setup.md)
+for the sibling Core dependency, native prerequisites, UI build, plugins, and a
+loopback-only configuration. For WorkGraph, use the separate
+[WorkGraph setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md),
+[host](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/host.md),
+and [Sandbox repository](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/sandbox.md)
+guides. Server is a generic host, not the WorkGraph protocol/compiler or repository kit.
+
 **Key Features:**
 - **Visual Web UI** for managing data pipelines
 - **REST API** for programmatic control
@@ -64,212 +72,37 @@ Drasi is an open-source Data Change Processing platform that simplifies building
 
 ## Quick Start
 
-This tutorial walks you through setting up a complete data pipeline in under 5 minutes. You'll create a mock data source, a continuous query that filters for high values, and a log reaction that outputs matching results.
+Start with the [local setup guide](docs/setup.md). It walks through building this
+checkout, running an empty host, and adding the locally built mock/log plugins
+for a first continuous query. A Cargo build alone does not include those plugins.
 
-### Step 1: Start Drasi Server
-
-**Option A: Using Docker (Recommended)**
-
-```bash
-# Clone the repository
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-
-# Start the server
-docker compose up -d
-
-# Verify it's running
-curl http://localhost:8080/health
-```
-
-**Option B: Using Cargo**
-
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
-> bundled Web UI).
-
-```bash
-# Clone and build (server + Web UI)
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-make build-release   # builds the Rust binary AND the Web UI (ui/dist)
-
-# Start the server (creates default config if none exists)
-cargo run --release
-```
-
-> **Note:** Plain `cargo build --release` does **not** build the Web UI. If you
-> use Cargo directly, also run `make build-ui` (or `cd ui && npm install &&
-> npm run build`) so the `/ui` route is available. Otherwise the server logs a
-> warning and the UI returns 404.
-
-### Step 2: Open the Web UI
-
-Open your browser to **http://localhost:8080/ui**
-
-You'll see an empty canvas with options to add components.
-
-### Step 3: Create a Data Pipeline
-
-**Using the Web UI:**
-
-1. Click **+ Add** in the top toolbar
-2. Select **Source** → **Mock** → Fill in:
-   - ID: `sensor-feed`
-   - Data Type: `sensorReading`
-   - Auto Start: checked
-3. Click **Save**
-4. Click **+ Add** again → **Query** → Fill in:
-   - ID: `high-temp`
-   - Query: `MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s`
-   - Sources: select `sensor-feed`
-   - Auto Start: checked
-5. Click **Save**
-6. Click **+ Add** → **Reaction** → **Log** → Fill in:
-   - ID: `temp-logger`
-   - Queries: select `high-temp`
-   - Auto Start: checked
-7. Click **Save**
-
-**Or using a config file:**
-
-Create `config/server.yaml`:
-```yaml
-apiVersion: drasi.io/v1
-host: 0.0.0.0
-port: 8080
-logLevel: info
-enableUi: true
-
-sources:
-  - kind: mock
-    id: sensor-feed
-    autoStart: true
-    dataType:
-      type: sensorReading
-      sensorCount: 5
-    intervalMs: 3000
-
-queries:
-  - id: high-temp
-    query: "MATCH (s:SensorReading) WHERE s.temperature > 25 RETURN s"
-    queryLanguage: Cypher
-    sources:
-      - sourceId: sensor-feed
-    autoStart: true
-
-reactions:
-  - kind: log
-    id: temp-logger
-    queries:
-      - high-temp
-    autoStart: true
-```
-
-Then start the server:
-```bash
-cargo run -- --config config/server.yaml
-```
-
-### Step 4: Verify It's Working
-
-**Check component status via API:**
-```bash
-# List all sources
-curl http://localhost:8080/api/v1/sources
-
-# Check query status
-curl http://localhost:8080/api/v1/queries/high-temp
-
-# Get current query results
-curl http://localhost:8080/api/v1/queries/high-temp/results
-```
-
-**Watch real-time events:**
-```bash
-# Stream all component events (SSE)
-curl -N http://localhost:8080/api/v1/events
-```
-
-**In the Web UI:**
-- Click on any component node to open its inspector panel
-- Click the **Activity** button in the toolbar to see real-time events
-- Watch the pipeline visualization update as data flows
-
-### Step 5: Explore Further
-
-- Try the **Solution Templates** - click **+ Add** → **Solutions** to deploy pre-built pipelines
-- Create additional queries to filter different conditions
-- Add an HTTP reaction to send webhooks to external services
+After setup, use the [Web UI guide](#web-ui-guide), the
+[progressive configuration examples](examples/configs/README.md), or the
+[PostgreSQL getting-started tutorial](examples/getting-started/README.md).
+These generic Server examples are not the WorkGraph Sandbox.
 
 ---
 
 ## Installation
 
-### Prerequisites
+This branch requires sibling `../drasi-core` source dependencies, Rust **1.95.0**,
+and native build libraries. The optional UI also needs Node.js/npm (Node 22 is
+used by the Docker UI builder). See [setup prerequisites and commands](docs/setup.md)
+rather than the former single-repository installation recipe.
 
-- **Docker** (recommended) OR **Rust 1.70+**
-- **Git** for cloning the repository
-
-### Option 1: Docker (Fastest)
-
-```bash
-# Start with pre-built image
-docker compose up -d
-
-# Or specify a version
-DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -d
-```
-
-### Option 2: Build from Source
-
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
-> bundled Web UI). The Docker image (Option 1) bundles a pre-built UI, so npm
-> is only needed for source builds.
-
-```bash
-# Install Rust if needed
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Clone and build (server + Web UI)
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-make build-release   # builds the Rust binary AND the Web UI (ui/dist)
-
-# The binary is at target/release/drasi-server
-# The Web UI assets are at ui/dist (served by the binary at /ui)
-```
-
-> **Note:** Plain `cargo build --release` does **not** build the Web UI — it
-> only builds the Rust binary. To enable the `/ui` route, either use
-> `make build-release` (recommended) or run `make build-ui` separately. If
-> `ui/dist` is missing at startup, the server logs a warning and `/ui`
-> returns 404.
-
-### Option 3: Interactive Setup
-
-```bash
-# Create configuration interactively
-cargo run -- init --output config/server.yaml
-
-# This guides you through setting up sources, queries, and reactions
-```
-
-### Verify Installation
-
-```bash
-# Health check
-curl http://localhost:8080/health
-
-# Open Web UI
-open http://localhost:8080/ui
-
-# Open API documentation
-open http://localhost:8080/api/v1/docs/
-```
+Published images are a different installation path: the Compose files pull an
+image, not this checkout. Read [Docker scope and limitations](DOCKER.md) before
+using them. `init` creates a configuration interactively; it does not install
+Core, native dependencies, or WorkGraph.
 
 ---
 
 ## Running Drasi Server
+
+Use an existing private config with an explicit loopback `host` as shown in
+[local setup](docs/setup.md#4-create-an-isolated-loopback-only-configuration).
+Bare startup otherwise creates a writable config and binds `0.0.0.0:8080`.
+The management API does not provide inbound authentication or TLS.
 
 ### Basic Usage
 
@@ -299,7 +132,8 @@ drasi-server [OPTIONS] [COMMAND]
 |--------|-------|---------|-------------|
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
-| `--verify-plugins` | | `false` | Enable cosign signature verification for downloaded plugins |
+| `--plugins-dir <PATH>` | | `<binary-dir>/plugins` | Directory for runtime plugin libraries |
+| `--skip-verification` | | `false` | Disable startup signature verification for trusted local development plugins |
 | `--enable-ui` | | | Enable Web UI (overrides config) |
 | `--disable-ui` | | | Disable Web UI (overrides config) |
 | `--help` | `-h` | | Print help information |
@@ -313,6 +147,12 @@ drasi-server [OPTIONS] [COMMAND]
 | `init` | Create a new configuration file interactively |
 | `validate` | Validate a configuration file without starting |
 | `doctor` | Check system dependencies |
+| `plugin` | Install, list, search, upgrade, and remove plugins |
+
+`host` is configured in YAML; there is no `--host` flag. Use `logLevel` in YAML
+or `RUST_LOG` for logging, not `--log-level`. See the
+[validation limits and legacy helper warnings](docs/setup.md#what-validation-does-and-does-not-prove)
+before using `validate`, `doctor`, or their Make wrappers as readiness checks.
 
 **Examples:**
 
@@ -330,7 +170,7 @@ drasi-server init --output config/my-config.yaml
 drasi-server validate --config config/server.yaml
 drasi-server validate --config config/server.yaml --show-resolved
 
-# Check dependencies
+# Legacy diagnostic: includes an obsolete submodule check
 drasi-server doctor
 drasi-server doctor --all  # Include optional deps
 ```
@@ -352,6 +192,8 @@ If no config file exists at the specified path, Drasi Server creates a default o
 drasi-server --config config/server.yaml
 ```
 
+This also starts the server. It is not a configuration-only command.
+
 ---
 
 ## Web UI Guide
@@ -361,25 +203,26 @@ Drasi Server includes a visual Web UI for managing data pipelines without writin
 ### Prerequisites (source builds only)
 
 The Web UI is a separate Vite/React app under `ui/` that compiles to static
-assets in `ui/dist`, which the server binary serves at `/ui`. When building
-from source you must build the UI alongside the binary:
+assets in `ui/dist`, served at `/ui/`. Build the UI before the release Rust
+binary so it can embed those assets:
 
 ```bash
-make build-release    # builds server + UI (recommended)
-# or, if you already built the binary with cargo:
-make build-ui         # build only the UI
+(cd ui && npm ci && npm run build) &&
+  cargo build --release --locked
 ```
 
-The pre-built **Docker image** (`ghcr.io/drasi-project/drasi-server`) already
-includes the compiled UI — no extra step needed.
+`make build-release` is the existing shortcut; its UI step can skip or mask npm
+failures, so follow the [build guidance](docs/setup.md#3-build-the-server-and-optionally-the-ui).
+At runtime the server prefers `ui/dist` under the working directory, then
+embedded assets. If you build the UI after Rust, rebuild Rust before moving the
+binary away from those filesystem assets.
 
-If `ui/dist` is missing at startup, the server logs a warning and the `/ui`
-route returns 404. Use `--disable-ui` (or `enableUi: false`) to suppress the
-warning when you intentionally don't want the UI.
+If neither filesystem nor embedded UI assets exist, `/ui/` returns 404.
+Use `--disable-ui` (or `enableUi: false`) for an intentional API-only build.
 
 ### Accessing the Web UI
 
-Open **http://localhost:8080/ui** in your browser.
+For the local setup configuration, open **http://127.0.0.1:8080/ui/** in your browser.
 
 The UI is enabled by default. To disable it:
 ```bash
@@ -657,7 +500,9 @@ You can upload custom template YAML files directly in the Web UI:
 
 Manage dynamic plugins — install, upgrade, list, search, and remove plugin shared libraries.
 
-> **Note:** Plugin management requires the `dynamic-plugins` feature. Build with `cargo build --no-default-features --features dynamic-plugins`.
+Plugin management is part of the normal Server build. The old `builtin-plugins`
+and `dynamic-plugins` feature switches no longer exist. For self-built plugins,
+follow the [local plugin setup](docs/setup.md#6-add-generic-plugins-for-examples).
 
 ##### `plugin install`
 
@@ -688,8 +533,8 @@ drasi-server plugin install --from-config --locked
 
 **Options:**
 - `--from-config`: Install all plugins declared in the config file's `plugins` section
-- `--registry <URL>`: Override OCI registry (default: from config or `ghcr.io/drasi-project`)
-- `--platform <PLATFORM>`: Override target platform (e.g., `linux/amd64`)
+- `--registry <URL-or-PATH>`: Override OCI registry or local directory source (default: from config or `ghcr.io/drasi-project`)
+- `--platform <PLATFORM>`: Accepted by the CLI, but currently unused by installation dispatch; do not rely on it to select a different platform
 - `--locked`: Use exact versions from `plugins.lock` (fails if lockfile is missing or outdated)
 
 > **Tip:** Wildcard patterns apply to OCI references only. File/HTTP installs must use exact URIs.
@@ -784,16 +629,20 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
-| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instanceId>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
+| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instance-key>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
+| `enableUi` | boolean | `true` | Serve the Web UI when filesystem or embedded assets are available |
 | `stateStore` | object | (none) | State store provider for plugin state persistence |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
-| `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry for plugin resolution |
+| `pluginRegistry` | string | `ghcr.io/drasi-project` | Default OCI registry or local directory source for plugin installation |
+| `autoInstallPlugins` | boolean | `false` | Install explicit `plugins` dependencies on startup when enabled |
 | `verifyPlugins` | boolean | `true` | Enable cosign signature verification for downloaded plugins (Sigstore keyless: Fulcio + Rekor) |
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
-| `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
+| `plugins` | array | `[]` | Dependencies for `plugin install --from-config`, or startup when `autoInstallPlugins: true` (see [Plugins](#plugins-configuration)) |
+| `corsAllowedOrigins` | array | `[]` | Allowed browser origins; empty permits all origins, and does not provide authentication |
 
-> **Note**: In the `persistIndex` data path, `<instanceId>` is sanitized for filesystem safety — `/`, `\`, and `..` are each replaced with `_`.
+> **Note**: `<instance-key>` is a hex-encoded form of the instance ID, shared by
+> the index and WAL directories. Paths are relative to the process working directory.
 
 **Example:**
 
@@ -2049,16 +1898,20 @@ make help           # Show all available commands
 
 **Getting Started:**
 ```bash
-make setup          # Check dependencies and create default config
 make run            # Build (debug) and run the server
 make run-release    # Build (release) and run the server
 make demo           # Run the getting-started example
 ```
 
+For a first setup, use [the explicit local setup path](docs/setup.md).
+`make setup` can start a server, and both `doctor` variants still check an
+obsolete submodule location. They are not authoritative prerequisite checks
+for this sibling-checkout branch.
+
 **Development:**
 ```bash
-make build          # Build debug binary
-make build-release  # Build release binary
+make build          # Build UI, then debug binary
+make build-release  # Build UI, then release binary
 make dev-build      # Format, lint, and test
 make clean-dev-build # Clean, format, lint, and test
 make test           # Run all tests
@@ -2067,81 +1920,25 @@ make fmt            # Format code
 make fmt-check      # Check formatting
 ```
 
-**Docker:**
-```bash
-make docker-build DOCKER_TAG_VERSION=v1.0.0  # Build Docker image
-```
-
 **Utilities:**
 ```bash
-make doctor         # Check system dependencies
-make validate CONFIG=path/to/config.yaml  # Validate config file
 make clean          # Clean build artifacts
-make demo-cleanup   # Stop demo containers
-make submodule-update  # Initialize/update git submodules
+make demo-cleanup   # Stop demo containers; can also remove demo volumes
 make vscode-test    # Run VS Code extension tests
 ```
+
+Use the built binary's `validate --config <path> --plugins-dir <path>` directly:
+`make validate` hides stderr and masks errors. See [validation behavior](docs/setup.md#what-validation-does-and-does-not-prove).
 
 ---
 
 ## Docker Deployment
 
-For detailed Docker instructions, see [DOCKER.md](DOCKER.md).
-
-### Quick Start
-
-```bash
-# Start full stack (Drasi Server + PostgreSQL)
-docker compose up -d
-
-# Start server only
-docker compose -f docker-compose-server-only.yml up -d
-
-# Use specific image version
-DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -d
-```
-
-### Building Images
-
-```bash
-# Build with Make
-make docker-build DOCKER_TAG_VERSION=local
-
-# Build directly
-docker build -t drasi-server:local .
-```
-
-### Configuration
-
-Mount your config directory:
-```bash
-docker run -p 8080:8080 -v ./config:/app/config drasi-server
-```
-
-Environment variables can be set in `.env` or passed directly:
-```bash
-docker run -p 8080:8080 \
-  -e SERVER_PORT=9090 \
-  -e LOG_LEVEL=debug \
-  drasi-server
-```
-
-### Common Operations
-
-```bash
-# View logs
-docker compose logs -f drasi-server
-
-# Check health
-curl http://localhost:8080/health
-
-# Restart (apply config changes)
-docker compose restart drasi-server
-
-# Stop and clean up
-docker compose down
-docker compose down -v  # Also remove volumes
-```
+See [DOCKER.md](DOCKER.md) for the tracked Compose filenames, published-image
+scope, port/mount safety, and persistence requirements. The current Dockerfile
+does not copy sibling `drasi-core` path dependencies into its build context;
+`docker build .` / `make docker-build` are not a working source-build recipe for
+this branch. Use [native local setup](docs/setup.md) for this checkout.
 
 ---
 
@@ -2708,7 +2505,7 @@ docker compose logs drasi-server
 
 # Common fixes:
 # - Config file syntax error: validate with `drasi-server validate`
-# - Permission issues: `chmod -R 755 config/`
+# - Permission issues: check config mount ownership for the container user (see DOCKER.md)
 # - Database not ready: wait for postgres health check
 ```
 
@@ -2749,80 +2546,22 @@ docker compose restart drasi-server
 
 ## Building from Source
 
-```bash
-# Clone the repository
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-
-# Build (default: all plugins statically linked)
-cargo build --release
-
-# Run tests
-cargo test
-
-# Format and lint
-cargo fmt
-cargo clippy
-```
-
-### Feature Flags
-
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `builtin-plugins` | ✅ | All source/reaction/bootstrap plugins are statically linked into the binary |
-| `dynamic-plugins` | | Enables loading plugins from `.so`/`.dylib`/`.dll` files at runtime |
-
-### Dynamic Plugin Build
-
-To build with dynamic plugin loading instead of static linking:
-
-```bash
-# Build the server with dynamic plugin loading support
-make build-dynamic          # debug
-make build-dynamic-release  # release
-
-# Or build the server and plugins separately:
-make build-dynamic-server           # server only (debug)
-make build-dynamic-plugins          # plugins only (debug)
-make build-dynamic-server-release   # server only (release)
-make build-dynamic-plugins-release  # plugins only (release)
-```
-
-Plugins are built using `cargo xtask`, which automatically discovers plugin crates via `cargo metadata` and builds each one with the `dynamic-plugin` feature enabled. Plugin shared libraries are output to a `plugins/` subdirectory alongside the server binary (e.g. `target/release/plugins/`).
-
-```bash
-# List discovered dynamic plugins
-cargo xtask list-plugins
-
-# Build plugins directly (equivalent to make build-dynamic-plugins)
-cargo xtask build-plugins
-cargo xtask build-plugins --release
-cargo xtask build-plugins --jobs 4   # limit parallelism
-```
+Use [docs/setup.md](docs/setup.md) for the canonical build instructions.
+It covers the pinned Rust toolchain, sibling Core checkout, native libraries,
+UI-before-Rust build order, and separate plugin builds. The former static/dynamic
+feature tables and `make build-dynamic*` instructions described removed
+interfaces. Server's `cargo xtask` now manages vendored native libraries, not
+plugin builds; generic plugin building belongs to Core.
 
 ### Cross-Compilation
 
-Cross-compilation uses the [`cross`](https://github.com/cross-rs/cross) tool with Docker containers defined in `Cross.toml`:
-
-```bash
-# Static build (all plugins linked in)
-make build-cross TARGET=x86_64-pc-windows-gnu
-make build-cross-release TARGET=x86_64-pc-windows-gnu
-
-# Dynamic build (server + plugin shared libraries)
-make build-dynamic-cross TARGET=x86_64-pc-windows-gnu
-make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu
-
-# Or build plugins for a target directly
-cargo xtask build-plugins --release --target x86_64-pc-windows-gnu
-```
-
-Supported targets (see `Cross.toml`):
-- `x86_64-unknown-linux-musl`
-- `aarch64-unknown-linux-musl`
-- `x86_64-unknown-linux-gnu`
-- `aarch64-unknown-linux-gnu`
-- `x86_64-pc-windows-gnu`
+The [Makefile](Makefile) retains `build-cross` and `build-cross-release`;
+[Cross.toml](Cross.toml) defines Linux GNU/musl containers for x86_64 and aarch64.
+These advanced recipes require target-native dependencies and access to
+`../drasi-core` inside the build container. They do not build the UI or plugins,
+and the patch-path mount helper does not discover the active sibling paths in
+`Cargo.toml`. Start with the native build unless you have supplied that cross
+environment; do not substitute the removed `build-dynamic-cross` targets.
 
 ## License
 
@@ -2830,7 +2569,8 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [DrasiLib](https://github.com/drasi-project/drasi-core/tree/main/lib) - Core event processing engine
+- [DrasiLib](https://github.com/drasi-project/drasi-core/tree/workgraph-generic-recovery/lib) - Generic event processing library in the sibling Core checkout
+- [WorkGraph setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md) - WorkGraph host and Sandbox repository setup, owned by `drasi-workgraph`
 - [Drasi](https://github.com/drasi-project) - Main Drasi project
 - [Drasi Documentation](https://drasi.io/) - Complete documentation
 

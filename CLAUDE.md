@@ -4,32 +4,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is the Drasi Server repository - a standalone server wrapper around DrasiLib that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-lib library located at `../drasi-lib/`.
+This is the Drasi Server repository - a generic standalone wrapper around DrasiLib
+that provides REST API, configuration management, and server lifecycle features.
+The active Cargo dependencies use the sibling `../drasi-core/` checkout:
+`lib/` for DrasiLib, `core/` for processing types, and `components/` for SDKs
+and generic components. There is no separate `../drasi-lib/` repository or
+nested Core submodule required by this checkout.
+
+Read [docs/setup.md](docs/setup.md) for the canonical local build/config/run path
+and current limitations. WorkGraph's protocol, compiler, plugins, and repository
+kit belong to sibling `drasi-workgraph`, not Server or Core. See
+[WorkGraph setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/README.md)
+and [Sandbox setup](https://github.com/drasi-project/drasi-workgraph/blob/workgraph-generic-recovery/docs/setup/sandbox.md)
+for that workflow.
 
 ## Development Commands
 
 ### Build and Run
-- Build: `cargo build`
-- Build release: `cargo build --release`
-- Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
+- API-only build: `cargo build` or `cargo build --release --locked`
+- Build with UI: `(cd ui && npm ci && npm run build) && cargo build --release --locked`
+- Make shortcuts: `make build` / `make build-release`; inspect UI output because the UI recipe can skip or mask npm failures
+- Cross-compile: see [setup platform limits](docs/setup.md#2-install-build-prerequisites) and `Cross.toml`; the container must have access to sibling Core paths
 - Run server: `cargo run` or `cargo run -- --config config/server.yaml`
 - Run with custom port: `cargo run -- --port 8080`
-- Run with plugin verification disabled: `cargo run -- --skip-verification --config config/server.yaml`
+- Run with trusted, self-built unsigned plugins (local development only): `cargo run -- --skip-verification --config config/server.yaml`
 - Run with UI disabled: `cargo run -- --disable-ui`
 - Run with UI enabled (override config): `cargo run -- --enable-ui`
-- Validate config (structure only): `cargo run -- validate --config config/server.yaml`
-- Validate config (with plugins): `cargo run -- validate --config config/server.yaml --plugins-dir ./plugins`
+- Validate config (default plugin directory): `cargo run -- validate --config config/server.yaml`
+- Validate config (explicit trusted plugins): `cargo run -- validate --config config/server.yaml --plugins-dir ./plugins`
 - Check compilation: `cargo check`
+
+Use the pinned Rust 1.95.0 toolchain and native prerequisites from the setup
+guide. Build UI assets before a release Rust build for embedding. Set the bind
+address via YAML `host: 127.0.0.1`; there is no `--host` or `--log-level` flag.
+Bare startup creates a missing config and starts a server bound to all
+interfaces by default. The management API has no inbound authentication/TLS.
+
+`validate` loads native plugin initialization code and reads `.env` beside the
+config, but does not start components or the HTTP server. It does not apply
+startup signature verification or validate external credentials/connectivity;
+missing plugins can remain warnings with exit zero. Use only trusted plugin
+directories. Do not use `make validate` as a gate: it masks errors. `doctor` and
+`make doctor` still check an obsolete nested submodule path, and `make setup`
+can start a server. Prefer the explicit steps in [setup](docs/setup.md).
 
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
-**Important: `[patch.crates-io]` does NOT affect plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime — they must be built separately. When developing with local drasi-core changes, always use `make build-local-plugins` to rebuild plugins from local source. Registry-downloaded plugins (`autoInstallPlugins: true`) will NOT be ABI-compatible with local drasi-core changes.
+**Important: Cargo dependency changes do not rebuild runtime plugins.** The
+Server uses sibling path dependencies, but plugins are separate shared libraries
+and must be built separately. Use `make build-local-plugins` for matching release
+plugins or the debug target below. Do not assume registry binaries are compatible
+with local Core changes. Keep `autoInstallPlugins: false` for local builds.
+Startup verification defaults to on and skips unsigned local libraries without
+a verified lockfile; the local-development exception is documented in
+[setup](docs/setup.md#6-add-generic-plugins-for-examples). No Server
+`builtin-plugins` / `dynamic-plugins` feature switches are required or available.
 
 - Build all plugins from local drasi-core (release): `make build-local-plugins`
 - Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
-- Build test-only plugins (mock, log, scriptfile): `make build-local-test-plugins`
-- Download test plugins from OCI registry (no drasi-core needed): `make download-test-plugins`
+- Build test-only plugins (mock source, log/HTTP reactions, scriptfile bootstrap): `make build-local-test-plugins`
+- Download test plugins: `make download-test-plugins` (needs compatible registry artifacts; the Cargo invocation still requires sibling Core)
 
 **Local directory plugin sources:** The `pluginRegistry` config field (and `--registry` CLI flag) accepts local filesystem paths in addition to OCI registry URLs. When a path is detected (e.g., `/path/to/plugins`, `./plugins`, `../drasi-core/target/debug/plugins`, `file:///opt/plugins`), the system scans the directory for plugin binaries instead of contacting an OCI registry. This is useful for development workflows where plugins are built locally. Detection is cross-platform: Unix absolute paths, relative paths (`./`, `../`), home-relative (`~/`), `file://` URIs, Windows drive letters, and UNC paths are all recognized as local directories.
 
@@ -234,7 +269,11 @@ instances:
 
 The REST API is exposed under `/api/v1/instances/{instanceId}/...` for multi-instance access; the first configured instance is also accessible via convenience routes at `/api/v1/sources`, `/api/v1/queries`, and `/api/v1/reactions`.
 
-**Important**: Sources and reactions are plugins that must be provided programmatically or via the configuration file's tagged enum format. Queries can also be defined via configuration files.
+**Important**: Sources and reactions use `kind` plus plugin-defined fields in
+configuration, or programmatic plugin instances. Their runtime descriptors must
+be available; declaring a `kind` does not install its plugin. Queries are also
+defined in configuration. Inspect `/api/v1/plugins/kinds` and the loaded plugin
+schemas instead of assuming a fixed tagged enum of built-in connectors.
 
 ### Write-Ahead Log (WAL)
 
@@ -263,12 +302,12 @@ DrasiServer separates two independent concepts:
 2. **Read-Only Mode** - Whether API changes are allowed at all
 
 **Persistence is enabled when:**
-- Config file is provided on startup (`--config path/to/config.yaml`)
+- A writable config backs the server (`--config path/to/config.yaml`, including the CLI's implicit default path)
 - Config file is writable
 - `persistConfig: true` in server settings (default)
 
 **Persistence is disabled when:**
-- No config file provided (server starts with empty configuration)
+- The server is constructed programmatically without config persistence
 - Config file is read-only
 - `persistConfig: false` in server settings
 
@@ -279,6 +318,7 @@ DrasiServer separates two independent concepts:
 - `persistConfig: false` → API mutations are allowed but NOT saved to config file
 - Read-only config file → API mutations are blocked entirely
 - This allows dynamic query creation without persistence (useful for programmatic usage)
+- The CLI does not start without a backing config: it creates a default file if its selected path is missing
 
 **Behavior:**
 - When persistence enabled: `save()` snapshots component state from the ComponentGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
@@ -318,20 +358,14 @@ server.run().await?;
 
 ### Component Types
 
-**Internal Sources:**
-- `postgres` - Direct PostgreSQL connection
-- `postgres_replication` - PostgreSQL WAL replication
-- `http` - HTTP endpoint polling
-- `grpc` - gRPC streaming
-- `mock` - Testing source
-- `application` - Programmatic API
+Most connector kinds are dynamic plugins, not internal Server implementations.
+Examples include `postgres` (PostgreSQL CDC), `http` (HTTP ingestion), `grpc`,
+and `mock` sources, and `http`, `grpc`, `sse`, and `log` reactions.
+`register_core_plugins` in `src/server.rs` statically registers the `noop` and
+`application` bootstrappers and the `application` reaction.
 
-**Internal Reactions:**
-- `http` - HTTP webhook
-- `grpc` - gRPC stream
-- `sse` - Server-Sent Events
-- `log` - Console logging
-- `application` - Programmatic API
+See the [configuration reference](README.md#configuration-reference) and loaded
+`/api/v1/plugins/kinds` schemas for current kinds and fields.
 
 ## Testing Approach
 
@@ -345,7 +379,7 @@ server.run().await?;
   - Tests load real cdylib plugins (mock source, log reaction) and exercise the full
     dynamic loading pipeline including metadata validation, callbacks, factory invocation,
     and lifecycle management through FFI vtables.
-  - Prerequisites: build plugins in drasi-core with `make build-cdylib-plugins`
+  - Prerequisites: build generic plugins from Core, for example via Server's `make build-local-plugins-debug`
 
 ### Running Tests
 - Always run `cargo test` before committing
@@ -555,8 +589,9 @@ server.run().await?;
 ## Dependencies
 
 ### Core Dependencies
-- Rust edition 2021 minimum
-- `drasi-lib` - External library at `../drasi-lib/`
+- Rust toolchain 1.95.0 (`rust-toolchain.toml`); Server uses edition 2021
+- `drasi-lib` - Generic library at `../drasi-core/lib/`
+- `drasi-core` and SDK/component crates - Sibling paths listed in `Cargo.toml`
 - Tokio for async runtime
 - Axum for HTTP server
 - Serde for serialization
