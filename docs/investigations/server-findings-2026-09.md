@@ -71,6 +71,157 @@ rewrite the provenance or scope of the earlier ComputationGraph audit.
   it requires `git apply --check --unidiff-zero`. It is evidence, not a patch
   approved for direct application.
 
+## Standalone WorkGraph/recovery case details
+
+The issue bodies are the canonical discussion records. The following portable
+snapshots retain the complete engineering cases for the three later additions
+without requiring access to the original application, session history, or
+private workspace.
+
+### #194: same-kind inline bootstrap inheritance
+
+**Affected code and version.** Server 0.2.3 at `0d369a7`, specifically
+`SourceConfig` deserialization and `merge_bootstrap_provider_with_source` in
+`src/api/models/source.rs`. The function copies every source config key missing
+from an inline bootstrap provider whenever the two `kind` strings match.
+Top-level reference resolution in `src/factories.rs` does not perform this
+merge.
+
+**Reproduction.** Register synthetic source and bootstrap descriptors under
+`strict-example`. Let the source accept `endpoint`, `credential`, `durability`,
+and `webhook`, while the bootstrap DTO accepts only `endpoint` and `credential`
+and denies unknown fields. Load
+[`same-kind-inline-bootstrap.yaml`](repros/same-kind-inline-bootstrap.yaml).
+The parsed inline provider contains `durability` and `webhook`; strict provider
+creation rejects them. The
+[`top-level-bootstrap-reference.yaml`](repros/top-level-bootstrap-reference.yaml)
+control supplies the same shared values without copying source-only fields.
+
+The equivalent failure was exercised historically on Server `8cd501c`: static
+validation accepted the inline document, but server construction failed before
+network activity because inherited `durability` was unknown to the strict
+bootstrap DTO. The top-level provider/reference form started successfully under
+the same host and plugin set. Current 0.2.3 retains the generic merge, and its
+existing `test_bootstrap_provider_inherits_generic_kind` confirms that all
+source fields are intentionally copied. A current production plugin was not
+used to rerun the historical failure.
+
+**Expected, actual, and impact.** Inline shorthand should inherit only fields
+that the bootstrap contract declares compatible, keep source/provider configs
+separate, or fail during validation with the same diagnostic as construction.
+Instead, unrelated source-only fields reach the bootstrap DTO. A new source
+option can therefore break an otherwise unchanged inline bootstrap
+configuration, and inline/reference forms that appear equivalent can have
+different startup outcomes.
+
+**Possible fix.** Make inheritance descriptor-declared, pass source config
+separately without materializing inherited provider fields, or require an
+explicit shared-schema capability. Do not hard-code connector fields, weaken
+strict DTOs, or serialize resolved secrets.
+
+**Acceptance criteria.**
+
+- Cover overlapping and source-only fields at deserialization, plugin-aware
+  validation, and provider creation with synthetic descriptors.
+- Ensure source-only fields reach a strict bootstrap DTO only through an
+  explicit descriptor contract.
+- Preserve supported shared-field inheritance, explicit overrides,
+  different-kind inline providers, and top-level references.
+- Make `validate` and `run` agree when the compatible plugin/schema is present.
+- Keep provider persistence lossless for unresolved references and secrets.
+
+### #195: incomplete plugin-aware validation exits successfully
+
+**Affected code and version.** Server 0.2.3 at `0d369a7`.
+`validate_with_plugins` records missing descriptors, schema validation skips
+those descriptors, and `validate_config` includes them only in
+`warning_count`. Process failure depends on `error_count`, so missing or
+unloadable required plugins do not affect exit status.
+
+**Reproduction.** Create an empty directory and run:
+
+```sh
+mkdir -p ./empty-plugins
+cargo run --locked --quiet --bin drasi-server -- \
+  validate \
+  --config docs/investigations/repros/validate-missing-plugin.yaml \
+  --plugins-dir ./empty-plugins
+printf 'exit=%s\n' "$?"
+```
+
+This was rerun on the current baseline. The command reported zero loaded
+plugins, warned that `source/definitely-not-installed` was absent, printed the
+same source as `[OK]` under config validation, summarized one warning, and
+returned status 0. No plugin binary, network, database, secret, or external
+service was involved.
+
+**Expected, actual, and impact.** CI and users need an explicit way to require
+complete plugin-aware validation. Current exit 0 can mean either that all
+required schemas accepted the document or that one or more component schemas
+were never checked. Deployment gates can therefore accept unknown options or
+fail only later during startup. This is a completeness/policy issue, not proof
+of a runtime security bypass.
+
+**Possible fix.** Add a documented strict/complete mode or make missing required
+plugins errors with a compatibility transition. Preserve permissive
+structure-only validation only as an explicit, machine-distinguishable outcome.
+Do not make automation parse prose or weaken signature, integrity, ABI, or
+target checks.
+
+**Acceptance criteria.**
+
+- Cover no directory, empty directory, absent required kind, unloadable
+  selected file, complete plugin set, and invalid component config.
+- Make strict validation fail for every incomplete case and identify each
+  unvalidated component without exposing its values.
+- Never print component `[OK]` when its schema was skipped in strict mode.
+- Keep any permissive mode visibly and programmatically incomplete.
+- Coordinate with #184 for schema-compilation failures and #190 for loader trust
+  policy without combining their implementations.
+
+### #196: secret-store bootstrap environment resolution
+
+**Affected code and version.** Server 0.2.3 at `0d369a7`.
+`create_secret_store_from_registry` passes the opaque
+`SecretStoreConfig.config` JSON directly to the descriptor. The provider-backed
+SDK resolver is installed only after this provider is created, so it cannot
+resolve the provider's own bootstrap configuration.
+
+**Reproduction.** Register a synthetic `test-file` secret-store descriptor that
+requires a `PathBuf` and records the JSON it receives. Load
+[`secret-store-bootstrap-env.yaml`](repros/secret-store-bootstrap-env.yaml)
+with its environment variables unset. Current code passes the literal
+`${TEST_SECRET_STORE_PATH:-./data/test-secrets.json}` and the structured nested
+environment object to the descriptor. Add a `{kind: Secret, name: recursive}`
+case to prove that provider self-reference fails explicitly rather than
+recursing or falling back.
+
+This is current code-confirmed; a current real secret-store plugin was not
+rerun. Historical commit `6648739` implemented the bounded environment-only
+resolution and unit tests. Its relevant two-file diff is preserved here, while
+its unrelated path dependencies and build changes are excluded.
+
+**Expected, actual, and impact.** Static values should pass unchanged;
+environment references should resolve recursively before provider creation;
+missing variables should produce path-specific diagnostics; and Secret
+self-reference should be denied. Currently the descriptor must reject the raw
+placeholder, use it literally, or duplicate Server interpolation behavior.
+
+**Possible fix.** Re-evaluate the historical helper against current
+`ConfigValue`/SDK behavior and add a small environment-only pre-provider
+resolver. Keep original unresolved configuration for persistence, never log
+resolved values, and do not initialize a fallback provider after failure.
+
+**Acceptance criteria.**
+
+- Cover plain strings, `${VAR}`, `${VAR:-default}`, structured environment
+  objects, nested arrays/objects, missing values, and Secret self-reference.
+- Pass resolved bootstrap JSON to the descriptor while retaining unresolved
+  configuration for persistence.
+- Preserve the normal provider-backed resolver for all later plugin
+  construction.
+- Use synthetic providers only; no credentials are required by the regression.
+
 ## Historical Server source inventory
 
 | Commit | Remote state | Reusable evidence | Disposition |
