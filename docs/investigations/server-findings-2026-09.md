@@ -38,6 +38,10 @@ The assigned umbrella is
 above are assigned to `agentofreality`. Existing issue history and assignees
 were retained.
 
+This ledger and its portable evidence are published in assigned draft
+[#197](https://github.com/drasi-project/drasi-server/pull/197), which is linked
+to the umbrella without claiming to resolve it.
+
 ## WorkGraph/recovery additions
 
 | Issue | Scope | Evidence |
