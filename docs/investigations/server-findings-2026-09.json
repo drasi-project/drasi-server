@@ -103,6 +103,26 @@
       "status": "current-code-confirmed-historical-bounded-patch"
     }
   ],
+  "standaloneCaseDetails": [
+    {
+      "issue": 194,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/194",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#194-same-kind-inline-bootstrap-inheritance",
+      "includes": ["affected-version", "code", "reproduction", "expected-actual", "impact", "root-cause", "possible-fix", "acceptance-criteria"]
+    },
+    {
+      "issue": 195,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/195",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#195-incomplete-plugin-aware-validation-exits-successfully",
+      "includes": ["affected-version", "code", "current-reproduction", "expected-actual", "impact", "root-cause", "possible-fix", "acceptance-criteria"]
+    },
+    {
+      "issue": 196,
+      "canonicalUrl": "https://github.com/drasi-project/drasi-server/issues/196",
+      "portableDocument": "docs/investigations/server-findings-2026-09.md#196-secret-store-bootstrap-environment-resolution",
+      "includes": ["affected-version", "code", "reproduction", "expected-actual", "impact", "root-cause", "historical-patch", "possible-fix", "acceptance-criteria"]
+    }
+  ],
   "cohorts": [
     {
       "id": "computationgraph-server-audit",
