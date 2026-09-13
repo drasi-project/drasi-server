@@ -120,6 +120,14 @@
     "url": "https://github.com/drasi-project/drasi-server/issues/193",
     "assignees": ["agentofreality"]
   },
+  "preservationPullRequest": {
+    "number": 197,
+    "url": "https://github.com/drasi-project/drasi-server/pull/197",
+    "state": "open",
+    "draft": true,
+    "assignees": ["agentofreality"],
+    "scope": "documentation-and-evidence-only"
+  },
   "findings": [
     {"issue": 179, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "serialize-config-saves"},
     {"issue": 180, "state": "open", "assignees": ["agentofreality"], "evidence": "code-confirmed", "scope": "provider-reference-retention"},
