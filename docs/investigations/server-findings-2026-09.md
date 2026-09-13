@@ -66,8 +66,10 @@ rewrite the provenance or scope of the earlier ComputationGraph audit.
 - [`repros/secret-store-bootstrap-env.yaml`](repros/secret-store-bootstrap-env.yaml)
   is a synthetic descriptor fixture for #196.
 - [`patches/secret-store-bootstrap-env-6648739.patch`](patches/secret-store-bootstrap-env-6648739.patch)
-  is the exact two-file portion of historical commit `6648739` relevant to
-  #196. It is evidence, not a patch approved for direct application.
+  is a zero-context patch generated from the exact two-file portion of
+  historical commit `6648739` relevant to #196. Inspect it before use; checking
+  it requires `git apply --check --unidiff-zero`. It is evidence, not a patch
+  approved for direct application.
 
 ## Historical Server source inventory
 
