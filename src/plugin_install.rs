@@ -295,11 +295,7 @@ fn validate_cached_plugin(
         .context("plugins.lock entry has no file hash")?;
     let actual_hash = compute_file_hash(path)?;
     if actual_hash != expected_hash {
-        bail!(
-            "plugin file hash mismatch: expected {}, got {}",
-            expected_hash,
-            actual_hash
-        );
+        bail!("plugin file hash mismatch: expected {expected_hash}, got {actual_hash}");
     }
 
     validate_plugin_binary(path, Some(&resolved.version))?;
