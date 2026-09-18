@@ -4,6 +4,11 @@ This document contains suggestions for improving the Trading Demo and exercises 
 
 Whether you're learning Drasi or looking to contribute to the project, these ideas range from beginner-friendly enhancements to more advanced features.
 
+Before changing a Trading component or its `@drasi/react` integration, run the
+checks in [Testing and behavior baseline](TESTING.md). The versioned inventory
+distinguishes intended behavior, compatibility assertions and known baseline
+bugs; do not update visual expectations to hide an unexplained regression.
+
 ## Learning Exercises
 
 These exercises are designed to help you understand Drasi by making small, focused changes to the trading demo.

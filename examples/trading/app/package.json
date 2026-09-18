@@ -13,6 +13,10 @@
     "clsx": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@vitest/coverage-v8": "3.2.7",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/node": "^20.0.0",
@@ -21,7 +25,10 @@
     "vite": "^5.0.0",
     "tailwindcss": "^3.3.0",
     "autoprefixer": "^10.4.0",
-    "postcss": "^8.4.0"
+    "postcss": "^8.4.0",
+    "jsdom": "26.1.0",
+    "tsx": "4.20.6",
+    "vitest": "3.2.7"
   },
   "scripts": {
     "drasi-react:prepare": "npm --prefix ../../../dev-tools/react install --ignore-scripts --prefer-offline && npm --prefix ../../../dev-tools/react run build",
@@ -31,7 +38,13 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "clean": "rm -rf node_modules dist",
-    "test": "echo 'No tests configured yet'"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run && node --test test/tools/metrics-policy.test.mjs",
+    "test:coverage": "vitest run --coverage && node --test test/tools/metrics-policy.test.mjs",
+    "test:browser": "playwright test",
+    "test:browser:linux": "node test/tools/linux-browser.mjs",
+    "test:browser:update": "node test/tools/linux-browser.mjs --project=visual --update-snapshots",
+    "test:live": "node --import tsx test/live/run.ts"
   },
   "eslintConfig": {
     "extends": [

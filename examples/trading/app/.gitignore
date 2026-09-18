@@ -1,2 +1,8 @@
 node_modules/
 dist/
+
+# Regression artifacts (visual expectations under test/browser are versioned).
+coverage/
+playwright-report/
+test-results/
+.test-runtime/
