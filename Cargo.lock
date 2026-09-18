@@ -1072,9 +1072,9 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "drasi-bootstrap-application"
-version = "0.2.11"
+version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49fe1b7704974e93afb5a76aa135364808c50bb5dda7c0bc7ef3e767513f4201"
+checksum = "0ed7033ce2fa13245939a42d958c80973980a419ea0aa354cc4f5ce9b5d1fd71"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1098,9 +1098,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-bootstrap-noop"
-version = "0.2.11"
+version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc67c7b9b9c710b8af25a965c95259caaa2e3de4f6f6d95a13e4e69b0ef157a7"
+checksum = "13c2f1da6dabd4b5dab43352aee04f204e2dde704fe037c5229a55b87dd47482"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1227,9 +1227,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-index-rocksdb"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59207ac804d9aa14c3e66827c5e99e1931f315d7957be9ec3ea196263517ba38"
+checksum = "66f84e6b9f5df5679ad9e0a934a67757d91039473a8cc4602097b093ad74d739"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1254,9 +1254,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-lib"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ab0676eba0376f638c8702aa61c5a0eb58539b64298b6a5caa55de3847fda1e"
+checksum = "2d0da4390d9ad3137128572076a31a71cb64bc1d92a9e56669e2d1ba41d164e4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1373,9 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-reaction-application"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be26adc955708866e63852292136b0050946776bd5c2aa13e55ad041ff9c69fb"
+checksum = "e5bd7f494c9086f12597e7f6a3e409802c5f3e94ba3cfddbaf9bf17717c58598"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "drasi-server"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1477,9 +1477,9 @@ dependencies = [
 
 [[package]]
 name = "drasi-wal-redb"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea51cee35cd58932772364b40d735091d6cddfca2ff6f58f9803ed8dfcc724e"
+checksum = "f7705504545f226b3601856e53b6b2046f54ed7dd5176d565fb160e9cec3e188"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1582,7 +1582,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4410,7 +4410,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4469,7 +4469,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5008,7 +5008,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

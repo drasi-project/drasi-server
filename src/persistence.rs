@@ -36,6 +36,7 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 struct PreservedServerSettings {
     enable_ui: bool,
+    memory_budget_mib_by_instance: IndexMap<String, ConfigValue<usize>>,
     plugin_registry: Option<String>,
     auto_install_plugins: bool,
     plugins: Vec<PluginDependency>,
@@ -209,6 +210,28 @@ impl ConfigPersistence {
             solutions_dir,
             preserved: PreservedServerSettings {
                 enable_ui: original_config.enable_ui,
+                memory_budget_mib_by_instance: {
+                    let mut by_instance: IndexMap<String, ConfigValue<usize>> = original_config
+                        .instances
+                        .iter()
+                        .filter_map(
+                            |instance| match (&instance.id, &instance.memory_budget_mib) {
+                                (ConfigValue::Static(id), Some(memory_budget_mib)) => {
+                                    Some((id.clone(), memory_budget_mib.clone()))
+                                }
+                                _ => None,
+                            },
+                        )
+                        .collect();
+                    if let (Some(instance_id), Some(memory_budget_mib)) =
+                        (&top_level_instance_id, &original_config.memory_budget_mib)
+                    {
+                        by_instance
+                            .entry(instance_id.clone())
+                            .or_insert_with(|| memory_budget_mib.clone());
+                    }
+                    by_instance
+                },
                 plugin_registry: original_config.plugin_registry.clone(),
                 auto_install_plugins: original_config.auto_install_plugins,
                 plugins: original_config.plugins.clone(),
@@ -526,6 +549,7 @@ impl ConfigPersistence {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
                     enable_archive: dynamic_config.enable_archive,
+                    memory_budget_mib: dynamic_config.memory_budget_mib.clone(),
                     state_store: dynamic_config.state_store.clone(),
                     secret_store: dynamic_config.secret_store.clone(),
                     default_priority_queue_capacity: dynamic_config
@@ -567,6 +591,11 @@ impl ConfigPersistence {
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
                     enable_archive,
+                    memory_budget_mib: self
+                        .preserved
+                        .memory_budget_mib_by_instance
+                        .get(&id)
+                        .cloned(),
                     state_store: None,
                     secret_store: None,
                     default_priority_queue_capacity: None,
@@ -619,6 +648,7 @@ impl ConfigPersistence {
                 persist_config: self.persist_config,
                 persist_index: instance.persist_index,
                 enable_archive: instance.enable_archive,
+                memory_budget_mib: instance.memory_budget_mib,
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: instance.state_store,
@@ -659,6 +689,7 @@ impl ConfigPersistence {
                 persist_config: self.persist_config,
                 persist_index: false, // Per-instance setting in multi-instance mode
                 enable_archive: false, // Per-instance setting in multi-instance mode
+                memory_budget_mib: None, // Per-instance setting in multi-instance mode
                 enable_ui: self.preserved.enable_ui,
                 solutions_dir: self.solutions_dir.clone(),
                 state_store: None,  // Per-instance setting in multi-instance mode
@@ -937,6 +968,10 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(instance_id.to_string(), core);
         let registry = InstanceRegistry::from_map(map);
+        let mut persist_settings = IndexMap::new();
+        persist_settings.insert(instance_id.to_string(), original_config.persist_index);
+        let mut archive_settings = IndexMap::new();
+        archive_settings.insert(instance_id.to_string(), original_config.enable_archive);
         ConfigPersistence::new(
             path,
             registry,
@@ -944,8 +979,8 @@ mod tests {
             8080,
             "info".to_string(),
             persist,
-            IndexMap::new(),
-            IndexMap::new(),
+            persist_settings,
+            archive_settings,
             None,
             original_config,
         )
@@ -1512,6 +1547,178 @@ mod tests {
             parsed.cors_allowed_origins[1],
             "https://dashboard.example.com"
         );
+    }
+
+    #[tokio::test]
+    async fn test_save_preserves_single_instance_memory_budget() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+        let core = build_core("budget-inst", vec![], vec![], vec![]).await;
+        let original_config = DrasiServerConfig {
+            id: ConfigValue::Static("budget-inst".to_string()),
+            persist_index: true,
+            memory_budget_mib: Some(ConfigValue::Static(512)),
+            ..Default::default()
+        };
+
+        let persistence = make_persistence_with_config(
+            core,
+            "budget-inst",
+            cfg_path.clone(),
+            true,
+            &original_config,
+        );
+        let instance_config: DrasiLibInstanceConfig = serde_yaml::from_str(
+            r#"
+                id: budget-inst
+                persistIndex: true
+                memoryBudgetMiB: 512
+            "#,
+        )
+        .unwrap();
+        persistence.register_instance(instance_config).await;
+        persistence.save().await.unwrap();
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
+        assert!(parsed.persist_index);
+        assert_eq!(parsed.memory_budget_mib, Some(ConfigValue::Static(512)));
+    }
+
+    #[tokio::test]
+    async fn test_save_preserves_per_instance_memory_budgets() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+        let first = build_core("first", vec![], vec![], vec![]).await;
+        let second = build_core("second", vec![], vec![], vec![]).await;
+        let registry = InstanceRegistry::from_map(IndexMap::from([
+            ("first".to_string(), first),
+            ("second".to_string(), second),
+        ]));
+        let original_config: DrasiServerConfig = serde_yaml::from_str(
+            r#"
+                instances:
+                  - id: first
+                    persistIndex: true
+                    memoryBudgetMiB: 128
+                  - id: second
+                    persistIndex: true
+                    memoryBudgetMiB: 256
+            "#,
+        )
+        .unwrap();
+        let persist_settings =
+            IndexMap::from([("first".to_string(), true), ("second".to_string(), true)]);
+        let archive_settings =
+            IndexMap::from([("first".to_string(), false), ("second".to_string(), false)]);
+        let persistence = ConfigPersistence::new(
+            cfg_path.clone(),
+            registry,
+            "0.0.0.0".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            persist_settings,
+            archive_settings,
+            None,
+            &original_config,
+        );
+        for instance in original_config.instances.clone() {
+            persistence.register_instance(instance).await;
+        }
+
+        persistence.save().await.unwrap();
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
+        assert_eq!(parsed.instances.len(), 2);
+        assert_eq!(
+            parsed.instances[0].memory_budget_mib,
+            Some(ConfigValue::Static(128))
+        );
+        assert_eq!(
+            parsed.instances[1].memory_budget_mib,
+            Some(ConfigValue::Static(256))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_root_memory_budget_does_not_leak_to_another_instance() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+        let remaining = build_core("remaining", vec![], vec![], vec![]).await;
+        let registry =
+            InstanceRegistry::from_map(IndexMap::from([("remaining".to_string(), remaining)]));
+        let original_config = DrasiServerConfig {
+            id: ConfigValue::Static("original".to_string()),
+            persist_index: true,
+            memory_budget_mib: Some(ConfigValue::Static(512)),
+            ..Default::default()
+        };
+        let persistence = ConfigPersistence::new(
+            cfg_path.clone(),
+            registry,
+            "0.0.0.0".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            IndexMap::from([("remaining".to_string(), false)]),
+            IndexMap::from([("remaining".to_string(), false)]),
+            None,
+            &original_config,
+        );
+
+        persistence.save().await.unwrap();
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
+        assert!(!parsed.persist_index);
+        assert_eq!(parsed.memory_budget_mib, None);
+    }
+
+    #[tokio::test]
+    async fn test_registered_instance_does_not_inherit_preserved_memory_budget() {
+        let tmp = TempDir::new().unwrap();
+        let cfg_path = tmp.path().join("server.yaml");
+        let core = build_core("recreated", vec![], vec![], vec![]).await;
+        let registry =
+            InstanceRegistry::from_map(IndexMap::from([("recreated".to_string(), core)]));
+        let original_config: DrasiServerConfig = serde_yaml::from_str(
+            r#"
+                instances:
+                  - id: recreated
+                    persistIndex: true
+                    memoryBudgetMiB: 512
+            "#,
+        )
+        .unwrap();
+        let persistence = ConfigPersistence::new(
+            cfg_path.clone(),
+            registry,
+            "0.0.0.0".to_string(),
+            8080,
+            "info".to_string(),
+            true,
+            IndexMap::from([("recreated".to_string(), false)]),
+            IndexMap::from([("recreated".to_string(), false)]),
+            None,
+            &original_config,
+        );
+        let recreated_config: DrasiLibInstanceConfig = serde_yaml::from_str(
+            r#"
+                id: recreated
+                persistIndex: false
+            "#,
+        )
+        .unwrap();
+        persistence.register_instance(recreated_config).await;
+
+        persistence.save().await.unwrap();
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: DrasiServerConfig = serde_yaml::from_str(&content).unwrap();
+        assert!(!parsed.persist_index);
+        assert_eq!(parsed.memory_budget_mib, None);
     }
 
     /// `persist_after_operation` must surface persistence failures to the
