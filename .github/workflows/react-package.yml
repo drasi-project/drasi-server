@@ -77,6 +77,9 @@ jobs:
 
       - name: Chromium, Firefox, WebKit and fixed-viewport visual assertions
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
+        # Firefox rejects Actions' pwuser-owned /github/home when the container runs as root.
+        env:
+          HOME: /root
         run: npm run test:browser 2>&1 | tee "$RUNNER_TEMP/trading-browser.log"
 
       - name: Reject unexplained coverage and artifact-size regressions

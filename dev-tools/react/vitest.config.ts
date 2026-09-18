@@ -22,6 +22,8 @@ export default defineConfig({
     setupFiles: ['./test/setup.ts'],
     coverage: {
       provider: 'v8',
+      // Legacy V8 synthetic branch ranges depend on coverage-file merge order.
+      experimentalAstAwareRemapping: true,
       include: ['src/**/*.{ts,tsx}'],
       reporter: ['text', 'json-summary', 'html'],
     },

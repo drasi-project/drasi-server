@@ -1,19 +1,19 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
-  "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7, Playwright 1.56.1",
+  "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "coverage": {
     "package": {
-      "statements": 61.81,
-      "branches": 64.87,
-      "functions": 75.58,
-      "lines": 61.81
+      "statements": 62.52,
+      "branches": 47.47,
+      "functions": 64.84,
+      "lines": 64.93
     },
     "trading": {
-      "statements": 89.01,
-      "branches": 78.6,
-      "functions": 85.92,
-      "lines": 89.01
+      "statements": 83.79,
+      "branches": 74.52,
+      "functions": 82.01,
+      "lines": 84.83
     }
   },
   "sizes": {

@@ -20,6 +20,8 @@ export default defineConfig({
     unstubGlobals: true,
     coverage: {
       provider: 'v8',
+      // Match the package's stable AST-based statement and branch identities.
+      experimentalAstAwareRemapping: true,
       include: ['src/**/*.{ts,tsx}'],
       reporter: ['text', 'json-summary', 'html'],
     },

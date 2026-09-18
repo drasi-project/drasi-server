@@ -109,6 +109,12 @@ and runs its checks using only the tarball. The tarball's sources are absent.
 All unrelated locked consumer dependency versions and integrity hashes are
 checked before the clean `npm ci --ignore-scripts`.
 
+The GitHub Actions browser step explicitly sets `HOME=/root`, matching the
+pinned container's effective user. Actions otherwise supplies a
+`/github/home` owned by `pwuser`, which Firefox refuses to use as root.
+The override is scoped to the browser step; it does not change shared
+directory ownership, disable browser safeguards or skip Firefox coverage.
+
 The disposable consumer first substitutes the tarball using
 `npm install --package-lock-only --ignore-scripts`. This is intentional:
 some npm versions run a directory dependency's `prepare` while resolving a
@@ -149,14 +155,27 @@ specific completed run's directory when no longer needed.
 ## Coverage and size evidence
 
 The checked-in `app/test/fixtures/baseline-metrics.json` records measured
-**Linux/amd64, Node 22.20.0** coverage, not the final #161/#163 targets. All
+**Linux/amd64, Node 22.20.0, Vitest 3.2.7 V8 with AST-aware remapping**
+coverage, not the final #161/#163 targets. All
 package and app `src` files are included, including currently uncovered
 entrypoints and unused components.
 
-| Vitest/V8 scope | Statements / lines | Branches | Functions |
-| --- | --- | --- | --- |
-| Package (18 tests) | 61.81% | 64.87% | 75.58% |
-| Trading (22 tests) | 89.01% | 78.60% | 85.92% |
+| Vitest/V8 scope | Statements | Lines | Branches | Functions |
+| --- | --- | --- | --- | --- |
+| Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
+| Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
+
+Schema version 2 remeasures the same source and unchanged test scenarios using
+Vitest's existing `experimentalAstAwareRemapping` option. Legacy V8 remapping
+produced either 241/372 or 242/373 covered package branches on identical runs:
+one always-covered synthetic range in `DrasiContext.tsx` appeared depending on
+coverage-file merge order. That made the original 64.87% branch floor flaky,
+despite the same 131 uncovered ranges. AST-aware remapping instead counts
+syntactic statements/branches/functions consistently: six package runs and
+three Trading runs produced identical counters. It also exposes more real
+branches (339/714 package, 389/522 Trading), so these percentages are **not
+comparable** to the original legacy-V8 measurements. No product code or tests
+were removed, no source was excluded, and no runtime/tool version was changed.
 
 The artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
 bytes CJS, 18,746 bytes declarations and 10,043 bytes package CSS. Clean Trading
@@ -319,6 +338,9 @@ Sanitized, unmodified service recordings (only disposable seed data) are under
 `runtime.json` records exact provenance. They document a **defect**, not golden
 expected results. They are never substituted for live responses.
 
+This blocker is tracked by the existing
+[drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680).
+No consumable fix or released dependency has been established for this gate.
 Fixing snapshot authority/aggregate result identity requires a separately
 authorized backend prerequisite. P1 does not choose an arbitrary historical
 row, change the query, derive a replacement financial total in the client, or
