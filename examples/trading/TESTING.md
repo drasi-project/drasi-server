@@ -200,7 +200,16 @@ enabled in this browser run.
 
 Prerequisites: a POSIX host, Docker, the repository's Rust toolchain, Node 22,
 Python 3.13, and access to GHCR/Sigstore for signed plugin
-verification. From the repository root, after the fast package/app setup above:
+verification.
+
+Linux checkout builds also require the system libjq and Oniguruma development
+libraries. The Ubuntu CI job installs `libjq-dev` and `libonig-dev` and exports
+`JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu`, matching the existing getting-started
+workflow. This explicit path is needed because the distro's libjq development
+package does not supply `libjq.pc`; installing only the `jq` executable is not
+sufficient for `jq-sys`.
+
+From the repository root, after the fast package/app setup above:
 
 ```sh
 npm --prefix ui ci

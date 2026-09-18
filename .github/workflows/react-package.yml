@@ -136,6 +136,13 @@ jobs:
           "$RUNNER_TEMP/trading-python/bin/python" -m pip install \
             -r examples/trading/app/test/live/requirements.txt
 
+      - name: Install server native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libjq-dev libonig-dev
+          # Match the existing getting-started CI: libjq-dev does not ship libjq.pc.
+          echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+
       - name: Build the actual checkout with its dependency lock and UI
         run: |
           npm --prefix ui ci
