@@ -22,6 +22,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRASI_SERVER_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
+BASE_CONFIG="$SCRIPT_DIR/server/trading-sources-only.yaml"
+PLUGIN_SOURCE="registry"
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
@@ -37,6 +39,50 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+usage() {
+    cat <<EOF
+Usage: ./start-demo.sh [--plugin-source registry|local]
+
+Plugin sources:
+  registry  Use compatible signed plugins from GHCR (default).
+  local     Use plugins prepared by ./build-local-plugins.sh.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --plugin-source)
+            [ $# -ge 2 ] || {
+                echo -e "${RED}Error: --plugin-source requires registry or local${NC}" >&2
+                exit 1
+            }
+            PLUGIN_SOURCE="$2"
+            shift 2
+            ;;
+        --plugin-source=*)
+            PLUGIN_SOURCE="${1#*=}"
+            shift
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown argument: $1${NC}" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+case "$PLUGIN_SOURCE" in
+    registry | local) ;;
+    *)
+        echo -e "${RED}Error: Invalid plugin source '$PLUGIN_SOURCE' (expected registry or local)${NC}" >&2
+        exit 1
+        ;;
+esac
+
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -46,11 +92,25 @@ command_exists() {
 wait_for_service() {
     local url=$1
     local service_name=$2
+    local service_pid=${3:-}
+    local log_file=${4:-}
     local max_attempts=30
     local attempt=0
     
     echo -n "Waiting for $service_name to be ready..."
     while [ $attempt -lt $max_attempts ]; do
+        if [ -n "$service_pid" ] && ! kill -0 "$service_pid" 2>/dev/null; then
+            local exit_code=0
+            wait "$service_pid" 2>/dev/null || exit_code=$?
+            echo -e " ${RED}✗${NC}"
+            echo "$service_name exited before becoming ready (exit code $exit_code)"
+            if [ -n "$log_file" ] && [ -f "$log_file" ]; then
+                echo
+                echo "Last 50 log lines:"
+                tail -50 "$log_file"
+            fi
+            return 1
+        fi
         if curl -s -o /dev/null -w "%{http_code}" "$url" | grep -q "200\|204"; then
             echo -e " ${GREEN}✓${NC}"
             return 0
@@ -61,6 +121,11 @@ wait_for_service() {
     done
     echo -e " ${RED}✗${NC}"
     echo "Failed to connect to $service_name after $max_attempts attempts"
+    if [ -n "$log_file" ] && [ -f "$log_file" ]; then
+        echo
+        echo "Last 50 log lines:"
+        tail -50 "$log_file"
+    fi
     return 1
 }
 
@@ -94,15 +159,177 @@ elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
     make build-ui
 fi
 
-# Ensure local plugins are built (required when using [patch.crates-io] with local drasi-core)
-PLUGINS_DIR="$DRASI_SERVER_ROOT/target/release/plugins"
-if [ ! -d "$PLUGINS_DIR" ] || [ -z "$(ls -A "$PLUGINS_DIR"/*.dylib "$PLUGINS_DIR"/*.so "$PLUGINS_DIR"/*.dll 2>/dev/null)" ]; then
-    echo -e "${YELLOW}No local plugins found. Building from drasi-core...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-local-plugins
+# Keep registry and local artifacts isolated so they can never be mixed.
+CONFIG_PATH="$BASE_CONFIG"
+SERVER_PLUGIN_ARGS=()
+if [ "$PLUGIN_SOURCE" = "registry" ]; then
+    PLUGINS_DIR="$SCRIPT_DIR/plugins/registry"
+    mkdir -p "$PLUGINS_DIR"
+else
+    PLUGINS_DIR="$SCRIPT_DIR/plugins/local"
+    LOCAL_MANIFEST="$PLUGINS_DIR/local-build.json"
+    LOCAL_CONFIG="$LOG_DIR/trading-sources-local.yaml"
+
+    if [ ! -f "$LOCAL_MANIFEST" ]; then
+        echo -e "${RED}Local trading plugins have not been prepared.${NC}"
+        echo
+        echo "Enable the local [patch.crates-io] entries in Cargo.toml, then run:"
+        echo "  ./examples/trading/build-local-plugins.sh"
+        exit 1
+    fi
+
+    if ! LOCAL_PLUGIN_REGISTRY="$(python3 - "$LOCAL_MANIFEST" "$DRASI_SERVER_ROOT/target/release/drasi-server" "$PLUGINS_DIR" <<'PY'
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1])
+server_binary = pathlib.Path(sys.argv[2]).resolve()
+plugins_dir = pathlib.Path(sys.argv[3]).resolve()
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with pathlib.Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def git_bytes(root, *args):
+    return subprocess.check_output(
+        ["git", "-C", str(root), *args],
+        stderr=subprocess.DEVNULL,
+    )
+
+def git_state(root):
+    root = pathlib.Path(root)
+    status = git_bytes(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    )
+    fingerprint = hashlib.sha256()
+
+    def add_bytes(value):
+        fingerprint.update(len(value).to_bytes(8, "big"))
+        fingerprint.update(value)
+
+    add_bytes(status)
+    add_bytes(git_bytes(root, "diff", "--binary", "HEAD"))
+    untracked = git_bytes(
+        root, "ls-files", "--others", "--exclude-standard", "-z"
+    ).split(b"\0")
+    for raw_path in filter(None, untracked):
+        path = root / raw_path.decode(sys.getfilesystemencoding(), "surrogateescape")
+        add_bytes(raw_path)
+        add_bytes(str(path.lstat().st_mode).encode())
+        if path.is_symlink():
+            add_bytes(path.readlink().as_posix().encode())
+        else:
+            add_bytes(path.read_bytes())
+
+    return {
+        "commit": git_bytes(root, "rev-parse", "HEAD").decode().strip(),
+        "worktree_sha256": fingerprint.hexdigest(),
+    }
+
+try:
+    manifest = json.loads(manifest_path.read_text())
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Unable to read local build manifest: {error}", file=sys.stderr)
+    sys.exit(1)
+
+errors = []
+if manifest.get("format_version") != 1:
+    errors.append("unsupported or missing local build manifest version")
+if not server_binary.is_file():
+    errors.append(f"Drasi Server binary is missing: {server_binary}")
+elif sha256(server_binary) != manifest.get("server_sha256"):
+    errors.append("Drasi Server was rebuilt after the local plugins were prepared")
+
+for filename, expected_hash in manifest.get("plugins", {}).items():
+    plugin_path = plugins_dir / filename
+    if not plugin_path.is_file():
+        errors.append(f"local plugin is missing: {filename}")
+    elif sha256(plugin_path) != expected_hash:
+        errors.append(f"local plugin changed after validation: {filename}")
+
+for key in ("drasi_server", "drasi_core"):
+    recorded = manifest.get(key, {})
+    root = recorded.get("root")
+    if not root:
+        errors.append(f"manifest is missing {key} source information")
+        continue
+    try:
+        current = git_state(root)
+    except (OSError, subprocess.CalledProcessError):
+        errors.append(f"unable to inspect recorded {key} checkout: {root}")
+        continue
+    for field in ("commit", "worktree_sha256"):
+        if current[field] != recorded.get(field):
+            errors.append(f"{key.replace('_', '-')} source changed after the local build")
+            break
+
+if errors:
+    print("Local trading runtime is stale or incomplete:\n", file=sys.stderr)
+    for error in errors:
+        print(f"  - {error}", file=sys.stderr)
+    print(
+        "\nRebuild the matched server and plugin set:\n"
+        "  ./examples/trading/build-local-plugins.sh",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+print(plugins_dir)
+PY
+)"; then
+        exit 1
+    fi
+
+    python3 - "$BASE_CONFIG" "$LOCAL_CONFIG" "$LOCAL_PLUGIN_REGISTRY" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+destination = pathlib.Path(sys.argv[2])
+registry = json.dumps(str(pathlib.Path(sys.argv[3]).resolve()))
+
+replacement = f"pluginRegistry: {registry}"
+if re.search(r"(?m)^pluginRegistry:", source):
+    source = re.sub(r"(?m)^pluginRegistry:.*$", replacement, source, count=1)
+else:
+    marker = "autoInstallPlugins: true"
+    if source.count(marker) != 1:
+        raise SystemExit(f"Unable to locate exactly one '{marker}' setting")
+    source = source.replace(marker, f"{replacement}\n{marker}", 1)
+
+destination.write_text(source)
+PY
+
+    CONFIG_PATH="$LOCAL_CONFIG"
+    SERVER_PLUGIN_ARGS=(--skip-verification)
+
+    VALIDATION_LOG="$LOG_DIR/local-plugin-validation.log"
+    if ! "$DRASI_SERVER_ROOT/target/release/drasi-server" validate \
+        --config "$LOCAL_CONFIG" \
+        --plugins-dir "$PLUGINS_DIR" \
+        >"$VALIDATION_LOG" 2>&1 ||
+        grep -Eq 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG" ||
+        ! grep -Fq 'Plugins (5 loaded' "$VALIDATION_LOG"; then
+        echo -e "${RED}Local trading plugins are incompatible with this Drasi Server.${NC}"
+        echo
+        grep -E 'plugin ABI mismatch|SDK version mismatch|target( triple)? mismatch|Failed to load plugin|\[WARN\].*not installed' "$VALIDATION_LOG" || tail -50 "$VALIDATION_LOG"
+        echo
+        echo "Rebuild the server and plugins from the same patched dependency graph:"
+        echo "  ./examples/trading/build-local-plugins.sh"
+        exit 1
+    fi
 fi
 
 echo -e "${GREEN}All prerequisites met!${NC}"
+echo "Plugin source: $PLUGIN_SOURCE"
 echo ""
 
 # Step 1: Start PostgreSQL
@@ -155,42 +382,32 @@ echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamica
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
-    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
+    ./target/release/drasi-server \
+        --config "$CONFIG_PATH" \
+        --plugins-dir "$PLUGINS_DIR" \
+        "${SERVER_PLUGIN_ARGS[@]}" \
+        > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
 echo "Replication source will bootstrap initial data from PostgreSQL..."
 
-# Give the server a moment to try binding to ports
-sleep 2
-
-# Check if the server process is still running
-if ! kill -0 $DRASI_PID 2>/dev/null; then
-    echo -e "${RED}✗ Drasi Server failed to start${NC}"
-    echo "Checking log for errors..."
-    tail -10 "$LOG_DIR/drasi-server.log" | grep -E "ERROR|Error|error" || tail -5 "$LOG_DIR/drasi-server.log"
-    echo ""
-    echo "Common issues:"
-    echo "  - Port 8280 already in use (check with: lsof -i :8280)"
-    echo "  - Port 9100 already in use (check with: lsof -i :9100)"
-    echo "  - PostgreSQL connection failed"
-    echo ""
-    echo "To kill existing Drasi servers: pkill -f drasi-server"
-    exit 1
-fi
-
 # Wait for Drasi Server to be ready
-if ! wait_for_service "http://localhost:8280/health" "Drasi Server"; then
+if ! wait_for_service \
+    "http://localhost:8280/health" \
+    "Drasi Server" \
+    "$DRASI_PID" \
+    "$LOG_DIR/drasi-server.log"; then
     echo -e "${RED}✗ Drasi Server API is not responding${NC}"
-    echo "Server process is running but API is not available"
-    echo "Check logs: tail -50 $LOG_DIR/drasi-server.log"
-    kill $DRASI_PID 2>/dev/null
+    if kill -0 "$DRASI_PID" 2>/dev/null; then
+        kill "$DRASI_PID" 2>/dev/null
+    fi
     exit 1
 fi
 
 # Verify sources are running
 echo "Verifying Drasi sources..."
 SOURCE_STATUS=$(curl -s http://localhost:8280/api/v1/sources)
-if echo "$SOURCE_STATUS" | grep -q '"status":"running"'; then
+if echo "$SOURCE_STATUS" | grep -qi '"status":"running"'; then
     echo -e "PostgreSQL replication source: ${GREEN}✓ Running${NC}"
     echo -e "HTTP source: ${GREEN}✓ Running${NC}"
 else

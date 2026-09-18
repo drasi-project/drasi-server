@@ -133,6 +133,28 @@ This script:
 
 **Open http://localhost:5273** to see the live trading dashboard.
 
+By default, the script installs compatible signed plugins from GHCR. To test
+changes from a local `drasi-core` checkout, first enable and update the existing
+`[patch.crates-io]` entries in the Drasi Server `Cargo.toml`, then run:
+
+```bash
+./examples/trading/build-local-plugins.sh
+./examples/trading/start-demo.sh --plugin-source local
+```
+
+The build script uses `cargo metadata` to discover the patched checkout. It
+rebuilds Drasi Server and only the five plugins used by this example, validates
+their FFI ABI and target, and installs them into an isolated
+`examples/trading/plugins/local` directory. Local mode never falls back to
+GHCR. If the server, either checkout, or any plugin changes afterward, rerun the
+build script.
+
+To return to published plugins, use the normal command with no options:
+
+```bash
+./examples/trading/start-demo.sh
+```
+
 To stop everything:
 ```bash
 ./stop-demo.sh
@@ -159,8 +181,22 @@ This starts PostgreSQL with:
 ```bash
 # From drasi-server root directory
 cargo build --release
-./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
+./target/release/drasi-server \
+    --config examples/trading/server/trading-sources-only.yaml \
+    --plugins-dir examples/trading/plugins/registry
 ```
+
+The `--plugins-dir` flag points at an example-specific directory that holds
+only the 5 plugins this demo uses (`source/http`, `source/postgres`,
+`bootstrap/scriptfile`, `bootstrap/postgres`, `reaction/sse`). With
+`autoInstallPlugins: true` set in the YAML, the server downloads them from
+the OCI registry on first start if the directory is empty. The normal startup
+uses a `registry` subdirectory so plugins built from a sibling `drasi-core`
+checkout cannot be reused accidentally with an ABI-incompatible server.
+`--plugin-source local` instead uses the separately validated `local`
+subdirectory produced by `build-local-plugins.sh` as both its plugin directory
+and local registry. The two modes never share plugin binaries or consult GHCR
+for local-mode plugins.
 
 The server starts with two sources pre-configured:
 - `postgres-stocks`: CDC source monitoring stocks and portfolio tables
@@ -368,6 +404,7 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 | `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
+| `build-local-plugins.sh` | Builds and validates a matched local server/plugin set |
 | `app/src/services/DrasiClient.ts` | Query definitions and Drasi integration |
 | `app/src/hooks/useDrasi.ts` | React hook for consuming Drasi queries |
 | `mock-generator/simple_price_generator.py` | Simulated market data feed |
@@ -405,6 +442,24 @@ lsof -i :8281 # SSE Reaction
 lsof -i :5273  # React app
 lsof -i :5632  # PostgreSQL
 ```
+
+### Local plugins are incompatible
+
+Local plugin mode requires Drasi Server and all five plugins to resolve
+`drasi-core`, `drasi-lib`, `drasi-plugin-sdk`, and `drasi-host-sdk` from the
+same local checkout. Cargo patches still obey dependency version requirements;
+an enabled patch is ignored when the local package version does not satisfy the
+requirement in `Cargo.toml`.
+
+After changing either repository or its patch configuration, rebuild:
+
+```bash
+./examples/trading/build-local-plugins.sh
+```
+
+The script reports whether a dependency still resolved from crates.io, whether
+the local packages came from different checkouts, and whether the plugin ABI or
+target differs from the rebuilt server.
 
 ## Key Concepts Demonstrated
 
