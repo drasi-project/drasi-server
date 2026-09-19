@@ -238,7 +238,7 @@ must not be presented as browser or real-server coverage.
 ### Measured P2 contract cost
 
 The same pinned Linux gate measured P2 after all 23 browser scenarios and the
-five unchanged, zero-differing-pixel PNGs passed. Only the **artifact size
+five unchanged, zero-differing-pixel PNG files passed. Only the **artifact size
 baseline** was advanced, with the original P1 bytes retained in
 `artifactChange.p1Sizes`. The 2% growth policy, every P1 coverage floor, all
 included source files, dependency locks and visual expectations are unchanged.
