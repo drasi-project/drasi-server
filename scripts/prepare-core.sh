@@ -18,7 +18,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-sibling="$(dirname "$root")/drasi-core"
+sibling="${root%/*}/drasi-core"
 repository="https://github.com/drasi-project/drasi-core.git"
 pin_file="$root/.drasi-core-revision"
 [[ -f "$pin_file" ]] || fail "missing reviewed revision file: $pin_file"
