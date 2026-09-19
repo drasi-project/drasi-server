@@ -245,7 +245,7 @@ package CSS nor any original image was edited, and all five comparisons remain
 exact. No size threshold, coverage floor or assertion was disabled to pass.
 
 Unchanged-backend checks pass: exact engine verification, registry plugin
-origin, 42 tooling tests, real UI/server builds, 779 Rust tests (12 ignored),
+origin, 42 tooling tests, real UI/server builds, 779 Rust tests (32 ignored),
 `make fmt-check` and strict locked all-target Clippy. The locked-server audit
 reports zero vulnerabilities and 15 existing warnings, not clearance of the
 separate unused legacy core workspace.
