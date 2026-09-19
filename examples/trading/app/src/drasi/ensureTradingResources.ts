@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import { DrasiClient, DrasiError, type Component, type QueryConfig, type QuerySource } from '@drasi/react/client';
+import { DrasiClient, DrasiError, type Component } from '@drasi/react/client';
 import { TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, type TradingQueryDefinition } from './config';
 
 const SETUP_TIMEOUT_MS = 60000;
@@ -69,11 +69,7 @@ export async function resolveTradingInstance(
   return data[0].id;
 }
 
-type QueryContract = Pick<QueryConfig, 'query' | 'queryLanguage' | 'joins'> & {
-  sources: readonly (Pick<QuerySource, 'sourceId'> & Partial<Omit<QuerySource, 'sourceId'>>)[];
-};
-
-function queryContract(config: QueryContract): string {
+function queryContract(config: TradingQueryDefinition): string {
   return JSON.stringify({
     query: config.query.trim(),
     language: config.queryLanguage,

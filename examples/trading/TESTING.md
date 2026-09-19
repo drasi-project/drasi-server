@@ -166,6 +166,12 @@ declaration/runtime graphs are checked. Hook imports cannot reach composed
 components/tutorial code/CSS. Marked runnable README snippets are compiled
 against the installed tarball. The package and Trading still build without
 source aliases or lifecycle rebuilding in the consumer.
+Eight parser checks require all five marked README examples and reject duplicate
+names, path traversal, wrong fence languages, unterminated fences and compiler
+diagnostic suppression. The actual installed README is hashed and compiled in
+ESM, CommonJS and bundler modes; the client/auth snippets also compile with
+React and React types absent. Parallel hand-written examples alone are not
+treated as documentation proof.
 
 From the repository root:
 

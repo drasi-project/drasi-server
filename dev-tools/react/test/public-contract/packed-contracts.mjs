@@ -5,11 +5,13 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractReadmeExamples } from './readme-examples.mjs';
 
 const fixtures = fileURLToPath(new URL('.', import.meta.url));
 const entrypoints = {
@@ -246,17 +248,10 @@ async function createClientOnly(artifact, directory, appLock) {
   return { omittedPeers: forbiddenPeers, installedFiles };
 }
 
-async function compileFixture(directory, output, fixture, mode, manifest) {
+async function compileSources({ directory, output, label, files, mode, manifest, boundary, expectedKinds, jsx = false }) {
   const require = createRequire(join(directory, 'package.json'));
   const ts = require('typescript');
   const packageRoot = join(directory, 'node_modules/@drasi/react');
-  const extension = { esm: 'mts', cjs: 'cts', bundler: 'ts' }[mode];
-  const file = join(directory, `contract-${fixture}-${mode}.${extension}`);
-  // Templates are not .ts files in the repository: only an installed tarball,
-  // never package self-resolution or a source path alias, may compile them.
-  await copyFile(join(fixtures, `${fixture}.fixture.txt`), file);
-  const text = await readFile(file, 'utf8');
-  assert(text.includes('@ts-expect-error'), `Missing negative assertions in ${fixture}`);
   const options = {
     noEmit: true, strict: true, skipLibCheck: false, types: [],
     target: ts.ScriptTarget.ES2022,
@@ -264,52 +259,128 @@ async function compileFixture(directory, output, fixture, mode, manifest) {
     module: mode === 'bundler' ? ts.ModuleKind.ESNext : ts.ModuleKind.NodeNext,
     moduleResolution: mode === 'bundler' ? ts.ModuleResolutionKind.Bundler : ts.ModuleResolutionKind.NodeNext,
     traceResolution: true,
+    ...(jsx ? { jsx: ts.JsxEmit.ReactJSX } : {}),
   };
   const trace = [];
   const host = ts.createCompilerHost(options);
   host.trace = message => trace.push(message);
-  const program = ts.createProgram([file], options, host);
+  const program = ts.createProgram(files, options, host);
   const diagnostics = ts.getPreEmitDiagnostics(program);
-  await writeFile(join(output, `${fixture}-${mode}-resolution.log`), `${trace.join('\n')}\n`);
+  await writeFile(join(output, `${label}-${mode}-resolution.log`), `${trace.join('\n')}\n`);
   assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diagnostics, {
     getCanonicalFileName: path => path,
     getCurrentDirectory: () => directory,
     getNewLine: () => '\n',
   }));
+  if (mode !== 'bundler') {
+    for (const file of files) {
+      assert.equal(program.getSourceFile(file)?.impliedNodeFormat,
+        mode === 'cjs' ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
+        `${label}/${mode} compiled ${file} in the wrong NodeNext mode`);
+    }
+  }
   const packageFiles = [];
   const loadedFiles = [];
   for (const source of program.getSourceFiles()) {
     const path = await realpath(source.fileName);
     assert(inside(directory, path), `Compiler escaped packed consumer (source alias or ambient types): ${path}`);
     loadedFiles.push(relative(directory, path));
-    if (fixture === 'client') {
+    if (boundary === 'client') {
       assert(!/[/\\]node_modules[/\\](?:@types[/\\])?react(?:-dom)?(?:[/\\]|$)/.test(path),
         `Client declaration graph resolved React: ${path}`);
     }
     if (inside(packageRoot, path)) {
       assert(/\.d\.(?:ts|mts|cts)$/.test(path), `Compiler reached package implementation source: ${path}`);
-      checkBoundary(ts, source, fixture === 'hooks' ? 'react' : fixture);
+      checkBoundary(ts, source, boundary);
       packageFiles.push(path);
     }
   }
-  const expectedKinds = fixture === 'client' ? ['client'] : fixture === 'hooks' ? ['react', 'client'] : ['root', 'components'];
   const condition = mode === 'cjs' ? 'require' : 'import';
   for (const kind of expectedKinds) {
     const target = resolve(packageRoot, manifest.exports[entrypoints[kind]][condition].types);
-    assert(packageFiles.includes(target), `${fixture}/${mode} did not resolve ${kind} through its ${condition} types export`);
+    assert(packageFiles.includes(target), `${label}/${mode} did not resolve ${kind} through its ${condition} types export`);
+    const opposite = resolve(packageRoot,
+      manifest.exports[entrypoints[kind]][condition === 'require' ? 'import' : 'require'].types);
+    assert(!packageFiles.includes(opposite), `${label}/${mode} also resolved the wrong ${kind} declaration format`);
   }
   return {
-    compiler: ts.version, extension, condition,
-    expectedErrors: (text.match(/@ts-expect-error/g) ?? []).length,
+    compiler: ts.version, condition,
     declarations: packageFiles.map(path => relative(packageRoot, path)).sort(),
     loadedFiles: loadedFiles.sort(),
   };
+}
+
+async function compileFixture(directory, output, fixture, mode, manifest) {
+  const extension = { esm: 'mts', cjs: 'cts', bundler: 'ts' }[mode];
+  const file = join(directory, `contract-${fixture}-${mode}.${extension}`);
+  // Templates are not .ts files in the repository: only an installed tarball,
+  // never package self-resolution or a source path alias, may compile them.
+  await copyFile(join(fixtures, `${fixture}.fixture.txt`), file);
+  const text = await readFile(file, 'utf8');
+  assert(text.includes('@ts-expect-error'), `Missing negative assertions in ${fixture}`);
+  const expectedKinds = fixture === 'client' ? ['client'] : fixture === 'hooks' ? ['react', 'client'] : ['root', 'components'];
+  const proof = await compileSources({
+    directory, output, label: fixture, files: [file], mode, manifest, expectedKinds,
+    boundary: fixture === 'hooks' ? 'react' : fixture,
+  });
+  return { ...proof, extension, expectedErrors: (text.match(/@ts-expect-error/g) ?? []).length };
+}
+
+async function compileReadme(directory, output, examples, label, manifest) {
+  const require = createRequire(join(directory, 'package.json'));
+  const ts = require('typescript');
+  const expectedKinds = new Set();
+  for (const example of examples) {
+    const source = ts.createSourceFile(example.name, example.code, ts.ScriptTarget.Latest, true,
+      example.name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    for (const specifier of moduleReferences(ts, source)) {
+      if (specifier === '@drasi/react/styles.css') {
+        assert.equal(await realpath(require.resolve(specifier)),
+          await realpath(join(directory, 'node_modules/@drasi/react', manifest.exports['./styles.css'])),
+          'README stylesheet must resolve through the packed export');
+      } else if (specifier === '@drasi/react' || specifier.startsWith('@drasi/react/')) {
+        const subpath = specifier === '@drasi/react' ? '.' : `.${specifier.slice('@drasi/react'.length)}`;
+        const kind = Object.entries(entrypoints).find(([, entry]) => entry === subpath)?.[0];
+        assert(kind, `README ${example.name} imports an unsupported public entrypoint: ${specifier}`);
+        expectedKinds.add(kind);
+      }
+    }
+  }
+  assert(expectedKinds.size, `README ${label} examples must consume published exports`);
+  const proof = {};
+  const folder = join(directory, 'contract-readme');
+  await mkdir(folder);
+  for (const mode of ['esm', 'cjs', 'bundler']) {
+    const modeFolder = join(folder, mode);
+    await mkdir(modeFolder);
+    // TSX has no .mtsx/.ctsx extension: package type selects its NodeNext mode.
+    await saveJson(join(modeFolder, 'package.json'), { private: true, type: mode === 'cjs' ? 'commonjs' : 'module' });
+    const files = [];
+    for (const example of examples) {
+      const name = example.name.endsWith('.tsx') ? example.name
+        : example.name.replace(/\.ts$/, `.${{ esm: 'mts', cjs: 'cts', bundler: 'ts' }[mode]}`);
+      const file = join(modeFolder, name);
+      await writeFile(file, example.code);
+      files.push(file);
+    }
+    proof[mode] = {
+      ...await compileSources({
+        directory, output, label, files, mode, manifest, jsx: true,
+        expectedKinds: [...expectedKinds], boundary: label === 'client-readme' ? 'client' : 'root',
+      }),
+      examples: examples.map((example, index) => ({
+        name: example.name, readmeLine: example.line, file: relative(directory, files[index]),
+      })),
+    };
+  }
+  return proof;
 }
 
 /** Called only after Trading has installed the tarball, never a workspace link. */
 export async function checkPackedPublicContract({ artifact, destination, app, lock }) {
   const output = join(destination, 'public-contract');
   await mkdir(output);
+  run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'readme-examples-check.mjs')], app, 30_000);
   const require = createRequire(join(app, 'package.json'));
   const packageRoot = join(app, 'node_modules/@drasi/react');
   const manifest = await json(join(packageRoot, 'package.json'));
@@ -338,6 +409,17 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
       }
     }
   }
+  // The installed README is the sole source of runnable documentation. These
+  // programs are checked with noEmit, never imported/executed or networked.
+  const readme = await readFile(join(packageRoot, 'README.md'), 'utf8');
+  const examples = extractReadmeExamples(readme);
+  proof.readme = {
+    sha256: createHash('sha256').update(readme).digest('hex'),
+    all: await compileReadme(app, output, examples, 'readme', manifest),
+    clientOnly: await compileReadme(clientOnly, output,
+      examples.filter(example => ['client.ts', 'auth.ts'].includes(example.name)), 'client-readme', manifest),
+  };
+  console.log(`Packed README: ${examples.length} marked examples checked in NodeNext ESM/CJS and bundler modes; client/auth also React-free (no execution)`);
   await saveJson(join(output, 'proofs.json'), proof);
   console.log(`Packed public contracts passed (React 18.3.1; ${process.version}): ${output}`);
 }

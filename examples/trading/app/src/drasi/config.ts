@@ -22,17 +22,21 @@
  * — the package receives only references; setup stays in this application.
  */
 
-import type { QueryConfig, RouteUnidentified } from '@drasi/react/client';
-import { ALL_QUERIES, type QueryDefinition } from '@/services/queries';
+import type { QueryConfig, QuerySource, RouteUnidentified } from '@drasi/react/client';
+import { ALL_QUERIES } from '@/services/queries';
 
 /** Base URL of the Drasi Server REST API used by the Trading example. */
 export const DRASI_SERVER_URL = 'http://localhost:8280';
 
-/** All continuous queries the Trading example multiplexes over one connection. */
+/** App-owned creation/comparison fields, not the complete server read DTO. */
 export type TradingQueryDefinition =
-  Pick<QueryDefinition, 'id' | 'query' | 'sources' | 'joins'> &
-  Pick<QueryConfig, 'queryLanguage'>;
+  Pick<QueryConfig, 'id' | 'query' | 'queryLanguage' | 'joins'> & {
+    readonly sources: readonly (
+      Pick<QuerySource, 'sourceId'> & Partial<Omit<QuerySource, 'sourceId'>>
+    )[];
+  };
 
+/** All continuous queries the Trading example multiplexes over one connection. */
 export const TRADING_QUERIES: TradingQueryDefinition[] = ALL_QUERIES.map(({ id, query, sources, joins }) => ({
   id, query, sources, joins, queryLanguage: 'Cypher',
 }));
