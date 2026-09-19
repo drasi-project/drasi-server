@@ -42,4 +42,7 @@ vendor/
 ui/node_modules/
 ui/dist/
 
+# Dependency/plugin preparation helpers
+scripts/__pycache__/
+
 .vscode

@@ -2,8 +2,6 @@ name: Lint
 
 on:
   pull_request:
-    branches:
-      - main
 
 jobs:
   lint:
@@ -11,6 +9,6 @@ jobs:
     with:
       install-jq: true
       install-protobuf: true
-      clippy-command: "make clippy"
+      clippy-command: "bash scripts/prepare-core.sh && cargo clippy --locked --all-targets -- -D warnings"
       clippy-args: ""
-      fmt-command: "make fmt-check"
+      fmt-command: "bash scripts/prepare-core.sh && make fmt-check"

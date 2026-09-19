@@ -84,13 +84,14 @@ curl http://localhost:8080/health
 
 **Option B: Using Cargo**
 
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> **Prerequisites:** The Rust toolchain in `rust-toolchain.toml` **and** Node.js / npm (required to build the
 > bundled Web UI).
 
 ```bash
 # Clone and build (server + Web UI)
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
+make prepare-core    # obtains/verifies the exact compatible sibling engine revision
 make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 
 # Start the server (creates default config if none exists)
@@ -244,6 +245,11 @@ make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 > `make build-release` (recommended) or run `make build-ui` separately. If
 > `ui/dist` is missing at startup, the server logs a warning and `/ui`
 > returns 404.
+
+The temporary engine-only source pin is documented in
+[Compatible engine source prerequisite](docs/engine-prerequisite.md).
+It preserves the registry library/SDK and signed plugin matrix; published
+binaries and downstream library consumers do not automatically inherit it.
 
 ### Option 3: Interactive Setup
 
@@ -2754,16 +2760,20 @@ docker compose restart drasi-server
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Build (default: all plugins statically linked)
-cargo build --release
+# Prepare the exact compatible engine, then build the server and embedded UI
+make prepare-core
+make build-release
 
 # Run tests
-cargo test
+cargo test --locked
 
 # Format and lint
 cargo fmt
-cargo clippy
+cargo clippy --locked
 ```
+
+See [the engine prerequisite](docs/engine-prerequisite.md) for exact source
+provenance, plugin selection, audit blockers and eventual pin removal.
 
 ### Feature Flags
 
