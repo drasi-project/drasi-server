@@ -536,7 +536,7 @@ The tarball includes README, CHANGELOG, LICENSE, NOTICE, dist and CSS only.
 Trading continues to consume built local exports. Its unchanged query
 definitions, financial transforms, provisioning and tutorial snippets stay
 app-owned. [Trading TESTING.md](../../examples/trading/TESTING.md) documents
-the locked clean-tarball gate, all three browsers, five original exact PNGs,
+the locked clean-tarball gate, all three browsers, five original exact PNG images,
 coverage/size budgets and authoritative real-server financial/CRUD/reconnect
 assertions. Synthetic tests are not proof that a real plugin emits a shape.
 

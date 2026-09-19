@@ -6,7 +6,7 @@
     "issue": 163,
     "part": "A / P3",
     "predecessor": "3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97",
-    "reason": "P3 adds full read-DTO/JSON/link validation, auth/credential/cancellation policy, semantic provider reconfiguration, named generic types and real ESM/CJS/type entrypoints. Metrics now count every shared chunk and entrypoint, not just the root barrel. Tarball also ships expanded contract/migration docs and CHANGELOG. All 26 packed Linux browser scenarios and five unchanged PNGs passed before advancing this measured artifact baseline. No dependency-version/CSS/PNG/coverage-floor or 2% policy relaxation. See examples/trading/TESTING.md.",
+    "reason": "P3 adds full read-DTO/JSON/link validation, auth/credential/cancellation policy, semantic provider reconfiguration, named generic types and real ESM/CJS/type entrypoints. Metrics now count every shared chunk and entrypoint, not just the root barrel. Tarball also ships expanded contract/migration docs and CHANGELOG. All 26 packed Linux browser scenarios and five unchanged PNG images passed before advancing this measured artifact baseline. No dependency-version/CSS/PNG/coverage-floor or 2% policy relaxation. See examples/trading/TESTING.md.",
     "p2Change": {
       "issue": 162,
       "predecessor": "a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059",
