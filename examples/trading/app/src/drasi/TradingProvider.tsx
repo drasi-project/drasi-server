@@ -4,7 +4,8 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DrasiClient, DrasiClientProvider, DrasiError, type DrasiClientOptions, type DrasiContextValue } from '@drasi/react';
+import { DrasiClient, DrasiError, type DrasiClientOptions } from '@drasi/react/client';
+import { DrasiClientProvider, type DrasiContextValue } from '@drasi/react/react';
 import { DRASI_SERVER_URL, TRADING_QUERY_IDS, TRADING_STREAM, routeTradingData } from './config';
 import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from './ensureTradingResources';
 
@@ -21,6 +22,10 @@ export function TradingProvider({
     client: null, initialized: false, error: null,
   });
   const retry = useCallback(() => setAttempt(current => current + 1), []);
+  const stableReconnect = useMemo(() => reconnect, [
+    reconnect?.maxReconnectAttempts, reconnect?.initialReconnectDelayMs,
+    reconnect?.maxReconnectDelayMs, reconnect?.connectionTimeoutMs,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,7 +38,7 @@ export function TradingProvider({
       controller.signal.throwIfAborted();
       client = new DrasiClient({
         serverUrl: baseUrl, instanceId: resolvedId, queryIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM,
-        routeUnidentified: routeTradingData, fetch: fetcher, eventSourceFactory, reconnect,
+        routeUnidentified: routeTradingData, fetch: fetcher, eventSourceFactory, reconnect: stableReconnect,
       });
       setState({ client, initialized: false, error: null });
       // Initial failures are handled below. Later terminal connection failures
@@ -68,7 +73,7 @@ export function TradingProvider({
       unsubscribe();
       void client?.disconnect();
     };
-  }, [serverUrl, instanceId, fetcher, eventSourceFactory, reconnect, attempt]);
+  }, [serverUrl, instanceId, fetcher, eventSourceFactory, stableReconnect, attempt]);
 
   const value = useMemo(() => ({ ...state, retry }), [state, retry]);
   return <DrasiClientProvider value={value}>

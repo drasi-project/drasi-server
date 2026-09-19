@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertBaseline } from './metrics-policy.mjs';
+import { assertBaseline, measurePackageModules } from './metrics-policy.mjs';
 
 const baseline = {
   coverage: {
@@ -34,4 +34,23 @@ test('rejects missing mandatory metrics rather than passing a partial measuremen
   delete observed.coverage.trading.functions;
   assert.throws(() => assertBaseline(observed, baseline), /Missing trading functions/);
   assert.throws(() => assertBaseline({ ...baseline, sizes: {} }, baseline), /Artifact metric set changed/);
+});
+
+test('measures all entrypoints and shared chunks without counting maps or dual declarations twice', () => {
+  const files = {
+    'package/dist/index.js': 2, 'package/dist/client/index.js': 3, 'package/dist/chunk-client.js': 500,
+    'package/dist/index.cjs': 4, 'package/dist/react/index.cjs': 5, 'package/dist/chunk-react.cjs': 600,
+    'package/dist/index.d.ts': 6, 'package/dist/client/index.d.ts': 7, 'package/dist/types-shared.d.ts': 700,
+    'package/dist/index.d.cts': 1000, 'package/dist/index.js.map': 1000, 'package/README.md': 1000,
+  };
+  assert.deepEqual(measurePackageModules(Object.keys(files), path => files[path]), {
+    packageEsm: 505, packageCjs: 609, packageTypes: 713,
+  });
+});
+
+test('does not accept an artifact missing any mandatory runtime or declaration format', () => {
+  for (const missing of ['.js', '.cjs', '.d.ts']) {
+    const files = ['.js', '.cjs', '.d.ts'].filter(suffix => suffix !== missing).map(suffix => `package/dist/index${suffix}`);
+    assert.throws(() => measurePackageModules(files, () => 1), /Missing packed/);
+  }
 });

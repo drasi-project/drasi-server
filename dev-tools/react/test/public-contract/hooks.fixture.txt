@@ -1,0 +1,146 @@
+// Copyright 2026 The Drasi Authors.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+import { createElement, type ReactNode } from 'react';
+import {
+  DrasiClient,
+  type DrasiClientOptions,
+  type ConnectionStatus,
+  type DrasiError,
+  type QueryConfig,
+  type ResultRow,
+} from '@drasi/react/client';
+import {
+  DrasiProvider,
+  DrasiClientProvider,
+  useDrasiClient,
+  useDrasiQuery,
+  useDrasiQueryDefinition,
+  useDrasiConnectionStatus,
+  useDrasiServerUiUrl,
+  type UseDrasiQueryOptions,
+  type UseDrasiQueryResult,
+  type UseDrasiQueryDefinitionResult,
+  type DrasiProviderProps,
+  type DrasiContextValue,
+} from '@drasi/react/react';
+
+interface TemperatureWire {
+  stationId: string;
+  millicelsius: number;
+}
+
+interface Temperature {
+  stationId: string;
+  celsius: number;
+}
+
+interface Delivery {
+  routeId: string;
+  parcels: number;
+}
+
+const clientOptions: DrasiClientOptions = {
+  serverUrl: 'https://drasi.example', instanceId: 'warehouse-west', queryIds: ['temperatures'],
+  reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
+  credentials: 'same-origin', headers: { 'X-Consumer': 'packed-hooks' },
+};
+
+export const temperatureOptions: UseDrasiQueryOptions<Temperature> = {
+  transform(row) {
+    // @ts-expect-error Transform input remains unknown until application validation.
+    const unchecked: TemperatureWire = row;
+    void unchecked;
+    if (typeof row.stationId !== 'string' || typeof row.millicelsius !== 'number') {
+      throw new TypeError('Expected a temperature reading');
+    }
+    const wire: TemperatureWire = { stationId: row.stationId, millicelsius: row.millicelsius };
+    return { stationId: wire.stationId, celsius: wire.millicelsius / 1000 };
+  },
+  getKey(row) {
+    const degrees: number = row.celsius;
+    // @ts-expect-error Keys receive transformed output, not raw input.
+    row.millicelsius;
+    return degrees < -273 ? null : row.stationId;
+  },
+  postProcess(rows) {
+    const output: Temperature[] = rows;
+    // @ts-expect-error Post-processing uses the transformed model, not another domain's rows.
+    const deliveries: Delivery[] = rows;
+    void deliveries;
+    return output.filter(row => row.celsius > 0);
+  },
+};
+
+export const defaultInput: UseDrasiQueryOptions<Delivery> = {
+  transform(raw) {
+    const input: ResultRow = raw;
+    // @ts-expect-error Unspecified wire input properties require narrowing.
+    raw.routeId.toUpperCase();
+    return { routeId: String(input.routeId), parcels: Number(input.parcels) };
+  },
+  getKey: row => row.routeId,
+  postProcess: rows => rows.filter(row => row.parcels > 0),
+};
+
+export const defaultOptions: UseDrasiQueryOptions = {
+  getKey(row) {
+    const input: Record<string, unknown> = row;
+    // @ts-expect-error Default row values are unknown, never implicit any.
+    const numeric: number = row.parcels;
+    void numeric;
+    return typeof input.id === 'string' ? input.id : null;
+  },
+};
+
+// @ts-expect-error Transform callbacks must produce the chosen output model.
+export const invalidTransform: UseDrasiQueryOptions<Temperature> = { transform: row => ({ stationId: String(row.stationId), celsius: 'hot' }) };
+// @ts-expect-error getKey must return string or null.
+export const invalidKey: UseDrasiQueryOptions<Temperature> = { getKey: row => row.celsius };
+// @ts-expect-error React options do not accept deployment definitions.
+export const hookDeployment: UseDrasiQueryOptions<Temperature> = { queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n' }] };
+
+export const providerProps: DrasiProviderProps = { ...clientOptions, children: null };
+// @ts-expect-error Providers must not discover an implicit default instance.
+export const missingInstance: DrasiProviderProps = { serverUrl: clientOptions.serverUrl, queryIds: clientOptions.queryIds, reaction: clientOptions.reaction, children: null };
+// @ts-expect-error Provider creation never deploys queries.
+export const providerDeployment: DrasiProviderProps = { ...providerProps, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', sources: [] }] };
+// @ts-expect-error Provider credentials are the same typed request contract as the client.
+export const providerCredentials: DrasiProviderProps = { ...providerProps, credentials: true };
+// @ts-expect-error Headers cannot accept arbitrary object values through provider props.
+export const providerHeaders: DrasiProviderProps = { ...providerProps, headers: { Authorization: 7 } };
+
+const client = new DrasiClient(clientOptions);
+export const context: DrasiContextValue = { client, initialized: false, error: null, retry() {} };
+// @ts-expect-error Context errors remain structured.
+export const invalidContext: DrasiContextValue = { ...context, error: 'offline' };
+
+export function Consumer(): ReactNode {
+  const temperatures: UseDrasiQueryResult<Temperature> =
+    useDrasiQuery<Temperature>('temperatures', temperatureOptions);
+  const deliveries: UseDrasiQueryResult<Delivery> = useDrasiQuery<Delivery>('deliveries', defaultInput);
+  const defaultResult: UseDrasiQueryResult = useDrasiQuery('other');
+  const rows: ResultRow[] | null = defaultResult.data;
+  // @ts-expect-error Default hook rows are not a typed domain model.
+  const unknownRows: Temperature[] | null = defaultResult.data;
+  // @ts-expect-error Distinct non-Trading result models must remain distinct.
+  const wrongRows: Delivery[] | null = temperatures.data;
+  const resultError: DrasiError | null = temperatures.error;
+  const lastUpdate: Date | null = deliveries.lastUpdate;
+  const definition: UseDrasiQueryDefinitionResult = useDrasiQueryDefinition('temperatures');
+  const config: QueryConfig | null = definition.config;
+  const definitionError: DrasiError | null = definition.error;
+  const loading: boolean = definition.loading;
+  const status: ConnectionStatus = useDrasiConnectionStatus();
+  const url: string | null = useDrasiServerUiUrl();
+  const owner: DrasiContextValue = useDrasiClient();
+  void [rows, unknownRows, wrongRows, resultError, lastUpdate, config, definitionError, loading, status, url, owner];
+  return createElement('p', null, temperatures.data?.[0]?.celsius ?? 'waiting');
+}
+
+export const owned = createElement(DrasiProvider, providerProps, createElement(Consumer));
+export const supplied = createElement(DrasiClientProvider, { value: context }, createElement(Consumer));
+// @ts-expect-error Hook-only entrypoints must not export the component layer.
+import { QueryTable } from '@drasi/react/react';

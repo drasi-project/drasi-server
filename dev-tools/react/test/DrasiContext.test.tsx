@@ -21,7 +21,10 @@ function Probe({ observe = () => {} }: { observe?: (errors: (DrasiError | null |
   const ui = useDrasiServerUiUrl();
   const query = useDrasiQuery<{ id: string; value: number }>('stocks', {
     getKey: row => row.id,
-    transform: row => ({ id: row.id, value: Number(row.value) }),
+    transform: row => {
+      if (typeof row.id !== 'string') throw new Error('Expected row ID');
+      return { id: row.id, value: Number(row.value) };
+    },
   });
   observe([context.error, connection.error, query.error, definition.error]);
   return <div>

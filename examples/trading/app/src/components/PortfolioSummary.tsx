@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from 'react';
-import { useDrasiQuery } from '@drasi/react';
+import { useDrasiQuery } from '@drasi/react/react';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { PortfolioSummary as PortfolioSummaryType } from '@/types';
 import { formatCurrency, formatPercent } from '@/utils/formatters';
@@ -30,7 +30,7 @@ interface PortfolioSummaryProps {
 export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ className }) => {
   const { data, loading } = useDrasiQuery<PortfolioSummaryType>(
     'portfolio-summary-query',
-    tradingQueryOptions<PortfolioSummaryType>('portfolio-summary-query'),
+    tradingQueryOptions('portfolio-summary-query'),
   );
   
   // Get the first (and only) result from the aggregation query

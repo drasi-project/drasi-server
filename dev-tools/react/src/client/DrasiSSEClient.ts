@@ -12,35 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ConnectionStatus, QueryResult, RouteUnidentified } from '../types';
+import type {
+  ConnectionStatus, DrasiHeaders, DrasiHeadersProvider, EventSourceOptions, QueryResult, ReconnectOptions,
+  ResultRow, RouteUnidentified,
+} from './types';
 import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
-import { isRecord } from './resources';
-
-const DEBUG_SSE =
-  (
-    globalThis as typeof globalThis & {
-      process?: { env?: { NODE_ENV?: string } };
-    }
-  ).process?.env?.NODE_ENV === 'development';
+import { isRecord, readRows } from './resources';
+import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
 
 export interface EventSourceLike {
   onopen: ((event: Event) => void) | null;
-  onmessage: ((event: MessageEvent) => void) | null;
+  onmessage: ((event: MessageEvent<string>) => void) | null;
   onerror: ((event: Event) => void) | null;
   addEventListener(type: string, listener: EventListener): void;
   close(): void;
 }
 
-export type EventSourceFactory = (url: string) => EventSourceLike;
+/** Synchronous factory; credentials/headers are resolved afresh before each invocation. */
+export type EventSourceFactory = (url: string, options: EventSourceOptions) => EventSourceLike;
 
-export interface DrasiSSEClientOptions {
+export interface DrasiSSEClientOptions extends ReconnectOptions {
   routeUnidentified?: RouteUnidentified;
   eventSourceFactory?: EventSourceFactory;
-  maxReconnectAttempts?: number;
-  initialReconnectDelayMs?: number;
-  maxReconnectDelayMs?: number;
-  /** Maximum time to open each EventSource (default 10000 ms). */
-  connectionTimeoutMs?: number;
+  credentials?: RequestCredentials;
+  headers?: DrasiHeaders;
   /** Read-only resource validation, including after opaque EventSource errors. */
   validate?: (signal: AbortSignal) => Promise<void>;
   errorDetails?: DrasiErrorDetails;
@@ -49,7 +44,7 @@ export interface DrasiSSEClientOptions {
 interface PendingConnection {
   generation: number;
   resolve: () => void;
-  reject: (error: Error) => void;
+  reject: (error: unknown) => void;
   cleanupAbort: () => void;
 }
 
@@ -87,18 +82,31 @@ export class DrasiSSEClient {
   private readonly connectionTimeoutMs: number;
   private readonly validate?: DrasiSSEClientOptions['validate'];
   private readonly errorDetails: DrasiErrorDetails;
+  private readonly credentials: RequestCredentials;
+  private readonly headers: Headers | DrasiHeadersProvider;
 
   constructor(options: DrasiSSEClientOptions = {}) {
     this.routeUnidentified = options.routeUnidentified;
+    this.errorDetails = options.errorDetails ?? {};
+    this.credentials = validateCredentials(options.credentials, this.errorDetails);
+    this.headers = typeof options.headers === 'function' ? options.headers
+      : requestHeaders(options.headers, undefined, this.errorDetails);
     this.eventSourceFactory =
       options.eventSourceFactory ??
-      ((url) => new EventSource(url) as EventSourceLike);
+      ((url, { credentials }) => {
+        // REST-only inspection remains usable in Node. Reject unsupported
+        // native stream authentication at execution, never silently omit it.
+        if (typeof EventSource === 'undefined' || credentials === 'omit' ||
+            typeof this.headers === 'function' || !this.headers.keys().next().done) {
+          throw new DrasiError('INVALID_CONFIGURATION', this.errorDetails);
+        }
+        return new EventSource(url, { withCredentials: credentials === 'include' });
+      });
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
     this.initialReconnectDelayMs = options.initialReconnectDelayMs ?? 1000;
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30000;
     this.connectionTimeoutMs = options.connectionTimeoutMs ?? 10000;
     this.validate = options.validate;
-    this.errorDetails = options.errorDetails ?? {};
     if (!Number.isInteger(this.maxReconnectAttempts) || this.maxReconnectAttempts < 0 ||
         [this.initialReconnectDelayMs, this.maxReconnectDelayMs, this.connectionTimeoutMs]
           .some(value => !Number.isFinite(value) || value <= 0)) {
@@ -128,7 +136,7 @@ export class DrasiSSEClient {
         if (generation === this.generation) {
           this.manuallyDisconnected = true;
           this.generation += 1;
-          this.stopConnection(abortError());
+          this.stopConnection(signal?.reason ?? abortError());
           this.updateConnectionStatus({ connected: false, reconnecting: false });
         }
       };
@@ -173,12 +181,32 @@ export class DrasiSSEClient {
   }
 
   private createSource(generation: number): void {
+    const controller = this.attemptController;
+    if (!controller || controller.signal.aborted || generation !== this.generation || !this.sseEndpoint) return;
+    this.openTimer = setTimeout(() => {
+      if (this.eventSource) this.handleConnectionError(generation, this.eventSource);
+      else this.handleConnectionFailure(generation, new DrasiError('STREAM_UNAVAILABLE', this.errorDetails));
+    }, this.connectionTimeoutMs);
+    if (typeof this.headers === 'function') {
+      void abortable(resolveHeaders(this.headers, {
+        url: this.sseEndpoint, transport: 'sse', signal: controller.signal,
+        instanceId: this.errorDetails.instanceId,
+      }, this.errorDetails), controller.signal).then(headers => {
+        if (!controller.signal.aborted && generation === this.generation) this.attachSource(generation, headers);
+      }).catch(error => {
+        if (!controller.signal.aborted) this.handleConnectionFailure(generation, error);
+      });
+    } else {
+      this.attachSource(generation, requestHeaders(this.headers, 'sse', this.errorDetails));
+    }
+  }
+
+  private attachSource(generation: number, headers: Headers): void {
     try {
-      DEBUG_SSE &&
-        console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
-      const source = this.eventSourceFactory(this.sseEndpoint!);
+      const source = this.eventSourceFactory(this.sseEndpoint!, {
+        headers, credentials: this.credentials, signal: this.attemptController!.signal,
+      });
       this.eventSource = source;
-      this.openTimer = setTimeout(() => this.handleConnectionError(generation, source), this.connectionTimeoutMs);
 
       source.onopen = () => {
         if (generation !== this.generation || source !== this.eventSource) {
@@ -213,26 +241,20 @@ export class DrasiSSEClient {
         this.handleConnectionError(generation, source);
       };
 
-      source.addEventListener('query-result', ((event: MessageEvent) => {
+      source.addEventListener('query-result', (event: Event) => {
         if (generation !== this.generation || source !== this.eventSource) {
           return;
         }
-        this.parseMessage(event.data, generation);
-      }) as EventListener);
-
-      source.addEventListener('heartbeat', ((event: MessageEvent) => {
-        if (generation !== this.generation || source !== this.eventSource) {
-          return;
-        }
-        DEBUG_SSE && console.log('Heartbeat received:', event.data);
-      }) as EventListener);
+        this.parseMessage('data' in event ? event.data : undefined, generation);
+      });
     } catch (error) {
       this.handleConnectionFailure(generation, error);
     }
   }
 
-  private parseMessage(rawData: string, generation: number): void {
+  private parseMessage(rawData: unknown, generation: number): void {
     try {
+      if (typeof rawData !== 'string') throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
       const data: unknown = JSON.parse(rawData);
       if (!isRecord(data)) throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
       this.handleSSEMessage(data);
@@ -320,7 +342,7 @@ export class DrasiSSEClient {
     pending.resolve();
   }
 
-  private rejectPendingConnection(generation: number, error: Error): void {
+  private rejectPendingConnection(generation: number, error: unknown): void {
     const pending = this.pendingConnection;
     if (!pending || pending.generation !== generation) return;
     this.pendingConnection = null;
@@ -340,7 +362,7 @@ export class DrasiSSEClient {
     this.openTimer = null;
   }
 
-  private stopConnection(error: Error): void {
+  private stopConnection(error: unknown): void {
     this.clearReconnectTimer();
     this.clearOpenTimer();
     this.attemptController?.abort();
@@ -357,7 +379,7 @@ export class DrasiSSEClient {
     }
   }
 
-  private handleSSEMessage(data: any): void {
+  private handleSSEMessage(data: ResultRow): void {
     if (data.type === 'heartbeat') {
       return;
     }
@@ -371,21 +393,24 @@ export class DrasiSSEClient {
         .some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
         throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
       }
-      const allResults: any[] = [];
+      const allResults: ResultRow[] = [];
 
       if (Array.isArray(data.addedResults)) {
         for (const result of data.addedResults) {
-          allResults.push(result.after || result);
+          const row = this.row(result);
+          allResults.push(this.row(row.after || row));
         }
       }
       if (Array.isArray(data.updatedResults)) {
         for (const result of data.updatedResults) {
-          allResults.push(result.after || result);
+          const row = this.row(result);
+          allResults.push(this.row(row.after || row));
         }
       }
       if (Array.isArray(data.deletedResults)) {
         for (const result of data.deletedResults) {
-          const item = result.before || result;
+          const row = this.row(result);
+          const item = this.row(row.before || row);
           allResults.push({ ...item, _deleted: true });
         }
       }
@@ -416,19 +441,31 @@ export class DrasiSSEClient {
     throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
-  private handleKeyedBatch(queryId: string, data: any): void {
+  private timestamp(value: unknown): number {
+    if (!value) return Date.now();
+    if (typeof value !== 'number' && typeof value !== 'string') {
+      throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
+    }
+    const timestamp = new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
+    return timestamp;
+  }
+
+  private row(value: unknown): ResultRow {
+    return readRows([value], this.errorDetails)[0];
+  }
+
+  private handleKeyedBatch(queryId: string, data: ResultRow): void {
     if (Array.isArray(data.results)) {
       const extractedData = data.results
-        .map((result: any) => this.extractRow(result))
-        .filter((item: any) => item != null);
+        .map((result: unknown) => this.extractRow(result))
+        .filter((item): item is ResultRow => item !== null);
 
       if (extractedData.length > 0) {
         this.handleQueryResult({
           queryId,
           data: extractedData,
-          timestamp: data.timestamp
-            ? new Date(data.timestamp).getTime()
-            : Date.now(),
+          timestamp: this.timestamp(data.timestamp),
         });
       }
       return;
@@ -437,10 +474,8 @@ export class DrasiSSEClient {
     if (data.type && data.data) {
       this.handleQueryResult({
         queryId,
-        data: [data.data],
-        timestamp: data.timestamp
-          ? new Date(data.timestamp).getTime()
-          : Date.now(),
+        data: [this.row(data.data)],
+        timestamp: this.timestamp(data.timestamp),
       });
       return;
     }
@@ -448,56 +483,53 @@ export class DrasiSSEClient {
     if (data.data !== undefined) {
       this.handleQueryResult({
         queryId,
-        data: Array.isArray(data.data) ? data.data : [data.data],
-        timestamp: data.timestamp
-          ? new Date(data.timestamp).getTime()
-          : Date.now(),
+        data: readRows(Array.isArray(data.data) ? data.data : [data.data], this.errorDetails),
+        timestamp: this.timestamp(data.timestamp),
       });
       return;
     }
     throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
-  private extractRow(result: any): any {
-    if (result == null || typeof result !== 'object') {
-      return result;
-    }
+  private extractRow(value: unknown): ResultRow | null {
+    if (value == null) return null;
+    const result = this.row(value);
     if (result.type === 'aggregation' && result.after) {
-      return result.after;
+      return this.row(result.after);
     }
     if (result.op === 'd' || (result.op === 'u' && !result.after)) {
       if (result.before) {
-        return { ...result.before, _deleted: true };
+        return { ...this.row(result.before), _deleted: true };
       }
     }
     if (
       (result.op === 'c' || result.op === 'r' || result.op === 'u') &&
       result.after
     ) {
-      return result.after;
+      return this.row(result.after);
     }
     if (result.type === 'delete' || result.type === 'DELETE') {
       const deleteData = result.before || result.data;
       if (deleteData) {
-        return { ...deleteData, _deleted: true };
+        return { ...this.row(deleteData), _deleted: true };
       }
     }
     if ((result.type === 'add' || result.type === 'ADD') && result.data) {
-      return result.data;
+      return this.row(result.data);
     }
     if (
       (result.type === 'update' || result.type === 'UPDATE') &&
       result.after
     ) {
-      return result.after;
+      return this.row(result.after);
     }
     if (result.data !== undefined) {
-      return result.data;
+      return this.row(result.data);
     }
     return result;
   }
 
-  private routeContentBasedResults(rows: any[]): void {
+  private routeContentBasedResults(rows: ResultRow[]): void {
     if (this.routeUnidentified) {
       this.routeUnidentified(rows, (queryId, data) => this.deliverToQuery(queryId, data));
       return;
@@ -505,8 +537,8 @@ export class DrasiSSEClient {
     throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
-  private deliverToQuery(queryId: string, data: any[]): void {
-    this.handleQueryResult({ queryId, data, timestamp: Date.now() });
+  private deliverToQuery(queryId: string, data: ResultRow[]): void {
+    this.handleQueryResult({ queryId, data: readRows(data, this.errorDetails), timestamp: Date.now() });
   }
 
   private handleQueryResult(result: QueryResult): void {
@@ -516,11 +548,8 @@ export class DrasiSSEClient {
     subscribers.forEach((callback) => {
       try {
         callback(result);
-      } catch (error) {
-        console.error(
-          `Error in subscriber callback for ${result.queryId}:`,
-          error,
-        );
+      } catch {
+        console.error('Drasi result subscriber failed.');
       }
     });
   }
@@ -564,8 +593,8 @@ export class DrasiSSEClient {
     this.statusListeners.forEach((listener) => {
       try {
         listener({ ...status });
-      } catch (error) {
-        console.error('Error in status listener:', error);
+      } catch {
+        console.error('Drasi connection status listener failed.');
       }
     });
   }

@@ -13,68 +13,90 @@
 // limitations under the License.
 
 import {
+  act,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const hooks = vi.hoisted(() => ({
-  useDrasiQuery: vi.fn(),
-  useDrasiQueryDefinition: vi.fn(),
-  useDrasiServerUiUrl: vi.fn(),
-}));
-
-vi.mock('../src/react/DrasiContext', () => hooks);
-
-import { QueryTable } from '../src/components/QueryTable';
-import { DrasiError } from '../src/client/errors';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import {
+  QueryTable,
+  type ColumnDef,
+  type QueryTableProps,
+  type RowAction,
+  type SortConfig,
+} from '../src/components';
+import { DrasiProvider } from '../src/react/DrasiContext';
+import type { ResultRow } from '../src/client/types';
+import type { UseDrasiQueryOptions } from '../src/react/types';
+import type { AnimationDirection } from '../src/react/useRowAnimation';
+import { fakeEventSourceFactory } from './FakeEventSource';
+import { ReadServer, json, refs } from './server';
 
 interface Stock {
   symbol: string;
   price: number;
 }
 
-const columns = [
-  { key: 'symbol' as const, label: 'Symbol', width: '5rem' },
-  { key: 'price' as const, label: 'Price' },
+const columns: ColumnDef<Stock>[] = [
+  { key: 'symbol', label: 'Symbol', width: '5rem' },
+  { key: 'price', label: 'Price' },
 ];
 
-beforeEach(() => {
-  hooks.useDrasiQueryDefinition.mockReturnValue({
-    config: {},
-    loading: false,
-    error: null,
-  });
-  hooks.useDrasiServerUiUrl.mockReturnValue(null);
-});
+const stockOptions: UseDrasiQueryOptions<Stock> = {
+  transform: row => {
+    if (typeof row.symbol !== 'string' || typeof row.price !== 'number') {
+      throw new TypeError('Invalid synthetic stock row');
+    }
+    return { symbol: row.symbol, price: row.price };
+  },
+};
+
+function renderTable<T extends object>(
+  props: QueryTableProps<T>,
+  rows: ResultRow[],
+  server = new ReadServer(),
+) {
+  server.snapshot = () => Promise.resolve(json(rows));
+  const factory = fakeEventSourceFactory();
+  const rendered = render(
+    <DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={factory.create}>
+      <QueryTable {...props} />
+    </DrasiProvider>,
+  );
+  return {
+    ...rendered,
+    factory,
+    async connect() {
+      await waitFor(() => expect(factory.instances).toHaveLength(1));
+      act(() => factory.instances[0].open());
+      await screen.findByRole('table');
+    },
+  };
+}
 
 describe('QueryTable', () => {
-  it('uses rowKey for accumulation and supports accessible sorting', () => {
-    hooks.useDrasiQuery.mockReturnValue({
-      data: [
-        { symbol: 'MSFT', price: 12 },
-        { symbol: 'AAPL', price: 10 },
-      ],
-      loading: false,
-      error: null,
-      lastUpdate: null,
-    });
-    const rowKey = (row: Stock) => row.symbol;
+  it('uses the typed rowKey after transformation for accumulation and accessible sorting', async () => {
+    const table = renderTable<Stock>({
+      queryId: 'stocks',
+      columns,
+      rowKey: row => row.symbol,
+      queryOptions: stockOptions,
+      defaultSort: { column: 'symbol', direction: 'asc' },
+    }, [
+      { symbol: 'MSFT', price: 12 },
+      { symbol: 'AAPL', price: 10 },
+    ]);
+    await table.connect();
 
-    render(
-      <QueryTable<Stock>
-        queryId="stocks"
-        columns={columns}
-        rowKey={rowKey}
-        defaultSort={{ column: 'symbol', direction: 'asc' }}
-      />,
-    );
-
-    const queryOptions = hooks.useDrasiQuery.mock.calls[0][1];
-    expect(queryOptions.getKey({ symbol: 'AAPL', price: 10 })).toBe('AAPL');
+    act(() => table.factory.instances[0].message({
+      queryId: 'stocks', data: { symbol: 'AAPL', price: 11 },
+    }));
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+    expect(screen.queryByText('10')).toBeNull();
+    expect(screen.getByText('11')).not.toBeNull();
 
     const symbolHeader = screen.getByRole('columnheader', { name: /symbol/i });
     expect(symbolHeader.getAttribute('aria-sort')).toBe('ascending');
@@ -90,33 +112,19 @@ describe('QueryTable', () => {
     ).not.toBeNull();
   });
 
-  it('renders query errors instead of an empty table', () => {
-    hooks.useDrasiQuery.mockReturnValue({
-      data: null,
-      loading: false,
-      error: new DrasiError('QUERY_NOT_FOUND'),
-      lastUpdate: null,
-    });
+  it('renders real query lookup errors instead of an empty table', async () => {
+    const server = new ReadServer();
+    server.missing = 'query';
+    const table = renderTable<Stock>({
+      queryId: 'stocks', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
+    }, [], server);
 
-    render(
-      <QueryTable<Stock>
-        queryId="stocks"
-        columns={columns}
-        rowKey={(row) => row.symbol}
-      />,
-    );
-
-    expect(screen.getByText('Error: The referenced query does not exist.')).not.toBeNull();
+    expect(await screen.findByText('Error: The referenced query does not exist.')).not.toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
+    expect(table.factory.instances).toHaveLength(0);
   });
 
   it('restores page scrolling when an expanded table enters an error state', async () => {
-    hooks.useDrasiQuery.mockReturnValue({
-      data: [{ symbol: 'AAPL', price: 10 }],
-      loading: false,
-      error: null,
-      lastUpdate: null,
-    });
     const requestFrame = vi
       .spyOn(window, 'requestAnimationFrame')
       .mockReturnValue(1);
@@ -124,34 +132,126 @@ describe('QueryTable', () => {
       .spyOn(window, 'cancelAnimationFrame')
       .mockImplementation(() => {});
 
-    const rendered = render(
-      <QueryTable<Stock>
-        queryId="stocks"
-        title="Stocks"
-        columns={columns}
-        rowKey={(row) => row.symbol}
-      />,
-    );
+    const table = renderTable<Stock>({
+      queryId: 'stocks', title: 'Stocks', columns,
+      rowKey: row => row.symbol, queryOptions: stockOptions,
+    }, [{ symbol: 'AAPL', price: 10 }]);
+    await table.connect();
     fireEvent.click(screen.getByRole('button', { name: 'Expand table' }));
     expect(document.body.style.overflow).toBe('hidden');
 
-    hooks.useDrasiQuery.mockReturnValue({
-      data: null,
-      loading: false,
-      error: new DrasiError('QUERY_NOT_FOUND'),
-      lastUpdate: null,
-    });
-    rendered.rerender(
-      <QueryTable<Stock>
-        queryId="stocks"
-        title="Stocks"
-        columns={columns}
-        rowKey={(row) => row.symbol}
-      />,
-    );
+    act(() => table.factory.instances[0].onmessage?.(
+      new MessageEvent('message', { data: 'broken JSON' }),
+    ));
 
+    await screen.findByText(/Error: .*malformed/);
     await waitFor(() => expect(document.body.style.overflow).toBe(''));
     requestFrame.mockRestore();
     cancelFrame.mockRestore();
+  });
+
+  it('supports computed columns, typed actions and non-visible default sorts for non-indexed row interfaces', async () => {
+    interface Device {
+      identity: { code: string };
+      rank: number;
+      units: number;
+      locked: boolean;
+      pending: boolean;
+    }
+
+    expectTypeOf<Parameters<NonNullable<ColumnDef<Device>['format']>>>()
+      .toEqualTypeOf<[unknown, Device]>();
+    expectTypeOf<Parameters<Exclude<ColumnDef<Device>['className'], string | undefined>>>()
+      .toEqualTypeOf<[unknown, Device]>();
+    const onInspect = vi.fn<(row: Device) => void>();
+    const onSort = vi.fn<(sort: SortConfig) => void>();
+    const format = vi.fn((value: unknown, row: Device) => {
+      expect(value).toBeUndefined();
+      return `${row.identity.code}: ${row.units} units`;
+    });
+    const deviceColumns: ColumnDef<Device>[] = [{
+      key: 'computed-summary',
+      label: 'Device',
+      format,
+      className: (value, row) => {
+        expectTypeOf(value).toEqualTypeOf<unknown>();
+        return row.locked ? 'locked-device' : 'available-device';
+      },
+      sortable: false,
+    }, { key: 'units', label: 'Units' }];
+    const actions: RowAction<Device>[] = [{
+      icon: '?', label: 'Inspect', onClick: onInspect,
+      disabled: row => row.locked, loading: row => row.pending,
+    }];
+    const table = renderTable<Device>({
+      queryId: 'stocks',
+      columns: deviceColumns,
+      actions,
+      rowKey: row => row.identity.code,
+      queryOptions: {
+        transform: row => ({
+          identity: { code: String(row.code) },
+          rank: Number(row.rank),
+          units: Number(row.units),
+          locked: row.locked === true,
+          pending: row.pending === true,
+        }),
+      },
+      defaultSort: { column: 'rank', direction: 'desc' },
+      onSortChange: onSort,
+      renderRow: (row, renderedColumns, animation, defaultRender) => {
+        expectTypeOf(row).toEqualTypeOf<Device>();
+        expectTypeOf(renderedColumns).toEqualTypeOf<ColumnDef<Device>[]>();
+        expectTypeOf(animation).toEqualTypeOf<AnimationDirection>();
+        return defaultRender();
+      },
+    }, [
+      { code: 'rack-a', rank: 2, units: 10 },
+      { code: 'rack-b', rank: 3, units: 2, locked: true },
+      { code: 'rack-c', rank: 1, units: 30, pending: true },
+    ]);
+    await table.connect();
+    expect(screen.getAllByRole('row').slice(1).map(row => row.textContent))
+      .toEqual(['rack-b: 2 units2?', 'rack-a: 10 units10?', 'rack-c: 30 units30']);
+    expect(screen.getByText('rack-b: 2 units').classList.contains('locked-device')).toBe(true);
+
+    const buttons = screen.getAllByRole('button', { name: 'Inspect' });
+    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[2]);
+    expect(onInspect).not.toHaveBeenCalled();
+    fireEvent.click(buttons[1]);
+    expect(onInspect).toHaveBeenCalledWith({
+      identity: { code: 'rack-a' }, rank: 2, units: 10, locked: false, pending: false,
+    });
+
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Device' }));
+    expect(onSort).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Units' }));
+    expect(onSort).toHaveBeenLastCalledWith({ column: 'units', direction: 'asc' });
+    expect(format).toHaveBeenCalled();
+  });
+
+  it('retains string, mixed-value and null ordering without coercing raw cells', async () => {
+    interface Row { code: string; value: unknown }
+    const table = renderTable<Row>({
+      queryId: 'stocks',
+      columns: [{ key: 'code', label: 'Code' }, { key: 'value', label: 'Value' }],
+      rowKey: row => row.code,
+      queryOptions: { transform: row => ({ code: String(row.code), value: row.value }) },
+      defaultSort: { column: 'value', direction: 'asc' },
+    }, [
+      { code: 'two', value: '2' },
+      { code: 'ten', value: '10' },
+      { code: 'numeric', value: 3 },
+      { code: 'null', value: null },
+      { code: 'missing' },
+    ]);
+    await table.connect();
+    const codes = () => screen.getAllByRole('row').slice(1)
+      .map(row => within(row).getAllByRole('cell')[0].textContent);
+    expect(codes()).toEqual(['ten', 'two', 'numeric', 'null', 'missing']);
+    expect(screen.getAllByText('-')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
+    expect(codes()).toEqual(['null', 'missing', 'numeric', 'two', 'ten']);
   });
 });

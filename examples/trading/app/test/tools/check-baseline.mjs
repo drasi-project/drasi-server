@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { assertBaseline } from './metrics-policy.mjs';
+import { assertBaseline, measurePackageModules } from './metrics-policy.mjs';
 
 const [archiveArgument, appArgument, packageCoverageArgument, mode] = process.argv.slice(2);
 assert(archiveArgument && appArgument && packageCoverageArgument,
@@ -30,11 +30,10 @@ function packedBytes(path) {
 }
 
 const assets = await readdir(join(app, 'dist/assets'));
+const packedPaths = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split('\n');
 const sizes = {
   packageTarball: (await stat(archive)).size,
-  packageEsm: packedBytes('dist/index.js'),
-  packageCjs: packedBytes('dist/index.cjs'),
-  packageTypes: packedBytes('dist/index.d.ts'),
+  ...measurePackageModules(packedPaths, path => execFileSync('tar', ['-xOf', archive, path]).length),
   packageCss: packedBytes('styles.css'),
   tradingJs: 0, tradingJsGzip: 0, tradingCss: 0, tradingCssGzip: 0,
 };

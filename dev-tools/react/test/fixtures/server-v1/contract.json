@@ -1,0 +1,107 @@
+{
+  "provenance": {
+    "capturedAt": "2026-09-19T08:34:20.080Z",
+    "serverVersion": "0.2.1",
+    "serverRevision": "3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97",
+    "serverBinarySha256": "3686a0288fcb15ddd3067c16be7b096a8b0262731cf0bf7f1de2ec078fc60aa9",
+    "cargoLockSha256": "7405a70dfa40b5f3c9f007468acd00b9d63bef4d718d6315444829db19d8f6a4",
+    "engineRevision": "1284e9f648634c1faa73fd897a21c2712bb0cbbe",
+    "engineVersion": "0.5.8",
+    "libraryVersion": "0.8.9",
+    "sdkVersion": "0.10.0",
+    "ssePluginVersion": "0.3.4",
+    "pluginAbi": "0.11.0",
+    "platform": "darwin/arm64",
+    "capture": "examples/trading/app/test/live/trading.live.spec.ts; live-eCvq2z; server-rest.json",
+    "note": "Unmodified response bodies from owned disposable seed data. The frontend had P3 changes; frozen backend sources/lock were unchanged from serverRevision. Port is the actual ephemeral reaction listener."
+  },
+  "query": {
+    "path": "/api/v1/instances/trading-server/queries/watchlist-query?view=full",
+    "recordedAt": "2026-09-19T08:34:20.080Z",
+    "body": {
+      "success": true,
+      "data": {
+        "id": "watchlist-query",
+        "status": "Running",
+        "links": {
+          "self": "/api/v1/instances/trading-server/queries/watchlist-query",
+          "full": "/api/v1/instances/trading-server/queries/watchlist-query?view=full"
+        },
+        "config": {
+          "autoStart": true,
+          "bootstrapBufferSize": 10000,
+          "bootstrapTimeoutSecs": 300,
+          "enableBootstrap": true,
+          "id": "watchlist-query",
+          "joins": [
+            {
+              "id": "ON_WATCHLIST",
+              "keys": [
+                { "label": "watchlist", "property": "symbol" },
+                { "label": "stocks", "property": "symbol" }
+              ]
+            },
+            {
+              "id": "HAS_PRICE",
+              "keys": [
+                { "label": "stocks", "property": "symbol" },
+                { "label": "stock_prices", "property": "symbol" }
+              ]
+            }
+          ],
+          "middleware": [],
+          "outboxCapacity": 1000,
+          "query": "\n    MATCH (w:watchlist)-[:ON_WATCHLIST]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)\n    RETURN s.symbol AS symbol,\n           s.name AS name,\n           sp.price AS price,\n           sp.previous_close AS previousClose,\n           ((sp.price - sp.previous_close) / sp.previous_close * 100) AS changePercent\n  ",
+          "queryLanguage": "Cypher",
+          "sources": [
+            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "postgres-stocks" },
+            { "nodes": [], "pipeline": [], "relations": [], "sourceId": "price-feed" }
+          ]
+        }
+      },
+      "error": null
+    }
+  },
+  "reaction": {
+    "path": "/api/v1/reactions/sse-stream?view=full",
+    "recordedAt": "2026-09-19T08:34:20.082Z",
+    "body": {
+      "success": true,
+      "data": {
+        "id": "sse-stream",
+        "status": "Running",
+        "links": {
+          "self": "/api/v1/instances/trading-server/reactions/sse-stream",
+          "full": "/api/v1/instances/trading-server/reactions/sse-stream?view=full"
+        },
+        "config": {
+          "heartbeatIntervalMs": 15000,
+          "host": "127.0.0.1",
+          "id": "sse-stream",
+          "kind": "sse",
+          "port": 59176,
+          "queries": [
+            "watchlist-query", "portfolio-query", "top-gainers-query", "top-losers-query",
+            "high-volume-query", "price-ticker-query", "sector-performance-query",
+            "portfolio-summary-query", "active-orders-query", "stale-orders-query",
+            "expiring-orders-query"
+          ],
+          "ssePath": "/events"
+        }
+      },
+      "error": null
+    }
+  },
+  "snapshot": {
+    "path": "/api/v1/queries/watchlist-query/results",
+    "recordedAt": "2026-09-19T08:34:20.083Z",
+    "body": {
+      "success": true,
+      "data": [
+        { "changePercent": -10, "name": "Microsoft Corporation", "previousClose": 200, "price": 180, "symbol": "MSFT" },
+        { "changePercent": 10, "name": "Apple Inc.", "previousClose": 100, "price": 110, "symbol": "AAPL" }
+      ],
+      "error": null
+    }
+  }
+}

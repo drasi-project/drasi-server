@@ -3,8 +3,8 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import { DrasiClient, DrasiError, type Component, type QueryConfig } from '@drasi/react';
-import { TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION } from './config';
+import { DrasiClient, DrasiError, type Component } from '@drasi/react/client';
+import { TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, type TradingQueryDefinition } from './config';
 
 const SETUP_TIMEOUT_MS = 60000;
 const POLL_MS = 200;
@@ -69,7 +69,7 @@ export async function resolveTradingInstance(
   return data[0].id;
 }
 
-function queryContract(config: QueryConfig): string {
+function queryContract(config: TradingQueryDefinition): string {
   return JSON.stringify({
     query: config.query.trim(),
     language: config.queryLanguage,
@@ -114,7 +114,7 @@ async function prepare({ client, serverUrl, fetch: fetcher }: SetupOptions, sign
       throw new DrasiError('RESOURCE_UNAVAILABLE', { ...details(kind, component.id), resourceStatus: component.status });
     }
   };
-  const readQuery = async (definition: QueryConfig) => {
+  const readQuery = async (definition: TradingQueryDefinition) => {
     const component = await client.getQuery(definition.id, signal);
     if (queryContract(component.config) !== queryContract(definition)) {
       throw new DrasiError('INCOMPATIBLE_RESOURCE', details('query', definition.id));
