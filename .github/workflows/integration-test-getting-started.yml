@@ -2,9 +2,6 @@ name: Getting Started Test
 
 on:
   pull_request:
-    branches:
-      - main
-      - feature-lib
   push:
     branches:
       - main
@@ -58,7 +55,9 @@ jobs:
           ./tests/integration/getting-started/setup-postgres.sh
 
       - name: Build Drasi Server
-        run: cargo build --release
+        run: |
+          bash scripts/prepare-core.sh
+          cargo build --locked --release
 
       - name: Run integration tests
         run: ./tests/integration/getting-started/run-integration-test.sh

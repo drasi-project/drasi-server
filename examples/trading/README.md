@@ -103,20 +103,26 @@ There are three ways to run the Trading Demo:
 
 ### Option 1: Dev Container (Recommended)
 
-Open this repository in VS Code and select **"Reopen in Container"** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`). When prompted, choose **"Drasi Server - Trading Demo"**. The demo will build and start automatically — once the container is ready, open **http://localhost:5273** to see the live trading dashboard.
+Open this repository in VS Code and select **"Reopen in Container"** from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`). When prompted, choose **"Drasi Server - Trading Demo"**. Post-create prepares the exact compatible sibling engine, builds this checkout and its Web UI, and installs the preserved signed plugins. Once ready, run `bash examples/trading/start-demo.sh` and open **http://localhost:5273**.
 
 ### Option 2: GitHub Codespaces
 
-Click **Code → Codespaces → New codespace** on the repository's GitHub page. Select the **"Drasi Server - Trading Demo"** dev container configuration. The demo will start automatically once the codespace is ready. Open the forwarded port **5273** from the Ports tab.
+Click **Code → Codespaces → New codespace** on the repository's GitHub page. Select the **"Drasi Server - Trading Demo"** dev container configuration. After the source-backed setup completes, run `bash examples/trading/start-demo.sh`. Open the forwarded port **5273** from the Ports tab.
+
+Both routes use the same source/plugin preparation as local startup, not an
+arbitrary latest release or an empty UI placeholder. The unpublished
+[engine prerequisite](../../docs/engine-prerequisite.md) does not modify any
+published binary. Existing mismatched core checkouts or conflicting plugin pins
+fail without being overwritten.
 
 ### Option 3: Run Locally
 
 #### Prerequisites
 
 - **Docker** and Docker Compose (for PostgreSQL)
-- **Node.js 16+** and npm (for the React app)
-- **Python 3.7+** (for the price generator)
-- **Rust toolchain** (if building Drasi Server from source)
+- **Node.js 22** and npm (the existing CI baseline)
+- **Python 3.11+** (plugin preparation and the price generator)
+- **Rust toolchain** from the repository's `rust-toolchain.toml`
 
 #### One-Command Start
 
@@ -127,7 +133,7 @@ Click **Code → Codespaces → New codespace** on the repository's GitHub page.
 
 This script:
 1. Starts PostgreSQL with sample data (50 stocks, 8 portfolio positions)
-2. Builds and starts Drasi Server with sources configured
+2. Builds this checkout and its Web UI with the exact sibling engine and compatible signed plugins, then starts Drasi Server with sources configured
 3. Installs dependencies and starts the React app
 4. Starts the Python price generator
 
@@ -158,9 +164,15 @@ This starts PostgreSQL with:
 
 ```bash
 # From drasi-server root directory
-cargo build --release
+bash scripts/prepare-trading.sh
 ./target/release/drasi-server --config examples/trading/server/trading-sources-only.yaml
 ```
+
+Preparation installs the SSE plugin but does not create any queries or
+reactions; the app still performs its existing automatic setup. Registry-SDK
+mode verifies signatures. Deliberate matching local-SDK development remains a
+separate unsigned-plugin mode, selected by Cargo's resolved origins rather than
+the existence of `../drasi-core`.
 
 The server starts with two sources pre-configured:
 - `postgres-stocks`: CDC source monitoring stocks and portfolio tables

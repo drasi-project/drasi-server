@@ -1,0 +1,51 @@
+# Source manifests: drasi-project/drasi-core@e05938237fd8c2c8a46bb40580c6971e53088fce
+# bootstrap/scriptfile is reused from the unchanged Trading platform lock.
+version = 1
+
+[plugins."reaction/http:0.3.1"]
+reference = "ghcr.io/drasi-project/reaction/http@sha256:80e394034ff7b18be78c7e66ed1336668a1c96fd2168e9ea72beabea63522be0"
+version = "0.3.1"
+digest = "sha256:80e394034ff7b18be78c7e66ed1336668a1c96fd2168e9ea72beabea63522be0"
+sdk_version = "0.10.0"
+core_version = "0.5.7"
+lib_version = "0.8.9"
+platform = "darwin/arm64"
+filename = "libdrasi_reaction_http.dylib"
+file_hash = "bb4006cacabc2a824a83e0ce816f066383bc31e2bedd80f93685844a98b29bea"
+
+[plugins."reaction/http:0.3.1".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."reaction/log:0.2.5"]
+reference = "ghcr.io/drasi-project/reaction/log@sha256:061bd482f6658803a4bec171b949ed3f8cd7f4a2a216c6dc5369fa3c21a50d8c"
+version = "0.2.5"
+digest = "sha256:061bd482f6658803a4bec171b949ed3f8cd7f4a2a216c6dc5369fa3c21a50d8c"
+sdk_version = "0.10.0"
+core_version = "0.5.7"
+lib_version = "0.8.9"
+platform = "darwin/arm64"
+filename = "libdrasi_reaction_log.dylib"
+file_hash = "1f4c573d4f445e8dff59d005d19c2b0fe3981ab58baa5df3c7d91cb1ffa6e27d"
+
+[plugins."reaction/log:0.2.5".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."source/mock:0.2.7"]
+reference = "ghcr.io/drasi-project/source/mock@sha256:4a9dfd4d8007e14f4c56df404d61e1f03b35c5a051b7147c195f0b209af22e59"
+version = "0.2.7"
+digest = "sha256:4a9dfd4d8007e14f4c56df404d61e1f03b35c5a051b7147c195f0b209af22e59"
+sdk_version = "0.10.0"
+core_version = "0.5.7"
+lib_version = "0.8.9"
+platform = "darwin/arm64"
+filename = "libdrasi_source_mock.dylib"
+file_hash = "43398983e3f92d40f86d65b95699584026a627cacf5302fbf7550037491e7299"
+
+[plugins."source/mock:0.2.7".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"

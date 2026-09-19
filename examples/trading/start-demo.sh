@@ -82,25 +82,20 @@ if ! command_exists python3; then
     exit 1
 fi
 
-if [ ! -f "$DRASI_SERVER_ROOT/target/release/drasi-server" ]; then
-    echo -e "${YELLOW}Drasi Server binary not found. Building (server + Web UI)...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    # Use the Makefile target so the Web UI (ui/dist) is built alongside the binary.
-    # `cargo build --release` alone does NOT build the UI and the /ui route would 404.
-    make build-release
-elif [ ! -d "$DRASI_SERVER_ROOT/ui/dist" ]; then
-    echo -e "${YELLOW}Web UI not built (ui/dist missing). Building UI...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-ui
-fi
-
-# Ensure local plugins are built (required when using [patch.crates-io] with local drasi-core)
-PLUGINS_DIR="$DRASI_SERVER_ROOT/target/release/plugins"
-if [ ! -d "$PLUGINS_DIR" ] || [ -z "$(ls -A "$PLUGINS_DIR"/*.dylib "$PLUGINS_DIR"/*.so "$PLUGINS_DIR"/*.dll 2>/dev/null)" ]; then
-    echo -e "${YELLOW}No local plugins found. Building from drasi-core...${NC}"
-    cd "$DRASI_SERVER_ROOT"
-    make build-local-plugins
-fi
+# An engine-only path patch does not change the SDK or authorize local plugin builds.
+PLUGIN_MODE="$(bash "$DRASI_SERVER_ROOT/scripts/prepare-trading.sh")"
+PLUGIN_VERIFICATION_ARGS=()
+case "$PLUGIN_MODE" in
+    registry) ;;
+    local)
+        # Only genuinely matching local SDK development uses unsigned local binaries.
+        PLUGIN_VERIFICATION_ARGS=(--skip-verification)
+        ;;
+    *)
+        echo "Unsupported plugin dependency origin: $PLUGIN_MODE" >&2
+        exit 1
+        ;;
+esac
 
 echo -e "${GREEN}All prerequisites met!${NC}"
 echo ""
@@ -155,7 +150,7 @@ echo "Step 2: Starting Drasi Server (sources only - app creates queries dynamica
 
 cd "$DRASI_SERVER_ROOT"
 RUST_LOG=info,drasi_server::sources::postgres=debug \
-    ./target/release/drasi-server --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
+    ./target/release/drasi-server "${PLUGIN_VERIFICATION_ARGS[@]}" --config "examples/trading/server/trading-sources-only.yaml" > "$LOG_DIR/drasi-server.log" 2>&1 &
 DRASI_PID=$!
 echo "Drasi Server started with PID: $DRASI_PID"
 echo "Replication source will bootstrap initial data from PostgreSQL..."
@@ -205,12 +200,7 @@ sleep 3
 echo ""
 echo "Step 3: Setting up React application..."
 cd "$SCRIPT_DIR/app"
-if [ ! -d "node_modules" ]; then
-    echo "Installing npm dependencies..."
-    npm install
-else
-    echo "Dependencies already installed"
-fi
+echo "Locked package and app dependencies are prepared"
 
 # Step 4: Start React app
 echo "Starting React application..."

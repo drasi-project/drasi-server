@@ -2,8 +2,6 @@ name: Test
 
 on:
   pull_request:
-    branches:
-      - main
 
 jobs:
   test:
@@ -11,3 +9,7 @@ jobs:
     with:
       install-jq: true
       install-protobuf: true
+      test-command: |
+        bash scripts/prepare-core.sh
+        make test-tooling
+        cargo test --locked
