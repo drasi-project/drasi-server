@@ -4,7 +4,7 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import type { Component, ComponentStatus, QueryConfig, ReactionConfig } from '../types';
-import { DrasiError, type DrasiErrorDetails } from './errors';
+import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -101,6 +101,14 @@ export function requireRunning(component: Component<unknown>, details: DrasiErro
   throw new DrasiError(code, { ...details, resourceStatus: component.status });
 }
 
+async function readJson(response: Response, details: DrasiErrorDetails): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw asDrasiError(error, details, error instanceof SyntaxError ? 'INVALID_PAYLOAD' : 'SERVER_UNAVAILABLE');
+  }
+}
+
 export async function readResponse(response: Response, details: DrasiErrorDetails): Promise<unknown> {
   if (!response.ok) {
     const errorDetails = { ...details, status: response.status };
@@ -109,7 +117,7 @@ export async function readResponse(response: Response, details: DrasiErrorDetail
     if (response.status === 404) {
       // Only a structured REST resource error establishes absence. HTML 404s
       // (for example a wrong proxy URL) must never authorize app provisioning.
-      const body: unknown = await response.json().catch(() => null);
+      const body = await readJson(response, errorDetails);
       const code = isRecord(body) ? body.code : null;
       if (code === 'INSTANCE_NOT_FOUND') {
         throw new DrasiError(code, {
@@ -128,9 +136,7 @@ export async function readResponse(response: Response, details: DrasiErrorDetail
       errorDetails,
     );
   }
-  const body: unknown = await response.json().catch(() => {
-    throw new DrasiError('INVALID_PAYLOAD', details);
-  });
+  const body = await readJson(response, details);
   if (!isRecord(body) || body.success !== true || !('data' in body)) {
     throw new DrasiError('INVALID_PAYLOAD', details);
   }

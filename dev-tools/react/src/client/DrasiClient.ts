@@ -116,6 +116,7 @@ export class DrasiClient {
       return data;
     } catch (error) {
       signal?.throwIfAborted();
+      if (controller.signal.aborted) throw new DrasiError('SERVER_UNAVAILABLE', details);
       throw asDrasiError(error, details, 'SERVER_UNAVAILABLE');
     } finally {
       clearTimeout(timer);

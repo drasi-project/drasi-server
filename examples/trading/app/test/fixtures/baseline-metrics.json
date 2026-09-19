@@ -33,13 +33,13 @@
     }
   },
   "sizes": {
-    "packageTarball": 124624,
-    "packageEsm": 72589,
-    "packageCjs": 74635,
+    "packageTarball": 124896,
+    "packageEsm": 72843,
+    "packageCjs": 74889,
     "packageTypes": 21140,
     "packageCss": 10043,
-    "tradingJs": 233355,
-    "tradingJsGzip": 68915,
+    "tradingJs": 233475,
+    "tradingJsGzip": 68946,
     "tradingCss": 21034,
     "tradingCssGzip": 5163
   }

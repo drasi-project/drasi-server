@@ -83,7 +83,8 @@ Package tests spy on every REST request across initialize, snapshots, reconnect
 and explicit retry: all must be GETs under the same encoded instance path.
 They cover query/reaction/instance absence, stopped/starting/error states,
 reaction kind/membership, auth/network/opaque-404/bad-payload failures, finite
-retry budgets, hung requests/streams, abort and stale generations. Hook tests
+retry budgets, hung requests/streams, response-body network/timeouts versus
+malformed JSON, abort and stale generations. Hook tests
 assert the **same `DrasiError` object** reaches context, connection, query and
 definition consumers, including invalid configuration and Retry controls.
 `referenceTypes.ts` checks required references and rejects old deployment props.
@@ -245,19 +246,19 @@ included source files, dependency locks and visual expectations are unchanged.
 
 | Artifact | P1 bytes | P2 bytes | Reason for growth |
 | --- | ---: | ---: | --- |
-| Packed tarball | 110,691 | 124,624 | Runtime, declarations, source maps and the reference/error/ownership documentation |
-| Package ESM / CJS | 66,865 / 68,860 | 72,589 / 74,635 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
+| Packed tarball | 110,691 | 124,896 | Runtime, declarations, source maps and the reference/error/ownership documentation |
+| Package ESM / CJS | 66,865 / 68,860 | 72,843 / 74,889 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
 | Declarations | 18,746 | 21,140 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding |
-| Trading JS / gzip | 223,574 / 65,775 | 233,355 / 68,915 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
+| Trading JS / gzip | 223,574 / 65,775 | 233,475 / 68,946 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
 | Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
 
-The app's net runtime addition is 9,781 bytes (3,140 gzip), not a new dependency
+The app's net runtime addition is 9,901 bytes (3,171 gzip), not a new dependency
 or duplicated React/SSE implementation. Setup contains the single app mutation
 boundary; the package has no POST/PUT/PATCH/DELETE path. Do not update screenshots
 or lower coverage to accommodate future drift.
 
-P2's measured whole-package coverage is 76.76% statements / 78.47% lines /
-64.24% branches / 78.06% functions; Trading is 87.24% / 87.90% / 77.86% /
+P2's measured whole-package coverage is 77.02% statements / 78.76% lines /
+64.56% branches / 77.94% functions; Trading is 87.24% / 87.90% / 77.86% /
 85.59%, respectively. The new Trading provisioner is 98.78% statements /
 99.25% lines / 92.59% branches / 100% functions. These improve every P1 floor;
 they are not a claim that #163's final transport/result-contract coverage targets

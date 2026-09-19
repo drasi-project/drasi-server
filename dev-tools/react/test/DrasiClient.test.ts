@@ -119,9 +119,11 @@ describe('connect-only DrasiClient', () => {
 
   it.each([
     new Response('<html>Not found</html>', { status: 404 }),
+    failure(404),
     new Response('bad json'),
     json({ status: 'Running', config: {} }),
     json({ id: 'stocks', status: 'Mystery', config: {} }),
+    json({ id: 'stocks', status: 'Running', config: { id: 'stocks', query: 7, queryLanguage: 'Cypher', sources: [] } }),
     new Response(JSON.stringify({ success: false, data: [] })),
   ])('rejects unsupported DTOs/opaque 404s rather than inventing absence', async response => {
     const { client, server } = setup();
@@ -134,6 +136,16 @@ describe('connect-only DrasiClient', () => {
     if (mode === 'wrong-kind') server.reaction.kind = 'log';
     else server.reaction.queries = [];
     await expect(client.initialize()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', resourceId: 'stream' });
+  });
+
+  it('rejects malformed reaction membership before opening a stream', async () => {
+    const { client, server, factory } = setup();
+    const read = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation((input, init) => String(input).includes('/reactions/')
+      ? Promise.resolve(json({ id: 'stream', status: 'Running', config: { ...server.reaction, queries: [7] } }))
+      : read(input, init));
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', resourceId: 'stream' });
+    expect(factory.instances).toHaveLength(0);
   });
 
   it('validates config at construction and never guesses deployment defaults', () => {
@@ -210,6 +222,26 @@ describe('connect-only DrasiClient', () => {
     controller.abort();
     await expect(aborted).rejects.toBe(controller.signal.reason);
   });
+
+  it.each(['network', 'timeout'] as const)(
+    'classifies a %s failure while reading the response body as unavailable, not malformed', async mode => {
+      vi.useFakeTimers();
+      const { client, server } = setup({ requestTimeoutMs: 20 });
+      server.fetch.mockImplementation(async (_input, init) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (mode === 'network') controller.error(new TypeError('Connection reset'));
+          else init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason), { once: true });
+        },
+      })));
+      const pending = client.getQueryConfig('stocks').catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(20);
+      const error = await pending;
+      expect(error).toBeInstanceOf(DrasiError);
+      expect(error).toMatchObject({
+        code: 'SERVER_UNAVAILABLE', retryable: true, instanceId: refs.instanceId, resourceId: 'stocks',
+      });
+    },
+  );
 });
 
 describe('snapshot/live lifecycle', () => {
