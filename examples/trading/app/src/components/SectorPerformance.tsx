@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from 'react';
-import { QueryTable, ColumnDef } from '@drasi/react';
+import { QueryTable, type ColumnDef } from '@drasi/react/components';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
 import { SectorPerformance as SectorPerformanceType } from '@/types';
@@ -28,9 +28,9 @@ const CODE_SNIPPET = `<QueryTable<SectorPerformance>
     { key: 'sector', label: 'Sector' },
     { key: 'stockCount', label: 'Stocks', align: 'right' },
     { key: 'avgChangePercent', label: 'Avg Change', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => <ChangeIndicator value={row.avgChangePercent} /> },
     { key: 'totalVolume', label: 'Volume', align: 'right',
-      format: (value) => formatCompactNumber(value) },
+      format: (_, row) => formatCompactNumber(row.totalVolume) },
     { key: 'minPrice', label: 'Price Range', align: 'right',
       format: (_, row) => \`\${formatCurrency(row.minPrice)} - \${formatCurrency(row.maxPrice)}\` },
   ]}
@@ -44,30 +44,30 @@ const columns: ColumnDef<SectorPerformanceType>[] = [
     key: 'sector',
     label: 'Sector',
     className: 'font-medium',
-    format: (value) => value || 'Unknown',
+    format: (_value, row) => row.sector || 'Unknown',
   },
   {
     key: 'stockCount',
     label: 'Stocks',
     align: 'right',
     className: 'text-sm text-gray-300',
-    format: (value) => value ?? 0,
+    format: (_value, row) => row.stockCount ?? 0,
   },
   {
     key: 'avgChangePercent',
     label: 'Avg Change',
     align: 'right',
-    format: (value) => <ChangeIndicator value={value} />,
-    className: (value) => clsx(
+    format: (_value, row) => <ChangeIndicator value={row.avgChangePercent} />,
+    className: (_value, row) => clsx(
       'font-mono text-sm',
-      value == null ? '' : value >= 0 ? 'text-trading-green' : 'text-trading-red'
+      row.avgChangePercent == null ? '' : row.avgChangePercent >= 0 ? 'text-trading-green' : 'text-trading-red'
     ),
   },
   {
     key: 'totalVolume',
     label: 'Volume',
     align: 'right',
-    format: (value) => formatCompactNumber(value),
+    format: (_value, row) => formatCompactNumber(row.totalVolume),
     className: 'text-sm text-gray-300',
   },
   {
@@ -87,7 +87,7 @@ export const SectorPerformance: React.FC = () => {
   return (
     <QueryTable<SectorPerformanceType>
       queryId="sector-performance-query"
-      queryOptions={tradingQueryOptions<SectorPerformanceType>('sector-performance-query')}
+      queryOptions={tradingQueryOptions('sector-performance-query')}
       title="Sector Performance"
       columns={columns}
       rowKey={(row) => row.sector || 'unknown'}

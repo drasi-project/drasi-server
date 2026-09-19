@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { ResultRow } from '@drasi/react/client';
+
 export interface Stock {
   symbol: string;
   name: string;
@@ -35,6 +37,31 @@ export interface PortfolioPosition {
   costBasis: number;
   profitLoss: number;
   profitLossPercent: number;
+}
+
+/** Portfolio normalization retains missing fields, nulls, and empty strings. */
+export type PortfolioNumber = number | null | '';
+
+/** Also accepts the id-only delete rows delivered by the portfolio query. */
+export interface PortfolioRow {
+  id?: number | string | null;
+  symbol?: string;
+  name?: string;
+  quantity?: PortfolioNumber;
+  purchasePrice?: PortfolioNumber;
+  currentPrice?: PortfolioNumber;
+  currentValue?: PortfolioNumber;
+  costBasis?: PortfolioNumber;
+  profitLoss?: PortfolioNumber;
+  profitLossPercent?: PortfolioNumber;
+  changePercent?: PortfolioNumber;
+  _deleted?: boolean;
+}
+
+export interface PriceTickerRow {
+  symbol: string;
+  price: number | string;
+  changePercent: number | string;
 }
 
 export interface SectorPerformance {
@@ -80,16 +107,34 @@ export interface OrderAlert {
   alertMessage: string;
 }
 
-export interface QueryResult {
+/** The application, not the reusable client, owns these query projections. */
+export interface TradingQueryRows {
+  'watchlist-query': Stock;
+  'portfolio-query': PortfolioRow;
+  'top-gainers-query': Stock;
+  'top-losers-query': Stock;
+  'high-volume-query': Stock;
+  'price-ticker-query': PriceTickerRow;
+  'sector-performance-query': SectorPerformance;
+  'portfolio-summary-query': PortfolioSummary;
+  'active-orders-query': LimitOrderResult;
+  'stale-orders-query': OrderAlert;
+  'expiring-orders-query': OrderAlert;
+}
+
+export type TradingQueryId = keyof TradingQueryRows;
+export type MarketMoverQueryId = 'top-gainers-query' | 'top-losers-query' | 'high-volume-query';
+
+export interface QueryResult<T = ResultRow> {
   queryId: string;
   timestamp: number;
-  data: any[];
+  data: T[];
   error?: string;
 }
 
-export interface QuerySubscription {
+export interface QuerySubscription<T = ResultRow> {
   queryId: string;
-  callback: (result: QueryResult) => void;
+  callback: (result: QueryResult<T>) => void;
   unsubscribe: () => void;
 }
 
@@ -105,7 +150,7 @@ export interface ScreenerFilters {
 export interface DrasiQuery {
   id: string;
   query: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   source_subscriptions: Array<{ source_id: string; pipeline: string[] }>;
 }
 

@@ -1,495 +1,549 @@
 # @drasi/react
 
-Reusable [React](https://react.dev/) building blocks for UIs whose content is
-kept continuously up to date by [Drasi](https://drasi.io) Continuous Queries.
+React building blocks for UIs driven by [Drasi](https://drasi.io) Continuous
+Queries: one shared SSE connection, query hooks and a sortable, animated,
+fullscreen-capable table. The package connects to **existing resources**.
+Provisioning, query definitions, transforms, business routing and deployment
+defaults belong to the application.
 
-[Drasi](https://drasi.io) is an open-source Data Change Processing platform that
-simplifies building change-driven solutions. You declare a **Continuous Query** —
-an [openCypher](https://opencypher.org/) or GQL query describing exactly the data
-you care about — and Drasi incrementally maintains that query's result set as the
-underlying sources change, without polling or re-scanning them. Each change to the
-result set is delivered to subscribed **Reactions** as a precise set of added,
-updated, and deleted rows. A single query can span multiple sources, and the
-meaning of "a change" is defined by your query rather than by the source systems.
+**Private, unpublished staging package.** It remains in `dev-tools/react` in
+this repository. Trading uses a local `file:` dependency; no npm publication,
+repository transfer or separate framework-agnostic package is implied.
 
-`@drasi/react` is the client side of that picture: it binds a React app to one or
-more Continuous Queries through Drasi Server's **SSE Reaction** and surfaces each
-query's live result set as idiomatic React state:
+## Installation and entrypoints
 
-- **One shared connection.** A single [SSE](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
-  connection is opened to a Drasi SSE Reaction and **multiplexed** across every
-  Continuous Query in your app — not one connection per query.
-- **Hooks for live results.** `useDrasiQuery` folds a query's added/updated/
-  deleted result changes into a ready‑to‑render array.
-- **A batteries‑included table.** `QueryTable` renders a sortable, animated,
-  full‑screen‑capable table bound to a query, with a built‑in “view the code”
-  dialog.
+Build the local package before consuming it:
 
-The library is **completely application agnostic**: it knows nothing about your
-queries, your data shapes, or how rows should be keyed/sorted. You provide all of
-that through props and options, which makes it reusable across any Drasi project.
-
-> This is currently an **unpublished, private staging package** at
-> `dev-tools/react` in the
-> [drasi-server](https://github.com/drasi-project/drasi-server) repository. The
-> Trading example installs and builds it through a local `file:` dependency so
-> the same exports used by a future npm consumer are exercised now.
-
-## Table of contents
-
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Concepts](#concepts)
-- [Errors, retries and provisioning ownership](#errors-retries-and-provisioning-ownership)
-- [API reference](#api-reference)
-  - [`DrasiProvider`](#drasiprovider)
-  - [`useDrasiQuery`](#usedrasiquery)
-  - [`useDrasiConnectionStatus`](#usedrasiconnectionstatus)
-  - [`useDrasiServerUiUrl`](#usedrasiserveruiurl)
-  - [`useDrasiQueryDefinition`](#usedrasiquerydefinition)
-  - [`QueryTable`](#querytable)
-  - [Low‑level classes](#low-level-classes)
-- [Styling](#styling)
-- [Project structure](#project-structure)
-- [Building from source](#building-from-source)
-- [Future publishing](#future-publishing)
-- [Using it in the Trading example](#using-it-in-the-trading-example)
-- [License](#license)
-
-## Installation
-
-The package is not published to npm yet. Inside this repository, install its
-development dependencies and build it first:
-
-```bash
-cd dev-tools/react
-npm ci
-npm run build
+```sh
+npm --prefix dev-tools/react ci
+npm --prefix dev-tools/react run build
 ```
 
-Repository consumers declare it as a local dependency:
+Repository consumers such as Trading declare
+`"@drasi/react": "file:../../../dev-tools/react"`. A source-free test consumer
+can instead install the `.tgz` produced by `npm pack`. No source aliases,
+Tailwind source scanning or install-time rebuilding are needed to consume it.
 
-```json
-{
-  "dependencies": {
-    "@drasi/react": "file:../../../dev-tools/react"
-  }
-}
-```
+| Import | Contents and dependencies |
+| --- | --- |
+| `@drasi/react/client` | `DrasiClient`, `DrasiSSEClient`, `DrasiError` and connection/transport/read DTO types. **No React/React DOM runtime or type imports.** |
+| `@drasi/react/react` | Providers, query/status/definition hooks, animation hook and named result/options types. React, but no composed components, tutorial code or CSS. |
+| `@drasi/react/components` | `QueryTable`, `CodeViewerDialog`, icons and column/action/sort/props types. React/React DOM, `clsx` and the headless hooks. |
+| `@drasi/react` | Deliberate convenience re-exports of all three groups. This is **not** a React-free import. |
+| `@drasi/react/styles.css` | Explicit package-owned stylesheet, never imported by the JS modules. |
 
-React and `react-dom` are peer dependencies, ensuring the library uses the
-application's copies. React 18.3.1 / Node 22 are the tested Trading baseline;
-the broad peer range is not a claim of React 19 validation. No publication or
-repository move is part of this work.
+All four JS entrypoints ship real ESM/CommonJS exports and conditional `.d.ts`
+and `.d.cts` declarations. Import these paths, not `src`, `dist` or hashed
+shared chunks. The framework-agnostic client is a module of this same package.
 
-Import the complete component stylesheet once:
+React and React DOM are **optional installation peers** so client-only
+consumers need not install them. They are required for the React/component/root
+entrypoints: install the tested **18.3.1** versions in your application.
+No React copy is bundled or hidden in another dependency. The exact peer range
+deliberately makes no React 19 or future-major claim.
+
+Import the component stylesheet once when using presentation:
 
 ```ts
 import '@drasi/react/styles.css';
 ```
 
-## Quick start
+## Quickstart
 
-Provision resources separately, then connect to them by reference. This example
-requires the `analytics` instance, a **running** `readings` query, and a
-**running** `sse` reaction named `events` whose `queries` includes `readings`.
-The explicit SSE URL must be reachable from the browser (including CORS and
-any reverse-proxy routing). Server bind addresses/ports are not client options.
+Provision resources separately. This example requires instance `analytics`, a
+running `readings` query and a running `sse` reaction `events` whose query list
+includes `readings`. The SSE endpoint must be browser-reachable, including
+proxy routing and CORS. Server bind addresses/ports are not client options.
 
 ```tsx
-import {
-  DrasiProvider,
-  QueryTable,
-  useDrasiConnectionStatus,
-  type ReactionReference,
-} from '@drasi/react';
+// @drasi-docs: quickstart.tsx
+import { DrasiProvider, useDrasiConnectionStatus } from '@drasi/react/react';
+import { QueryTable } from '@drasi/react/components';
+import type { ReactionReference } from '@drasi/react/client';
 import '@drasi/react/styles.css';
 
 const QUERY_IDS = ['readings'];
 const REACTION: ReactionReference = {
-  id: 'events',
-  endpoint: 'https://events.example/changes',
+  id: 'events', endpoint: 'https://events.example/changes',
 };
-
 interface Reading { id: string; value: number }
 
 function Readings() {
-  return (
-    <QueryTable<Reading>
-      queryId="readings"
-      rowKey={(row) => row.id}
-      columns={[
-        { key: 'id', label: 'Sensor' },
-        { key: 'value', label: 'Value', align: 'right' },
-      ]}
-      animateOnChange="value"
-    />
-  );
+  return <QueryTable<Reading>
+    queryId="readings"
+    rowKey={row => row.id}
+    queryOptions={{
+      getKey: row => row.id,
+      transform: row => {
+        if (typeof row.id !== 'string' || typeof row.value !== 'number') {
+          throw new Error('Expected a Reading');
+        }
+        return { id: row.id, value: row.value };
+      },
+    }}
+    columns={[
+      { key: 'id', label: 'Sensor' },
+      { key: 'value', label: 'Value', align: 'right', format: (_raw, row) => row.value.toFixed(2) },
+    ]}
+    animateOnChange="value"
+  />;
 }
 
 function ConnectionBadge() {
   const status = useDrasiConnectionStatus();
-  return <span>{status.error?.message ?? (status.connected ? 'Live' : 'Connecting…')}</span>;
+  return <span>{status.error?.message ?? (status.connected ? 'Live' : 'Connecting')}</span>;
 }
 
 export default function App() {
-  return (
-    <DrasiProvider
-      serverUrl="https://drasi.example"
-      instanceId="analytics"
-      queryIds={QUERY_IDS}
-      reaction={REACTION}
-    >
-      <ConnectionBadge />
-      <Readings />
-    </DrasiProvider>
-  );
+  return <DrasiProvider
+    serverUrl="https://drasi.example" instanceId="analytics"
+    queryIds={QUERY_IDS} reaction={REACTION}
+  >
+    <ConnectionBadge />
+    <Readings />
+  </DrasiProvider>;
 }
 ```
 
-When the provider mounts it:
+Initialization reads the referenced queries concurrently, waits for the bounded
+batch to settle, then checks the reaction and opens **one** SSE connection.
+Initialization, subscriptions, reconnect and retry perform **GETs only**.
+There is no resource-management mode, implicit instance, query-language choice
+or deployment reconciler.
 
-1. reads each query and the reaction in the **explicitly selected instance**,
-2. validates lifecycle status, SSE kind and subscribed-query membership, and
-3. opens **one** SSE connection and fans updates out to each `useDrasiQuery`.
+## Server and read-only DTO contract
 
-Initialization, subscription, reconnect and explicit retry perform **GETs only**.
-There is no resource-management mode, implicit first-instance selection, query
-language selection, deployment reconciliation, or Trading-specific default.
-All REST reads use `/api/v1/instances/{encodedInstanceId}/...`.
+Every REST operation uses
+`/api/v1/instances/{encodedInstanceId}/...`; there is no discovery-order
+fallback. Subscriptions must belong to the configured `queryIds`. Optional
+inspection may read another query within that same explicit instance.
+Validation checks lifecycle status, SSE reaction kind and query membership.
+It does not compare desired query text or overwrite deployment settings.
 
-Each query hook subscribes to live changes before requesting its REST snapshot.
-Changes received while that request is in flight are buffered and replayed after
-the snapshot. Reconnect fetches a fresh snapshot. This preserves the existing
-buffer/replay behavior; it does **not** establish an atomic, ordered or
-exactly-once snapshot/live handoff without server cursors. Result identity and
-broader transport contracts are separate follow-up work.
+Full-view responses contain
+`{ success: true, data: { id, status, links, config, error_message? }, error: null }`.
+The request is `GET .../queries/{id}?view=full` or
+`GET .../reactions/{id}?view=full`. The exported read types are:
 
-## Concepts
+| Type | Validated fields |
+| --- | --- |
+| `Component<T>` / `ComponentLinks` | Matching resource ID, known lifecycle status, optional string `error_message`, full config and links belonging to the requested instance/resource. |
+| `QueryConfig` | `id`, `autoStart`, `query`, explicit `queryLanguage` (`Cypher` or `GQL`), `middleware`, `sources`, `enableBootstrap`, `bootstrapBufferSize`, `outboxCapacity`, `bootstrapTimeoutSecs`; optional joins, priority/dispatch capacities, `dispatchMode: 'Channel'`, storage backend. |
+| `QuerySource` / `QueryJoin` / `QueryJoinKey` | Full source subscriptions (`sourceId`, `pipeline`, `nodes`, `relations`) and ordered join keys. No source/join reordering. |
+| `QueryMiddleware` | Kind, name and JSON configuration owned by the server plugin. |
+| `ReactionConfig` / `SseReactionConfig` | ID, kind, query membership and flattened plugin JSON properties. Supported SSE reads also validate host, port, SSE path and heartbeat interval. |
+| `JsonValue` / `ResultRow` | Plugin-owned JSON configuration and object rows whose application-specific fields remain `unknown`. |
 
-**Multiplexed connection.** A Drasi SSE Reaction can deliver the result changes
-for many queries over a single connection. `@drasi/react` opens that connection once
-([`DrasiSSEClient`](#low-level-classes)) and routes each batch to the right
-subscribers by query id, so adding more `QueryTable`s does not add more sockets.
+These are **read DTOs, not creation DTOs**. No pass-through creation fields,
+ignored deployment options or implicit Cypher selection are offered.
+Storage backend JSON and other plugin-owned JSON are exposed for inspection,
+not interpreted/executed by this client. Unknown additive server fields are
+not advertised as writable options. Required fields, enums, integer ranges,
+nested shapes and snapshot object rows are checked at runtime from `unknown`.
+Malformed/incompatible bodies fail visibly with `INVALID_PAYLOAD`; missing
+reads throw rather than returning a success-shaped `null`.
 
-**Content routing for aggregations.** Some Drasi result changes (for example from
-aggregating queries) arrive without a query id. The library cannot know which
-query they belong to, so you may supply a `routeUnidentified` callback that
-inspects a row and decides which query id(s) it belongs to. This keeps all
-application‑specific shape knowledge in your app.
+Current v1 links may spell identifiers literally. The client checks their
+identity and returns safely encoded, instance-scoped links. It never follows
+arbitrary response links, and refuses REST redirects into another path/origin.
+The UI helper returns `${serverUrl}/ui?instance={encodedInstanceId}`.
 
-**Generic accumulation.** `useDrasiQuery` folds each change batch into a `Map`
-keyed by `getKey(row)`; rows flagged `_deleted` are removed. Optional `transform`
-(normalize a row) and `postProcess` (sort/filter/slice the final array) options
-let you adapt any data model without the library hard‑coding it.
+`test/fixtures/server-v1/contract.json` contains **unmodified actual response
+bodies** for a full query, full SSE reaction and snapshot, with backend
+revision/binary/lock/plugin provenance. They were captured by the real Trading
+harness, not inferred from synthetic fakes. Tests consume those records and
+separately mutate them to exercise malformed, unauthorized and cross-instance
+cases. See [verified compatibility](#verified-compatibility).
+
+## Authentication and injected transports
+
+`fetch` has the native fetch signature. Every request receives `method: 'GET'`,
+fresh headers, credentials, `redirect: 'manual'` and an `AbortSignal`.
+Native fetch is invoked with its global receiver, preserving browser binding.
+The default credentials are `same-origin`; REST defaults to
+`Accept: application/json`.
+
+`headers` accepts `HeadersInit` or an async/sync `DrasiHeadersProvider`.
+The provider receives `{ url, transport: 'rest' | 'sse', signal, instanceId }`
+and runs for **each** REST read and stream attempt. A stable function can
+refresh tokens without replacing the client. Static headers are copied at
+construction; a transport cannot mutate another request's headers. The library
+does not log credentials, token-bearing URLs, response bodies or user callback
+exception details.
+
+```ts
+// @drasi-docs: auth.ts
+import {
+  DrasiClient, DrasiError,
+  type DrasiHeadersProvider, type EventSourceFactory,
+} from '@drasi/react/client';
+
+export function authenticatedClient(
+  getAccessToken: (signal: AbortSignal) => Promise<string>,
+  openStream: EventSourceFactory,
+) {
+  const headers: DrasiHeadersProvider = async ({ signal }) => {
+    const token = await getAccessToken(signal);
+    if (!token) throw new DrasiError('UNAUTHENTICATED');
+    return { Authorization: `Bearer ${token}` };
+  };
+  return new DrasiClient({
+    serverUrl: 'https://drasi.example', instanceId: 'analytics',
+    queryIds: ['readings'],
+    reaction: { id: 'events', endpoint: 'https://events.example/changes' },
+    credentials: 'include', headers, eventSourceFactory: openStream,
+  });
+}
+```
+
+The synchronous custom factory receives
+`(url, { headers: Headers, credentials, signal })` and returns an
+`EventSourceLike`. It must apply these options, honor cancellation/`close()`
+and expose the declared callbacks/listener interface. SSE headers default to
+`Accept: text/event-stream`. A known `DrasiError` thrown by a factory/auth
+provider retains its identity and classification.
+
+**Native EventSource limitations:** it cannot send custom headers, expose
+HTTP status or omit same-origin cookies. `include` maps to
+`withCredentials: true`; `same-origin` maps to `false`. Custom headers/header
+functions or `omit` therefore require a custom factory **when opening a
+stream**. Unsupported native authentication fails with `INVALID_CONFIGURATION`,
+not silently dropped auth. REST-only inspection does not require a factory.
+Do not wrap native EventSource and pretend it supports bearer headers.
+Cross-origin cookie use requires appropriate server/proxy credentials and CORS.
+
+The SSE endpoint is supplied by the operator, never inferred from bind settings.
+The supported plugin protocol cannot attest that a proxy routes to the declared
+reaction/instance or reveal native SSE redirect destinations. Use a trusted
+proxy or custom transport if enforcement is required. A generic stream error
+is **never** evidence that a query/reaction is missing: the client revalidates
+using read-only REST before choosing recovery.
+
+Callbacks should honor their signal. Timeouts also settle client-facing work
+when a custom callback ignores cancellation; late completions cannot open a
+stream or publish data. Explicit read cancellation preserves the caller's
+original `signal.reason`. Malformed headers/options are permanent
+`INVALID_CONFIGURATION`; invalid JSON/DTOs are `INVALID_PAYLOAD`;
+REST network/body/timeouts are retryable `SERVER_UNAVAILABLE`. A 401/403 never
+authorizes provisioning.
+
+## Ownership and reconfiguration
+
+`DrasiProvider` owns a client, shared stream, initialization, retries and
+cleanup. Equivalent inline reference arrays, reaction/reconnect objects and
+headers do **not** bounce the connection. Query IDs compare as a set (duplicates
+remain invalid), header names/values are canonicalized, and omitted policy
+fields equal the documented defaults.
+
+Material server, instance, reaction ID, endpoint, query-set, credential/header,
+timeout or retry-policy changes replace the lifecycle. Old requests are aborted,
+the old stream closes, and late events/snapshots/definition reads cannot update
+the new scope. Rows/config from another scope are hidden while replacement
+work starts. This is not Part B's complete stale/reconnect state model.
+
+**Callable options compare by identity:** `fetch`, `eventSourceFactory`,
+`routeUnidentified` and a header-provider function. Memoize them when their
+meaning is unchanged. Replacing a function replaces the lifecycle; a stable
+auth function may return a fresh token on the next request. Query-hook
+`getKey`/`transform`/`postProcess` option changes apply to subsequent batches
+without reopening the stream; they do not reprocess stored rows retroactively.
+
+`useDrasiClient().retry()` restarts that provider's **shared**, read-only
+connection/snapshot lifecycle. A retained retry from an obsolete configuration
+does not restart its replacement. Automatic transient snapshot retries stay
+local to their subscription and do not disconnect other queries.
+A direct `DrasiClient` has immutable configuration: construct/disconnect a new
+client for material changes. `initialize()` shares in-flight work and reuses a
+connected client. Its owner must dispose subscriptions and call `disconnect()`.
+
+`DrasiClientProvider` instead binds an **app-owned** lifecycle. The binding
+does not initialize/disconnect, retry, provision or open a second connection.
+Its owner supplies coherent state and scoped retry and disposes old clients on
+reconfiguration. Descendant hooks perform their own read-only
+subscriptions/snapshots once `initialized` is true.
+
+```tsx
+// @drasi-docs: controlled.tsx
+import type { ReactNode } from 'react';
+import { DrasiClientProvider, type DrasiContextValue } from '@drasi/react/react';
+
+export function AppOwnedBinding({ value, children }: {
+  value: DrasiContextValue;
+  children: ReactNode;
+}) {
+  return <DrasiClientProvider value={value}>{children}</DrasiClientProvider>;
+}
+```
+
+Trading's `TradingProvider.tsx` attempts the same client, catches only eligible
+known-resource failures, runs its app-owned bounded `ensureTradingResources`,
+then retries once. Its serial explicit-Cypher creation bodies, conflicts,
+shared work, cancellation and Web Locks stay outside the package.
 
 ## API reference
 
-### `DrasiProvider`
+### Connection options
 
-Establishes the shared connection and makes it available to descendants. Render
-it once near the root of your tree.
+`DrasiProviderProps` extends `DrasiClientOptions` with required React `children`.
+`ReactionReference` contains only the existing `id` and absolute HTTP(S)
+browser `endpoint`. Relative URLs, URL user/password credentials, fragments,
+wildcard bind hosts, empty/dot identifiers and duplicate query IDs are rejected.
 
-| Prop | Type | Description |
-| --- | --- | --- |
-| `serverUrl` | `string` | Absolute HTTP(S) server base URL. **Required; no default.** |
-| `instanceId` | `string` | Explicit instance identity. **Required; never discovered.** |
-| `queryIds` | `readonly string[]` | Identifiers of existing queries. **Required.** |
-| `reaction` | `ReactionReference` | Existing SSE reaction identity and explicit browser URL. **Required.** |
-| `routeUnidentified` | `(rows, deliver) => void` | Optional router for result-change payloads that arrive without a query id. Call `deliver(queryId, rows)` for each matching query. |
-| `fetch` | `typeof fetch` | Optional fetch implementation for authentication, polyfills, or tests. |
-| `eventSourceFactory` | `(url) => EventSourceLike` | Optional EventSource implementation for polyfills or tests. |
-| `reconnect` | `object` | Optional maximum-attempt and backoff overrides. |
-| `requestTimeoutMs` | `number` | REST request/body timeout, default 10000 ms. |
-| `children` | `ReactNode` | Your application. |
+| Option | Default / meaning |
+| --- | --- |
+| `serverUrl: string` | Required absolute HTTP(S) server base, no query/fragment/default. |
+| `instanceId: string` | Required explicit instance, never discovered. |
+| `queryIds: readonly string[]` | Required existing query references; no definitions. |
+| `reaction: ReactionReference` | Required existing SSE reaction and browser URL. |
+| `routeUnidentified?: RouteUnidentified` | Application adapter for legacy batches without a query ID. Receives `ResultRow[]` and a delivery callback. |
+| `fetch?: typeof fetch` | Defaults to global native fetch; GETs only. |
+| `headers?: DrasiHeaders` | No custom headers by default; static input or per-request provider. |
+| `credentials?: RequestCredentials` | `same-origin`; native SSE cannot implement `omit`. |
+| `eventSourceFactory?: EventSourceFactory` | Native browser EventSource by default. |
+| `requestTimeoutMs?: number` | 10000 ms **per REST request**, including auth/body. Composite reads can make multiple requests. |
+| `reconnect?: ReconnectOptions` | Defaults below; same count/backoff for streams and snapshots. |
 
-`ReactionReference`:
+`ReconnectOptions` defaults: **10 retries after the first attempt**,
+`initialReconnectDelayMs: 1000`, `maxReconnectDelayMs: 30000`,
+`connectionTimeoutMs: 10000`. Backoff is exponential; counts reset on a
+successful open/snapshot. Open timeout includes stream auth and waiting for
+open, not idle lifetime of an already-open stream. Permanent failures stop
+immediately; exhaustion retains the last typed error and stops timers/work.
+Concurrent resource validation drains its bounded batch before failure handoff
+so app recovery does not race an abort storm. Explicit cancellation aborts all.
+
+### Hooks and result boundary
+
+| Hook | Named result |
+| --- | --- |
+| `useDrasiClient()` | `DrasiContextValue`: `{ client, initialized, error, retry }`. |
+| `useDrasiQuery<T = ResultRow>(queryId, options?)` | `UseDrasiQueryResult<T>`: `{ data: T[] \| null, loading, error, lastUpdate: Date \| null }`. |
+| `useDrasiConnectionStatus()` | `ConnectionStatus`: `connected`, optional `reconnecting`, `DrasiError`, `lastConnected`. A socket opening does not prove query synchronization. |
+| `useDrasiQueryDefinition(queryId)` | `UseDrasiQueryDefinitionResult`: `{ config: QueryConfig \| null, loading, error }`. |
+| `useDrasiServerUiUrl()` | Instance-scoped UI URL when initialized, otherwise `null`. |
+| `useRowAnimation(options)` | `UseRowAnimationResult`; exported `AnimationDirection` and `UseRowAnimationOptions`. |
+
+All provider/hooks preserve `DrasiError` objects, not just messages.
+`UseDrasiQueryOptions<T>` supplies `getKey(row: T)`, optional
+`transform(row: ResultRow): T`, and `postProcess(rows: T[]): T[]`.
+Key extraction is **after** transformation; returning `null` skips a row.
 
 ```ts
-interface ReactionReference {
-  id: string;
-  endpoint: string;              // absolute browser-reachable HTTP(S) URL
+// @drasi-docs: query-options.ts
+import type { UseDrasiQueryOptions } from '@drasi/react/react';
+
+interface Reading { device: string; value: number }
+export const readingOptions: UseDrasiQueryOptions<Reading> = {
+  getKey: row => row.device,
+  transform: row => {
+    if (typeof row.device !== 'string' || typeof row.value !== 'number') {
+      throw new Error('Expected a Reading');
+    }
+    return { device: row.device, value: row.value };
+  },
+  postProcess: rows => rows.sort((a, b) => b.value - a.value),
+};
+```
+
+Raw rows are `Record<string, unknown>`. A generic alone does not validate fields:
+without `transform`, choosing `T` is the caller's schema assertion. Prefer a
+validating transform for external data; failures become typed hook errors.
+
+**Deliberately unchanged until Part B (#163):** the legacy key fallback remains
+`id`, then `symbol`, then serialized row. `_deleted` is retained through
+transforms, but minimal delete payloads still pass through the transform/key
+path. Existing keyed `queryId`/`query_id` result/data shapes and the legacy
+unidentified added/updated/deleted routing alternatives remain compatibility
+behavior, not a new official normalized result contract. Stable identity,
+key-changing updates and named adapters are not completed here.
+
+Subscribers listen before their REST snapshot, buffer deltas while it loads,
+then replay them; reconnect requests a fresh snapshot. This does **not**
+establish an atomic, ordered or exactly-once handoff without a server
+sequence/cursor, and arrival timestamps do not solve that problem. Full
+snapshot/live reconciliation and initial/live/reconnecting/stale/error states
+remain Part B. Current `loading`/transport flags must not be interpreted as
+stronger consistency guarantees.
+
+### Components
+
+`QueryTable<T>` binds `useDrasiQuery` to the existing sortable, animated table.
+Required props are `queryId`, `columns: ColumnDef<T>[]` and `rowKey(row: T)`.
+`queryOptions` forwards the typed hook options. `ColumnDef`, `RowAction`,
+`SortConfig`, `QueryTableProps` and `CodeViewerDialogProps` are
+exported by the component entrypoint.
+
+Columns support labels, cell formatting, sortable flags, alignment, cell/header
+classes and width. Row actions receive typed rows and support disabled/loading
+callbacks, labels, icons and classes. Table props include `defaultSort`,
+`animateOnChange`, `actions`, `actionsWidth`, `headerActions`, `title`,
+`emptyMessage`, `codeSnippet` and table/header/row class hooks. Sorting,
+formatting, animations, fullscreen and code-view behavior are unchanged.
+Computed column strings remain supported, so `format`/`className` receive
+`(value: unknown, row: T)`. Use the typed row (as in the quickstart) or narrow
+the raw value; no unsafe cast is needed. `SortConfig` retains a string column
+and `asc | desc` direction, including sorting by non-visible row fields.
+Pure presentation/composition, controlled sort, slots, dialog accessibility
+and theming redesign are separate #164 work, not claims of this release.
+
+CSS is namespaced and package-owned. `--drasi-*` variables and existing class
+props customize appearance; portals and advanced overlay semantics have not
+been redesigned. Consumers do not need Tailwind.
+
+### Low-level clients
+
+`DrasiClient` exposes `initialize()`, `validateResources(signal?)`,
+`getQuery(id, signal?)`, `getReaction(signal?)`, `getQueryConfig(id, signal?)`,
+`getQueryResults(id, signal?)`, `subscribe(id, onResult, onError?)`,
+`getConnectionStatus()`, `onConnectionStatusChange(callback)`,
+`getServerUiUrl()`, `isInitialized()` and `disconnect()`.
+Direct reads perform one attempt; initialization and subscriptions own the
+documented retry policy. Each subscription returns an unsubscribe function.
+Provide `onError` to handle subscription failures; if omitted, the library logs
+only the safe error code rather than silently swallowing a malformed snapshot.
+
+```ts
+// @drasi-docs: client.ts
+import { DrasiClient, type DrasiError, type ResultRow } from '@drasi/react/client';
+
+// Execute in a browser, not while importing or server rendering.
+export async function monitorReadings(
+  onRows: (rows: ResultRow[]) => void,
+  onError: (error: DrasiError) => void,
+) {
+  const client = new DrasiClient({
+    serverUrl: 'https://drasi.example', instanceId: 'analytics',
+    queryIds: ['readings'],
+    reaction: { id: 'events', endpoint: 'https://events.example/changes' },
+  });
+  try {
+    await client.initialize();
+  } catch (error) {
+    await client.disconnect();
+    throw error;
+  }
+  const unsubscribe = client.subscribe('readings', result => onRows(result.data), onError);
+  return async () => { unsubscribe(); await client.disconnect(); };
 }
 ```
 
-The endpoint is never derived from server bind settings. A reverse proxy may
-expose a different host, port and path. URL syntax is validated, but operators
-must route it to this reaction; the current SSE protocol cannot attest endpoint
-identity. URL credentials, fragments, wildcard bind hosts and relative URLs
-are rejected. Supply authenticated fetch/EventSource implementations as needed;
-native EventSource does not support custom headers. These transports must honor
-cancellation. Keep configuration object/array identities stable across renders;
-full material/equivalent configuration lifecycle work is deferred.
+`DrasiSSEClient` is the lower-level stream multiplexer. `DrasiSSEClientOptions`
+adds an optional read-only `validate(signal)` callback and `errorDetails` to
+the stream/auth/reconnect options. Direct use does not validate REST resources
+unless that callback is supplied and cannot infer their absence. It exposes
+`connect(queryIds, endpoint, signal?)`, `subscribe`, `getConnectionStatus`,
+`onConnectionStatusChange`, `isConnected` and `disconnect`.
 
-### `useDrasiQuery`
+## Errors and recovery
 
-```ts
-function useDrasiQuery<T = any>(
-  queryId: string,
-  options?: UseDrasiQueryOptions<T>,
-): { data: T[] | null; loading: boolean; error: DrasiError | null; lastUpdate: Date | null };
-```
+`DrasiError extends Error` has stable `DrasiErrorCode`, `instanceId`,
+`resourceKind`, `resourceId`, `resourceStatus`, optional HTTP `status` and
+`retryable`. `DrasiErrorDetails` and `DrasiResourceKind` are exported.
+Render `.message`; discriminate with `instanceof DrasiError` and `.code`.
+Safe messages do not include raw server details. Explicit cancellation is the
+original abort reason rather than a `DrasiError`.
 
-Subscribes to a query over the shared connection and returns its accumulated
-result set.
-
-`UseDrasiQueryOptions<T>`:
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `getKey` | `(row) => string \| null` | Stable unique key used to accumulate adds/updates/deletes. Returning `null` skips the row. Defaults to `row.id ?? row.symbol ?? JSON.stringify(row)`. |
-| `transform` | `(row) => T` | Normalize a raw row before it is stored (e.g. parse numeric strings). |
-| `postProcess` | `(rows: T[]) => T[]` | Sort/filter/slice the accumulated rows before render. |
-
-```tsx
-const { data, loading } = useDrasiQuery('portfolio-query', {
-  getKey: (row) => `portfolio-${row.id}`,
-  transform: (row) => ({ ...row, quantity: Number(row.quantity) }),
-  postProcess: (rows) => rows.sort((a, b) => b.currentValue - a.currentValue),
-});
-```
-
-### `useDrasiConnectionStatus`
-
-```ts
-function useDrasiConnectionStatus(): ConnectionStatus;
-// { connected: boolean; reconnecting?: boolean; error?: DrasiError; lastConnected?: Date }
-```
-
-### `useDrasiServerUiUrl`
-
-```ts
-function useDrasiServerUiUrl(): string | null;
-```
-
-Returns a deep link to the Drasi Server UI for the connected instance, or `null`
-before the connection is established.
-
-### `useDrasiQueryDefinition`
-
-```ts
-function useDrasiQueryDefinition(queryId: string):
-  { config: QueryConfig | null; loading: boolean; error: DrasiError | null };
-```
-
-Fetches a query's full configuration from the server (used, for example, to show
-the live Cypher definition in the `QueryTable` code viewer).
-
-### `QueryTable`
-
-A sortable, animated table bound to a single query. It calls `useDrasiQuery`
-internally, so you only describe how to render rows.
-
-Key props (see `QueryTableProps<T>` for the full list):
-
-| Prop | Type | Description |
-| --- | --- | --- |
-| `queryId` | `string` | Query to subscribe to. **Required.** |
-| `columns` | `ColumnDef<T>[]` | Column definitions. **Required.** |
-| `rowKey` | `(row: T) => string` | Unique React key per row. **Required.** |
-| `queryOptions` | `UseDrasiQueryOptions<T>` | Forwarded to `useDrasiQuery` (key/transform/sort). |
-| `title` | `string` | Card title. |
-| `defaultSort` | `{ column: string; direction: 'asc' \| 'desc' }` | Initial sort. |
-| `animateOnChange` | `keyof T` | Field whose changes trigger the row flash animation. |
-| `actions` | `RowAction<T>[]` | Per‑row action buttons. |
-| `actionsWidth` | `string` | CSS width for the actions column, such as `3rem`. |
-| `headerActions` | `ReactNode` | Header slot (e.g. an “add” button). |
-| `emptyMessage` | `string` | Shown when there are no rows. |
-| `codeSnippet` | `string` | Consumer code shown in the “view code” dialog. |
-| `className` / `tableClassName` / `headerClassName` / `rowClassName` | `string` | Style hooks for full theming. |
-
-`ColumnDef<T>`:
-
-```ts
-interface ColumnDef<T> {
-  key: keyof T | string;
-  label: string;
-  format?: (value: any, row: T) => React.ReactNode;
-  sortable?: boolean;            // default true
-  align?: 'left' | 'center' | 'right';
-  className?: string | ((value: any, row: T) => string);
-  headerClassName?: string;
-  width?: string;                  // CSS width, e.g. '5rem' or '120px'
-}
-```
-
-### Low‑level classes
-
-If you are not using React, or you want full control, the underlying classes are
-exported too:
-
-- **`DrasiClient`** — connect-only; exposes `initialize()`,
-  `validateResources(signal?)`, `subscribe(queryId, cb, onError?)`,
-  `getQueryResults(queryId, signal?)`, `getQueryConfig(queryId, signal?)`,
-  `getQuery(queryId, signal?)`, `getReaction(signal?)`,
-  `onConnectionStatusChange(cb)`, `getServerUiUrl()` and `disconnect()`.
-- **`DrasiSSEClient`** — the raw multiplexing SSE client used by `DrasiClient`.
-  Direct use does not perform REST validation unless its read-only `validate`
-  callback is supplied; it cannot infer missing resources from stream errors.
-
-```ts
-const client = new DrasiClient({
-  serverUrl: 'https://drasi.example',
-  instanceId: 'analytics',
-  queryIds: ['readings'],
-  reaction: { id: 'events', endpoint: 'https://events.example/changes' },
-});
-await client.initialize();
-const unsubscribe = client.subscribe('readings', (result) => {
-  console.log(result.data);
-}, (error) => console.error(error.code, error.message));
-// On teardown:
-unsubscribe();
-await client.disconnect();
-```
-
-Full-view reads consume `{ success: true, data: { id, status, config }, error }`.
-Query text, `queryLanguage`, source subscriptions (`sourceId`, `pipeline`,
-`nodes`, `relations`) and joins are inside `config`; reaction `kind`, `queries`
-and plugin properties are **flattened within `config`**, not `config.properties`.
-`getQueryConfig` returns that config; absence throws a typed error, not `null`.
-Read-only validation does not compare query text or deployment definitions.
-
-## Errors, retries and provisioning ownership
-
-`DrasiError` extends `Error`. Its stable `code`, `instanceId`, `resourceKind`,
-`resourceId`, `resourceStatus`, optional HTTP `status` and `retryable` fields
-survive through the client, context and hooks. Messages are safe summaries;
-raw server responses, stack traces and network details are not displayed.
-Render `error.message`; branch on `error instanceof DrasiError` and `error.code`.
-Never parse a message to authorize setup.
-
-| Code | Meaning / ownership |
+| Code | Meaning / appropriate owner action |
 | --- | --- |
-| `INSTANCE_NOT_FOUND` | Wrong/missing explicitly selected instance. Operator/app configuration, not query setup. |
-| `QUERY_NOT_FOUND`, `REACTION_NOT_FOUND` | Structured REST-confirmed absence. App may provision only resources it owns. |
-| `RESOURCE_STOPPED` | Stopped/Added resource. An owning app may start it; the package never does. |
-| `RESOURCE_STARTING` | Starting/Reconfiguring, including bootstrap. Retryable; **not absent** and no duplicate start. |
-| `RESOURCE_UNAVAILABLE` | Error/Stopping/Removed. Surface for operator attention. |
-| `SERVER_UNAVAILABLE`, `STREAM_UNAVAILABLE` | Retryable transport/service failure. **Never permission to create resources.** |
-| `UNAUTHENTICATED`, `FORBIDDEN` | Fix credentials/authorization; no automatic retry/provisioning. |
-| `INVALID_CONFIGURATION`, `INCOMPATIBLE_RESOURCE`, `INVALID_PAYLOAD` | Fix references, reaction contract, deployment conflict or unsupported data; no blind retry. |
+| `INSTANCE_NOT_FOUND` | Explicit instance is absent. Correct configuration; not query provisioning. |
+| `QUERY_NOT_FOUND`, `REACTION_NOT_FOUND` | Structured REST-confirmed absence. Only the owning app may provision allowlisted resources. |
+| `RESOURCE_STOPPED` | Stopped/Added resource. Only its owner may start it. |
+| `RESOURCE_STARTING` | Starting/Reconfiguring/bootstrap. Retryable, not absent; no duplicate start. |
+| `RESOURCE_UNAVAILABLE` | Error/Stopping/Removed; operator attention. |
+| `SERVER_UNAVAILABLE`, `STREAM_UNAVAILABLE` | Retryable service/transport failure, **never permission to create**. |
+| `UNAUTHENTICATED`, `FORBIDDEN` | Fix credentials/authorization. No automatic auth/provisioning loop. |
+| `INVALID_CONFIGURATION`, `INCOMPATIBLE_RESOURCE`, `INVALID_PAYLOAD` | Invalid references/options, wrong reaction contract, redirect or unsupported data. Permanent until corrected. |
 
-Native EventSource hides HTTP status. After an opaque stream failure the
-client validates references using **read-only REST**, then either surfaces a
-confirmed permanent error or retries transport. A proxy's unstructured 404
-is an invalid payload, not evidence of a missing query.
+`retryable` means another attempt may be useful, not that retry continues
+forever. REST 408/429/5xx and network/body timeouts are retryable; 401/403 and
+malformed/incompatible data are permanent. Only a structured matching REST 404
+establishes absence; proxy HTML/unstructured 404s do not. Native SSE errors
+expose no HTTP status, even when the underlying cause is an auth failure.
 
-The default policy allows **10 retries after the first attempt**, with
-1000 ms exponential backoff capped at 30000 ms. Each EventSource opening has a
-10000 ms timeout; each REST request/body also has a 10000 ms timeout. The
-`reconnect` options are `maxReconnectAttempts`, `initialReconnectDelayMs`,
-`maxReconnectDelayMs`, and `connectionTimeoutMs`. Counts reset on a successful
-open/snapshot. This bounds consecutive failed attempts, not idle time on an
-already-open stream. Snapshot transient retries use the same count/backoff;
-missing/stopped/auth/protocol errors terminate immediately. Exhaustion surfaces
-the last typed error and stops work. `retryable` says another attempt may be
-useful, not that the package will retry forever.
+## SSR and import safety
 
-`useDrasiClient()` returns `{ client, initialized, error, retry }`; `retry()`
-starts a new **read-only** connection/snapshot lifecycle. Unmount/cleanup aborts
-requests, closes the stream and cancels timers. A direct client owner must call
-`disconnect()`; every subscription returns an unsubscribe function.
+All entrypoints are safe to import/require without DOM/network activity.
+Server rendering providers and the initial, closed component state does not run
+effects or open streams. Interactive portals require a browser DOM; open
+dialogs/fullscreen are not a server-rendering feature.
+A direct client can perform REST-only reads in Node with native/injected fetch,
+including auth, without React or EventSource. **Default live execution is
+browser-only**: missing EventSource produces `INVALID_CONFIGURATION`.
+SSR is not a server-side live subscription or a preloaded query snapshot.
 
-Applications needing setup should first attempt `client.initialize()`, catch
-only eligible typed errors, run their own bounded provisioner, then retry.
-Keep desired-definition checks, POST bodies and conflict policy outside the
-package. Do not use SSE errors as absence detection.
+Clean packed tests use DOM/network traps, ESM and CommonJS, NodeNext
+`.mts`/`.cts` and bundler resolution with `skipLibCheck: false`. Client-only
+tests omit peers and verify no React runtime or `@types/react` declaration graph;
+hooks do not load presentation/CSS. Marked runnable snippets in this README are
+extracted from the installed tarball and type-checked against its real exports.
+No source aliases or hidden React copies satisfy these contracts.
 
-For this application-owned lifecycle, `DrasiClientProvider` is a controlled
-React context binding: pass `value={{ client, initialized, error, retry }}`.
-It opens **no** connection and performs **no** initialization, retry or cleanup;
-the owner must manage cancellation and disconnect on teardown. It lets an app
-reuse the *same* initialized client/stream with all package hooks, without a
-second preflight client or an implicit resource-management callback.
-See Trading's `src/drasi/TradingProvider.tsx` and `ensureTradingResources.ts`
-for the bounded, shared recovery implementation.
+## Verified compatibility
 
-## Styling
+Claims are intentionally narrow, not open-ended minimum versions:
 
-The package ships complete, namespaced component CSS. Consumers do not need
-Tailwind and do not need to scan package source:
-
-```ts
-import '@drasi/react/styles.css';
-```
-
-Colors and the default table height are themeable through the `--drasi-*` CSS
-custom properties. Visual elements are also overridable through the `className`,
-`tableClassName`, `headerClassName`, `rowClassName`, and per‑column `className`
-props, so you can match any design system.
-
-## Project structure
-
-The source is organized so the public API is a single barrel (`src/index.ts`)
-re‑exporting three groups:
-
-```
-src/
-  index.ts          # public barrel
-  types.ts          # shared public types
-  client/           # framework-agnostic core (no React): DrasiClient, DrasiSSEClient
-  react/            # React bindings: DrasiProvider, hooks, useRowAnimation
-  components/       # ready-made UI: QueryTable, CodeViewerDialog, icons
-```
-
-Consumers only ever import from the package root (`@drasi/react`); the internal
-folders are an implementation detail.
-
-## Building from source
-
-```bash
-# from this directory (dev-tools/react)
-npm ci           # install committed-lock dependencies
-npm run build    # bundle ESM + CJS + .d.ts to ./dist
-```
-
-Other scripts:
-
-| Script | Description |
+| Surface | Exercised configuration |
 | --- | --- |
-| `npm run dev` | Rebuild on change (`tsup --watch`). |
-| `npm run typecheck` | Type-check without emitting. |
-| `npm test` | Run client, hook, lifecycle, and component regression tests. |
-| `npm run test:coverage` | Measure V8 coverage across all package source files. |
-| `npm run clean` | Remove `dist/`. |
+| React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
+| Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
+| Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
+| Server | v1 DTOs on server **0.2.1**, exact captured revision in the fixture, library **0.8.9**, the reviewed compatible engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. Not a claim that every older 0.2.1 runtime has the same result guarantees. |
+| Plugin / ABI | Signed SSE **0.3.4**, SDK/host/FFI crates **0.10.0**, independently versioned C ABI **0.11.0**. Trading's five exact platform/digest/hash pins remain unchanged. |
 
-The build (via [`tsup`](https://tsup.egoist.dev/)) emits ES modules
-(`dist/index.js`), CommonJS (`dist/index.cjs`), and TypeScript declarations to
-`dist/`. `styles.css` is shipped alongside those artifacts. Both `dist/` and
-`node_modules/` are git‑ignored.
+Protocol capabilities, not a guessed version string, determine acceptance.
+Missing full-view fields, unsupported language/status/shape, wrong resource
+identity or incompatible reaction membership fail with typed errors. No older
+server fallback, query-language substitution or newer SDK/ABI upgrade is
+attempted. See [engine prerequisites](../../docs/engine-prerequisite.md).
+The client does not attest engine/plugin versions; a semantically wrong result
+with a valid shape cannot be detected by DTO validation. Operator setup and
+real-server provenance/gates supply the version evidence.
 
-## Future publishing
+## P3 migration
 
-Publishing is intentionally outside the scope of the current staging work.
-`package.json` is marked `"private": true` so it cannot be published
-accidentally. The later repository move must update repository links, remove the
-private flag, choose the initial version, reserve the npm scope, and add a
-trusted release workflow with npm provenance. `prepack` already performs a clean
-build, and CI verifies the packed artifact before that transition.
+Use `/client`, `/react` or `/components` for the dependency boundary you need;
+root imports remain supported. Import `/styles.css` explicitly for components.
+React peers are now optional for installation, not optional when executing
+React APIs, and support is limited to the exercised version.
 
-## Using it in the Trading example
+Connection options still require server, instance, query IDs and an explicit
+reaction endpoint. Keep creation definitions in your app; a complete
+`QueryConfig` read now includes real server fields and is not a convenient
+creation-body type. Trading uses its own `TradingQueryDefinition`.
 
-The Trading dashboard (`examples/trading/app`) consumes this package as
-`@drasi/react` through a local `file:../../../dev-tools/react` dependency. Its
-`predev` and `prebuild` scripts build the package first, and the app imports the
-package stylesheet. There are no Vite or TypeScript source aliases and no
-consumer Tailwind scanning, so broken exports, declarations, or styles cannot be
-hidden by monorepo-only configuration.
+Raw result/transform/route fields are now `unknown`, not ambient `any`.
+Narrow them or use a validating transform. Get-key/action callbacks receive
+the typed row; adapt formatters to the typed column API rather than casting
+rows to `any`. Hook results/options and error/connection/sort types have public
+names. Equivalent inline data configuration is safe; callable identities remain
+material. Custom stream factories may accept the new auth/credentials/signal
+argument; one-argument factories remain assignable but must not ignore
+authentication when configured.
 
-The [Trading behavior baseline](../../examples/trading/TESTING.md) documents
-app integration tests, deterministic three-engine browser checks, fixed-viewport
-visual comparisons, and the separate real-server gate. CI also tests Trading
-from a clean tarball consumer with lifecycle rebuilding disabled; synthetic
-transport fixtures are not evidence of a supported server/plugin wire contract.
-Package tests include non-Trading telemetry fixtures without adding another demo.
+Legacy `_deleted`, content routing, key fallback and snapshot buffering are
+explicitly retained for the next Part B PR. This migration does not claim
+stable-key, key-changing-update, exactly-once or complete stale-state behavior.
 
-All trading‑specific behaviour (provisioning, the query list, the SSE Reaction, the
-content‑router for aggregation result changes, and per‑query key/transform/sort
-options) lives in the app under `src/drasi/`, demonstrating how an application
-supplies its domain knowledge to these otherwise‑generic components.
+## Development and Trading verification
+
+The source/type graphs are physically separated under `src/client`,
+`src/react` and `src/components`; `src/types.ts` is only a root compatibility
+barrel, not an import used by the client. `npm run build` emits ESM, CJS and
+both declaration formats. `npm run typecheck`, `npm test`,
+`npm run test:coverage` and `npm run dev` use the existing tooling.
+The tarball includes README, CHANGELOG, LICENSE, NOTICE, dist and CSS only.
+
+Trading continues to consume built local exports. Its unchanged query
+definitions, financial transforms, provisioning and tutorial snippets stay
+app-owned. [Trading TESTING.md](../../examples/trading/TESTING.md) documents
+the locked clean-tarball gate, all three browsers, five original exact PNGs,
+coverage/size budgets and authoritative real-server financial/CRUD/reconnect
+assertions. Synthetic tests are not proof that a real plugin emits a shape.
+
+Keep `"private": true`. Publishing, repository transfer, credentials/workflows,
+new examples/Storybook, composition/accessibility and Part B result redesign are
+separately authorized work, not a next step implied by this package.
 
 ## License
 
-Apache License 2.0. See the license headers in each source file and the
-repository's top‑level `LICENSE`.
+Apache License 2.0. See LICENSE and NOTICE.

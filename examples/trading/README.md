@@ -270,10 +270,13 @@ A component subscribes to a continuous query with the `useDrasiQuery` hook (or b
 dropping in a `QueryTable`):
 
 ```typescript
-import { useDrasiQuery } from '@drasi/react';
+import { useDrasiQuery } from '@drasi/react/react';
+import { tradingQueryOptions } from './drasi/queryOptions';
 
 // Subscribe to a continuous query over the shared connection
-const { data, loading, lastUpdate } = useDrasiQuery<Stock>('watchlist-query');
+const { data, loading, lastUpdate } = useDrasiQuery(
+  'watchlist-query', tradingQueryOptions('watchlist-query'),
+);
 
 // data updates automatically when query results change
 // No polling. No manual refetching. No WebSocket plumbing.
@@ -325,7 +328,7 @@ The app uses the package's controlled `DrasiClientProvider` to bind hooks to the
 same single client during resolution/setup and streaming. Terminal errors keep
 their `DrasiError` identity and show a **Retry connection** control; stream/network
 errors alone never authorize creation. Package reconnect/snapshot attempts are
-bounded as described in its [error/retry contract](../../dev-tools/react/README.md#errors-retries-and-provisioning-ownership).
+bounded as described in its [error/retry contract](../../dev-tools/react/README.md#errors-and-recovery).
 Business actions, financial transforms, query/source/join ordering, routing,
 sorting defaults and successful dashboard appearance are unchanged.
 
@@ -356,6 +359,30 @@ package before Vite runs, and `app/src/main.tsx` imports
 `@drasi/react/styles.css`. There are no package source aliases or consumer
 Tailwind content scans: the app consumes the package's built JavaScript,
 declarations, and self-contained stylesheet.
+
+P3 imports transport/types from `@drasi/react/client`, bindings from
+`@drasi/react/react`, and presentation from `@drasi/react/components`.
+The root remains a convenience export. Client-only consumers need no React
+runtime or React types; hooks do not load component CSS. All entrypoints ship
+real ESM/CommonJS and declaration artifacts. Trading retains React 18.3.1;
+React 19 is not claimed.
+
+The app's `TradingQueryDefinition` remains a creation-only shape with explicit
+Cypher and ordered sources/joins; it is not the package's complete read-only
+`QueryConfig` DTO. Incoming object fields are now `unknown`, and app-owned
+transforms narrow/convert them to named Trading row types. Query text, numeric
+business defaults, routing and deletion behavior are unchanged. The known
+market-mover default sorting remains intentionally unchanged.
+
+The package provider compares plain reference/configuration values rather than
+object identities, while callable fetch/auth/stream/routing identities are
+material. Trading keeps app-owned lifecycle/provisioning and the controlled
+binding; it does not switch back to a package provisioner. See the package's
+[auth](../../dev-tools/react/README.md#authentication-and-injected-transports),
+[ownership](../../dev-tools/react/README.md#ownership-and-reconfiguration),
+[SSR](../../dev-tools/react/README.md#ssr-and-import-safety) and
+[migration](../../dev-tools/react/README.md#p3-migration) contracts. Stable keys,
+canonical deltas and complete stale/reconnect state remain #163 Part B.
 
 Validate the package independently before consuming it:
 

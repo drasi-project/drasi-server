@@ -5,6 +5,16 @@
 
 import assert from 'node:assert/strict';
 
+/** Count every shipped entrypoint/shared chunk, not just the small root barrel. */
+export function measurePackageModules(paths, readBytes) {
+  const sum = suffix => {
+    const modules = paths.filter(path => path.startsWith('package/dist/') && path.endsWith(suffix));
+    assert(modules.length > 0, `Missing packed ${suffix} modules`);
+    return modules.reduce((total, path) => total + readBytes(path), 0);
+  };
+  return { packageEsm: sum('.js'), packageCjs: sum('.cjs'), packageTypes: sum('.d.ts') };
+}
+
 export function assertBaseline(observed, baseline) {
   for (const project of ['package', 'trading']) {
     for (const counter of ['statements', 'branches', 'functions', 'lines']) {
