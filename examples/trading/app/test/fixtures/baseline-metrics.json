@@ -2,6 +2,22 @@
   "schemaVersion": 2,
   "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
+  "artifactChange": {
+    "issue": 162,
+    "predecessor": "a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059",
+    "reason": "P2 adds instance-scoped reference validation, named errors, bounded read-only retries, controlled React binding, and app-owned shared provisioning. No dependency/CSS/PNG/coverage-floor or 2% policy change. See examples/trading/TESTING.md.",
+    "p1Sizes": {
+      "packageTarball": 110691,
+      "packageEsm": 66865,
+      "packageCjs": 68860,
+      "packageTypes": 18746,
+      "packageCss": 10043,
+      "tradingJs": 223574,
+      "tradingJsGzip": 65775,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    }
+  },
   "coverage": {
     "package": {
       "statements": 62.52,
@@ -17,13 +33,13 @@
     }
   },
   "sizes": {
-    "packageTarball": 110691,
-    "packageEsm": 66865,
-    "packageCjs": 68860,
-    "packageTypes": 18746,
+    "packageTarball": 125325,
+    "packageEsm": 72992,
+    "packageCjs": 75038,
+    "packageTypes": 21140,
     "packageCss": 10043,
-    "tradingJs": 223574,
-    "tradingJsGzip": 65775,
+    "tradingJs": 233695,
+    "tradingJsGzip": 69038,
     "tradingCss": 21034,
     "tradingCssGzip": 5163
   }

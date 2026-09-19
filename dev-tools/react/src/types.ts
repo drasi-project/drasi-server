@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import type React from 'react';
+import type { DrasiError } from './client/errors';
 
 /**
  * A batch of results for a single continuous query, delivered over the shared
@@ -33,7 +34,7 @@ export interface QueryResult<T = any> {
 export interface ConnectionStatus {
   connected: boolean;
   reconnecting?: boolean;
-  error?: string;
+  error?: DrasiError;
   lastConnected?: Date;
 }
 
@@ -57,44 +58,40 @@ export interface QueryJoin {
   keys: QueryJoinKey[];
 }
 
-/**
- * A continuous query definition. This is the minimal shape the library needs
- * in order to create/start the query on the Drasi Server. Extra fields are
- * passed through untouched.
- */
-export interface QueryDefinition {
+/** Read-only query configuration returned inside the server's full view. */
+export interface QueryConfig {
   id: string;
   query: string;
   sources: QuerySource[];
   joins?: QueryJoin[];
-  /** Query language. Defaults to `Cypher` when omitted. */
-  queryLanguage?: string;
-  [key: string]: any;
+  queryLanguage: 'Cypher' | 'GQL';
+  [key: string]: unknown;
 }
 
-/**
- * Configuration for the SSE reaction that the library ensures exists on the
- * Drasi Server. A single reaction multiplexes every query in the connection.
- */
-export interface ReactionDefinition {
-  /** Reaction id. Defaults to `sse-stream`. */
-  id?: string;
-  /** Reaction kind. Defaults to `sse`. */
-  kind?: string;
-  /** Host the reaction binds to on the server. Defaults to `0.0.0.0`. */
-  host?: string;
-  /** Port the reaction's SSE endpoint listens on. */
-  port: number;
-  /** Path of the SSE endpoint. Defaults to `/events`. */
-  ssePath?: string;
-  /** Heartbeat interval in milliseconds. */
-  heartbeatIntervalMs?: number;
-  /**
-   * Public URL of the SSE endpoint the browser should connect to. When omitted
-   * it is derived from `host`/`port`/`ssePath` (mapping `0.0.0.0` to
-   * `localhost`).
-   */
-  endpoint?: string;
+/** Read-only reaction configuration. Plugin properties are flattened here. */
+export interface ReactionConfig {
+  id: string;
+  kind: string;
+  queries: string[];
+  [key: string]: unknown;
+}
+
+export type ComponentStatus =
+  | 'Starting' | 'Running' | 'Stopping' | 'Stopped'
+  | 'Error' | 'Reconfiguring' | 'Added' | 'Removed';
+
+/** The consumed subset of the server's ComponentListItem full-view DTO. */
+export interface Component<T> {
+  id: string;
+  status: ComponentStatus;
+  config: T;
+}
+
+/** Reference to an existing SSE reaction, not a deployment definition. */
+export interface ReactionReference {
+  id: string;
+  /** Absolute, browser-reachable HTTP(S) URL; may point at a reverse proxy. */
+  endpoint: string;
 }
 
 /**

@@ -13,12 +13,14 @@
 // limitations under the License.
 
 /**
- * Framework-agnostic core: orchestrates the query/reaction lifecycle and the
+ * Framework-agnostic core: validates existing resources and manages the
  * shared, multiplexed SSE connection without any React dependency.
  */
 
 export { DrasiClient } from './DrasiClient';
 export type { DrasiClientOptions } from './DrasiClient';
+export { DrasiError } from './errors';
+export type { DrasiErrorCode, DrasiErrorDetails, DrasiResourceKind } from './errors';
 export { DrasiSSEClient } from './DrasiSSEClient';
 export type {
   DrasiSSEClientOptions,

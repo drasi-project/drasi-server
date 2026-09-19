@@ -30,6 +30,7 @@ const hooks = vi.hoisted(() => ({
 vi.mock('../src/react/DrasiContext', () => hooks);
 
 import { QueryTable } from '../src/components/QueryTable';
+import { DrasiError } from '../src/client/errors';
 
 interface Stock {
   symbol: string;
@@ -93,7 +94,7 @@ describe('QueryTable', () => {
     hooks.useDrasiQuery.mockReturnValue({
       data: null,
       loading: false,
-      error: 'snapshot failed',
+      error: new DrasiError('QUERY_NOT_FOUND'),
       lastUpdate: null,
     });
 
@@ -105,7 +106,7 @@ describe('QueryTable', () => {
       />,
     );
 
-    expect(screen.getByText('Error: snapshot failed')).not.toBeNull();
+    expect(screen.getByText('Error: The referenced query does not exist.')).not.toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });
 
@@ -137,7 +138,7 @@ describe('QueryTable', () => {
     hooks.useDrasiQuery.mockReturnValue({
       data: null,
       loading: false,
-      error: 'snapshot failed',
+      error: new DrasiError('QUERY_NOT_FOUND'),
       lastUpdate: null,
     });
     rendered.rerender(
