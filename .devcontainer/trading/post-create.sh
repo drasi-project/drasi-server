@@ -46,17 +46,12 @@ export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
 # Shared with start-demo.sh: no latest release, empty UI placeholder, or
 # unversioned plugin install can stand in for the reviewed checkout and pins.
-bash scripts/prepare-trading.sh
+bash scripts/prepare-trading.sh --allow-sudo
 
 # Make demo scripts executable.
 chmod +x examples/trading/start-demo.sh examples/trading/stop-demo.sh
 
-# Pre-install npm and pip dependencies so the first start-demo.sh run is fast.
-if [ -d examples/trading/app ] && [ ! -d examples/trading/app/node_modules ]; then
-    echo "📦 Installing React app npm dependencies..."
-    (cd examples/trading/app && npm install)
-fi
-
+# The shared helper prepares the package/app with their existing locked scripts.
 if [ -f examples/trading/mock-generator/requirements.txt ]; then
     if ! python3 -c "import requests, flask, psycopg2" 2>/dev/null; then
         echo "📦 Installing Python dependencies for mock generator..."

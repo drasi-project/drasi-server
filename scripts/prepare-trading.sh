@@ -6,9 +6,13 @@
 
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [[ $# -gt 0 ]]; then
+    [[ $# -eq 1 && "$1" == "--allow-sudo" ]] \
+        || { echo "Usage: $0 [--allow-sudo]" >&2; exit 1; }
+fi
 
 if [[ ! -e "$root/../drasi-core" && ! -L "$root/../drasi-core" ]]; then
-    bash "$root/scripts/prepare-core.sh" >&2
+    bash "$root/scripts/prepare-core.sh" "$@" >&2
 fi
 mode="$(python3 "$root/scripts/plugin_origin.py" mode)"
 case "$mode" in
@@ -27,4 +31,9 @@ if [[ "$mode" == registry ]]; then
 else
     make -C "$root" build-local-plugins >&2
 fi
+
+# npm prepares the file dependency during app installation; its build tools must exist first.
+npm --prefix "$root/dev-tools/react" ci >&2
+npm --prefix "$root/dev-tools/react" run build >&2
+npm --prefix "$root/examples/trading/app" ci >&2
 printf '%s\n' "$mode"

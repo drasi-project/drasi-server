@@ -12,9 +12,14 @@ fail() {
 }
 
 check_only=false
+allow_sudo=false
 if [[ $# -gt 0 ]]; then
-    [[ $# -eq 1 && "$1" == "--check" ]] || fail "usage: $0 [--check]"
-    check_only=true
+    [[ $# -eq 1 ]] || fail "usage: $0 [--check | --allow-sudo]"
+    case "$1" in
+        --check) check_only=true ;;
+        --allow-sudo) allow_sudo=true ;;
+        *) fail "usage: $0 [--check | --allow-sudo]" ;;
+    esac
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -28,7 +33,14 @@ revision="$(cat "$pin_file")"
 if [[ ! -e "$sibling" && ! -L "$sibling" ]]; then
     [[ "$check_only" == false ]] || fail "missing sibling checkout: $sibling"
     # Reserve only an absent destination; never reset or replace an existing checkout.
-    mkdir "$sibling" || fail "cannot reserve absent sibling: $sibling"
+    if [[ "$allow_sudo" == true && ! -w "$(dirname "$sibling")" ]]; then
+        sudo -n mkdir -- "$sibling" || fail "cannot reserve absent sibling: $sibling"
+        sudo -n chown -h "$(id -u):$(id -g)" "$sibling" \
+            || fail "cannot assign the newly reserved sibling to the current user: $sibling"
+        [[ -d "$sibling" && ! -L "$sibling" ]] || fail "newly reserved sibling changed: $sibling"
+    else
+        mkdir "$sibling" || fail "cannot reserve absent sibling: $sibling"
+    fi
     git -C "$sibling" init --quiet
     git -C "$sibling" remote add origin "$repository"
     git -C "$sibling" fetch --quiet --depth=1 origin "$revision" \

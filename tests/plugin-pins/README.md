@@ -19,7 +19,7 @@ Mutable version tags are not used by installation.
 | --- | --- | --- |
 | macOS arm64 | Verified for all four test plugins | Verified ABI 0.11.0, versions, hashes and required factories |
 | Linux amd64 | Verified for all four test plugins | Not yet claimed; requires the matching Linux server |
-| Linux arm64 | Verified for all four test plugins | Not yet claimed; requires the matching Linux server |
+| Linux arm64 | Verified for all four test plugins | Verified with the source-built Linux image: ABI 0.11.0, versions, hashes and factories |
 
 The macOS binaries also report Git commit `e059382`, independently resolved to
 the full snapshot above, and these build timestamps: mock

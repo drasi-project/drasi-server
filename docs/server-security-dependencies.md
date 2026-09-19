@@ -90,7 +90,7 @@ scenario, query or financial expectation is changed. All **14** targeted
 cases pass, including the original ten real plugin/Wiremock scenarios.
 
 Local macOS arm64 checks on the updated lock pass build, strict all-target
-Clippy, formatting and 32 setup-policy tests. The actual pinned-registry
+Clippy, formatting and 35 setup-policy tests. The actual pinned-registry
 `make test-all` path passes **810 Rust tests**, with one existing doctest
 ignored. Its existing broad plugin smoke script records **8 passes and 28
 skips**, not 36 successful plugin cases. Separate isolated runs of the updated
@@ -105,10 +105,22 @@ warnings, and yanked chacha20 0.10.0. The unsoundness warnings cover anyhow
 1.0.102, im 15.1.0, scc 2.4.0 and sized-chunks 0.6.5. These warnings are not
 silently treated as resolved.
 
-The final committed binary still needs the unchanged P1 real
-PostgreSQL/Flask/CDC/SSE/browser gate and the relevant remote/container checks;
-their current outcomes are tracked in #202/#203. A pre-update binary's success
-does not validate this updated lock.
+The P1 owner also ran the full unchanged real PostgreSQL/Flask/CDC/SSE/browser
+gate on the final security-updated binary: **PASS**, one scenario in 13.4s,
+all 11 queries/reaction, CRUD/deletes, singleton 2000/cost 1800 -> live/reload
+2050 -> offline/reconnect 2150, with no manual refresh or assertion changes.
+The tested native binary SHA-256 is
+`f18c25d6b9e8cdbaa6b72e4700aee7e70cff15c30ebd0e56a6c1688eb333f358`,
+from committed server source `f9b573712fc349d5339e0021336a4deb5c6a56c7`.
+Later setup-helper corrections do not change its runtime inputs. This is not
+the pre-update `d659...` executable.
+
+Actual source-built Linux arm64 Docker and devcontainer binaries also pass
+signed-plugin ABI/hash/factory/UI probes. Cross's real locked Linux arm64
+check passes with the complete sibling workspace mounted. Exact-head remote
+outcomes and the unchanged YAML agent's unsupported-model infrastructure failure
+are tracked in #202/#203; they are not replaced by local evidence or called
+passing skips. The final integrated #201 CI remains a separate gate.
 
 The unused legacy workspace findings in
 [drasi-project/drasi-core#933](https://github.com/drasi-project/drasi-core/issues/933) /

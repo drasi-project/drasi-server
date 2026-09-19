@@ -20,7 +20,7 @@ class CorePreparationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.server = self.root / "server"
         self.source = self.root / "managed-core"
         self.sibling = self.root / "drasi-core"
@@ -105,12 +105,13 @@ class CorePreparationTests(unittest.TestCase):
         self.assertNotEqual(self.prepare().returncode, 0)
         self.assertFalse(self.sibling.exists())
 
-    def test_absent_sibling_fetches_only_the_exact_revision(self):
+    def git_transport(self):
         # Redirect the fixed upstream URL only inside this isolated Git transport fixture.
         real_git = shutil.which("git")
         binary = self.root / "bin"
         binary.mkdir()
         log = self.root / "git-commands.jsonl"
+        log.touch()
         shim = binary / "git"
         shim.write_text(f"#!{sys.executable}\n" + """
 import json, os, subprocess, sys
@@ -128,6 +129,10 @@ sys.exit(subprocess.run([os.environ["FIXTURE_REAL_GIT"], *arguments]).returncode
             "FIXTURE_REAL_GIT": real_git, "FIXTURE_GIT_SOURCE": str(self.source),
             "FIXTURE_GIT_LOG": str(log),
         }
+        return environment, log, binary
+
+    def test_absent_sibling_fetches_only_the_exact_revision(self):
+        environment, log, _ = self.git_transport()
         result = self.prepare(env=environment)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.git("-C", self.sibling, "rev-parse", "HEAD").stdout.strip(), self.revision)
@@ -137,6 +142,71 @@ sys.exit(subprocess.run([os.environ["FIXTURE_REAL_GIT"], *arguments]).returncode
         checkout = next(call for call in calls if "checkout" in call)
         self.assertEqual(checkout[-2:], ["--detach", self.revision])
         self.assertFalse(any("reset" in call or "pull" in call for call in calls))
+
+    def test_sudo_opt_in_never_changes_existing_directories_or_links(self):
+        binary = self.root / "bin"
+        binary.mkdir()
+        log = self.root / "sudo-log"
+        stub = binary / "sudo"
+        stub.write_text(f"#!{sys.executable}\nfrom pathlib import Path\n"
+                        f"Path({str(log)!r}).write_text('unexpected sudo')\nraise SystemExit(91)\n")
+        stub.chmod(0o755)
+        environment = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"]}
+        self.sibling.mkdir()
+        original = self.sibling.stat()
+        self.assertNotEqual(self.prepare("--allow-sudo", env=environment).returncode, 0)
+        self.assertFalse(log.exists())
+        self.assertEqual(self.sibling.stat().st_uid, original.st_uid)
+        self.assertEqual(self.sibling.stat().st_mode, original.st_mode)
+        self.sibling.rmdir()
+        self.sibling.symlink_to(self.source, target_is_directory=True)
+        result = self.prepare("--allow-sudo", env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(log.exists())
+        self.assertEqual(self.sibling.readlink(), self.source)
+
+    @unittest.skipIf(os.geteuid() == 0, "Permission boundary requires an unprivileged test user")
+    def test_readonly_parent_reserves_only_an_absent_sibling_with_explicit_opt_in(self):
+        environment, _, binary = self.git_transport()
+        log = self.root / "sudo-commands.jsonl"
+        log.touch()
+        sudo = binary / "sudo"
+        sudo.write_text(f"#!{sys.executable}\n" + """
+import json, os, subprocess, sys
+from pathlib import Path
+parent = Path(os.environ["FIXTURE_PARENT"])
+sibling = parent / "drasi-core"
+with open(os.environ["FIXTURE_SUDO_LOG"], "a") as output:
+    output.write(json.dumps(sys.argv[1:]) + "\\n")
+if sys.argv[1:] == ["-n", "mkdir", "--", str(sibling)]:
+    parent.chmod(0o700)
+    try:
+        subprocess.run(["mkdir", "--", str(sibling)], check=True)
+    finally:
+        parent.chmod(0o500)
+elif sys.argv[1:] != ["-n", "chown", "-h", f"{os.getuid()}:{os.getgid()}", str(sibling)]:
+    raise SystemExit("Unexpected privilege operation")
+""")
+        sudo.chmod(0o755)
+        environment.update({"FIXTURE_PARENT": str(self.root), "FIXTURE_SUDO_LOG": str(log)})
+        self.root.chmod(0o500)
+        try:
+            result = self.prepare(env=environment)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.sibling.exists())
+            self.assertEqual(log.read_text(), "")
+            result = self.prepare("--allow-sudo", env=environment)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(self.git("-C", self.sibling, "rev-parse", "HEAD").stdout.strip(), self.revision)
+            commands = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(len(commands), 2)
+            self.assertEqual(commands[0], ["-n", "mkdir", "--", str(self.sibling)])
+            self.assertEqual(commands[1], [
+                "-n", "chown", "-h", f"{os.getuid()}:{os.getgid()}", str(self.sibling),
+            ])
+            self.assertEqual(self.root.stat().st_mode & 0o777, 0o500)
+        finally:
+            self.root.chmod(0o700)
 
 
 if __name__ == "__main__":

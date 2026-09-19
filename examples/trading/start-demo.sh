@@ -200,12 +200,7 @@ sleep 3
 echo ""
 echo "Step 3: Setting up React application..."
 cd "$SCRIPT_DIR/app"
-if [ ! -d "node_modules" ]; then
-    echo "Installing npm dependencies..."
-    npm install
-else
-    echo "Dependencies already installed"
-fi
+echo "Locked package and app dependencies are prepared"
 
 # Step 4: Start React app
 echo "Starting React application..."

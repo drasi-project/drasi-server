@@ -227,6 +227,13 @@ if "build-release" in sys.argv:
     output.mkdir(parents=True, exist_ok=True)
     (output / "index.html").write_text("fixture UI source build")
 """)
+        executable(self.bin / "npm", """
+import json, os, sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["npm", *sys.argv[1:]]) + "\\n")
+if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") == "1":
+    sys.exit(23)
+""")
 
     def test_make_test_all_uses_resolved_origin_not_sibling_existence(self):
         checkout = self.root / "server"
@@ -298,7 +305,7 @@ if "metadata" in sys.argv:
                 shutil.copyfile(ROOT / "examples/trading/start-demo.sh", trading / "start-demo.sh")
                 environment = {**self.environment, "POLICY_MODE": mode}
                 self.source_stubs()
-                for tool in ("docker", "npm"):
+                for tool in ("docker",):
                     executable(self.bin / tool, "pass\n")
                 executable(self.bin / "docker-compose", "print('fixture-ready')\n")
                 executable(self.bin / "curl", "print('200')\n")
@@ -341,7 +348,7 @@ sys.exit(42)
         (trading / "stop-demo.sh").write_text("#!/bin/bash\n")
         executable(self.root / "target/release/drasi-server", "raise SystemExit('arbitrary prebuilt')\n")
         self.source_stubs()
-        for tool in ("sudo", "docker", "curl", "npm"):
+        for tool in ("sudo", "docker", "curl"):
             executable(self.bin / tool, f"""
 import json, os, sys
 with open(os.environ["POLICY_LOG"], "a") as log:
@@ -362,6 +369,11 @@ with open(os.environ["POLICY_LOG"], "a") as log:
         self.assertEqual((self.root / "ui/dist/index.html").read_text(), "fixture UI source build")
         installs = [event for event in events if any("install_plugins.py" in arg for arg in event)]
         self.assertEqual(len(installs), 1)
+        npm_calls = [event for event in events if event[0] == "npm"]
+        self.assertEqual(
+            [(Path(event[2]).name, event[3:]) for event in npm_calls],
+            [("react", ["ci"]), ("react", ["run", "build"]), ("app", ["ci"])],
+        )
 
         for failure in ("FAIL_CORE", "FAIL_BUILD"):
             with self.subTest(failure=failure):
@@ -376,6 +388,32 @@ with open(os.environ["POLICY_LOG"], "a") as log:
                     "install_plugins.py" in argument
                     for event in self.commands() for argument in event
                 ))
+
+    def test_clean_package_dependency_build_precedes_app_install_and_failure_stops_it(self):
+        self.source_stubs()
+        environment = {**self.environment, "POLICY_MODE": "registry"}
+        for failure in (False, True):
+            with self.subTest(failure=failure):
+                self.log.write_text("")
+                result = subprocess.run(
+                    ["bash", str(self.root / "scripts/prepare-trading.sh")],
+                    cwd=self.root,
+                    env={**environment, "FAIL_PACKAGE_BUILD": "1" if failure else "0"},
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                )
+                npm_calls = [event for event in self.commands() if event[0] == "npm"]
+                expected = [("react", ["ci"]), ("react", ["run", "build"])]
+                if failure:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("registry", result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), "registry")
+                    expected.append(("app", ["ci"]))
+                self.assertEqual(
+                    [(Path(event[2]).name, event[3:]) for event in npm_calls],
+                    expected,
+                )
 
     def test_release_build_requires_real_ui_build_and_locked_cargo(self):
         (self.root / "ui").mkdir()

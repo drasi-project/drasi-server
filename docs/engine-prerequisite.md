@@ -91,6 +91,14 @@ automatic deletion. An approved symlink must be created only at an absent
 `../drasi-core`; never repoint an unrelated checkout or a project's main
 working tree. `bash scripts/prepare-core.sh --check` verifies without fetching.
 
+Devcontainer post-create opts into `--allow-sudo` only because its unprivileged
+user cannot normally create a sibling under root-owned `/workspaces`.
+If that sibling is absent and its parent is not writable, preparation uses
+noninteractive `sudo mkdir` to reserve exactly that path and assigns only the
+new directory to the invoking user. It never recursively changes `/workspaces`,
+changes ownership of an existing checkout/link, or enables privileged behavior
+for ordinary local/CI calls. Missing sudo authorization is an explicit error.
+
 **Cargo path dependencies do not store a Git revision in `Cargo.lock`.**
 Keep the revision file, source verification, manifest and lock together.
 Package version 0.5.8 alone cannot distinguish the published baseline from
@@ -114,6 +122,13 @@ real UI with locked dependencies, and installs all five pinned Trading plugins,
 including SSE before the app creates its reaction. A pre-existing binary,
 download of `latest`, or empty `ui/dist` is not source-build evidence. Published
 images/binaries do not inherit these local patches.
+
+The same source-workspace prerequisite installs `dev-tools/react` with its
+committed npm lock and runs its existing build before `npm ci` installs the
+app's file dependency. This prevents a clean checkout from invoking that
+dependency's prepare script without `tsup`. It changes no package APIs,
+exports, UI or lockfile resolutions. Source-free packed-consumer checks are a
+separate path and must continue to disable lifecycle rebuilding from source.
 
 ## Plugins and genuine local SDK development
 
@@ -161,12 +176,30 @@ Fresh validation of the updated #203 graph and binary is recorded separately in
 reuse that pre-update executable. Tooling tests cover origin decisions, clean-plugin startup, locked-install
 postconditions, post-create source dispatch and safe exact-revision preparation.
 
-Those checks are **not** the unchanged P1 real PostgreSQL/Flask/CDC/SSE/browser
-gate. Its owner must run that harness against this prerequisite's committed
-default configuration and report the exact server/core/lock/binary provenance.
-Remote server checks, actual container/cross validation and the final integrated
-#201 run have separate outcomes; see #202 for current evidence rather than
-treating missing or skipped gates as passes.
+The P1 owner subsequently ran the **full unchanged** real
+PostgreSQL/Flask/CDC/SSE/browser gate against committed security-updated source
+`f9b573712fc349d5339e0021336a4deb5c6a56c7`: **PASS**, with fresh 11-query/reaction
+setup, CRUD/deletes, singleton 2000/cost 1800 -> live/reload 2050 ->
+offline/reconnect 2150, no manual refresh and unchanged pins/assertions.
+Harness revision was `fc6671bfeb7bb0bf151023d657b8d7926a0cf084`; tested native
+binary SHA-256 was
+`f18c25d6b9e8cdbaa6b72e4700aee7e70cff15c30ebd0e56a6c1688eb333f358`.
+Later setup-helper corrections do not alter those runtime inputs.
+
+Actual Docker Linux arm64 source builds and ABI/UI probes, the pinned Cross
+tool's locked Linux arm64 check, and the actual unprivileged Trading
+devcontainer post-create route also pass. Devcontainer validation used the
+declared image/features and source scripts with only network/port isolation;
+the parent `/workspaces` stayed root-owned, the newly reserved sibling alone
+became user-owned, and all npm/Cargo manifests and locks remained unchanged.
+It verified the built release executable, real UI and five signed plugin
+factories, not an arbitrary prebuilt binary. Owned validation resources were
+removed afterward.
+
+The final integrated #201 default-build run and coordinator promotion remain
+separate gates. See #202 for exact latest-head CI outcomes and the unchanged
+YAML agent's unsupported-model infrastructure failure; missing/skipped checks
+and unrelated audit failures are not represented as passes.
 
 The original server audit reported `RUSTSEC-2026-0258` for h2 0.3.27 and
 0.4.14, and `RUSTSEC-2026-0285` for rustls 0.23.40, identically to #119.
