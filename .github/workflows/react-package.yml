@@ -6,9 +6,13 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".drasi-core-revision"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
       - "scripts/**"
+      - "src/**"
+      - "ui/**"
       - "dev-tools/react/**"
-      - "examples/trading/app/**"
+      - "examples/trading/**"
       - ".github/workflows/react-package.yml"
   push:
     branches:
@@ -17,18 +21,30 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".drasi-core-revision"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
       - "scripts/**"
+      - "src/**"
+      - "ui/**"
       - "dev-tools/react/**"
-      - "examples/trading/app/**"
+      - "examples/trading/**"
       - ".github/workflows/react-package.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: Test package and consumer
+    name: Package, packed Trading, browsers and visuals
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1g
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -36,7 +52,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.20.0
           cache: npm
           cache-dependency-path: |
             dev-tools/react/package-lock.json
@@ -52,7 +68,7 @@ jobs:
 
       - name: Test package
         working-directory: dev-tools/react
-        run: npm test
+        run: npm test -- --coverage 2>&1 | tee "$RUNNER_TEMP/package-tests.log"
 
       - name: Build and pack package
         working-directory: dev-tools/react
@@ -60,14 +76,134 @@ jobs:
           npm run build
           npm pack --pack-destination "$RUNNER_TEMP"
 
-      - name: Install Trading app dependencies
-        working-directory: examples/trading/app
-        run: npm ci
+      - name: Install a clean Trading tarball consumer without package source
+        run: |
+          node examples/trading/app/test/tools/packed-consumer.mjs \
+            "$RUNNER_TEMP/drasi-react-0.1.0.tgz" "$RUNNER_TEMP/trading-consumer"
 
-      - name: Replace local dependency with packed artifact
-        working-directory: examples/trading/app
-        run: npm install --no-save "$RUNNER_TEMP"/drasi-react-*.tgz
+      - name: Type-check and test Trading
+        working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
+        run: |
+          npm run typecheck
+          npm run test:coverage 2>&1 | tee "$RUNNER_TEMP/trading-tests.log"
 
       - name: Build Trading app against packed artifact
-        working-directory: examples/trading/app
+        working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
         run: npm run --ignore-scripts build
+
+      - name: Chromium, Firefox, WebKit and fixed-viewport visual assertions
+        working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
+        # Firefox rejects Actions' pwuser-owned /github/home when the container runs as root.
+        env:
+          HOME: /root
+        run: npm run test:browser 2>&1 | tee "$RUNNER_TEMP/trading-browser.log"
+
+      - name: Reject unexplained coverage and artifact-size regressions
+        run: |
+          node examples/trading/app/test/tools/check-baseline.mjs \
+            "$RUNNER_TEMP/drasi-react-0.1.0.tgz" \
+            "$RUNNER_TEMP/trading-consumer/examples/trading/app" \
+            dev-tools/react/coverage/coverage-summary.json
+
+      - name: Retain coverage, browser diagnostics and logs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: react-trading-baseline
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            dev-tools/react/coverage/
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/coverage/
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/playwright-report/
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/test-results/
+
+  live:
+    name: Real Trading on the checked-out server
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.20.0
+          cache: npm
+          cache-dependency-path: |
+            dev-tools/react/package-lock.json
+            examples/trading/app/package-lock.json
+            ui/package-lock.json
+
+      - name: Set up Python for the real Trading API
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned Trading API dependencies
+        run: |
+          python -m venv "$RUNNER_TEMP/trading-python"
+          "$RUNNER_TEMP/trading-python/bin/python" -m pip install \
+            -r examples/trading/app/test/live/requirements.txt
+
+      - name: Install server native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libjq-dev libonig-dev
+          # Match the existing getting-started CI: libjq-dev does not ship libjq.pc.
+          echo "JQ_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+
+      - name: Build the actual checkout with its dependency lock and UI
+        run: |
+          bash scripts/prepare-core.sh
+          python3 scripts/plugin_origin.py mode
+          npm --prefix ui ci
+          npm --prefix ui run build
+          cargo build --locked 2>&1 | tee "$RUNNER_TEMP/server-build.log"
+
+      - name: Pack and install a clean Trading consumer
+        run: |
+          npm --prefix dev-tools/react ci
+          npm --prefix dev-tools/react run build
+          (cd dev-tools/react && npm pack --pack-destination "$RUNNER_TEMP")
+          node examples/trading/app/test/tools/packed-consumer.mjs \
+            "$RUNNER_TEMP/drasi-react-0.1.0.tgz" "$RUNNER_TEMP/trading-consumer"
+
+      - name: Build Trading and install its browser
+        working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
+        run: |
+          npm run --ignore-scripts build
+          npx --no-install playwright install --with-deps chromium
+
+      - name: Mandatory real-server provisioning, CRUD, live and reconnect smoke
+        working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
+        env:
+          P1_RUNTIME: checkout
+          P1_SOURCE_ROOT: ${{ github.workspace }}
+          P1_SERVER_BIN: ${{ github.workspace }}/target/debug/drasi-server
+          P1_SERVER_CARGO_LOCK: ${{ github.workspace }}/Cargo.lock
+          P1_SERVER_REVISION: ${{ github.sha }}
+          P1_PYTHON: ${{ runner.temp }}/trading-python/bin/python
+        run: npm run test:live 2>&1 | tee "$RUNNER_TEMP/trading-live.log"
+
+      - name: Retain real contracts, service logs and browser failures
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: react-trading-real-server
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/.test-runtime/live-*/*.log
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/.test-runtime/live-*/*.json
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/.test-runtime/live-*/*.yaml
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/playwright-report/live/
+            ${{ runner.temp }}/trading-consumer/examples/trading/app/test-results/live/
