@@ -277,8 +277,8 @@ if "metadata" in sys.argv:
                 events = self.commands()
                 self.assertIn(["registry-install" if mode == "registry" else "local-build"], events)
                 self.assertNotIn(["local-build" if mode == "registry" else "registry-install"], events)
-                self.assertIn(["cargo", "test", "--tests", "--", "--include-ignored"], events)
-                self.assertIn(["cargo", "test", "--doc"], events)
+                self.assertIn(["cargo", "test", "--locked", "--tests", "--", "--include-ignored"], events)
+                self.assertIn(["cargo", "test", "--locked", "--doc"], events)
                 if mode == "registry":
                     result = subprocess.run(
                         ["make", "-f", str(makefile), "build-local-plugins"],

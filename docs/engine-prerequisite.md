@@ -11,9 +11,12 @@ Server integration is tracked by
 [#201](https://github.com/drasi-project/drasi-server/pull/201), under
 [#161](https://github.com/drasi-project/drasi-server/issues/161).
 
-**This is an unpublished source integration, not a fixed release or a completed
-security gate.** Existing audit failures remain blockers; neither opening a
-draft PR nor passing functional validation waives them. No merge, publication,
+**This is an unpublished source integration, not a fixed release or blanket
+security approval.** The separately approved
+[#203 transport remediation](server-security-dependencies.md) clears the two
+selected server advisories while preserving the Drasi/plugin matrix. Existing
+warnings and the unused upstream workspace's failing audit remain visible;
+neither a draft PR nor functional validation waives them. No merge, publication,
 library/SDK upgrade or data migration is part of this prerequisite.
 
 ## Exact source and dependency boundary
@@ -45,13 +48,22 @@ callers must share those same Cargo identities. A core-only override can leave
 nominally incompatible copies. The compatibility workspace's unused library
 0.9.0 and SDK/FFI 0.11.0 crates are **not** selected.
 
-Compared with #119's `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`, the lockfile
-removes only the three patched packages' registry source/checksum fields.
+In the initial source-only integration commit
+`ef2d9471f5a14884c3ab191a5f08f41e914d7c3d`, compared with #119's
+`a2b648062a4c55e036d68b6f26bf73b4e773bcf1`, the lockfile removed only the three
+patched packages' registry source/checksum fields.
 All 646 package versions and dependency arrays, and all 643 other package
-records, are unchanged. The candidate lock SHA-256 is
+records were unchanged. That pre-security lock SHA-256 is
 `b0b2b2a464b03888050b782eab0cf9f88413608bcb12a3c674cacefaadbf34c6`.
 Resolved feature sets and dependency-kind/target edges were also compared with
 an immutable baseline archive, not inferred from version counts.
+
+The subsequently approved, separately identified #203 commit changes only
+the required HTTP/TLS/test-client closure. The final lock has 623 packages and
+SHA-256 `7405a70dfa40b5f3c9f007468acd00b9d63bef4d718d6315444829db19d8f6a4`;
+[the complete seven-upgrade/23-removal and feature/edge delta](server-security-dependencies.md)
+is documented separately. Do not describe the final combined lock as
+source-only, or reuse pre-update binary results as final validation.
 
 The earlier complete Git engine 0.5.9 candidate at
 `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` was rejected: it changed the public
@@ -139,12 +151,14 @@ signature/load evidence and the historical native version-label limitation.
 
 ## Validation status and removal policy
 
-Local macOS arm64 validation of this source graph passed locked metadata/tree,
+Initial, pre-#203 macOS arm64 validation passed locked metadata/tree,
 the server build, 775 Rust tests (32 existing ignored), strict all-target Clippy
 and formatting. The five original Trading artifacts installed with trusted
 signature results and exact binary hashes. An isolated server loaded them with
 reported C ABI 0.11.0, exposed the SSE factory and served its embedded UI.
-Tooling tests cover origin decisions, clean-plugin startup, locked-install
+Fresh validation of the updated #203 graph and binary is recorded separately in
+[the security dependency evidence](server-security-dependencies.md); it does not
+reuse that pre-update executable. Tooling tests cover origin decisions, clean-plugin startup, locked-install
 postconditions, post-create source dispatch and safe exact-revision preparation.
 
 Those checks are **not** the unchanged P1 real PostgreSQL/Flask/CDC/SSE/browser
@@ -154,10 +168,12 @@ Remote server checks, actual container/cross validation and the final integrated
 #201 run have separate outcomes; see #202 for current evidence rather than
 treating missing or skipped gates as passes.
 
-The retained server audit still reports `RUSTSEC-2026-0258` for h2 0.3.27 and
+The original server audit reported `RUSTSEC-2026-0258` for h2 0.3.27 and
 0.4.14, and `RUSTSEC-2026-0285` for rustls 0.23.40, identically to #119.
-The upstream compatibility workspace separately reports baseline-identical
-h2/azure_core findings. Neither set is suppressed or upgraded here.
+The explicitly approved #203 update removes those selected findings without
+suppression; 15 existing warnings remain. The upstream compatibility workspace
+separately retains its baseline-identical h2/azure_core findings and is not
+modified or declared audit-green by the server change.
 
 Remove the three overrides and revision/setup integration only after a
 compatible fixed release is explicitly selected and independently validated

@@ -194,11 +194,11 @@ test-all:
 		*) echo "Unsupported plugin dependency origin: $$mode" >&2; exit 1 ;; \
 	esac
 	@echo "=== Building server binary ==="
-	cargo build
+	cargo build --locked
 	@echo "=== Running unit and integration tests (including ignored/E2E) ==="
-	cargo test --tests -- --include-ignored
+	cargo test --locked --tests -- --include-ignored
 	@echo "=== Running doctests ==="
-	cargo test --doc
+	cargo test --locked --doc
 	@echo "=== Running plugin smoke tests ==="
 	./tests/plugin_smoke_test.sh --skip-build
 	@echo "=== All tests passed ==="
