@@ -129,7 +129,7 @@ const StockTicker: React.FC = () => {
 
   if (tickerItems.length === 0) {
     return (
-      <div className="stock-ticker">
+      <div className="stock-ticker" role="region" aria-label="Live stock ticker">
         <div className="ticker-container">
           <div className="ticker-content-static">
             <span className="ticker-placeholder">Waiting for price updates...</span>
@@ -140,7 +140,7 @@ const StockTicker: React.FC = () => {
   }
 
   return (
-    <div className="stock-ticker">
+    <div className="stock-ticker" role="region" aria-label="Live stock ticker">
       <div className="ticker-container" ref={containerRef}>
         <div className="ticker-content-smooth">
           {tickerItems.map((item) => (

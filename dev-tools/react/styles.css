@@ -19,34 +19,23 @@
  * with the --drasi-* custom properties without configuring Tailwind or scanning
  * package source.
  */
-:root {
-  --drasi-color-surface: #131825;
-  --drasi-color-dialog: #1e2433;
-  --drasi-color-code: #0d1117;
-  --drasi-color-border: #1f2937;
-  --drasi-color-primary: #3b82f6;
-  --drasi-color-success: #10b981;
-  --drasi-color-danger: #ef4444;
-  --drasi-color-text: #e5e7eb;
-  --drasi-color-muted: #9ca3af;
-  --drasi-color-subtle: #6b7280;
-  --drasi-table-height: 400px;
-  --drasi-radius: 0.5rem;
-}
-
 .drasi-query-table {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: var(--drasi-table-height);
-  color: var(--drasi-color-text);
-  background: var(--drasi-color-surface);
-  border: 1px solid var(--drasi-color-border);
-  border-radius: var(--drasi-radius);
+  height: var(--drasi-table-height, 400px);
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: var(--drasi-line-height, 1.5);
+  color: var(--drasi-color-text, #111827);
+  background: var(--drasi-color-surface, #fff);
+  border: 1px solid var(--drasi-color-border, #d1d5db);
+  border-radius: var(--drasi-radius, 0.5rem);
 }
 
 .drasi-query-table *,
-.drasi-code-dialog * {
+.drasi-modal-content,
+.drasi-modal-content * {
   box-sizing: border-box;
 }
 
@@ -69,7 +58,7 @@
 }
 
 .drasi-query-table__error {
-  color: var(--drasi-color-danger);
+  color: var(--drasi-color-danger, #b91c1c);
 }
 
 .drasi-query-table__header {
@@ -83,16 +72,12 @@
 .drasi-query-table__header-main,
 .drasi-query-table__header-controls,
 .drasi-query-table__actions,
-.drasi-query-table__heading-content,
-.drasi-code-dialog__title-group,
-.drasi-code-dialog__external-link,
-.drasi-code-dialog__copy-button {
+.drasi-query-table__heading-content {
   display: flex;
   align-items: center;
 }
 
-.drasi-query-table__header-main,
-.drasi-code-dialog__title-group {
+.drasi-query-table__header-main {
   gap: 0.75rem;
 }
 
@@ -130,7 +115,12 @@
 }
 
 .drasi-query-table__table {
+  margin: 0;
   width: 100%;
+  font: inherit;
+  color: inherit;
+  text-indent: 0;
+  background: transparent;
   border-collapse: collapse;
 }
 
@@ -138,16 +128,16 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--drasi-color-surface);
+  background: var(--drasi-color-surface, #fff);
 }
 
 .drasi-query-table__header-row {
-  border-bottom: 1px solid var(--drasi-color-border);
+  border-bottom: 1px solid var(--drasi-color-border, #d1d5db);
 }
 
 .drasi-query-table__heading {
   padding: 0.5rem;
-  color: var(--drasi-color-muted);
+  color: var(--drasi-color-muted, #4b5563);
   font-size: 0.875rem;
   font-weight: 500;
   outline-offset: -2px;
@@ -163,8 +153,34 @@
 }
 
 .drasi-query-table__heading--sortable:hover,
-.drasi-query-table__heading--sortable:focus-visible {
-  color: var(--drasi-color-text);
+.drasi-query-table__heading--sortable:focus-within {
+  color: var(--drasi-color-text, #111827);
+}
+
+.drasi-query-table__sort-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.drasi-query-table__sort-button:focus-visible,
+.drasi-query-table__scroll:focus-visible,
+.drasi-icon-button:focus-visible,
+.drasi-action-button:focus-visible,
+.drasi-modal-content :focus-visible {
+  outline: 2px solid var(--drasi-color-focus, #1d4ed8);
+  outline-offset: 2px;
+}
+
+.drasi-query-table__scroll:focus-visible {
+  outline-offset: -2px;
 }
 
 .drasi-query-table__heading-content {
@@ -181,21 +197,22 @@
 }
 
 .drasi-query-table__row {
-  border-bottom: 1px solid rgb(31 41 55 / 50%);
+  border-bottom: 1px solid var(--drasi-color-row-border, #e5e7eb);
   transition: background-color 0.15s ease;
 }
 
 .drasi-query-table__row:hover {
-  background: rgb(31 41 55 / 20%);
+  background: var(--drasi-color-row-hover, #f3f4f6);
 }
 
 .drasi-query-table__cell {
   padding: 0.75rem 0.5rem;
+  border: 0;
 }
 
 .drasi-query-table__empty {
   padding: 2rem;
-  color: var(--drasi-color-subtle);
+  color: var(--drasi-color-subtle, #4b5563);
   text-align: center;
 }
 
@@ -212,6 +229,8 @@
 }
 
 .drasi-icon {
+  display: block;
+  vertical-align: middle;
   width: 1rem;
   height: 1rem;
 }
@@ -223,8 +242,10 @@
 
 .drasi-icon-button,
 .drasi-action-button {
+  margin: 0;
   padding: 0.375rem;
-  color: var(--drasi-color-subtle);
+  font: inherit;
+  color: var(--drasi-color-subtle, #4b5563);
   background: transparent;
   border: 0;
   border-radius: 0.25rem;
@@ -242,8 +263,8 @@
 .drasi-icon-button:focus-visible,
 .drasi-action-button:hover,
 .drasi-action-button:focus-visible {
-  color: var(--drasi-color-primary);
-  background: rgb(31 41 55 / 50%);
+  color: var(--drasi-color-primary, #1d4ed8);
+  background: var(--drasi-color-action-hover, #e5e7eb);
 }
 
 .drasi-action-button--disabled {
@@ -259,7 +280,7 @@
 }
 
 .drasi-spinner {
-  border: 2px solid var(--drasi-color-subtle);
+  border: 2px solid var(--drasi-color-subtle, #4b5563);
   border-top-color: transparent;
   border-radius: 9999px;
   animation: drasi-spin 0.75s linear infinite;
@@ -273,11 +294,13 @@
 .drasi-spinner--large {
   width: 2rem;
   height: 2rem;
-  border-color: var(--drasi-color-primary);
+  border-color: var(--drasi-color-primary, #1d4ed8);
   border-top-color: transparent;
 }
 
 .drasi-sort-indicator {
+  display: block;
+  vertical-align: middle;
   width: 0.75rem;
   height: 0.75rem;
   margin-left: 0.25rem;
@@ -288,7 +311,7 @@
 }
 
 .drasi-sort-indicator--active {
-  color: var(--drasi-color-primary);
+  color: var(--drasi-color-primary, #1d4ed8);
 }
 
 .drasi-query-table__backdrop {
@@ -319,148 +342,49 @@
   animation: drasi-flash-blue 0.5s ease-in-out;
 }
 
-.drasi-code-dialog__overlay {
+.drasi-modal-layer {
   position: fixed;
   inset: 0;
   z-index: 100;
+  overflow: auto;
+}
+
+.drasi-modal-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgb(0 0 0 / 70%);
-  animation: drasi-fade-in 0.2s ease-out;
+  background: var(--drasi-color-overlay, rgb(0 0 0 / 70%));
 }
 
-.drasi-code-dialog {
-  display: flex;
-  flex-direction: column;
-  width: 90vw;
-  max-width: 72rem;
-  height: 85vh;
-  color: var(--drasi-color-text);
-  background: var(--drasi-color-dialog);
-  border: 1px solid rgb(31 41 55 / 50%);
-  border-radius: var(--drasi-radius);
-  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 50%);
-  animation: drasi-slide-up 0.25s ease-out;
-}
-
-.drasi-code-dialog__header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  border-bottom: 1px solid rgb(31 41 55 / 50%);
-}
-
-.drasi-code-dialog__title {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
-.drasi-code-dialog__external-link {
-  gap: 0.375rem;
-  padding: 0.25rem 0.75rem;
-  color: var(--drasi-color-primary);
-  font-size: 0.875rem;
-  text-decoration: none;
-  background: rgb(31 41 55 / 30%);
-  border-radius: 0.25rem;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.drasi-code-dialog__external-link:hover {
-  color: #93c5fd;
-  background: rgb(31 41 55 / 50%);
-}
-
-.drasi-code-dialog__tabs {
-  display: flex;
-  flex: 0 0 auto;
-  border-bottom: 1px solid var(--drasi-color-border);
-}
-
-.drasi-code-dialog__tab {
-  padding: 0.75rem 1.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.drasi-code-dialog__tab--active {
-  color: var(--drasi-color-primary);
-  background: rgb(31 41 55 / 20%);
-  border-bottom-color: var(--drasi-color-primary);
-}
-
-.drasi-code-dialog__tab--inactive {
-  color: var(--drasi-color-muted);
-}
-
-.drasi-code-dialog__tab--inactive:hover {
-  color: var(--drasi-color-text);
-  background: rgb(31 41 55 / 10%);
-}
-
-.drasi-code-dialog__copy-container {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  padding-right: 1rem;
-}
-
-.drasi-code-dialog__copy-button {
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  font-size: 0.875rem;
-  border: 0;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.drasi-code-dialog__copy-button--copied {
-  color: var(--drasi-color-success);
-  background: rgb(16 185 129 / 20%);
-}
-
-.drasi-code-dialog__copy-button--idle {
-  color: #d1d5db;
-  background: rgb(31 41 55 / 30%);
-}
-
-.drasi-code-dialog__copy-button--idle:hover {
-  background: rgb(31 41 55 / 50%);
-}
-
-.drasi-code-dialog__content {
-  flex: 1 1 auto;
-  padding: 1.5rem;
+.drasi-modal-content {
+  min-width: 0;
+  max-height: calc(100dvh - 2rem);
+  line-height: var(--drasi-line-height, inherit);
   overflow: auto;
-  background: var(--drasi-color-code);
+  outline: none;
 }
 
-.drasi-code-dialog__code {
+.drasi-modal-surface {
+  width: 32rem;
+  max-width: 100%;
+  padding: 1.5rem;
+  color: var(--drasi-color-text, #111827);
+  background: var(--drasi-color-dialog, #fff);
+  border: 1px solid var(--drasi-color-border, #d1d5db);
+  border-radius: var(--drasi-radius, 0.5rem);
+}
+
+.drasi-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   margin: 0;
-  color: var(--drasi-color-text);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1.5rem;
-  line-height: 1.625;
-  white-space: pre-wrap;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 @keyframes drasi-spin {
@@ -475,7 +399,7 @@
     background-color: transparent;
   }
   50% {
-    background-color: rgb(16 185 129 / 20%);
+    background-color: color-mix(in srgb, var(--drasi-color-success, #047857) 20%, transparent);
   }
 }
 
@@ -485,7 +409,7 @@
     background-color: transparent;
   }
   50% {
-    background-color: rgb(239 68 68 / 20%);
+    background-color: color-mix(in srgb, var(--drasi-color-danger, #b91c1c) 20%, transparent);
   }
 }
 
@@ -495,26 +419,18 @@
     background-color: transparent;
   }
   50% {
-    background-color: rgb(59 130 246 / 25%);
+    background-color: color-mix(in srgb, var(--drasi-color-primary, #1d4ed8) 25%, transparent);
   }
 }
 
-@keyframes drasi-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes drasi-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .drasi-query-table,
+  .drasi-query-table *,
+  .drasi-modal-layer,
+  .drasi-modal-content,
+  .drasi-modal-content * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -59,15 +59,26 @@ if (args[0] !== '--inside') {
     run('npm', ['run', 'typecheck'], consumerApp);
     run('npm', ['run', 'test:coverage'], consumerApp);
     run('npm', ['run', '--ignore-scripts', 'build'], consumerApp);
-    run('npm', ['run', 'test:browser', '--', ...args.slice(1)], consumerApp);
-    run('node', [
-      '/repo/examples/trading/app/test/tools/check-baseline.mjs',
-      `/artifacts/${archives[0]}`, consumerApp,
-      join(packageDir, 'coverage/coverage-summary.json'),
-    ]);
+    const failures = [];
+    try {
+      run('npm', ['run', 'test:browser', '--', ...args.slice(1)], consumerApp);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      run('node', [
+        '/repo/examples/trading/app/test/tools/check-baseline.mjs',
+        `/artifacts/${archives[0]}`, consumerApp,
+        join(packageDir, 'coverage/coverage-summary.json'),
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length) throw new AggregateError(failures, 'Browser or artifact gates failed; all failures remain blocking.');
   } finally {
     const outputs = [
       [join(packageDir, 'coverage'), '/artifacts/package-coverage'],
+      [join(consumer, 'public-contract'), '/artifacts/public-contract'],
       [join(consumerApp, 'coverage'), '/artifacts/app-coverage'],
       [join(consumerApp, 'dist'), '/artifacts/app-dist'],
       [join(consumerApp, 'test-results'), '/artifacts/test-results'],
@@ -76,7 +87,10 @@ if (args[0] !== '--inside') {
     ];
     for (const [source, target] of outputs) {
       try {
-        await cp(source, target, { recursive: true });
+        await cp(source, target, {
+          recursive: true,
+          filter: path => basename(path) !== 'node_modules',
+        });
       } catch (error) {
         if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
         console.log(`Not produced: ${source}`);

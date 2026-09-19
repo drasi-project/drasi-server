@@ -31,9 +31,9 @@ export default defineConfig({
     actionTimeout: 5_000,
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } }, testMatch: 'trading.spec.ts' },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 1000 } }, testMatch: 'trading.spec.ts' },
-    { name: 'webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 1000 } }, testMatch: 'trading.spec.ts' },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } }, testMatch: ['trading.spec.ts', 'accessibility.spec.ts'] },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 1000 } }, testMatch: ['trading.spec.ts', 'accessibility.spec.ts'] },
+    { name: 'webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 1000 } }, testMatch: ['trading.spec.ts', 'accessibility.spec.ts', 'contrast-transitions.spec.ts'] },
     { name: 'visual', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } }, testMatch: 'visual.spec.ts' },
   ],
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useReducedMotion } from './useReducedMotion';
 
 export type AnimationDirection = 'up' | 'down' | 'change' | null;
 
@@ -40,12 +41,14 @@ export interface UseRowAnimationResult<T> {
  * For numeric values it emits an 'up' or 'down' direction; for string values it
  * emits a neutral 'change'. `QueryTable` maps these values to the
  * `drasi-row--up`, `drasi-row--down`, and `drasi-row--change` classes shipped in
- * `@drasi/react/styles.css`.
+ * `@drasi/react/styles.css`. Reduced motion cancels active timers/animations,
+ * while continuing to track the current baseline for subsequent updates.
  */
 export function useRowAnimation<T>(
   options: UseRowAnimationOptions<T>,
 ): UseRowAnimationResult<T> {
   const { rowKey, getValue, animationDuration = 500, data } = options;
+  const reducedMotion = useReducedMotion();
 
   const [animations, setAnimations] = useState<Map<string, AnimationDirection>>(
     new Map(),
@@ -57,8 +60,16 @@ export function useRowAnimation<T>(
   useEffect(() => {
     return () => {
       timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      timeoutsRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!reducedMotion) return;
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current.clear();
+    setAnimations(previous => previous.size === 0 ? previous : new Map());
+  }, [reducedMotion]);
 
   const updateData = useCallback(
     (data: readonly T[]) => {
@@ -86,6 +97,7 @@ export function useRowAnimation<T>(
         }
 
         if (
+          !reducedMotion &&
           currentValue !== undefined &&
           prevValue !== undefined &&
           currentValue !== prevValue
@@ -143,7 +155,7 @@ export function useRowAnimation<T>(
 
       prevValuesRef.current = nextValues;
     },
-    [rowKey, getValue, animationDuration],
+    [rowKey, getValue, animationDuration, reducedMotion],
   );
 
   useEffect(() => {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { Stock } from '@/services/TradingApi';
 import { BaseDialog, DialogButton } from './shared';
 
@@ -58,6 +58,7 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const formId = useId();
 
   // Reset form when dialog opens or position changes
   useEffect(() => {
@@ -223,8 +224,11 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
           <p className="text-gray-400 mb-4">No more stocks available to add.</p>
         ) : (
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Stock</label>
+            <label htmlFor={`${formId}-symbol`} className="block text-sm text-gray-400 mb-2">Stock</label>
             <select
+              id={`${formId}-symbol`}
+              aria-invalid={Boolean(errors.symbol)}
+              aria-describedby={errors.symbol ? `${formId}-symbol-error` : undefined}
               value={symbol}
               onChange={(e) => handleSymbolChange(e.target.value)}
               className={`w-full bg-trading-bg border rounded p-2 text-white ${
@@ -238,7 +242,7 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
               ))}
             </select>
             {errors.symbol && (
-              <p className="text-red-400 text-sm mt-1">{errors.symbol}</p>
+              <p id={`${formId}-symbol-error`} className="text-red-400 text-sm mt-1">{errors.symbol}</p>
             )}
           </div>
         )
@@ -254,8 +258,11 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
         <>
           {/* Quantity */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+            <label htmlFor={`${formId}-quantity`} className="block text-sm text-gray-400 mb-2">Quantity</label>
             <input
+              id={`${formId}-quantity`}
+              aria-invalid={Boolean(errors.quantity)}
+              aria-describedby={errors.quantity ? `${formId}-quantity-error` : undefined}
               type="number"
               value={quantity}
               onChange={(e) => handleQuantityChange(e.target.value)}
@@ -265,14 +272,17 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
               }`}
             />
             {errors.quantity && (
-              <p className="text-red-400 text-sm mt-1">{errors.quantity}</p>
+              <p id={`${formId}-quantity-error`} className="text-red-400 text-sm mt-1">{errors.quantity}</p>
             )}
           </div>
 
           {/* Purchase Price */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
+            <label htmlFor={`${formId}-purchase-price`} className="block text-sm text-gray-400 mb-2">Purchase Price ($)</label>
             <input
+              id={`${formId}-purchase-price`}
+              aria-invalid={Boolean(errors.purchasePrice)}
+              aria-describedby={errors.purchasePrice ? `${formId}-purchase-price-error` : undefined}
               type="number"
               step="0.01"
               value={purchasePrice}
@@ -283,14 +293,17 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
               }`}
             />
             {errors.purchasePrice && (
-              <p className="text-red-400 text-sm mt-1">{errors.purchasePrice}</p>
+              <p id={`${formId}-purchase-price-error`} className="text-red-400 text-sm mt-1">{errors.purchasePrice}</p>
             )}
           </div>
 
           {/* Purchase Date */}
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-2">Purchase Date</label>
+            <label htmlFor={`${formId}-purchase-date`} className="block text-sm text-gray-400 mb-2">Purchase Date</label>
             <input
+              id={`${formId}-purchase-date`}
+              aria-invalid={Boolean(errors.purchaseDate)}
+              aria-describedby={errors.purchaseDate ? `${formId}-purchase-date-error` : undefined}
               type="date"
               value={purchaseDate}
               onChange={(e) => handleDateChange(e.target.value)}
@@ -299,7 +312,7 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
               }`}
             />
             {errors.purchaseDate && (
-              <p className="text-red-400 text-sm mt-1">{errors.purchaseDate}</p>
+              <p id={`${formId}-purchase-date-error`} className="text-red-400 text-sm mt-1">{errors.purchaseDate}</p>
             )}
           </div>
         </>
@@ -307,7 +320,7 @@ export const PositionDialog: React.FC<PositionDialogProps> = ({
 
       {/* Submit error */}
       {submitError && (
-        <div className="p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
+        <div role="alert" className="p-2 bg-red-900/30 border border-red-500/50 rounded text-sm text-red-400">
           {submitError}
         </div>
       )}

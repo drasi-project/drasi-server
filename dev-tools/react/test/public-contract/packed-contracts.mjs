@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractReadmeExamples } from './readme-examples.mjs';
 
@@ -25,7 +25,8 @@ const componentNames = new Set([
   'DataTable', 'DataTableProps', 'DataTableState', 'DataTableRenderContext',
   'DataTableErrorContext', 'DataTableHeaderContext', 'queryTableState',
   'QueryTable', 'QueryTableProps', 'QueryTableRenderContext', 'QueryTableErrorContext',
-  'ColumnDef', 'RowAction',
+  'ColumnDef', 'RowAction', 'Modal', 'ModalProps', 'ModalLayer', 'ClientModal', 'TableHeight',
+  'usePortalTheme', 'tableHeight', 'LengthUnit', 'focusAvailable',
   'CodeViewerDialog', 'CodeViewerDialogProps', 'CodeIcon', 'ExpandIcon', 'CollapseIcon',
 ]);
 const tutorialNames = new Set([
@@ -130,6 +131,10 @@ function checkBoundary(ts, source, kind) {
         `${kind} graph reaches components: ${specifier}`);
       assert(!/^(?:@types\/)?react-dom(?:\/|$)/.test(specifier),
         `${kind} graph reaches ReactDOM: ${specifier}`);
+      assert(!/^@radix-ui\//.test(specifier),
+        `${kind} graph reaches a UI primitive: ${specifier}`);
+      assert(!/^(?:scroll-into-view-if-needed|compute-scroll-into-view)(?:\/|$)/.test(specifier),
+        `${kind} graph reaches modal scroll geometry: ${specifier}`);
     }
   }
 }
@@ -279,6 +284,21 @@ async function compileSources({ directory, output, label, files, mode, manifest,
     traceResolution: true,
     ...(jsx ? { jsx: ts.JsxEmit.ReactJSX } : {}),
   };
+  const retained = join(output, 'programs', label, mode);
+  await mkdir(retained, { recursive: true });
+  const inputs = [];
+  for (const file of files) {
+    const body = await readFile(file);
+    await writeFile(join(retained, basename(file)), body);
+    inputs.push({
+      file: relative(output, join(retained, basename(file))),
+      sha256: createHash('sha256').update(body).digest('hex'),
+    });
+  }
+  await saveJson(join(retained, 'package.json'), {
+    private: true, type: mode === 'cjs' ? 'commonjs' : 'module',
+  });
+  await saveJson(join(retained, 'compiler-options.json'), options);
   const trace = [];
   const host = ts.createCompilerHost(options);
   host.trace = message => trace.push(message);
@@ -323,6 +343,7 @@ async function compileSources({ directory, output, label, files, mode, manifest,
   }
   return {
     compiler: ts.version, condition,
+    inputs,
     declarations: packageFiles.map(path => relative(packageRoot, path)).sort(),
     loadedFiles: loadedFiles.sort(),
   };
@@ -366,7 +387,7 @@ async function compileReadme(directory, output, examples, label, manifest) {
   }
   assert(expectedKinds.size, `README ${label} examples must consume published exports`);
   const proof = {};
-  const folder = join(directory, 'contract-readme');
+  const folder = join(directory, label === 'headless-readme' ? 'contract-headless-readme' : 'contract-readme');
   await mkdir(folder);
   for (const mode of ['esm', 'cjs', 'bundler']) {
     const modeFolder = join(folder, mode);
@@ -384,7 +405,8 @@ async function compileReadme(directory, output, examples, label, manifest) {
     proof[mode] = {
       ...await compileSources({
         directory, output, label, files, mode, manifest, jsx: true,
-        expectedKinds: [...expectedKinds], boundary: label === 'client-readme' ? 'client' : 'root',
+        expectedKinds: [...expectedKinds],
+        boundary: label === 'client-readme' ? 'client' : label === 'headless-readme' ? 'react' : 'root',
       }),
       examples: examples.map((example, index) => ({
         name: example.name, readmeLine: example.line, file: relative(directory, files[index]),
@@ -434,10 +456,12 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
   proof.readme = {
     sha256: createHash('sha256').update(readme).digest('hex'),
     all: await compileReadme(app, output, examples, 'readme', manifest),
+    headless: await compileReadme(app, output,
+      examples.filter(example => example.name === 'reduced-motion.tsx'), 'headless-readme', manifest),
     clientOnly: await compileReadme(clientOnly, output,
       examples.filter(example => ['client.ts', 'auth.ts'].includes(example.name)), 'client-readme', manifest),
   };
-  console.log(`Packed README: ${examples.length} marked examples checked in NodeNext ESM/CJS and bundler modes; client/auth also React-free (no execution)`);
+  console.log(`Packed README: ${examples.length} marked examples checked in NodeNext ESM/CJS and bundler modes; client/auth also React-free, reduced-motion also hook-only (no execution)`);
   await saveJson(join(output, 'proofs.json'), proof);
   console.log(`Packed public contracts passed (React 18.3.1; ${process.version}): ${output}`);
 }

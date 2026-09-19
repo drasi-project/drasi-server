@@ -1,0 +1,265 @@
+/*
+ * Copyright 2026 The Drasi Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+.drasi-code-dialog,
+.drasi-code-dialog * {
+  box-sizing: border-box;
+}
+
+.drasi-code-dialog__title-group,
+.drasi-code-dialog__external-link,
+.drasi-code-dialog__copy-button {
+  display: flex;
+  align-items: center;
+}
+
+.drasi-code-dialog__title-group {
+  gap: 0.75rem;
+}
+
+.drasi-code-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 70%);
+  animation: drasi-code-dialog-fade-in 0.2s ease-out;
+}
+
+.drasi-code-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  max-width: 72rem;
+  height: 85vh;
+  color: var(--drasi-color-text);
+  background: var(--drasi-color-dialog);
+  border: 1px solid rgb(31 41 55 / 50%);
+  border-radius: var(--drasi-radius);
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 50%);
+  animation: drasi-code-dialog-slide-up 0.25s ease-out;
+}
+
+.drasi-code-dialog__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.drasi-code-dialog__external-link {
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--drasi-color-primary);
+  font-size: 0.875rem;
+  text-decoration: none;
+  background: rgb(31 41 55 / 30%);
+  border-radius: 0.25rem;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__external-link:hover {
+  color: #93c5fd;
+  background: rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__tab-root {
+  display: contents;
+}
+
+.drasi-code-dialog__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--drasi-color-border);
+}
+
+.drasi-code-dialog__tablist {
+  display: flex;
+  min-width: 0;
+}
+
+.drasi-code-dialog__tab {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__tab--active {
+  color: var(--drasi-color-primary);
+  background: rgb(31 41 55 / 20%);
+  border-bottom-color: var(--drasi-color-primary);
+}
+
+.drasi-code-dialog__tab--inactive {
+  color: var(--drasi-color-muted);
+}
+
+.drasi-code-dialog__tab--inactive:hover {
+  color: var(--drasi-color-text);
+  background: rgb(31 41 55 / 10%);
+}
+
+.drasi-code-dialog__copy-container {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding-right: 1rem;
+}
+
+.drasi-code-dialog__copy-button {
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__copy-button--copied {
+  color: var(--drasi-color-success);
+  background: rgb(16 185 129 / 20%);
+}
+
+.drasi-code-dialog__copy-button--idle {
+  color: #d1d5db;
+  background: rgb(31 41 55 / 30%);
+}
+
+.drasi-code-dialog__copy-button--idle:hover {
+  background: rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 1.5rem;
+  overflow: auto;
+  background: var(--drasi-color-code);
+}
+
+.drasi-code-dialog__code {
+  margin: 0;
+  color: var(--drasi-color-text);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.5rem;
+  line-height: 1.625;
+  white-space: pre-wrap;
+}
+
+.drasi-code-dialog__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.drasi-code-dialog :is(button, a, [role="tabpanel"]):focus-visible {
+  outline: 2px solid var(--drasi-color-focus, var(--drasi-color-primary));
+  outline-offset: -2px;
+}
+
+@media (max-width: 40rem) {
+  .drasi-code-dialog__header {
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .drasi-code-dialog__title-group {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .drasi-code-dialog__title {
+    overflow-wrap: anywhere;
+  }
+
+  .drasi-code-dialog__tabs {
+    flex-wrap: wrap;
+  }
+
+  .drasi-code-dialog__tablist {
+    flex: 1 1 auto;
+  }
+
+  .drasi-code-dialog__tab {
+    flex: 1;
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .drasi-code-dialog__copy-container {
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drasi-code-dialog__overlay,
+  .drasi-code-dialog,
+  .drasi-code-dialog * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@keyframes drasi-code-dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drasi-code-dialog-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

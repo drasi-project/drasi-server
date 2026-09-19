@@ -30,6 +30,11 @@ later Part B identity, canonical-delta or snapshot/reconnect/stale contracts.
 The Part B consumer changes and focused proof obligations are described below;
 the measured historical evidence remains unchanged.
 
+P6's presentation contracts and acceptance status are recorded
+[separately below](#p6-presentation-contracts-and-evidence). The version-1
+inventory, KB-04 accessibility limitations and P1-P5 measurements describe
+their historical layers; they are not current-head P6 passing evidence.
+
 ## Behavior inventory, version 1
 
 Paths in the assertion column are relative to `app/test`. A synthetic test
@@ -137,6 +142,341 @@ query definitions and financial rows are untouched; raw diagnostic REST reads
 still record the actual isolated bind values.
 
 ## Fast checks
+
+### P6 presentation contracts and evidence
+
+P6 / #164 Part B adds bounded keyboard, modal, theme, sizing and reduced-motion
+contracts to P5 composition. It retains every original query, raw key,
+projection, financial calculation, provisioning rule, link and tutorial.
+The known default-sort discrepancy is still frozen. No standalone example,
+Storybook, backend/SDK/plugin change or publication is included.
+
+The package reference documents
+[Modal props and focus ownership](../../dev-tools/react/README.md#modal),
+[portal theme signals and limits](../../dev-tools/react/README.md#scoped-themes-and-portals),
+[size validation/precedence](../../dev-tools/react/README.md#table-sizing)
+and [live reduced motion](../../dev-tools/react/README.md#reduced-motion).
+Trading keeps normal 400px cards, fullscreen 32px insets/bounds and default
+350ms FLIP transitions. Reduced motion completes transitions without waiting
+for animation frames/timers; it does not stop query updates.
+
+P6 additionally enforces the existing critical thresholds on
+`src/components/**`: **90% statements, lines and functions / 85% branches**,
+alongside the unchanged client/react thresholds. Coverage includes all package
+product source, with no exclusions added for the modal, portal theme or other
+presentation code. Current module measurements and final counts are not frozen
+by this policy statement.
+
+The following is the **required evidence inventory**. Measured P6 outcomes
+follow below; exact-head CI is recorded in the owning draft PR and issue #164.
+Do not substitute P5's historical counts or assume that an added assertion
+has run successfully.
+
+| Evidence | Contract it must establish |
+| --- | --- |
+| Package `DataTable`, sizing and accessibility regressions | Native sort buttons, one Enter/Space request per action, `scope`/`aria-sort`, table/action names and busy state; named tabbable viewport with native scrolling even without interactive cells; numeric/unit/token heights and invalid-value rejection; supplied/query state contracts preserved. |
+| Package Modal tests | Provider-free controlled naming/description, initial/fallback/return focus, Tab/Shift+Tab containment, topmost Escape/outside dismissal, pointer shielding, shared scroll cleanup, nested/independent owners, StrictMode and unmount. |
+| Package motion tests | Live preference changes, automatic timer cancellation/latest baselines, controlled animation suppression and no animation-dependent data processing. |
+| Built-package Trading integration | Shared BaseDialog interoperability and field labels; fullscreen/code nesting and cleanup; app-owned Radix tabs; delayed display/copy, cancellation, retry and lazy-read boundaries preserved. |
+| Installed public contracts | Dual-format declarations and NodeNext/bundler positive/negative types; `ModalProps`, typed refs/callbacks, `TableHeight`, `ariaLabel`, `useReducedMotion`; no public ambient `any` or source aliases. |
+| Installed dependency/import/SSR checks | `/client` installs with `--omit=peer` without React/runtime types; `/react` stays free of Radix, components, React DOM and CSS. Modal open/closed SSR omits portal content without a fake DOM; motion SSR is false. |
+| Installed literal README recipes | All original ten recipes, including the first five, retained literally; added numeric/token sizing, scoped provider-free table/modal and headless motion examples compile from the actual tarball. Negative-assertion counts are measured from the programs, not hard-coded. |
+| Real-browser presentation checks | Chromium/Firefox/WebKit keyboard/DOM behavior, nested/independent dismissal and focus/scroll cleanup, local and portal themes, hostile general host styles, narrow sizing and reduced-motion changes. Record browser-specific outcomes, not assumed parity. |
+| Existing visual and product gates | The same five original exact-zero-diff PNG comparisons, original behavior scenarios, financial CRUD/reconnect expectations, coverage floors, artifact policy and actual-backend gates. No expectation refresh or reduced assertion substitutes for a passing run. |
+
+Keep evidence categories distinct:
+
+- **axe/rule scans** detect only the automated rules exercised in the rendered
+  state. Active-modal scans explicitly scope to the active dialog; dashboard
+  scans cover the whole document with all rules enabled. Retain the scope
+  attachment with each raw report and its failures. A scoped dialog result
+  is not a whole-page pass, and a clean scan is not a WCAG conformance claim.
+- **DOM/ARIA assertions** inspect roles, names, relationships, hidden background
+  and attributes. They do not prove what any screen reader actually announces.
+- **Accessibility-tree inspection** records browser-native snapshots in
+  Chromium, Firefox and WebKit, separately from DOM `ariaSnapshot` output;
+  Chromium also has a full CDP tree attachment. These are browser-exposed
+  trees, not human/platform AT results. Preserve engine differences rather
+  than inventing normalized names or claiming identical spoken output.
+- **Real-browser keyboard checks** exercise actual focus and input behavior in
+  the recorded engines. They do not establish universal browser/version support.
+- **Human AT review** requires an actual screen reader and a human recording
+  announcements/usability. No such P6 review is available; acceptance is pending.
+
+P1-P5 historical results, the original five visual PNG images and their
+zero-diff requirement stay intact. P6 artifact/coverage measurements must be
+recorded after the same gates without lowering inherited thresholds or
+excluding moved code. Current development readiness, once measured, is not
+merge, release or publication permission.
+
+The expanded predecessor comparison uses exact
+`569b1d26e558b838d3a572bf7e2e5fbd6280eeaf`: 171 archived source blobs were
+verified, the predecessor was built, and its compiled tarball was consumed
+without source links. Paired Linux Chromium/Firefox/WebKit full-rule audits
+retain 47 strict state/browser pairs and two separately recorded natural
+post-click observations, producing 98 raw reports. All 19 distinct failing
+element/state entries in the strict matrix are unchanged from the predecessor.
+Foreground/background colors, fonts, rendered state and browser versions are
+recorded rather than inferred from matching PNG images.
+
+| Measured Trading text/control | Contrast ratio (required: 4.5) |
+| --- | --- |
+| Sell badge / footer | 3.81 / 3.98 |
+| Add, Create Order, Save | 2.97 |
+| Selected Buy / Sell | 2.53 / 3.76 |
+| Buy/Sell order hint | 3.66 |
+| Delete / Cancel Order confirmation | 3.90 |
+| Drasi UI link / active code tabs / copied feedback | 4.13 / 4.16 / 4.34 |
+| Stable primary-button hover | 4.03 |
+| Matched WebKit transition samples | 3.97 / 3.28 |
+
+`app/.test-runtime/p6-predecessor-569b1d2/colour-approval-matrix.json` is the
+expanded inventory; the earlier `comparison.json` is only its two-target
+dashboard subset. Provenance, raw reports, screenshots and traces are retained
+alongside it. Clipboard success was exercised in Chromium only. The React
+example's added `height={400}` line is disclosed. WebKit transition comparisons
+seek the existing native animation to the same time with identical keyframes,
+easing, hover and focus; no color declarations are rewritten. Unmatched
+natural transition phases are not called equivalent.
+
+These measurements establish preexistence, **not acceptance**. All current
+contrast violations and incomplete checks remain visible and unwaived.
+Untested states are not classified. No color or image expectation change is
+authorized by this inventory; that decision and human AT review remain
+separate. It is not a zero-violation Trading audit.
+
+The coordinator's disposition preserves the user's original exact-design
+requirement: keep these colors and test **no new or worsened Trading
+accessibility violations**, not a zero-contrast result. The full-rule audit
+still runs `color-contrast`; `trading-axe-baseline.json` matches only 19
+documented fingerprints in 86 exact element/state/browser contexts. Matching
+also requires the recorded selector, semantic identity, impact, foreground,
+effective background, font metrics and rendered typography; lower contrast,
+new rules/elements, duplicate bad elements and unrecorded contexts fail.
+Known violations are retained in the report rather than deleted or downgraded.
+Missing violations are allowed as improvements, not fabricated as observations.
+Generic component/default-theme audits still require **zero violations**.
+
+The authoritative regression environment is the pinned Linux browser image.
+Computed font-family serialization can differ on another OS; an unmeasured
+platform is not silently normalized into the approved boundary. Stable-state
+Trading audits move the pointer away and await existing finite CSS motion;
+no assertion deadline or business/visual clock policy is increased. Two
+separately configured WebKit cases exercise the exactly measured native hover
+and transition phases. Other engines do not get empty or expected-fail tests
+for those unmeasured phases.
+
+`test/fixtures/p6-predecessor-axe-evidence.json.gz` durably retains all 98 raw
+reports, violations, incomplete results and source/state provenance. The
+provenance test verifies file hashes and every regression context against
+those measurements; positive/negative policy tests reject broader matching.
+CI retains this archive, compact evidence and actual new axe/non-regression
+reports. A passing regression check must be described as **no new/worsened
+Trading a11y regressions under preserved legacy colors**, never contrast-clean,
+full WCAG compliance, a waiver or human AT acceptance.
+
+The Linux helper and React workflow retain the installed public-contract
+proofs, compiler-resolution traces and generated programs alongside browser
+reports and coverage. Dependency installation directories are excluded from
+these evidence copies; the checked manifests/locks and proof records remain.
+
+The focus-visibility implementation adds two locked runtime packages:
+`scroll-into-view-if-needed` 3.1.0 and `compute-scroll-into-view` 3.1.1. This is a
+maintained, overlay-bounded geometry operation, not a replacement for Radix's
+focus/scroll-lock/dismissal ownership. Its nearest, if-needed reveal is instant
+under both default and reduced motion. Revalidation must check viewport
+visibility and unchanged background scroll, including long content and
+transformed/fullscreen layouts. Byte accounting includes every emitted
+entry/shared/lazy chunk; the helper must not be hidden from the artifact
+comparison by measuring only the small public Modal wrapper.
+
+Native paging checks keep PageUp/PageDown down until actual movement is
+observed, then release in `finally` and await the native `scrollend` event.
+This avoids treating a compositor plateau as a completed gesture or a
+zero-duration synthetic key press cancelling WebKit's paging;
+the test never sets `scrollTop` to manufacture movement or increases the
+existing five-second assertion bound.
+
+#### P6 measured evidence
+
+Local verification uses actual React 18.3.1 with Node 22.20.0 in the pinned
+Linux image and Node 24.19.0 in a separate clean consumer. Package tests are
+**413**, Trading tests **219** (including 102 strict contrast-policy cases),
+and Node tooling checks **8**. The installed checker runs nine public type
+programs with **630 measured negative assertions**, 13 literal README recipes
+(all original ten retained), nine parser guards and eight ESM/CJS import/SSR
+modes. Client-only installation still omits React and its runtime types;
+all entries, shared/lazy chunks and dual declarations are inspected.
+
+Before the explicit preserved-design policy, the full packed Linux run was
+146/152: its six failing Trading audit scenarios exposed the retained contrast
+findings, not ignored failures. All five original image comparisons and other
+browser cases passed. The subsequent strict Trading-only regression run passes
+29/29 actual Chromium/Firefox/WebKit cases, including all measured control
+families and the two WebKit hover/transition cases. The final complete
+source-free Linux run passes **175/175** browser cases, including every
+original behavior scenario and all five unchanged, zero-diff PNG images.
+All raw Trading violations and incomplete checks remain reported under the
+strict non-regression policy; this is not a contrast-clean result. Exact-head
+CI is recorded separately in the owning draft PR.
+
+The source-free tarball frontend also passes the actual checked-out backend
+gate: fresh setup, existing no-write reload, financial singleton
+2000 / cost 1800 / count 2, live 2050, reload 2050, offline/reconnect 2150,
+CRUD/live/deletes and no recovery navigation or historical-row selection.
+The backend UI/server were built in the owning checkout; raw Rust totals are
+779 passed / 32 ignored, tooling 42 passed, strict Clippy/fmt passed, and
+structured audit output reports zero vulnerabilities with 15 existing warnings
+(10 unmaintained, four unsound, one yanked). This does not clear unused legacy
+workspace advisories or the separately retained external/configured caveats.
+Both owned live runs cleaned their processes/containers; only their exact
+temporary runtime directories were removed after safe evidence retention.
+
+Coverage below is statements / lines / functions / branches:
+
+| Scope | P6 measured coverage |
+| --- | --- |
+| Client | 97.73 / 99.10 / 99.34 / 95.27 |
+| Hooks | 98.88 / 100 / 100 / 94.28 |
+| Components | 97.86 / 100 / 100 / 95.74 |
+| DataTable | 100 / 100 / 100 / 96.31 |
+| Modal public boundary | 100 / 100 / 100 / 100 |
+| Modal client layer | 93.10 / 100 / 100 / 90 |
+| Portal theme, sizing, reduced-motion helper | 100 / 100 / 100 / 100 |
+| TradingQueryTable | 97.36 / 100 / 100 / 93.33 |
+| CodeViewerDialog and BaseDialog | 100 / 100 / 100 / 100 |
+
+Four targeted regression probes failed on P5 production code before
+implementation: a CSS length was an ineffective class, sorting lacked a native
+button, nested Escape collapsed both layers, and the form had no modal focus/
+role behavior. Those observable cases now pass. Additional browser findings
+were fixed at their causes: lost portal font weight, pixel-versus-unitless
+line height, responsive SVG shrink behavior and offscreen wrapped focus.
+Original image expectations were never refreshed to bless those changes.
+
+#### P6 measured artifact advance
+
+The same 2% future-growth rule remains; this is an explained feature baseline,
+not a percentage increase or coverage exception. P1-P5 history is retained in
+`baseline-metrics.json`. The pinned Linux measurement includes all emitted
+entry/shared/lazy files, not only the initial app chunk.
+
+| Bytes | P5 | P6 feature measurement |
+| --- | ---: | ---: |
+| Tarball | 169457 | 204840 |
+| Package ESM | 78523 | 89246 |
+| Package CJS | 85845 | 98118 |
+| Declarations | 37834 | 41244 |
+| Package CSS | 10043 | 8616 |
+| Trading JS | 251684 | 304459 |
+| Trading JS gzip | 74133 | 92744 |
+| Trading CSS | 21639 | 25266 |
+| Trading CSS gzip | 5212 | 5900 |
+
+The 52775-byte app JS increase (18611 gzip) includes maintained Dialog/Tabs
+primitives, bounded scroll geometry and P6 adapters instead of an untested
+focus system. Public props/contracts and complete shipped reference explain
+declaration/tarball growth. Tutorial CSS moves to Trading; namespaced defaults,
+focus outlines and theme/motion contracts explain the stylesheet changes.
+The client-only and hook import boundaries remain independent. Browser-only
+fixture bundles and recorded audit archives are not production app assets.
+
+The [retained external caveats](#product-gates-versus-retained-caveats) also
+still apply: external YAML-agent unsupported-model HTTP 400, configured native
+plugin skips, the missing optional `build-dynamic` convenience target and the
+unused legacy-core advisories are not passing checks or reasons to change
+models, credentials or pins in this layer.
+
+#### Manual screen-reader checklist (pending)
+
+**Status: pending; no actual human screen-reader test is claimed.** A reviewer
+can use NVDA with Firefox or Chrome on Windows, and VoiceOver with Safari on
+macOS, or record the actual chosen supported combination explicitly. Browser
+automation and an accessibility-tree snapshot must not be relabelled as either
+of those human runs.
+
+For each combination record: review date, exact revision, OS/version,
+browser/version, AT/version, preference/viewport/zoom, steps, actual spoken
+output and focus behavior, and pass/fail/blocked/not-run for every item.
+Record defects and limitations rather than replacing outcomes with a generic
+"accessible" label.
+
+##### Isolated component preview
+
+No preview service is started automatically. A reviewer can run the following
+from this checkout to open the existing **test-only, provider-free** fixture.
+It does not connect to Drasi, PostgreSQL, Trading's API or external endpoints;
+the opt-in server mode refuses the Trading root and API routes. Use a free
+loopback port, keep the command in the foreground and stop it with Ctrl+C.
+
+```bash
+npm --prefix dev-tools/react ci --ignore-scripts
+npm --prefix dev-tools/react run build
+npm --prefix examples/trading/app ci --ignore-scripts
+npm --prefix examples/trading/app run --ignore-scripts build
+cd examples/trading/app
+npm exec -- vite build --config test/browser/consumer/vite.config.ts
+P1_WEB_PORT=18333 P6_COMPONENTS_ONLY=1 node --import tsx test/browser/server.ts
+```
+
+Open `http://127.0.0.1:18333/__components/` for the controls or
+`http://127.0.0.1:18333/__components/?case=modal` for modal ownership. Port
+collisions fail rather than reusing another service. This supplies an isolated
+route for genuine human review; it is not evidence that anyone performed it.
+Trading-specific forms/code-viewer review remains a separate checklist item
+in a reviewer-owned Trading environment using its documented startup path.
+Do not toggle global accessibility/VoiceOver settings or interact with someone
+else's desktop to manufacture a result.
+
+1. Navigate the dashboard and a named table with the screen reader. Confirm
+   column headings and the table name; activate a sort button by Enter and
+   Space. Check one sort change, sensible `aria-sort` announcement and stable
+   focus. Check names/disabled/busy state for row actions. Focus the named table
+   viewport and check native Arrow/PageUp/PageDown scrolling in the AT's
+   appropriate interaction/pass-through mode, including a non-sortable table
+   with no row actions.
+2. Open a Trading form, the fullscreen table and CodeViewer by keyboard.
+   Confirm each dialog name (and short description when supplied), initial
+   focus and associated input labels. A visible close/cancel control must be
+   discoverable without pointer input.
+3. Tab/Shift+Tab through each modal. Confirm containment, visible focus and
+   background isolation using both ordinary focus navigation and the AT's
+   browse/navigation commands. Check scrolling within long content. At a small
+   viewport height, wrap from first to last control and back; the focused
+   control must stay visible. Trading BaseDialog uses a naturally sized card
+   and scrollable outer overlay, so exercise that layout as well as the
+   default package modal. Start from a nonzero background-page scroll position
+   and record it before and after these focus moves; revealing a control must
+   not scroll that page.
+   Repeat with default and reduced motion; the focus reveal itself is instant.
+4. In CodeViewer, check the named tablist, selected tab and linked visible
+   panel. Exercise ArrowLeft/ArrowRight/Home/End automatic selection and
+   Enter/Space. Tab to Copy outside the tablist; verify it copies the currently
+   displayed content when clipboard permission is available. Record denial
+   as a limitation, not a successful copy.
+5. Open CodeViewer over fullscreen, dismiss the top layer by Escape and by an
+   outside primary pointer press, and verify the lower layer stays open.
+   Where a dismissal option is disabled, it must not close another layer.
+   Confirm background controls do not activate through the overlay.
+6. Close by the visible control, Escape and outside press; check focus returns
+   to an eligible opener/explicit target. Repeat with a removed, disabled,
+   hidden or inert opener (change it in the browser's element inspector) and
+   the configured fallback. With a surviving dialog, focus must stay there; after final
+   close/unmount, verify page scrolling and focus are restored.
+7. Allow live updates while sorting, using forms and inspecting a query.
+   Check that focus is not stolen and last-good/error/retry notices remain
+   usable. Table cell changes are not automatic live regions: record what is
+   actually announced and any application announcement need, not an invented
+   continuous-update announcement guarantee.
+8. Repeat expansion/collapse and row updates with reduced motion active, then
+   change preference during a transition. Check immediate stable layout,
+   no continuing flash/transition and uninterrupted data updates.
+9. Repeat relevant steps at the existing 390x844 narrow viewport and with the
+   reviewer's recorded zoom. Check dialog/table scrolling, reachable close
+   controls, focus visibility, readable labels and local/portal theme contrast.
+
+Do not mark human acceptance complete until those versioned outcomes are
+available. Automated passing counts alone cannot close this checklist.
 
 ### P5 composition separation
 
@@ -361,6 +701,25 @@ npm run test:browser -- --project=chromium --project=firefox --project=webkit
 builds the package implicitly: use the commands above first. React 18.3.1 is the
 Trading baseline. Node 22 is the CI baseline. No React 19 support is established
 by these tests.
+
+For linked-package Vitest development, an invalid-hook-call error confined to
+dialogs can indicate that an externalized primitive resolved the package's
+development React copy instead of the app's existing deduplicated React.
+Trading combines `resolve.mainFields: ['module', 'main']` with targeted
+`test.server.deps.inline` entries for Radix, `react-remove-scroll` and its
+singleton/callback/sidecar helpers, routing their imports through the existing
+`react`/`react-dom` deduplication. Retain both parts of this test-resolution
+configuration. It does not change package types or primitive architecture,
+alias the package to source, add a second React runtime, or bypass the
+installed-tarball gate.
+
+The first client mount of Modal loads its maintained primitive asynchronously;
+a closed mount warms that layer without taking focus or scroll ownership.
+Tests must await the ready dialog role (for example, `findByRole`) before
+keyboard interaction rather than assume synchronous first-mount rendering.
+Keep the existing readiness deadlines; no timeout increase is required by this
+boundary. A delayed-module regression should delay only the load, then use the
+real primitive to prove close/unmount cannot acquire ownership later.
 
 ## Reproducible visual and packed-consumer gate
 

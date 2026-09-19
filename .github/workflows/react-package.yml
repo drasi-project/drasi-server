@@ -85,12 +85,14 @@ jobs:
             "$RUNNER_TEMP/drasi-react-0.1.0.tgz" "$RUNNER_TEMP/trading-consumer"
 
       - name: Type-check and test Trading
+        id: trading_tests
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
         run: |
           npm run typecheck
           npm run test:coverage 2>&1 | tee "$RUNNER_TEMP/trading-tests.log"
 
       - name: Build Trading app against packed artifact
+        id: trading_build
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
         run: npm run --ignore-scripts build
 
@@ -102,6 +104,7 @@ jobs:
         run: npm run test:browser 2>&1 | tee "$RUNNER_TEMP/trading-browser.log"
 
       - name: Reject unexplained coverage and artifact-size regressions
+        if: ${{ !cancelled() && steps.trading_tests.outcome == 'success' && steps.trading_build.outcome == 'success' }}
         run: |
           node examples/trading/app/test/tools/check-baseline.mjs \
             "$RUNNER_TEMP/drasi-react-0.1.0.tgz" \
@@ -118,9 +121,14 @@ jobs:
           path: |
             dev-tools/react/coverage/
             ${{ env.TRADING_ARTIFACT_ROOT }}/*.log
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/public-contract/
+            !${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/public-contract/**/node_modules/**
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/coverage/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/playwright-report/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/test-results/
+            examples/trading/app/test/fixtures/p6-predecessor-axe-evidence.json.gz
+            examples/trading/app/test/fixtures/p6-contrast-evidence.json
+            examples/trading/app/test/fixtures/trading-axe-baseline.json
 
   live:
     name: Real Trading on the checked-out server

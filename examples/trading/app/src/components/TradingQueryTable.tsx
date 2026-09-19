@@ -4,13 +4,12 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import {
-  DataTable, queryTableState, CodeIcon, ExpandIcon, CollapseIcon, type DataTableProps,
+  DataTable, Modal, queryTableState, CodeIcon, ExpandIcon, CollapseIcon, type DataTableProps,
 } from '@drasi/react/components';
 import {
-  useDrasiQuery, useDrasiClient, useTableSort, useRowAnimation, type UseDrasiQueryOptions,
+  useDrasiQuery, useDrasiClient, useTableSort, useRowAnimation, useReducedMotion, type UseDrasiQueryOptions,
 } from '@drasi/react/react';
 import type { DrasiError } from '@drasi/react/client';
 import { QueryInspector } from './QueryInspector';
@@ -35,12 +34,14 @@ export function TradingQueryTable<T extends object>({
   const sorting = useTableSort({ sort, defaultSort, onSortChange });
   const [showCodeViewer, setShowCodeViewer] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const expandButton = useRef<HTMLButtonElement>(null);
+  const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
   const [expandRect, setExpandRect] = useState<DOMRect | null>(null);
   const [animating, setAnimating] = useState(false);
   const frames = useRef<number[]>([]);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousBodyOverflow = useRef<string | null>(null);
+  const closing = useRef(false);
   const getValue = useCallback((row: T) => {
     const value = presentation.animateOnChange === undefined ? undefined : row[presentation.animateOnChange];
     return typeof value === 'number' || typeof value === 'string' ? value : undefined;
@@ -51,64 +52,65 @@ export function TradingQueryTable<T extends object>({
     data: presentation.animateOnChange === undefined ? undefined : query.data,
   });
 
-  const handleExpand = useCallback(() => {
-    if (!containerRef.current) return;
-    if (collapseTimer.current) {
-      clearTimeout(collapseTimer.current);
-      collapseTimer.current = null;
-    }
-    setExpandRect(containerRef.current.getBoundingClientRect());
-    setExpanded(true);
-    frames.current.push(requestAnimationFrame(() => {
-      frames.current.push(requestAnimationFrame(() => setAnimating(true)));
-    }));
-    previousBodyOverflow.current = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  }, []);
-
-  const handleCollapse = useCallback(() => {
-    frames.current.forEach(cancelAnimationFrame);
-    frames.current = [];
-    setAnimating(false);
-    if (collapseTimer.current) clearTimeout(collapseTimer.current);
-    collapseTimer.current = setTimeout(() => {
-      setExpanded(false);
-      setExpandRect(null);
-      document.body.style.overflow = previousBodyOverflow.current ?? '';
-      previousBodyOverflow.current = null;
-      collapseTimer.current = null;
-    }, 350);
-  }, []);
-
-  useEffect(() => () => {
-    frames.current.forEach(cancelAnimationFrame);
-    if (collapseTimer.current) clearTimeout(collapseTimer.current);
-    if (previousBodyOverflow.current !== null) document.body.style.overflow = previousBodyOverflow.current;
-  }, []);
-
-  useEffect(() => {
-    if (!query.error || !expanded) return;
-    frames.current.forEach(cancelAnimationFrame);
+  const cancelTransition = useCallback(() => {
+    frames.current.forEach(frame => cancelAnimationFrame(frame));
     frames.current = [];
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
+  }, []);
+
+  const finishCollapse = useCallback(() => {
+    cancelTransition();
+    closing.current = false;
     setAnimating(false);
     setExpanded(false);
     setExpandRect(null);
-    document.body.style.overflow = previousBodyOverflow.current ?? '';
-    previousBodyOverflow.current = null;
-  }, [query.error, expanded]);
+  }, [cancelTransition]);
+
+  const handleExpand = useCallback(() => {
+    if (!containerRef.current) return;
+    cancelTransition();
+    closing.current = false;
+    setExpandRect(containerRef.current.getBoundingClientRect());
+    setExpanded(true);
+    setAnimating(reducedMotion);
+    if (!reducedMotion) {
+      frames.current.push(requestAnimationFrame(() => {
+        frames.current.push(requestAnimationFrame(() => {
+          frames.current = [];
+          setAnimating(true);
+        }));
+      }));
+    }
+  }, [cancelTransition, reducedMotion]);
+
+  const handleCollapse = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    cancelTransition();
+    if (reducedMotion) {
+      finishCollapse();
+      return;
+    }
+    setAnimating(false);
+    collapseTimer.current = setTimeout(finishCollapse, 350);
+  }, [cancelTransition, finishCollapse, reducedMotion]);
+
+  useEffect(() => cancelTransition, [cancelTransition]);
 
   useEffect(() => {
-    if (!expanded) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') handleCollapse();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [expanded, handleCollapse]);
+    if (!query.error || !expanded) return;
+    finishCollapse();
+  }, [query.error, expanded, finishCollapse]);
+
+  useEffect(() => {
+    if (!expanded || !reducedMotion) return;
+    cancelTransition();
+    if (closing.current) finishCollapse();
+    else setAnimating(true);
+  }, [expanded, reducedMotion, cancelTransition, finishCollapse]);
 
   const expandedStyle = useMemo((): DataTableProps<T, DrasiError>['style'] => {
     if (!expandRect) return undefined;
@@ -118,10 +120,10 @@ export function TradingQueryTable<T extends object>({
       left: animating ? 32 : expandRect.left,
       width: animating ? 'calc(100vw - 64px)' : expandRect.width,
       height: animating ? 'calc(100vh - 64px)' : expandRect.height,
-      transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+      transition: reducedMotion ? 'none' : 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
       zIndex: 60,
     };
-  }, [expandRect, animating]);
+  }, [expandRect, animating, reducedMotion]);
 
   const renderTable = (isExpanded: boolean, isAnimating: boolean) => (
     <DataTable<T, DrasiError>
@@ -134,7 +136,7 @@ export function TradingQueryTable<T extends object>({
       containerRef={isExpanded ? undefined : containerRef}
       className={isExpanded ? 'drasi-query-table--expanded'
         : clsx(presentation.className, expanded && 'drasi-query-table--hidden')}
-      style={isExpanded ? expandedStyle : presentation.style}
+      style={isExpanded ? { height: '100%' } : presentation.style}
       height={isExpanded ? undefined : presentation.height}
       titleClassName={clsx(presentation.titleClassName, isAnimating && 'drasi-query-table__title--expanded')}
       headerSlotClassName={clsx(presentation.headerSlotClassName, isAnimating && 'drasi-expanded-text')}
@@ -146,16 +148,18 @@ export function TradingQueryTable<T extends object>({
         <>
           {presentation.headerControls}
           {codeSnippet && (
-            <button type="button" onClick={() => setShowCodeViewer(true)} className="drasi-icon-button" title="View code" aria-label="View code">
+            <button type="button" onClick={() => setShowCodeViewer(true)} className="drasi-icon-button" title="View code" aria-label="View code" aria-haspopup="dialog">
               <CodeIcon className="drasi-icon drasi-icon--medium" />
             </button>
           )}
           <button
             type="button"
+            ref={isExpanded ? undefined : expandButton}
             onClick={isExpanded ? handleCollapse : handleExpand}
             className="drasi-icon-button"
             title={isExpanded ? 'Collapse table' : 'Expand table'}
             aria-label={isExpanded ? 'Collapse table' : 'Expand table'}
+            aria-haspopup={isExpanded ? undefined : 'dialog'}
           >
             {isExpanded ? <CollapseIcon className="drasi-icon drasi-icon--medium" /> : <ExpandIcon className="drasi-icon drasi-icon--medium" />}
           </button>
@@ -174,19 +178,23 @@ export function TradingQueryTable<T extends object>({
         />
       )}
       {renderTable(false, false)}
-      {expanded && createPortal(
-        <>
-          <div
-            className="drasi-query-table__backdrop"
-            style={{
-              backgroundColor: animating ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
-              transition: 'background-color 0.35s ease',
-            }}
-            onClick={handleCollapse}
-          />
+      {expanded && (
+        <Modal
+          open
+          title={presentation.title || queryId}
+          onClose={handleCollapse}
+          returnFocusRef={expandButton}
+          themeRef={containerRef}
+          className="trading-expanded-dialog"
+          style={expandedStyle}
+          overlayClassName="drasi-query-table__backdrop"
+          overlayStyle={{
+            backgroundColor: animating ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
+            transition: reducedMotion ? 'none' : 'background-color 0.35s ease',
+          }}
+        >
           {renderTable(true, animating)}
-        </>,
-        document.body,
+        </Modal>
       )}
     </>
   );

@@ -290,3 +290,21 @@ export function HeadlessConsumer(): ReactNode {
   void [defaultController, stored, explicit, sort, states];
   return createElement('button', { type: 'button', onClick: update }, 'Sort without a provider');
 }
+
+import { useReducedMotion } from '@drasi/react/react';
+
+export function PackedMotionConsumer(): ReactNode {
+  const reduced: boolean = useReducedMotion();
+  // @ts-expect-error The preference is a boolean, not an arbitrary string.
+  const text: string = useReducedMotion();
+  // @ts-expect-error The hook reads the live preference and accepts no override argument.
+  useReducedMotion(true);
+  void text;
+  return createElement('span', null, reduced ? 'Reduced motion' : 'Default motion');
+}
+// @ts-expect-error The hook-only entrypoint does not export modal presentation.
+import { Modal as HookModal } from '@drasi/react/react';
+// @ts-expect-error Modal props stay outside the hook-only declaration graph.
+import type { ModalProps as HookModalProps } from '@drasi/react/react';
+// @ts-expect-error Table size types belong to the component graph.
+import type { TableHeight as HookTableHeight } from '@drasi/react/react';

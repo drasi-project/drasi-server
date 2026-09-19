@@ -295,7 +295,7 @@ export const standalone: DataTableProps<Temperature, SensorError> = {
   containerRef: createRef<HTMLDivElement>(),
   tableClassName: 'warehouse-scroll', headerClassName: 'warehouse-head',
   titleClassName: 'warehouse-title', rowClassName: row => row.celsius > 30 ? 'hot' : '',
-  height: 'warehouse-height', emptyMessage: 'No readings.',
+  height: 400, emptyMessage: 'No readings.',
   headerActions: createElement('span', null, 'Calibrated'),
   headerControls: createElement('button', { type: 'button' }, 'Inspect'),
   headerSlot: createElement('p', null, 'Application-owned data'),
@@ -452,3 +452,106 @@ export const rootSuppliedRendered = createElement(Root.DataTable<Delivery>, {
   columns: deliveryTable.columns,
   rowKey: deliveryTable.rowKey,
 });
+
+import { Modal, type ModalProps, type TableHeight } from '@drasi/react/components';
+import { useReducedMotion } from '@drasi/react/react';
+import type { RefObject } from 'react';
+
+export type RootModal = Assert<Equal<typeof Root.Modal, typeof Modal>>;
+export type RootModalProps = Assert<Equal<Root.ModalProps, ModalProps>>;
+export type RootTableHeight = Assert<Equal<Root.TableHeight, TableHeight>>;
+export type RootReducedMotion = Assert<Equal<typeof Root.useReducedMotion, typeof useReducedMotion>>;
+export type MotionIsBoolean = Assert<Equal<ReturnType<typeof useReducedMotion>, boolean>>;
+export type DataHeight = Assert<Equal<DataTableProps<Temperature>['height'], TableHeight | undefined>>;
+export type QueryHeight = Assert<Equal<QueryTableProps<Temperature>['height'], TableHeight | undefined>>;
+export type TableName = Assert<Equal<DataTableProps<Temperature>['ariaLabel'], string | undefined>>;
+export type QueryTableName = Assert<Equal<QueryTableProps<Temperature>['ariaLabel'], string | undefined>>;
+export type ModalCloseRequest = Assert<Equal<ModalProps['onClose'], () => void>>;
+export type ModalTitle = Assert<Equal<ModalProps['title'], string>>;
+export type ModalInitialRef = Assert<Equal<ModalProps['initialFocusRef'], RefObject<HTMLElement> | undefined>>;
+export type ModalReturnRef = Assert<Equal<ModalProps['returnFocusRef'], RefObject<HTMLElement> | undefined>>;
+export type ModalFallbackRef = Assert<Equal<ModalProps['fallbackFocusRef'], RefObject<HTMLElement> | undefined>>;
+export type ModalThemeRef = Assert<Equal<ModalProps['themeRef'], RefObject<HTMLElement> | undefined>>;
+
+export const acceptedHeights: readonly TableHeight[] = [
+  0, 400, 12.5, '0', 'auto', '400px', '20rem', '2em', '20ch', '20ex', '3lh', '3rlh',
+  '50vw', '50vh', '50vmin', '50vmax', '50svw', '50svh', '50lvw', '50lvh', '50dvw', '50dvh',
+  '10cm', '10mm', '5in', '20pt', '20pc', '75%',
+  'var(--panel-height)', 'var(--panel-height, 20rem)', 'var(--panel-height, auto)',
+];
+export const sizedTables = acceptedHeights.map(height => createElement(DataTable<Temperature>, {
+  ...emptyStandalone, height, ariaLabel: 'Warehouse readings', style: { height: '2rem' },
+}));
+export const sizedQuery: QueryTableProps<Temperature> = {
+  ...table, height: 400, ariaLabel: 'Live warehouse readings',
+};
+// @ts-expect-error The former utility-class height is not a CSS size.
+export const legacyUtilityHeight: TableHeight = 'h-[400px]';
+// @ts-expect-error Arbitrary class strings must not silently become sizes.
+export const legacyNamedHeight: TableHeight = 'warehouse-height';
+// @ts-expect-error Nonzero string sizes require an explicit unit.
+export const unitlessHeight: TableHeight = '400';
+// @ts-expect-error Expressions go into a custom property, not the height prop.
+export const calculatedHeight: TableHeight = 'calc(100vh - 64px)';
+// @ts-expect-error Responsive expressions also require a custom property.
+export const clampedHeight: TableHeight = 'clamp(10rem, 50vh, 40rem)';
+// @ts-expect-error Boolean values are not table sizes.
+export const booleanHeight: TableHeight = true;
+// @ts-expect-error The real table prop enforces TableHeight, not just a standalone alias.
+export const legacySizedTable: DataTableProps<Temperature> = { ...emptyStandalone, height: 'h-[400px]' };
+// @ts-expect-error Live tables share the same height contract.
+export const legacySizedQuery: QueryTableProps<Temperature> = { ...table, height: 'warehouse-height' };
+// @ts-expect-error Accessible table names are strings.
+export const invalidTableName: DataTableProps<Temperature> = { ...emptyStandalone, ariaLabel: 42 };
+
+const closePackedModal = () => {};
+export const modalProps: ModalProps = {
+  open: true, onClose: closePackedModal, title: 'Warehouse details',
+  description: 'Review the latest readings.',
+  children: createElement('button', { type: 'button', onClick: closePackedModal }, 'Close'),
+  initialFocusRef: createRef<HTMLButtonElement>(),
+  returnFocusRef: createRef<HTMLButtonElement>(),
+  fallbackFocusRef: createRef<HTMLHeadingElement>(),
+  themeRef: createRef<HTMLDivElement>(),
+  className: 'warehouse-dialog', style: { width: '24rem' },
+  overlayClassName: 'warehouse-overlay', overlayStyle: { padding: '1rem' },
+  closeOnEscape: false, closeOnOutsideClick: false,
+};
+export const unmountedModalRefs: ModalProps = {
+  ...modalProps, initialFocusRef: { current: null }, returnFocusRef: { current: null },
+  fallbackFocusRef: { current: null }, themeRef: { current: null },
+};
+export const renderedModal = createElement(Modal, modalProps);
+export const rootRenderedModal = createElement(Root.Modal, modalProps);
+// @ts-expect-error A modal requires an accessible title.
+export const unnamedModal: ModalProps = { open: true, onClose() {}, children: null };
+// @ts-expect-error The hidden accessible title is a string, not arbitrary JSX.
+export const nodeModalTitle: ModalProps = { ...modalProps, title: createElement('h2', null, 'Warehouse') };
+// @ts-expect-error Controlled visibility is required.
+export const uncontrolledModal: ModalProps = { title: 'Warehouse', onClose() {}, children: null };
+// @ts-expect-error The owner must provide a close request callback.
+export const missingModalClose: ModalProps = { open: true, title: 'Warehouse', children: null };
+// @ts-expect-error Content is required even though ReactNode allows an explicit null.
+export const missingModalChildren: ModalProps = { open: true, title: 'Warehouse', onClose() {} };
+// @ts-expect-error Visibility is a boolean, not a string.
+export const invalidModalOpen: ModalProps = { ...modalProps, open: 'true' };
+// @ts-expect-error The close request supplies no DOM event argument.
+export const eventModalClose: ModalProps = { ...modalProps, onClose: (event: MouseEvent) => { void event; } };
+// @ts-expect-error A short accessible description is a string.
+export const nodeModalDescription: ModalProps = { ...modalProps, description: createElement('p', null, 'Details') };
+// @ts-expect-error Initial focus refs must point to HTML elements.
+export const numericInitialFocus: ModalProps = { ...modalProps, initialFocusRef: createRef<number>() };
+// @ts-expect-error Focus restoration does not accept selector strings.
+export const selectorReturnFocus: ModalProps = { ...modalProps, returnFocusRef: '#open-details' };
+// @ts-expect-error Fallback focus needs a ref object, not a callback ref.
+export const callbackFallbackFocus: ModalProps = { ...modalProps, fallbackFocusRef: (_element: HTMLElement | null) => {} };
+// @ts-expect-error Theme sources must be HTML elements, not SVG refs.
+export const svgThemeSource: ModalProps = { ...modalProps, themeRef: createRef<SVGSVGElement>() };
+// @ts-expect-error Modal styles retain React CSSProperties checking.
+export const invalidModalStyle: ModalProps = { ...modalProps, style: { arbitraryStyle: true } };
+// @ts-expect-error Dismissal settings are booleans.
+export const invalidEscapeSetting: ModalProps = { ...modalProps, closeOnEscape: 'false' };
+// @ts-expect-error Outside-pointer dismissal also uses a boolean.
+export const invalidOutsideSetting: ModalProps = { ...modalProps, closeOnOutsideClick: 0 };
+// @ts-expect-error The public wrapper does not expose primitive dismissal escape hatches.
+export const primitiveModalEvent: ModalProps = { ...modalProps, onPointerDownOutside() {} };

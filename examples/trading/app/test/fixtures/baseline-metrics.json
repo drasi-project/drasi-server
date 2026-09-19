@@ -4,9 +4,15 @@
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "artifactChange": {
     "issue": 164,
-    "part": "A / P5",
-    "predecessor": "20561c13dd74929855dfbe605bb1fac23e5a49f4",
-    "reason": "P5 extracts provider-free DataTable, typed state/header/row composition and controlled sorting while moving tutorial/fullscreen code into Trading. Package ESM/CJS shrink across all entries/shared chunks; declarations grow by 2959 bytes for the new presentation, slot/error, sort and animation contracts. Trading JavaScript grows by 792 bytes and generated CSS by 605 bytes under its unchanged source-scanning config, now including the app-owned dialog/fullscreen modules. Package CSS remains exactly 10043 bytes. All 26 packed Linux browser scenarios and five original zero-diff PNG images passed before this measured artifact advance. Ten literal README recipes compile against the installed artifact. No dependencies, protocol, financial behavior, image baselines, coverage exclusions/floors or 2% future-growth policy were changed. P6 styling/accessibility work remains open. See examples/trading/TESTING.md.",
+    "part": "B / P6",
+    "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
+    "reason": "P6 adds a client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal via scroll-into-view-if-needed 3.1.0, inherited portal themes, validated sizing, native sort/scroll semantics and live reduced motion. All entries/shared/lazy chunks are counted. Measured Trading JS grows by 52775 bytes (gzip 18611), including these maintained primitives and adapters; package ESM/CJS grow by 10723/12273 bytes, declarations by 3410 bytes, while package CSS shrinks by 1427 bytes after moving tutorial styles to Trading. The tarball includes the full new reference and executable recipes. Original Trading colors, all five original zero-diff PNG images, financial behavior, SDK/plugin pins, inherited coverage floors and the 2% future-growth policy remain unchanged. New component floors are enforced without product exclusions. Trading full-rule axe results use exact predecessor non-regression fingerprints, never a blanket contrast exclusion or zero-violation claim; human AT and preserved contrast findings remain open. See examples/trading/TESTING.md.",
+    "p5Change": {
+      "issue": 164,
+      "part": "A / P5",
+      "predecessor": "20561c13dd74929855dfbe605bb1fac23e5a49f4",
+      "reason": "P5 extracts provider-free DataTable, typed state/header/row composition and controlled sorting while moving tutorial/fullscreen code into Trading. Package ESM/CJS shrink across all entries/shared chunks; declarations grow by 2959 bytes for the new presentation, slot/error, sort and animation contracts. Trading JavaScript grows by 792 bytes and generated CSS by 605 bytes under its unchanged source-scanning config, now including the app-owned dialog/fullscreen modules. Package CSS remains exactly 10043 bytes. All 26 packed Linux browser scenarios and five original zero-diff PNG images passed before this measured artifact advance. Ten literal README recipes compile against the installed artifact. No dependencies, protocol, financial behavior, image baselines, coverage exclusions/floors or 2% future-growth policy were changed. P6 styling/accessibility work remains open. See examples/trading/TESTING.md."
+    },
     "p4Change": {
       "issue": 163,
       "part": "B / P4",
@@ -68,6 +74,17 @@
       "tradingCss": 21034,
       "tradingCssGzip": 5163
     },
+    "p5Sizes": {
+      "packageTarball": 169457,
+      "packageEsm": 78523,
+      "packageCjs": 85845,
+      "packageTypes": 37834,
+      "packageCss": 10043,
+      "tradingJs": 251684,
+      "tradingJsGzip": 74133,
+      "tradingCss": 21639,
+      "tradingCssGzip": 5212
+    },
     "p3FinalCi": {
       "revision": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
       "run": "https://github.com/drasi-project/drasi-server/actions/runs/35436454291",
@@ -99,14 +116,14 @@
     }
   },
   "sizes": {
-    "packageTarball": 169457,
-    "packageEsm": 78523,
-    "packageCjs": 85845,
-    "packageTypes": 37834,
-    "packageCss": 10043,
-    "tradingJs": 251684,
-    "tradingJsGzip": 74133,
-    "tradingCss": 21639,
-    "tradingCssGzip": 5212
+    "packageTarball": 204840,
+    "packageEsm": 89246,
+    "packageCjs": 98118,
+    "packageTypes": 41244,
+    "packageCss": 8616,
+    "tradingJs": 304459,
+    "tradingJsGzip": 92744,
+    "tradingCss": 25266,
+    "tradingCssGzip": 5900
   }
 }

@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- P6 / #164 Part B provider-free, controlled `Modal` and `ModalProps`, backed
+  by pinned Radix Dialog 1.1.15. Required nonempty accessible title rendered
+  visually hidden; empty/whitespace titles throw `TypeError`. Optional
+  description, typed initial/return/fallback focus refs, topmost dismissal,
+  shared focus containment, pointer shielding and scroll ownership. Consumers
+  supply visible close controls and application content; no tutorial chrome.
+- Overlay-bounded focus visibility through pinned
+  `scroll-into-view-if-needed` 3.1.0 and locked `compute-scroll-into-view` 3.1.1.
+  Non-root focus inside the dialog is revealed only if needed, with nearest
+  alignment and instant scrolling even when decorative animations are enabled.
+  The maintained geometry helper does not replace Radix focus/lock/dismissal
+  ownership or add a custom global focus manager.
+- Scoped portal theme propagation from an inline anchor or `themeRef`,
+  including resolved local `--drasi-*` values and typography/direction.
+  Ancestor attribute, resize and preferred-color-scheme changes refresh it;
+  arbitrary CSSOM/stylesheet replacement without those signals is not watched.
+- Public `TableHeight` and table `ariaLabel`, plus headless
+  `useReducedMotion` with a deterministic false SSR/no-`matchMedia` result.
+- Three additional literal README recipes for numeric/token sizing, a scoped
+  provider-free table/modal and headless reduced motion. Installed public
+  contracts add positive/negative props/ref/height checks, import-boundary
+  guards and open/closed modal SSR checks without a fake DOM. P6 gate
+  counts and measurements are recorded in Trading TESTING.md; no human screen-reader
+  review or universal browser/assistive-technology compatibility is claimed.
+- Full-rule Trading accessibility non-regression checks bounded by exact
+  predecessor element/state/browser/color/typography evidence. Original colors
+  and image expectations are preserved; raw violations and incomplete checks
+  remain visible. Generic/default-theme audits still require zero violations.
+  Passing this check is not WCAG compliance or acceptance of the retained debt.
 - P5 / #164 Part A provider-free `DataTable<T, E extends Error = Error>` with
   readonly rows/columns, application-owned state/retries, typed loading/empty/
   error/stale/header slots, right-hand header controls, card ref/style hooks and
@@ -24,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional readonly animation maps for shared table presentations and readonly
   `useRowAnimation.data` / `updateData` inputs.
 - Installed type contracts and provider-free non-Trading SSR coverage for the
-  composition API; runtime graphs reject tutorial/dialog implementations while
+  P5 composition API; runtime graphs reject app-owned tutorial implementations while
   headless sort types remain allowed. Five additional marked README recipes
   cover supplied rows, both sort modes, scoped recovery and app-owned views.
 - P4 / #163 Part B normalized `ResultChange`, `QuerySnapshot`, `QueryDelta` and
@@ -96,6 +125,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package/consumer CI.
 
 ### Changed
+- Sort controls are native buttons inside `th scope="col"`, with the column
+  label as the button name and `aria-sort` on the active header. Action buttons
+  retain labels and expose busy state; the action column has a hidden heading.
+- Table viewports are named, tabbable regions for native keyboard scrolling,
+  including when all columns are non-sortable and there are no row actions.
+  Their focus-visible outline does not change unfocused table geometry.
+- `height` is a validated size, not an additional class name. Migrate
+  `h-[400px]` to `400` or `'400px'`; finite nonnegative pixels, explicit units,
+  percentages, `'0'`, `'auto'` and `var(--token[, length])` are supported.
+  Invalid JavaScript values throw `TypeError`. Explicit height overrides
+  `style.height`; omission retains inline height or the inherited token's
+  400px fallback. Use a token for `calc()`/`clamp()`, defining its value or
+  providing a literal fallback. Syntax validation does not evaluate the CSS
+  custom-property cascade during SSR.
+- Package colors now have light `var()` fallbacks at usage rather than global
+  dark defaults. Trading owns its exact body theme and CodeViewer styles;
+  ordinary consumers need no Tailwind or source scanning. Row flashes derive
+  success/danger/primary colors from tokens via `color-mix` at 20%/20%/25%
+  against transparent; Trading's explicit original values retain its colors
+  and timing. `--drasi-color-overlay` controls the default modal backdrop
+  (70% black fallback) and is copied/reset with the known portal tokens.
+- `--drasi-line-height` preserves explicitly supplied unitless typography
+  across the portal: table fallback `1.5`, modal-content fallback `inherit`.
+  Trading sets `1.5` on its own body. Copying a computed pixel line height
+  alone does not preserve an ancestor's unitless scaling for differently sized
+  descendants.
+- `useRowAnimation` cancels animation timers under reduced motion while
+  maintaining the latest baseline. DataTable also suppresses controlled maps,
+  and package CSS disables animations/transitions. Trading preserves its
+  ordinary 350ms FLIP behavior and completes reduced-motion transitions
+  immediately without delaying live data.
+- Trading's narrow shared `BaseDialog` adapter uses Modal while preserving
+  app-owned cards, forms and actions. CodeViewer remains lazy/app-owned and
+  uses pinned Radix Tabs 1.1.13 for tab keyboard/selection relationships; copy
+  remains outside the tablist. Existing inspection reads, cancellations,
+  snippets, UI links and business behavior are retained.
 - `QueryTable` is now a small `useDrasiQuery` + `DataTable` composition.
   `queryOptions.getKey` and `queryOptions.transform` remain required, with
   `rowKey` separate. Slots retain last-good rows; `renderEmpty` returns content
@@ -114,8 +179,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider callback; matching codes/messages alone does not select that scope.
   Async definition content now updates an open view and its copy action.
   Required initialization and per-subscription resource-validation GETs remain.
-- P5 leaves package CSS byte-for-byte unchanged, including legacy app-used
-  dialog/fullscreen rules and the existing `height` class-name contract.
+- P5 left package CSS byte-for-byte unchanged, including legacy app-used
+  dialog/fullscreen rules and the then-existing `height` class-name contract.
+  P6's bounded presentation changes above supersede that historical boundary.
 - `useDrasiQuery` now requires options containing a nonempty stable raw `getKey`
   and `transform`, including `row => row` for raw reads. Generic output does
   not assert a wire schema. Identity precedes projection; sparse deletes never
@@ -171,6 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deferred
 - Stronger snapshot/live consistency requires a shared backend snapshot cursor
   and stream resume/replay contract, not client clocks or guessed signatures.
-- P6 focus management, coordinated overlays, theming, reduced-motion and
-  height-prop completion remain separate from P5 / #164 Part A. Standalone
-  examples/Storybook (#165), publication and repository transfer remain separate.
+- Human screen-reader acceptance remains pending; automated rule, DOM/ARIA,
+  accessibility-tree and keyboard checks are not a substitute for actual AT
+  review. Development evidence is not merge/release permission.
+- Standalone examples/Storybook (#165), publication and repository transfer
+  remain separate. The package stays private and backend/SDK pins are unchanged.

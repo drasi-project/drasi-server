@@ -31,12 +31,23 @@ test('does not extract fences quoted inside an unmarked wider fence with metadat
   assert.equal(extractReadmeExamples(quoted + required).length, requiredReadmeExamples.length);
 });
 
-test('requires every named runnable example, including the composition recipes', () => {
+test('requires every named runnable example, including composition and P6 presentation recipes', () => {
   for (const name of requiredReadmeExamples) {
     const incomplete = requiredReadmeExamples.filter(example => example !== name).map(example => fence(example)).join('\n');
     assert.throws(() => extractReadmeExamples(incomplete),
       error => error.message.includes(`Missing marked README examples: ${name}`));
   }
+});
+
+test('retains all ten original recipe names before adding the P6 recipes', () => {
+  assert.deepEqual(requiredReadmeExamples.slice(0, 10), [
+    'quickstart.tsx', 'query-options.ts', 'client.ts', 'auth.ts', 'controlled.tsx',
+    'data-table.tsx', 'sort-uncontrolled.tsx', 'sort-controlled.tsx',
+    'query-states.tsx', 'composed-table.tsx',
+  ]);
+  assert.deepEqual(requiredReadmeExamples.slice(10), [
+    'table-sizing.tsx', 'scoped-modal.tsx', 'reduced-motion.tsx',
+  ]);
 });
 
 test('rejects duplicate names instead of silently overwriting an example', () => {
