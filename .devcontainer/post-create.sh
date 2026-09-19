@@ -21,7 +21,8 @@ export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
 # Build Drasi Server
 echo "🔨 Building Drasi Server (this may take a few minutes)..."
-cargo build
+bash scripts/prepare-core.sh
+cargo build --locked
 
 echo ""
 echo "✅ Drasi Server development environment is ready!"
