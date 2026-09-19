@@ -30,10 +30,12 @@ describe('DrasiSSEClient', () => {
       factory.instances[0].open();
       await connected;
       factory.instances[0].message(payload);
-      expect(client.getConnectionStatus().error).toBeInstanceOf(DrasiError);
-      expect(client.getConnectionStatus().error?.code).toBe('INVALID_PAYLOAD');
+      const keyed = payload !== null && typeof payload === 'object' && 'queryId' in payload && payload.queryId === 'q';
+      const error = keyed ? client.getQueryError('q') : client.getConnectionStatus().error;
+      expect(error).toBeInstanceOf(DrasiError);
+      expect(error?.code).toBe('INVALID_PAYLOAD');
       expect(client.getConnectionStatus().reconnecting).toBe(false);
-      expect(factory.instances[0].closed).toBe(true);
+      expect(factory.instances[0].closed).toBe(!keyed);
       await client.disconnect();
     },
   );
@@ -78,14 +80,15 @@ describe('DrasiSSEClient', () => {
 
     factory.instances[0].message({
       queryId: 'stocks',
-      data: { id: 'A', price: 10 },
-      timestamp: '2026-08-12T00:00:00Z',
+      results: [{ type: 'ADD', data: { id: 'A', price: 10 } }],
+      timestamp: Date.parse('2026-08-12T00:00:00Z'),
     });
 
     expect(results).toEqual([
       expect.objectContaining({
         queryId: 'stocks',
-        data: [{ id: 'A', price: 10 }],
+        kind: 'delta',
+        changes: [{ kind: 'upsert', after: { id: 'A', price: 10 } }],
       }),
     ]);
     expect(client.getConnectionStatus().connected).toBe(true);

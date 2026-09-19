@@ -4,9 +4,15 @@
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "artifactChange": {
     "issue": 163,
-    "part": "A / P3",
-    "predecessor": "3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97",
-    "reason": "P3 adds full read-DTO/JSON/link validation, auth/credential/cancellation policy, semantic provider reconfiguration, named generic types and real ESM/CJS/type entrypoints. Metrics now count every shared chunk and entrypoint, not just the root barrel. Tarball also ships expanded contract/migration docs and CHANGELOG. All 26 packed Linux browser scenarios and five unchanged PNG images passed before advancing this measured artifact baseline. No dependency-version/CSS/PNG/coverage-floor or 2% policy relaxation. See examples/trading/TESTING.md.",
+    "part": "B / P4",
+    "predecessor": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
+    "reason": "P4 replaces permissive result guessing with strict versioned normalization and an explicit legacy adapter; adds raw stable identity, before/after changes, bounded visible snapshot reconciliation, scoped state/retry and reactive guarded projections. Named declarations, executable migration docs and safe last-good-data UI account for the measured feature cost. All 26 packed Linux browser scenarios and all five original exact PNGs passed before this artifact baseline advance. All entrypoints/shared chunks remain counted. No dependency, CSS, PNG, coverage exclusion, original coverage floor or 2% policy relaxation; critical client/react coverage thresholds are now enforced. See examples/trading/TESTING.md.",
+    "p3Change": {
+      "issue": 163,
+      "part": "A / P3",
+      "predecessor": "3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97",
+      "reason": "P3 added full read-DTO/JSON/link validation, auth/credential/cancellation policy, semantic provider reconfiguration, named generic types and real ESM/CJS/type entrypoints. Metrics count every shared chunk and entrypoint. Expanded contract/migration docs and CHANGELOG ship in the tarball."
+    },
     "p2Change": {
       "issue": 162,
       "predecessor": "a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059",
@@ -33,6 +39,32 @@
       "tradingJsGzip": 69038,
       "tradingCss": 21034,
       "tradingCssGzip": 5163
+    },
+    "p3Sizes": {
+      "packageTarball": 155916,
+      "packageEsm": 84754,
+      "packageCjs": 91229,
+      "packageTypes": 28121,
+      "packageCss": 10043,
+      "tradingJs": 240826,
+      "tradingJsGzip": 70541,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    },
+    "p3FinalCi": {
+      "revision": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
+      "run": "https://github.com/drasi-project/drasi-server/actions/runs/35436454291",
+      "sizes": {
+        "packageTarball": 155715,
+        "packageEsm": 84877,
+        "packageCjs": 91352,
+        "packageTypes": 28121,
+        "packageCss": 10043,
+        "tradingJs": 240901,
+        "tradingJsGzip": 70550,
+        "tradingCss": 21034,
+        "tradingCssGzip": 5163
+      }
     }
   },
   "coverage": {
@@ -50,13 +82,13 @@
     }
   },
   "sizes": {
-    "packageTarball": 155916,
-    "packageEsm": 84754,
-    "packageCjs": 91229,
-    "packageTypes": 28121,
+    "packageTarball": 187699,
+    "packageEsm": 98585,
+    "packageCjs": 106000,
+    "packageTypes": 34875,
     "packageCss": 10043,
-    "tradingJs": 240826,
-    "tradingJsGzip": 70541,
+    "tradingJs": 250892,
+    "tradingJsGzip": 73795,
     "tradingCss": 21034,
     "tradingCssGzip": 5163
   }

@@ -17,6 +17,11 @@ const messages = {
   INVALID_CONFIGURATION: 'The Drasi connection configuration is invalid.',
   INCOMPATIBLE_RESOURCE: 'The resource is incompatible with this connection.',
   INVALID_PAYLOAD: 'Drasi returned an unsupported or malformed payload.',
+  UNROUTABLE_RESULT: 'The result has no usable query identity. Select an adapter and an explicit routing policy.',
+  INVALID_ROW_KEY: 'A result row has no valid stable key. Check getKey, including sparse delete records.',
+  RESULT_PROCESSING_FAILED: 'A result callback failed. Check the row transform or derived-state callback.',
+  SNAPSHOT_OVERLAP: 'Changes overlapped the snapshot. Refreshing because this protocol has no shared ordering cursor.',
+  RESULT_BUFFER_OVERFLOW: 'Too many changes arrived during the snapshot. The query must resynchronize.',
 } as const;
 
 export type DrasiErrorCode = keyof typeof messages;
@@ -44,7 +49,8 @@ export class DrasiError extends Error {
   constructor(readonly code: DrasiErrorCode, details: DrasiErrorDetails = {}) {
     super(messages[code]);
     this.retryable = code === 'SERVER_UNAVAILABLE' ||
-      code === 'STREAM_UNAVAILABLE' || code === 'RESOURCE_STARTING';
+      code === 'STREAM_UNAVAILABLE' || code === 'RESOURCE_STARTING' ||
+      code === 'SNAPSHOT_OVERLAP' || code === 'RESULT_BUFFER_OVERFLOW';
     this.instanceId = details.instanceId;
     this.resourceKind = details.resourceKind;
     this.resourceId = details.resourceId;

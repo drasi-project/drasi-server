@@ -369,20 +369,59 @@ React 19 is not claimed.
 
 The app's `TradingQueryDefinition` remains a creation-only shape with explicit
 Cypher and ordered sources/joins; it is not the package's complete read-only
-`QueryConfig` DTO. Incoming object fields are now `unknown`, and app-owned
-transforms narrow/convert them to named Trading row types. Query text, numeric
-business defaults, routing and deletion behavior are unchanged. The known
-market-mover default sorting remains intentionally unchanged.
+`QueryConfig` DTO. Incoming object fields are `unknown`, and app-owned guards
+validate the actual per-query projection. High-volume rows, for example, have
+`volume` but no `previousClose`; the app does not invent a value for it.
+Portfolio numeric conversion retains the existing `parseFloat`, missing/null,
+empty-string and invalid-number behavior. Query text, financial calculations
+and the known market-mover default sorting remain unchanged.
 
 The package provider compares plain reference/configuration values rather than
-object identities, while callable fetch/auth/stream/routing identities are
+object identities, while callable fetch/auth/stream/adapter identities are
 material. Trading keeps app-owned lifecycle/provisioning and the controlled
 binding; it does not switch back to a package provisioner. See the package's
 [auth](../../dev-tools/react/README.md#authentication-and-injected-transports),
 [ownership](../../dev-tools/react/README.md#ownership-and-reconfiguration),
 [SSR](../../dev-tools/react/README.md#ssr-and-import-safety) and
-[migration](../../dev-tools/react/README.md#p3-migration) contracts. Stable keys,
-canonical deltas and complete stale/reconnect state remain #163 Part B.
+[migration](../../dev-tools/react/README.md#p3-migration) contracts.
+
+#### Result identity and recovery (#163 Part B)
+
+Every Trading hook and table supplies `tradingQueryOptions(queryId)`: required
+raw `getKey`, a validating `transform`, and pure derived sorting/filtering.
+Keys are nonempty business identities, never serialized whole rows. Portfolio
+uses position ID with the existing symbol fallback, summary uses its singleton
+key, and the remaining queries retain their existing symbol/sector/ID choices.
+Sparse deletes are keyed **before** projection; a portfolio `{ id }` delete
+does not need prices or a symbol. `QueryTable.rowKey` is a separate transformed
+render/animation key. Portfolio now uses the same position identity there;
+the existing symbol-based edit/delete lookup and order identity limitations
+remain documented in [TESTING.md](TESTING.md#known-baseline-limitations-not-refactor-regressions).
+
+`config.ts` selects `tradingResultAdapter` once at module scope using
+`createLegacyResultAdapter({ routeUnidentified: routeTradingData })`.
+Official SSE envelopes carry `queryId`, `results` and `timestamp`, so they
+never depend on Trading's shape heuristics. The explicit legacy adapter also
+supports the named historical forms; envelope IDs always take precedence.
+Unidentified rows retain the existing financial routing and price fan-out,
+but every row must route synchronously using its original reference. Unknown
+rows fail safely with `UNROUTABLE_RESULT` and are not printed to the console.
+An unidentified legacy before/after update is represented as delete then
+upsert, not an identity-preserving update; prefer identified official envelopes.
+
+Hooks expose `status`, `stale`, `errorScope` and query-local `retry()` alongside
+data/loading/error/lastUpdate. Query retry refreshes only that subscription's
+REST read; shared connection retry remains `useDrasiClient().retry`. The app's
+controlled provider owns setup/connection lifecycle, not a second package owner.
+
+REST snapshots and SSE have no shared cursor. Any nonempty delta overlapping a
+snapshot produces visible `SNAPSHOT_OVERLAP` and bounded read reconciliation,
+not replay of ambiguously ordered changes. Pending changes are counted without
+retaining their row bodies (default limit 10,000); overflow aborts the read and
+surfaces `RESULT_BUFFER_OVERFLOW`. Recovery uses a finite retry budget and
+retains last-good rows as stale where available. Query protocol errors do not
+close the shared stream. A successful read with no known overlap is still
+best effort, **not** an atomic, gap-free or exactly-once consistency guarantee.
 
 Validate the package independently before consuming it:
 

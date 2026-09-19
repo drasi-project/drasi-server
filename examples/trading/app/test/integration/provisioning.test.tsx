@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient, DrasiError, useDrasiClient, useDrasiQuery, type EventSourceLike } from '@drasi/react';
 import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from '../../src/drasi/ensureTradingResources';
 import { TradingProvider } from '../../src/drasi/TradingProvider';
+import { tradingQueryOptions } from '../../src/drasi/queryOptions';
 import { DRASI_SERVER_URL, TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, TRADING_STREAM } from '../../src/drasi/config';
 import { SyntheticTrading } from '../fixtures/synthetic/trading';
 
@@ -314,7 +315,7 @@ describe('Trading instance and provider lifecycle', () => {
   });
 
   function Probe() {
-    const state = useDrasiClient(), query = useDrasiQuery('watchlist-query');
+    const state = useDrasiClient(), query = useDrasiQuery('watchlist-query', tradingQueryOptions('watchlist-query'));
     return <div>
       <span>{state.initialized ? 'Ready' : 'Pending'}</span>
       <output>{query.error ? `${query.error instanceof DrasiError}:${query.error.code}` : ''}</output>

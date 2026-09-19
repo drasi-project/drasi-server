@@ -26,12 +26,14 @@ import {
   DrasiClientOptions,
 } from '../client/DrasiClient';
 import { DrasiError, asDrasiError, isAbortError } from '../client/errors';
-import { isRecord } from '../client/resources';
+import { accumulateResult } from '../client/accumulation';
 import { configurationKey } from './configuration';
 import type {
   ConnectionStatus,
   QueryConfig,
   QueryResult,
+  QuerySubscription,
+  QuerySubscriptionState,
   ResultRow,
 } from '../client/types';
 import type { UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult } from './types';
@@ -75,7 +77,8 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
   instanceId,
   queryIds,
   reaction,
-  routeUnidentified,
+  resultAdapter,
+  reconciliation,
   fetch: fetcher,
   headers,
   credentials,
@@ -89,7 +92,7 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
     client: DrasiClient | null; attempt: number; initialized: boolean; error: DrasiError | null;
   }>({ client: null, attempt: 0, initialized: false, error: null });
   const key = configurationKey({
-    serverUrl, instanceId, queryIds, reaction, headers, credentials, reconnect, requestTimeoutMs,
+    serverUrl, instanceId, queryIds, reaction, headers, credentials, reconnect, requestTimeoutMs, reconciliation,
   });
   const headersProvider = typeof headers === 'function' ? headers : undefined;
 
@@ -102,7 +105,8 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
           instanceId,
           queryIds,
           reaction,
-          routeUnidentified,
+          resultAdapter,
+          reconciliation,
           fetch: fetcher,
           headers,
           credentials,
@@ -117,7 +121,7 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
     [
       key,
       instanceId,
-      routeUnidentified,
+      resultAdapter,
       fetcher,
       eventSourceFactory,
       headersProvider,
@@ -186,27 +190,14 @@ export function useDrasiClient(): DrasiContextValue {
   return ctx;
 }
 
-/** Default row key extractor used when none is supplied. */
-function defaultGetKey(row: unknown): string | null {
-  if (row == null) return null;
-  if (isRecord(row) && row.id !== undefined && row.id !== null) return String(row.id);
-  if (isRecord(row) && row.symbol) return String(row.symbol);
-  return JSON.stringify(row) ?? null;
-}
-
 /**
- * Subscribe to a continuous query over the shared connection and maintain its
- * accumulated result set.
- *
- * Rows are accumulated across update batches keyed by {@link
- * UseDrasiQueryOptions.getKey}; rows flagged with `_deleted` are removed.
- * Optional `transform` and `postProcess` callbacks let the caller normalize
- * rows and sort/filter the final array without coupling the library to any
- * particular data model.
+ * Accumulate raw rows by required domain identity, then derive a typed view.
+ * Projection/key changes immediately recompute retained rows without another
+ * socket or subscription. Sparse deletes never pass through a transform.
  */
-export function useDrasiQuery<T = ResultRow>(
+export function useDrasiQuery<T extends object = ResultRow>(
   queryId: string,
-  options?: UseDrasiQueryOptions<T>,
+  options: UseDrasiQueryOptions<T>,
 ): UseDrasiQueryResult<T> {
   const {
     client,
@@ -214,87 +205,96 @@ export function useDrasiQuery<T = ResultRow>(
     error: providerError,
   } = useDrasiClient();
   const scope = useMemo(() => ({ client, queryId }), [client, queryId]);
-  const [result, setResult] = useState<UseDrasiQueryResult<T> & { scope: typeof scope }>({
-    scope, data: null, loading: true, error: null, lastUpdate: null,
+  const [result, setResult] = useState<{
+    scope: typeof scope;
+    rows: ResultRow[] | null;
+    lastUpdate: Date | null;
+    state: QuerySubscriptionState;
+  }>({
+    scope, rows: null, lastUpdate: null,
+    state: { status: 'initial-loading', stale: false, error: null, errorScope: null },
   });
-
-  const dataMapRef = useRef<Map<string, T>>(new Map());
-
-  // Keep the latest options without forcing a resubscribe on every render.
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const subscriptionRef = useRef<{ scope: typeof scope; subscription: QuerySubscription } | null>(null);
+  const lastGood = useRef<{ scope: typeof scope; data: T[]; lastUpdate: Date | null } | null>(null);
+  const retry = useCallback(() => {
+    if (subscriptionRef.current?.scope === scope) subscriptionRef.current.subscription.retry();
+  }, [scope]);
 
   useEffect(() => {
     let active = true;
-    setResult(current => ({
-      ...(current.scope === scope ? current : { scope, data: null, lastUpdate: null }),
-      loading: !providerError, error: providerError,
-    }));
-    if (!initialized || !client) {
-      return;
-    }
-
-    dataMapRef.current.clear();
-
-    const handleResult = (result: QueryResult) => {
+    let rawRows: ResultRow[] = [];
+    const stateChanged = (state: QuerySubscriptionState) => {
       if (!active) return;
-      try {
-        const opts = optionsRef.current;
-        const getKey = opts?.getKey ?? defaultGetKey;
-        const transform = opts?.transform;
-
-        if (result.snapshot) {
-          dataMapRef.current.clear();
-        }
-
-        result.data.forEach(rawItem => {
-          if (rawItem == null) return;
-          const deleted = rawItem._deleted === true;
-          // With no transform, T is the caller's row-schema assertion. The wire
-          // boundary proves only ResultRow; use transform to validate its fields.
-          const transformed = transform ? transform(rawItem) : rawItem as T;
-          if (transformed == null) return;
-          const item =
-            deleted && typeof transformed === 'object'
-              ? { ...transformed, _deleted: true }
-              : transformed;
-          const key = getKey(item);
-          if (key === null) return;
-
-          if (deleted) {
-            dataMapRef.current.delete(key);
-          } else {
-            dataMapRef.current.set(key, item);
-          }
-        });
-
-        let finalData = Array.from(dataMapRef.current.values());
-        if (opts?.postProcess) {
-          finalData = opts.postProcess([...finalData]);
-        }
-
-        setResult({ scope, data: finalData, lastUpdate: new Date(result.timestamp), loading: false, error: null });
-      } catch (resultError) {
-        setResult(current => ({ ...current, loading: false, error: asDrasiError(resultError, {
-          instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
-        }) }));
-      }
+      setResult(current => ({
+        ...(current.scope === scope ? current : { scope, rows: null, lastUpdate: null }), state,
+      }));
     };
-
-    const unsubscribe = client.subscribe(queryId, handleResult, (queryError) => {
-      if (active) setResult(current => ({ ...current, error: queryError, loading: false }));
+    stateChanged({
+      status: providerError ? 'terminal-error' : 'initial-loading', stale: false,
+      error: providerError, errorScope: providerError ? 'connection' : null,
     });
-
+    if (!initialized || !client) return () => { active = false; };
+    const handleResult = (batch: QueryResult) => {
+      if (!active) return;
+      rawRows = accumulateResult(rawRows, batch, optionsRef.current.getKey, {
+        instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
+      });
+      const rows = rawRows;
+      setResult(current => ({ ...current, scope, rows, lastUpdate: new Date(batch.receivedAt) }));
+    };
+    const subscription = client.subscribe(queryId, handleResult, error => {
+      if (active) setResult(current => ({ ...current, state: { ...current.state, error } }));
+    }, stateChanged);
+    subscriptionRef.current = { scope, subscription };
     return () => {
       active = false;
-      unsubscribe();
-      dataMapRef.current.clear();
+      if (subscriptionRef.current?.subscription === subscription) subscriptionRef.current = null;
+      subscription();
     };
   }, [queryId, client, initialized, providerError, scope]);
 
-  return result.scope === scope
-    ? { data: result.data, loading: result.loading, error: result.error, lastUpdate: result.lastUpdate }
-    : { data: null, loading: !providerError, error: providerError, lastUpdate: null };
+  const rows = result.scope === scope ? result.rows : null;
+  const projection = useMemo(() => {
+    if (rows === null) return { data: null, error: null };
+    const details = { instanceId: client?.instanceId, resourceKind: 'query' as const, resourceId: queryId };
+    try {
+      const keyed = accumulateResult([], { kind: 'snapshot', queryId, rows, receivedAt: 0 }, options.getKey, details);
+      const transformed: T[] = [];
+      for (const row of keyed) {
+        const value = options.transform(row);
+        if (value === null) continue;
+        if (typeof value !== 'object') throw new DrasiError('RESULT_PROCESSING_FAILED', details);
+        transformed.push(value);
+      }
+      const data = options.postProcess ? options.postProcess(transformed) : transformed;
+      if (!Array.isArray(data) || data.some(value => value === null || typeof value !== 'object')) {
+        throw new DrasiError('RESULT_PROCESSING_FAILED', details);
+      }
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error: asDrasiError(error, details, 'RESULT_PROCESSING_FAILED') };
+    }
+  }, [rows, options.getKey, options.transform, options.postProcess, client, queryId]);
+  useEffect(() => {
+    if (projection.data !== null) lastGood.current = { scope, data: projection.data, lastUpdate: result.lastUpdate };
+  }, [projection, scope, result.lastUpdate]);
+
+  const previous = lastGood.current?.scope === scope ? lastGood.current : null;
+  const data = projection.error ? previous?.data ?? null : projection.data;
+  const state = result.scope === scope ? result.state : null;
+  const error = providerError ?? state?.error ?? projection.error;
+  const phase = providerError || projection.error ? 'terminal-error' : state?.status ?? 'initial-loading';
+  const status = phase === 'initial-loading' && data !== null ? 'resynchronizing'
+    : phase === 'live' && data?.length === 0 ? 'empty' : phase;
+  return {
+    data, status, stale: data !== null && (status !== 'live' && status !== 'empty'),
+    loading: data === null && error === null && status !== 'terminal-error',
+    error, errorScope: providerError ? 'connection' : state?.errorScope ?? (projection.error ? 'query' : null),
+    lastUpdate: projection.error ? previous?.lastUpdate ?? null : result.scope === scope ? result.lastUpdate : null,
+    retry,
+  };
 }
 
 /** Track the shared connection status. */

@@ -4,26 +4,36 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import type { DrasiError } from '../client/errors';
-import type { QueryConfig, ResultRow } from '../client/types';
+import type { QueryConfig, QueryErrorScope, QueryStatus, ResultRow, RowKey } from '../client/types';
 
-/** Existing accumulation options. A generic alone does not validate an application's row schema. */
-export interface UseDrasiQueryOptions<T = ResultRow> {
+/** Identity precedes projection. A generic alone never validates a wire row. */
+export interface UseDrasiQueryOptions<T extends object = ResultRow> {
   /**
-   * Applied AFTER transformation, including to legacy delete rows.
-   * Returning null skips a row. Legacy default: id, then symbol, then serialized row.
+   * Required stable RAW-row identity, including sparse deletes and both sides
+   * of updates. Return a nonempty string; invalid keys are errors, not skips.
    */
-  getKey?: (row: T) => string | null;
-  /** Narrow/validate the raw object's unknown fields here to establish your application's T. */
-  transform?: (row: ResultRow) => T;
+  getKey: RowKey;
+  /**
+   * Validate/project current raw rows, never deletes. Return null to hide this
+   * identity; its raw state is retained so later updates/option changes can
+   * reveal it again. Use row => row for untransformed object rows.
+   */
+  transform: (row: Readonly<ResultRow>) => T | null;
+  /** Pure derived sorting/filtering. Does not remove rows from the raw result set. */
   postProcess?: (rows: T[]) => T[];
 }
 
-/** Current hook result. Transport connectivity alone is not snapshot synchronization. */
-export interface UseDrasiQueryResult<T = ResultRow> {
+/** Best-effort data and explicit recovery state, not an atomic server snapshot. */
+export interface UseDrasiQueryResult<T extends object = ResultRow> {
   data: T[] | null;
+  status: QueryStatus;
+  stale: boolean;
   loading: boolean;
   error: DrasiError | null;
+  errorScope: QueryErrorScope | null;
   lastUpdate: Date | null;
+  /** Query-local REST refresh; use useDrasiClient().retry for a shared connection failure. */
+  retry: () => void;
 }
 
 export interface UseDrasiQueryDefinitionResult {

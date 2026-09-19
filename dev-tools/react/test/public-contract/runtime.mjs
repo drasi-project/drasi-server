@@ -46,13 +46,21 @@ const options = {
   queryIds: ['temperatures'],
   reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
 };
+const queryOptions = {
+  getKey: raw => {
+    if (typeof raw.stationId !== 'string' || !raw.stationId) throw new Error('Missing station identity');
+    return raw.stationId;
+  },
+  transform: raw => raw,
+};
 
 try {
   const api = await load(specifier);
   assert.deepEqual(accesses, [], `${specifier} import touched browser/network globals`);
   setFetch(noNetwork);
   if (kind === 'client') {
-    for (const name of ['DrasiClient', 'DrasiSSEClient', 'DrasiError']) {
+    for (const name of ['DrasiClient', 'DrasiSSEClient', 'DrasiError',
+      'accumulateResult', 'sse034ResultAdapter', 'createLegacyResultAdapter']) {
       assert.equal(typeof api[name], 'function', `Missing ${name} from client export`);
     }
     const client = new api.DrasiClient(options);
@@ -62,6 +70,20 @@ try {
     await client.disconnect();
     await sse.disconnect();
     assert.deepEqual(accesses, [], 'Client construction/disconnect performed browser/network work');
+
+    const before = { stationId: 'old-room', celsius: 3 };
+    const after = { stationId: 'new-room', celsius: 4 };
+    const [delta] = api.sse034ResultAdapter({
+      queryId: 'temperatures', timestamp: 1,
+      results: [{ type: 'UPDATE', before, after, data: after }],
+    }, { receivedAt: 2 });
+    assert.deepEqual(delta, {
+      kind: 'delta', queryId: 'temperatures', receivedAt: 2, sourceTimestamp: 1,
+      changes: [{ kind: 'update', before, after }],
+    });
+    assert.deepEqual(api.accumulateResult([before], delta, queryOptions.getKey), [after]);
+    assert.equal(typeof api.createLegacyResultAdapter(), 'function');
+    assert.equal(sse.getQueryError('temperatures'), null);
 
     const queryPath = '/api/v1/instances/warehouse-west/queries/temperatures';
     const reactionPath = '/api/v1/instances/warehouse-west/reactions/warehouse-events';
@@ -138,12 +160,17 @@ try {
   } else {
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
     function HookConsumer() {
-      const result = hooks.useDrasiQuery('temperatures');
+      const result = hooks.useDrasiQuery('temperatures', queryOptions);
       const definition = hooks.useDrasiQueryDefinition('temperatures');
       assert.equal(hooks.useDrasiClient().initialized, false);
       assert.equal(hooks.useDrasiConnectionStatus().connected, false);
       assert.equal(hooks.useDrasiServerUiUrl(), null);
       assert.equal(result.data, null);
+      assert.equal(result.status, 'initial-loading');
+      assert.equal(result.stale, false);
+      assert.equal(result.errorScope, null);
+      assert.equal(result.lastUpdate, null);
+      assert.equal(typeof result.retry, 'function');
       assert.equal(definition.config, null);
       return React.createElement('span', null, 'idle SSR consumer');
     }
@@ -155,6 +182,7 @@ try {
           queryId: 'temperatures', title: 'Warehouse temperatures',
           columns: [{ key: 'stationId', label: 'Station' }],
           rowKey: row => row.stationId,
+          queryOptions,
         }),
         React.createElement(api.CodeViewerDialog, {
           isOpen: false, onClose() {}, title: 'Definition', reactCode: '', cypherQuery: '',
@@ -165,6 +193,9 @@ try {
     if (kind === 'root') {
       assert.equal(typeof api.DrasiClient, 'function');
       assert.equal(typeof api.QueryTable, 'function');
+      assert.equal(typeof api.accumulateResult, 'function');
+      assert.equal(typeof api.sse034ResultAdapter, 'function');
+      assert.equal(typeof api.createLegacyResultAdapter, 'function');
     }
   }
   await new Promise(resolve => setTimeout(resolve, 0));
