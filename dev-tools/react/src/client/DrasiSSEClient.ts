@@ -13,6 +13,8 @@
 // limitations under the License.
 
 import { ConnectionStatus, QueryResult, RouteUnidentified } from '../types';
+import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
+import { isRecord } from './resources';
 
 const DEBUG_SSE =
   (
@@ -37,6 +39,11 @@ export interface DrasiSSEClientOptions {
   maxReconnectAttempts?: number;
   initialReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
+  /** Maximum time to open each EventSource (default 10000 ms). */
+  connectionTimeoutMs?: number;
+  /** Read-only resource validation, including after opaque EventSource errors. */
+  validate?: (signal: AbortSignal) => Promise<void>;
+  errorDetails?: DrasiErrorDetails;
 }
 
 interface PendingConnection {
@@ -75,6 +82,11 @@ export class DrasiSSEClient {
   private generation = 0;
   private manuallyDisconnected = true;
   private pendingConnection: PendingConnection | null = null;
+  private attemptController: AbortController | null = null;
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly connectionTimeoutMs: number;
+  private readonly validate?: DrasiSSEClientOptions['validate'];
+  private readonly errorDetails: DrasiErrorDetails;
 
   constructor(options: DrasiSSEClientOptions = {}) {
     this.routeUnidentified = options.routeUnidentified;
@@ -84,6 +96,14 @@ export class DrasiSSEClient {
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
     this.initialReconnectDelayMs = options.initialReconnectDelayMs ?? 1000;
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30000;
+    this.connectionTimeoutMs = options.connectionTimeoutMs ?? 10000;
+    this.validate = options.validate;
+    this.errorDetails = options.errorDetails ?? {};
+    if (!Number.isInteger(this.maxReconnectAttempts) || this.maxReconnectAttempts < 0 ||
+        [this.initialReconnectDelayMs, this.maxReconnectDelayMs, this.connectionTimeoutMs]
+          .some(value => !Number.isFinite(value) || value <= 0)) {
+      throw new DrasiError('INVALID_CONFIGURATION', this.errorDetails);
+    }
   }
 
   /**
@@ -106,7 +126,10 @@ export class DrasiSSEClient {
     return new Promise<void>((resolve, reject) => {
       const onAbort = () => {
         if (generation === this.generation) {
+          this.manuallyDisconnected = true;
+          this.generation += 1;
           this.stopConnection(abortError());
+          this.updateConnectionStatus({ connected: false, reconnecting: false });
         }
       };
       signal?.addEventListener('abort', onAbort, { once: true });
@@ -136,17 +159,33 @@ export class DrasiSSEClient {
       return;
     }
 
+    const controller = new AbortController();
+    this.attemptController = controller;
+    if (this.validate) {
+      void this.validate(controller.signal).then(() => {
+        if (!controller.signal.aborted && generation === this.generation) this.createSource(generation);
+      }).catch(error => {
+        if (!controller.signal.aborted && !isAbortError(error)) this.handleConnectionFailure(generation, error);
+      });
+    } else {
+      this.createSource(generation);
+    }
+  }
+
+  private createSource(generation: number): void {
     try {
       DEBUG_SSE &&
         console.log(`Connecting to SSE endpoint: ${this.sseEndpoint}`);
-      const source = this.eventSourceFactory(this.sseEndpoint);
+      const source = this.eventSourceFactory(this.sseEndpoint!);
       this.eventSource = source;
+      this.openTimer = setTimeout(() => this.handleConnectionError(generation, source), this.connectionTimeoutMs);
 
       source.onopen = () => {
         if (generation !== this.generation || source !== this.eventSource) {
           source.close();
           return;
         }
+        this.clearOpenTimer();
         this.reconnectAttempts = 0;
         this.updateConnectionStatus({
           connected: true,
@@ -160,7 +199,7 @@ export class DrasiSSEClient {
         if (generation !== this.generation || source !== this.eventSource) {
           return;
         }
-        this.parseMessage(event.data, 'SSE message');
+        this.parseMessage(event.data, generation);
       };
 
       source.onerror = () => {
@@ -178,7 +217,7 @@ export class DrasiSSEClient {
         if (generation !== this.generation || source !== this.eventSource) {
           return;
         }
-        this.parseMessage(event.data, 'query-result event');
+        this.parseMessage(event.data, generation);
       }) as EventListener);
 
       source.addEventListener('heartbeat', ((event: MessageEvent) => {
@@ -192,11 +231,13 @@ export class DrasiSSEClient {
     }
   }
 
-  private parseMessage(rawData: string, description: string): void {
+  private parseMessage(rawData: string, generation: number): void {
     try {
-      this.handleSSEMessage(JSON.parse(rawData));
+      const data: unknown = JSON.parse(rawData);
+      if (!isRecord(data)) throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
+      this.handleSSEMessage(data);
     } catch (error) {
-      console.error(`Failed to parse ${description}:`, error);
+      this.handleConnectionFailure(generation, asDrasiError(error, this.errorDetails));
     }
   }
 
@@ -204,14 +245,26 @@ export class DrasiSSEClient {
     generation: number,
     source: EventSourceLike,
   ): void {
+    if (generation !== this.generation || source !== this.eventSource) return;
+    this.clearOpenTimer();
     source.close();
     if (source === this.eventSource) {
       this.eventSource = null;
     }
-    this.handleConnectionFailure(
-      generation,
-      new Error('SSE connection lost'),
-    );
+    const error = new DrasiError('STREAM_UNAVAILABLE', this.errorDetails);
+    this.updateConnectionStatus({ connected: false, reconnecting: true, error });
+    const controller = this.attemptController!;
+    // EventSource exposes no HTTP status. Only REST can establish missing or
+    // stopped resources; a generic stream failure never implies absence.
+    if (this.validate) {
+      void this.validate(controller.signal)
+        .then(() => this.handleConnectionFailure(generation, error))
+        .catch(failure => {
+          if (!controller.signal.aborted) this.handleConnectionFailure(generation, failure);
+        });
+    } else {
+      this.handleConnectionFailure(generation, error);
+    }
   }
 
   private handleConnectionFailure(
@@ -222,13 +275,19 @@ export class DrasiSSEClient {
       return;
     }
 
-    const connectionError =
-      error instanceof Error ? error : new Error(String(error));
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+    this.clearOpenTimer();
+    this.eventSource?.close();
+    this.eventSource = null;
+    this.attemptController?.abort();
+    this.attemptController = null;
+    const connectionError = asDrasiError(error, this.errorDetails, 'STREAM_UNAVAILABLE');
+    if (!connectionError.retryable || this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.clearReconnectTimer();
+      this.manuallyDisconnected = true;
       this.updateConnectionStatus({
         connected: false,
         reconnecting: false,
-        error: connectionError.message,
+        error: connectionError,
       });
       this.rejectPendingConnection(generation, connectionError);
       return;
@@ -243,7 +302,7 @@ export class DrasiSSEClient {
     this.updateConnectionStatus({
       connected: false,
       reconnecting: true,
-      error: connectionError.message,
+      error: connectionError,
     });
 
     this.clearReconnectTimer();
@@ -276,8 +335,16 @@ export class DrasiSSEClient {
     }
   }
 
+  private clearOpenTimer(): void {
+    if (this.openTimer !== null) clearTimeout(this.openTimer);
+    this.openTimer = null;
+  }
+
   private stopConnection(error: Error): void {
     this.clearReconnectTimer();
+    this.clearOpenTimer();
+    this.attemptController?.abort();
+    this.attemptController = null;
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -300,6 +367,10 @@ export class DrasiSSEClient {
       data.updatedResults !== undefined ||
       data.deletedResults !== undefined
     ) {
+      if (['addedResults', 'updatedResults', 'deletedResults']
+        .some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
+        throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
+      }
       const allResults: any[] = [];
 
       if (Array.isArray(data.addedResults)) {
@@ -325,19 +396,24 @@ export class DrasiSSEClient {
       return;
     }
 
-    if (data.query_id) {
+    if (typeof data.query_id === 'string') {
       this.handleKeyedBatch(data.query_id, data);
       return;
     }
 
-    if (data.queryId) {
+    if (typeof data.queryId === 'string') {
       this.handleKeyedBatch(data.queryId, data);
       return;
     }
 
-    if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-      this.routeContentBasedResults([data]);
+    if (data.query_id !== undefined || data.queryId !== undefined) {
+      throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
     }
+    if (Object.keys(data).length > 0) {
+      this.routeContentBasedResults([data]);
+      return;
+    }
+    throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
   private handleKeyedBatch(queryId: string, data: any): void {
@@ -377,7 +453,9 @@ export class DrasiSSEClient {
           ? new Date(data.timestamp).getTime()
           : Date.now(),
       });
+      return;
     }
+    throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
   private extractRow(result: any): any {
@@ -421,20 +499,10 @@ export class DrasiSSEClient {
 
   private routeContentBasedResults(rows: any[]): void {
     if (this.routeUnidentified) {
-      try {
-        this.routeUnidentified(rows, (queryId, data) =>
-          this.deliverToQuery(queryId, data),
-        );
-      } catch (error) {
-        console.error('Failed to route unidentified SSE results:', error);
-      }
+      this.routeUnidentified(rows, (queryId, data) => this.deliverToQuery(queryId, data));
       return;
     }
-    DEBUG_SSE &&
-      console.warn(
-        'Received results without a query id and no routeUnidentified handler is configured.',
-        rows[0],
-      );
+    throw new DrasiError('INVALID_PAYLOAD', this.errorDetails);
   }
 
   private deliverToQuery(queryId: string, data: any[]): void {

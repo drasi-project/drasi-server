@@ -72,6 +72,9 @@ function requiredNumber(body: FixtureRow, key: string): number {
 export class SyntheticTrading {
   readonly requests: FixtureRequest[] = [];
   readonly queries = new Map<string, FixtureRow>();
+  readonly queryStatuses = new Map<string, string>();
+  instanceId = 'trading-server';
+  reactionStatus = 'Running';
   reaction: FixtureRow | null = null;
   stocks = structuredClone(STOCKS);
   watchlist = new Set(['AAPL', 'MSFT']);
@@ -179,7 +182,8 @@ export class SyntheticTrading {
 
   handle(request: FixtureRequest): FixtureResponse {
     this.requests.push(structuredClone(request));
-    const { method, path, body = {} } = request;
+    const { method, body = {} } = request;
+    let { path } = request;
     if (this.failure?.method === method && this.failure.path === path) {
       const failure = this.failure;
       this.failure = null;
@@ -187,28 +191,51 @@ export class SyntheticTrading {
     }
     const ok = (data: unknown, status = 200) => ({ status, body: { success: true, data } });
     if (path === '/health') return { status: 200, body: { status: 'healthy' } };
-    if (path === '/api/v1/instances') return ok([{ id: 'trading-server' }]);
+    if (path === '/api/v1/instances') return ok([{ id: this.instanceId }]);
+    const instance = path.match(/^\/api\/v1\/instances\/([^/]+)(\/.*)$/);
+    if (instance) {
+      if (decodeURIComponent(instance[1]) !== this.instanceId) {
+        return { status: 404, body: { code: 'INSTANCE_NOT_FOUND', message: 'Instance not found' } };
+      }
+      path = `/api/v1${instance[2]}`;
+    } else if (path.startsWith('/api/v1/')) {
+      throw new Error(`Unscoped resource request: ${path}`);
+    }
     if (path === '/api/v1/queries' && method === 'POST') {
+      const fields = ['id', 'query', 'sources', 'joins', 'queryLanguage', 'autoStart'];
+      if (Object.keys(body).some(key => !fields.includes(key))) {
+        return { status: 400, body: { code: 'INVALID_REQUEST', message: 'Unknown query field' } };
+      }
       const id = requiredString(body, 'id');
       if (this.queries.has(id)) return { status: 409, body: { message: 'Already exists' } };
       this.queries.set(id, body);
       return ok(body, 201);
     }
-    const query = path.match(/^\/api\/v1\/queries\/([^/?]+)(\/results)?$/);
+    const query = path.match(/^\/api\/v1\/queries\/([^/?]+)(\/results|\/start)?$/);
+    if (query?.[2] === '/start' && method === 'POST') {
+      if (!this.queries.has(query[1])) return { status: 404, body: { code: 'QUERY_NOT_FOUND' } };
+      this.queryStatuses.set(query[1], 'Running');
+      return ok({ message: 'Started' });
+    }
     if (query && method === 'GET') {
-      if (!this.queries.has(query[1])) return { status: 404, body: { message: 'Not found' } };
+      if (!this.queries.has(query[1])) return { status: 404, body: { code: 'QUERY_NOT_FOUND', message: 'Not found' } };
       return query[2]
         ? ok(this.snapshot(query[1]))
-        : ok({ status: 'Running', config: this.queries.get(query[1]) });
+        : ok({ id: query[1], status: this.queryStatuses.get(query[1]) ?? 'Running', config: this.queries.get(query[1]) });
     }
     if (path === '/api/v1/reactions' && method === 'POST') {
+      if (this.reaction) return { status: 409, body: { code: 'DUPLICATE_RESOURCE' } };
       this.reaction = body;
       return ok(body, 201);
     }
+    if (path === '/api/v1/reactions/sse-stream/start' && method === 'POST') {
+      this.reactionStatus = 'Running';
+      return ok({ message: 'Started' });
+    }
     if (path === '/api/v1/reactions/sse-stream' && method === 'GET') {
       return this.reaction
-        ? ok({ status: 'Running', config: this.reaction })
-        : { status: 404, body: { message: 'Not found' } };
+        ? ok({ id: 'sse-stream', status: this.reactionStatus, config: this.reaction })
+        : { status: 404, body: { code: 'REACTION_NOT_FOUND', message: 'Not found' } };
     }
     if (path === '/api/stocks' && method === 'GET') return ok(this.stocks);
     if (path === '/api/watchlist' && method === 'GET') {

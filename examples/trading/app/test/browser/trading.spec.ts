@@ -3,13 +3,45 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import { test, expect, expectSymbols, openTrading, panel, row, tradingDialog } from './fixtures';
+import { test, expect, expectSymbols, openTrading, panel, row, tradingDialog, prepareTradingPage } from './fixtures';
 import { QUERY_IDS } from '../fixtures/synthetic/trading';
+
+test('partial setup repairs only the known missing/stopped resources before reconnecting', async ({ page, request }) => {
+  await openTrading(page);
+  expect((await request.post('/__fixture/partial')).ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+  await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
+  await expect(panel(page, 'Portfolio').getByText('$2,000.00')).toBeVisible();
+  const state = await (await request.get('/__fixture/state')).json();
+  const writes = state.requests.filter((item: { method: string }) => item.method === 'POST');
+  expect(writes.slice(12).map((item: { path: string }) => item.path)).toEqual([
+    '/api/v1/instances/trading-server/queries/watchlist-query/start',
+    '/api/v1/instances/trading-server/queries',
+    '/api/v1/instances/trading-server/reactions/sse-stream/start',
+  ]);
+  expect(state.connections).toBe(1);
+});
+
+test('concurrent tabs share app-owned setup without duplicate start storms', async ({ page, context, request, baseURL }) => {
+  const second = await context.newPage();
+  const errors: string[] = [];
+  try {
+    await prepareTradingPage(second, baseURL!, errors);
+    await Promise.all([openTrading(page), openTrading(second)]);
+    const state = await (await request.get('/__fixture/state')).json();
+    expect(state.requests.filter((item: { method: string }) => item.method === 'POST')).toHaveLength(12);
+    expect(state.connections).toBe(2); // One per independent tab, never a setup connection.
+    expect(errors).toEqual([]);
+  } finally {
+    await second.close();
+  }
+});
 
 test('fresh automatic setup and existing-resource reload use the unchanged startup contract', async ({ page, request }) => {
   await openTrading(page);
   const initial = await (await request.get('/__fixture/state')).json();
-  const created = initial.requests.filter((item: { method: string; path: string }) => item.method === 'POST' && item.path === '/api/v1/queries');
+  const created = initial.requests.filter((item: { method: string; path: string }) => item.method === 'POST' && item.path === '/api/v1/instances/trading-server/queries');
   expect(created.map((item: { body: { id: string } }) => item.body.id)).toEqual(QUERY_IDS);
   expect(initial.connections).toBe(1);
   await page.reload();
@@ -99,8 +131,12 @@ test('live data, deletes, animations, sector totals, ticker and reconnect recove
   await request.delete('/api/watchlist/MSFT');
   await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
   await request.post('/__fixture/reconnect');
-  await page.clock.runFor(1000);
-  await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+  // REST now classifies the opaque SSE failure before scheduling backoff.
+  // Keep driving the frozen retry clock while those real HTTP reads complete.
+  await expect.poll(async () => {
+    await page.clock.runFor(1000);
+    return page.getByText('Connected', { exact: true }).isVisible();
+  }, { timeout: 5000, intervals: [100] }).toBe(true);
   await expectSymbols(page, 'Watchlist', ['AAPL']);
   await expect(row(page, 'Watchlist', 'AAPL')).toContainText('$125.00');
   expect(reconnectNavigations).toBe(0);

@@ -16,6 +16,12 @@ never new golden expectations. Readiness for another development layer requires
 the actual current-branch product gates. It is not a claim that all external
 checks or the entire unused core workspace are green, nor merge authorization.
 
+P2 ([#162](https://github.com/drasi-project/drasi-server/issues/162)) builds on
+the exact P1 head `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`. The package now
+connects to explicit existing references with GETs only; Trading owns automatic
+setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
+`TradingProvider.tsx`. This does not change the business/visual baseline below.
+
 ## Behavior inventory, version 1
 
 Paths in the assertion column are relative to `app/test`. A synthetic test
@@ -25,7 +31,7 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
 | ID | Preserved behavior | Executable assertions / baseline limitation |
 | --- | --- | --- |
 | T01 | Existing `./start-demo.sh`, manual setup and URLs: app 5273, REST 8280, SSE 8281, price source 9100, Trading API 9200, PostgreSQL 5632 | `integration/tradingOptions.test.ts` locks app REST/reaction defaults; browser requests still use production URLs, redirected only by the test runner. B1's approved source-backed preparation is shared with startup/devcontainer routes; P1 retains those helpers without changing the app's automatic setup or URLs. |
-| T02 | Fresh startup automatically creates all **11** queries and `sse-stream`; reload reuses resources | `integration/Trading.test.ts` and `browser/trading.spec.ts`, “fresh automatic setup” / “automatically provisions”; exact query definitions, joins, source IDs, reaction membership, single connection and no second mutation on reload. Live gate is required separately. |
+| T02 | Fresh startup automatically creates all **11** queries and `sse-stream`; reload reuses resources | `integration/Trading.test.ts` and `browser/trading.spec.ts`, “fresh automatic setup” / “automatically provisions”; exact query definitions, joins, source IDs, reaction membership, single connection and no second mutation on reload. P2 also exercises partial missing/stopped resources and concurrent tabs, one stream per tab. Live gate is required separately. |
 | T03 | Query IDs, `HAS_PRICE`, `ON_WATCHLIST`, `OWNS_STOCK`, `ORDER_HAS_PRICE`, numeric thresholds and P/L meaning | `integration/tradingOptions.test.ts`; known-value row and summary assertions in `Trading.test.ts`. Synthetic projections are illustrative and do not replace real query execution. |
 | T04 | Watchlist add/remove, alphabetical rows, duplicate/write errors | Both app and browser CRUD assertions; the app suite also checks failed writes leave existing rows intact and show an error. |
 | T05 | Portfolio add/edit/delete, validation and Total Value / Cost / P/L / Return | Both CRUD suites assert quantities, dates, request bodies, rendered prices and exact summaries after every operation. Duplicate-symbol identity remains a known limitation (KB-02), not an endorsed contract. |
@@ -70,6 +76,40 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
   prerequisite addresses this engine identity defect. The same live assertions
   remain mandatory, and historical records remain unchanged. No client-side
   selection heuristic or replacement financial computation was added.
+
+## P2 ownership and negative cases
+
+Package tests spy on every REST request across initialize, snapshots, reconnect
+and explicit retry: all must be GETs under the same encoded instance path.
+They cover query/reaction/instance absence, stopped/starting/error states,
+reaction kind/membership, auth/network/opaque-404/bad-payload failures, finite
+retry budgets, hung requests/streams, abort and stale generations. Hook tests
+assert the **same `DrasiError` object** reaches context, connection, query and
+definition consumers, including invalid configuration and Retry controls.
+`referenceTypes.ts` checks required references and rejects old deployment props.
+
+Trading's `integration/provisioning.test.tsx` imports the **built package**, not
+a source alias or mocked hook. It covers all 11 allowlisted definitions,
+description-free Cypher POST bodies, ordered source/join semantics, no-op
+existing resources, partial/stopped/starting states, shared concurrency,
+409/read convergence and conflicts, Web Locks, individual/last-consumer abort,
+partial success, the 60-second deadline, wrong-instance isolation and
+non-provisionable failures. The existing business integration assertions remain.
+
+The three browser engines additionally cover partial setup and native
+concurrent tabs; the original five PNG files are unchanged. The frozen-clock
+reconnect test now advances the retry clock while the new asynchronous REST
+classification completes, under the same five-second assertion bound. Its
+connected/fresh-row/delete/no-navigation assertions are not relaxed.
+
+The real-server gate retains all business actions and now asserts singleton
+aggregate snapshots explicitly at 2000 / cost 1800 / count 2, reload 2050,
+and offline/reconnect 2150, rejecting historical candidates. In native runs,
+the harness still translates only the owned reaction's bind host/port to
+ephemeral loopback values. P2 reverses that same translation in its full-view
+response so the app can validate its desired definition. Status, membership,
+query definitions and financial rows are untouched; raw diagnostic REST reads
+still record the actual isolated bind values.
 
 ## Fast checks
 
@@ -183,7 +223,7 @@ branches (339/714 package, 389/522 Trading), so these percentages are **not
 comparable** to the original legacy-V8 measurements. No product code or tests
 were removed, no source was excluded, and no runtime/tool version was changed.
 
-The artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
+The original P1 artifact baseline was 110,691 bytes packed, 66,865 bytes package ESM, 68,860
 bytes CJS, 18,746 bytes declarations and 10,043 bytes package CSS. Clean Trading
 JS is 223,574 bytes (65,775 gzip), CSS 21,034 bytes (5,163 gzip).
 `check-baseline.mjs` rejects any coverage drop or artifact growth above 2%;
@@ -194,6 +234,34 @@ versions, so compare the pinned environment rather than mixing host coverage.
 
 Browser coverage is scenario-based; these percentages are Vitest/V8 only and
 must not be presented as browser or real-server coverage.
+
+### Measured P2 contract cost
+
+The same pinned Linux gate measured P2 after all 23 browser scenarios and the
+five unchanged, zero-differing-pixel PNGs passed. Only the **artifact size
+baseline** was advanced, with the original P1 bytes retained in
+`artifactChange.p1Sizes`. The 2% growth policy, every P1 coverage floor, all
+included source files, dependency locks and visual expectations are unchanged.
+
+| Artifact | P1 bytes | P2 bytes | Reason for growth |
+| --- | ---: | ---: | --- |
+| Packed tarball | 110,691 | 124,624 | Runtime, declarations, source maps and the reference/error/ownership documentation |
+| Package ESM / CJS | 66,865 / 68,860 | 72,589 / 74,635 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
+| Declarations | 18,746 | 21,140 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding |
+| Trading JS / gzip | 223,574 / 65,775 | 233,355 / 68,915 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
+| Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
+
+The app's net runtime addition is 9,781 bytes (3,140 gzip), not a new dependency
+or duplicated React/SSE implementation. Setup contains the single app mutation
+boundary; the package has no POST/PUT/PATCH/DELETE path. Do not update screenshots
+or lower coverage to accommodate future drift.
+
+P2's measured whole-package coverage is 76.76% statements / 78.47% lines /
+64.24% branches / 78.06% functions; Trading is 87.24% / 87.90% / 77.86% /
+85.59%, respectively. The new Trading provisioner is 98.78% statements /
+99.25% lines / 92.59% branches / 100% functions. These improve every P1 floor;
+they are not a claim that #163's final transport/result-contract coverage targets
+are finished.
 
 ## Mandatory real-server gate
 

@@ -12,95 +12,142 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  DrasiSSEClient,
-  DrasiSSEClientOptions,
-  EventSourceFactory,
-} from './DrasiSSEClient';
-import {
-  ConnectionStatus,
-  QueryDefinition,
-  QueryResult,
-  ReactionDefinition,
-  RouteUnidentified,
+import { DrasiSSEClient, type DrasiSSEClientOptions, type EventSourceFactory } from './DrasiSSEClient';
+import type {
+  Component, ConnectionStatus, QueryConfig, QueryResult, ReactionConfig,
+  ReactionReference, RouteUnidentified,
 } from '../types';
+import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
+import { instancePath, isIdentifier, readQuery, readReaction, readResponse, requireRunning, validateHttpUrl } from './resources';
 
-/** Configuration for {@link DrasiClient}. */
+/** References to pre-existing resources. No option enables resource management. */
 export interface DrasiClientOptions {
-  /** Base URL of the Drasi Server REST API. Defaults to `http://localhost:8280`. */
-  serverUrl?: string;
-  /** Continuous queries to ensure exist and stream over the shared connection. */
-  queries: QueryDefinition[];
-  /** The SSE reaction that multiplexes the queries. */
-  reaction: ReactionDefinition;
-  /** Routes content for change payloads that arrive without a query id. */
+  /** Absolute HTTP(S) server base URL. No default or instance discovery. */
+  serverUrl: string;
+  instanceId: string;
+  queryIds: readonly string[];
+  reaction: ReactionReference;
   routeUnidentified?: RouteUnidentified;
-  /** Fetch implementation, primarily for authenticated clients and tests. */
   fetch?: typeof globalThis.fetch;
-  /** EventSource factory, primarily for polyfills and tests. */
   eventSourceFactory?: EventSourceFactory;
-  /** Overrides for reconnect behavior. */
-  reconnect?: Pick<
-    DrasiSSEClientOptions,
-    | 'maxReconnectAttempts'
-    | 'initialReconnectDelayMs'
-    | 'maxReconnectDelayMs'
-  >;
-}
-
-const DEFAULT_REACTION_ID = 'sse-stream';
-const SNAPSHOT_RETRY_INITIAL_DELAY_MS = 1000;
-const SNAPSHOT_RETRY_MAX_DELAY_MS = 30000;
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
-}
-
-function componentIsActive(payload: any, config: any): boolean {
-  const status = payload?.status ?? config?.status;
-  if (typeof status !== 'string') return false;
-  return ['running', 'starting', 'reconfiguring'].includes(
-    status.toLowerCase(),
-  );
+  /** REST timeout per request, including reading its body (default 10000 ms). */
+  requestTimeoutMs?: number;
+  /** SSE and snapshot retries are bounded by the same policy. */
+  reconnect?: Pick<DrasiSSEClientOptions,
+    'maxReconnectAttempts' | 'initialReconnectDelayMs' | 'maxReconnectDelayMs' | 'connectionTimeoutMs'>;
 }
 
 /**
- * Orchestrates query/reaction lifecycle and one shared SSE connection. Each
- * query subscription starts listening before fetching its REST snapshot, then
- * replays buffered deltas, closing the snapshot-to-stream race.
+ * Read-only resource validation, snapshots and one multiplexed SSE connection.
+ * It never creates, starts, stops, updates or deletes resources. Buffered deltas
+ * are replayed after snapshots; this is not an atomic/exactly-once handoff.
  */
 export class DrasiClient {
   private readonly baseUrl: string;
   private readonly sseClient: DrasiSSEClient;
-  private readonly queries = new Map<string, QueryDefinition>();
-  private readonly reaction: ReactionDefinition;
-  private readonly reactionId: string;
+  private readonly queryIds: Set<string>;
+  private readonly reaction: ReactionReference;
   private readonly fetcher: typeof globalThis.fetch;
+  private readonly requestTimeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly retryDelay: number;
+  private readonly maxRetryDelay: number;
+  private readonly subscriptions = new Set<() => void>();
   private initialized = false;
   private initPromise: Promise<void> | null = null;
   private initController: AbortController | null = null;
-  private instanceId: string | null = null;
+  readonly instanceId: string;
 
   constructor(options: DrasiClientOptions) {
-    this.baseUrl = (options.serverUrl || 'http://localhost:8280').replace(
-      /\/$/,
-      '',
-    );
-    this.reaction = options.reaction;
-    this.reactionId = options.reaction.id || DEFAULT_REACTION_ID;
-    this.fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.instanceId = options.instanceId;
+    const details = { instanceId: this.instanceId };
+    if (!isIdentifier(options.instanceId) || !Array.isArray(options.queryIds) ||
+        options.queryIds.some(id => !isIdentifier(id)) ||
+        new Set(options.queryIds).size !== options.queryIds.length || !isIdentifier(options.reaction?.id)) {
+      throw new DrasiError('INVALID_CONFIGURATION', details);
+    }
+    this.baseUrl = validateHttpUrl(options.serverUrl, details);
+    if (new URL(this.baseUrl).search) throw new DrasiError('INVALID_CONFIGURATION', details);
+    this.reaction = {
+      id: options.reaction.id,
+      endpoint: validateHttpUrl(options.reaction.endpoint, details),
+    };
+    this.queryIds = new Set(options.queryIds);
+    this.fetcher = (options.fetch ?? globalThis.fetch).bind(globalThis);
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 10000;
+    this.maxRetries = options.reconnect?.maxReconnectAttempts ?? 10;
+    this.retryDelay = options.reconnect?.initialReconnectDelayMs ?? 1000;
+    this.maxRetryDelay = options.reconnect?.maxReconnectDelayMs ?? 30000;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new DrasiError('INVALID_CONFIGURATION', details);
+    }
     this.sseClient = new DrasiSSEClient({
+      ...options.reconnect,
       routeUnidentified: options.routeUnidentified,
       eventSourceFactory: options.eventSourceFactory,
-      ...options.reconnect,
+      errorDetails: this.details('reaction', this.reaction.id),
+      validate: signal => this.validateResources(signal),
     });
-    for (const query of options.queries) {
-      this.queries.set(query.id, query);
+  }
+
+  private details(resourceKind: 'query' | 'reaction', resourceId: string): DrasiErrorDetails {
+    return { instanceId: this.instanceId, resourceKind, resourceId };
+  }
+
+  private async read(
+    kind: 'queries' | 'reactions',
+    id: string,
+    suffix: 'config' | 'results',
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const details = this.details(kind === 'queries' ? 'query' : 'reaction', id);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(abort, this.requestTimeoutMs);
+    try {
+      signal?.throwIfAborted();
+      const url = suffix === 'config'
+        ? `${instancePath(this.baseUrl, this.instanceId, kind, id)}?view=full`
+        : instancePath(this.baseUrl, this.instanceId, kind, id, 'results');
+      const response = await this.fetcher(url, { method: 'GET', signal: controller.signal });
+      const data = await readResponse(response, details);
+      controller.signal.throwIfAborted();
+      return data;
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw asDrasiError(error, details, 'SERVER_UNAVAILABLE');
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
     }
+  }
+
+  /** Read the server's full-view query DTO, including lifecycle status. */
+  async getQuery(queryId: string, signal?: AbortSignal): Promise<Component<QueryConfig>> {
+    return readQuery(await this.read('queries', queryId, 'config', signal), this.details('query', queryId));
+  }
+
+  /** Read the configured reaction's full-view DTO; properties are not nested. */
+  async getReaction(signal?: AbortSignal): Promise<Component<ReactionConfig>> {
+    return readReaction(
+      await this.read('reactions', this.reaction.id, 'config', signal),
+      this.details('reaction', this.reaction.id),
+    );
+  }
+
+  /** Validate references/usability, not desired query text or deployment settings. */
+  async validateResources(signal?: AbortSignal): Promise<void> {
+    for (const queryId of this.queryIds) {
+      requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
+    }
+    const reaction = await this.getReaction(signal);
+    const details = this.details('reaction', this.reaction.id);
+    if (reaction.config.kind !== 'sse' ||
+        [...this.queryIds].some(id => !reaction.config.queries.includes(id))) {
+      throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
+    }
+    requireRunning(reaction, details);
   }
 
   isInitialized(): boolean {
@@ -108,19 +155,15 @@ export class DrasiClient {
   }
 
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized && this.sseClient.isConnected()) return;
     if (this.initPromise) return this.initPromise;
-
     const controller = new AbortController();
     this.initController = controller;
-    const promise = this.doInitialize(controller.signal);
+    const promise = this.sseClient.connect([...this.queryIds], this.reaction.endpoint, controller.signal);
     this.initPromise = promise;
-
     try {
       await promise;
-      if (this.initPromise === promise && !controller.signal.aborted) {
-        this.initialized = true;
-      }
+      if (this.initPromise === promise && !controller.signal.aborted) this.initialized = true;
     } finally {
       if (this.initPromise === promise) {
         this.initPromise = null;
@@ -129,275 +172,34 @@ export class DrasiClient {
     }
   }
 
-  private async doInitialize(signal: AbortSignal): Promise<void> {
-    const healthResponse = await this.fetcher(`${this.baseUrl}/health`, {
-      signal,
-    });
-    if (!healthResponse.ok) {
-      throw new Error(
-        `Drasi Server health check failed (${healthResponse.status})`,
-      );
-    }
-
-    try {
-      const instancesResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/instances`,
-        { signal },
-      );
-      if (instancesResponse.ok) {
-        const instancesJson = await instancesResponse.json();
-        const instances = instancesJson.data ?? instancesJson;
-        if (Array.isArray(instances) && instances.length > 0) {
-          this.instanceId = instances[0].id ?? instances[0];
-        }
-      }
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      console.warn('Could not discover Drasi instance id:', error);
-    }
-
-    for (const queryDef of this.queries.values()) {
-      await this.ensureQuery(queryDef, signal);
-    }
-
-    const sseEndpoint = await this.ensureReaction(signal);
-    await this.sseClient.connect(
-      Array.from(this.queries.keys()),
-      sseEndpoint,
-      signal,
-    );
+  /** Optional definition read for tooling/code viewers; never a null-on-error fallback. */
+  async getQueryConfig(queryId: string, signal?: AbortSignal): Promise<QueryConfig> {
+    return (await this.getQuery(queryId, signal)).config;
   }
 
-  private async ensureReaction(signal: AbortSignal): Promise<string> {
-    let checkResponse = await this.fetcher(
-      `${this.baseUrl}/api/v1/reactions/${encodeURIComponent(this.reactionId)}?view=full`,
-      { signal },
-    );
-
-    if (checkResponse.status === 404) {
-      const reactionConfig: Record<string, any> = {
-        kind: this.reaction.kind || 'sse',
-        id: this.reactionId,
-        queries: Array.from(this.queries.keys()),
-        autoStart: true,
-        host: this.reaction.host || '0.0.0.0',
-        port: this.reaction.port,
-        ssePath: this.reaction.ssePath || '/events',
-      };
-      if (this.reaction.heartbeatIntervalMs !== undefined) {
-        reactionConfig.heartbeatIntervalMs =
-          this.reaction.heartbeatIntervalMs;
-      }
-
-      const createResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/reactions`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(reactionConfig),
-          signal,
-        },
-      );
-
-      if (createResponse.ok) {
-        return this.reactionEndpoint();
-      }
-      if (createResponse.status !== 409) {
-        throw new Error(
-          `Failed to create reaction ${this.reactionId} (${createResponse.status}): ${await createResponse.text()}`,
-        );
-      }
-
-      checkResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/reactions/${encodeURIComponent(this.reactionId)}?view=full`,
-        { signal },
-      );
-    }
-
-    if (!checkResponse.ok) {
-      throw new Error(
-        `Failed to read reaction ${this.reactionId} (${checkResponse.status})`,
-      );
-    }
-
-    const reaction = await checkResponse.json();
-    let payload = reaction.data ?? reaction;
-    let config = payload?.config ?? payload;
-    if (!componentIsActive(payload, config)) {
-      const startResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/reactions/${encodeURIComponent(this.reactionId)}/start`,
-        { method: 'POST', signal },
-      );
-      if (!startResponse.ok) {
-        const startError = await startResponse.text();
-        const refreshResponse = await this.fetcher(
-          `${this.baseUrl}/api/v1/reactions/${encodeURIComponent(this.reactionId)}?view=full`,
-          { signal },
-        );
-        if (refreshResponse.ok) {
-          const refreshedReaction = await refreshResponse.json();
-          payload = refreshedReaction.data ?? refreshedReaction;
-          config = payload?.config ?? payload;
-        }
-        if (!refreshResponse.ok || !componentIsActive(payload, config)) {
-          throw new Error(
-            `Failed to start reaction ${this.reactionId} (${startResponse.status}): ${startError}`,
-          );
-        }
-      }
-    }
-
-    const props = config?.properties || config || {};
-    return this.reactionEndpoint(
-      props.host,
-      props.port,
-      props.ssePath,
-    );
-  }
-
-  private reactionEndpoint(
-    host?: string,
-    port?: number,
-    path?: string,
-  ): string {
-    if (this.reaction.endpoint) return this.reaction.endpoint;
-
-    const base = new URL(this.baseUrl);
-    const configuredHost = host || this.reaction.host;
-    if (
-      configuredHost &&
-      configuredHost !== '0.0.0.0' &&
-      configuredHost !== '::'
-    ) {
-      base.hostname = configuredHost;
-    }
-    base.port = String(port || this.reaction.port);
-    base.pathname = path || this.reaction.ssePath || '/events';
-    base.search = '';
-    base.hash = '';
-    return base.toString();
-  }
-
-  private async ensureQuery(
-    queryDef: QueryDefinition,
-    signal: AbortSignal,
-  ): Promise<void> {
-    const queryId = encodeURIComponent(queryDef.id);
-    const checkResponse = await this.fetcher(
-      `${this.baseUrl}/api/v1/queries/${queryId}?view=full`,
-      { signal },
-    );
-
-    if (checkResponse.status === 404) {
-      const queryConfig = {
-        id: queryDef.id,
-        query: queryDef.query,
-        queryLanguage: queryDef.queryLanguage || 'Cypher',
-        sources: queryDef.sources,
-        joins: queryDef.joins ?? [],
-        autoStart: true,
-      };
-      const createResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/queries`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(queryConfig),
-          signal,
-        },
-      );
-      if (!createResponse.ok && createResponse.status !== 409) {
-        throw new Error(
-          `Failed to create query ${queryDef.id} (${createResponse.status}): ${await createResponse.text()}`,
-        );
-      }
-      return;
-    }
-
-    if (!checkResponse.ok) {
-      throw new Error(
-        `Failed to read query ${queryDef.id} (${checkResponse.status})`,
-      );
-    }
-
-    const query = await checkResponse.json();
-    const payload = query.data ?? query;
-    const config = payload?.config ?? payload;
-    if (!componentIsActive(payload, config)) {
-      const startResponse = await this.fetcher(
-        `${this.baseUrl}/api/v1/queries/${queryId}/start`,
-        { method: 'POST', signal },
-      );
-      if (!startResponse.ok) {
-        const startError = await startResponse.text();
-        const refreshResponse = await this.fetcher(
-          `${this.baseUrl}/api/v1/queries/${queryId}?view=full`,
-          { signal },
-        );
-        if (refreshResponse.ok) {
-          const refreshedQuery = await refreshResponse.json();
-          const refreshedPayload = refreshedQuery.data ?? refreshedQuery;
-          const refreshedConfig = refreshedPayload?.config ?? refreshedPayload;
-          if (componentIsActive(refreshedPayload, refreshedConfig)) return;
-        }
-        throw new Error(
-          `Failed to start query ${queryDef.id} (${startResponse.status}): ${startError}`,
-        );
-      }
-    }
-  }
-
-  async getQueryConfig(
-    queryId: string,
-    signal?: AbortSignal,
-  ): Promise<Record<string, any> | null> {
-    const response = await this.fetcher(
-      `${this.baseUrl}/api/v1/queries/${encodeURIComponent(queryId)}?view=full`,
-      { signal },
-    );
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get query ${queryId} (${response.status}): ${await response.text()}`,
-      );
-    }
-    const json = await response.json();
-    const payload = json.data ?? json;
-    return payload?.config ?? payload ?? null;
-  }
-
-  async getQueryResults(
-    queryId: string,
-    signal?: AbortSignal,
-  ): Promise<any[]> {
-    const response = await this.fetcher(
-      `${this.baseUrl}/api/v1/queries/${encodeURIComponent(queryId)}/results`,
-      { signal },
-    );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get results for query ${queryId} (${response.status}): ${await response.text()}`,
-      );
-    }
-    const json = await response.json();
-    const data = json.data ?? json;
-    if (!Array.isArray(data)) {
-      throw new Error(`Query ${queryId} returned a non-array result`);
-    }
+  async getQueryResults(queryId: string, signal?: AbortSignal): Promise<any[]> {
+    requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
+    const data = await this.read('queries', queryId, 'results', signal);
+    if (!Array.isArray(data)) throw new DrasiError('INVALID_PAYLOAD', this.details('query', queryId));
     return data;
   }
 
   /**
-   * Subscribe before fetching the current snapshot. Deltas received while a
-   * snapshot request is in flight are buffered and replayed after the snapshot.
-   * A fresh snapshot is fetched after each SSE reconnection so changes emitted
-   * while the stream was unavailable cannot leave the accumulated result stale.
+   * Listen before fetching a snapshot; replay buffered deltas afterward. On
+   * reconnect, discard stale rows with a fresh snapshot. Permanent failures
+   * terminate this subscription; transient snapshot failures have bounded retries.
    */
   subscribe(
     queryId: string,
     callback: (result: QueryResult) => void,
-    onError?: (error: Error) => void,
+    onError?: (error: DrasiError) => void,
   ): () => void {
+    if (!this.queryIds.has(queryId)) {
+      const error = new DrasiError('INVALID_CONFIGURATION', this.details('query', queryId));
+      if (!onError) throw error;
+      onError(error);
+      return () => {};
+    }
     const queuedResults: QueryResult[] = [];
     let active = true;
     let snapshotReady = false;
@@ -406,27 +208,17 @@ export class DrasiClient {
     let snapshotRetryAttempts = 0;
     let snapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let connectionWasInterrupted = !this.sseClient.isConnected();
+    let unsubscribeStatus = () => {};
 
-    const deliverLiveResult = (result: QueryResult) => {
+    const unsubscribe = this.sseClient.subscribe(queryId, result => {
       if (!active) return;
-      if (!snapshotReady) {
-        queuedResults.push(result);
-        return;
-      }
-      callback(result);
-    };
-    const unsubscribe = this.sseClient.subscribe(
-      queryId,
-      deliverLiveResult,
-    );
-
+      if (!snapshotReady) queuedResults.push(result);
+      else callback(result);
+    });
     const clearSnapshotRetry = () => {
-      if (snapshotRetryTimer !== null) {
-        clearTimeout(snapshotRetryTimer);
-        snapshotRetryTimer = null;
-      }
+      if (snapshotRetryTimer !== null) clearTimeout(snapshotRetryTimer);
+      snapshotRetryTimer = null;
     };
-
     const suspendSnapshot = () => {
       snapshotReady = false;
       queuedResults.length = 0;
@@ -435,99 +227,71 @@ export class DrasiClient {
       snapshotController = null;
       snapshotGeneration += 1;
     };
-
+    const stop = () => {
+      active = false;
+      suspendSnapshot();
+      unsubscribeStatus();
+      unsubscribe();
+      this.subscriptions.delete(stop);
+    };
     const fetchSnapshot = () => {
       if (!active || !this.sseClient.isConnected()) return;
-
-      clearSnapshotRetry();
-      snapshotController?.abort();
-      snapshotReady = false;
-      queuedResults.length = 0;
-
+      suspendSnapshot();
       const controller = new AbortController();
       snapshotController = controller;
       const generation = ++snapshotGeneration;
-
-      void this.getQueryResults(queryId, controller.signal)
-        .then((rows) => {
-          if (!active || generation !== snapshotGeneration) return;
-          snapshotController = null;
-          snapshotRetryAttempts = 0;
-          callback({
-            queryId,
-            data: rows,
-            timestamp: Date.now(),
-            snapshot: true,
-          });
-          snapshotReady = true;
-          queuedResults.splice(0).forEach(callback);
-        })
-        .catch((error) => {
-          if (
-            !active ||
-            generation !== snapshotGeneration ||
-            isAbortError(error)
-          ) {
-            return;
-          }
-
-          snapshotController = null;
-          snapshotReady = false;
-          onError?.(toError(error));
-
-          const delay = Math.min(
-            SNAPSHOT_RETRY_INITIAL_DELAY_MS *
-              Math.pow(2, snapshotRetryAttempts),
-            SNAPSHOT_RETRY_MAX_DELAY_MS,
-          );
-          snapshotRetryAttempts = Math.min(snapshotRetryAttempts + 1, 5);
-          snapshotRetryTimer = setTimeout(fetchSnapshot, delay);
-        });
-    };
-
-    const unsubscribeStatus = this.sseClient.onConnectionStatusChange(
-      (status) => {
-        if (!active) return;
-        if (!status.connected) {
-          connectionWasInterrupted = true;
-          suspendSnapshot();
+      void this.getQueryResults(queryId, controller.signal).then(rows => {
+        if (!active || generation !== snapshotGeneration) return;
+        snapshotController = null;
+        snapshotRetryAttempts = 0;
+        callback({ queryId, data: rows, timestamp: Date.now(), snapshot: true });
+        snapshotReady = true;
+        queuedResults.splice(0).forEach(callback);
+      }).catch(error => {
+        if (!active || generation !== snapshotGeneration || isAbortError(error)) return;
+        const failure = asDrasiError(error, this.details('query', queryId));
+        snapshotController = null;
+        onError?.(failure);
+        if (!failure.retryable || snapshotRetryAttempts >= this.maxRetries) {
+          stop();
           return;
         }
-        if (connectionWasInterrupted) {
-          connectionWasInterrupted = false;
-          snapshotRetryAttempts = 0;
-          fetchSnapshot();
-        }
-      },
-    );
-
-    if (this.sseClient.isConnected() && snapshotGeneration === 0) {
-      fetchSnapshot();
-    }
-
-    return () => {
-      active = false;
-      clearSnapshotRetry();
-      snapshotController?.abort();
-      snapshotController = null;
-      queuedResults.length = 0;
-      unsubscribeStatus();
-      unsubscribe();
+        const delay = Math.min(this.retryDelay * 2 ** snapshotRetryAttempts++, this.maxRetryDelay);
+        snapshotRetryTimer = setTimeout(fetchSnapshot, delay);
+      });
     };
+    this.subscriptions.add(stop);
+    unsubscribeStatus = this.sseClient.onConnectionStatusChange(status => {
+      if (!active) return;
+      if (!status.connected) {
+        connectionWasInterrupted = true;
+        suspendSnapshot();
+        if (status.error && !status.reconnecting) {
+          onError?.(status.error);
+          stop();
+        }
+        return;
+      }
+      if (connectionWasInterrupted) {
+        connectionWasInterrupted = false;
+        snapshotRetryAttempts = 0;
+        fetchSnapshot();
+      }
+    });
+    if (!active) unsubscribeStatus();
+    if (this.sseClient.isConnected() && snapshotGeneration === 0) fetchSnapshot();
+    return stop;
   }
 
   getConnectionStatus(): ConnectionStatus {
     return this.sseClient.getConnectionStatus();
   }
 
-  onConnectionStatusChange(
-    callback: (status: ConnectionStatus) => void,
-  ): () => void {
+  onConnectionStatusChange(callback: (status: ConnectionStatus) => void): () => void {
     return this.sseClient.onConnectionStatusChange(callback);
   }
 
-  getServerUiUrl(): string | null {
-    if (!this.instanceId) return null;
+  getServerUiUrl(): string {
     return `${this.baseUrl}/ui?instance=${encodeURIComponent(this.instanceId)}`;
   }
 
@@ -536,6 +300,7 @@ export class DrasiClient {
     this.initController?.abort();
     this.initController = null;
     this.initPromise = null;
+    for (const stop of this.subscriptions) stop();
     await this.sseClient.disconnect();
   }
 }
