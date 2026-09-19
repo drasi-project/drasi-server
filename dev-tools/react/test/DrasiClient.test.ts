@@ -87,6 +87,29 @@ describe('connect-only DrasiClient', () => {
     await connected;
   });
 
+  it('drains failed parallel validation before handing off to an app retry', async () => {
+    const { client, server } = setup({ queryIds: ['stocks', 'other'] });
+    const other = deferred<Response>();
+    const read = server.fetch.getMockImplementation()!;
+    let otherSignal: AbortSignal | null | undefined;
+    server.fetch.mockImplementation((input, init) => {
+      if (String(input).includes('/queries/stocks?')) return Promise.resolve(failure(404, 'QUERY_NOT_FOUND'));
+      if (String(input).includes('/queries/other?')) {
+        otherSignal = init?.signal;
+        return other.promise;
+      }
+      return read(input, init);
+    });
+    const settled = vi.fn();
+    const result = client.initialize().catch((error: unknown) => { settled(); return error; });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(settled).not.toHaveBeenCalled();
+    expect(otherSignal?.aborted).toBe(false);
+    other.resolve(failure(404, 'QUERY_NOT_FOUND'));
+    expect(await result).toMatchObject({ code: 'QUERY_NOT_FOUND', resourceId: 'stocks' });
+    expect(otherSignal?.aborted).toBe(false);
+  });
+
   it.each([
     ['query', 'QUERY_NOT_FOUND', 'stocks'],
     ['reaction', 'REACTION_NOT_FOUND', 'stream'],

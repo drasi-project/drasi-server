@@ -106,6 +106,9 @@ Both cases also pass 12 consecutive WebKit repetitions (24 checks), keeping
 fresh provisioning separate from the additional existing-stream retry scenario.
 Independent package validation GETs overlap, and an app waiting on another tab's
 setup returns after one fully-ready preflight instead of rereading the bundle.
+Validation batches drain before reporting a missing resource, so an app retry
+does not race a burst of aborted reads. Explicit cancellation still aborts all
+requests. The partial-startup case also passes 12 WebKit repetitions.
 Query creation remains serial; source/join order is unchanged.
 The original five PNG files are unchanged. The frozen-clock
 reconnect test now advances the retry clock while the new asynchronous REST
@@ -260,21 +263,21 @@ included source files, dependency locks and visual expectations are unchanged.
 
 | Artifact | P1 bytes | P2 bytes | Reason for growth |
 | --- | ---: | ---: | --- |
-| Packed tarball | 110,691 | 124,963 | Runtime, declarations, source maps and the reference/error/ownership documentation |
-| Package ESM / CJS | 66,865 / 68,860 | 72,869 / 74,915 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
+| Packed tarball | 110,691 | 125,325 | Runtime, declarations, source maps and the reference/error/ownership documentation |
+| Package ESM / CJS | 66,865 / 68,860 | 72,992 / 75,038 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
 | Declarations | 18,746 | 21,140 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding |
-| Trading JS / gzip | 223,574 / 65,775 | 233,623 / 69,004 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
+| Trading JS / gzip | 223,574 / 65,775 | 233,695 / 69,038 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
 | Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
 
-The app's net runtime addition is 10,049 bytes (3,229 gzip), not a new dependency
+The app's net runtime addition is 10,121 bytes (3,263 gzip), not a new dependency
 or duplicated React/SSE implementation. Setup contains the single app mutation
 boundary; the package has no POST/PUT/PATCH/DELETE path. Do not update screenshots
 or lower coverage to accommodate future drift.
 
-P2's measured whole-package coverage is 77.02% statements / 78.76% lines /
-64.56% branches / 78.06% functions; Trading is 87.31% / 87.96% / 78.06% /
-85.59%, respectively. The new Trading provisioner is 98.78% statements /
-99.25% lines / 92.59% branches / 100% functions. These improve every P1 floor;
+P2's measured whole-package coverage is 77.09% statements / 78.80% lines /
+64.65% branches / 78.06% functions; Trading is 87.31% / 87.96% / 78.06% /
+85.59%, respectively. The new Trading provisioner is 98.81% statements /
+99.28% lines / 92.98% branches / 100% functions. These improve every P1 floor;
 they are not a claim that #163's final transport/result-contract coverage targets
 are finished.
 

@@ -139,9 +139,14 @@ export class DrasiClient {
 
   /** Validate references/usability, not desired query text or deployment settings. */
   async validateResources(signal?: AbortSignal): Promise<void> {
-    await Promise.all([...this.queryIds].map(async queryId => {
+    const queries = await Promise.allSettled([...this.queryIds].map(async queryId => {
       requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
     }));
+    // Drain a validation batch before handing an error to an app that may
+    // immediately retry. Explicit cancellation still aborts every request.
+    for (const query of queries) {
+      if (query.status === 'rejected') throw query.reason;
+    }
     const reaction = await this.getReaction(signal);
     const details = this.details('reaction', this.reaction.id);
     if (reaction.config.kind !== 'sse' ||
