@@ -6,7 +6,7 @@
     "issue": 163,
     "part": "B / P4",
     "predecessor": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
-    "reason": "P4 replaces permissive result guessing with strict versioned normalization and an explicit legacy adapter; adds raw stable identity, before/after changes, bounded visible snapshot reconciliation, scoped state/retry and reactive guarded projections. Named declarations, executable migration docs and safe last-good-data UI account for the measured feature cost. All 26 packed Linux browser scenarios and all five original exact PNGs passed before this artifact baseline advance. All entrypoints/shared chunks remain counted. No dependency, CSS, PNG, coverage exclusion, original coverage floor or 2% policy relaxation; critical client/react coverage thresholds are now enforced. See examples/trading/TESTING.md.",
+    "reason": "P4 replaces permissive result guessing with strict versioned normalization and an explicit legacy adapter; adds raw stable identity, before/after changes, bounded visible snapshot reconciliation, scoped state/retry and reactive guarded projections. Named declarations, executable migration docs and safe last-good-data UI account for the measured feature cost. All 26 packed Linux browser scenarios and all five original exact PNG images passed before this artifact baseline advance. All entrypoints/shared chunks remain counted. No dependency, CSS, PNG, coverage exclusion, original coverage floor or 2% policy relaxation; critical client/react coverage thresholds are now enforced. See examples/trading/TESTING.md.",
     "p3Change": {
       "issue": 163,
       "part": "A / P3",
