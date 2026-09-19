@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 
 export const requiredReadmeExamples = [
   'quickstart.tsx', 'query-options.ts', 'client.ts', 'auth.ts', 'controlled.tsx',
+  'data-table.tsx', 'sort-uncontrolled.tsx', 'sort-controlled.tsx',
+  'query-states.tsx', 'composed-table.tsx',
 ];
 
 /** Only an explicit first-line marker opts a README fence into compilation. */

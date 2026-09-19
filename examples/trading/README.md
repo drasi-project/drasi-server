@@ -264,10 +264,12 @@ The UI is built on a **standalone, reusable component package**,
 `dev-tools/react` directory but is completely independent of this example. The app
 consumes it exactly like an external dependency (`@drasi/react`). The package
 provides a single multiplexed SSE connection, React hooks for live query results,
-and a ready‑made `QueryTable` component.
+provider-free `DataTable` presentation, a headless sort controller and a small
+live `QueryTable` composition. Trading's local `TradingQueryTable` adds the
+demo's tutorial and fullscreen UI; those features are not package behavior.
 
 A component subscribes to a continuous query with the `useDrasiQuery` hook (or by
-dropping in a `QueryTable`):
+using Trading's `TradingQueryTable` wrapper):
 
 ```typescript
 import { useDrasiQuery } from '@drasi/react/react';
@@ -350,7 +352,9 @@ from this example so it can be reused in any Drasi application:
 | `DrasiError` | Stable typed error codes, resource/instance identity and retryability |
 | `useDrasiQuery` | Subscribe to a query; returns its accumulated, live result set |
 | `useDrasiConnectionStatus` | Track connection/reconnection state |
-| `QueryTable` | Sortable, animated table bound to a query, with a code viewer |
+| `useTableSort` / `useRowAnimation` | Headless sort and animation state shared by multiple presentations |
+| `DataTable` | Provider-free presentation of readonly rows and app-owned state |
+| `QueryTable` / `queryTableState` | Small live table composition / pure query-to-presentation state adapter |
 | `DrasiClient` / `DrasiSSEClient` | Low-level orchestrator and SSE multiplexer |
 
 The app declares `@drasi/react` as
@@ -360,12 +364,13 @@ package before Vite runs, and `app/src/main.tsx` imports
 Tailwind content scans: the app consumes the package's built JavaScript,
 declarations, and self-contained stylesheet.
 
-P3 imports transport/types from `@drasi/react/client`, bindings from
+The app imports transport/types from `@drasi/react/client`, bindings from
 `@drasi/react/react`, and presentation from `@drasi/react/components`.
 The root remains a convenience export. Client-only consumers need no React
-runtime or React types; hooks do not load component CSS. All entrypoints ship
-real ESM/CommonJS and declaration artifacts. Trading retains React 18.3.1;
-React 19 is not claimed.
+runtime or React types; hooks do not load components, React DOM or CSS. Neither
+table imports CSS implicitly or contains tutorial/dialog implementations.
+All entrypoints ship real ESM/CommonJS and declaration artifacts. Trading
+retains React 18.3.1; React 19 is not claimed.
 
 The app's `TradingQueryDefinition` remains a creation-only shape with explicit
 Cypher and ordered sources/joins; it is not the package's complete read-only
@@ -383,7 +388,51 @@ binding; it does not switch back to a package provisioner. See the package's
 [auth](../../dev-tools/react/README.md#authentication-and-injected-transports),
 [ownership](../../dev-tools/react/README.md#ownership-and-reconfiguration),
 [SSR](../../dev-tools/react/README.md#ssr-and-import-safety) and
-[migration](../../dev-tools/react/README.md#p3-migration) contracts.
+[P4 migration](../../dev-tools/react/README.md#p4--163-part-b-migration) contracts.
+
+#### App-owned tables and inspection (P5 / #164 Part A)
+
+`app/src/components/TradingQueryTable.tsx` owns one `useDrasiQuery`
+subscription, one shared `useTableSort` controller and one `useRowAnimation`
+tracker. It passes `queryTableState(query, retryConnection)` and the shared
+sort/animation state to normal and fullscreen `DataTable` cards. The existing
+FLIP transition, card markup and appearance stay app-owned; opening a second
+presentation does not create another subscription or socket. Tutorial snippets
+now correctly show `<TradingQueryTable ...>` rather than implying these
+demo-specific features belong to the package's QueryTable.
+
+The local wrapper's `codeSnippet` enables its code button. Only clicking that
+button with a snippet mounts `QueryInspector`, whose `useDrasiQueryDefinition`
+hook performs the optional GET. Closing unmounts the inspector and aborts the
+read. For its own read failure, **Retry query definition** rekeys only that read,
+never the query subscription or shared connection. If the inspector's non-null
+error is the **same object** as `useDrasiClient().error`, it instead offers
+**Retry connection** and calls the provider's retry callback. Identical error
+codes/messages alone do not select shared recovery; no new package API is
+needed. Async results update the already-open code view and copy content
+instead of leaving a frozen loading message. Query formatting, tutorial
+snippets, Drasi UI links and `CodeViewerDialog` are all app-owned;
+`CodeViewerDialog` is no longer a package export.
+
+Plain package tables and closed inspectors do not request tutorial definitions.
+This does **not** remove the required initial resource-validation GETs or the
+query-resource check performed by every subscription's `getQueryResults` before
+its snapshot. Those are connect-only correctness checks, not tutorial traffic.
+
+`useTableSort` supports controlled `sort` (including explicit null) and a
+one-time uncontrolled `defaultSort`; null restores input order. Both card
+presentations use the same state, not synchronized copies of a second sorting
+implementation. All 11 queries, numeric conversions, business filters and
+existing default sorts remain unchanged. App actions and provisioning remain
+outside the reusable package.
+
+See the package's [P5 migration](../../dev-tools/react/README.md#p5--164-part-a-migration)
+and [composition recipes](../../dev-tools/react/README.md#app-owned-composition).
+This follows #207 at `20561c13dd74929855dfbe605bb1fac23e5a49f4` under tracker
+#161. Package CSS remains byte-for-byte unchanged, including the legacy
+dialog/fullscreen rules used here. P6 focus management, coordinated overlays,
+theming, reduced-motion and height completion remain separate; no new example
+app/Storybook (#165) or backend/protocol change is included.
 
 #### Result identity and recovery (#163 Part B)
 
@@ -393,8 +442,9 @@ Keys are nonempty business identities, never serialized whole rows. Portfolio
 uses position ID with the existing symbol fallback, summary uses its singleton
 key, and the remaining queries retain their existing symbol/sector/ID choices.
 Sparse deletes are keyed **before** projection; a portfolio `{ id }` delete
-does not need prices or a symbol. `QueryTable.rowKey` is a separate transformed
-render/animation key. Portfolio now uses the same position identity there;
+does not need prices or a symbol. `TradingQueryTable.rowKey`, forwarded to
+DataTable, is a separate transformed render/animation key. Portfolio uses the
+same position identity there;
 the existing symbol-based edit/delete lookup and order identity limitations
 remain documented in [TESTING.md](TESTING.md#known-baseline-limitations-not-refactor-regressions).
 
@@ -555,7 +605,9 @@ requests.post('http://localhost:9100/sources/price-feed/events', json=event)
 | `server/trading-sources-only.yaml` | Drasi Server configuration with sources |
 | `database/docker-compose.yml` | PostgreSQL container with replication |
 | `database/init.sql` | Schema, sample data, replication setup |
-| `../../dev-tools/react/` | Reusable React components (provider, hooks, `QueryTable`) — see [`dev-tools/react/README.md`](../../dev-tools/react/README.md) |
+| `../../dev-tools/react/` | Reusable providers, headless hooks, `DataTable` and `QueryTable` — see [`dev-tools/react/README.md`](../../dev-tools/react/README.md) |
+| `app/src/components/TradingQueryTable.tsx` | App-owned normal/fullscreen cards sharing query, sort and animation state |
+| `app/src/components/QueryInspector.tsx` / `CodeViewerDialog.tsx` | On-demand definition reads and tutorial/code presentation |
 | `app/src/services/queries.ts` | Continuous query definitions |
 | `app/src/drasi/config.ts` | App-specific Drasi config: query list, SSE reaction, content routing |
 | `app/src/drasi/queryOptions.ts` | Per-query key/transform/sort options passed to the shared components |

@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- P5 / #164 Part A provider-free `DataTable<T, E extends Error = Error>` with
+  readonly rows/columns, application-owned state/retries, typed loading/empty/
+  error/stale/header slots, right-hand header controls, card ref/style hooks and
+  keyed custom-row composition. No provider, query identity or network is
+  needed to present supplied rows.
+- Headless `useTableSort`, `UseTableSortOptions` and `UseTableSortResult` through
+  `/react`; `SortConfig` is shared with `/components`. Defined `sort` (including
+  null) is controlled, undefined is uncontrolled, and null restores input order.
+  One notification per setter/header action, outside state updaters; controlled
+  changes preserve stored uncontrolled state. Header toggling remains asc/desc,
+  not an automatic three-state cycle.
+- Pure `/components` `queryTableState` adapter and full typed query-state slot
+  contexts, preserving P4 status/staleness and query-local versus shared retries.
+- Optional readonly animation maps for shared table presentations and readonly
+  `useRowAnimation.data` / `updateData` inputs.
+- Installed type contracts and provider-free non-Trading SSR coverage for the
+  composition API; runtime graphs reject tutorial/dialog implementations while
+  headless sort types remain allowed. Five additional marked README recipes
+  cover supplied rows, both sort modes, scoped recovery and app-owned views.
 - P4 / #163 Part B normalized `ResultChange`, `QuerySnapshot`, `QueryDelta` and
   `QueryResult` contracts, exported with adapters and the framework-independent
   `accumulateResult` raw reducer through `/client` and root.
@@ -71,12 +90,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (provider + hooks), and `components/` (ready-made UI) with barrel exports.
 - Initial release: `DrasiProvider`, `useDrasiQuery`, `useDrasiConnectionStatus`,
   `useDrasiServerUiUrl`, `useDrasiQueryDefinition`, `QueryTable`,
-  `CodeViewerDialog`, `useRowAnimation`, and the low-level `DrasiClient` /
+  `useRowAnimation`, and the low-level `DrasiClient` /
   `DrasiSSEClient` classes.
 - Package-owned namespaced CSS, lifecycle-safe SSE reconnection and
   package/consumer CI.
 
 ### Changed
+- `QueryTable` is now a small `useDrasiQuery` + `DataTable` composition.
+  `queryOptions.getKey` and `queryOptions.transform` remain required, with
+  `rowKey` separate. Slots retain last-good rows; `renderEmpty` returns content
+  inside one spanning cell. Sort callbacks accept null, and custom-row column
+  arguments are readonly.
+- Removed package `CodeViewerDialog`/`CodeViewerDialogProps` exports and the
+  table's `codeSnippet`, implicit inspection and fullscreen behavior. Generic
+  icons remain optional exports; application controls use `headerControls`.
+  Trading's local `TradingQueryTable` owns normal/fullscreen presentations with
+  one query/sort/animation owner and the existing FLIP transition/markup.
+- Trading owns `QueryInspector`, query formatting, code snippets, UI links and
+  `CodeViewerDialog`. Definition reads mount only on a code click with a snippet,
+  abort on close, and offer Retry query definition for their own read failures,
+  remounting only that read. If the error is the same non-null object as the
+  provider's error, the inspector instead offers Retry connection through the
+  provider callback; matching codes/messages alone does not select that scope.
+  Async definition content now updates an open view and its copy action.
+  Required initialization and per-subscription resource-validation GETs remain.
+- P5 leaves package CSS byte-for-byte unchanged, including legacy app-used
+  dialog/fullscreen rules and the existing `height` class-name contract.
 - `useDrasiQuery` now requires options containing a nonempty stable raw `getKey`
   and `transform`, including `row => row` for raw reads. Generic output does
   not assert a wire schema. Identity precedes projection; sparse deletes never
@@ -89,8 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `QueryTable` preserves available last-good rows with the existing error
   styling, offers scope-appropriate Retry query / Retry connection, and shows
   stale reconnect/resync messages only on the exceptional recovery path.
-  Healthy table presentation and CSS are unchanged; this is not the #164 UI
-  composition/accessibility redesign.
+  P5 retains that P4 recovery behavior through `queryTableState` and DataTable;
+  healthy table presentation and CSS remain unchanged.
 - Connection options replace top-level `routeUnidentified` with `resultAdapter`.
   Explicit IDs precede legacy routing. Unidentified routing must synchronously
   deliver all original callback row references and may fan out; its before/after
@@ -132,5 +171,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deferred
 - Stronger snapshot/live consistency requires a shared backend snapshot cursor
   and stream resume/replay contract, not client clocks or guessed signatures.
-- Composition/accessibility/theming (#164), standalone examples (#165), package
-  publication and repository transfer remain separate work.
+- P6 focus management, coordinated overlays, theming, reduced-motion and
+  height-prop completion remain separate from P5 / #164 Part A. Standalone
+  examples/Storybook (#165), publication and repository transfer remain separate.

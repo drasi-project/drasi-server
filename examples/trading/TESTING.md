@@ -138,6 +138,125 @@ still record the actual isolated bind values.
 
 ## Fast checks
 
+### P5 composition separation
+
+P5 ([#164 Part A](https://github.com/drasi-project/drasi-server/issues/164))
+starts at the exact P4 head `20561c13dd74929855dfbe605bb1fac23e5a49f4`
+in predecessor #207. It separates provider-free `DataTable`, headless query
+state and the small composed `QueryTable`. Trading's `TradingQueryTable`
+owns the existing fullscreen transition and shares sorting/animation across
+two instances of the same presentation. `QueryInspector` and
+`CodeViewerDialog` are app-owned; the package no longer ships tutorial code.
+The package stylesheet and all original visual PNG images remain unchanged.
+
+`DataTable.test.tsx` uses frozen, non-Trading rows with no provider. It covers
+typed computed cells, actions, headers/custom rows, stable row state,
+animation, null/number/string/hidden-field ordering, controlled precedence,
+uncontrolled defaults/clearing and one notification per action in StrictMode.
+`QueryTableComposition.test.tsx` uses the real provider/client rather than
+mocking hooks. Loading/empty/retained/error slots expose full query state;
+query-local retry preserves another table's subscription and shared retry
+returns to the provider. No protocol, raw-key/projection or financial behavior
+is reimplemented in the presentation layer.
+
+The portable `composition-regressions.test.tsx` was first run against the
+exact P4 checkout, before implementation. All three assertions failed:
+there was no provider-free `DataTable` export, a plain table made three
+non-cancelled definition/full-view reads rather than the two required
+resource-validation reads, and three sort actions notified six times under
+StrictMode. The identical checks pass on P5. Required initialization and
+subscription resource validation remains intact; removing those GETs would
+not be an acceptable way to make the inspector assertion pass.
+
+Trading's `integration/tableComposition.test.tsx` tests the built package.
+It covers closed-inspector read isolation, delayed success updating an open
+viewer and its actual copied text, safe failure/retry, close cancellation and
+fresh reopen, instance-scoped server-UI links, fullscreen shared sorting,
+live animations/actions, collapse buttons/backdrop/Escape and unmount cleanup.
+Definition-read retry does not bounce a healthy stream; a shared error uses
+the connection owner's retry. Existing CRUD/provisioning/result tests remain.
+
+The original three-browser behavior scenarios and five visual comparisons
+remain the gate. The tutorial screenshot now waits for its actual lazily
+loaded `OWNS_STOCK` query text before comparing the same image; it does not
+capture a loading placeholder or refresh a baseline. The existing lifecycle
+versus frozen visual-clock policy, five-second readiness assertions, forced
+503, concurrent/partial setup, financial values and no-navigation assertions
+are unchanged.
+
+P6 still owns focus containment/restoration, topmost/nested overlay ownership,
+shared scroll locking, complete keyboard/tab semantics, local/portal theme
+tokens, reduced motion and the height API. Single-overlay compatibility tests
+are not evidence that those unfinished contracts are complete. No standalone
+example or Storybook site is added in P5.
+
+#### P5 measured artifact change
+
+The clean Linux/amd64 Node 22.20.0 run passes **354 package tests, 95 Trading
+tests, 6 metric-policy tests and 26 browser scenarios**, including all five
+original exact-zero-diff visual PNG images. Installed React 18.3.1 contracts
+pass on actual Node 22.20.0 and 24.19.0: **9 public type programs with 528
+negative assertions, 8 import/SSR modes, 8 README parser guards and 10 literal
+README snippets** in ESM/CJS/bundler modes. Client/auth programs remain
+React-free. The five predecessor README snippets are preserved.
+
+Coverage is measured without excluding moved code:
+
+| Scope | Statements | Lines | Functions | Branches |
+| --- | ---: | ---: | ---: | ---: |
+| Package, all files | 97.85% | 99.05% | 98.29% | 95.08% |
+| Client, unchanged | 97.73% | 99.10% | 99.34% | 95.27% |
+| React hooks | 98.79% | 100% | 100% | 94.08% |
+| `DataTable` | 100% | 100% | 100% | 96.85% |
+| `QueryTable` and state adapter | 100% | 100% | 100% | 100% |
+| `useTableSort` | 100% | 100% | 100% | 100% |
+| Trading, all files | 89.28% | 90.14% | 87.93% | 81.84% |
+| App-owned table wrapper | 92.40% | 94.11% | 100% | 88.09% |
+| App-owned code viewer | 97.87% | 97.72% | 91.66% | 96.66% |
+| App-owned inspector | 96.15% | 97.72% | 100% | 82.92% |
+
+The enforced critical client/react floors remain 90% statements/lines/functions
+and 85% branches. Existing client normalization, reducer, subscription,
+configuration and provider evidence is retained; this layer does not rewrite
+their protocol or lifecycles.
+
+| Measured bytes | P4 | P5 |
+| --- | ---: | ---: |
+| Package tarball, including docs/maps | 187699 | 169457 |
+| Package ESM, all entries/chunks | 98585 | 78523 |
+| Package CJS, all entries/chunks | 106000 | 85845 |
+| Package declarations, `.d.ts` family | 34875 | 37834 |
+| Package CSS | 10043 | 10043 |
+| Trading JavaScript | 250892 | 251684 |
+| Trading JavaScript gzip | 73795 | 74133 |
+| Trading generated CSS | 21034 | 21639 |
+| Trading generated CSS gzip | 5163 | 5212 |
+
+The first full browser run passed all behavior/visual checks and correctly
+rejected the declaration-growth budget. The measured advance retains P1-P4
+history and the same **2% future-growth policy**. The new provider-free/state
+slot/error/sort/animation declarations add 2959 bytes; moving tutorial and
+fullscreen code out of the package reduces every complete runtime-format
+total, not just its entry stubs. The app still owns that functionality, plus
+composition plumbing and lazy retry (792 more JavaScript bytes). Its unchanged
+Tailwind content scan now also sees the moved modules, including `.table` and
+`.transition` utility discovery; generated CSS grows by 605 bytes. Neither
+package CSS nor any original image was edited, and all five comparisons remain
+exact. No size threshold, coverage floor or assertion was disabled to pass.
+
+Unchanged-backend checks pass: exact engine verification, registry plugin
+origin, 42 tooling tests, real UI/server builds, 779 Rust tests (32 ignored),
+`make fmt-check` and strict locked all-target Clippy. The locked-server audit
+reports zero vulnerabilities and 15 existing warnings, not clearance of the
+separate unused legacy core workspace.
+
+The supported native plugin invocation is `make download-test-plugins`
+followed by `./tests/plugin_smoke_test.sh --skip-build`: **8 pass / 28 configured
+skips**, with the pinned registry artifacts verified. This is not all-plugin
+coverage. The additional legacy `make test-smoke` convenience target still
+exits 2 because its `build-dynamic` target is absent; that pre-existing blocker
+is not reported as a passing gate or repaired by P5.
+
 ### Part B Trading result consumers
 
 Trading now supplies required raw keys and validating projections for all 11

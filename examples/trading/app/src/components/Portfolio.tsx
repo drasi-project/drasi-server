@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
+import type { ColumnDef, RowAction } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
 import { portfolioRowKey, tradingQueryOptions } from '@/drasi/queryOptions';
 import { PortfolioSummary } from './PortfolioSummary';
 import { ChangeIndicator, EditIcon, DeleteIcon, AddIcon, ConfirmDialog } from './shared';
@@ -24,7 +25,7 @@ import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display
-const CODE_SNIPPET = `<QueryTable<PortfolioRow>
+const CODE_SNIPPET = `<TradingQueryTable<PortfolioRow>
   queryId="portfolio-query"
   queryOptions={tradingQueryOptions('portfolio-query')}
   title="Portfolio"
@@ -249,7 +250,7 @@ export const Portfolio: React.FC = () => {
 
   return (
     <>
-      <QueryTable<PortfolioRow>
+      <TradingQueryTable<PortfolioRow>
         queryId="portfolio-query"
         queryOptions={tradingQueryOptions('portfolio-query')}
         title="Portfolio"

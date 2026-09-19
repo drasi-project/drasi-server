@@ -22,11 +22,16 @@ class SyntheticEventSource extends EventTarget implements EventSourceLike {
 
 const reconnect = { initialReconnectDelayMs: 25, maxReconnectDelayMs: 25 };
 
-export async function renderTrading(backend = new SyntheticTrading()) {
+export async function renderTrading(
+  backend = new SyntheticTrading(),
+  beforeFetch?: (url: URL, init?: RequestInit) => Promise<void>,
+) {
   const sources: SyntheticEventSource[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     if (init?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const url = new URL(input instanceof Request ? input.url : String(input));
+    await beforeFetch?.(url, init);
+    init?.signal?.throwIfAborted();
     const result = backend.handle({
       path: url.pathname,
       method: init?.method ?? 'GET',

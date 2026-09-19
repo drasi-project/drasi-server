@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
+import type { ColumnDef, RowAction } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
 import { useDrasiQuery } from '@drasi/react/react';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { DeleteIcon, AddIcon, ConfirmDialog } from './shared';
@@ -24,7 +25,7 @@ import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display - React component only
-const CODE_SNIPPET = `<QueryTable<LimitOrderResult>
+const CODE_SNIPPET = `<TradingQueryTable<LimitOrderResult>
   queryId="active-orders-query"
   queryOptions={tradingQueryOptions('active-orders-query')}
   title="Limit Orders"
@@ -277,7 +278,7 @@ export const Orders: React.FC = () => {
 
   return (
     <>
-      <QueryTable<LimitOrderResult>
+      <TradingQueryTable<LimitOrderResult>
         queryId="active-orders-query"
         queryOptions={tradingQueryOptions('active-orders-query')}
         title="Limit Orders"
