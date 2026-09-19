@@ -1,15 +1,20 @@
 # Trading regression baseline
 
-This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-server/issues/200),
-above [#119](https://github.com/drasi-project/drasi-server/pull/119) at
-`a2b648062a4c55e036d68b6f26bf73b4e773bcf1`. It protects the existing Trading
-application, not a second demo. No production query, service, startup command,
-package API, CSS or component is changed by this foundation.
+This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-server/issues/200).
+Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
+at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
+separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
+at `6f888956cca131992ed7e656387f74cc3053652b`. It protects the existing Trading
+application, not a second demo. P1 does not redesign its query, package API,
+CSS or components. The reviewed engine/security/source-backed setup changes
+come from B1, whose history and policies are retained.
 
-**P1 is BLOCKED, not ready:** the mandatory real-server gate reproduces
-incorrect aggregate REST snapshots on the exact #119 checkout/core 0.5.8.
-Fast, packed-consumer and visual gates pass, but they do not waive this failure.
-See [the exact-baseline reproduction](#exact-checkout-reproduction-blocked).
+**Default source integration is now required, not a diagnostic overlay.**
+The gate uses the pinned compatible source described below; the original #119
+failure recordings remain [historical defect evidence](#historical-119-reproduction),
+never new golden expectations. Readiness for another development layer requires
+the actual current-branch product gates. It is not a claim that all external
+checks or the entire unused core workspace are green, nor merge authorization.
 
 ## Behavior inventory, version 1
 
@@ -19,7 +24,7 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
 
 | ID | Preserved behavior | Executable assertions / baseline limitation |
 | --- | --- | --- |
-| T01 | Existing `./start-demo.sh`, manual setup and URLs: app 5273, REST 8280, SSE 8281, price source 9100, Trading API 9200, PostgreSQL 5632 | `integration/tradingOptions.test.ts` locks app REST/reaction defaults; browser requests still use production URLs, redirected only by the test runner. Scripts/configuration are unchanged. The local-plugin startup dependency remains separate #160 work. |
+| T01 | Existing `./start-demo.sh`, manual setup and URLs: app 5273, REST 8280, SSE 8281, price source 9100, Trading API 9200, PostgreSQL 5632 | `integration/tradingOptions.test.ts` locks app REST/reaction defaults; browser requests still use production URLs, redirected only by the test runner. B1's approved source-backed preparation is shared with startup/devcontainer routes; P1 retains those helpers without changing the app's automatic setup or URLs. |
 | T02 | Fresh startup automatically creates all **11** queries and `sse-stream`; reload reuses resources | `integration/Trading.test.ts` and `browser/trading.spec.ts`, “fresh automatic setup” / “automatically provisions”; exact query definitions, joins, source IDs, reaction membership, single connection and no second mutation on reload. Live gate is required separately. |
 | T03 | Query IDs, `HAS_PRICE`, `ON_WATCHLIST`, `OWNS_STOCK`, `ORDER_HAS_PRICE`, numeric thresholds and P/L meaning | `integration/tradingOptions.test.ts`; known-value row and summary assertions in `Trading.test.ts`. Synthetic projections are illustrative and do not replace real query execution. |
 | T04 | Watchlist add/remove, alphabetical rows, duplicate/write errors | Both app and browser CRUD assertions; the app suite also checks failed writes leave existing rows intact and show an error. |
@@ -57,13 +62,14 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
   associated field labels; Chromium's existing table header semantics differ
   from jsdom's. The browser suite locates existing headings/`th` elements where
   necessary. This is not an accessibility pass; #164 owns those improvements.
-- **KB-05 — aggregate snapshot authority (blocking):** the real
+- **KB-05 — historical aggregate snapshot authority failure:** the original
   `portfolio-summary-query` REST result contains intermediate/historical rows,
   not one current aggregate. Reload/reconnect can therefore replace a correct
   streamed total with an old total. This reproduces on #119's exact server code
-  and dependency lock, not just an older image. The live gate remains nonzero;
-  a backend prerequisite/scope decision is required. No client-side selection
-  heuristic or backend change is included here.
+  and dependency lock, not just an older image. The approved B1 source
+  prerequisite addresses this engine identity defect. The same live assertions
+  remain mandatory, and historical records remain unchanged. No client-side
+  selection heuristic or replacement financial computation was added.
 
 ## Fast checks
 
@@ -198,6 +204,30 @@ Flask on a dedicated loopback port. The actual built Trading app creates its
 queries/reaction and consumes real REST/SSE data. No synthetic endpoints are
 enabled in this browser run.
 
+### Integrated source and shared setup
+
+Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
+`1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The default manifest selects only
+the sibling engine 0.5.8 / AST 0.3.5 / Cypher 0.3.6 paths. Registry library
+0.8.9, SDK/host/FFI 0.10.0, index 0.5.8 and GQL 0.3.6 stay selected. This is
+the full compatible source backport, not a published 0.5.8 fix, the rejected
+0.5.9 hook API, or the earlier disposable three-file overlay. See
+[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md).
+
+`source_provenance.py` invokes the shared source verifier and resolved-SDK
+policy, checks the caller's commit/lock and exact engine/parser origins, and
+rejects a different caller plugin lock. Native installation reuses
+`scripts/install_plugins.py`, rather than a second installer. Actual loaded
+plugin status/hash/version/ABI metadata is validated by that same shared
+policy and retained in `loaded-plugins.json`.
+
+For a source-free packed Trading consumer, set `P1_SOURCE_ROOT` to the original
+server checkout. It supplies **backend build provenance and setup helpers
+only**; no package source alias or Tailwind scan is introduced. The frontend
+still consumes the tarball. CI prepares the pinned sibling before its build,
+passes that checkout explicitly, and triggers on Cargo, core pin, shared helper,
+server/UI, package and Trading changes for dependent PR bases.
+
 Prerequisites: a POSIX host, Docker, the repository's Rust toolchain, Node 22,
 Python 3.13, and access to GHCR/Sigstore for signed plugin
 verification.
@@ -212,6 +242,8 @@ sufficient for `jq-sys`.
 From the repository root, after the fast package/app setup above:
 
 ```sh
+bash scripts/prepare-core.sh
+python3 scripts/plugin_origin.py mode
 npm --prefix ui ci
 npm --prefix ui run build
 cargo build --locked
@@ -219,6 +251,7 @@ python3 -m venv examples/trading/app/.test-runtime/venv
 examples/trading/app/.test-runtime/venv/bin/python -m pip install \
   -r examples/trading/app/test/live/requirements.txt
 
+P1_SOURCE_ROOT="$PWD" \
 P1_SERVER_BIN="$PWD/target/debug/drasi-server" \
 P1_SERVER_CARGO_LOCK="$PWD/Cargo.lock" \
 P1_SERVER_REVISION="$(git rev-parse HEAD)" \
@@ -229,10 +262,9 @@ npm --prefix examples/trading/app run test:live
 The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.8**, PostgreSQL source **0.2.7**, SSE
 reaction **0.3.4**, and PostgreSQL/scriptfile bootstrappers **0.2.10** by immutable
 OCI manifest digest and binary SHA256. Their SDK crate is **0.10.0** and their
-independently versioned C ABI is **0.11.0**. The #119 checkout resolves
-`drasi-lib 0.8.9` and `drasi-core 0.5.8`. The installer runs
-`plugin install --from-config --locked` with `verifyPlugins: true`; the harness
-also independently checks every downloaded binary hash. Missing tools, wrong
+independently versioned C ABI is **0.11.0**. The shared installer runs the existing
+`plugin install --from-config --locked` with `verifyPlugins: true` and
+independently checks every downloaded binary hash. Missing tools, wrong
 hashes, unsuccessful signatures and unavailable platform pins fail the gate.
 
 The harness loads the existing database schema, replaces only its own sample
@@ -264,6 +296,8 @@ uses SIGINT. Completed `.test-runtime/live-*` directories intentionally retain
 diagnostics; remove a specific finished directory when no longer needed.
 
 Failure artifacts include service/install logs, runtime/lock/binary provenance,
+`source-provenance.json` with engine Git revision and resolved dependency sources,
+`loaded-plugins.json` with actual ABI/hash/status,
 raw `server-rest.json`, unmodified SSE `data` strings in `server-sse.ndjson`,
 the application's mutation transcript and Playwright traces/screenshots/video.
 These actual server records must never be replaced by the synthetic fixture
@@ -287,7 +321,7 @@ The singleton-snapshot and $2,150 UI assertions stay mandatory and fail; the
 harness does not filter historical rows, guess the newest aggregate or refresh
 the page to hide the discrepancy.
 
-### Exact-checkout reproduction: BLOCKED
+### Historical #119 reproduction
 
 The bounded comparison rebuilt the unchanged #119 server at
 `a2b648062a4c55e036d68b6f26bf73b4e773bcf1` using `cargo build --locked` after
@@ -306,7 +340,8 @@ diagnostics: they still fail the gate. The final $2,150 assertion is unchanged.
 | Plugin source revision | `e05938237fd8c2c8a46bb40580c6971e53088fce` |
 | Plugin digests / hashes | [`plugins-darwin-arm64.lock`](app/test/live/plugins-darwin-arm64.lock); Linux equivalents are alongside it |
 
-Minimal reproduction uses the `test:live` command above and the existing query:
+The original reproduction used #119's registry engine, not today's pinned
+default source. Its exact historical inputs and the existing query were:
 
 ```cypher
     MATCH (p:portfolio)-[:OWNS_STOCK]->(s:stocks)-[:HAS_PRICE]->(sp:stock_prices)
@@ -347,11 +382,29 @@ Sanitized, unmodified service recordings (only disposable seed data) are under
 `runtime.json` records exact provenance. They document a **defect**, not golden
 expected results. They are never substituted for live responses.
 
-This blocker is tracked by the existing
+This historical defect is tracked by the existing
 [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680).
-No consumable fix or released dependency has been established for this gate.
-Fixing snapshot authority/aggregate result identity requires a separately
-authorized backend prerequisite. P1 does not choose an arbitrary historical
-row, change the query, derive a replacement financial total in the client, or
-modify Drasi Server/drasi-core. #200's live-server acceptance remains unchecked,
-and the refactor must not proceed to P2 on the strength of mock/build passes.
+The separately approved source prerequisite now comes from #204 and
+[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934).
+No released fix or data migration is claimed. The current gate must prove the
+correct singleton 2000 -> live/reload 2050 -> offline/reconnect 2150 result on
+this branch's own rebuilt server; earlier handed-off binary results are not a
+substitute.
+
+### Product gates versus retained caveats
+
+Current-head evidence is recorded on #200/#201, including the normal merge
+predecessor, server/core/manifest/lock/binary/plugin provenance, actual live
+results and cleanup. `make test-all` retains the original smoke script: its
+8 passes / 28 configuration-dependent skips are reported separately, not
+presented as coverage of every plugin. No new skips or expected failures are
+added to the mandatory Trading gate.
+
+The unchanged YAML agent can fail HTTP 400 for an unsupported model before
+validation. That is external infrastructure, not a passed check or a reason
+to change models/credentials here. The selected server audit reports zero
+vulnerabilities with 15 existing warnings; the unused legacy core workspace's
+h2/Azure findings remain red and are not waived. See
+[the scoped server security disposition](../../docs/server-security-dependencies.md).
+These caveats remain visible when discussing readiness for dependent
+development; they do not authorize merge, automatic merge or publication.

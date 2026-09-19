@@ -6,7 +6,11 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".drasi-core-revision"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
       - "scripts/**"
+      - "src/**"
+      - "ui/**"
       - "dev-tools/react/**"
       - "examples/trading/**"
       - ".github/workflows/react-package.yml"
@@ -17,7 +21,11 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".drasi-core-revision"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
       - "scripts/**"
+      - "src/**"
+      - "ui/**"
       - "dev-tools/react/**"
       - "examples/trading/**"
       - ".github/workflows/react-package.yml"
@@ -153,6 +161,8 @@ jobs:
 
       - name: Build the actual checkout with its dependency lock and UI
         run: |
+          bash scripts/prepare-core.sh
+          python3 scripts/plugin_origin.py mode
           npm --prefix ui ci
           npm --prefix ui run build
           cargo build --locked 2>&1 | tee "$RUNNER_TEMP/server-build.log"
@@ -175,6 +185,7 @@ jobs:
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
         env:
           P1_RUNTIME: checkout
+          P1_SOURCE_ROOT: ${{ github.workspace }}
           P1_SERVER_BIN: ${{ github.workspace }}/target/debug/drasi-server
           P1_SERVER_CARGO_LOCK: ${{ github.workspace }}/Cargo.lock
           P1_SERVER_REVISION: ${{ github.sha }}

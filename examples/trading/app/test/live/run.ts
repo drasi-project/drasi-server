@@ -18,6 +18,7 @@ import { startSseProxy } from './sseProxy.ts';
 const app = fileURLToPath(new URL('../../', import.meta.url));
 const trading = fileURLToPath(new URL('../../../', import.meta.url));
 const python = process.env.P1_PYTHON ?? 'python3';
+const sourceRoot = resolve(process.env.P1_SOURCE_ROOT ?? fileURLToPath(new URL('../../../../../', import.meta.url)));
 assert([undefined, 'checkout', 'image'].includes(process.env.P1_RUNTIME), 'P1_RUNTIME must be checkout or image');
 const native = process.env.P1_RUNTIME !== 'image';
 const checkoutBinary = native
@@ -60,13 +61,21 @@ command(python, ['-c', [
   'requirements = [line.strip().split("==") for line in open(sys.argv[1]) if "==" in line]',
   'assert all(version(name) == expected for name, expected in requirements), "Use the pinned isolated test/live/requirements.txt environment"',
 ].join('\n'), join(app, 'test/live/requirements.txt')]);
-const pluginPins = JSON.parse(command(python, [
+const sourceProvenance = native ? JSON.parse(command(python, [
+  join(app, 'test/live/source_provenance.py'),
+  '--source-root', sourceRoot,
+  '--cargo-lock', process.env.P1_SERVER_CARGO_LOCK!,
+  '--revision', process.env.P1_SERVER_REVISION!,
+  '--plugin-lock', lockPath,
+])) : undefined;
+const pluginPins: Record<string, { filename: string; file_hash: string; version: string }> =
+  sourceProvenance?.pluginPins ?? JSON.parse(command(python, [
   '-c', 'import json, sys, tomllib; print(json.dumps(tomllib.load(open(sys.argv[1], "rb"))["plugins"]))', lockPath,
-])) as Record<string, { filename: string; file_hash: string; version: string }>;
+]));
 assert.equal(Object.keys(pluginPins).length, 5);
 const checkoutDependencies = native ? JSON.parse(command(python, [
   '-c',
-  'import json, sys, tomllib; lock=tomllib.load(open(sys.argv[1], "rb")); print(json.dumps({p["name"]:p["version"] for p in lock["package"] if p["name"] in ["drasi-server","drasi-lib","drasi-core","drasi-plugin-sdk","drasi-host-sdk","drasi-ffi-primitives"]}))',
+  'import json, sys, tomllib; lock=tomllib.load(open(sys.argv[1], "rb")); print(json.dumps({p["name"]:p["version"] for p in lock["package"] if p["name"] in ["drasi-server","drasi-lib","drasi-core","drasi-query-ast","drasi-query-cypher","drasi-query-gql","drasi-index-rocksdb","drasi-plugin-sdk","drasi-host-sdk","drasi-ffi-primitives"]}))',
   process.env.P1_SERVER_CARGO_LOCK!,
 ])) : undefined;
 await mkdir(join(app, '.test-runtime'), { recursive: true });
@@ -74,6 +83,9 @@ const runDir = await mkdtemp(join(app, '.test-runtime/live-'));
 await mkdir(join(runDir, 'plugins'));
 await mkdir(join(runDir, 'tmp'));
 await copyFile(lockPath, join(runDir, 'plugins/plugins.lock'));
+if (sourceProvenance) {
+  await writeFile(join(runDir, 'source-provenance.json'), JSON.stringify(sourceProvenance, null, 2) + '\n');
+}
 await writeFile(join(runDir, 'runtime.json'), JSON.stringify({
   imageBaseline: pins, platform: native ? `${process.platform}/${process.arch}` : platform, pluginPins,
   mode: native ? 'checkout' : 'pinned-image',
@@ -81,6 +93,7 @@ await writeFile(join(runDir, 'runtime.json'), JSON.stringify({
     checkoutRevision: process.env.P1_SERVER_REVISION,
     checkoutVersion: command(checkoutBinary, ['--version']),
     checkoutDependencies,
+    sourceProvenance,
     checkoutCargoLockSha256: createHash('sha256').update(await readFile(process.env.P1_SERVER_CARGO_LOCK!)).digest('hex'),
     checkoutBinarySha256: createHash('sha256').update(await readFile(checkoutBinary)).digest('hex'),
   } : {}),
@@ -248,9 +261,10 @@ try {
     '--mount', `type=bind,source=${runDir},target=/smoke`,
   ];
   if (checkoutBinary) {
-    const installer = start(checkoutBinary, [
-      '--config', join(runDir, 'server.yaml'), '--plugins-dir', join(runDir, 'plugins'),
-      'plugin', 'install', '--from-config', '--locked',
+    const installer = start(python, [
+      join(sourceRoot, 'scripts/install_plugins.py'),
+      '--group', 'trading', '--server-bin', checkoutBinary,
+      '--plugins-dir', join(runDir, 'plugins'),
     ], 'plugin-install', env, runDir, false);
     await ready('signed, locked native plugin installation', async () => {
       if (installer.exitCode === null && installer.signalCode === null) return false;
@@ -300,6 +314,19 @@ try {
     return ['price-feed', 'postgres-stocks', 'postgres-broker'].every(id =>
       sources.some((source: { id: string; status?: string }) => source.id === id && source.status?.toLowerCase() === 'running'));
   });
+  const loadedResponse = await fetch(`${rest}/api/v1/plugins`, { signal: AbortSignal.timeout(5000) });
+  assert(loadedResponse.ok, `Cannot inspect loaded plugin ABI: ${loadedResponse.status}`);
+  const loadedPlugins = await loadedResponse.json();
+  const loadedPath = join(runDir, 'loaded-plugins.json');
+  await writeFile(loadedPath, JSON.stringify(loadedPlugins, null, 2) + '\n');
+  command(python, ['-c', [
+    'import json, sys, tomllib',
+    'sys.path.insert(0, sys.argv[1])',
+    'from install_plugins import validate_loaded_plugins',
+    'response = json.load(open(sys.argv[2]))',
+    'pins = tomllib.load(open(sys.argv[3], "rb"))["plugins"]',
+    'validate_loaded_plugins(response["plugins"], pins)',
+  ].join('\n'), join(sourceRoot, 'scripts'), loadedPath, lockPath]);
   const apiPort = await freePort();
   start(python, ['-m', 'flask', '--app', join(trading, 'mock-generator/trading_api.py'), 'run',
     '--host', '127.0.0.1', '--port', String(apiPort)], 'trading-api', {
@@ -325,6 +352,7 @@ try {
   ]);
   console.log(await readFile(join(runDir, 'playwright.log'), 'utf8'));
   assert.equal(result, 0, 'Real-server smoke failed (never a passing skip)');
+  if (native) command('bash', [join(sourceRoot, 'scripts/prepare-core.sh'), '--check']);
   console.log(`Real-server smoke passed with ${pins.serverVersion} / ${native ? 'checkout' : platform}.`);
 } catch (error) {
   failure = error;
