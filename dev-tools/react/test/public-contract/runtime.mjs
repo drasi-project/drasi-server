@@ -84,24 +84,41 @@ try {
     };
     const rows = [{ stationId: 'cold-room', celsius: 3 }];
     for (const transport of ['injected', 'global']) {
-      const requests = [];
-      const fetcher = async (url, init) => {
-        const path = new URL(url).pathname;
-        assert.equal(init.method, 'GET');
-        assert(path.startsWith('/api/v1/instances/warehouse-west/'));
-        requests.push(path);
-        const data = path.endsWith('/results') ? rows : path.includes('/reactions/') ? reaction : query;
-        return new Response(JSON.stringify({ success: true, data }), { headers: { 'content-type': 'application/json' } });
-      };
-      setFetch(transport === 'global' ? fetcher : noNetwork);
-      const rest = new api.DrasiClient({ ...options, ...(transport === 'injected' ? { fetch: fetcher } : {}) });
-      assert.equal(requests.length, 0, 'REST client construction made a request');
-      assert.deepEqual(await rest.getQuery('temperatures'), query);
-      assert.deepEqual(await rest.getQueryResults('temperatures'), rows);
-      assert.deepEqual(await rest.getReaction(), reaction);
-      assert.equal(requests.length, 4, 'REST calls did not use the selected fetch implementation');
-      assert.equal(rest.getConnectionStatus().connected, false, 'REST reads opened an SSE stream');
-      await rest.disconnect();
+      for (const authentication of ['default', 'static', 'provider']) {
+        const requests = [];
+        let headerCalls = 0;
+        const headers = { 'X-Consumer': 'packed-rest-contract' };
+        const auth = authentication === 'default' ? {} : {
+          credentials: authentication === 'static' ? 'omit' : 'include',
+          headers: authentication === 'static' ? headers : async () => {
+            headerCalls += 1;
+            return headers;
+          },
+        };
+        const fetcher = async (url, init) => {
+          const path = new URL(url).pathname;
+          assert.equal(init.method, 'GET');
+          assert.equal(init.credentials, auth.credentials ?? 'same-origin');
+          assert.equal(new Headers(init.headers).get('X-Consumer'),
+            authentication === 'default' ? null : headers['X-Consumer']);
+          assert(path.startsWith('/api/v1/instances/warehouse-west/'));
+          requests.push(path);
+          const data = path.endsWith('/results') ? rows : path.includes('/reactions/') ? reaction : query;
+          return new Response(JSON.stringify({ success: true, data }), { headers: { 'content-type': 'application/json' } });
+        };
+        setFetch(transport === 'global' ? fetcher : noNetwork);
+        // Authenticated REST-only inspection needs no custom stream factory.
+        const rest = new api.DrasiClient({ ...options, ...auth, ...(transport === 'injected' ? { fetch: fetcher } : {}) });
+        assert.equal(requests.length, 0, 'REST client construction made a request');
+        assert.equal(headerCalls, 0, 'Construction executed an authentication provider');
+        assert.deepEqual(await rest.getQuery('temperatures'), query);
+        assert.deepEqual(await rest.getQueryResults('temperatures'), rows);
+        assert.deepEqual(await rest.getReaction(), reaction);
+        assert.equal(requests.length, 4, 'REST calls did not use the selected fetch implementation');
+        assert.equal(headerCalls, authentication === 'provider' ? requests.length : 0);
+        assert.equal(rest.getConnectionStatus().connected, false, 'REST reads opened an SSE stream');
+        await rest.disconnect();
+      }
     }
     setFetch(noNetwork);
     const eventSourceTrap = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
