@@ -59,9 +59,10 @@ describe('app-owned setup using the built package', () => {
   });
 
   it('makes no redundant mutations when another consumer already prepared everything', async () => {
-    const { run, writes } = setup(true);
+    const { run, writes, fetcher } = setup(true);
     await run();
     expect(writes()).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(12);
   });
 
   it('repairs partial setup, starting each stopped resource only once', async () => {

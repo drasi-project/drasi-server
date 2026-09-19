@@ -60,7 +60,10 @@ jobs:
 
       - name: Install package dependencies
         working-directory: dev-tools/react
-        run: npm ci
+        run: |
+          # Action inputs do not translate the host runner.temp into this container.
+          echo "TRADING_ARTIFACT_ROOT=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          npm ci
 
       - name: Type-check package
         working-directory: dev-tools/react
@@ -114,10 +117,10 @@ jobs:
           if-no-files-found: error
           path: |
             dev-tools/react/coverage/
-            ${{ runner.temp }}/*.log
-            ${{ runner.temp }}/trading-consumer/examples/trading/app/coverage/
-            ${{ runner.temp }}/trading-consumer/examples/trading/app/playwright-report/
-            ${{ runner.temp }}/trading-consumer/examples/trading/app/test-results/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/*.log
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/coverage/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/playwright-report/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/test-results/
 
   live:
     name: Real Trading on the checked-out server

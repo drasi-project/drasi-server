@@ -28,10 +28,41 @@ test('concurrent tabs share app-owned setup without duplicate start storms', asy
   const errors: string[] = [];
   try {
     await prepareTradingPage(second, baseURL!, errors);
+    // Lifecycle tests need real retry timers; only visual/animation cases freeze them.
+    await page.clock.resume();
+    await second.clock.resume();
     await Promise.all([openTrading(page), openTrading(second)]);
     const state = await (await request.get('/__fixture/state')).json();
-    expect(state.requests.filter((item: { method: string }) => item.method === 'POST')).toHaveLength(12);
+    const writes = state.requests.filter((item: { method: string }) => item.method === 'POST');
+    expect(writes.map((item: { body: { id: string } }) => item.body.id)).toEqual([...QUERY_IDS, 'sse-stream']);
     expect(state.connections).toBe(2); // One per independent tab, never a setup connection.
+    expect(errors).toEqual([]);
+  } finally {
+    await second.close();
+  }
+});
+
+test('a second tab retries an unavailable existing stream without provisioning', async ({ page, context, request, baseURL }) => {
+  await openTrading(page);
+  const before = await (await request.get('/__fixture/state')).json();
+  const second = await context.newPage();
+  const errors: string[] = [];
+  try {
+    await prepareTradingPage(second, baseURL!, errors);
+    await second.clock.resume();
+    let rejectedStreams = 0;
+    await second.route('http://localhost:8281/events', route => {
+      rejectedStreams += 1;
+      return route.fulfill({
+        status: 503, headers: { 'Access-Control-Allow-Origin': '*' },
+        contentType: 'text/plain', body: 'Controlled transient stream outage',
+      });
+    }, { times: 1 });
+    await openTrading(second);
+    const state = await (await request.get('/__fixture/state')).json();
+    expect(state.requests.slice(before.requests.length).every((item: { method: string }) => item.method === 'GET')).toBe(true);
+    expect(rejectedStreams).toBe(1);
+    expect(state.connections).toBe(2);
     expect(errors).toEqual([]);
   } finally {
     await second.close();

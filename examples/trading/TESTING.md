@@ -98,7 +98,16 @@ partial success, the 60-second deadline, wrong-instance isolation and
 non-provisionable failures. The existing business integration assertions remain.
 
 The three browser engines additionally cover partial setup and native
-concurrent tabs; the original five PNG files are unchanged. The frozen-clock
+concurrent first-run tabs. A separate existing-resource tab case deliberately
+fails one SSE opening and requires recovery with no provisioning. These
+lifecycle cases run their clocks so startup backoff can progress, retaining
+the five-second connected assertions, exact 12 creations and one stream per tab.
+Both cases also pass 12 consecutive WebKit repetitions (24 checks), keeping
+fresh provisioning separate from the additional existing-stream retry scenario.
+Independent package validation GETs overlap, and an app waiting on another tab's
+setup returns after one fully-ready preflight instead of rereading the bundle.
+Query creation remains serial; source/join order is unchanged.
+The original five PNG files are unchanged. The frozen-clock
 reconnect test now advances the retry clock while the new asynchronous REST
 classification completes, under the same five-second assertion bound. Its
 connected/fresh-row/delete/no-navigation assertions are not relaxed.
@@ -161,6 +170,11 @@ pinned container's effective user. Actions otherwise supplies a
 `/github/home` owned by `pwuser`, which Firefox refuses to use as root.
 The override is scoped to the browser step; it does not change shared
 directory ownership, disable browser safeguards or skip Firefox coverage.
+
+The container job records its actual `$RUNNER_TEMP` for artifact upload. The
+host-side `runner.temp` context is not translated inside action inputs; using it
+there previously dropped Trading traces/logs even though workspace coverage was
+uploaded. Failed browser cases now retain their real diagnostics.
 
 The disposable consumer first substitutes the tarball using
 `npm install --package-lock-only --ignore-scripts`. This is intentional:
@@ -238,7 +252,7 @@ must not be presented as browser or real-server coverage.
 
 ### Measured P2 contract cost
 
-The same pinned Linux gate measured P2 after all 23 browser scenarios and the
+The same pinned Linux gate measured P2 after all 26 browser scenarios and the
 five unchanged, zero-differing-pixel PNG files passed. Only the **artifact size
 baseline** was advanced, with the original P1 bytes retained in
 `artifactChange.p1Sizes`. The 2% growth policy, every P1 coverage floor, all
@@ -246,19 +260,19 @@ included source files, dependency locks and visual expectations are unchanged.
 
 | Artifact | P1 bytes | P2 bytes | Reason for growth |
 | --- | ---: | ---: | --- |
-| Packed tarball | 110,691 | 124,896 | Runtime, declarations, source maps and the reference/error/ownership documentation |
-| Package ESM / CJS | 66,865 / 68,860 | 72,843 / 74,889 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
+| Packed tarball | 110,691 | 124,963 | Runtime, declarations, source maps and the reference/error/ownership documentation |
+| Package ESM / CJS | 66,865 / 68,860 | 72,869 / 74,915 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
 | Declarations | 18,746 | 21,140 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding |
-| Trading JS / gzip | 223,574 / 65,775 | 233,475 / 68,946 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
+| Trading JS / gzip | 223,574 / 65,775 | 233,623 / 69,004 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
 | Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
 
-The app's net runtime addition is 9,901 bytes (3,171 gzip), not a new dependency
+The app's net runtime addition is 10,049 bytes (3,229 gzip), not a new dependency
 or duplicated React/SSE implementation. Setup contains the single app mutation
 boundary; the package has no POST/PUT/PATCH/DELETE path. Do not update screenshots
 or lower coverage to accommodate future drift.
 
 P2's measured whole-package coverage is 77.02% statements / 78.76% lines /
-64.56% branches / 77.94% functions; Trading is 87.24% / 87.90% / 77.86% /
+64.56% branches / 78.06% functions; Trading is 87.31% / 87.96% / 78.06% /
 85.59%, respectively. The new Trading provisioner is 98.78% statements /
 99.25% lines / 92.59% branches / 100% functions. These improve every P1 floor;
 they are not a claim that #163's final transport/result-contract coverage targets

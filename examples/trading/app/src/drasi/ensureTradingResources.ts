@@ -141,8 +141,13 @@ async function prepare({ client, serverUrl, fetch: fetcher }: SetupOptions, sign
 
   // Preflight the whole known bundle before any write. Do not partially create
   // around an authorization, malformed-data or conflicting-definition failure.
-  for (const definition of TRADING_QUERIES) await readOptional(() => readQuery(definition), 'QUERY_NOT_FOUND');
-  await readOptional(readReaction, 'REACTION_NOT_FOUND');
+  let ready = true;
+  for (const definition of TRADING_QUERIES) {
+    const component = await readOptional(() => readQuery(definition), 'QUERY_NOT_FOUND');
+    if (component?.status !== 'Running') ready = false;
+  }
+  const reaction = await readOptional(readReaction, 'REACTION_NOT_FOUND');
+  if (ready && reaction?.status === 'Running') return;
 
   const ensure = async (
     kind: 'query' | 'reaction', id: string, body: object,

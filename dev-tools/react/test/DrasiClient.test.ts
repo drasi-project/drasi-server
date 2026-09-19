@@ -63,6 +63,30 @@ describe('connect-only DrasiClient', () => {
     expect(server.fetch.mock.calls.length).toBeGreaterThan(3);
   });
 
+  it('overlaps independent validation reads but waits for every query before opening SSE', async () => {
+    const { client, server, factory } = setup({ queryIds: ['stocks', 'other'] });
+    server.reaction.queries = ['stocks', 'other'];
+    const first = deferred<Response>(), second = deferred<Response>();
+    const read = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation((input, init) => {
+      if (String(input).includes('/queries/stocks?')) return first.promise;
+      if (String(input).includes('/queries/other?')) return second.promise;
+      return read(input, init);
+    });
+    const connected = client.initialize();
+    expect(server.fetch).toHaveBeenCalledTimes(2);
+    expect(factory.instances).toHaveLength(0);
+    second.resolve(json({ id: 'other', status: 'Running',
+      config: { id: 'other', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
+    await Promise.resolve();
+    expect(factory.instances).toHaveLength(0);
+    first.resolve(json({ id: 'stocks', status: 'Running',
+      config: { id: 'stocks', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
+    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
+    factory.instances[0].open();
+    await connected;
+  });
+
   it.each([
     ['query', 'QUERY_NOT_FOUND', 'stocks'],
     ['reaction', 'REACTION_NOT_FOUND', 'stream'],

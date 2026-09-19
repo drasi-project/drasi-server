@@ -139,9 +139,9 @@ export class DrasiClient {
 
   /** Validate references/usability, not desired query text or deployment settings. */
   async validateResources(signal?: AbortSignal): Promise<void> {
-    for (const queryId of this.queryIds) {
+    await Promise.all([...this.queryIds].map(async queryId => {
       requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
-    }
+    }));
     const reaction = await this.getReaction(signal);
     const details = this.details('reaction', this.reaction.id);
     if (reaction.config.kind !== 'sse' ||
