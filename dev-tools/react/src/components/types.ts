@@ -13,10 +13,10 @@
 // limitations under the License.
 
 import type { ReactNode } from 'react';
-import type { ResultRow } from '../client/types';
+export type { SortConfig } from '../react/useTableSort';
 
-/** Column definition for {@link QueryTable}. */
-export interface ColumnDef<T extends object = ResultRow> {
+/** Column definition shared by DataTable and QueryTable. */
+export interface ColumnDef<T extends object = Record<string, unknown>> {
   /** Property key on the data object, or a custom string for computed columns. */
   key: keyof T | string;
   /** Column header label. */
@@ -39,8 +39,8 @@ export interface ColumnDef<T extends object = ResultRow> {
   width?: string;
 }
 
-/** Row action definition (edit, delete, etc.) for {@link QueryTable}. */
-export interface RowAction<T = ResultRow> {
+/** Row action definition shared by DataTable and QueryTable. */
+export interface RowAction<T = Record<string, unknown>> {
   /** Icon element to display. */
   icon: ReactNode;
   /** Accessibility label. */
@@ -55,10 +55,4 @@ export interface RowAction<T = ResultRow> {
   disabled?: (row: T) => boolean;
   /** Whether the action is loading for this row. */
   loading?: (row: T) => boolean;
-}
-
-/** Sort configuration for {@link QueryTable}, including non-visible fields. */
-export interface SortConfig {
-  column: string;
-  direction: 'asc' | 'desc';
 }

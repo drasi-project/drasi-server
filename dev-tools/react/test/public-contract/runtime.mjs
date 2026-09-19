@@ -23,7 +23,7 @@ const server = kind === 'client' ? null : await load('react-dom/server');
 if (kind !== 'client') await load('react-dom');
 const originalGlobals = new Map();
 const accesses = [];
-for (const name of ['window', 'document', 'EventSource', 'fetch']) {
+for (const name of ['window', 'document', 'navigator', 'EventSource', 'fetch', 'requestAnimationFrame']) {
   originalGlobals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
   Object.defineProperty(globalThis, name, {
     configurable: true,
@@ -54,11 +54,125 @@ const queryOptions = {
   transform: raw => raw,
 };
 
+function checkProviderFreeTables(api) {
+  assert.equal(typeof api.DataTable, 'function');
+  assert.equal(typeof api.queryTableState, 'function');
+  for (const name of ['CodeViewerDialog', 'formatQueryConfig', 'QueryInspector']) {
+    assert.equal(api[name], undefined, `App-owned tutorial API leaked: ${name}`);
+  }
+  for (const name of ['CodeIcon', 'ExpandIcon', 'CollapseIcon']) {
+    assert.equal(typeof api[name], 'function', `Optional generic icon missing: ${name}`);
+  }
+  const rows = Object.freeze([
+    Object.freeze({ routeId: 'north', parcels: 12 }),
+    Object.freeze({ routeId: 'south', parcels: 3 }),
+    Object.freeze({ routeId: 'waiting', parcels: null }),
+    Object.freeze({ routeId: 'east', parcels: 3 }),
+  ]);
+  const columns = Object.freeze([
+    { key: 'routeId', label: 'Route' },
+    { key: 'parcels', label: 'Parcels', align: 'right' },
+    { key: 'summary', label: 'Summary', sortable: false, format: (_value, row) => `${row.routeId} delivery` },
+  ]);
+  let notifications = 0;
+  const base = {
+    rows, columns, rowKey: row => row.routeId, title: 'Warehouse deliveries',
+    onSortChange() { notifications += 1; },
+  };
+  const render = props => server.renderToString(React.createElement(api.DataTable, { ...base, ...props }));
+  const html = render({
+    defaultSort: { column: 'parcels', direction: 'asc' },
+    animateOnChange: 'parcels',
+    rowAnimations: new Map([['south', 'up']]),
+    headerActions: React.createElement('span', null, 'Dispatch desk'),
+    headerControls: React.createElement('button', { type: 'button' }, 'Export'),
+    headerSlot: React.createElement('p', null, 'App-supplied rows'),
+    actions: Object.freeze([{ icon: 'Send', label: 'Dispatch', onClick() {}, disabled: row => row.parcels === null }]),
+    renderHeader(context) {
+      assert.deepEqual(context.rows.map(row => row.routeId), ['south', 'east', 'north', 'waiting']);
+      assert.deepEqual(context.sort, { column: 'parcels', direction: 'asc' });
+      assert.equal(typeof context.setSort, 'function');
+      return React.createElement('header', null, context.defaultRender());
+    },
+    renderRow(row, definitions, animation, defaultRender) {
+      assert.equal(definitions, columns);
+      assert.equal(animation, row.routeId === 'south' ? 'up' : null);
+      return React.createElement(React.Fragment, null,
+        defaultRender(),
+        React.createElement('tr', null,
+          React.createElement('td', { colSpan: 4 }, `${row.routeId} detail`)));
+    },
+  });
+  for (const text of ['Warehouse deliveries', 'south delivery', 'north detail', 'Export', 'Dispatch desk', 'App-supplied rows']) {
+    assert(html.includes(text), `Provider-free supplied-row SSR omitted ${text}`);
+  }
+  assert(html.indexOf('south delivery') < html.indexOf('east delivery'));
+  assert(html.indexOf('east delivery') < html.indexOf('north delivery'));
+  assert(html.indexOf('north delivery') < html.indexOf('waiting delivery'));
+  assert(html.includes('aria-sort="ascending"'));
+  assert(html.includes('drasi-row--up'));
+  assert(!html.includes('View code') && !html.includes('Expand table'));
+
+  const cleared = render({ sort: null, defaultSort: { column: 'parcels', direction: 'desc' } });
+  assert(cleared.indexOf('north delivery') < cleared.indexOf('south delivery'));
+  assert(cleared.indexOf('waiting delivery') < cleared.indexOf('east delivery'));
+  assert(!cleared.includes('aria-sort='));
+  const descending = render({ sort: { column: 'parcels', direction: 'desc' } });
+  assert(descending.indexOf('waiting delivery') < descending.indexOf('north delivery'));
+  assert(descending.indexOf('north delivery') < descending.indexOf('south delivery'));
+  assert(descending.indexOf('south delivery') < descending.indexOf('east delivery'));
+  assert.deepEqual(rows.map(row => row.routeId), ['north', 'south', 'waiting', 'east']);
+  assert.equal(notifications, 0, 'SSR/default/controlled props triggered a sort callback');
+
+  const error = new Error('Warehouse refresh unavailable');
+  for (const scenario of [
+    { rows: null, state: { error, stale: true, loading: true }, calls: ['error'], table: false },
+    { rows: null, state: { loading: true }, calls: ['loading'], table: false },
+    { rows: [], state: { error, stale: true, loading: true }, calls: ['error', 'empty'], table: true },
+    { rows, state: { stale: true, loading: true }, calls: ['stale'], table: true },
+    { rows, state: { loading: true }, calls: ['loading'], table: true },
+  ]) {
+    const calls = [];
+    const slots = Object.fromEntries(['error', 'stale', 'loading', 'empty'].map(name => [
+      `render${name[0].toUpperCase()}${name.slice(1)}`,
+      context => {
+        calls.push(name);
+        assert.equal(context.rows, scenario.rows);
+        assert.equal(context.state, scenario.state);
+        assert.equal(context.sort, null);
+        assert.equal(typeof context.setSort, 'function');
+        if (name === 'error') assert.equal(context.error, error);
+        return React.createElement('span', null, `${name} content`);
+      },
+    ]));
+    const stateHtml = render({ rows: scenario.rows, state: scenario.state, ...slots });
+    assert.deepEqual(calls, scenario.calls, 'Presentation notice precedence changed');
+    assert.equal(stateHtml.includes('<table'), scenario.table, 'Supplied/absent baseline handling changed');
+    if (scenario.calls.includes('empty')) {
+      assert.match(stateHtml, /<td[^>]+colspan="3"[^>]*><span>empty content<\/span><\/td>/i);
+    }
+  }
+  const suppressed = render({
+    rows: [], state: { error }, emptyMessage: 'fallback empty',
+    renderError: () => null, renderEmpty: () => null,
+  });
+  assert(suppressed.includes('<table'));
+  assert(!suppressed.includes(error.message) && !suppressed.includes('fallback empty'));
+  const defaultError = render({ rows: null, state: { error, retry() {} } });
+  assert(defaultError.includes('role="alert"') && defaultError.includes('>Retry</button>'));
+  assert(!defaultError.includes('<table'));
+  const staleWithoutBaseline = render({ rows: null, state: { stale: true } });
+  assert(staleWithoutBaseline.includes('<table'));
+  assert(staleWithoutBaseline.includes('Showing last known data.'));
+  assert(staleWithoutBaseline.includes('No data available'));
+  assert.deepEqual(accesses, [], 'Provider-free DataTable SSR touched browser/network globals');
+}
+
 try {
   const api = await load(specifier);
   assert.deepEqual(accesses, [], `${specifier} import touched browser/network globals`);
-  setFetch(noNetwork);
   if (kind === 'client') {
+    setFetch(noNetwork);
     for (const name of ['DrasiClient', 'DrasiSSEClient', 'DrasiError',
       'accumulateResult', 'sse034ResultAdapter', 'createLegacyResultAdapter']) {
       assert.equal(typeof api[name], 'function', `Missing ${name} from client export`);
@@ -158,7 +272,44 @@ try {
         `Client import loaded React: ${file}`);
     }
   } else {
+    if (kind === 'components' || kind === 'root') checkProviderFreeTables(api);
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
+    function HeadlessConsumer() {
+      const initial = hooks.useTableSort({ defaultSort: { column: 'priority', direction: 'desc' } });
+      const controlled = hooks.useTableSort({ sort: null, defaultSort: { column: 'priority', direction: 'asc' } });
+      assert.deepEqual(initial.sort, { column: 'priority', direction: 'desc' });
+      assert.equal(controlled.sort, null);
+      assert.equal(typeof controlled.setSort, 'function');
+      assert.equal(typeof controlled.toggleSort, 'function');
+      return React.createElement('span', null, 'provider-free sort controller');
+    }
+    assert(server.renderToString(React.createElement(HeadlessConsumer)).includes('provider-free sort controller'));
+    assert.deepEqual(accesses, [], 'Headless sort SSR touched browser/network globals');
+    if (kind === 'react') {
+      for (const name of ['DataTable', 'QueryTable', 'queryTableState', 'CodeViewerDialog']) {
+        assert.equal(api[name], undefined, `Hooks runtime exports presentation: ${name}`);
+      }
+    } else {
+      const { DrasiError } = await load('@drasi/react/client');
+      const retryQuery = () => {};
+      const retryConnection = () => {};
+      for (const errorScope of [null, 'query', 'connection']) {
+        const query = Object.freeze({
+          data: null, status: errorScope === 'connection' ? 'reconnecting' : 'resynchronizing',
+          loading: false, stale: true, error: new DrasiError('SERVER_UNAVAILABLE'),
+          errorScope, lastUpdate: null, retry: retryQuery,
+        });
+        const state = api.queryTableState(query, retryConnection);
+        assert.equal(state.error, query.error);
+        assert.equal(state.stale, query.stale);
+        assert.equal(state.loading, query.loading);
+        assert.equal(state.retry, errorScope === 'connection' ? retryConnection : retryQuery);
+        assert.equal(state.retryLabel, errorScope === 'connection' ? 'Retry connection' : 'Retry query');
+        assert.equal(state.staleMessage,
+          `${errorScope === 'connection' ? 'Reconnecting' : 'Resynchronizing'}. Showing last known data.`);
+      }
+    }
+    setFetch(noNetwork);
     function HookConsumer() {
       const result = hooks.useDrasiQuery('temperatures', queryOptions);
       const definition = hooks.useDrasiQueryDefinition('temperatures');
@@ -183,16 +334,27 @@ try {
           columns: [{ key: 'stationId', label: 'Station' }],
           rowKey: row => row.stationId,
           queryOptions,
-        }),
-        React.createElement(api.CodeViewerDialog, {
-          isOpen: false, onClose() {}, title: 'Definition', reactCode: '', cypherQuery: '',
+          renderLoading(context) {
+            assert.equal(context.query.status, 'initial-loading');
+            assert.equal(context.query.errorScope, null);
+            assert.equal(typeof context.retryConnection, 'function');
+            assert.equal(context.state.retry, context.query.retry);
+            assert.equal(context.rows, null);
+            return React.createElement('span', null, 'query state slot');
+          },
         }));
     const html = server.renderToString(React.createElement(hooks.DrasiProvider, options, child));
     assert(html.includes('idle SSR consumer'));
-    if (kind !== 'react') assert(html.includes('Warehouse temperatures'));
+    if (kind !== 'react') {
+      assert(html.includes('Warehouse temperatures'));
+      assert(html.includes('query state slot'));
+      assert(!html.includes('View code') && !html.includes('Expand table'));
+    }
     if (kind === 'root') {
       assert.equal(typeof api.DrasiClient, 'function');
       assert.equal(typeof api.QueryTable, 'function');
+      assert.equal(typeof api.DataTable, 'function');
+      assert.equal(typeof api.useTableSort, 'function');
       assert.equal(typeof api.accumulateResult, 'function');
       assert.equal(typeof api.sse034ResultAdapter, 'function');
       assert.equal(typeof api.createLegacyResultAdapter, 'function');
@@ -210,7 +372,9 @@ try {
     assert.throws(() => require.resolve(privatePath), error => error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED');
     assert.throws(() => import.meta.resolve(privatePath), error => error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED');
   }
-  const proof = kind === 'client' ? 'idle construction; browser-free Node REST' : 'idle import and SSR';
+  const proof = kind === 'client' ? 'idle construction; browser-free Node REST'
+    : kind === 'react' ? 'idle import; headless and provider SSR'
+      : 'provider-free supplied-row SSR; scoped query adapter and live-table SSR';
   console.log(`Packed ${specifier} ${format}: ${proof}; explicit CSS resolves`);
 } finally {
   for (const [name, descriptor] of originalGlobals) {

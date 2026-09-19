@@ -35,3 +35,5 @@ export type {
   UseRowAnimationOptions,
   UseRowAnimationResult,
 } from './useRowAnimation';
+export { useTableSort } from './useTableSort';
+export type { SortConfig, UseTableSortOptions, UseTableSortResult } from './useTableSort';

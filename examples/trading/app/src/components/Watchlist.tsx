@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
+import type { ColumnDef, RowAction } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator, RemoveIcon, AddIcon, SelectDialog } from './shared';
 import { Stock } from '@/types';
@@ -22,7 +23,7 @@ import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display
-const CODE_SNIPPET = `<QueryTable<Stock>
+const CODE_SNIPPET = `<TradingQueryTable<Stock>
   queryId="watchlist-query"
   queryOptions={tradingQueryOptions('watchlist-query')}
   title="Watchlist"
@@ -152,7 +153,7 @@ export const Watchlist: React.FC = () => {
         </div>
       )}
       
-      <QueryTable<Stock>
+      <TradingQueryTable<Stock>
         queryId="watchlist-query"
         queryOptions={tradingQueryOptions('watchlist-query')}
         title="Watchlist"

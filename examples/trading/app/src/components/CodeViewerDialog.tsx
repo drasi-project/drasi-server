@@ -16,7 +16,6 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  useMemo,
   useRef,
   useId,
 } from 'react';
@@ -36,14 +35,15 @@ export interface CodeViewerDialogProps {
   cypherQuery: string;
   /** Optional URL to open the query in the Drasi Server UI. */
   drasiUiUrl?: string | null;
+  /** App-owned asynchronous query inspection feedback. */
+  statusSlot?: React.ReactNode;
 }
 
 type TabId = 'react' | 'cypher';
 
 /**
- * CodeViewerDialog displays the query definition alongside the consumer code
- * for a {@link QueryTable}. It is presentation-friendly (large monospace text)
- * and rendered via a portal so it never shifts when the underlying data changes.
+ * Trading's tutorial presentation. Overlay/focus ownership is deferred to P6;
+ * asynchronous definition content must remain live while this dialog is open.
  */
 export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   isOpen,
@@ -52,16 +52,13 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   reactCode,
   cypherQuery,
   drasiUiUrl,
+  statusSlot,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('cypher');
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousBodyOverflowRef = useRef<string | null>(null);
   const titleId = useId();
-
-  // Freeze the code content while the dialog is open.
-  const memoizedReactCode = useMemo(() => reactCode, [isOpen ? null : reactCode]);
-  const memoizedCypherQuery = useMemo(() => cypherQuery, [isOpen ? null : cypherQuery]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -95,7 +92,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   }, [isOpen]);
 
   const handleCopy = async () => {
-    const textToCopy = activeTab === 'react' ? memoizedReactCode : memoizedCypherQuery;
+    const textToCopy = activeTab === 'react' ? reactCode : cypherQuery;
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
@@ -124,7 +121,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 
   if (!isOpen) return null;
 
-  const currentCode = activeTab === 'react' ? memoizedReactCode : memoizedCypherQuery;
+  const currentCode = activeTab === 'react' ? reactCode : cypherQuery;
 
   return createPortal(
     <div
@@ -275,6 +272,7 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 
         {/* Code content */}
         <div className="drasi-code-dialog__content">
+          {statusSlot}
           <pre className="drasi-code-dialog__code">
             <code>{currentCode}</code>
           </pre>
