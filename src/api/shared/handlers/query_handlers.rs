@@ -32,7 +32,7 @@ use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, ComponentListItem, StatusResponse};
 use crate::persistence::ConfigPersistence;
-use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor};
+use drasi_lib::{channels::ComponentStatus, queries::LabelExtractor, ExecutionMode};
 use drasi_reaction_application::subscription::SubscriptionOptions;
 use drasi_reaction_application::ApplicationReaction;
 use futures_util::{stream, StreamExt};
@@ -391,17 +391,42 @@ pub async fn attach_query_stream(
         .map_err(ErrorResponse::from)?;
 
     let reaction_id = format!("__attach_{}_{}", id, Uuid::new_v4());
-    let (reaction, handle) = ApplicationReaction::new(reaction_id.clone(), vec![id.clone()]);
-    if let Err(e) = core.add_reaction(reaction).await {
-        return Err(ErrorResponse::new(
+    let computation_mode = core.execution_mode() == ExecutionMode::ComputationGraph;
+    let (reaction, handle) = if computation_mode {
+        ApplicationReaction::builder(reaction_id.clone())
+            .with_queries(vec![id.clone()])
+            .with_auto_start(false)
+            .build()
+    } else {
+        ApplicationReaction::new(reaction_id.clone(), vec![id.clone()])
+    };
+    let addition = if computation_mode {
+        core.add_reaction_with_handle(reaction).await.map(Some)
+    } else {
+        core.add_reaction(reaction).await.map(|()| None)
+    };
+    let component = addition.map_err(|e| {
+        ErrorResponse::new(
             error_codes::INTERNAL_ERROR,
             format!("Failed to add attach reaction: {e}"),
-        ));
-    }
+        )
+    })?;
 
-    if let Err(e) = core.start_reaction(&reaction_id).await {
+    let start_result = if let Some(component) = component {
+        component.start().await.map_err(|e| {
+            drasi_lib::DrasiError::operation_failed(
+                "reaction",
+                &reaction_id,
+                "start",
+                e.to_string(),
+            )
+        })
+    } else {
+        core.start_reaction(&reaction_id).await
+    };
+    if let Err(e) = start_result {
         let error_msg = e.to_string();
-        if !error_msg.contains("already running") {
+        if computation_mode || !error_msg.contains("already running") {
             let _ = core.remove_reaction(&reaction_id, true).await;
             return Err(ErrorResponse::new(
                 error_codes::INTERNAL_ERROR,

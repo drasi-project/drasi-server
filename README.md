@@ -87,9 +87,11 @@ curl http://localhost:8080/health
 > **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
 > bundled Web UI).
 
+This development checkout also requires the existing `drasi-core` repository
+beside `drasi-server`; see [Build from Source](#option-2-build-from-source).
+
 ```bash
-# Clone and build (server + Web UI)
-git clone https://github.com/drasi-project/drasi-server.git
+# From the parent directory containing both existing checkouts
 cd drasi-server
 make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 
@@ -226,12 +228,17 @@ DRASI_SERVER_IMAGE=ghcr.io/drasi-project/drasi-server:latest docker compose up -
 > bundled Web UI). The Docker image (Option 1) bundles a pre-built UI, so npm
 > is only needed for source builds.
 
+The `drasi-server/` and `drasi-core/` checkouts must be siblings in the same
+parent directory. Keep their currently checked-out development branches:
+the server's Drasi dependencies resolve directly into `../drasi-core`, not a
+Git revision or published Drasi crates. Local core edits are included when
+rebuilding the server, even before they are committed.
+
 ```bash
 # Install Rust if needed
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone and build (server + Web UI)
-git clone https://github.com/drasi-project/drasi-server.git
+# From the parent directory containing both existing checkouts
 cd drasi-server
 make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 
@@ -382,14 +389,16 @@ Programmatic callers can select all builders with
 `DrasiServerBuilder::with_execution_mode(ExecutionMode::ComputationGraph)`;
 without that override, explicitly supplied instance builders retain their modes.
 
-This development branch pins the complete Drasi dependency family to immutable
-core revision `c0d24bdd7360293c4473a23ee7a95a2a24acef0f`. Build reproducibly with
-`cargo build --locked --bin drasi-server`. Runtime plugins are separate shared
-libraries: use matching target/SDK artifacts built from that same revision
-(SDK/host Cargo packages 0.11.1; exported FFI protocol 0.14.0), not an automatic
-download from a moving registry tag. The plugin API's `sdkVersion` reports that
-FFI compatibility version, not the Cargo package version. Cargo's pin
-does not rebuild or replace plugin binaries.
+This development checkout uses the complete Drasi dependency family from the
+sibling `../drasi-core` repository, with the `computation` feature enabled.
+Build with `cargo build --locked --bin drasi-server`; Cargo compiles the current
+local core files rather than fetching a pinned revision or published Drasi crates.
+Runtime plugins are separate shared libraries: rebuild matching target/SDK
+artifacts from that same checkout, for example with `make build-local-plugins`.
+Do not assume plugins downloaded from a registry match local SDK changes.
+The plugin API's `sdkVersion` reports the FFI compatibility version, not the
+Cargo package version. Path dependencies do not rebuild or replace plugin
+binaries.
 
 For a real binary/plugin regression, independently verify the hashes/provenance of
 matching HTTP source and log reaction cdylibs, place them in a directory, then run:

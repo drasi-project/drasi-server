@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is the Drasi Server repository - a standalone server wrapper around DrasiLib that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. The actual core functionality is provided by the external drasi-lib library located at `../drasi-lib/`.
+This is the Drasi Server repository - a standalone server wrapper around DrasiLib that provides REST API, configuration management, and server lifecycle features for Microsoft's Drasi data processing system. Core functionality is provided by `drasi-lib` at `../drasi-core/lib/`. All Drasi dependencies use paths into the existing sibling `drasi-core` checkout, so local core edits are compiled directly without committing or fetching another revision.
 
 ## Development Commands
 
@@ -24,7 +24,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
-**Important: `[patch.crates-io]` does NOT affect plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime — they must be built separately. When developing with local drasi-core changes, always use `make build-local-plugins` to rebuild plugins from local source. Registry-downloaded plugins (`autoInstallPlugins: true`) will NOT be ABI-compatible with local drasi-core changes.
+**Important: path dependencies do NOT rebuild plugins.** Plugins are separate shared libraries loaded at runtime and must be built separately. When developing with local drasi-core changes, use `make build-local-plugins` to rebuild plugins from the same sibling checkout. Do not assume registry-downloaded plugins (`autoInstallPlugins: true`) match a locally modified SDK.
 
 - Build all plugins from local drasi-core (release): `make build-local-plugins`
 - Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
@@ -556,7 +556,7 @@ server.run().await?;
 
 ### Core Dependencies
 - Rust edition 2021 minimum
-- `drasi-lib` - External library at `../drasi-lib/`
+- `drasi-lib` - Sibling path dependency at `../drasi-core/lib/`
 - Tokio for async runtime
 - Axum for HTTP server
 - Serde for serialization

@@ -37,7 +37,7 @@ use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_lib::channels::ComponentStatus;
-use drasi_lib::DrasiLib;
+use drasi_lib::{DrasiLib, ExecutionMode};
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
 
@@ -155,7 +155,7 @@ pub async fn create_source_handler(
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
-            if auto_start {
+            if auto_start && core.execution_mode() == ExecutionMode::ComponentGraph {
                 if let Err(e) = core.start_source(&source_id).await {
                     log::warn!("Failed to auto-start source '{source_id}': {e}");
                 }
@@ -310,7 +310,7 @@ pub async fn upsert_source_handler(
         Ok(_) => {
             log::info!("Source '{source_id}' created successfully");
 
-            if auto_start {
+            if auto_start && core.execution_mode() == ExecutionMode::ComponentGraph {
                 if let Err(e) = core.start_source(&source_id).await {
                     log::warn!("Failed to auto-start source '{source_id}': {e}");
                 }

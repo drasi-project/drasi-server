@@ -43,10 +43,8 @@ else
     SERVER_BIN := drasi-server
 endif
 
-# Auto-discover volume mounts for cross-compilation from local [patch.crates-io] paths.
-# When developing with local path overrides in .cargo/config.toml, cross needs those
-# directories mounted into its Docker container. If no local patches exist (crates
-# come from crates.io), this produces an empty value and cross works normally.
+# Discover extra cross-compilation mounts for optional path patches in .cargo/config.toml.
+# The server's sibling Drasi dependencies are declared directly in Cargo.toml.
 CROSS_PATCH_VOLUMES := $(shell \
   grep -oP 'path\s*=\s*"\K[^"]+' .cargo/config.toml 2>/dev/null | \
   while read p; do \
@@ -247,8 +245,8 @@ build-local-test-plugins:
 	@echo "=== Test plugins ready in target/debug/plugins/ ==="
 
 # Build ALL cdylib plugins from local ../drasi-core (release mode) and copy to target/release/plugins/.
-# Use this when developing with [patch.crates-io] pointing to local drasi-core, so plugins match
-# the server binary. Registry-downloaded plugins will NOT be ABI-compatible with local changes.
+# Rebuild these separately from the server's sibling path dependencies so artifacts match.
+# Registry-downloaded plugins may not match a locally modified SDK.
 build-local-plugins:
 	@echo "=== Building all cdylib plugins from local drasi-core (release) ==="
 	cd ../drasi-core && make build-plugins-release

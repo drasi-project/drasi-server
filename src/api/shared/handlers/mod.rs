@@ -35,6 +35,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::error::{error_codes, ErrorDetail, ErrorResponse};
 use super::responses::{
@@ -154,6 +155,37 @@ pub(crate) async fn sse_event_async<T: Serialize>(payload: T) -> Option<Result<E
     sse_event(payload)
 }
 
+const COMPUTATION_CREATION_TIMEOUT: Duration = Duration::from_secs(30);
+
+// Limit the health wait, not the already-committed node's realization.
+pub(crate) async fn wait_for_computation_creation(
+    core: &DrasiLib,
+    component_type: &str,
+    id: &str,
+) -> drasi_lib::Result<drasi_lib::computation::v1::ComponentHandle> {
+    let health_error = |reason: String| {
+        drasi_lib::DrasiError::operation_failed(
+            component_type,
+            id,
+            "wait_created",
+            format!("Node was added, but {reason}"),
+        )
+    };
+    let handle = core
+        .computation_component(id)
+        .map_err(|e| health_error(format!("creation health could not be inspected: {e}")))?;
+    tokio::time::timeout(COMPUTATION_CREATION_TIMEOUT, handle.wait_created())
+        .await
+        .map_err(|_| {
+            health_error(format!(
+                "creation was not confirmed within {} seconds; it may still be pending or blocked",
+                COMPUTATION_CREATION_TIMEOUT.as_secs()
+            ))
+        })?
+        .map_err(|e| health_error(format!("creation was not confirmed: {e}")))?;
+    Ok(handle)
+}
+
 /// Helper to persist configuration after a successful in-memory mutation.
 ///
 /// **Important contract:** the in-memory state has already been mutated
@@ -249,4 +281,128 @@ pub async fn list_instances(
     }
 
     Json(ApiResponse::success(data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wait_for_computation_creation;
+    use async_trait::async_trait;
+    use drasi_lib::{
+        computation::v1::{
+            ComponentDescriptor, ComponentId, ComputationComponent, GraphChangeCodec,
+            InputEnvelope, OutputEnvelope, PipeRequirements, PortDescriptor, PortDirection, PortId,
+            RealizationState, Transformer,
+        },
+        DrasiError, DrasiLib, ExecutionMode,
+    };
+    use std::{task::Poll, time::Duration};
+
+    struct UnconnectedTransformer {
+        descriptor: ComponentDescriptor,
+    }
+
+    #[async_trait]
+    impl ComputationComponent for UnconnectedTransformer {
+        fn descriptor(&self) -> &ComponentDescriptor {
+            &self.descriptor
+        }
+
+        async fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Transformer for UnconnectedTransformer {
+        async fn transform(
+            &mut self,
+            _input: InputEnvelope,
+        ) -> anyhow::Result<Vec<OutputEnvelope>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
+        let core = DrasiLib::builder()
+            .with_id("blocked-transformer-timeout")
+            .with_execution_mode(ExecutionMode::ComputationGraph)
+            .build()
+            .await
+            .unwrap();
+        core.start().await.unwrap();
+        let id = "unconnected-transformer";
+        let ports = [("in", PortDirection::Input), ("out", PortDirection::Output)]
+            .into_iter()
+            .map(|(name, direction)| {
+                PortDescriptor::new(
+                    PortId::try_new(name).unwrap(),
+                    direction,
+                    GraphChangeCodec::schema().descriptor().clone(),
+                    PipeRequirements::default(),
+                )
+            })
+            .collect();
+        let handle = core
+            .add_transformer_with_handle(UnconnectedTransformer {
+                descriptor: ComponentDescriptor::try_new(ComponentId::try_new(id).unwrap(), ports)
+                    .unwrap(),
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let observed = handle.observed().unwrap();
+                assert!(observed.failure.is_none(), "{observed:?}");
+                if observed.realization == RealizationState::Blocked {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("a valid transformer with unconnected ports must become Blocked");
+
+        let started = tokio::time::Instant::now();
+        let mut creation = Box::pin(wait_for_computation_creation(&core, "transformer", id));
+        assert!(futures_util::poll!(&mut creation).is_pending());
+        tokio::time::advance(Duration::from_millis(29_999)).await;
+        assert!(futures_util::poll!(&mut creation).is_pending());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        let error = match futures_util::poll!(&mut creation) {
+            Poll::Ready(result) => result.unwrap_err(),
+            Poll::Pending => panic!("the creation health wait must expire at 30 seconds"),
+        };
+        assert_eq!(started.elapsed(), Duration::from_secs(30));
+        assert!(
+            matches!(
+                &error,
+                DrasiError::OperationFailed {
+                    component_type,
+                    component_id,
+                    operation,
+                    reason,
+                } if component_type == "transformer"
+                    && component_id == id
+                    && operation == "wait_created"
+                    && reason.contains("Node was added")
+                    && reason.contains("30 seconds")
+            ),
+            "{error}"
+        );
+        let observed = handle.observed().unwrap();
+        assert_eq!(observed.realization, RealizationState::Blocked);
+        assert!(observed.failure.is_none(), "{observed:?}");
+        assert_eq!(
+            core.computation_component(id).unwrap().generation(),
+            handle.generation()
+        );
+        tokio::time::resume();
+        core.shutdown().await.unwrap();
+    }
 }

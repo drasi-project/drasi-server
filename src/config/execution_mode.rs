@@ -32,6 +32,9 @@ use serde::{Deserialize, Serialize};
 pub enum ExecutionModeConfig {
     #[default]
     ComponentGraph,
+    /// Adds acknowledge graph node creation. Validation, initialization and
+    /// automatic activation continue on the node; inspect its status for the
+    /// outcome. Explicit start operations still report startup failures.
     ComputationGraph,
 }
 

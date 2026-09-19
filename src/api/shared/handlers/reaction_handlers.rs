@@ -36,6 +36,7 @@ use crate::factories::create_reaction_locked;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
 use drasi_lib::channels::ComponentStatus;
+use drasi_lib::ExecutionMode;
 use futures_util::{stream, StreamExt};
 use tokio::sync::broadcast;
 
@@ -113,7 +114,7 @@ pub async fn create_reaction_handler(
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
-            if auto_start {
+            if auto_start && core.execution_mode() == ExecutionMode::ComponentGraph {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
                     log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
                 }
@@ -244,7 +245,7 @@ pub async fn upsert_reaction_handler(
         Ok(_) => {
             log::info!("Reaction '{reaction_id}' created successfully");
 
-            if auto_start {
+            if auto_start && core.execution_mode() == ExecutionMode::ComponentGraph {
                 if let Err(e) = core.start_reaction(&reaction_id).await {
                     log::warn!("Failed to auto-start reaction '{reaction_id}': {e}");
                 }

@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::persist_after_operation;
+use super::{persist_after_operation, wait_for_computation_creation};
 use crate::api::models::ConfigValue;
 use crate::api::models::{BootstrapProviderConfig, BootstrapProviderRef};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
@@ -30,7 +30,7 @@ use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::{ConfigurationSnapshot, DrasiLib};
+use drasi_lib::{ConfigurationSnapshot, DrasiLib, ExecutionMode};
 
 /// Request body for creating a new instance
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -251,8 +251,9 @@ pub struct CloneInstanceResponse {
 ///
 /// Takes an atomic snapshot of the source instance and recreates all
 /// components (sources, queries, reactions) in the target instance.
-/// All cloned components are created in the stopped state.
-/// On failure, already-created components are rolled back.
+/// All cloned components have auto-start disabled.
+/// Legacy creation failures roll back previously created components. Computation
+/// mode retains added nodes and reports their creation failures in the response.
 pub async fn clone_instance(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
@@ -295,6 +296,8 @@ pub async fn clone_instance(
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
     let mut reactions_created: Vec<String> = Vec::new();
+    let computation_mode = target_core.execution_mode() == ExecutionMode::ComputationGraph;
+    let mut errors = Vec::new();
 
     // Phase 1: Create sources
     for src_snap in &snapshot.sources {
@@ -329,6 +332,10 @@ pub async fn clone_instance(
                 Ok(s) => s,
                 Err(e) => {
                     log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
+                    if computation_mode {
+                        errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
+                        continue;
+                    }
                     let rb = rollback_sources(&target_core, &sources_created).await;
                     return Err(clone_error(
                         error_codes::SOURCE_CREATE_FAILED,
@@ -345,6 +352,10 @@ pub async fn clone_instance(
             .await
         {
             log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
+            if computation_mode {
+                errors.push(format!("Failed to add source '{}': {e}", src_snap.id));
+                continue;
+            }
             let rb = rollback_sources(&target_core, &sources_created).await;
             return Err(clone_error(
                 error_codes::SOURCE_CREATE_FAILED,
@@ -369,6 +380,20 @@ pub async fn clone_instance(
         }
 
         sources_created.push(src_snap.id.clone());
+        if computation_mode {
+            if let Err(e) =
+                wait_for_computation_creation(&target_core, "source", &src_snap.id).await
+            {
+                log::warn!(
+                    "Clone: source '{}' was added but creation failed: {e}",
+                    src_snap.id
+                );
+                errors.push(format!(
+                    "Source '{}' was added but creation failed: {e}",
+                    src_snap.id
+                ));
+            }
+        }
     }
 
     // Phase 2: Create queries
@@ -382,6 +407,10 @@ pub async fn clone_instance(
 
         if let Err(e) = target_core.add_query(query_config).await {
             log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
+            if computation_mode {
+                errors.push(format!("Failed to add query '{}': {e}", q_snap.id));
+                continue;
+            }
             let mut rb = rollback_queries(&target_core, &queries_created).await;
             rb.extend(rollback_sources(&target_core, &sources_created).await);
             return Err(clone_error(
@@ -394,6 +423,20 @@ pub async fn clone_instance(
         }
 
         queries_created.push(q_snap.id.clone());
+        if computation_mode {
+            if let Err(e) =
+                wait_for_computation_creation(&target_core, "query", &q_snap.id).await
+            {
+                log::warn!(
+                    "Clone: query '{}' was added but creation failed: {e}",
+                    q_snap.id
+                );
+                errors.push(format!(
+                    "Query '{}' was added but creation failed: {e}",
+                    q_snap.id
+                ));
+            }
+        }
     }
 
     // Phase 3: Create reactions
@@ -419,6 +462,10 @@ pub async fn clone_instance(
                 Ok(r) => r,
                 Err(e) => {
                     log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
+                    if computation_mode {
+                        errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
+                        continue;
+                    }
                     let mut rb = rollback_reactions(&target_core, &reactions_created).await;
                     rb.extend(rollback_queries(&target_core, &queries_created).await);
                     rb.extend(rollback_sources(&target_core, &sources_created).await);
@@ -437,6 +484,10 @@ pub async fn clone_instance(
             .await
         {
             log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
+            if computation_mode {
+                errors.push(format!("Failed to add reaction '{}': {e}", rx_snap.id));
+                continue;
+            }
             let mut rb = rollback_reactions(&target_core, &reactions_created).await;
             rb.extend(rollback_queries(&target_core, &queries_created).await);
             rb.extend(rollback_sources(&target_core, &sources_created).await);
@@ -450,6 +501,20 @@ pub async fn clone_instance(
         }
 
         reactions_created.push(rx_snap.id.clone());
+        if computation_mode {
+            if let Err(e) =
+                wait_for_computation_creation(&target_core, "reaction", &rx_snap.id).await
+            {
+                log::warn!(
+                    "Clone: reaction '{}' was added but creation failed: {e}",
+                    rx_snap.id
+                );
+                errors.push(format!(
+                    "Reaction '{}' was added but creation failed: {e}",
+                    rx_snap.id
+                ));
+            }
+        }
     }
 
     persist_after_operation(&config_persistence, "cloning instance").await?;
@@ -464,11 +529,11 @@ pub async fn clone_instance(
     );
 
     Ok(Json(ApiResponse::success(CloneInstanceResponse {
-        success: true,
+        success: errors.is_empty(),
         sources_created,
         queries_created,
         reactions_created,
-        errors: Vec::new(),
+        errors,
     })))
 }
 
