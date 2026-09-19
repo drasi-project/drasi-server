@@ -20,7 +20,10 @@ function Probe({ observe = () => {} }: { observe?: (errors: (DrasiError | null |
   const definition = useDrasiQueryDefinition('stocks');
   const ui = useDrasiServerUiUrl();
   const query = useDrasiQuery<{ id: string; value: number }>('stocks', {
-    getKey: row => row.id,
+    getKey: row => {
+      if (typeof row.id !== 'string') throw new Error('Expected raw row ID');
+      return row.id;
+    },
     transform: row => {
       if (typeof row.id !== 'string') throw new Error('Expected row ID');
       return { id: row.id, value: Number(row.value) };
@@ -94,7 +97,7 @@ describe('typed failures through all React bindings', () => {
     expect(factory.instances.every(source => source.closed)).toBe(true);
   });
 
-  it('preserves delete markers through transforms and surfaces malformed live payloads', async () => {
+  it('applies sparse deletes without transforms and surfaces malformed live payloads', async () => {
     const server = new ReadServer(), factory = fakeEventSourceFactory(), observe = vi.fn();
     render(<DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={factory.create}>
       <Probe observe={observe} />
@@ -104,13 +107,16 @@ describe('typed failures through all React bindings', () => {
     await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[{"id":"A","value":10}]'));
     expect(screen.getByTestId('ui').textContent).toContain(encodeURIComponent(refs.instanceId));
     act(() => factory.instances[0].message({
-      queryId: 'stocks', data: { id: 'A', value: '10', _deleted: true },
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'DELETE', data: { id: 'A' } }],
     }));
     await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[]'));
     act(() => factory.instances[0].onmessage?.(new MessageEvent('message', { data: 'broken json' })));
     await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('malformed'));
     const errors = observe.mock.calls[observe.mock.calls.length - 1][0];
     expect(errors.every((error: unknown) => error === errors[0])).toBe(true);
+    expect(errors[0]).toMatchObject({
+      code: 'INVALID_PAYLOAD', instanceId: refs.instanceId, resourceKind: 'reaction', resourceId: 'stream',
+    });
     expect(factory.instances[0].closed).toBe(true);
   });
 

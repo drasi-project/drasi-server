@@ -21,6 +21,7 @@ export function configurationKey(options: DrasiClientOptions): string | null {
       reconnect?.initialReconnectDelayMs ?? 1000,
       reconnect?.maxReconnectDelayMs ?? 30000,
       reconnect?.connectionTimeoutMs ?? 10000,
+      options.reconciliation?.maxPendingChanges ?? 10000,
     ]);
   } catch {
     // Invalid configuration is surfaced by the provider, not thrown during render.

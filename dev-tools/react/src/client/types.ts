@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import type { DrasiError } from './errors';
+import type { DrasiError, DrasiErrorDetails } from './errors';
 
 /** JSON values in opaque, plugin-owned read-only configuration. */
 export type JsonValue = null | boolean | number | string
@@ -12,14 +12,74 @@ export type JsonValue = null | boolean | number | string
 /** Validated object row. Applications must narrow/transform its unknown fields. */
 export type ResultRow = Record<string, unknown>;
 
-/** Existing snapshot/delta boundary; not an ordered or atomic server cursor. */
-export interface QueryResult<T = ResultRow> {
-  queryId: string;
-  /** Legacy deletions carry `_deleted: true`; identity/adapters are a separate contract. */
-  data: T[];
-  /** Epoch milliseconds. This is not a server ordering guarantee. */
-  timestamp: number;
-  snapshot?: boolean;
+/** Insert/replace by the application's stable key, or an explicit before/after change. */
+export type ResultChange<T = ResultRow> =
+  | { readonly kind: 'upsert'; readonly after: T }
+  | { readonly kind: 'update'; readonly before: T; readonly after: T }
+  | { readonly kind: 'delete'; readonly before: T };
+
+export interface QuerySnapshot<T = ResultRow> {
+  readonly kind: 'snapshot';
+  readonly queryId: string;
+  readonly rows: readonly T[];
+  /** Local receipt time for display only, never an ordering cursor. */
+  readonly receivedAt: number;
+}
+
+export interface QueryDelta<T = ResultRow> {
+  readonly kind: 'delta';
+  readonly queryId: string;
+  readonly changes: readonly ResultChange<T>[];
+  readonly receivedAt: number;
+  /** SSE reaction wall-clock time, when supplied. Not a snapshot cursor. */
+  readonly sourceTimestamp?: number;
+}
+
+/** The only accumulated-result boundary. Wire alternatives must use a named adapter. */
+export type QueryResult<T = ResultRow> = QuerySnapshot<T> | QueryDelta<T>;
+
+export interface ResultAdapterContext extends Readonly<DrasiErrorDetails> {
+  readonly receivedAt: number;
+}
+
+/** Synchronous wire validation/normalization. Empty output means a validated heartbeat/no-op. */
+export type ResultAdapter = (
+  payload: unknown,
+  context: ResultAdapterContext,
+) => readonly QueryDelta[];
+
+export interface LegacyResultAdapterOptions {
+  /** Only consulted for payloads without either query ID spelling. Never overrides an envelope ID. */
+  routeUnidentified?: RouteUnidentified;
+}
+
+/** Raw identity must also work on sparse deletes. No default, transform, or serialization fallback. */
+export type RowKey = (row: Readonly<ResultRow>) => string;
+
+export type QueryStatus =
+  | 'initial-loading' | 'live' | 'empty' | 'reconnecting' | 'resynchronizing'
+  | 'stale-last-good-data' | 'terminal-error';
+
+export type QueryErrorScope = 'query' | 'connection';
+
+/** Subscription work state; hooks additionally distinguish an empty accumulated result set. */
+export interface QuerySubscriptionState {
+  readonly status: Exclude<QueryStatus, 'empty'>;
+  readonly stale: boolean;
+  readonly error: DrasiError | null;
+  readonly errorScope: QueryErrorScope | null;
+}
+
+/** Calling the handle unsubscribes; retry restarts only this subscription's REST reconciliation. */
+export interface QuerySubscription {
+  (): void;
+  retry(): void;
+  getState(): QuerySubscriptionState;
+}
+
+export interface ResultReconciliationOptions {
+  /** Maximum changes observed during a pending snapshot (default 10000), not a result-set limit. */
+  maxPendingChanges?: number;
 }
 
 /** Live transport status, not proof that each query snapshot is synchronized. */

@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import {
   useDrasiQuery,
+  useDrasiClient,
   useDrasiQueryDefinition,
   useDrasiServerUiUrl,
 } from '../react/DrasiContext';
@@ -35,14 +36,14 @@ export interface QueryTableProps<T extends object = ResultRow> {
   queryId: string;
   /** Column definitions. */
   columns: ColumnDef<T>[];
-  /** Function to extract a unique key for each row. */
+  /** Stable render/animation key on the transformed row, independent of the required raw getKey. */
   rowKey: (row: T) => string;
 
   /**
    * Options that control how the query's result batches are folded into rows
    * (key extraction, normalization, sort/filter). See {@link UseDrasiQueryOptions}.
    */
-  queryOptions?: UseDrasiQueryOptions<T>;
+  queryOptions: UseDrasiQueryOptions<T>;
 
   // Optional props
   /** Card title. */
@@ -246,20 +247,32 @@ function formatQueryConfig(config: QueryConfig): string {
  *   renders the live result set as a table.
  * - Sortable columns, optional row actions, value-change animations, expand to
  *   full screen, and a code viewer showing the query definition.
- * - Fully data-model agnostic: callers supply `columns`, `rowKey`, and optional
+ * - Fully data-model agnostic: callers supply `columns`, `rowKey`, and required
  *   `queryOptions` (key/transform/sort).
  *
  * @example
  * ```tsx
- * <QueryTable<Stock>
- *   queryId="watchlist-query"
+ * <QueryTable<{ device: string; reading: number }>
+ *   queryId="readings"
  *   columns={[
- *     { key: 'symbol', label: 'Symbol' },
- *     { key: 'price', label: 'Price', format: (_, row) => formatCurrency(row.price), align: 'right' },
+ *     { key: 'device', label: 'Device' },
+ *     { key: 'reading', label: 'Reading', format: (_, row) => row.reading.toFixed(2) },
  *   ]}
- *   rowKey={(row) => row.symbol}
- *   defaultSort={{ column: 'symbol', direction: 'asc' }}
- *   animateOnChange="price"
+ *   queryOptions={{
+ *     getKey: row => {
+ *       if (typeof row.device !== 'string') throw new Error('Expected device identity');
+ *       return row.device;
+ *     },
+ *     transform: row => {
+ *       if (typeof row.device !== 'string' || typeof row.reading !== 'number') {
+ *         throw new Error('Expected a reading row');
+ *       }
+ *       return { device: row.device, reading: row.reading };
+ *     },
+ *   }}
+ *   rowKey={(row) => row.device}
+ *   defaultSort={{ column: 'device', direction: 'asc' }}
+ *   animateOnChange="reading"
  * />
  * ```
  */
@@ -285,17 +298,11 @@ export function QueryTable<T extends object = ResultRow>({
   headerSlot,
   codeSnippet,
 }: QueryTableProps<T>): React.ReactElement {
-  const effectiveQueryOptions = useMemo<UseDrasiQueryOptions<T>>(
-    () => ({
-      ...queryOptions,
-      getKey: queryOptions?.getKey ?? rowKey,
-    }),
-    [queryOptions, rowKey],
-  );
-  const { data, loading, error } = useDrasiQuery<T>(
+  const { data, loading, error, stale, status, errorScope, retry } = useDrasiQuery<T>(
     queryId,
-    effectiveQueryOptions,
+    queryOptions,
   );
+  const { retry: retryConnection } = useDrasiClient();
   const [sort, setSort] = useState<SortConfig | undefined>(defaultSort);
   const [showCodeViewer, setShowCodeViewer] = useState(false);
   const drasiUiUrl = useDrasiServerUiUrl();
@@ -608,8 +615,19 @@ export function QueryTable<T extends object = ResultRow>({
     );
   }
 
-  // Error state
-  if (error) {
+  const recovery = error ? (
+    <div className="drasi-query-table__error" role="alert">
+      <span>Error: {error.message}</span>
+      {stale && <span> Showing last known data.</span>}{' '}
+      <button type="button" onClick={errorScope === 'connection' ? retryConnection : retry}>
+        {errorScope === 'connection' ? 'Retry connection' : 'Retry query'}
+      </button>
+    </div>
+  ) : stale ? (
+    <div role="status">{status === 'reconnecting' ? 'Reconnecting' : 'Resynchronizing'}. Showing last known data.</div>
+  ) : null;
+
+  if (error && !data) {
     return (
       <div
         className={clsx(
@@ -619,7 +637,7 @@ export function QueryTable<T extends object = ResultRow>({
         )}
       >
         {title && <h2 className="drasi-query-table__state-title">{title}</h2>}
-        <div className="drasi-query-table__error">Error: {error.message}</div>
+        {recovery}
       </div>
     );
   }
@@ -653,6 +671,7 @@ export function QueryTable<T extends object = ResultRow>({
   // Renders the full table card content (shared between normal and expanded views)
   const renderTableCard = (isExpanded: boolean, isAnimating: boolean) => (
     <>
+      {recovery}
       {/* Header */}
       {(title || headerActions || codeSnippet) && (
         <div className="drasi-query-table__header">

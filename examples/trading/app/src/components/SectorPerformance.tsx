@@ -23,6 +23,7 @@ import clsx from 'clsx';
 // Code snippet for presentation display
 const CODE_SNIPPET = `<QueryTable<SectorPerformance>
   queryId="sector-performance-query"
+  queryOptions={tradingQueryOptions('sector-performance-query')}
   title="Sector Performance"
   columns={[
     { key: 'sector', label: 'Sector' },

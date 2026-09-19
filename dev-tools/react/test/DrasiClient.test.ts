@@ -301,21 +301,30 @@ describe('snapshot/live lifecycle', () => {
     ));
   });
 
-  it('subscribes before snapshot fetch and replays queued deltas afterward', async () => {
-    const { client, server, factory, open } = setup();
+  it.each([10, 12])('refreshes a snapshot valued %s overlapping delta 11 instead of guessing its ordering', async price => {
+    vi.useFakeTimers();
+    const { client, server, factory, open } = setup({
+      reconnect: { maxReconnectAttempts: 1, initialReconnectDelayMs: 10 },
+    });
     const snapshot = deferred<Response>();
     server.snapshot = () => snapshot.promise;
     await open();
-    const batches = vi.fn();
-    client.subscribe('stocks', batches);
-    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A', price: 11 } });
+    const batches = vi.fn(), errors = vi.fn();
+    const subscription = client.subscribe('stocks', batches, errors);
+    factory.instances[0].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
+    });
     expect(batches).not.toHaveBeenCalled();
-    snapshot.resolve(json([{ id: 'A', price: 10 }]));
-    await vi.waitFor(() => expect(batches).toHaveBeenCalledTimes(2));
+    snapshot.resolve(json([{ id: 'A', price }]));
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledOnce());
+    expect(subscription.getState()).toMatchObject({ status: 'resynchronizing', error: { code: 'SNAPSHOT_OVERLAP' } });
+    expect(batches).not.toHaveBeenCalled();
+    server.snapshot = () => Promise.resolve(json([{ id: 'A', price: 13 }]));
+    await vi.advanceTimersByTimeAsync(10);
     expect(batches.mock.calls.map(([batch]) => batch)).toEqual([
-      expect.objectContaining({ snapshot: true, data: [{ id: 'A', price: 10 }] }),
-      expect.objectContaining({ data: [{ id: 'A', price: 11 }] }),
+      expect.objectContaining({ kind: 'snapshot', rows: [{ id: 'A', price: 13 }] }),
     ]);
+    expect(subscription.getState()).toMatchObject({ status: 'live', error: null, stale: false });
   });
 
   it('reports transient snapshot errors and recovers within capped retries', async () => {
@@ -327,20 +336,22 @@ describe('snapshot/live lifecycle', () => {
     client.subscribe('stocks', onResult, onError);
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
     expect(onError.mock.calls[0][0]).toBeInstanceOf(DrasiError);
-    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A', price: 11 } });
+    factory.instances[0].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 11 } }],
+    });
     expect(onResult).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(onResult.mock.calls[0][0]).toMatchObject({ snapshot: true, data: [{ id: 'A', price: 12 }] });
+    expect(onResult.mock.calls[0][0]).toMatchObject({ kind: 'snapshot', rows: [{ id: 'A', price: 12 }] });
   });
 
-  it('fetches a fresh snapshot and buffers live deltas after reconnecting', async () => {
+  it('refreshes known reconnect overlap without replaying potentially older buffered data', async () => {
     vi.useFakeTimers();
     const { client, server, factory, open } = setup({
       reconnect: { maxReconnectAttempts: 2, initialReconnectDelayMs: 10 },
     });
     await open();
-    const onResult = vi.fn();
-    const stop = client.subscribe('stocks', onResult);
+    const onResult = vi.fn(), onError = vi.fn();
+    const stop = client.subscribe('stocks', onResult, onError);
     await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
     const snapshot = deferred<Response>();
     server.snapshot = () => snapshot.promise;
@@ -348,13 +359,17 @@ describe('snapshot/live lifecycle', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(factory.instances).toHaveLength(2);
     factory.instances[1].open();
-    factory.instances[1].message({ queryId: 'stocks', data: { id: 'A', price: 13 } });
+    factory.instances[1].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A', price: 13 } }],
+    });
     expect(onResult).toHaveBeenCalledOnce();
     snapshot.resolve(json([{ id: 'A', price: 12 }]));
-    await vi.waitFor(() => expect(onResult).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(stop.getState()).toMatchObject({ status: 'resynchronizing', stale: true });
+    server.snapshot = () => Promise.resolve(json([{ id: 'A', price: 13 }]));
+    await vi.advanceTimersByTimeAsync(10);
     expect(onResult.mock.calls.slice(1).map(([batch]) => batch)).toEqual([
-      expect.objectContaining({ snapshot: true, data: [{ id: 'A', price: 12 }] }),
-      expect.objectContaining({ data: [{ id: 'A', price: 13 }] }),
+      expect.objectContaining({ kind: 'snapshot', rows: [{ id: 'A', price: 13 }] }),
     ]);
     stop();
   });
@@ -371,7 +386,9 @@ describe('snapshot/live lifecycle', () => {
     await vi.runAllTimersAsync();
     expect(server.snapshot).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledTimes(3);
-    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A' } });
+    factory.instances[0].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { id: 'A' } }],
+    });
     expect(onResult).not.toHaveBeenCalled();
   });
 

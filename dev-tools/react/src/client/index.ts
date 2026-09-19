@@ -28,3 +28,5 @@ export type {
   EventSourceLike,
 } from './DrasiSSEClient';
 export type * from './types';
+export { sse034ResultAdapter, createLegacyResultAdapter } from './results';
+export { accumulateResult } from './accumulation';

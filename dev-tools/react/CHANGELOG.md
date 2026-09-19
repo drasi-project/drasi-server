@@ -8,12 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- P4 / #163 Part B normalized `ResultChange`, `QuerySnapshot`, `QueryDelta` and
+  `QueryResult` contracts, exported with adapters and the framework-independent
+  `accumulateResult` raw reducer through `/client` and root.
+- Strict default `sse034ResultAdapter` for pinned, untemplated SSE 0.3.4;
+  explicit `createLegacyResultAdapter` for legacy op/lowercase/keyed/batch
+  formats and app-owned unidentified routing. Custom adapter output is also
+  runtime-validated. Source-defined aggregation with null `before` becomes an
+  upsert. Noop contributes no changes; empty normalized batches, heartbeat and
+  valid unsubscribed batches are ignored rather than treated as corrupt results.
+- Named callable `QuerySubscription` cleanup handles with query-local `.retry()`
+  and `.getState()`, an optional subscription-state callback, and hook
+  `status`, `stale`, `errorScope` and `retry`. Per-query processing/subscription
+  REST faults are isolated while the transport stays healthy; low-level SSE
+  exposes `getQueryError`. Initial/shared reconnect validation still checks
+  every configured reference and may fail the shared connection.
+- Bounded known-overlap recovery with retryable `SNAPSHOT_OVERLAP` and
+  `RESULT_BUFFER_OVERFLOW`. Pending changes are counted, not retained/replayed;
+  `reconciliation.maxPendingChanges` defaults to 10000 and does not cap result
+  size. Exhaustion is terminal and can retain useful stale last-good data.
+- Terminal `INVALID_ROW_KEY`, `RESULT_PROCESSING_FAILED` and
+  `UNROUTABLE_RESULT` errors, with existing typed error identity preserved.
+- Adapter context includes optional read-only `DrasiErrorDetails` and required
+  receipt metadata. New unidentified stream faults retain configured reaction
+  details, while keyed faults carry query details; existing context literals
+  remain valid.
 - Real `@drasi/react/client`, `/react` and `/components` ESM/CommonJS exports
   with `.d.ts`/`.d.cts` declarations. The client runtime/type graph is
   React-independent; hooks do not import composed components or CSS. Root and
   explicit `styles.css` imports remain supported.
 - Complete guarded v1 read DTOs, validated object-row boundaries, scoped
   component links and versioned unmodified real-server contract fixtures.
+- Package-local SSE 0.3.4 evidence: all 20 original recording lines copied
+  verbatim into `test/fixtures/server-v1/sse-0.3.4.ndjson`, with exact upstream
+  tag/revision/serializer provenance recorded in `contract.json`.
+- Portable `test/ResultRegression.test.jsx` proof: the same three behavioral
+  cases fail with observable wrong results on archived P3 `a0569c2` and pass
+  on P4, covering raw identity before projection/sparse deletion, key-changing
+  official updates and bounded refresh instead of overlapping snapshot replay.
+  Real provider/client/transport implementations are exercised.
 - Shared request credentials, copied headers and asynchronous per-request auth
   providers. Custom stream factories receive headers/credentials/cancellation;
   unsupported native EventSource auth fails explicitly when opening a stream.
@@ -40,10 +73,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `useDrasiServerUiUrl`, `useDrasiQueryDefinition`, `QueryTable`,
   `CodeViewerDialog`, `useRowAnimation`, and the low-level `DrasiClient` /
   `DrasiSSEClient` classes.
-- Package-owned namespaced CSS, lifecycle-safe SSE reconnection,
-  snapshot/delta buffering (not an atomic handoff), and package/consumer CI.
+- Package-owned namespaced CSS, lifecycle-safe SSE reconnection and
+  package/consumer CI.
 
 ### Changed
+- `useDrasiQuery` now requires options containing a nonempty stable raw `getKey`
+  and `transform`, including `row => row` for raw reads. Generic output does
+  not assert a wire schema. Identity precedes projection; sparse deletes never
+  run transforms. Key-changing updates remove the old identity; upserts are
+  idempotent by key, with no value-based deduplication or fallback identity.
+- A null transform hides a retained raw identity rather than deleting it.
+  `getKey`, `transform` and pure derived `postProcess` changes immediately
+  reproject raw state without a new subscription/socket. `QueryTable` requires
+  `queryOptions`; its transformed `rowKey` is not an accumulation fallback.
+- `QueryTable` preserves available last-good rows with the existing error
+  styling, offers scope-appropriate Retry query / Retry connection, and shows
+  stale reconnect/resync messages only on the exceptional recovery path.
+  Healthy table presentation and CSS are unchanged; this is not the #164 UI
+  composition/accessibility redesign.
+- Connection options replace top-level `routeUnidentified` with `resultAdapter`.
+  Explicit IDs precede legacy routing. Unidentified routing must synchronously
+  deliver all original callback row references and may fan out; its before/after
+  updates are flattened into delete-before then upsert-after, a documented
+  compatibility limit. Only the selected legacy adapter interprets `_deleted`.
+- Snapshots/deltas use discriminated `rows`/`changes`, not legacy
+  `data`/`snapshot` flags. Receipt/source timestamps are display metadata only;
+  unsafe upstream `u64` JSON `row_signature`s are not row identities.
+- Any known snapshot/delta overlap rejects the ambiguous candidate and
+  resynchronizes instead of replaying a guessed order. A no-known-overlap
+  baseline remains best effort; delayed events and cross-transport causality
+  prevent an atomic, gap-free or exactly-once handoff. The pinned SSE 0.3.4
+  serializer does not transmit the library's internal sequence.
+- Tests expose the undetectable delayed-event limit: an older change arriving
+  after an accepted newer REST baseline can temporarily replace newer row
+  state until explicit refresh. Timestamps are never used to guess order.
 - Raw public values are validated `unknown`/`ResultRow`, not ambient `any`.
   Consumers narrow fields in transforms; a generic alone is not runtime schema
   validation. Trading owns its distinct query-creation type and typed transforms.
@@ -52,10 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   followed. Timeouts bound even injected callbacks that do not settle on abort.
 - React/React DOM peers are optional to install for client-only consumers but
   required for React/component/root execution; the verified peer version is
-  18.3.1. Node 22/24 tooling is exercised; no React 19/future-major claim.
+  18.3.1. Node 22.20.0/24.19.0 tooling is exercised; no React 19/future-major claim.
 - Artifact measurement counts all entrypoints and shared runtime/declaration
   chunks rather than only the root barrel; the inherited 2% growth policy and
   coverage floors remain in force.
+- Coverage includes all product source and enforces separate client/react
+  subtree floors of 90% statements/lines/functions and 85% branches; existing
+  artifact-size baselines are unchanged.
 - Removed package provisioning and deployment definitions (`queries`,
   `QueryDefinition`, `ReactionDefinition`, bind host/port and implicit defaults).
   Supply existing resource references instead; no management mode replaces them.
@@ -64,9 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returning `null`. Existing-resource connections never compare desired query text.
 
 ### Deferred
-- Issue #163 Part B: stable row identity, canonical deltas/explicit adapters,
-  key-changing updates, snapshot/live consistency and the complete
-  reconnect/stale/error state contract. Legacy keys, `_deleted`, unidentified
-  routing and buffering behavior are retained, not declared complete.
+- Stronger snapshot/live consistency requires a shared backend snapshot cursor
+  and stream resume/replay contract, not client clocks or guessed signatures.
 - Composition/accessibility/theming (#164), standalone examples (#165), package
   publication and repository transfer remain separate work.

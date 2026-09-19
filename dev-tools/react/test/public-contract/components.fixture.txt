@@ -14,7 +14,11 @@ import {
 import type {
   DrasiClientOptions, ConnectionStatus, DrasiErrorCode, DrasiErrorDetails,
   ReactionReference, QueryConfig, ReactionConfig, Component, ResultRow, QueryResult,
+  ResultChange, QuerySnapshot, QueryDelta, ResultAdapter, ResultAdapterContext,
+  LegacyResultAdapterOptions, ResultReconciliationOptions, RowKey, QuerySubscription,
+  QuerySubscriptionState, QueryStatus, QueryErrorScope,
 } from '@drasi/react/client';
+import { accumulateResult, createLegacyResultAdapter, sse034ResultAdapter } from '@drasi/react/client';
 import type {
   UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult,
   DrasiProviderProps, DrasiContextValue,
@@ -35,6 +39,22 @@ export type RootReactionConfig = Assert<Equal<Root.ReactionConfig, ReactionConfi
 export type RootComponent = Assert<Equal<Root.Component<QueryConfig>, Component<QueryConfig>>>;
 export type RootRow = Assert<Equal<Root.ResultRow, ResultRow>>;
 export type RootResult = Assert<Equal<Root.QueryResult, QueryResult>>;
+export type RootTypedResult = Assert<Equal<Root.QueryResult<Temperature>, QueryResult<Temperature>>>;
+export type RootChange = Assert<Equal<Root.ResultChange<Temperature>, ResultChange<Temperature>>>;
+export type RootSnapshot = Assert<Equal<Root.QuerySnapshot<Temperature>, QuerySnapshot<Temperature>>>;
+export type RootDelta = Assert<Equal<Root.QueryDelta<Temperature>, QueryDelta<Temperature>>>;
+export type RootAdapter = Assert<Equal<Root.ResultAdapter, ResultAdapter>>;
+export type RootAdapterContext = Assert<Equal<Root.ResultAdapterContext, ResultAdapterContext>>;
+export type RootLegacyOptions = Assert<Equal<Root.LegacyResultAdapterOptions, LegacyResultAdapterOptions>>;
+export type RootReconciliation = Assert<Equal<Root.ResultReconciliationOptions, ResultReconciliationOptions>>;
+export type RootRowKey = Assert<Equal<Root.RowKey, RowKey>>;
+export type RootSubscription = Assert<Equal<Root.QuerySubscription, QuerySubscription>>;
+export type RootSubscriptionState = Assert<Equal<Root.QuerySubscriptionState, QuerySubscriptionState>>;
+export type RootQueryStatus = Assert<Equal<Root.QueryStatus, QueryStatus>>;
+export type RootQueryScope = Assert<Equal<Root.QueryErrorScope, QueryErrorScope>>;
+export type RootReducer = Assert<Equal<typeof Root.accumulateResult, typeof accumulateResult>>;
+export type RootOfficialAdapter = Assert<Equal<typeof Root.sse034ResultAdapter, typeof sse034ResultAdapter>>;
+export type RootLegacyAdapter = Assert<Equal<typeof Root.createLegacyResultAdapter, typeof createLegacyResultAdapter>>;
 export type RootHookOptions = Assert<Equal<Root.UseDrasiQueryOptions, UseDrasiQueryOptions>>;
 export type RootHookResult = Assert<Equal<Root.UseDrasiQueryResult, UseDrasiQueryResult>>;
 export type RootDefinitionResult = Assert<Equal<Root.UseDrasiQueryDefinitionResult, UseDrasiQueryDefinitionResult>>;
@@ -100,6 +120,18 @@ export const invalidAction: RowAction<Temperature> = { icon: null, label: 'Inspe
 export const table: QueryTableProps<Temperature> = {
   queryId: 'temperatures', columns, actions, defaultSort: sort,
   rowKey: row => row.stationId,
+  queryOptions: {
+    getKey: raw => {
+      if (typeof raw.station_id !== 'string' || !raw.station_id) throw new Error('Missing station identity');
+      return raw.station_id;
+    },
+    transform: raw => {
+      if (typeof raw.station_id !== 'string' || typeof raw.millicelsius !== 'number') {
+        throw new Error('Expected a temperature');
+      }
+      return { stationId: raw.station_id, celsius: raw.millicelsius / 1000 };
+    },
+  },
   animateOnChange: 'celsius',
   rowClassName(row, index) {
     const degrees: number = row.celsius;
@@ -126,6 +158,18 @@ export const deliveryTable: QueryTableProps<Delivery> = {
   queryId: 'deliveries',
   columns: [{ key: 'parcels', label: 'Parcels', format: (_value, row) => row.parcels.toFixed(0) }],
   rowKey: row => row.routeId,
+  queryOptions: {
+    getKey: raw => {
+      if (typeof raw.routeId !== 'string' || !raw.routeId) throw new Error('Missing route identity');
+      return raw.routeId;
+    },
+    transform: raw => {
+      if (typeof raw.routeId !== 'string' || typeof raw.parcels !== 'number') {
+        throw new Error('Expected a delivery');
+      }
+      return { routeId: raw.routeId, parcels: raw.parcels };
+    },
+  },
   actions: [{ icon: null, label: 'Dispatch', onClick: row => { row.parcels.toFixed(0); } }],
 };
 // @ts-expect-error A table cannot accidentally use callbacks for another row model.
@@ -134,6 +178,20 @@ export const crossedTables: QueryTableProps<Delivery> = table;
 export const badAnimation: QueryTableProps<Temperature> = { ...table, animateOnChange: 'parcels' };
 // @ts-expect-error Table props do not deploy queries.
 export const tableDeployment: QueryTableProps<Temperature> = { ...table, queries: [{ query: 'MATCH (n) RETURN n' }] };
+// @ts-expect-error Render/animation rowKey does not supply the required accumulation/projection options.
+export const missingQueryOptions: QueryTableProps<Temperature> = { queryId: 'temperatures', columns, rowKey: row => row.stationId };
+// @ts-expect-error Required table query options include the raw key even when rowKey is present.
+export const missingRawKey: QueryTableProps<Temperature> = { ...table, queryOptions: { transform: table.queryOptions.transform } };
+// @ts-expect-error Required table query options include an explicit transform.
+export const missingTransform: QueryTableProps<Temperature> = { ...table, queryOptions: { getKey: table.queryOptions.getKey } };
+// @ts-expect-error Table raw key callbacks validate unknown fields rather than assume a typed render row.
+export const unknownRawKey: QueryTableProps<Temperature> = { ...table, queryOptions: { ...table.queryOptions, getKey: raw => raw.station_id } };
+// @ts-expect-error A transformed render key cannot substitute for the raw key.
+export const transformedRawKey: QueryTableProps<Temperature> = { ...table, queryOptions: { ...table.queryOptions, getKey: table.rowKey } };
+// @ts-expect-error Render keys independently require strings too.
+export const numericRenderKey: QueryTableProps<Temperature> = { ...table, rowKey: row => row.celsius };
+// @ts-expect-error Table projection options preserve their output generic.
+export const crossedOptions: QueryTableProps<Delivery> = { ...deliveryTable, queryOptions: table.queryOptions };
 
 export const rendered = createElement(QueryTable<Temperature>, table);
 export const rootRendered = createElement(Root.QueryTable<Delivery>, deliveryTable);

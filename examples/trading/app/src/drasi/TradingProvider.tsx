@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DrasiClient, DrasiError, type DrasiClientOptions } from '@drasi/react/client';
 import { DrasiClientProvider, type DrasiContextValue } from '@drasi/react/react';
-import { DRASI_SERVER_URL, TRADING_QUERY_IDS, TRADING_STREAM, routeTradingData } from './config';
+import { DRASI_SERVER_URL, TRADING_QUERY_IDS, TRADING_STREAM, tradingResultAdapter } from './config';
 import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from './ensureTradingResources';
 
 type TradingProviderProps = Partial<Pick<DrasiClientOptions,
@@ -38,7 +38,7 @@ export function TradingProvider({
       controller.signal.throwIfAborted();
       client = new DrasiClient({
         serverUrl: baseUrl, instanceId: resolvedId, queryIds: TRADING_QUERY_IDS, reaction: TRADING_STREAM,
-        routeUnidentified: routeTradingData, fetch: fetcher, eventSourceFactory, reconnect: stableReconnect,
+        resultAdapter: tradingResultAdapter, fetch: fetcher, eventSourceFactory, reconnect: stableReconnect,
       });
       setState({ client, initialized: false, error: null });
       // Initial failures are handled below. Later terminal connection failures
