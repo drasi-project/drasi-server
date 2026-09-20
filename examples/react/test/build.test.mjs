@@ -2,13 +2,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertExampleBudget, assertHooksGraph, entryGraph } from '../scripts/check-build.mjs';
+import { assertExampleModule, moduleIdentity } from '../scripts/module-identity.mjs';
 
 const graph = () => ({
   'hooks.js': { entry: 'hooks.html', imports: ['shared.js'], dynamicImports: [], css: [], modules: [] },
   'shared.js': { entry: null, imports: [], dynamicImports: [], css: [], modules: [{ id: '@drasi/react/dist/react/index.js', sources: [] }] },
 });
-test('built dependency proof walks static, shared and lazy chunks', () => {
+test('built dependency proof normalizes actual virtual IDs and walks static, shared and lazy chunks', () => {
+  const root = '/__w/_temp/trading-consumer/examples/react';
+  const virtual = moduleIdentity(`\0${root}/node_modules/react/jsx-runtime.js?commonjs-module`, root);
+  assert.deepEqual(virtual, { id: 'node_modules/react/jsx-runtime.js?commonjs-module', sourceMap: null });
+  assertExampleModule(virtual.id);
+  assertExampleModule(moduleIdentity('\0commonjsHelpers.js', root).id);
+  const library = moduleIdentity(`${root}/node_modules/@drasi/react/dist/chunk-client.js`, root);
+  assert.deepEqual(library, {
+    id: '@drasi/react/dist/chunk-client.js',
+    sourceMap: `${root}/node_modules/@drasi/react/dist/chunk-client.js.map`,
+  });
+  assertExampleModule(library.id);
+  for (const raw of [
+    `${root}/../trading/app/src/App.tsx`,
+    `\0${root}/../trading/app/src/App.tsx?commonjs-module`,
+    `${root}/../../dev-tools/react/src/react/index.ts`,
+    `${root}/node_modules/@drasi/react/src/react/index.ts`,
+    '\0unknown-helper.js',
+  ]) {
+    assert.throws(() => assertExampleModule(moduleIdentity(raw, root).id), /outside its source\/installed artifacts/);
+  }
   const fixture = graph();
+  fixture['shared.js'].modules.push({ id: virtual.id, sources: [] });
   fixture['shared.js'].dynamicImports = ['lazy.js'];
   fixture['lazy.js'] = { entry: null, imports: [], dynamicImports: [], css: [], modules: [] };
   assert.deepEqual(entryGraph(fixture, 'hooks.html'), ['hooks.js', 'lazy.js', 'shared.js']);

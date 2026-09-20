@@ -185,6 +185,10 @@ walks static **and lazy** imports from `hooks.html`, including shared chunks,
 and inspects the installed package's shipped source-map labels. It rejects
 retained component, Radix, geometry, tutorial/Trading or CSS dependencies.
 It reads no original package source. The HTML must also have no stylesheet.
+Virtual CommonJS IDs are normalized to their actual consumer-relative files;
+an enclosing directory named `trading-consumer` is not a Trading import.
+Inputs outside the example's source, installed dependencies and named Vite/
+CommonJS helpers fail the gate, including real sibling Trading/source aliases.
 React DOM is the example's explicitly installed renderer, not a hook
 dependency or bundled hidden peer.
 

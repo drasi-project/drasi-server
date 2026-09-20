@@ -5,6 +5,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { assertExampleModule } from './module-identity.mjs';
 
 export function entryGraph(graph, entry) {
   const start = Object.keys(graph).find(file => graph[file].entry === entry);
@@ -26,8 +27,9 @@ export function assertHooksGraph(graph) {
     const chunk = graph[file];
     assert.deepEqual(chunk.css, [], `Hooks entry unexpectedly loads CSS: ${file}`);
     for (const module of chunk.modules) {
-      assert(!/trading|@radix-ui|scroll-into-view|react-remove-scroll|react-focus|ModalLayer|components\//i.test(module.id),
+      assert(!/(?:^|\/)trading(?:\/|$)|@radix-ui|scroll-into-view|react-remove-scroll|react-focus|ModalLayer|components\/|\.(?:css|scss|sass)(?:\?|$)/i.test(module.id),
         `Hooks entry contains presentation/domain module ${module.id}`);
+      assertExampleModule(module.id);
       assert(!module.sources.some(source => /\/components\//.test(source)),
         `Hooks entry retains component implementation through ${module.id}`);
       assert(!/dev-tools\/react\/src/.test(module.id), 'Package source alias detected');
@@ -53,8 +55,9 @@ export function assertExampleBudget(evidence, baseline) {
 export async function checkBuild(directory) {
   const graph = JSON.parse(await readFile(join(directory, 'build-graph.json'), 'utf8'));
   for (const chunk of Object.values(graph)) for (const module of chunk.modules) {
-    assert(!/trading|dev-tools\/react\/src|@drasi\/react\/src/i.test(module.id),
-      `Example imports Trading or package source: ${module.id}`);
+    assertExampleModule(module.id);
+    assert(!module.sources.some(source => /(?:^|\/)examples\/trading\//.test(source)),
+      `Package chunk retains Trading source: ${module.id}`);
   }
   const hooks = assertHooksGraph(graph);
   const html = await readFile(join(directory, 'hooks.html'), 'utf8');

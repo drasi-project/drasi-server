@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { defineConfig } from 'vite';
+import { moduleIdentity } from './scripts/module-identity.mjs';
 
 export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom'] },
@@ -20,11 +21,11 @@ export default defineConfig({
           dynamicImports: output.dynamicImports,
           css: [...(output.viteMetadata?.importedCss ?? [])],
           modules: Object.entries(output.modules).filter(([, info]) => info.renderedLength > 0).map(([id]) => {
-            const packageFile = /(?:node_modules\/@drasi\/react|dev-tools\/react)\/(dist\/.+)/.exec(id);
+            const module = moduleIdentity(id, process.cwd());
             return {
-              id: packageFile ? `@drasi/react/${packageFile[1]}` : relative(process.cwd(), id).replaceAll('\\', '/'),
+              id: module.id,
               // Inspect shipped maps, never source files, to identify a retained package chunk.
-              sources: packageFile ? JSON.parse(readFileSync(`${id}.map`, 'utf8')).sources : [],
+              sources: module.sourceMap ? JSON.parse(readFileSync(module.sourceMap, 'utf8')).sources : [],
             };
           }),
         };
