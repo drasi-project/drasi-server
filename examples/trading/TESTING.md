@@ -342,12 +342,14 @@ them into synthetic fixtures or infer guarantees for unexercised protocol paths.
 ### Older image comparison, not a passing fallback
 
 The separately pinned official Docker image in `test/live/runtime-pins.json`
-is historical. To compare it, explicitly pass `P1_RUNTIME=image` and
-`P1_PLUGIN_LOCK=/absolute/path/to/matching-historical-platform.lock` to
-`npm --prefix examples/trading/app run test:live`. Obtain the old platform lock
-from P1 commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`; the current ABI 0.13
-locks are not compatible with that image's ABI 0.11. Neither the image pin nor
-the original failure recordings have been rewritten.
+is historical. For a faithful comparison, use a separate owned checkout of P1
+commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`, including its matching
+platform locks and shared ABI-verification policy, then run
+`P1_RUNTIME=image npm --prefix examples/trading/app run test:live` there.
+Overriding only `P1_PLUGIN_LOCK` in the current checkout is insufficient: the
+current shared ABI 0.13 verifier correctly rejects that image's ABI 0.11 before
+the financial scenario. Do not weaken the current policy to run the old image.
+Neither the image pin nor the original failure recordings have been rewritten.
 That image is version 0.2.1 but comes from commit
 `f78d9f11993eb96a2707617b727949dab2f33ab7` with core **0.5.7**, not the #119
 checkout. Neither a mutable `v0.2.1` tag nor the GitHub release executable is an
