@@ -66,16 +66,16 @@ async fn create_test_router_with_id(
     let test_reaction = create_mock_reaction("test-reaction", vec!["reaction-query".to_string()]);
     let auto_reaction = create_mock_reaction("auto-reaction", vec!["auto-query".to_string()]);
 
-    // Create queries referenced by the reactions (auto_start: false so they don't need to run)
+    // Reactions require running queries so they can capture a valid subscription head.
     let reaction_query = Query::cypher("reaction-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("reaction-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
     let auto_query = Query::cypher("auto-query")
         .query("MATCH (n:Node) RETURN n")
         .from_source("reaction-source")
-        .auto_start(false)
+        .auto_start(true)
         .build();
 
     // Create a minimal DrasiLib using the builder with mock instances
@@ -722,6 +722,7 @@ async fn test_query_attach_sse_stream() {
         .auto_start(false)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
+    core.start_query("attach-query").await.unwrap();
 
     // Start an attach stream request
     let response = router
@@ -777,6 +778,7 @@ async fn test_query_attach_creates_temporary_reaction() {
         .auto_start(false)
         .build();
     core.add_query(query_config.clone()).await.unwrap();
+    core.start_query("attach-reaction-test").await.unwrap();
 
     // Count reactions before attach
     let reactions_before = core.list_reactions().await.unwrap_or_default().len();

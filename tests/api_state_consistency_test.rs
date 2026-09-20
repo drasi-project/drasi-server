@@ -126,8 +126,9 @@ async fn test_components_with_auto_start() {
 
 #[tokio::test]
 async fn test_components_without_auto_start() {
-    let test_source = create_mock_source("test-source");
-    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+    let test_source = create_mock_source("test-source").with_auto_start(false);
+    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()])
+        .with_auto_start(false);
 
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
@@ -150,7 +151,7 @@ async fn test_components_without_auto_start() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Wait for component graph to reach Running (sources/queries may not auto-start)
+    // Only the internal component graph source should auto-start.
     let graph = core.component_graph();
     drasi_lib::wait_for_status(
         &graph,
@@ -160,6 +161,26 @@ async fn test_components_without_auto_start() {
     )
     .await
     .expect("component graph should reach Running");
+
+    // Never-started components retain their initial Added state.
+    assert_eq!(
+        core.get_source_status("test-source")
+            .await
+            .expect("source status"),
+        ComponentStatus::Added
+    );
+    assert_eq!(
+        core.get_query_status("test-query")
+            .await
+            .expect("query status"),
+        ComponentStatus::Added
+    );
+    assert_eq!(
+        core.get_reaction_status("test-reaction")
+            .await
+            .expect("reaction status"),
+        ComponentStatus::Added
+    );
 
     // Server should still be running
     assert!(core.is_running().await);
