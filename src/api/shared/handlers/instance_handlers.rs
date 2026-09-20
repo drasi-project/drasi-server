@@ -44,6 +44,16 @@ pub struct CreateInstanceRequest {
     #[serde(default)]
     pub persist_index: Option<bool>,
 
+    /// Whether persistent queries also maintain the archive index for past()
+    /// functions. Default: false.
+    #[serde(default)]
+    pub enable_archive: Option<bool>,
+
+    /// RocksDB memory budget for this instance, in MiB
+    #[serde(default, rename = "memoryBudgetMiB")]
+    #[schema(minimum = 1)]
+    pub memory_budget_mib: Option<usize>,
+
     /// Default capacity for priority queues (cascades to queries/reactions)
     #[serde(default)]
     pub default_priority_queue_capacity: Option<usize>,
@@ -51,6 +61,18 @@ pub struct CreateInstanceRequest {
     /// Default capacity for dispatch buffers (cascades to queries/reactions)
     #[serde(default)]
     pub default_dispatch_buffer_capacity: Option<usize>,
+}
+
+fn invalid_memory_budget_error(instance_id: &str, error: impl std::fmt::Display) -> ErrorResponse {
+    ErrorResponse::new(
+        error_codes::INVALID_REQUEST,
+        "Invalid instance memory budget configuration",
+    )
+    .with_details(ErrorDetail {
+        component_type: Some("instance".to_string()),
+        component_id: Some(instance_id.to_string()),
+        technical_details: Some(error.to_string()),
+    })
 }
 
 /// Create a new DrasiLib instance
@@ -69,6 +91,12 @@ pub async fn create_instance(
 
     let instance_id = request.id.clone();
     let persist_index = request.persist_index.unwrap_or(false);
+    let enable_archive = request.enable_archive.unwrap_or(false);
+    let memory_budget_mib = request.memory_budget_mib;
+
+    let memory_budget_bytes =
+        crate::index_provider::memory_budget_bytes(persist_index, memory_budget_mib)
+            .map_err(|error| invalid_memory_budget_error(&instance_id, error))?;
 
     // Check if instance already exists
     if registry.contains(&instance_id).await {
@@ -96,7 +124,13 @@ pub async fn create_instance(
     // Register the persistent RocksDB index provider as the instance default
     // when requested.
     if persist_index {
-        builder = crate::index_provider::apply_rocksdb_index(builder, &instance_id);
+        builder = crate::index_provider::apply_rocksdb_index(
+            builder,
+            &instance_id,
+            enable_archive,
+            memory_budget_bytes,
+        )
+        .map_err(|error| invalid_memory_budget_error(&instance_id, error))?;
     }
 
     // WAL provider for durable source event persistence
@@ -143,6 +177,8 @@ pub async fn create_instance(
         let instance_config = DrasiLibInstanceConfig {
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
+            enable_archive,
+            memory_budget_mib: memory_budget_mib.map(ConfigValue::Static),
             state_store: None,
             secret_store: None,
             default_priority_queue_capacity: request

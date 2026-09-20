@@ -4,7 +4,7 @@ This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-serv
 Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
 at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
 separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
-at `6f888956cca131992ed7e656387f74cc3053652b`. It protects the existing Trading
+at `7b9601784f37ca3680359b7fc29a52f9f286d15f`. It protects the existing Trading
 application, not a second demo. P1 does not redesign its query, package API,
 CSS or components. The reviewed engine/security/source-backed setup changes
 come from B1, whose history and policies are retained.
@@ -171,6 +171,9 @@ entrypoints and unused components.
 | Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
 | Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
 
+The app runner also includes seven native-version setup guards. These are
+additional checks, not new Trading behavior coverage or changed product floors.
+
 Schema version 2 remeasures the same source and unchanged test scenarios using
 Vitest's existing `experimentalAstAwareRemapping` option. Legacy V8 remapping
 produced either 241/372 or 242/373 covered package branches on identical runs:
@@ -184,8 +187,15 @@ comparable** to the original legacy-V8 measurements. No product code or tests
 were removed, no source was excluded, and no runtime/tool version was changed.
 
 The artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
-bytes CJS, 18,746 bytes declarations and 10,043 bytes package CSS. Clean Trading
+bytes CJS, 37,492 bytes declarations and 10,043 bytes package CSS. Clean Trading
 JS is 223,574 bytes (65,775 gzip), CSS 21,034 bytes (5,163 gzip).
+Schema version 3 counts every emitted package JS/CJS entry and nested chunk,
+both declaration formats, every packaged stylesheet, and recursive Trading
+JS/CSS assets. The unchanged tarball contains 18,746-byte `index.d.ts` and
+18,746-byte `index.d.cts` files; version 2 counted only the former. Its exact
+measurements are retained in `baseline-metrics-v2.json`. This is a measurement
+correction, not artifact growth or a relaxed budget. Source maps and other
+non-runtime files remain covered by the complete tarball byte metric.
 `check-baseline.mjs` rejects any coverage drop or artifact growth above 2%;
 explain and review baseline updates instead of silently accepting them.
 The Linux runner and CI both run this check and retain
@@ -209,24 +219,29 @@ enabled in this browser run.
 Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
 `1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The default manifest selects only
 the sibling engine 0.5.8 / AST 0.3.5 / Cypher 0.3.6 paths. Registry library
-0.8.9, SDK/host/FFI 0.10.0, index 0.5.8 and GQL 0.3.6 stay selected. This is
-the full compatible source backport, not a published 0.5.8 fix, the rejected
+0.9.1, SDK/host/FFI 0.11.0, index 0.6.1 and GQL 0.3.6 stay selected with
+server 0.2.3. This is the full compatible source backport, not a published
+0.5.8 fix, the rejected
 0.5.9 hook API, or the earlier disposable three-file overlay. See
-[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md).
+[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md)
+and [the approved main-runtime matrix](../../docs/main-runtime-integration.md).
 
 `source_provenance.py` invokes the shared source verifier and resolved-SDK
 policy, checks the caller's commit/lock and exact engine/parser origins, and
 rejects a different caller plugin lock. Native installation reuses
 `scripts/install_plugins.py`, rather than a second installer. Actual loaded
 plugin status/hash/version/ABI metadata is validated by that same shared
-policy and retained in `loaded-plugins.json`.
+policy and retained in `loaded-plugins.json`. The native CLI's reported server
+and SDK versions must also match the verified lock/resolved SDK; a stale
+`target/debug/drasi-server` fails before any test services start. The success
+banner uses that verified binary version, not the historical image version.
 
 For a source-free packed Trading consumer, set `P1_SOURCE_ROOT` to the original
 server checkout. It supplies **backend build provenance and setup helpers
 only**; no package source alias or Tailwind scan is introduced. The frontend
 still consumes the tarball. CI prepares the pinned sibling before its build,
-passes that checkout explicitly, and triggers on Cargo, core pin, shared helper,
-server/UI, package and Trading changes for dependent PR bases.
+passes that checkout explicitly, and triggers on Cargo, Make, core pin, shared
+helper/pins, server/UI, package and Trading changes for dependent PR bases.
 
 Prerequisites: a POSIX host, Docker, the repository's Rust toolchain, Node 22,
 Python 3.13, and access to GHCR/Sigstore for signed plugin
@@ -242,8 +257,7 @@ sufficient for `jq-sys`.
 From the repository root, after the fast package/app setup above:
 
 ```sh
-bash scripts/prepare-core.sh
-python3 scripts/plugin_origin.py mode
+bash scripts/prepare-build.sh
 npm --prefix ui ci
 npm --prefix ui run build
 cargo build --locked
@@ -259,10 +273,18 @@ P1_PYTHON="$PWD/examples/trading/app/.test-runtime/venv/bin/python" \
 npm --prefix examples/trading/app run test:live
 ```
 
-The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.8**, PostgreSQL source **0.2.7**, SSE
-reaction **0.3.4**, and PostgreSQL/scriptfile bootstrappers **0.2.10** by immutable
-OCI manifest digest and binary SHA256. Their SDK crate is **0.10.0** and their
-independently versioned C ABI is **0.11.0**. The shared installer runs the existing
+Rebuild the default server binary before Rust integration tests as well: some
+tests invoke `target/debug/drasi-server` directly. A build in another target
+directory or a handed-off B1 binary does not update that executable.
+
+The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.11**,
+PostgreSQL source **0.2.10**, SSE reaction **0.3.6**, and PostgreSQL/scriptfile
+bootstrappers **0.2.13** by immutable OCI manifest digest and binary SHA256.
+They come from the merged official main release
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
+(drasi-project/drasi-core#789). Their SDK crate is **0.11.1**; it and the host
+SDK crate **0.11.0** both use the independently versioned C ABI **0.13.0**.
+The shared installer runs the existing
 `plugin install --from-config --locked` with `verifyPlugins: true` and
 independently checks every downloaded binary hash. Missing tools, wrong
 hashes, unsuccessful signatures and unavailable platform pins fail the gate.
@@ -304,10 +326,28 @@ These actual server records must never be replaced by the synthetic fixture
 projections. In particular, preserve SSE row signatures as raw text when
 recording: some exceed JavaScript's safe integer range.
 
+The successful isolated B1 candidate runs and earlier integrated P1 run are
+historical evidence, not a substitute for running this gate on the current
+branch's own rebuilt binary. The default gate must still prove singleton
+2000/cost 1800/count 2, live 2050, existing-resource reload 2050, and
+offline/reconnect 2150 without navigation or historical-row selection.
+
+Actual SSE 0.3.6 observations include `message` events with
+`queryId`/`results`/`timestamp`, `ADD`, `DELETE`, `UPDATE` and lowercase
+`aggregation` results. Aggregation carries `before`/`after` without `data`;
+update also carries `data`. ABI compatibility alone does not establish wire
+compatibility. Retain each run's raw observations separately; do not normalize
+them into synthetic fixtures or infer guarantees for unexercised protocol paths.
+
 ### Older image comparison, not a passing fallback
 
-`P1_RUNTIME=image npm --prefix examples/trading/app run test:live` runs the
-separately pinned official Docker image in `test/live/runtime-pins.json`.
+The separately pinned official Docker image in `test/live/runtime-pins.json`
+is historical. To compare it, explicitly pass `P1_RUNTIME=image` and
+`P1_PLUGIN_LOCK=/absolute/path/to/matching-historical-platform.lock` to
+`npm --prefix examples/trading/app run test:live`. Obtain the old platform lock
+from P1 commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`; the current ABI 0.13
+locks are not compatible with that image's ABI 0.11. Neither the image pin nor
+the original failure recordings have been rewritten.
 That image is version 0.2.1 but comes from commit
 `f78d9f11993eb96a2707617b727949dab2f33ab7` with core **0.5.7**, not the #119
 checkout. Neither a mutable `v0.2.1` tag nor the GitHub release executable is an

@@ -22,7 +22,7 @@ def selected_engine(metadata, core_root):
         "drasi-core": ("0.5.8", "core"),
         "drasi-query-ast": ("0.3.5", "query-ast"),
         "drasi-query-cypher": ("0.3.6", "query-cypher"),
-        "drasi-index-rocksdb": ("0.5.8", None),
+        "drasi-index-rocksdb": ("0.6.1", None),
         "drasi-query-gql": ("0.3.6", None),
     }
     result = {}
