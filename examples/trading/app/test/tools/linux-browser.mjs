@@ -39,6 +39,7 @@ if (args[0] !== '--inside') {
   const packageDir = '/work/dev-tools/react';
   const consumer = '/work/consumer';
   const consumerApp = `${consumer}/examples/trading/app`;
+  const exampleApp = `${consumer}/examples/react`;
   await mkdir(packageDir, { recursive: true });
   await cp('/repo/dev-tools/react', packageDir, {
     recursive: true,
@@ -66,6 +67,11 @@ if (args[0] !== '--inside') {
       failures.push(error);
     }
     try {
+      run('npm', ['run', 'test:browser'], exampleApp);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
       run('node', [
         '/repo/examples/trading/app/test/tools/check-baseline.mjs',
         `/artifacts/${archives[0]}`, consumerApp,
@@ -84,6 +90,9 @@ if (args[0] !== '--inside') {
       [join(consumerApp, 'test-results'), '/artifacts/test-results'],
       [join(consumerApp, 'playwright-report'), '/artifacts/playwright-report'],
       [join(consumerApp, 'test/browser/__screenshots__'), '/artifacts/__screenshots__'],
+      [join(exampleApp, 'dist'), '/artifacts/examples-dist'],
+      [join(exampleApp, 'test-results'), '/artifacts/examples-test-results'],
+      [join(exampleApp, 'playwright-report'), '/artifacts/examples-playwright-report'],
     ];
     for (const [source, target] of outputs) {
       try {

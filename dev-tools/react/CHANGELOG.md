@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- P7 / #165 consumer documentation and the linked
+  [examples/react workspace](../../examples/react/README.md): a live
+  cold-storage table, a hooks-only semantic UI and an explicitly simulated,
+  provider-free component showcase. This is documentation/examples work on
+  unchanged private-package APIs, not a published npm release.
+- Complete public-symbol, option/default/callback and low-level client method
+  reference, animation/status helpers, explicit #119 bootstrap-to-connect-only
+  migration, local-file/tarball installation, troubleshooting, hosting/security
+  responsibilities and contribution/test/license paths.
+- Three additional literal README recipes: hooks-only live state with
+  query-local/shared retry, provider-free actions/state slots, and raw identity
+  before projection with sparse deletes. All 13 inherited recipes and parser
+  assertions are retained; required-name guards cover the additions.
+- Precise links to existing verified P6
+  [measured evidence](../../examples/trading/TESTING.md#p6-measured-evidence)
+  and [artifact measurements](../../examples/trading/TESTING.md#p6-measured-artifact-advance),
+  separate from subsequent-change validation and the nine-part **PENDING HUMAN**
+  screen-reader checklist. Trading's 19 retained contrast fingerprints in 86
+  exact contexts remain unwaived strict non-regression evidence, not a
+  zero-violation/WCAG result; generic/default-theme audits require zero
+  automated violations. P7 development does not imply human acceptance,
+  merge permission or publication.
 - P6 / #164 Part B provider-free, controlled `Modal` and `ModalProps`, backed
   by pinned Radix Dialog 1.1.15. Required nonempty accessible title rendered
   visually hidden; empty/whitespace titles throw `TypeError`. Optional
@@ -240,5 +262,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Human screen-reader acceptance remains pending; automated rule, DOM/ARIA,
   accessibility-tree and keyboard checks are not a substitute for actual AT
   review. Development evidence is not merge/release permission.
-- Standalone examples/Storybook (#165), publication and repository transfer
-  remain separate. The package stays private and backend/SDK pins are unchanged.
+- Publication and repository transfer remain separately authorized. P7's
+  example workspace does not publish the package, introduce public APIs or
+  require Storybook. The package stays private and backend/SDK pins are unchanged.

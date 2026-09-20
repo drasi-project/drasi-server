@@ -31,7 +31,7 @@ test('does not extract fences quoted inside an unmarked wider fence with metadat
   assert.equal(extractReadmeExamples(quoted + required).length, requiredReadmeExamples.length);
 });
 
-test('requires every named runnable example, including composition and P6 presentation recipes', () => {
+test('requires every named runnable example, including composition, P6 and P7 recipes', () => {
   for (const name of requiredReadmeExamples) {
     const incomplete = requiredReadmeExamples.filter(example => example !== name).map(example => fence(example)).join('\n');
     assert.throws(() => extractReadmeExamples(incomplete),
@@ -45,8 +45,14 @@ test('retains all ten original recipe names before adding the P6 recipes', () =>
     'data-table.tsx', 'sort-uncontrolled.tsx', 'sort-controlled.tsx',
     'query-states.tsx', 'composed-table.tsx',
   ]);
-  assert.deepEqual(requiredReadmeExamples.slice(10), [
+  assert.deepEqual(requiredReadmeExamples.slice(10, 13), [
     'table-sizing.tsx', 'scoped-modal.tsx', 'reduced-motion.tsx',
+  ]);
+});
+
+test('adds focused P7 recipes after all thirteen inherited recipes', () => {
+  assert.deepEqual(requiredReadmeExamples.slice(13), [
+    'hooks-only.tsx', 'actions-slots.tsx', 'raw-identity.ts',
   ]);
 });
 

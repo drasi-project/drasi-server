@@ -1,0 +1,33 @@
+{
+  "name": "drasi-react-cold-storage-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build && node scripts/check-build.mjs",
+    "start": "node scripts/start.mjs",
+    "feed": "node scripts/feed.mjs",
+    "clean:run": "node scripts/clean-run.mjs",
+    "test": "node --import tsx --test test/*.test.ts test/*.test.mjs",
+    "test:browser": "playwright test",
+    "test:live": "node test/run-live.mjs"
+  },
+  "dependencies": {
+    "@drasi/react": "file:../../dev-tools/react",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.56.1",
+    "@types/node": "20.19.11",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "playwright-core": "1.56.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.2",
+    "vite": "5.4.19"
+  }
+}
