@@ -42,7 +42,10 @@ run_test() {
 
 # Build server first
 echo -e "${BLUE}Building Drasi Server...${NC}"
-cargo build
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+bash scripts/prepare-build.sh
+cargo build --locked
 echo ""
 
 # Run Rust Tests

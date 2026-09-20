@@ -5,10 +5,13 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "Makefile"
       - ".drasi-core-revision"
       - ".cargo/**"
       - "rust-toolchain.toml"
       - "scripts/**"
+      - "tests/plugin-pins/**"
+      - "tests/test_p1_live_source.py"
       - "src/**"
       - "ui/**"
       - "dev-tools/react/**"
@@ -20,10 +23,13 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "Makefile"
       - ".drasi-core-revision"
       - ".cargo/**"
       - "rust-toolchain.toml"
       - "scripts/**"
+      - "tests/plugin-pins/**"
+      - "tests/test_p1_live_source.py"
       - "src/**"
       - "ui/**"
       - "dev-tools/react/**"
@@ -164,8 +170,7 @@ jobs:
 
       - name: Build the actual checkout with its dependency lock and UI
         run: |
-          bash scripts/prepare-core.sh
-          python3 scripts/plugin_origin.py mode
+          bash scripts/prepare-build.sh
           npm --prefix ui ci
           npm --prefix ui run build
           cargo build --locked 2>&1 | tee "$RUNNER_TEMP/server-build.log"

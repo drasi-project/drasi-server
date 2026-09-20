@@ -64,6 +64,20 @@ pub struct DrasiServerConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the archive index (element version history for past() functions)
+    /// on persistent queries. Default: false. Every element update is also
+    /// written to the archive when enabled, and the archive has no retention,
+    /// so leave this off unless queries use the past() functions.
+    #[serde(default = "default_enable_archive")]
+    pub enable_archive: bool,
+    /// Optional RocksDB memory budget for this instance, in MiB
+    #[serde(
+        default,
+        rename = "memoryBudgetMiB",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<ConfigValueUsizeSchema>)]
+    pub memory_budget_mib: Option<ConfigValue<usize>>,
     /// Enable the web UI at /ui (default: true)
     #[serde(default = "default_enable_ui")]
     pub enable_ui: bool,
@@ -161,6 +175,8 @@ impl Default for DrasiServerConfig {
             log_level: ConfigValue::Static("info".to_string()),
             persist_config: true,
             persist_index: false,
+            enable_archive: false,
+            memory_budget_mib: None,
             enable_ui: true,
             solutions_dir: None,
             state_store: None,
@@ -203,6 +219,10 @@ fn default_log_level() -> ConfigValue<String> {
 
 fn default_persist_config() -> bool {
     true
+}
+
+fn default_enable_archive() -> bool {
+    false
 }
 
 fn default_persist_index() -> bool {
@@ -268,6 +288,18 @@ pub struct DrasiLibInstanceConfig {
     /// Enable persistent indexing using RocksDB (default: false uses in-memory indexes)
     #[serde(default = "default_persist_index")]
     pub persist_index: bool,
+    /// Enable the archive index for past() functions on this instance's
+    /// persistent queries (default: false).
+    #[serde(default = "default_enable_archive")]
+    pub enable_archive: bool,
+    /// Optional RocksDB memory budget for this instance, in MiB
+    #[serde(
+        default,
+        rename = "memoryBudgetMiB",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<ConfigValueUsizeSchema>)]
+    pub memory_budget_mib: Option<ConfigValue<usize>>,
     /// Optional state store provider configuration for plugin state persistence
     ///
     /// When set, plugins (Sources, BootstrapProviders, Reactions) can persist
@@ -312,6 +344,8 @@ pub struct DrasiLibInstanceConfig {
 pub struct ResolvedInstanceConfig {
     pub id: String,
     pub persist_index: bool,
+    pub enable_archive: bool,
+    pub memory_budget_bytes: Option<usize>,
     pub state_store: Option<StateStoreConfig>,
     pub secret_store: Option<SecretStoreConfig>,
     pub default_priority_queue_capacity: Option<usize>,
@@ -367,6 +401,8 @@ impl DrasiServerConfig {
             vec![DrasiLibInstanceConfig {
                 id: self.id.clone(),
                 persist_index: self.persist_index,
+                enable_archive: self.enable_archive,
+                memory_budget_mib: self.memory_budget_mib.clone(),
                 state_store: self.state_store.clone(),
                 secret_store: self.secret_store.clone(),
                 default_priority_queue_capacity: self.default_priority_queue_capacity.clone(),
@@ -407,6 +443,18 @@ impl DrasiServerConfig {
                     None
                 };
 
+            let memory_budget_mib = if let Some(memory_budget) = instance.memory_budget_mib.as_ref()
+            {
+                Some(mapper.resolve_typed(memory_budget)?)
+            } else {
+                None
+            };
+            let memory_budget_bytes = crate::index_provider::memory_budget_bytes(
+                instance.persist_index,
+                memory_budget_mib,
+            )
+            .map_err(|error| anyhow::anyhow!("Instance '{id}': {error}"))?;
+
             // Map query DTOs to QueryConfig
             let query_mapper = QueryConfigMapper;
             let queries: Vec<QueryConfig> = instance
@@ -443,6 +491,8 @@ impl DrasiServerConfig {
             resolved.push(ResolvedInstanceConfig {
                 id,
                 persist_index: instance.persist_index,
+                enable_archive: instance.enable_archive,
+                memory_budget_bytes,
                 state_store: instance.state_store.clone(),
                 secret_store: instance.secret_store.clone(),
                 default_priority_queue_capacity,
@@ -467,6 +517,15 @@ impl DrasiServerConfig {
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         use crate::api::mappings::map_server_settings;
+
+        // Explicit instances are self-contained. Reject a root budget instead of
+        // silently ignoring a setting that operators rely on as a memory bound.
+        if !self.instances.is_empty() && self.memory_budget_mib.is_some() {
+            return Err(anyhow::anyhow!(
+                "Root memoryBudgetMiB cannot be used with explicit instances; \
+                 set memoryBudgetMiB on each persistent instance"
+            ));
+        }
 
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();
@@ -570,6 +629,127 @@ mod tests {
             !config.persist_index,
             "persist_index should default to false when omitted from YAML"
         );
+    }
+
+    #[test]
+    fn test_memory_budget_mib_defaults_to_none() {
+        let config = DrasiServerConfig::default();
+        assert_eq!(config.memory_budget_mib, None);
+    }
+
+    #[test]
+    fn test_memory_budget_mib_resolves_for_persistent_index() {
+        let yaml = r#"
+            id: test-server
+            persistIndex: true
+            memoryBudgetMiB: 512
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        config.validate().unwrap();
+        let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
+
+        assert_eq!(instances[0].memory_budget_bytes, Some(512 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_memory_budget_mib_supports_environment_defaults() {
+        let yaml = r#"
+            id: test-server
+            persistIndex: true
+            memoryBudgetMiB: ${INDEX_MEMORY_MIB:-384}
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
+
+        assert_eq!(instances[0].memory_budget_bytes, Some(384 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_memory_budget_mib_requires_persistent_index() {
+        let yaml = r#"
+            id: test-server
+            persistIndex: false
+            memoryBudgetMiB: 512
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let error = config.validate().unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("memoryBudgetMiB requires persistIndex: true"));
+    }
+
+    #[test]
+    fn test_memory_budget_mib_rejects_zero() {
+        let yaml = r#"
+            id: test-server
+            persistIndex: true
+            memoryBudgetMiB: 0
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let error = config.validate().unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("memoryBudgetMiB must be greater than zero"));
+    }
+
+    #[test]
+    fn test_memory_budget_mib_roundtrip() {
+        let config = DrasiServerConfig {
+            persist_index: true,
+            memory_budget_mib: Some(ConfigValue::Static(768)),
+            ..Default::default()
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let deserialized: DrasiServerConfig = serde_yaml::from_str(&yaml).unwrap();
+
+        assert!(yaml.contains("memoryBudgetMiB: 768"));
+        assert_eq!(
+            deserialized.memory_budget_mib,
+            Some(ConfigValue::Static(768))
+        );
+    }
+
+    #[test]
+    fn test_per_instance_memory_budget_mib() {
+        let yaml = r#"
+            instances:
+              - id: small
+                persistIndex: true
+                memoryBudgetMiB: 128
+              - id: default-budget
+                persistIndex: true
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let instances = config.resolved_instances(&DtoMapper::new()).unwrap();
+
+        assert_eq!(instances[0].memory_budget_bytes, Some(128 * 1024 * 1024));
+        assert_eq!(instances[1].memory_budget_bytes, None);
+    }
+
+    #[test]
+    fn test_root_memory_budget_mib_rejected_with_explicit_instances() {
+        let yaml = r#"
+            persistIndex: true
+            memoryBudgetMiB: 512
+            instances:
+              - id: persistent
+                persistIndex: true
+        "#;
+
+        let config: DrasiServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let error = config.validate().unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Root memoryBudgetMiB cannot be used with explicit instances"));
     }
 
     #[test]
