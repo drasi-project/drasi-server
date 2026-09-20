@@ -159,18 +159,56 @@ class LockedTradingPluginsTests(unittest.TestCase):
                 self.assertEqual(pins[scriptfile], trading[scriptfile])
                 self.assertEqual(trading, installer.group_pins("trading", system, machine))
 
+    def test_getting_started_reuses_the_signed_runtime_pins(self):
+        for system, machine in (("Linux", "x86_64"), ("Linux", "aarch64"), ("Darwin", "arm64")):
+            with self.subTest(system=system, machine=machine):
+                expected = {
+                    **installer.group_pins("trading", system, machine),
+                    **installer.group_pins("test", system, machine),
+                }
+                pins = installer.group_pins("getting-started", system, machine)
+                self.assertEqual(
+                    {key.split(":")[0] for key in pins},
+                    {"source/postgres", "bootstrap/postgres", "reaction/log"},
+                )
+                for reference, pin in pins.items():
+                    self.assertEqual(pin, expected[reference])
+                    self.assertEqual(pin["signature"]["subject"], installer.SUBJECT)
+
+    def test_current_pins_reject_wrong_sdk_crate_target_and_publisher(self):
+        path, target = installer.pinned_lock_path("Linux", "x86_64")
+        original = tomllib.loads(path.read_text())["plugins"]
+        for field, value in (
+            ("sdk_version", "0.10.0"), ("sdk_version", "0.11.0"),
+            ("lib_version", "0.9.0"), ("platform", "linux/arm64"),
+            ("signature", {
+                "verified": True, "issuer": installer.ISSUER,
+                "subject": installer.SUBJECT.replace("@refs/heads/main", "@refs/heads/experimental"),
+            }),
+        ):
+            with self.subTest(field=field, value=value):
+                pins = copy.deepcopy(original)
+                next(iter(pins.values()))[field] = value
+                candidate = Path(self.temporary.name) / "invalid.lock"
+                candidate.write_text(
+                    "version = 1\n" + "".join(installer.pin_toml(ref, pin) for ref, pin in pins.items())
+                )
+                with self.assertRaisesRegex(plugin_origin.PluginOriginError, "invalid"):
+                    installer.read_pins(candidate, target)
+
     def test_actual_load_requires_pinned_versions_hashes_factories_and_abi(self):
         plugins = []
         for reference, pin in self.pins.items():
             category, kind = reference.split(":")[0].split("/")
             plugins.append({
-                "id": f"{category}/{kind}", "sdkVersion": "0.11.0",
+                "id": f"{category}/{kind}", "sdkVersion": "0.13.0",
                 "pluginVersion": pin["version"], "fileHash": pin["file_hash"],
                 "status": "Loaded", "kinds": [{"category": category.title(), "kind": kind}],
             })
         installer.validate_loaded_plugins(plugins, self.pins)
         for field, wrong in (
-            ("sdkVersion", "0.10.0"), ("pluginVersion", "999.0.0"),
+            ("sdkVersion", "0.11.0"), ("sdkVersion", "0.14.0"),
+            ("pluginVersion", "999.0.0"),
             ("fileHash", "0" * 64), ("status", "Failed"), ("kinds", []),
         ):
             with self.subTest(field=field):
@@ -245,7 +283,7 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
                 if mode == "local":
                     for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
                         replace_package(
-                            metadata, package(name, "0.8.9" if name == "drasi-lib" else "0.10.0", None),
+                            metadata, package(name, "0.9.1" if name == "drasi-lib" else "0.11.0", None),
                         )
                 _, selected = plugin_origin.classify(metadata)
                 core = {
@@ -463,6 +501,54 @@ with open(os.environ["POLICY_LOG"], "a") as log:
         self.assertEqual(events[0], ["cargo", "build", "--locked"])
         self.assertEqual(events[1][:4], ["python3", "scripts/install_plugins.py", "--group", "test"])
         self.assertFalse(any("latest" in argument for event in events for argument in event))
+
+    def test_getting_started_installs_compatible_pins_before_launch_and_stops_on_failure(self):
+        directory = self.root / "tests/integration/getting-started"
+        directory.mkdir(parents=True)
+        script = directory / "run-integration-test.sh"
+        shutil.copyfile(ROOT / "tests/integration/getting-started/run-integration-test.sh", script)
+        config = directory / "config.yaml"
+        config.write_text("apiVersion: drasi.io/v1\n")
+        server = self.bin / "test-server"
+        executable(server, """
+import json, os, sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["server", *sys.argv[1:]]) + "\\n")
+sys.exit(42)
+""")
+        executable(self.bin / "python3", """
+import json, os, sys
+with open(os.environ["POLICY_LOG"], "a") as log:
+    log.write(json.dumps(["python3", *sys.argv[1:]]) + "\\n")
+sys.exit(int(os.environ.get("FAIL_INSTALL", "0")))
+""")
+        executable(self.bin / "curl", "raise SystemExit(1)\n")
+        executable(self.bin / "sleep", "import time; time.sleep(0.1)\n")
+        plugins = self.root / "isolated-getting-started-plugins"
+        for failure in ("0", "1"):
+            with self.subTest(failure=failure):
+                self.log.write_text("")
+                result = subprocess.run(
+                    ["bash", str(script)], cwd=self.root,
+                    env={
+                        **self.environment, "SERVER_BINARY": str(server),
+                        "SERVER_LOG": str(self.root / "server.log"),
+                        "PLUGINS_DIR": str(plugins), "FAIL_INSTALL": failure,
+                    },
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                calls = self.commands()
+                self.assertEqual(calls[0][0], "python3")
+                self.assertTrue(calls[0][1].endswith("scripts/install_plugins.py"))
+                self.assertEqual(calls[0][2:4], ["--group", "getting-started"])
+                launches = [call for call in calls if call[0] == "server"]
+                if failure == "1":
+                    self.assertEqual(launches, [])
+                else:
+                    self.assertEqual(launches, [[
+                        "server", "--config", str(config), "--plugins-dir", str(plugins),
+                    ]])
 
 
 if __name__ == "__main__":

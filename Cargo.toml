@@ -18,7 +18,7 @@ exclude = ["examples/sse-cli"]
 
 [package]
 name = "drasi-server"
-version = "0.2.1"
+version = "0.2.3"
 edition = "2021"
 authors = ["Drasi Project"]
 description = "Standalone Drasi server for data change processing"
@@ -36,7 +36,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.8.9", features = [
+drasi-lib = { version = "0.9.1", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -50,26 +50,26 @@ drasi-lib = { version = "0.8.9", features = [
 drasi-core = "0.5.8"
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.2.10"
-drasi-bootstrap-application = "0.2.10"
+drasi-bootstrap-noop = "0.2.12"
+drasi-bootstrap-application = "0.2.12"
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.3.8"
+drasi-reaction-application = "0.3.10"
 
 # Index plugins
-drasi-index-rocksdb = "0.5.8"
+drasi-index-rocksdb = "0.6.1"
 
 # State store plugins
-drasi-state-store-redb = "0.2.4"
+drasi-state-store-redb = "0.2.5"
 
 # WAL plugins
-drasi-wal-redb = "0.2.6"
+drasi-wal-redb = "0.2.8"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.10.0"
+drasi-plugin-sdk = "0.11.0"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.10.0", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { version = "0.11.0", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -119,7 +119,7 @@ pretty_assertions = "1.4"
 semver = "1.0"
 test-case = "3.3"
 # Use the Hyper 1 test client, avoiding the obsolete h2 0.3 dependency line.
-wiremock = "=0.6.0"
+wiremock = "=0.6.5"
 
 # Additional testing dependencies
 futures = "0.3"

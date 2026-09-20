@@ -18,21 +18,23 @@ import sys
 import tempfile
 import tomllib
 
-from plugin_origin import PluginOriginError, ROOT, resolve_origin
+from plugin_origin import PLUGIN_ABI_VERSION, PluginOriginError, ROOT, resolve_origin
 
 
 VERSIONS = {
-    "source/http": "0.2.8",
-    "source/postgres": "0.2.7",
-    "bootstrap/postgres": "0.2.10",
-    "bootstrap/scriptfile": "0.2.10",
-    "reaction/sse": "0.3.4",
+    "source/http": "0.2.11",
+    "source/postgres": "0.2.10",
+    "bootstrap/postgres": "0.2.13",
+    "bootstrap/scriptfile": "0.2.13",
+    "reaction/sse": "0.3.6",
 }
 TEST_VERSIONS = {
-    "source/mock": "0.2.7",
-    "reaction/log": "0.2.5",
-    "reaction/http": "0.3.1",
+    "source/mock": "0.2.10",
+    "reaction/log": "0.2.7",
+    "reaction/http": "0.3.3",
 }
+# The signed release's SDK crate differs from the host crate; both use ABI 0.13.
+PLUGIN_SDK_VERSION = "0.11.1"
 ISSUER = "https://token.actions.githubusercontent.com"
 SUBJECT = (
     "https://github.com/drasi-project/drasi-core/"
@@ -69,9 +71,9 @@ def read_pins(path, target, versions=VERSIONS):
         if (
             kind not in versions
             or pin["version"] != versions[kind]
-            or pin["sdk_version"] != "0.10.0"
-            or pin["lib_version"] != "0.8.9"
-            or pin["core_version"] != "0.5.7"
+            or pin["sdk_version"] != PLUGIN_SDK_VERSION
+            or pin["lib_version"] != "0.9.1"
+            or pin["core_version"] != "0.5.8"
             or pin["platform"] != target
             or pin["reference"] != expected_reference
             or re.fullmatch(r"sha256:[a-f0-9]{64}", pin["digest"]) is None
@@ -91,10 +93,16 @@ def group_pins(group, system, machine):
     trading = read_pins(trading_path, target)
     if group == "trading":
         return trading
-    if group != "test":
+    if group not in ("test", "getting-started"):
         raise PluginOriginError(f"Unknown plugin group: {group}")
     test_path, _ = pinned_lock_path(system, machine, "test")
     pins = read_pins(test_path, target, TEST_VERSIONS)
+    if group == "getting-started":
+        required = {"source/postgres", "bootstrap/postgres", "reaction/log"}
+        return {
+            reference: pin for reference, pin in {**trading, **pins}.items()
+            if reference.split(":")[0] in required
+        }
     pins.update(
         (reference, pin) for reference, pin in trading.items()
         if reference.split(":")[0] == "bootstrap/scriptfile"
@@ -124,7 +132,7 @@ def validate_loaded_plugins(plugins, pins):
         if plugin is None:
             raise PluginOriginError(f"Required plugin was not loaded: {kind_id}")
         if (
-            plugin["sdkVersion"] != "0.11.0"
+            plugin["sdkVersion"] != PLUGIN_ABI_VERSION
             or plugin["pluginVersion"] != pin["version"]
             or plugin["fileHash"] != pin["file_hash"]
             or plugin["status"] not in ("Loaded", "Active")
@@ -226,7 +234,9 @@ def install(server, directory, pins, run=subprocess.run):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", choices=("trading", "test"), default="trading")
+    parser.add_argument(
+        "--group", choices=("trading", "test", "getting-started"), default="trading",
+    )
     parser.add_argument("--server-bin", type=Path, required=True)
     parser.add_argument("--plugins-dir", type=Path, required=True)
     arguments = parser.parse_args()
