@@ -100,7 +100,8 @@ def group_pins(group, system, machine):
     if group == "getting-started":
         required = {"source/postgres", "bootstrap/postgres", "reaction/log"}
         return {
-            reference: pin for reference, pin in {**trading, **pins}.items()
+            f"{reference.split(':')[0]}:{pin['version']}": pin
+            for reference, pin in {**trading, **pins}.items()
             if reference.split(":")[0] in required
         }
     pins.update(

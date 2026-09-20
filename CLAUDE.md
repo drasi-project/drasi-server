@@ -9,6 +9,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ## Development Commands
 
 ### Build and Run
+- Source prerequisite: Make build/run/test/lint targets prepare it automatically; before direct Cargo commands use `make prepare-core` (or `make prepare-build` for explicitly matching local SDK development).
 - Build: `cargo build`
 - Build release: `cargo build --release`
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`

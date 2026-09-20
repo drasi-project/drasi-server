@@ -8,7 +8,9 @@
 > The older matrix and timestamps below are preserved **historical evidence**,
 > not descriptions of the current lockfiles. No unmerged-branch artifact is pinned.
 
-These locks add only the test kinds missing from the unchanged Trading runtime
+## Historical September 18 locks and evidence (superseded)
+
+At predecessor `6f888956`, these locks added only the test kinds missing from the then-unchanged Trading runtime
 locks: `source/mock` **0.2.7**, `reaction/log` **0.2.5**, and `reaction/http`
 **0.3.1**. `scripts/install_plugins.py --group test` reuses the existing
 `bootstrap/scriptfile` **0.2.10** entry from

@@ -359,6 +359,10 @@ EOF
 
 cd "$PROJECT_DIR"
 
+if ! $SKIP_BUILD; then
+    bash scripts/prepare-build.sh
+fi
+
 echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║     Drasi Plugin Smoke Test Suite        ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
@@ -369,7 +373,7 @@ if $RUN_STATIC; then
 
     if ! $SKIP_BUILD; then
         echo -e "\n${CYAN}Building static binary...${NC}"
-        cargo build 2>&1 | tail -3
+        cargo build --locked 2>&1 | tail -3
         echo -e "${GREEN}Static build complete${NC}"
     fi
 

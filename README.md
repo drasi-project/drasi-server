@@ -251,6 +251,10 @@ The temporary engine-only source pin is documented in
 It preserves the registry library/SDK and signed plugin matrix; published
 binaries and downstream library consumers do not automatically inherit it.
 
+The Makefile build/run/test/lint entry points prepare the pinned sibling
+automatically. Before invoking Cargo directly in a clean checkout, run
+`make prepare-core`; see [the current main runtime matrix](docs/main-runtime-integration.md).
+
 ### Option 3: Interactive Setup
 
 ```bash

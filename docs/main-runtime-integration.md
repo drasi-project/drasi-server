@@ -98,6 +98,15 @@ path without changing global credentials or settings.
 
 ## Startup and behavior boundaries
 
+Supported root Cargo/Make entry points prepare the engine before Cargo resolves
+the mandatory paths. `scripts/prepare-build.sh` is the shared preflight for
+build/run/test/lint/setup targets and Trading: obtain only an absent sibling,
+then inspect Cargo's actual SDK origins and verify the exact core pin in
+registry mode. Genuine matching local SDK development keeps its separate
+source mode. Failed preparation stops before compilation or installation.
+For direct `cargo ...` commands, run `make prepare-core` first (or
+`make prepare-build` for deliberate local SDK development).
+
 Trading retains its existing 11 queries, joins, creation order, transformations,
 CRUD, defaults and presentation. The same installer supplies Trading's five
 plugins, auxiliary tests' mock/log/HTTP plus scriptfile, and Getting Started's
