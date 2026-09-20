@@ -784,7 +784,8 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
-| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instanceId>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
+| `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instance-key>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
+| `memoryBudgetMiB` | integer | RocksDB provider default | Optional shared RocksDB memory budget, in MiB, for all query databases in the instance. Requires `persistIndex: true`. Set it at the root only in single-instance mode; with explicit `instances`, set it on each persistent instance. |
 | `stateStore` | object | (none) | State store provider for plugin state persistence |
 | `defaultPriorityQueueCapacity` | integer | `10000` | Default capacity for query/reaction event queues |
 | `defaultDispatchBufferCapacity` | integer | `1000` | Default buffer capacity for event dispatching |
@@ -793,7 +794,13 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `trustedIdentities` | array | `[]` | Custom trusted signer identities for plugin verification (e.g., email, URI) |
 | `plugins` | array | `[]` | Plugin references to install on startup (see [Plugins](#plugins-configuration)) |
 
-> **Note**: In the `persistIndex` data path, `<instanceId>` is sanitized for filesystem safety — `/`, `\`, and `..` are each replaced with `_`.
+> **Note**: In the `persistIndex` data path, `<instance-key>` is `id-` followed
+> by the lowercase hexadecimal encoding of the instance ID.
+
+> **Note**: When `memoryBudgetMiB` is omitted, RocksDB uses its provider default (currently
+> a 256 MiB shared cache with up to 128 MiB of memtables charged to that cache).
+> The setting is fixed when the instance starts and requires a restart to change.
+> It bounds RocksDB cache and memtable memory, not total Drasi Server RSS.
 
 **Example:**
 
@@ -804,7 +811,8 @@ host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
-persistIndex: false
+persistIndex: true
+memoryBudgetMiB: 512
 pluginRegistry: ghcr.io/drasi-project
 verifyPlugins: true  # optional: verify plugin signatures via Sigstore (Fulcio + Rekor)
 # trustedIdentities:  # optional: restrict to specific signers
@@ -1618,6 +1626,9 @@ reactions:
 
 For advanced use cases requiring isolated processing environments, configure multiple DrasiLib instances:
 
+> **Note**: When `instances` is present, do not set `memoryBudgetMiB` at the root.
+> Configure it within each instance that has `persistIndex: true`.
+
 ```yaml
 apiVersion: drasi.io/v1
 host: 0.0.0.0
@@ -1627,6 +1638,7 @@ logLevel: info
 instances:
   - id: analytics
     persistIndex: true
+    memoryBudgetMiB: 512
     stateStore:
       kind: redb
       path: ./data/analytics-state.redb
@@ -1727,7 +1739,7 @@ curl http://localhost:8080/api/v1/instances
 # Create new instance
 curl -X POST http://localhost:8080/api/v1/instances \
   -H "Content-Type: application/json" \
-  -d '{"id": "my-instance", "persistIndex": false}'
+  -d '{"id": "my-instance", "persistIndex": true, "memoryBudgetMiB": 512}'
 ```
 
 ### Sources API
