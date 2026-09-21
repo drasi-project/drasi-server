@@ -49,6 +49,9 @@ jobs:
       - name: Install Rust toolchain
         run: rustup show
 
+      - name: Test pinned plugin setup
+        run: python3 -m unittest discover -s tests -p 'test_plugin_*.py'
+
       - name: Setup PostgreSQL database
         run: |
           export RESTART_CONTAINER=true
