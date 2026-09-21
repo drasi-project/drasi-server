@@ -1,5 +1,11 @@
 # Compatible engine source prerequisite
 
+> **Current runtime:** the user-approved bottom-up merge now retains main's
+> library/SDK/index versions and uses verified main-signed ABI 0.13 plugins.
+> See [Main runtime integration](main-runtime-integration.md) for the current
+> matrix, pins and checks. The frozen-version matrix and successful runs below
+> are the **historical September 18 delivery**, not claims about today's pins.
+
 This checkout temporarily consumes the reviewed aggregate-identity correction
 for [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680)
 from the compatible backport in

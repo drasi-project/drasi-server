@@ -96,6 +96,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log_level: drasi_server::models::ConfigValue::Static("info".to_string()),
         persist_config: true,
         persist_index: false,                  // Use in-memory indexes (default)
+        enable_archive: false,                 // Disable temporal history (default)
+        memory_budget_mib: None,               // Use the RocksDB default when enabled
         enable_ui: true,                       // Enable web UI (default)
         state_store: None,                     // Use in-memory state store (default)
         secret_store: None,                    // No secret store configured

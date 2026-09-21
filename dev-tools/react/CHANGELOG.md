@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Parent integration
+- Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
+  host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
+  runtime while retaining the reviewed engine correction and all P3/P4 contracts.
+- Keep original runtime fixtures and P1/P2/P3/P4/P5 schema-2 measurements historical.
+  Current accounting includes both shipped declaration formats, all package
+  chunks/CSS and recursive Trading assets without changing coverage floors or
+  the 2% growth policy. The original P5 tarball contains 37,834 ESM and 37,851
+  CommonJS declaration bytes; counting both adds no product bytes.
+- Document that new archive/memory-budget controls are server/instance settings:
+  the query read DTO is unchanged and `storageBackend` remains opaque JSON.
+  Existing P5 composition is preserved; no P6/P7 features or query/resource-
+  creation defaults are introduced by this integration.
+- Retain all 17 actual SSE 0.3.6 records from P4's own rebuilt normal-merge
+  server separately, with manifest/lock/binary/signature provenance. Exercise
+  the unchanged `sse034ResultAdapter` and default transport against them,
+  including query-ID routing and aggregation before/after without `data`.
+  The adapter name/API and P4 identity/recovery semantics do not change;
+  native ABI compatibility is not a universal wire-format claim.
+
 ### Added
 - P5 / #164 Part A provider-free `DataTable<T, E extends Error = Error>` with
   readonly rows/columns, application-owned state/retries, typed loading/empty/

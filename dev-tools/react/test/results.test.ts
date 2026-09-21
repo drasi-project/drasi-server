@@ -4,12 +4,16 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import recordingText from './fixtures/server-v1/sse-0.3.4.ndjson?raw';
+import currentRecordingText from './fixtures/server-v1-0.2.3/sse-0.3.6.ndjson?raw';
+import currentProvenance from './fixtures/server-v1-0.2.3/sse-0.3.6.provenance.json';
 import { describe, expect, it, vi } from 'vitest';
 import { accumulateResult } from '../src/client/accumulation';
 import { DrasiError } from '../src/client/errors';
+import { DrasiSSEClient } from '../src/client/DrasiSSEClient';
 import { isRecord } from '../src/client/resources';
 import { createLegacyResultAdapter, readAdaptedResults, sse034ResultAdapter } from '../src/client/results';
 import type { QueryDelta, QueryResult, ResultChange, ResultRow, RowKey } from '../src/client/types';
+import { fakeEventSourceFactory } from './FakeEventSource';
 
 const context = { receivedAt: 10, instanceId: 'warehouse' };
 const envelope = (results: unknown[], queryId = 'inventory') => ({ queryId, results, timestamp: 1 });
@@ -27,12 +31,15 @@ const initial: QueryResult = {
   rows: [{ rack: 'north', slot: 'one', value: 8 }, { rack: 'south', slot: 'one', value: 8 }],
 };
 
-describe('versioned SSE 0.3.4 evidence', () => {
-  it('normalizes every original raw recording without inferring identity from unsafe signatures', () => {
+describe('versioned observed SSE evidence', () => {
+  it.each([
+    { version: '0.3.4', text: recordingText },
+    { version: '0.3.6', text: currentRecordingText },
+  ])('normalizes every original $version raw recording without inferring identity from unsafe signatures', ({ text }) => {
     const kinds = new Set<string>();
     const queries = new Set<string>();
     let unsafeSignatures = 0;
-    for (const line of recordingText.trim().split('\n')) {
+    for (const line of text.trim().split('\n')) {
       const recording: unknown = JSON.parse(line);
       if (!isRecord(recording) || typeof recording.data !== 'string') throw new Error('Invalid versioned recording');
       const wire: unknown = JSON.parse(recording.data);
@@ -61,6 +68,65 @@ describe('versioned SSE 0.3.4 evidence', () => {
     expect(kinds).toEqual(new Set(['upsert', 'delete', 'update']));
     expect(queries.has('portfolio-summary-query')).toBe(true);
     expect(queries.has('sector-performance-query')).toBe(true);
+  });
+
+  it('routes actual 0.3.6 default envelopes and preserves aggregation before/after without requiring data', async () => {
+    expect(currentProvenance).toMatchObject({
+      serverVersion: '0.2.3', libraryVersion: '0.9.1', indexVersion: '0.6.1',
+      hostSdkVersion: '0.11.0', pluginSdkVersion: '0.11.1',
+      ssePluginVersion: '0.3.6', pluginAbi: '0.13.0', signatureVerified: true,
+    });
+    const factory = fakeEventSourceFactory();
+    const client = new DrasiSSEClient({ eventSourceFactory: factory.create });
+    const watchlist = vi.fn(), gainers = vi.fn(), sector = vi.fn(), errors = vi.fn();
+    client.subscribe('watchlist-query', watchlist, errors);
+    client.subscribe('top-gainers-query', gainers, errors);
+    client.subscribe('sector-performance-query', sector, errors);
+    const connected = client.connect(
+      ['watchlist-query', 'top-gainers-query', 'sector-performance-query'], 'https://stream.invalid/events',
+    );
+    factory.instances[0].open();
+    await connected;
+    const lines = currentRecordingText.trim().split('\n');
+    expect(lines).toHaveLength(currentProvenance.lines);
+    const observed = new Map<string, number>();
+    try {
+      for (const line of lines) {
+        const recording: unknown = JSON.parse(line);
+        if (!isRecord(recording) || typeof recording.data !== 'string') throw new Error('Invalid current recording');
+        const wire: unknown = JSON.parse(recording.data);
+        if (!isRecord(wire) || !Array.isArray(wire.results)) throw new Error('Invalid current envelope');
+        expect(Object.keys(wire).sort()).toEqual(['queryId', 'results', 'timestamp']);
+        expect(readAdaptedResults(legacy(wire, context), context)).toEqual(normalize(wire));
+        for (const change of wire.results) {
+          if (!isRecord(change) || typeof change.type !== 'string') throw new Error('Invalid recorded change');
+          observed.set(change.type, (observed.get(change.type) ?? 0) + 1);
+          if (change.type === 'aggregation') {
+            expect(change).not.toHaveProperty('data');
+            expect(change).toHaveProperty('before');
+            expect(change).toHaveProperty('after');
+          }
+        }
+        factory.instances[0].onmessage?.(new MessageEvent('message', { data: recording.data }));
+      }
+      expect(Object.fromEntries(observed)).toEqual({ ADD: 3, DELETE: 3, UPDATE: 10, aggregation: 1 });
+      expect(watchlist).toHaveBeenCalledTimes(3);
+      expect(gainers).toHaveBeenCalledOnce();
+      expect(watchlist.mock.calls[2][0]).toMatchObject({ queryId: 'watchlist-query' });
+      expect(gainers.mock.calls[0][0]).toMatchObject({ queryId: 'top-gainers-query' });
+      expect(sector).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        queryId: 'sector-performance-query',
+        changes: [{
+          kind: 'update',
+          before: { avgChangePercent: 3.75, maxPrice: 180, minPrice: 95, sector: 'Technology', stockCount: 4, totalVolume: 60000000 },
+          after: { avgChangePercent: 5, maxPrice: 180, minPrice: 95, sector: 'Technology', stockCount: 4, totalVolume: 60000000 },
+        }],
+      }));
+      expect(errors).not.toHaveBeenCalled();
+      expect(client.isConnected()).toBe(true);
+    } finally {
+      await client.disconnect();
+    }
   });
 
   it('handles source-defined nullable aggregation before, noop and validated heartbeats', () => {

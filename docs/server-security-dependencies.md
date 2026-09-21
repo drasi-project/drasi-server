@@ -1,5 +1,10 @@
 # Targeted server HTTP/TLS dependency remediation
 
+> The original #203 evidence below is historical and remains unchanged. The
+> [approved main runtime integration](main-runtime-integration.md) retains its
+> patched h2/rustls requirements while accepting incoming Wiremock 0.6.5 and
+> main's newer Drasi runtime; it documents the current 621-package graph.
+
 [#203](https://github.com/drasi-project/drasi-server/issues/203) authorizes this
 focused exception to the otherwise source-only lockfile change in
 [#202](https://github.com/drasi-project/drasi-server/issues/202). It is a
