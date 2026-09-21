@@ -28,7 +28,7 @@ tools:
 # the agent reads. The agent job never runs untrusted PR code itself.
 steps:
   - name: Download validation results
-    uses: actions/download-artifact@v4
+    uses: actions/download-artifact@v8.0.1
     with:
       name: validation-results
       path: /tmp/gh-aw/agent
@@ -41,7 +41,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
       - name: Build server and run config validation tests
         run: |
           set +e
@@ -69,7 +69,7 @@ jobs:
           cat "$RESULTS"
       - name: Upload validation results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: validation-results
           path: /tmp/gh-aw/agent/validation-results.txt
