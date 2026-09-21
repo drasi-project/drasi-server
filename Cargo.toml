@@ -57,7 +57,7 @@ drasi-bootstrap-application = "0.2.12"
 drasi-reaction-application = "0.3.10"
 
 # Index plugins
-drasi-index-rocksdb = "0.6.1"
+drasi-index-rocksdb = "0.6.3"
 
 # State store plugins
 drasi-state-store-redb = "0.2.5"
@@ -66,10 +66,10 @@ drasi-state-store-redb = "0.2.5"
 drasi-wal-redb = "0.2.8"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.11.0"
+drasi-plugin-sdk = "0.11.2"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.11.0", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { version = "0.11.2", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -134,7 +134,7 @@ warnings = "deny"
 # Use rustls with aws-lc-rs instead of ring to avoid ring's macOS cross-compilation
 # assembly architecture mismatch (ring compiles asm for target instead of host).
 ureq = { version = "3", default-features = false, features = ["json", "rustls-no-provider", "rustls-webpki-roots"] }
-rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+rustls = { version = "0.23.45", default-features = false, features = ["aws-lc-rs"] }
 flate2 = "1"
 tar = "0.4"
 serde_json = "1"
