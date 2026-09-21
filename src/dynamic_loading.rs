@@ -205,15 +205,16 @@ pub fn load_plugins(
     };
 
     for mut plugin in loaded {
+        let package_version = plugin.plugin_version();
+        if package_version.is_none() {
+            log::warn!(
+                "Loaded plugin '{}' has no package version metadata",
+                plugin.file_path.display()
+            );
+        }
         let meta = plugin.metadata_info.as_deref().unwrap_or("no metadata");
 
-        // Parse version info from metadata string (format: "sdk=X core=Y plugin=Z target=...")
-        let plugin_version = meta
-            .split_whitespace()
-            .find(|s| s.starts_with("plugin="))
-            .and_then(|s| s.strip_prefix("plugin="))
-            .unwrap_or("")
-            .to_string();
+        let plugin_version = package_version.clone().unwrap_or_default();
         let sdk_version = meta
             .split_whitespace()
             .find(|s| s.starts_with("sdk="))
@@ -248,7 +249,11 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry.register_source_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_source_with_package_version(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                package_version.as_deref(),
+            );
             stats.source_descriptors += 1;
         }
 
@@ -264,7 +269,11 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry.register_reaction_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_reaction_with_package_version(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                package_version.as_deref(),
+            );
             stats.reaction_descriptors += 1;
         }
 
@@ -280,7 +289,11 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry.register_bootstrapper_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_bootstrapper_with_package_version(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                package_version.as_deref(),
+            );
             stats.bootstrap_descriptors += 1;
         }
 
@@ -296,7 +309,11 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry.register_secret_store_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_secret_store_with_package_version(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                package_version.as_deref(),
+            );
             stats.secret_store_descriptors += 1;
         }
 
@@ -312,7 +329,11 @@ pub fn load_plugins(
                 config_version: proxy.config_version().to_string(),
                 config_schema_name: proxy.config_schema_name().to_string(),
             });
-            registry.register_identity_provider_with_metadata(Arc::new(proxy), &plugin_id_parts[0]);
+            registry.register_identity_provider_with_package_version(
+                Arc::new(proxy),
+                &plugin_id_parts[0],
+                package_version.as_deref(),
+            );
             stats.identity_provider_descriptors += 1;
         }
 

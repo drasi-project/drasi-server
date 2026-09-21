@@ -57,6 +57,8 @@ const DEADLINE: Duration = Duration::from_secs(10);
 const INVALID_QUERY: &str = "NOT A CYPHER QUERY";
 const SOURCE_PLUGIN: &str = "mock-fixture";
 const REACTION_PLUGIN: &str = "log-fixture";
+const SOURCE_PACKAGE_VERSION: &str = "2.3.4";
+const REACTION_PACKAGE_VERSION: &str = "3.4.5";
 
 #[derive(Default)]
 struct LifecycleProbe {
@@ -308,13 +310,15 @@ impl Harness {
         let reaction_probe = Arc::new(LifecycleProbe::default());
         let mut plugins = PluginRegistry::new();
         drasi_server::register_core_plugins(&mut plugins);
-        plugins.register_source_with_metadata(
+        plugins.register_source_with_package_version(
             Arc::new(SourceDescriptor(source_probe.clone())),
             SOURCE_PLUGIN,
+            Some(SOURCE_PACKAGE_VERSION),
         );
-        plugins.register_reaction_with_metadata(
+        plugins.register_reaction_with_package_version(
             Arc::new(ReactionDescriptor(reaction_probe.clone())),
             REACTION_PLUGIN,
+            Some(REACTION_PACKAGE_VERSION),
         );
         let app = Router::new().nest(
             "/api/v1",
@@ -651,11 +655,14 @@ async fn native_solution_preserves_source_and_reaction_plugin_version_nodes() {
         .unwrap()
         .inspector()
         .topology();
-    for (id, plugin_id) in [("source", SOURCE_PLUGIN), ("reaction", REACTION_PLUGIN)] {
+    for (id, plugin_id, package_version) in [
+        ("source", SOURCE_PLUGIN, SOURCE_PACKAGE_VERSION),
+        ("reaction", REACTION_PLUGIN, REACTION_PACKAGE_VERSION),
+    ] {
         let handle = harness.core.computation_component(id).unwrap();
         let identity = PluginIdentity {
             id: Arc::from(plugin_id),
-            version: Arc::from("1.0.0"),
+            version: Arc::from(package_version),
         };
         let Some(GraphEntity::Plugin(plugin)) =
             topology.nodes.get(&GraphEntityId::Plugin(identity))
@@ -663,6 +670,12 @@ async fn native_solution_preserves_source_and_reaction_plugin_version_nodes() {
             panic!("Missing plugin/version node for {id}: {topology:?}");
         };
         assert!(plugin.dependent_components.contains(handle.id()));
+        assert!(!topology
+            .nodes
+            .contains_key(&GraphEntityId::Plugin(PluginIdentity {
+                id: Arc::from(plugin_id),
+                version: Arc::from("1.0.0"),
+            })));
     }
     harness.core.stop().await.unwrap();
 }

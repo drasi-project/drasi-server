@@ -87,6 +87,152 @@ fn new_orchestrator() -> Arc<PluginOrchestrator> {
     Arc::new(PluginOrchestrator::new(lifecycle))
 }
 
+async fn assert_package_versions_and_component_startup(
+    registry: Arc<RwLock<PluginRegistry>>,
+) -> anyhow::Result<()> {
+    use drasi_lib::{ComponentStatus, DrasiLib, ExecutionMode, Query};
+    use drasi_server::config::{ReactionConfig, SourceConfig};
+    use drasi_server::factories::{create_reaction_locked, create_source_locked};
+
+    {
+        let registry = registry.read().await;
+        for (version, config_version) in [
+            (
+                registry.source_package_version("mock"),
+                registry.get_source("mock").unwrap().config_version(),
+            ),
+            (
+                registry.reaction_package_version("log"),
+                registry.get_reaction("log").unwrap().config_version(),
+            ),
+        ] {
+            let version = version.expect("loaded package version");
+            assert_ne!(
+                version, config_version,
+                "fixture must exercise distinct version meanings"
+            );
+        }
+    }
+    for mode in [
+        ExecutionMode::ComponentGraph,
+        ExecutionMode::ComputationGraph,
+    ] {
+        let core = DrasiLib::builder()
+            .with_id(format!("package-version-{mode:?}"))
+            .with_execution_mode(mode)
+            .build()
+            .await?;
+        let result = async {
+            let (source, metadata) = create_source_locked(
+                &registry,
+                SourceConfig {
+                    kind: "mock".into(),
+                    id: "version-source".into(),
+                    auto_start: true,
+                    bootstrap_provider: None,
+                    identity_provider: None,
+                    config: serde_json::json!({
+                        "dataType": {"type": "generic"},
+                        "intervalMs": 1000
+                    }),
+                },
+            )
+            .await?;
+            assert_eq!(
+                metadata.get("pluginVersion").map(String::as_str),
+                registry.read().await.source_package_version("mock")
+            );
+            core.add_source_with_metadata(source, metadata).await?;
+            core.add_query(
+                Query::cypher("version-query")
+                    .query("MATCH (n) RETURN n")
+                    .from_source("version-source")
+                    .enable_bootstrap(false)
+                    .auto_start(true)
+                    .build(),
+            )
+            .await?;
+            let (reaction, metadata) = create_reaction_locked(
+                &registry,
+                ReactionConfig {
+                    kind: "log".into(),
+                    id: "version-reaction".into(),
+                    queries: vec!["version-query".into()],
+                    auto_start: true,
+                    identity_provider: None,
+                    config: serde_json::json!({}),
+                },
+            )
+            .await?;
+            assert_eq!(
+                metadata.get("pluginVersion").map(String::as_str),
+                registry.read().await.reaction_package_version("log")
+            );
+            core.add_reaction_with_metadata(reaction, metadata).await?;
+            core.start().await?;
+            if mode == ExecutionMode::ComputationGraph {
+                for id in ["version-source", "version-query", "version-reaction"] {
+                    tokio::time::timeout(
+                        Duration::from_secs(10),
+                        core.computation_component(id)?.wait_started(),
+                    )
+                    .await??;
+                }
+            }
+            assert_eq!(
+                core.get_source_status("version-source").await?,
+                ComponentStatus::Running
+            );
+            assert_eq!(
+                core.get_reaction_status("version-reaction").await?,
+                ComponentStatus::Running
+            );
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        core.shutdown().await?;
+        result?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial_test::serial(plugin_package_versions)]
+#[ignore = "requires cdylib plugins; run make build-local-test-plugins first"]
+async fn test_startup_loader_preserves_real_package_versions() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    for path in [mock_source_plugin_path(), log_reaction_plugin_path()] {
+        std::fs::copy(&path, directory.path().join(path.file_name().unwrap()))?;
+    }
+    let mut registry = PluginRegistry::new();
+    let loaded =
+        drasi_server::dynamic_loading::load_plugins(directory.path(), &mut registry, None, None)?;
+    assert_eq!(loaded.plugins_loaded, 2);
+    assert_package_versions_and_component_startup(Arc::new(RwLock::new(registry))).await
+}
+
+#[tokio::test]
+#[serial_test::serial(plugin_package_versions)]
+#[ignore = "requires cdylib plugins; run make build-local-test-plugins first"]
+async fn test_runtime_loader_preserves_real_package_versions() -> anyhow::Result<()> {
+    let registry = Arc::new(RwLock::new(PluginRegistry::new()));
+    let lifecycle = PluginLifecycleManager::new(registry.clone());
+    let mut events = lifecycle.subscribe();
+    lifecycle
+        .load_plugin(&mock_source_plugin_path(), None)
+        .await?;
+    lifecycle
+        .load_plugin(&log_reaction_plugin_path(), None)
+        .await?;
+    for _ in 0..2 {
+        let PluginEvent::Loaded { version, .. } = events.recv().await? else {
+            anyhow::bail!("expected plugin load event");
+        };
+        assert!(!version.is_empty());
+    }
+    assert_package_versions_and_component_startup(registry).await
+}
+
 // =============================================================================
 // 1. PluginOrchestrator.load_plugin() with a real cdylib
 // =============================================================================

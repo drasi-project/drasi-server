@@ -139,6 +139,13 @@ pub extern "C" fn drasi_plugin_init() -> *mut FfiPluginRegistration
 | `target_triple` | Exact match | **REJECT** | Cannot load x86_64 `.so` on aarch64 |
 | `plugin_version` | Log only | **INFO** | Plugin's own version — no compatibility constraint |
 
+The package version and configuration-format version have different meanings.
+Both startup loading and runtime loading retain the package version read from
+the loaded library. Component metadata uses that value for `pluginVersion`;
+`config_version()` remains the schema/configuration version. If older plugin
+metadata does not provide a package version, Server reports it as unknown and
+omits the component's version field rather than inventing one from the schema.
+
 ## FFI Boundary Design
 
 ### Opaque Pointer Pattern

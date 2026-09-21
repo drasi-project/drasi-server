@@ -469,9 +469,8 @@ pub async fn create_secret_store_from_registry(
 
 /// Get plugin metadata for a source kind from the registry.
 ///
-/// Returns a HashMap with `pluginId` and `pluginVersion`
-/// if the kind is backed by a registered plugin. Core (statically-linked)
-/// plugins return an empty map.
+/// Returns the registered plugin ID and its actual package version when known.
+/// Configuration versions are not plugin versions. Core plugins return an empty map.
 pub fn get_source_plugin_metadata(
     registry: &PluginRegistry,
     kind: &str,
@@ -480,10 +479,11 @@ pub fn get_source_plugin_metadata(
     if let Some(reg) = registry.get_source_registration(kind) {
         if !reg.plugin_id.is_empty() {
             meta.insert("pluginId".to_string(), reg.plugin_id.clone());
-            meta.insert(
-                "pluginVersion".to_string(),
-                reg.descriptor.config_version().to_string(),
-            );
+            if let Some(version) = registry.source_package_version(kind) {
+                meta.insert("pluginVersion".to_string(), version.to_owned());
+            } else {
+                log::warn!("Source kind '{kind}' has no known plugin package version; version metadata is omitted");
+            }
         }
     }
     meta
@@ -491,9 +491,8 @@ pub fn get_source_plugin_metadata(
 
 /// Get plugin metadata for a reaction kind from the registry.
 ///
-/// Returns a HashMap with `pluginId` and `pluginVersion`
-/// if the kind is backed by a registered plugin. Core (statically-linked)
-/// plugins return an empty map.
+/// Returns the registered plugin ID and its actual package version when known.
+/// Configuration versions are not plugin versions. Core plugins return an empty map.
 pub fn get_reaction_plugin_metadata(
     registry: &PluginRegistry,
     kind: &str,
@@ -502,10 +501,11 @@ pub fn get_reaction_plugin_metadata(
     if let Some(reg) = registry.get_reaction_registration(kind) {
         if !reg.plugin_id.is_empty() {
             meta.insert("pluginId".to_string(), reg.plugin_id.clone());
-            meta.insert(
-                "pluginVersion".to_string(),
-                reg.descriptor.config_version().to_string(),
-            );
+            if let Some(version) = registry.reaction_package_version(kind) {
+                meta.insert("pluginVersion".to_string(), version.to_owned());
+            } else {
+                log::warn!("Reaction kind '{kind}' has no known plugin package version; version metadata is omitted");
+            }
         }
     }
     meta
@@ -661,6 +661,33 @@ mod tests {
         // Register core plugins (noop, application)
         crate::server::register_core_plugins(&mut registry);
         registry
+    }
+
+    #[test]
+    fn reaction_metadata_reports_package_version_not_configuration_version() {
+        let mut registry = test_registry();
+        let descriptor = registry.get_reaction("application").unwrap().clone();
+        let configuration_version = descriptor.config_version().to_owned();
+        registry.register_reaction_with_package_version(
+            descriptor,
+            "reaction/application",
+            Some("9.7.3"),
+        );
+        let metadata = get_reaction_plugin_metadata(&registry, "application");
+        assert_eq!(metadata["pluginId"], "reaction/application");
+        assert_eq!(metadata["pluginVersion"], "9.7.3");
+        assert_ne!(metadata["pluginVersion"], configuration_version);
+    }
+
+    #[test]
+    fn unknown_package_versions_are_not_replaced_by_configuration_versions() {
+        let mut registry = test_registry();
+        assert!(get_reaction_plugin_metadata(&registry, "application").is_empty());
+        let descriptor = registry.get_reaction("application").unwrap().clone();
+        registry.register_reaction_with_metadata(descriptor, "reaction/application");
+        let metadata = get_reaction_plugin_metadata(&registry, "application");
+        assert_eq!(metadata["pluginId"], "reaction/application");
+        assert!(!metadata.contains_key("pluginVersion"));
     }
 
     // ==========================================================================
