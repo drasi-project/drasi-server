@@ -619,6 +619,50 @@ current evidence, and current ABI 0.13 guards must not be weakened to run an
 old ABI 0.11 cache or historical image. Reproduce old results only with the
 complete matching historical harness/policy described below.
 
+The own default `target/debug/drasi-server` was rebuilt before Rust integration
+tests. Normal merge `3b39126ae36c9a0da96a4c0e29ad812b181636f6` has exact
+parents original P4 `20561c13` and approved P3 `39f82c9`. Its current
+server 0.2.3 / library 0.9.1 / host SDK 0.11.0 / index 0.6.1 binary has SHA-256
+`eec11ff22242d354b05ef5fb65f1f5240c235a9906298c342d77276ab8feef2d`,
+with lock SHA-256
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+The unchanged own-source live scenario passed with fresh signed SSE 0.3.6 /
+plugin SDK 0.11.1 / ABI 0.13 plugins: singleton 2000/cost 1800/count 2,
+live/reload 2050 and offline/reconnect 2150, CRUD/deletes and no recovery
+navigation or historical candidate rows. This is not a borrowed lower binary.
+
+All 17 raw CDP records from that run remain separate in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson`, with adjacent
+source/manifest/lock/binary/plugin provenance. Tests retain all old recording
+assertions and exercise these current records through the unchanged normalizer
+and default SSE transport. In particular, current lowercase aggregation carries
+before/after without `data`; numeric signatures still exceed JavaScript's safe
+integer range and are never row identity. No authoritative snapshot cursor,
+clock-based ordering or broader plugin compatibility is inferred.
+
+The integrated local gates pass 332 package tests, 89 Trading tests, all
+13 artifact-policy tests (all originals retained), and 53 tooling tests.
+Own rebuilt locked Rust passes 809 tests with 32 existing ignores; fmt,
+strict Clippy, typo validation and the selected audit pass (zero vulnerabilities,
+15 retained warnings). Clean installed Node 22.20.0 and 24.19.0 consumers retain
+nine public programs / 363 negative assertions, five literal README examples,
+eight extraction guards and eight import/SSR checks, including React-free
+client/auth and hook presentation isolation. The full packed Linux run passes
+all 26 scenarios and all five unchanged exact images on its first run.
+The independent source-free frontend also passes the current own-source live
+scenario; it points `P1_SOURCE_ROOT` only at this backend checkout.
+
+Integrated measurements are **189,130 tarball / 98,585 all ESM / 106,000 all
+CJS / 69,767 all declarations / 10,043 package CSS** bytes. Packed Trading
+remains **250,892 JS / 73,795 JS gzip / 21,034 CSS / 5,163 CSS gzip** bytes.
+Only the tarball changes from original P4: **+1,431 bytes (0.76%)** for current
+runtime/compatibility documentation. Executable, CSS and already-shipped
+declaration bytes are unchanged; the declaration metric now counts both graphs.
+The existing P4 byte budget is not raised, and the same 2% policy passes.
+Current-head CI and final provenance remain on #207; external workflow/model,
+configured-skip, embedded-plugin/legacy-workspace, npm/publication and human
+assistive-technology caveats are not converted into passed product claims.
+
 ## Mandatory real-server gate
 
 The primary gate builds the **checked-out server and its Cargo.lock**, not an

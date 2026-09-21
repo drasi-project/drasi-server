@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document that new archive/memory-budget controls are server/instance settings:
   the query read DTO is unchanged and `storageBackend` remains opaque JSON.
   No P5-P7 product features or query/resource-creation defaults are introduced.
+- Retain all 17 actual SSE 0.3.6 records from the own rebuilt normal-merge
+  server separately, with manifest/lock/binary/signature provenance. Exercise
+  the unchanged `sse034ResultAdapter` and default transport against them,
+  including query-ID routing and aggregation before/after without `data`.
+  The adapter name/API and P4 identity/recovery semantics do not change;
+  native ABI compatibility is not a universal wire-format claim.
 
 ### Added
 - P4 / #163 Part B normalized `ResultChange`, `QuerySnapshot`, `QueryDelta` and

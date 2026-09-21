@@ -350,8 +350,11 @@ New malformed/unroutable unidentified failures retain those reaction details;
 identified query failures use query details instead. Existing `DrasiError`
 objects retain their identity rather than being rewrapped.
 
-The default **`sse034ResultAdapter`** accepts the pinned, **untemplated SSE
-0.3.4** envelope `{ queryId, results, timestamp }`:
+The default **`sse034ResultAdapter`** accepts the recorded **untemplated SSE**
+envelope `{ queryId, results, timestamp }`. Its name identifies the original
+0.3.4 contract. Actual current 0.3.6 captures exercise the same observed
+ADD/DELETE/UPDATE/aggregation shapes without changing this API. This is not a
+claim about every plugin version, custom template or unobserved variant:
 
 - `ADD` with object `data` becomes an upsert; `DELETE` with object `data`
   becomes a delete.
@@ -696,7 +699,7 @@ The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
 
-The protocol evidence is the real capture at
+Historical protocol evidence is the real capture at
 `examples/trading/app/test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson`
 and the unmodified REST bodies at `test/fixtures/server-v1/contract.json`.
 The complete **20 original recording lines** are copied verbatim into
@@ -713,6 +716,20 @@ nullable aggregation-before and before/after updates; its
 `QueryResult.sequence`**. The capture and exact tagged source have distinct
 roles: not every documented variant occurred in that capture. An unused local
 SSE 0.3.5 checkout is not evidence for this pinned protocol.
+
+Current evidence is separate:
+`test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson` contains all **17 unmodified
+CDP records** from this layer's own rebuilt server at normal merge
+`3b39126ae36c9a0da96a4c0e29ad812b181636f6`. The adjacent
+`sse-0.3.6.provenance.json` records the source, manifest/lock/binary hashes and
+official signed ABI 0.13 plugin identity. Tests consume both versioned raw
+recordings through the unchanged adapter; current records also exercise the
+default stream transport and query-ID routing. They include `ADD`/`DELETE`
+with `data`, `UPDATE` with `before`/`after`/`data`, lowercase `aggregation`
+with `before`/`after` **without `data`**, and large numeric signatures that
+remain unsuitable as JavaScript identities. No shared REST/SSE cursor appears
+in these envelopes. Native ABI compatibility alone is not wire-format proof.
+The old raw recording and Part A's separate current DTO fixture are unchanged.
 
 ## P4 / #163 Part B migration
 
@@ -743,7 +760,8 @@ For Part B, migrate these breaking result contracts:
    `result.snapshot` and `result.timestamp` with snapshot `rows` or delta
    `changes` and display-only `receivedAt`/optional `sourceTimestamp`. Preserve
    `before` and `after` on updates, especially key changes.
-4. Remove top-level `routeUnidentified`. The default is strict SSE 0.3.4;
+4. Remove top-level `routeUnidentified`. The default is the strict recorded
+   SSE format above (`sse034ResultAdapter`, also exercised with current 0.3.6);
    explicitly choose `createLegacyResultAdapter({ routeUnidentified })` for
    legacy formats. `_deleted` is not a normalized-state tombstone.
 5. Distinguish query `status`/`stale`/`errorScope` from socket status. Keep useful
