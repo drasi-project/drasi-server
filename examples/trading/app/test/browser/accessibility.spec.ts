@@ -4,6 +4,8 @@
 import { test as base, expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { test as trading, openTrading, panel, row } from './fixtures';
 import { audit, auditReadiness, settleTradingAudit } from './axeAudit';
+import { installPausedClock } from './clock';
+import { FIXED_TIME } from '../fixtures/synthetic/trading';
 
 const test = base.extend({
   page: async ({ page, baseURL }, use, testInfo) => {
@@ -838,8 +840,7 @@ test.describe('installed provider-free consumer', () => {
 
   test('live motion preference cancels pending row decoration and unmount cleanup without losing updates', async ({ page }) => {
     const time = new Date();
-    await page.clock.install({ time });
-    await page.clock.pauseAt(time);
+    await installPausedClock(page, time);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await openConsumer(page, 'case=motion');
     const tracked = page.getByRole('table', { name: 'Tracked motion' }).getByRole('row').filter({ hasText: 'Bravo' });
@@ -867,6 +868,44 @@ test.describe('installed provider-free consumer', () => {
     await page.clock.runFor(1000);
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByTestId('motion-preference')).toHaveText('reduce');
+  });
+
+  test('paused clock keeps the original anchor across a scheduling gap before app navigation', async ({ page }, testInfo) => {
+    const anchor = new Date(FIXED_TIME);
+    const delayedPage: Parameters<typeof installPausedClock>[0] = {
+      url: () => page.url(),
+      clock: {
+        install: async options => {
+          await page.clock.install(options);
+          await new Promise(resolve => setTimeout(resolve, 75));
+        },
+        pauseAt: value => page.clock.pauseAt(value),
+      },
+    };
+    await installPausedClock(delayedPage, anchor);
+    expect(await page.evaluate(() => Date.now())).toBe(anchor.getTime());
+    await openConsumer(page, 'case=motion');
+    expect(await page.evaluate(() => Date.now())).toBe(anchor.getTime());
+    const timer = await page.evaluateHandle(() => {
+      const state = { fired: false };
+      setTimeout(() => { state.fired = true; }, 100);
+      return state;
+    });
+    try {
+      await page.clock.runFor(99);
+      expect(await timer.evaluate(state => state.fired)).toBe(false);
+      await page.clock.runFor(1);
+      expect(await timer.evaluate(state => state.fired)).toBe(true);
+      expect(await page.evaluate(() => Date.now())).toBe(anchor.getTime() + 100);
+      await page.clock.resume();
+      await expect.poll(() => page.evaluate(() => Date.now())).toBeGreaterThan(anchor.getTime() + 100);
+      await testInfo.attach('pre-navigation-clock-anchor.json', {
+        body: JSON.stringify({ anchor: anchor.toISOString(), injectedGapMs: 75, relativeTimerMs: 100, resumed: true }),
+        contentType: 'application/json',
+      });
+    } finally {
+      await timer.dispose();
+    }
   });
 
   test('audit readiness rejects settled content while its own overlay is still fading', async ({ page }, testInfo) => {

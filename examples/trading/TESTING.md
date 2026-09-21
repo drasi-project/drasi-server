@@ -456,6 +456,15 @@ before capturing computed colors. It does not accept a transient color, recaptur
 or alter runtime animation. The rejected intermediate WebKit raw audit/trace
 is retained, rather than treated as a passing run.
 
+Clock preparation also avoids a pre-navigation install/pause protocol race:
+on the blank page only, installation starts before the original anchor and
+`pauseAt` then establishes exactly the same `FIXED_TIME` before app code loads.
+No application time is advanced during this preparation. The visual clock
+still starts paused, lifecycle cases still explicitly resume it, and relative
+timer/recovery assertions and five-second bounds are unchanged. A scheduling-gap
+regression verifies the exact anchor across navigation, relative timers and
+subsequent resume; original image comparisons remain authoritative.
+
 The integrated Linux artifact measures **206,779 tarball / 89,246 ESM /
 98,118 CJS / 82,505 dual declarations / 8,616 package CSS / 304,459 app JS
 (92,744 gzip) / 25,266 app CSS (5,900 gzip)** bytes. Runtime, declaration and
