@@ -159,7 +159,9 @@ bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. New runtime captures are kept separately, never substituted into the
+cases. `test/fixtures/server-v1-0.2.3/contract.json` separately records the
+own rebuilt merged server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
+read tests consume both versions. New records are never substituted into the
 old provenance. See [verified compatibility](#verified-compatibility).
 
 ## Authentication and injected transports

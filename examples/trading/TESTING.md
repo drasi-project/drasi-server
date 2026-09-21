@@ -445,6 +445,27 @@ keeps the same coverage floors and 2% growth rule. New source/lock/binary/live
 evidence belongs to #206; old runtime captures are not relabeled as 0.2.3
 or ABI 0.13 results.
 
+The own rebuilt merge source `5988b1d82cbb4d24dca2d4cb2763c0572d564bf4`
+passes the unchanged actual Trading flow on server 0.2.3, with singleton
+2000/cost 1800/count 2 -> 2050 live/reload -> 2150 offline/reconnect,
+CRUD/live/deletes and no recovery navigation. Its binary SHA-256 is
+`6327ce9a6e938451f50174d634efdf795f011044b5b8eeeafbd8204b74fb3b28`;
+lock SHA-256 is
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+Actual full-view query/reaction/snapshot records are retained separately in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/contract.json` and run through
+the same read-only guards as the original 0.2.1 records.
+
+Fresh checks report 221 package tests, 64 Trading tests, 12 artifact-policy
+cases, 53 tooling tests, and 809 locked Rust passes / 32 existing ignores.
+Strict Clippy/fmt and the selected audit pass with zero vulnerabilities and
+15 retained warnings. The first local full Linux run had a 375-pixel mobile
+ticker-only difference; an unchanged targeted visual rerun and a subsequent
+full 26-scenario rerun passed all five original images. No product, screenshot,
+timeout, readiness or clock assertion was changed to obtain those passes.
+Final packed/current-head CI evidence is recorded on #206 rather than inferred
+from any lower owner's binary or an old plugin cache.
+
 ## Mandatory real-server gate
 
 The primary gate builds the **checked-out server and its Cargo.lock**, not an
