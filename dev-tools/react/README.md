@@ -146,17 +146,26 @@ nested shapes and snapshot object rows are checked at runtime from `unknown`.
 Malformed/incompatible bodies fail visibly with `INVALID_PAYLOAD`; missing
 reads throw rather than returning a success-shaped `null`.
 
+Server 0.2.3's `enableArchive` and `memoryBudgetMiB` settings belong to the
+server/instance configuration, not new fields in the unchanged v1 query read
+DTO. The client does not expose an instance-creation API. Per-query storage
+overrides remain opaque `storageBackend` JSON; no archive or memory-budget
+defaults are selected here.
+
 Current v1 links may spell identifiers literally. The client checks their
 identity and returns safely encoded, instance-scoped links. It never follows
 arbitrary response links, and refuses REST redirects into another path/origin.
 The UI helper returns `${serverUrl}/ui?instance={encodedInstanceId}`.
 
-`test/fixtures/server-v1/contract.json` contains **unmodified actual response
+The historical `test/fixtures/server-v1/contract.json` contains **unmodified actual response
 bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. See [verified compatibility](#verified-compatibility).
+cases. `test/fixtures/server-v1-0.2.3/contract.json` separately records the
+own rebuilt merged server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
+read tests consume both versions. New records are never substituted into the
+old provenance. See [verified compatibility](#verified-compatibility).
 
 ## Authentication and injected transports
 
@@ -673,14 +682,16 @@ Claims are intentionally narrow, not open-ended minimum versions:
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
 | Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
-| Server | v1 DTOs on server **0.2.1**, exact captured revision in the fixture, library **0.8.9**, the reviewed compatible engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. Not a claim that every older 0.2.1 runtime has the same result guarantees. |
-| Plugin / ABI | Signed SSE **0.3.4**, SDK/host/FFI crates **0.10.0**, independently versioned C ABI **0.11.0**. Trading's five exact platform/digest/hash pins remain unchanged. |
+| Server | Current approved runtime: **0.2.3**, registry library **0.9.1**, index **0.6.1**, the same reviewed engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. The v1 query read DTO is unchanged; archive/memory settings remain server/instance-owned. |
+| Plugin / ABI | Current signed SSE **0.3.6**, host/FFI crates **0.11.0**, plugin SDK crate **0.11.1**, native ABI **0.13.0**, from official merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`. Immutable platform/digest/hash/signature pins come from the approved parent integration. |
+| Historical runtime evidence | Server **0.2.1**, library **0.8.9**, SSE **0.3.4**, SDK **0.10.0** / ABI **0.11.0** captures remain versioned separately. They are not proof for every 0.2.1 build or a fallback for current ABI 0.13 startup. |
 
 Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
 identity or incompatible reaction membership fail with typed errors. No older
 server fallback, query-language substitution or newer SDK/ABI upgrade is
-attempted. See [engine prerequisites](../../docs/engine-prerequisite.md).
+attempted. See [engine prerequisites](../../docs/engine-prerequisite.md) and
+the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
@@ -777,6 +788,10 @@ app-owned. [Trading TESTING.md](../../examples/trading/TESTING.md) documents
 the locked clean-tarball gate, all three browsers, five original exact PNG images,
 coverage/size budgets and authoritative real-server financial/CRUD/reconnect
 assertions. Synthetic tests are not proof that a real plugin emits a shape.
+Artifact accounting includes all entrypoints/shared chunks, both declaration
+formats and all shipped CSS; historical single-format measurements remain
+preserved separately. The 2% future-growth policy and coverage floors do not
+change with this accounting correction.
 
 Keep `"private": true`. Publishing, repository transfer, credentials/workflows,
 new examples/Storybook and the pure UI/composition/accessibility work in #164

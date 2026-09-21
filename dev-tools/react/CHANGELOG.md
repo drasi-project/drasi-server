@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Parent integration
+- Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
+  host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
+  runtime while retaining the reviewed engine correction and all P3/P4 contracts.
+- Keep original runtime fixtures and P1/P2/P3/P4 schema-2 measurements historical.
+  Current accounting includes both shipped declaration formats, all package
+  chunks/CSS and recursive Trading assets without changing coverage floors or
+  the 2% growth policy.
+- Document that new archive/memory-budget controls are server/instance settings:
+  the query read DTO is unchanged and `storageBackend` remains opaque JSON.
+  No P5-P7 product features or query/resource-creation defaults are introduced.
+
 ### Added
 - P4 / #163 Part B normalized `ResultChange`, `QuerySnapshot`, `QueryDelta` and
   `QueryResult` contracts, exported with adapters and the framework-independent
