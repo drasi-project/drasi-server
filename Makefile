@@ -20,7 +20,7 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins download-test-plugins \
-        build-local-plugins build-local-plugins-debug test-tooling prepare-core
+        build-local-plugins build-local-plugins-debug test-tooling prepare-core prepare-build
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -79,7 +79,7 @@ help:
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
 	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
-	@echo "  make download-test-plugins      - Download test plugins from OCI registry (no drasi-core needed)"
+	@echo "  make download-test-plugins      - Prepare engine and download signed registry test plugins"
 	@echo "  make test-tooling               - Test plugin dependency-origin and setup policy"
 	@echo ""
 	@echo "Code Quality:"
@@ -102,10 +102,10 @@ help:
 # === Getting Started ===
 
 # Check dependencies and create config
-setup: doctor
+setup: prepare-build doctor
 	@echo ""
 	@echo "Building Drasi Server..."
-	@cargo build
+	@cargo build --locked
 	@echo ""
 	@if [ ! -f "config/server.yaml" ]; then \
 		echo "Creating default configuration..."; \
@@ -118,35 +118,38 @@ setup: doctor
 	@echo "Setup complete! Run 'make run' to start the server."
 
 # Build and run (debug mode)
-run: build-ui
-	cargo run
+run: prepare-build build-ui
+	cargo run --locked
 
 # Build and run with custom config
-run-config: build-ui
+run-config: prepare-build build-ui
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Usage: make run-config CONFIG=path/to/config.yaml"; \
 		exit 1; \
 	fi
-	cargo run -- --config $(CONFIG)
+	cargo run --locked -- --config "$(CONFIG)"
 
 # Build and run (release mode)
-run-release: build-ui
-	cargo run --release
+run-release: prepare-build build-ui
+	cargo run --locked --release
 
 # === Build ===
 
 prepare-core:
 	bash scripts/prepare-core.sh
 
+prepare-build:
+	@bash scripts/prepare-build.sh
+
 # Build the web UI (requires Node.js/npm)
 build-ui:
 	@echo "Building web UI..."
 	cd ui && npm ci && npm run build
 
-build: build-ui
+build: prepare-build build-ui
 	cargo build --locked
 
-build-release: build-ui
+build-release: prepare-build build-ui
 	cargo build --locked --release
 
 build-cross:
@@ -155,7 +158,7 @@ build-cross:
 		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	@bash scripts/prepare-core.sh
+	@bash scripts/prepare-build.sh
 	DRASI_CORE_WORKSPACE="$(CROSS_CORE_WORKSPACE)" cross build --locked --target-dir target/cross --target "$(TARGET)"
 
 build-cross-release:
@@ -164,20 +167,20 @@ build-cross-release:
 		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	@bash scripts/prepare-core.sh
+	@bash scripts/prepare-build.sh
 	DRASI_CORE_WORKSPACE="$(CROSS_CORE_WORKSPACE)" cross build --locked --target-dir target/cross --release --target "$(TARGET)"
 
-clippy:
-	cargo clippy --all-targets -- -D warnings
+clippy: prepare-build
+	cargo clippy --locked --all-targets -- -D warnings
 
-fmt:
+fmt: prepare-build
 	cargo fmt
 
-fmt-check:
+fmt-check: prepare-build
 	cargo fmt -- --check
 
-test:
-	cargo test
+test: prepare-build
+	cargo test --locked
 
 test-tooling:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
@@ -186,7 +189,7 @@ test-tooling:
 # plugin smoke tests, and VSCode extension tests.
 # Build local plugins only when Cargo resolves matching local SDK/host/FFI code.
 # An engine-only path patch must retain the compatible registry SDK plugins.
-test-all:
+test-all: prepare-build
 	@mode="$$(python3 scripts/plugin_origin.py mode)" && \
 	case "$$mode" in \
 		local) $(MAKE) build-local-plugins-debug ;; \
@@ -204,17 +207,18 @@ test-all:
 	@echo "=== All tests passed ==="
 
 # Plugin smoke tests: start server and create every plugin kind, verify no crash
-test-smoke:
+test-smoke: prepare-build
 	@echo "=== Plugin smoke test ==="
 	./tests/plugin_smoke_test.sh
 
 # Build cdylib test plugins (mock source, log reaction, http reaction, scriptfile bootstrap)
 # needed by solution deployment and E2E tests.
 # Plugins are built from ../drasi-core and copied to target/debug/plugins/.
-# Download pre-built test plugins from the OCI registry (no local drasi-core needed).
+# Obtain the pinned engine if absent, then download signed test plugins instead
+# of building the sibling workspace's unused SDK/library plugins.
 # Uses the server's built-in `plugin install` CLI to fetch mock source, log reaction,
 # http reaction, and scriptfile bootstrap plugins.
-download-test-plugins:
+download-test-plugins: prepare-build
 	@echo "=== Downloading test plugins from OCI registry ==="
 	cargo build --locked
 	python3 scripts/install_plugins.py --group test \
@@ -254,8 +258,8 @@ build-local-plugins-debug:
 	cp "$$core_root"/target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/
 	@echo "=== Local plugins ready in target/debug/plugins/ ==="
 
-dev-run:
-	cargo run -- --config config/server.yaml
+dev-run: prepare-build
+	cargo run --locked -- --config config/server.yaml
 
 dev-build: fmt clippy test
 	@echo "Dev build complete!"
@@ -302,7 +306,7 @@ doctor:
 	@echo ""
 
 # Validate configuration
-validate:
+validate: prepare-build
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Validating config/server.yaml..."; \
 		cargo run --release -- validate --config config/server.yaml 2>/dev/null || echo "Note: validate subcommand not yet implemented"; \

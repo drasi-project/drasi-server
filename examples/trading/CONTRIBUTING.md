@@ -91,7 +91,9 @@ No standalone example app or Storybook site is needed before #165.
 Use the complete [package reference](../../dev-tools/react/README.md#components)
 and [P6 migration](../../dev-tools/react/README.md#p6--164-part-b-migration)
 instead of private implementation imports or unsafe type casts.
-The package remains private and backend/SDK/plugin pins are out of scope.
+The package remains private. Feature work does not independently change
+backend/SDK/plugin pins; normal parent integration inherits only the separately
+approved current runtime documented in `docs/main-runtime-integration.md`.
 Retain all original literal README recipes; additions must compile from the
 installed tarball with the existing strict public-contract checker.
 

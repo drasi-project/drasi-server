@@ -502,8 +502,11 @@ announcements or change its existing animation, data handling or pixels.
 All eleven queries, raw keys, financial transforms, provisioning, sorting
 defaults and the documented market-mover discrepancy remain frozen. The five
 original visual PNG images remain the unchanged compatibility expectations,
-not replacements for accessibility evidence. SDK/backend/plugin pins and the
-package's private status are unchanged.
+not replacements for accessibility evidence. The package remains private.
+The original P6 feature kept its predecessor's runtime pins; the approved
+normal parent integration now inherits server 0.2.3, registry library 0.9.1,
+host SDK 0.11.0 and the signed SSE 0.3.6 / native ABI 0.13 plugin set.
+This does not change the presentation, query, result or no-cursor guarantees.
 
 See the [P6 migration and executable recipes](../../dev-tools/react/README.md#p6--164-part-b-migration)
 and [P6 evidence/checklist](TESTING.md#p6-presentation-contracts-and-evidence).

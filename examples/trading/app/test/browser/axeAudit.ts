@@ -66,9 +66,21 @@ export async function audit(
   }
 }
 
+export function auditReadiness(scope: Locator) {
+  return scope.evaluate(element => {
+    const owner = element.closest('.drasi-modal-layer') ?? element;
+    return {
+      contentOpacity: getComputedStyle(element).opacity,
+      ownerOpacity: getComputedStyle(owner).opacity,
+      finiteMotion: owner.getAnimations({ subtree: true })
+        .filter(animation => (animation.playState === 'running' || animation.pending) &&
+          Number.isFinite(animation.effect?.getComputedTiming().endTime)).length,
+    };
+  });
+}
+
 export async function settleTradingAudit(page: Page, scope: Locator): Promise<void> {
   await page.mouse.move(0, 0);
-  await expect.poll(() => scope.evaluate(element => element.getAnimations({ subtree: true })
-    .filter(animation => animation.playState === 'running' &&
-      Number.isFinite(animation.effect?.getComputedTiming().endTime)).length)).toBe(0);
+  await expect.poll(() => auditReadiness(scope))
+    .toEqual({ contentOpacity: '1', ownerOpacity: '1', finiteMotion: 0 });
 }

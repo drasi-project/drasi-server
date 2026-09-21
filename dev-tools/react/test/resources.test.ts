@@ -8,18 +8,22 @@ import { DrasiClient } from '../src/client/DrasiClient';
 import { DrasiError } from '../src/client/errors';
 import { readQuery, readReaction, readResponse, readRows } from '../src/client/resources';
 import captured from './fixtures/server-v1/contract.json';
+import current from './fixtures/server-v1-0.2.3/contract.json';
 import { component, json, queryConfig, refs } from './server';
 
 const queryDetails = { instanceId: 'trading-server', resourceKind: 'query' as const, resourceId: 'watchlist-query' };
 const reactionDetails = { instanceId: 'trading-server', resourceKind: 'reaction' as const, resourceId: 'sse-stream' };
 
 describe('versioned real server read contract', () => {
-  it('consumes captured full-view query/reaction and snapshot bodies through the public client', async () => {
+  it.each([
+    { version: '0.2.1', sseVersion: '0.3.4', record: captured },
+    { version: '0.2.3', sseVersion: '0.3.6', record: current },
+  ])('consumes captured $version full-view query/reaction and snapshot bodies through the public client', async ({ version, sseVersion, record }) => {
     const fetcher = vi.fn<typeof fetch>(async input => {
       const url = new URL(String(input));
       expect(url.pathname.startsWith('/api/v1/instances/trading-server/')).toBe(true);
-      const response = url.pathname.endsWith('/results') ? captured.snapshot
-        : url.pathname.includes('/reactions/') ? captured.reaction : captured.query;
+      const response = url.pathname.endsWith('/results') ? record.snapshot
+        : url.pathname.includes('/reactions/') ? record.reaction : record.query;
       return new Response(JSON.stringify(response.body));
     });
     const client = new DrasiClient({
@@ -27,15 +31,16 @@ describe('versioned real server read contract', () => {
       reaction: { id: 'sse-stream', endpoint: 'https://proxy.invalid/events' }, fetch: fetcher,
     });
     await expect(client.validateResources()).resolves.toBeUndefined();
-    expect(await client.getQuery('watchlist-query')).toEqual(captured.query.body.data);
-    expect(await client.getReaction()).toEqual(captured.reaction.body.data);
-    expect(await client.getQueryResults('watchlist-query')).toEqual(captured.snapshot.body.data);
+    expect(await client.getQuery('watchlist-query')).toEqual(record.query.body.data);
+    expect(await client.getReaction()).toEqual(record.reaction.body.data);
+    expect(await client.getQueryResults('watchlist-query')).toEqual(record.snapshot.body.data);
     const config = await client.getQueryConfig('watchlist-query');
     expect(config.sources.map(source => source.sourceId)).toEqual(['postgres-stocks', 'price-feed']);
     expect(config.joins?.map(join => join.id)).toEqual(['ON_WATCHLIST', 'HAS_PRICE']);
     expect(config.middleware).toEqual([]);
     expect(config.bootstrapTimeoutSecs).toBe(300);
-    expect(captured.provenance.ssePluginVersion).toBe('0.3.4');
+    expect(record.provenance.serverVersion).toBe(version);
+    expect(record.provenance.ssePluginVersion).toBe(sseVersion);
     expect(fetcher.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
     await client.disconnect();
   });

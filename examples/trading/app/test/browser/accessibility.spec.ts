@@ -3,7 +3,7 @@
 
 import { test as base, expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { test as trading, openTrading, panel, row } from './fixtures';
-import { audit, settleTradingAudit } from './axeAudit';
+import { audit, auditReadiness, settleTradingAudit } from './axeAudit';
 
 const test = base.extend({
   page: async ({ page, baseURL }, use, testInfo) => {
@@ -867,6 +867,39 @@ test.describe('installed provider-free consumer', () => {
     await page.clock.runFor(1000);
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByTestId('motion-preference')).toHaveText('reduce');
+  });
+
+  test('audit readiness rejects settled content while its own overlay is still fading', async ({ page }, testInfo) => {
+    await openConsumer(page, 'case=modal');
+    await openOwner(page);
+    const dialog = modal(page);
+    const owner = page.locator('.drasi-modal-layer').filter({ has: dialog });
+    const animation = await owner.evaluateHandle(element => {
+      const fade = element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, fill: 'both' });
+      fade.pause();
+      fade.currentTime = 500;
+      return fade;
+    });
+    const fading = await auditReadiness(dialog);
+    expect(fading).toEqual({ contentOpacity: '1', ownerOpacity: '0.5', finiteMotion: 0 });
+    let ready = false;
+    const pending = settleTradingAudit(page, dialog).then(() => { ready = true; });
+    try {
+      await observePaints(page);
+      expect(ready).toBe(false);
+      await animation.evaluate(fade => fade.finish());
+      await pending;
+      expect(ready).toBe(true);
+      const settled = await auditReadiness(dialog);
+      expect(settled).toEqual({ contentOpacity: '1', ownerOpacity: '1', finiteMotion: 0 });
+      await testInfo.attach('audit-owner-readiness.json', {
+        body: JSON.stringify({ fading, settled }), contentType: 'application/json',
+      });
+    } finally {
+      await animation.evaluate(fade => fade.cancel());
+      await animation.dispose();
+      await pending;
+    }
   });
 
   test('the fixture server keeps encoded traversal and malformed paths outside its static root', async ({ request }) => {

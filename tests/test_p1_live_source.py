@@ -31,7 +31,7 @@ def fixture():
             ("drasi-core", "0.5.8", "core"),
             ("drasi-query-ast", "0.3.5", "query-ast"),
             ("drasi-query-cypher", "0.3.6", "query-cypher"),
-            ("drasi-index-rocksdb", "0.5.8", None),
+            ("drasi-index-rocksdb", "0.6.1", None),
             ("drasi-query-gql", "0.3.6", None),
         ]
     ]}
@@ -43,6 +43,7 @@ class LiveSourceProvenanceTests(unittest.TestCase):
         self.assertEqual(len(selected), 5)
         self.assertIsNone(selected["drasi-core"]["source"])
         self.assertEqual(selected["drasi-query-cypher"]["version"], "0.3.6")
+        self.assertEqual(selected["drasi-index-rocksdb"]["version"], "0.6.1")
         self.assertEqual(selected["drasi-index-rocksdb"]["source"], REGISTRY)
 
     def test_rejects_unapproved_engine_version(self):
@@ -73,6 +74,12 @@ class LiveSourceProvenanceTests(unittest.TestCase):
         metadata = fixture()
         metadata["packages"][3]["source"] = None
         with self.assertRaisesRegex(ValueError, "registry-sourced"):
+            provenance.selected_engine(metadata, CORE)
+
+    def test_rejects_the_previous_registry_index_version(self):
+        metadata = fixture()
+        metadata["packages"][3]["version"] = "0.5.8"
+        with self.assertRaisesRegex(ValueError, "version"):
             provenance.selected_engine(metadata, CORE)
 
     def test_rejects_an_unapproved_gql_version(self):
