@@ -451,7 +451,8 @@ ignored**, with strict Clippy/fmt and audit zero vulnerabilities / the same
 and all five original exact PNG images pass under the corrected accounting.
 An additional three-engine regression covers fully opaque content while its
 own overlay is still fading; the audit now observes both within the unchanged
-five-second bound. It does not accept a transient color, recapture fingerprints
+five-second bound and observes native paints after a completed transition
+before capturing computed colors. It does not accept a transient color, recapture fingerprints
 or alter runtime animation. The rejected intermediate WebKit raw audit/trace
 is retained, rather than treated as a passing run.
 

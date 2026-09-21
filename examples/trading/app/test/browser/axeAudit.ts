@@ -81,6 +81,17 @@ export function auditReadiness(scope: Locator) {
 
 export async function settleTradingAudit(page: Page, scope: Locator): Promise<void> {
   await page.mouse.move(0, 0);
-  await expect.poll(() => auditReadiness(scope))
+  await expect.poll(async () => {
+    const beforePaint = await auditReadiness(scope);
+    if (beforePaint.contentOpacity !== '1' || beforePaint.ownerOpacity !== '1' || beforePaint.finiteMotion !== 0) {
+      return beforePaint;
+    }
+    // WebKit can report a finished transition before its final computed colors
+    // are committed. Observe real paints rather than accepting an in-flight sample.
+    await page.evaluate(() => new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    return auditReadiness(scope);
+  })
     .toEqual({ contentOpacity: '1', ownerOpacity: '1', finiteMotion: 0 });
 }
