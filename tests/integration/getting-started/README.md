@@ -14,10 +14,23 @@ This directory contains integration tests for Drasi Server that can be run both 
 
 1. PostgreSQL running (use Docker or local installation)
 2. Drasi Server built in release mode
+3. Python 3.11 or newer for the locked plugin installer
+4. Network access to the public OCI registry and Sigstore/Rekor for signature verification
+
+The runner installs the reviewed `source/postgres:0.2.10`,
+`bootstrap/postgres:0.2.13`, and `reaction/log:0.2.7` artifacts before starting
+the server. Their immutable digests, binary hashes, and trusted publisher
+identity come from the [shared plugin pins](../../plugin-pins/README.md).
+Signature verification stays enabled; automatic latest-version installation
+is disabled. A missing, conflicting, or unverified artifact stops the runner
+before any server is launched. This engine-prerequisite checkout also requires
+the exact pinned sibling engine before Cargo runs. Make build/test entry points
+prepare it automatically; run `make prepare-core` before direct Cargo commands.
 
 ### Quick Start with Docker
 
 ```bash
+# Run these commands from the repository root.
 # Start PostgreSQL with Docker
 docker run -d \
   --name drasi-test-postgres \
@@ -28,15 +41,14 @@ docker run -d \
   postgres:15
 
 # Setup the database
-./setup-postgres.sh
+./tests/integration/getting-started/setup-postgres.sh
 
 # Build Drasi Server (from project root)
-cd ../..
-cargo build --release
+make prepare-core
+cargo build --locked --release
 
 # Run tests
-cd tests/integration/getting-started
-./run-integration-test.sh
+./tests/integration/getting-started/run-integration-test.sh
 ```
 
 ### Configuration
@@ -51,8 +63,9 @@ All scripts support environment variables for customization:
 - `DB_PASSWORD` - Database password (default: `drasi_password`)
 
 **Server Configuration:**
-- `SERVER_BINARY` - Path to server binary (default: `../../target/release/drasi-server`)
-- `CONFIG_FILE` - Path to config file (default: `./config.yaml`)
+- `SERVER_BINARY` - Path to server binary (default: `target/release/drasi-server` under the repository root)
+- `PLUGINS_DIR` - Plugin directory (default: `plugins` beside `SERVER_BINARY`); use a fresh directory when replacing an incompatible plugin set
+- `CONFIG_FILE` - Path to config file (default: `config.yaml` beside the runner)
 - `SERVER_PORT` - Server API port (default: `8080`)
 - `SERVER_LOG` - Path to server log file (default: `./server.log`)
 
@@ -87,7 +100,9 @@ The GitHub Actions workflow uses these scripts:
     ./tests/integration/getting-started/setup-postgres.sh
 
 - name: Build server
-  run: cargo build --release
+  run: |
+    bash scripts/prepare-core.sh
+    cargo build --locked --release
 
 - name: Run integration tests
   run: ./tests/integration/getting-started/run-integration-test.sh
@@ -114,8 +129,9 @@ rm -f server.log
 
 **Server won't start:**
 - Check server log: `cat server.log`
-- Verify binary exists: `ls -la ../../target/release/drasi-server`
+- Verify binary exists: `ls -la target/release/drasi-server` from the repository root
 - Check port availability: `lsof -i :8080`
+- For pin conflicts, keep the existing directory intact and choose a fresh `PLUGINS_DIR`; do not disable signature or ABI verification
 
 **Tests fail:**
 - Review server logs in `server.log`
