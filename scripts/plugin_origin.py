@@ -16,6 +16,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 SDK_PACKAGES = ("drasi-host-sdk", "drasi-plugin-sdk", "drasi-ffi-primitives")
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
+REGISTRY_SDK_VERSION = "0.11.0"
+REGISTRY_LIB_VERSION = "0.9.1"
+PLUGIN_ABI_VERSION = "0.13.0"
 
 
 class PluginOriginError(Exception):
@@ -69,11 +72,15 @@ def classify(metadata):
     selected = selected_packages(metadata)
     sources = [selected[name]["source"] for name in SDK_PACKAGES]
     if all(source == REGISTRY for source in sources):
-        if any(selected[name]["version"] != "0.10.0" for name in SDK_PACKAGES):
-            raise PluginOriginError("Registry plugin pins require SDK/host/FFI crates 0.10.0")
+        if any(selected[name]["version"] != REGISTRY_SDK_VERSION for name in SDK_PACKAGES):
+            raise PluginOriginError(
+                f"Registry plugin pins require SDK/host/FFI crates {REGISTRY_SDK_VERSION}"
+            )
         library = selected["drasi-lib"]
-        if library["source"] != REGISTRY or library["version"] != "0.8.9":
-            raise PluginOriginError("Registry plugin pins require registry drasi-lib 0.8.9")
+        if library["source"] != REGISTRY or library["version"] != REGISTRY_LIB_VERSION:
+            raise PluginOriginError(
+                f"Registry plugin pins require registry drasi-lib {REGISTRY_LIB_VERSION}"
+            )
         return "registry", selected
     if all(source is None for source in sources):
         return "local", selected

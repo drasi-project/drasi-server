@@ -121,6 +121,7 @@ pub async fn list_instances(
     request_body(content = inline(shared::CreateInstanceRequest)),
     responses(
         (status = 200, description = "Instance created successfully", body = ApiResponse),
+        (status = 400, description = "Invalid instance configuration", body = ErrorResponse),
         (status = 409, description = "Instance already exists"),
         (status = 500, description = "Internal server error"),
     ),
