@@ -139,12 +139,21 @@ pub extern "C" fn drasi_plugin_init() -> *mut FfiPluginRegistration
 | `target_triple` | Exact match | **REJECT** | Cannot load x86_64 `.so` on aarch64 |
 | `plugin_version` | Log only | **INFO** | Plugin's own version — no compatibility constraint |
 
-The package version and configuration-format version have different meanings.
-Both startup loading and runtime loading retain the package version read from
-the loaded library. Component metadata uses that value for `pluginVersion`;
-`config_version()` remains the schema/configuration version. If older plugin
-metadata does not provide a package version, Server reports it as unknown and
-omits the component's version field rather than inventing one from the schema.
+The Server API (`GET /api/v1/plugins`) reports three different versions:
+
+| JSON field | Meaning |
+|------------|---------|
+| `pluginVersion` | The plugin's package version, read from the loaded library's metadata |
+| `kinds[].configVersion` | The configuration format for a plugin kind, from `config_version()` |
+| `sdkVersion` | The plugin/host interface compatibility version, not the Cargo package version of `drasi-plugin-sdk` |
+
+Startup and runtime loading both retain the package version. Source and reaction
+metadata also use it for `pluginVersion`. If the package version is unavailable,
+the plugin listing uses an empty string and component metadata omits
+`pluginVersion`; neither substitutes the configuration-format version.
+
+For matching local Server and plugin builds on the ComputationGraph branch, see
+[ComputationGraph development](../README.md#computationgraph-development).
 
 ## FFI Boundary Design
 

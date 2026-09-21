@@ -18,6 +18,7 @@ Drasi Server is a standalone server for real-time data change processing. It mon
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Running Drasi Server](#running-drasi-server)
+  - [Execution Engine](#execution-engine)
 - [Web UI Guide](#web-ui-guide)
 - [Instances](#instances)
 - [Solution Templates](#solution-templates)
@@ -25,6 +26,7 @@ Drasi Server is a standalone server for real-time data change processing. It mon
 - [REST API](#rest-api)
 - [VS Code Extension](#vs-code-extension)
 - [Development Utilities](#development-utilities)
+  - [ComputationGraph Development](#computationgraph-development)
 - [Docker Deployment](#docker-deployment)
 - [Use Cases](#use-cases)
 - [Complete Configuration Examples](#complete-configuration-examples)
@@ -307,7 +309,8 @@ drasi-server [OPTIONS] [COMMAND]
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
 | `--execution-mode <MODE>` | | (from config) | Force `component-graph` or `computation-graph` for all instances |
-| `--verify-plugins` | | `false` | Enable cosign signature verification for downloaded plugins |
+| `--plugins-dir <PATH>` | | `plugins/` beside the binary | Directory containing plugin shared libraries |
+| `--skip-verification` | | `false` | Disable plugin signature verification; use only for trusted local development builds |
 | `--enable-ui` | | | Enable Web UI (overrides config) |
 | `--disable-ui` | | | Disable Web UI (overrides config) |
 | `--help` | `-h` | | Print help information |
@@ -345,74 +348,94 @@ drasi-server doctor --all  # Include optional deps
 
 ### Execution Engine
 
-The legacy `ComponentGraph` engine remains the default. Opt into native
-`ComputationGraph` execution without changing source, query, reaction, or plugin
-configuration:
+`ComponentGraph` remains the default. Select `ComputationGraph` without changing
+your source, query, or reaction configuration. The existing component, lifecycle,
+status, and query-results endpoints use the selected engine. Server does not
+expose all of the lower-level graph-management APIs available in the Rust library.
 
-```bash
-drasi-server --config config/server.yaml --execution-mode computation-graph
-```
+These instructions apply to the `agentofreality-parallel-computation-graph`
+branch. Use a [local development build](#computationgraph-development); do not
+assume published binaries, images, or plugins include these changes.
 
-This selects the implementation behind the **ordinary** source/query/reaction
-CRUD, lifecycle, results, and status APIs; it does not create a side graph while
-leaving queries on the legacy engine. Existing plugin ABI entrypoints and loader
-verification policy are unchanged.
+#### Choose an engine
 
-For file-based selection, use camelCase values:
+| Engine | CLI `--execution-mode` | YAML or JSON `executionMode` |
+|--------|------------------------|------------------------------|
+| ComponentGraph (default) | `component-graph` | `componentGraph` |
+| ComputationGraph | `computation-graph` | `computationGraph` |
+
+Save this small configuration as `config/engines.yaml`. It creates two empty
+instances: `analytics` inherits the root setting, while `compatibility` overrides it.
 
 ```yaml
+apiVersion: drasi.io/v1
+host: 127.0.0.1
+port: 8080
 executionMode: computationGraph
 instances:
-  - id: native
-  - id: legacy
+  - id: analytics
+  - id: compatibility
     executionMode: componentGraph
 ```
 
-Precedence is **CLI force > instance `executionMode` > root `executionMode` >
-`componentGraph`**. API-created instances inherit the stable server-level default
-(root plus CLI), not whichever instance happens to be first. An explicit REST
-override is allowed unless it conflicts with a CLI-forced mode, in which case
-creation returns HTTP 400. Configuration persistence records the actual running
-engine and retains the root default independently of per-instance overrides.
-Omitted legacy selections remain omitted in serialized configuration.
-
-Inspect the live instance, rather than relying on a configuration echo:
-
 ```bash
-curl http://localhost:8080/api/v1/instances/native/runtime
-# data: {"instanceId":"native","executionMode":"computationGraph","running":true}
+# Use the selections in the file
+drasi-server --config config/engines.yaml
+
+# Alternatively, force every instance to use ComputationGraph
+drasi-server --config config/engines.yaml --execution-mode computation-graph
 ```
 
-Startup also prints each instance's actual execution mode. The existing UI,
-component endpoints, and snapshots continue to use their existing shapes.
-Programmatic callers can select all builders with
-`DrasiServerBuilder::with_execution_mode(ExecutionMode::ComputationGraph)`;
-without that override, explicitly supplied instance builders retain their modes.
+At startup, precedence is **CLI > instance `executionMode` > root
+`executionMode` > `componentGraph`**. In a single-instance configuration, use the
+root field alongside `sources`, `queries`, and `reactions`.
 
-This development checkout uses the complete Drasi dependency family from the
-sibling `../drasi-core` repository, with the `computation` feature enabled.
-Build with `cargo build --locked --bin drasi-server`; Cargo compiles the current
-local core files rather than fetching a pinned revision or published Drasi crates.
-Runtime plugins are separate shared libraries: rebuild matching target/SDK
-artifacts from that same checkout, for example with `make build-local-plugins`.
-Do not assume plugins downloaded from a registry match local SDK changes.
-The plugin API's `sdkVersion` reports the FFI compatibility version, not the
-Cargo package version. Path dependencies do not rebuild or replace plugin
-binaries.
+New instances created by `POST /api/v1/instances` inherit the server-level
+default, not the first instance's engine. A request can override it, for example
+`{"id":"reporting","executionMode":"componentGraph"}`. If that conflicts with a
+CLI-forced mode, creation returns HTTP 400 with code `INVALID_REQUEST` and message
+`executionMode conflicts with the server's forced execution mode`.
 
-For a real binary/plugin regression, independently verify the hashes/provenance of
-matching HTTP source and log reaction cdylibs, place them in a directory, then run:
+#### Check the running engine
 
 ```bash
-DRASI_NATIVE_TEST_PLUGINS=./plugins cargo test --locked --test execution_mode_test \
-  native_binary_loads_plugins_and_processes_http_events -- --ignored --exact
+curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/instances/analytics/runtime
 ```
 
-This uses isolated temporary storage and loopback ports, checks the live native
-runtime endpoint, and sends an HTTP event through the loaded source, ordinary
-query API, and loaded log reaction. It explicitly uses `--skip-verification`
-because local build artifacts are not cosign-signed; SDK/target/ABI checks remain
-active. Normal server startup still requires verified plugins by default.
+For the running `analytics` instance, the response is:
+
+```json
+{
+  "success": true,
+  "data": {
+    "instanceId": "analytics",
+    "executionMode": "computationGraph",
+    "running": true
+  },
+  "error": null
+}
+```
+
+This reads the live instance, not just its configuration. `running` describes the
+instance; it does not mean every source, query, and reaction is ready.
+
+#### Saved selections and restarts
+
+With `persistConfig: true` (the default) and a writable configuration file, an API
+change saves the running engines and the server-level default separately.
+Redundant default values may be omitted from the YAML. **A CLI-forced mode is
+included in the next API-triggered save**, so removing the flag later may not
+restore the previous default. Use `persistConfig: false` if those changes should
+not be saved.
+
+Engine selection applies when an instance is created; restart to apply a file
+change. Selecting an engine does **not** migrate existing stored state.
+
+Core library documentation:
+[design](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-design.md),
+[usage](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-usage.md),
+[configuration](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-configuration.md),
+and [API reference](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-reference.md).
 
 ### Environment Variables
 
@@ -852,7 +875,10 @@ drasi-server plugin install-all --registry ghcr.io/my-org
 
 ## Configuration Reference
 
-Drasi Server uses YAML configuration files. All configuration values support environment variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
+Drasi Server uses YAML configuration files. Many fields support environment
+variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
+`executionMode` requires one of the literal values listed in
+[Execution Engine](#execution-engine).
 
 ### Server Settings
 
@@ -862,6 +888,7 @@ Drasi Server uses YAML configuration files. All configuration values support env
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `executionMode` | string | `componentGraph` | Default engine for configured and API-created instances; see [Execution Engine](#execution-engine) for per-instance overrides and CLI precedence |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
 | `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instance-key>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
 | `memoryBudgetMiB` | integer | RocksDB provider default | Optional shared RocksDB memory budget, in MiB, for all query databases in the instance. Requires `persistIndex: true`. Set it at the root only in single-instance mode; with explicit `instances`, set it on each persistent instance. |
@@ -2132,6 +2159,42 @@ npm run package
 
 Drasi Server includes a Makefile with common development commands.
 
+### ComputationGraph Development
+
+Use matching Server and Core checkouts on the feature branch, with the
+[source-build prerequisites and directory layout](#option-2-build-from-source).
+Server enables the `drasi-lib` `computation` feature. Rebuilding Server includes
+local Core changes, but does not rebuild the plugin shared libraries.
+
+From `drasi-server/`, build Server and its plugins separately:
+
+```bash
+cargo build --locked --release --bin drasi-server
+make build-local-plugins
+
+# Use config/engines.yaml from the Execution Engine example
+./target/release/drasi-server --config config/engines.yaml \
+  --plugins-dir ./target/release/plugins --skip-verification --disable-ui
+```
+
+`make build-local-plugins` builds plugins from the sibling Core checkout and
+copies them to `target/release/plugins/`. Keep Server and plugins on matching
+SDKs, toolchains, and targets; registry downloads may not match local SDK changes.
+For debug builds, use `cargo build --locked --bin drasi-server` and
+`make build-local-plugins-debug`, with binaries under `target/debug/`.
+
+Use `--skip-verification` only for trusted local builds without signatures.
+It disables signature verification, not SDK or target checks. The example
+disables the UI because a Cargo-only build does not build its assets; see
+[UI source builds](#prerequisites-source-builds-only) to include them.
+See [plugin version fields](docs/plugin-architecture.md#version-validation)
+for the distinction between package, configuration, and SDK versions.
+
+Rust callers can use
+`DrasiServerBuilder::with_execution_mode(ExecutionMode::ComputationGraph)` to
+select the engine for all instance builders. Without that override, supplied
+instance builders keep their own selections.
+
 ### Available Commands
 
 ```bash
@@ -2840,14 +2903,13 @@ docker compose restart drasi-server
 
 ## Building from Source
 
+See [source-build prerequisites and checkout layout](#option-2-build-from-source),
+then follow [ComputationGraph Development](#computationgraph-development) for
+the feature-branch Server and matching local plugins. This checkout loads plugin
+shared libraries at runtime; it has no `builtin-plugins` or `dynamic-plugins`
+Cargo feature flags.
+
 ```bash
-# Clone the repository
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server
-
-# Build (default: all plugins statically linked)
-cargo build --release
-
 # Run tests
 cargo test
 
@@ -2856,64 +2918,23 @@ cargo fmt
 cargo clippy
 ```
 
-### Feature Flags
-
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `builtin-plugins` | ✅ | All source/reaction/bootstrap plugins are statically linked into the binary |
-| `dynamic-plugins` | | Enables loading plugins from `.so`/`.dylib`/`.dll` files at runtime |
-
-### Dynamic Plugin Build
-
-To build with dynamic plugin loading instead of static linking:
-
-```bash
-# Build the server with dynamic plugin loading support
-make build-dynamic          # debug
-make build-dynamic-release  # release
-
-# Or build the server and plugins separately:
-make build-dynamic-server           # server only (debug)
-make build-dynamic-plugins          # plugins only (debug)
-make build-dynamic-server-release   # server only (release)
-make build-dynamic-plugins-release  # plugins only (release)
-```
-
-Plugins are built using `cargo xtask`, which automatically discovers plugin crates via `cargo metadata` and builds each one with the `dynamic-plugin` feature enabled. Plugin shared libraries are output to a `plugins/` subdirectory alongside the server binary (e.g. `target/release/plugins/`).
-
-```bash
-# List discovered dynamic plugins
-cargo xtask list-plugins
-
-# Build plugins directly (equivalent to make build-dynamic-plugins)
-cargo xtask build-plugins
-cargo xtask build-plugins --release
-cargo xtask build-plugins --jobs 4   # limit parallelism
-```
-
 ### Cross-Compilation
 
-Cross-compilation uses the [`cross`](https://github.com/cross-rs/cross) tool with Docker containers defined in `Cross.toml`:
+Server cross-compilation uses [`cross`](https://github.com/cross-rs/cross)
+with Docker containers defined in [`Cross.toml`](Cross.toml):
 
 ```bash
-# Static build (all plugins linked in)
-make build-cross TARGET=x86_64-pc-windows-gnu
-make build-cross-release TARGET=x86_64-pc-windows-gnu
-
-# Dynamic build (server + plugin shared libraries)
-make build-dynamic-cross TARGET=x86_64-pc-windows-gnu
-make build-dynamic-cross-release TARGET=x86_64-pc-windows-gnu
-
-# Or build plugins for a target directly
-cargo xtask build-plugins --release --target x86_64-pc-windows-gnu
+make build-cross TARGET=x86_64-unknown-linux-gnu
+make build-cross-release TARGET=x86_64-unknown-linux-gnu
 ```
 
-Supported targets (see `Cross.toml`):
+Build plugins separately in Core for the same target as Server.
+
+Configured targets:
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 - `x86_64-unknown-linux-gnu`
 - `aarch64-unknown-linux-gnu`
-- `x86_64-pc-windows-gnu`
 
 ## License
 
