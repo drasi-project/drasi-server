@@ -5,10 +5,9 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
-import { assertBaseline, measurePackageModules } from './metrics-policy.mjs';
+import { assertBaseline, measurePackageModules, measureTradingAssets } from './metrics-policy.mjs';
 
 const [archiveArgument, appArgument, packageCoverageArgument, mode] = process.argv.slice(2);
 assert(archiveArgument && appArgument && packageCoverageArgument,
@@ -25,26 +24,13 @@ async function coverage(path) {
   }));
 }
 
-function packedBytes(path) {
-  return execFileSync('tar', ['-xOf', archive, `package/${path}`]).length;
-}
-
-const assets = await readdir(join(app, 'dist/assets'));
 const packedPaths = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split('\n');
+
 const sizes = {
   packageTarball: (await stat(archive)).size,
   ...measurePackageModules(packedPaths, path => execFileSync('tar', ['-xOf', archive, path]).length),
-  packageCss: packedBytes('styles.css'),
-  tradingJs: 0, tradingJsGzip: 0, tradingCss: 0, tradingCssGzip: 0,
+  ...await measureTradingAssets(join(app, 'dist/assets')),
 };
-for (const asset of assets) {
-  if (!/\.(js|css)$/.test(asset)) continue;
-  const body = await readFile(join(app, 'dist/assets', asset));
-  const key = asset.endsWith('.js') ? 'tradingJs' : 'tradingCss';
-  sizes[key] += body.length;
-  sizes[`${key}Gzip`] += gzipSync(body).length;
-}
-assert(sizes.tradingJs > 0 && sizes.tradingCss > 0, 'Built Trading assets are missing');
 const observed = {
   coverage: {
     package: await coverage(resolve(packageCoverageArgument)),

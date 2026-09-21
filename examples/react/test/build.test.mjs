@@ -1,7 +1,11 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertExampleBudget, assertHooksGraph, entryGraph } from '../scripts/check-build.mjs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { assertExampleBudget, assertHooksGraph, entryGraph, measureExampleAssets } from '../scripts/check-build.mjs';
 import { assertExampleModule, moduleIdentity } from '../scripts/module-identity.mjs';
 
 const graph = () => ({
@@ -64,4 +68,31 @@ test('example budgets count every entry and enforce exactly the inherited 2% gro
   assert.throws(() => assertExampleBudget({ total: boundary, entries: {} }, baseline), /entry set/);
   assert.throws(() => assertExampleBudget({ total: boundary, entries: { 'hooks.html': { ...boundary, css: 1 } } }, baseline), /growth budget/);
   assert.throws(() => assertExampleBudget({ total: { ...boundary, js: undefined }, entries: { 'hooks.html': boundary } }, baseline), /Missing example/);
+});
+
+test('example inventory includes root/nested JS, MJS, CJS and CSS but not source maps', async context => {
+  const directory = await mkdtemp(join(tmpdir(), 'drasi-example-assets-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, 'assets/nested'), { recursive: true });
+  const files = {
+    'entry.js': 'entry',
+    'assets/nested/shared.mjs': 'shared',
+    'assets/nested/compat.cjs': 'compat',
+    'root.css': 'root style',
+    'assets/nested/theme.css': 'theme',
+    'assets/nested/shared.mjs.map': 'map',
+  };
+  for (const [file, content] of Object.entries(files)) await writeFile(join(directory, file), content);
+  const measured = await measureExampleAssets(directory);
+  assert.deepEqual(Object.keys(measured).sort(), Object.keys(files).filter(file => !file.endsWith('.map')).sort());
+  for (const [file, value] of Object.entries(measured)) {
+    assert.equal(value.bytes, Buffer.byteLength(files[file]));
+    assert.equal(value.gzip, gzipSync(files[file]).length);
+    assert.match(value.sha256, /^[a-f0-9]{64}$/);
+  }
+  const fixture = graph();
+  fixture['hooks.js'].imports = ['assets/nested/shared.mjs'];
+  fixture['assets/nested/shared.mjs'] = { ...fixture['shared.js'], dynamicImports: ['assets/nested/compat.cjs'] };
+  fixture['assets/nested/compat.cjs'] = { ...fixture['shared.js'] };
+  assert.deepEqual(entryGraph(fixture, 'hooks.html'), ['assets/nested/compat.cjs', 'assets/nested/shared.mjs', 'hooks.js']);
 });

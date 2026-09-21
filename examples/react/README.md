@@ -21,16 +21,22 @@ projection, including sparse deletes; the view's `rowKey` is separate.
 
 Use Node **22.20.0** or **24.19.0**, React/React DOM **18.3.1**, the repository's
 Rust toolchain, Python **3.11+** and access to GHCR/Sigstore. The tested server
-setup uses the exact compatible engine and signed plugin versions described
-in [engine prerequisites](../../docs/engine-prerequisite.md). Linux builds
+setup is the approved server **0.2.3**, registry library **0.9.1** and
+host/plugin/FFI crates **0.11.0** with the same exact engine correction.
+Signed plugins from merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
+use plugin SDK **0.11.1** and actual native ABI **0.13.0**, including SSE
+**0.3.6**, HTTP source **0.2.11** and scriptfile bootstrap **0.2.13**.
+See [the approved runtime and immutable pin provenance](../../docs/main-runtime-integration.md).
+Earlier server 0.2.1 / ABI 0.11 evidence is historical, not a startup fallback.
+Linux builds
 also need libjq/Oniguruma development libraries as documented there.
 No database, Trading API or Docker container is needed by this example.
 
 From the repository root:
 
 ```sh
-# If the pinned sibling has not been prepared, follow engine-prerequisite.md first.
-bash scripts/prepare-core.sh --check
+# Prepare only an absent sibling; reject a wrong or dirty foreign checkout.
+bash scripts/prepare-build.sh
 python3 scripts/plugin_origin.py mode
 
 # Build this checkout's real server and embedded UI, not an unrelated binary.
@@ -80,7 +86,11 @@ the declarative template to **concrete numbers** in the owned `server.yaml`.
 Plugin full-view metadata preserves unresolved environment expressions, so
 leaving such an expression in the SSE port would correctly fail the client's
 strict read contract even if the plugin itself resolved its bind port.
-The startup also validates the actual pre-created references with the public
+Before installation, startup rejects a stale server/SDK binary version against
+the checked-out manifest/lock and resolved SDK. It reuses the shared backend
+source verifier to record the exact revision, manifest/lock hashes, selected
+engine/SDK identities and approved plugin-lock hash; actual loaded binary
+hashes/native ABI/signatures remain independently checked. The startup also validates the actual pre-created references with the public
 REST-only client before exposing the browser listener; it does not rewrite
 responses or loosen that contract. The bootstrap file is copied into the owned working directory
 and uses a literal relative JSONL path; it does not rely on environment
@@ -173,7 +183,9 @@ P7_SOURCE_ROOT="$BACKEND_CHECKOUT" npm start
 ```
 
 `P7_SOURCE_ROOT` supplies only the actual backend executable, Cargo/core
-provenance and shared plugin installer/pins. The browser assets, frontend
+provenance and shared plugin installer/pins. The reused source verifier lives
+under the backend's `examples/trading/app/test/live/` tooling; it imports no
+Trading frontend or business code. The browser assets, frontend
 source, declarations and runtime dependencies come from the copied example
 and installed package. No package or Trading source can satisfy an import.
 The package remains private and unpublished; do not use a registry
@@ -192,7 +204,8 @@ CommonJS helpers fail the gate, including real sibling Trading/source aliases.
 React DOM is the example's explicitly installed renderer, not a hook
 dependency or bundled hidden peer.
 
-Size evidence includes every emitted JS/CSS entry/shared/lazy chunk, totals
+Size evidence recursively includes every emitted JS/MJS/CJS and CSS asset at
+the output root or any nested directory, including entry/shared/lazy chunks, totals
 each file once for the workspace, and separately totals every entry's
 reachable files. Per-entry totals intentionally overlap; do not sum them to
 claim a combined download size. The lazy modal chunk is included even when

@@ -206,17 +206,26 @@ nested shapes and snapshot object rows are checked at runtime from `unknown`.
 Malformed/incompatible bodies fail visibly with `INVALID_PAYLOAD`; missing
 reads throw rather than returning a success-shaped `null`.
 
+Server 0.2.3's `enableArchive` and `memoryBudgetMiB` settings belong to the
+server/instance configuration, not new fields in the unchanged v1 query read
+DTO. The client does not expose an instance-creation API. Per-query storage
+overrides remain opaque `storageBackend` JSON; no archive or memory-budget
+defaults are selected here.
+
 Current v1 links may spell identifiers literally. The client checks their
 identity and returns safely encoded, instance-scoped links. It never follows
 arbitrary response links, and refuses REST redirects into another path/origin.
 The UI helper returns `${serverUrl}/ui?instance={encodedInstanceId}`.
 
-`test/fixtures/server-v1/contract.json` contains **unmodified actual response
+The historical `test/fixtures/server-v1/contract.json` contains **unmodified actual response
 bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. See [verified compatibility](#verified-compatibility).
+cases. `test/fixtures/server-v1-0.2.3/contract.json` separately records the
+own rebuilt merged server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
+read tests consume both versions. New records are never substituted into the
+old provenance. See [verified compatibility](#verified-compatibility).
 
 ## Authentication and injected transports
 
@@ -446,8 +455,11 @@ New malformed/unroutable unidentified failures retain those reaction details;
 identified query failures use query details instead. Existing `DrasiError`
 objects retain their identity rather than being rewrapped.
 
-The default **`sse034ResultAdapter`** accepts the pinned, **untemplated SSE
-0.3.4** envelope `{ queryId, results, timestamp }`:
+The default **`sse034ResultAdapter`** accepts the recorded **untemplated SSE**
+envelope `{ queryId, results, timestamp }`. Its name identifies the original
+0.3.4 contract. Actual current 0.3.6 captures exercise the same observed
+ADD/DELETE/UPDATE/aggregation shapes without changing this API. This is not a
+claim about every plugin version, custom template or unobserved variant:
 
 - `ADD` with object `data` becomes an upsert; `DELETE` with object `data`
   becomes a delete.
@@ -1795,33 +1807,35 @@ No source aliases or hidden React copies satisfy these contracts.
 
 ## Verified compatibility
 
-Claims are intentionally narrow, not open-ended minimum versions:
-the configurations below cover the **implemented and automated P6 contracts**
-at the P7 starting point `959594b1ad1d8b0a891b9526d2376f30fe66182f`.
-See the recorded [P6 measured evidence](../../examples/trading/TESTING.md#p6-measured-evidence)
-and [complete artifact measurements](../../examples/trading/TESTING.md#p6-measured-artifact-advance).
-Those recorded P6 passes are not
-current-change validation or human screen-reader approval, nor proof of every
-browser/AT combination.
+Claims are intentionally narrow, not open-ended minimum versions. P7 normally
+integrates the approved runtime through P6
+`12402050d8ee490abc5eedbf6aa606c55638d4d0` while preserving its original
+`cd474f83df7eb15a909b87134ff9822ba45b8116` history and all public contracts.
+See [P7 integration evidence](../../examples/trading/TESTING.md#p7-approved-main-runtime-integration)
+for the integrated checks and complete artifact accounting. Earlier P6/P7
+results remain historical, not substitutes for current-change validation,
+human screen-reader approval or every browser/AT combination.
 
 | Surface | Exercised configuration |
 | --- | --- |
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
 | Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
-| Server | v1 DTOs on server **0.2.1**, exact captured revision in the fixture, library **0.8.9**, the reviewed compatible engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. Not a claim that every older 0.2.1 runtime has the same result guarantees. |
-| Plugin / ABI | Signed SSE **0.3.4**, SDK/host/FFI crates **0.10.0**, independently versioned C ABI **0.11.0**. Trading's five exact platform/digest/hash pins remain unchanged. |
+| Server | Current approved runtime: **0.2.3**, registry library **0.9.1**, index **0.6.1**, the same reviewed engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. The v1 query read DTO is unchanged; archive/memory settings remain server/instance-owned. |
+| Plugin / ABI | Current signed SSE **0.3.6**, host/FFI crates **0.11.0**, plugin SDK crate **0.11.1**, native ABI **0.13.0**, from official merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`. Immutable platform/digest/hash/signature pins come from the approved parent integration. |
+| Historical runtime evidence | Server **0.2.1**, library **0.8.9**, SSE **0.3.4**, SDK **0.10.0** / ABI **0.11.0** captures remain versioned separately. They are not proof for every 0.2.1 build or a fallback for current ABI 0.13 startup. |
 
 Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
 identity or incompatible reaction membership fail with typed errors. No older
 server fallback, query-language substitution or newer SDK/ABI upgrade is
-attempted. See [engine prerequisites](../../docs/engine-prerequisite.md).
+attempted. See [engine prerequisites](../../docs/engine-prerequisite.md) and
+the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
 
-The protocol evidence is the real capture at
+Historical protocol evidence is the real capture at
 `examples/trading/app/test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson`
 and the unmodified REST bodies at `test/fixtures/server-v1/contract.json`.
 The complete **20 original recording lines** are copied verbatim into
@@ -1838,6 +1852,20 @@ nullable aggregation-before and before/after updates; its
 `QueryResult.sequence`**. The capture and exact tagged source have distinct
 roles: not every documented variant occurred in that capture. An unused local
 SSE 0.3.5 checkout is not evidence for this pinned protocol.
+
+Current evidence is separate:
+`test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson` contains all **17 unmodified
+CDP records** from the P4 layer's own rebuilt server at normal merge
+`3b39126ae36c9a0da96a4c0e29ad812b181636f6`. The adjacent
+`sse-0.3.6.provenance.json` records the source, manifest/lock/binary hashes and
+official signed ABI 0.13 plugin identity. Tests consume both versioned raw
+recordings through the unchanged adapter; current records also exercise the
+default stream transport and query-ID routing. They include `ADD`/`DELETE`
+with `data`, `UPDATE` with `before`/`after`/`data`, lowercase `aggregation`
+with `before`/`after` **without `data`**, and large numeric signatures that
+remain unsuitable as JavaScript identities. No shared REST/SSE cursor appears
+in these envelopes. Native ABI compatibility alone is not wire-format proof.
+The old raw recording and Part A's separate current DTO fixture are unchanged.
 
 ## #119 bootstrap-to-connect-only migration
 
@@ -1921,7 +1949,14 @@ Trading's normal tables remain **400px**; fullscreen retains the **32px**
 inset and `calc(100vw - 64px)` / `calc(100vh - 64px)` bounds. All eleven
 queries, raw identity/projection rules, financial calculations, default-sort
 discrepancy, snippets and server-UI links remain app-owned and unchanged.
-The package remains private; SDK/backend/plugin pins are untouched.
+The original P6 feature kept its predecessor's runtime pins unchanged. Its
+normal main integration now retains original P6
+`959594b1ad1d8b0a891b9526d2376f30fe66182f` and merges updated P5
+`bb0bec99f06e12f3fbe9cd2bf0eee653763f851e`, inheriting the approved server
+0.2.3 / SSE 0.3.6 / ABI 0.13 graph rather than upgrading dependencies
+independently. P6's controls, original Trading design and strict legacy-contrast
+non-regression policy are preserved; the package stays private and no P7
+features are imported.
 
 ### Accessibility evidence and remaining acceptance
 
@@ -1954,9 +1989,12 @@ gates does not authorize merge, release or publication.
 
 ## P5 / #164 Part A migration
 
-This presentation/composition work follows #207 at
-`20561c13dd74929855dfbe605bb1fac23e5a49f4` under tracker #161. P3/P4 auth,
-protocol, identity, recovery and consistency limits remain unchanged.
+The original presentation/composition work follows #207 at
+`20561c13dd74929855dfbe605bb1fac23e5a49f4` under tracker #161. Its main-runtime
+integration normally merges updated #207 at
+`2ccf8624533193861e6518cb0c39785f561fa270` into the existing P5 history, without
+rebasing or importing P6/P7 features. P3/P4 auth, protocol, identity, recovery
+and consistency limits remain unchanged.
 
 1. Use `/components` `DataTable` for supplied readonly rows, no provider or
    query identity required. Pass application errors through `state`; the error
@@ -2023,7 +2061,8 @@ For Part B, migrate these breaking result contracts:
    `result.snapshot` and `result.timestamp` with snapshot `rows` or delta
    `changes` and display-only `receivedAt`/optional `sourceTimestamp`. Preserve
    `before` and `after` on updates, especially key changes.
-4. Remove top-level `routeUnidentified`. The default is strict SSE 0.3.4;
+4. Remove top-level `routeUnidentified`. The default is the strict recorded
+   SSE format above (`sse034ResultAdapter`, also exercised with current 0.3.6);
    explicitly choose `createLegacyResultAdapter({ routeUnidentified })` for
    legacy formats. `_deleted` is not a normalized-state tombstone.
 5. Distinguish query `status`/`stale`/`errorScope` from socket status. Keep useful
@@ -2097,6 +2136,10 @@ app-owned. [Trading TESTING.md](../../examples/trading/TESTING.md) documents
 the locked clean-tarball gate, all three browsers, five original exact PNG images,
 coverage/size budgets and authoritative real-server financial/CRUD/reconnect
 assertions. Synthetic tests are not proof that a real plugin emits a shape.
+Artifact accounting includes all entrypoints/shared chunks, both declaration
+formats and all shipped CSS; historical single-format measurements remain
+preserved separately. The 2% future-growth policy and coverage floors do not
+change with this accounting correction.
 
 Keep `"private": true`. P7 / #165 completes consumer documentation and adds
 the linked example workspace without a new API or package release. Publishing,

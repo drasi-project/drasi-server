@@ -13,6 +13,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { STOCKS, POSITIONS, ORDERS, FIXED_TIME } from '../fixtures/synthetic/trading.ts';
+import { verifyRuntimeVersion } from './runtimeVersion.ts';
 import { startSseProxy } from './sseProxy.ts';
 
 const app = fileURLToPath(new URL('../../', import.meta.url));
@@ -78,6 +79,11 @@ const checkoutDependencies = native ? JSON.parse(command(python, [
   'import json, sys, tomllib; lock=tomllib.load(open(sys.argv[1], "rb")); print(json.dumps({p["name"]:p["version"] for p in lock["package"] if p["name"] in ["drasi-server","drasi-lib","drasi-core","drasi-query-ast","drasi-query-cypher","drasi-query-gql","drasi-index-rocksdb","drasi-plugin-sdk","drasi-host-sdk","drasi-ffi-primitives"]}))',
   process.env.P1_SERVER_CARGO_LOCK!,
 ])) : undefined;
+const checkoutVersion = checkoutBinary ? command(checkoutBinary, ['--version']) : undefined;
+const runtimeVersion = native ? verifyRuntimeVersion(checkoutVersion!, {
+  server: checkoutDependencies['drasi-server'],
+  sdk: sourceProvenance.selectedDependencies['drasi-plugin-sdk'].version,
+}) : pins.serverVersion;
 await mkdir(join(app, '.test-runtime'), { recursive: true });
 const runDir = await mkdtemp(join(app, '.test-runtime/live-'));
 await mkdir(join(runDir, 'plugins'));
@@ -91,7 +97,7 @@ await writeFile(join(runDir, 'runtime.json'), JSON.stringify({
   mode: native ? 'checkout' : 'pinned-image',
   ...(checkoutBinary ? {
     checkoutRevision: process.env.P1_SERVER_REVISION,
-    checkoutVersion: command(checkoutBinary, ['--version']),
+    checkoutVersion,
     checkoutDependencies,
     sourceProvenance,
     checkoutCargoLockSha256: createHash('sha256').update(await readFile(process.env.P1_SERVER_CARGO_LOCK!)).digest('hex'),
@@ -353,7 +359,7 @@ try {
   console.log(await readFile(join(runDir, 'playwright.log'), 'utf8'));
   assert.equal(result, 0, 'Real-server smoke failed (never a passing skip)');
   if (native) command('bash', [join(sourceRoot, 'scripts/prepare-core.sh'), '--check']);
-  console.log(`Real-server smoke passed with ${pins.serverVersion} / ${native ? 'checkout' : platform}.`);
+  console.log(`Real-server smoke passed with ${runtimeVersion} / ${native ? 'checkout' : platform}.`);
 } catch (error) {
   failure = error;
 } finally {

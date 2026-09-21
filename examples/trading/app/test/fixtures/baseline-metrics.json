@@ -1,23 +1,31 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "previousMeasurement": "baseline-metrics-v2.json",
+  "previousP2Measurement": "baseline-metrics-p2-v2.json",
+  "previousP3Measurement": "baseline-metrics-p3-v2.json",
+  "previousP4Measurement": "baseline-metrics-p4-v2.json",
+  "previousP5Measurement": "baseline-metrics-p5-v2.json",
+  "previousP6Measurement": "baseline-metrics-p6-v2.json",
+  "previousP7Measurement": "baseline-metrics-p7-v2.json",
+  "artifactScope": "All package dist JS/CJS/declaration entries and chunks, all packaged CSS, and all recursive Trading JS/CSS assets; maps remain included in the tarball total",
   "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "artifactChange": {
     "issue": 165,
     "part": "P7",
     "predecessor": "959594b1ad1d8b0a891b9526d2376f30fe66182f",
-    "reason": "P7 completes the shipped public reference, low-level method/option/callback tables, #119 migration, troubleshooting, hosting/contribution guidance and three additional executable recipes. README and CHANGELOG alone increase the measured tarball by 12942 bytes, from 204840 to 217782. Every package ESM/CJS/shared/lazy module, declaration and CSS total, and every Trading JS/CSS total, remains exactly at P6. The first pinned Linux run passed all 175 inherited browser cases, five original zero-diff PNG images and 12 independent showcase cases, then correctly rejected the documentation growth. This measured advance preserves P1-P6 history, all coverage floors and the same 2% future-growth policy. New example assets are independently measured/budgeted in examples/react/test/baseline-metrics.json rather than omitted or charged to Trading. Human AT remains open, with explicit actual-user permission to develop P7 before that review; Trading contrast findings remain unwaived strict non-regression evidence.",
+    "reason": "Retain the original P7 documentation/examples feature budget while normally integrating the approved runtime through P6. Complete accounting includes all entry/shared/nested/lazy JS/CJS, both declaration formats, every packaged stylesheet and recursive Trading assets. P7 already shipped 82505 declaration bytes; counting both formats is not product growth. Original P1-P7 schema-2 records remain byte-identical, including P7's measured documentation-only tarball advance from 204840 to 217782. Example closures/assets are measured separately and recursively. No package runtime/API/CSS, Trading query/design, critical coverage floor or 2% future-growth rule is changed. Human AT remains open and the original strict Trading contrast boundaries remain unwaived.",
     "p6Change": {
       "issue": 164,
       "part": "B / P6",
       "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
-      "reason": "P6 adds a client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal via scroll-into-view-if-needed 3.1.0, inherited portal themes, validated sizing, native sort/scroll semantics and live reduced motion. All entries/shared/lazy chunks are counted. Measured Trading JS grows by 52775 bytes (gzip 18611), including these maintained primitives and adapters; package ESM/CJS grow by 10723/12273 bytes, declarations by 3410 bytes, while package CSS shrinks by 1427 bytes after moving tutorial styles to Trading. The tarball includes the full new reference and executable recipes. Original Trading colors, all five original zero-diff PNG images, financial behavior, SDK/plugin pins, inherited coverage floors and the 2% future-growth policy remain unchanged. New component floors are enforced without product exclusions. Trading full-rule axe results use exact predecessor non-regression fingerprints, never a blanket contrast exclusion or zero-violation claim; human AT and preserved contrast findings remain open. See examples/trading/TESTING.md."
+      "reason": "P6 retains its original feature budget for the client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal, portal themes, validated sizing, native keyboard semantics and reduced motion. The incoming measurement policy counts all entry/shared/nested/lazy JS/CJS, both declaration formats, all packaged CSS and recursive app assets. Already-shipped P6 declarations total 82505 bytes, 6820 above the corrected P5 declaration total; this is an accounting correction, not new product growth. Original P1-P6 schema-2 records remain byte-identical. Original Trading colors, all five exact PNG images, financial behavior, coverage floors and the same 2% future-growth rule remain unchanged. The approved current backend/plugin graph is inherited from the parent rather than upgraded by P6. Full-rule Trading axe still uses exact predecessor non-regression fingerprints, not a blanket contrast exclusion or zero-violation claim; human AT and retained findings remain open. See examples/trading/TESTING.md."
     },
     "p5Change": {
       "issue": 164,
       "part": "A / P5",
       "predecessor": "20561c13dd74929855dfbe605bb1fac23e5a49f4",
-      "reason": "P5 extracts provider-free DataTable, typed state/header/row composition and controlled sorting while moving tutorial/fullscreen code into Trading. Package ESM/CJS shrink across all entries/shared chunks; declarations grow by 2959 bytes for the new presentation, slot/error, sort and animation contracts. Trading JavaScript grows by 792 bytes and generated CSS by 605 bytes under its unchanged source-scanning config, now including the app-owned dialog/fullscreen modules. Package CSS remains exactly 10043 bytes. All 26 packed Linux browser scenarios and five original zero-diff PNG images passed before this measured artifact advance. Ten literal README recipes compile against the installed artifact. No dependencies, protocol, financial behavior, image baselines, coverage exclusions/floors or 2% future-growth policy were changed. P6 styling/accessibility work remains open. See examples/trading/TESTING.md."
+      "reason": "P5 extracts provider-free DataTable, typed state/header/row composition and controlled sorting while moving tutorial/fullscreen code into Trading. Its original feature budget is retained under the corrected all-entry/all-CSS/recursive-asset convention: both declaration formats total 75685 bytes, 5918 bytes above the corrected P4 declarations. This accounting correction is separate from feature growth; the original P5 schema-2 record remains byte-identical. Package ESM/CJS shrink across all entries/shared chunks. Trading JavaScript grows by 792 bytes and generated CSS by 605 bytes from the app-owned dialog/fullscreen modules and unchanged source scanning; package CSS remains 10043 bytes. Original image baselines, coverage exclusions/floors and the 2% future-growth rule are unchanged. The approved current backend/plugin runtime is inherited from the parent rather than implemented by P5. See examples/trading/TESTING.md."
     },
     "p4Change": {
       "issue": 163,
@@ -40,7 +48,7 @@
       "packageTarball": 110691,
       "packageEsm": 66865,
       "packageCjs": 68860,
-      "packageTypes": 18746,
+      "packageTypes": 37492,
       "packageCss": 10043,
       "tradingJs": 223574,
       "tradingJsGzip": 65775,
@@ -51,7 +59,7 @@
       "packageTarball": 125325,
       "packageEsm": 72992,
       "packageCjs": 75038,
-      "packageTypes": 21140,
+      "packageTypes": 42280,
       "packageCss": 10043,
       "tradingJs": 233695,
       "tradingJsGzip": 69038,
@@ -62,7 +70,7 @@
       "packageTarball": 155916,
       "packageEsm": 84754,
       "packageCjs": 91229,
-      "packageTypes": 28121,
+      "packageTypes": 56256,
       "packageCss": 10043,
       "tradingJs": 240826,
       "tradingJsGzip": 70541,
@@ -73,7 +81,7 @@
       "packageTarball": 187699,
       "packageEsm": 98585,
       "packageCjs": 106000,
-      "packageTypes": 34875,
+      "packageTypes": 69767,
       "packageCss": 10043,
       "tradingJs": 250892,
       "tradingJsGzip": 73795,
@@ -84,7 +92,7 @@
       "packageTarball": 169457,
       "packageEsm": 78523,
       "packageCjs": 85845,
-      "packageTypes": 37834,
+      "packageTypes": 75685,
       "packageCss": 10043,
       "tradingJs": 251684,
       "tradingJsGzip": 74133,
@@ -95,7 +103,18 @@
       "packageTarball": 204840,
       "packageEsm": 89246,
       "packageCjs": 98118,
-      "packageTypes": 41244,
+      "packageTypes": 82505,
+      "packageCss": 8616,
+      "tradingJs": 304459,
+      "tradingJsGzip": 92744,
+      "tradingCss": 25266,
+      "tradingCssGzip": 5900
+    },
+    "p7Sizes": {
+      "packageTarball": 217782,
+      "packageEsm": 89246,
+      "packageCjs": 98118,
+      "packageTypes": 82505,
       "packageCss": 8616,
       "tradingJs": 304459,
       "tradingJsGzip": 92744,
@@ -105,11 +124,12 @@
     "p3FinalCi": {
       "revision": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
       "run": "https://github.com/drasi-project/drasi-server/actions/runs/35436454291",
+      "accounting": "Declaration total corrected to both shipped formats; the original CI counters remain in baseline-metrics-p4-v2.json.",
       "sizes": {
         "packageTarball": 155715,
         "packageEsm": 84877,
         "packageCjs": 91352,
-        "packageTypes": 28121,
+        "packageTypes": 56256,
         "packageCss": 10043,
         "tradingJs": 240901,
         "tradingJsGzip": 70550,
@@ -117,6 +137,52 @@
         "tradingCssGzip": 5163
       }
     }
+  },
+  "measurementChange": {
+    "parent": "e361d1c3369e83213f0bb164ab2be66569ea7e18",
+    "reason": "Count the already-shipped index.d.cts as well as index.d.ts for both P1 and P2, retaining their original version-2 records. This changes accounting, not artifacts, coverage floors or the 2% growth policy.",
+    "p1TarballSha256": "f85eae9c85c50b1af98474d1b0524dc12b5ed9e780cf1c5500b4ef7fbad733f0",
+    "p2TarballSha256": "ee28948165c33c762d3d7fb3ff6e086bda553fe60fd5c12b0499bc7918745140"
+  },
+  "p3MeasurementChange": {
+    "parent": "f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467",
+    "originalP3Head": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
+    "p3TarballSha256": "4d636b2cd77d49bd6c2d1d32aed4cee7e91bd8cc2f94f60ad81c644f1919a0af",
+    "reason": "Retain P3 entrypoint/shared-chunk accounting and include all of its already-shipped CommonJS declarations. The original schema-2 P3 record remains byte-identical; no product-byte, coverage-floor or 2% policy increase is inferred from counting both formats.",
+    "esmDeclarations": 28121,
+    "commonJsDeclarations": 28135
+  },
+  "p4MeasurementChange": {
+    "parent": "39f82c9e7124c512eaad2047bda3222732387297",
+    "originalP4Head": "20561c13dd74929855dfbe605bb1fac23e5a49f4",
+    "p4TarballSha256": "de1d883e324f9b0597b3e1620df43fa9bb49efd998a24f50b9b4ad1beb075c9a",
+    "reason": "Preserve P4's feature budget and exact schema-2 history while counting its already-shipped .d.ts and .d.cts files under the incoming all-entry/all-CSS/recursive-asset policy. This corrects accounting, not product bytes, coverage floors or the 2% growth rule.",
+    "esmDeclarations": 34875,
+    "commonJsDeclarations": 34892
+  },
+  "p5MeasurementChange": {
+    "parent": "2ccf8624533193861e6518cb0c39785f561fa270",
+    "originalP5Head": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
+    "p5TarballSha256": "3cb4774d8c34e5aee2464b66026210a37ef83abd2f65f84ff82c09dfb59f8aca",
+    "reason": "Remeasure the retained original P5 tarball, including its already-shipped .d.cts declarations as well as .d.ts. Preserve P1-P4 corrected accounting, all five schema-2 historical records, the original P5 runtime/feature budget, coverage floors and the same 2% future-growth rule. No product bytes are added by counting both declaration formats.",
+    "esmDeclarations": 37834,
+    "commonJsDeclarations": 37851
+  },
+  "p6MeasurementChange": {
+    "parent": "bb0bec99f06e12f3fbe9cd2bf0eee653763f851e",
+    "originalP6Head": "959594b1ad1d8b0a891b9526d2376f30fe66182f",
+    "p6TarballSha256": "148f5df78906b18fc6d9d328faad2efc869d6cfd66cac6e38111013beb7f25ca",
+    "reason": "Remeasure the verified original P6 tarball with the incoming complete accounting, including its separately shipped CommonJS declarations. Preserve the original P6 feature budget and exact schema-2 record alongside the unchanged original P1-P5 histories. No product bytes, coverage-floor change or 2% growth-policy increase is inferred from the corrected declaration count.",
+    "esmDeclarations": 41244,
+    "commonJsDeclarations": 41261
+  },
+  "p7MeasurementChange": {
+    "parent": "12402050d8ee490abc5eedbf6aa606c55638d4d0",
+    "originalP7Head": "cd474f83df7eb15a909b87134ff9822ba45b8116",
+    "p7TarballSha256": "664ae1da684690b2cf87dcdf777a765ca3f4a6151a7fffd70ee958d9cd876261",
+    "reason": "Retain P7's exact original schema-2 record separately and apply the incoming complete artifact collector to the original tarball. Both declaration formats were already shipped; the corrected 82505-byte total adds no product bytes. Preserve all earlier historical records, P7's feature budget, every coverage floor and the same 2% future-growth rule.",
+    "esmDeclarations": 41244,
+    "commonJsDeclarations": 41261
   },
   "coverage": {
     "package": {
@@ -136,7 +202,7 @@
     "packageTarball": 217782,
     "packageEsm": 89246,
     "packageCjs": 98118,
-    "packageTypes": 41244,
+    "packageTypes": 82505,
     "packageCss": 8616,
     "tradingJs": 304459,
     "tradingJsGzip": 92744,

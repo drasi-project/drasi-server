@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DrasiClient } from '@drasi/react/client';
-import { renderServerConfig } from './config.mjs';
+import { renderServerConfig, verifyRuntimeVersion } from './config.mjs';
 import { serveExample } from './web.mjs';
 
 export const exampleRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -43,9 +43,16 @@ export async function startExample(env = process.env) {
   const binary = join(source, 'target/debug/drasi-server');
   await access(binary);
   await access(join(exampleRoot, 'dist/index.html'));
-  command('bash', [join(source, 'scripts/prepare-core.sh'), '--check'], source);
-  assert.equal(command('python3', [join(source, 'scripts/plugin_origin.py'), 'mode'], source), 'registry',
+  assert.equal(command('bash', [join(source, 'scripts/prepare-build.sh')], source), 'registry',
     'This example uses the reviewed registry-SDK setup, not an unverified local plugin build');
+  const sourceProvenance = JSON.parse(command('python3', [
+    join(exampleRoot, 'scripts/verify-plugins.py'), source, '--source',
+  ], source));
+  const binaryVersion = command(binary, ['--version'], source);
+  verifyRuntimeVersion(binaryVersion, {
+    server: sourceProvenance.serverVersion,
+    sdk: sourceProvenance.selectedDependencies['drasi-plugin-sdk'].version,
+  });
   const restPort = await portNumber(env.P7_REST_PORT, 0);
   const feedPort = await portNumber(env.P7_FEED_PORT, 0);
   const ssePort = await portNumber(env.P7_SSE_PORT, 0);
@@ -131,10 +138,12 @@ export async function startExample(env = process.env) {
     await writeFile(join(directory, 'loaded-plugins.json'), JSON.stringify(plugins, null, 2) + '\n');
     command('python3', [join(exampleRoot, 'scripts/verify-plugins.py'), source, join(directory, 'loaded-plugins.json')], source);
     const provenance = {
-      sourceRevision: command('git', ['rev-parse', 'HEAD'], source),
-      coreRevision: (await readFile(join(source, '.drasi-core-revision'), 'utf8')).trim(),
-      cargoLockSha256: createHash('sha256').update(await readFile(join(source, 'Cargo.lock'))).digest('hex'),
+      sourceRevision: sourceProvenance.serverRevision,
+      coreRevision: sourceProvenance.engineGit,
+      cargoLockSha256: sourceProvenance.serverCargoLockSha256,
+      manifestSha256: sourceProvenance.serverManifestSha256,
       binarySha256: createHash('sha256').update(await readFile(binary)).digest('hex'),
+      binaryVersion, sourceProvenance,
       configTemplateSha256: createHash('sha256').update(template).digest('hex'),
       configSha256: createHash('sha256').update(config).digest('hex'),
       seedSha256: createHash('sha256').update(await readFile(join(directory, 'readings.jsonl'))).digest('hex'),

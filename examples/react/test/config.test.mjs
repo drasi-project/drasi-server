@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { renderServerConfig } from '../scripts/config.mjs';
+import { renderServerConfig, verifyRuntimeVersion } from '../scripts/config.mjs';
 
 const template = await readFile(new URL('../config/server.yaml', import.meta.url), 'utf8');
 const ports = { restPort: 15380, feedPort: 15381, ssePort: 15382 };
@@ -26,4 +26,19 @@ test('rendering rejects invalid ports, missing/repeated markers and unresolved c
   assert.throws(() => renderServerConfig(template.replace('"${EXAMPLE_SSE_PORT}"', '1234'), ports), /exactly one/);
   assert.throws(() => renderServerConfig(template + '\nport: "${EXAMPLE_SSE_PORT}"', ports), /exactly one/);
   assert.throws(() => renderServerConfig(template + '\nextra: "${UNEXPECTED}"', ports), /unresolved/);
+});
+
+test('startup checks the actual binary against the resolved server and host SDK, not a stale version label', () => {
+  const expected = { server: '0.2.3', sdk: '0.11.0' };
+  const current = 'drasi-server 0.2.3\nrustc: measured toolchain\nplugin-sdk: 0.11.0\n';
+  assert.doesNotThrow(() => verifyRuntimeVersion(current, expected));
+  assert.doesNotThrow(() => verifyRuntimeVersion(current.replaceAll('\n', '\r\n'), expected));
+  for (const output of [
+    current.replace('drasi-server 0.2.3', 'drasi-server 0.2.1'),
+    current.replace('plugin-sdk: 0.11.0', 'plugin-sdk: 0.10.0'),
+    current.replace('plugin-sdk: 0.11.0', 'plugin-sdk: 0.11.1'),
+    current.replace('plugin-sdk: 0.11.0', ''),
+    current + 'plugin-sdk: 0.11.0\n',
+    '',
+  ]) assert.throws(() => verifyRuntimeVersion(output, expected), /Native binary does not match/);
 });

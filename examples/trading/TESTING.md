@@ -4,7 +4,7 @@ This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-serv
 Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
 at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
 separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
-at `6f888956cca131992ed7e656387f74cc3053652b`. It protects the existing Trading
+at `7b9601784f37ca3680359b7fc29a52f9f286d15f`. It protects the existing Trading
 application, not a second demo. P1 does not redesign its query, package API,
 CSS or components. The reviewed engine/security/source-backed setup changes
 come from B1, whose history and policies are retained.
@@ -16,24 +16,43 @@ never new golden expectations. Readiness for another development layer requires
 the actual current-branch product gates. It is not a claim that all external
 checks or the entire unused core workspace are green, nor merge authorization.
 
-P2 ([#162](https://github.com/drasi-project/drasi-server/issues/162)) builds on
-the exact P1 head `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`. The package now
+P2 ([#162](https://github.com/drasi-project/drasi-server/issues/162)) originally
+built on P1 `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`. Its normal parent update
+now incorporates exact P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18`, including
+the approved main-runtime and official signed-plugin changes below, while
+retaining original P2 `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97` ancestry.
+The package still
 connects to explicit existing references with GETs only; Trading owns automatic
 setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
 `TradingProvider.tsx`. This does not change the business/visual baseline below.
 
 P3 ([#163 Part A](https://github.com/drasi-project/drasi-server/issues/163))
-builds directly on P2's exact `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97`.
+originally built on P2 `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97`.
+Its normal parent integration retains original P3
+`a0569c2ae7b17f51996f431cf2264c636a19f3d1` and incorporates exact updated
+P2 `f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467`, without importing P4-P7.
 It completes the public client/transport/type/entrypoint and material
 configuration contract. P3's historical passes do not imply acceptance of the
 later Part B identity, canonical-delta or snapshot/reconnect/stale contracts.
 The Part B consumer changes and focused proof obligations are described below;
 the measured historical evidence remains unchanged.
 
+P4 normally integrates exact updated P3
+`39f82c9e7124c512eaad2047bda3222732387297`, retaining original P4
+`20561c13dd74929855dfbe605bb1fac23e5a49f4` ancestry and the complete result,
+identity, adapter and bounded-recovery contract. This brings the approved
+server 0.2.3 / SSE 0.3.6 / ABI 0.13 runtime into the owning P4 branch, not
+P5-P7 product features. Current evidence is recorded separately from the
+original ABI 0.11 captures and historical measurements below.
+
 P6's presentation contracts and acceptance status are recorded
 [separately below](#p6-presentation-contracts-and-evidence). The version-1
-inventory, KB-04 accessibility limitations and P1-P5 measurements describe
-their historical layers; they are not current-head P6 passing evidence.
+inventory, KB-04 accessibility limitations and P1-P6 original measurements
+describe their historical layers; they are not current-runtime P6 proof.
+P6's normal parent update retains original
+`959594b1ad1d8b0a891b9526d2376f30fe66182f` and integrates exact P5
+`bb0bec99f06e12f3fbe9cd2bf0eee653763f851e`, without importing P7 features or
+altering the original design, accessibility policy or pending human review.
 
 P7 / #165 adds the independent [cold-storage examples](../react/README.md)
 above exact P6 `959594b1ad1d8b0a891b9526d2376f30fe66182f`.
@@ -157,7 +176,9 @@ P6 / #164 Part B adds bounded keyboard, modal, theme, sizing and reduced-motion
 contracts to P5 composition. It retains every original query, raw key,
 projection, financial calculation, provisioning rule, link and tutorial.
 The known default-sort discrepancy is still frozen. No standalone example,
-Storybook, backend/SDK/plugin change or publication is included.
+Storybook or publication is included. The original P6 feature did not change
+backend/SDK/plugin selections; its approved normal parent integration now
+inherits the current runtime separately, as recorded below.
 
 The package reference documents
 [Modal props and focus ownership](../../dev-tools/react/README.md#modal),
@@ -305,7 +326,12 @@ zero-duration synthetic key press cancelling WebKit's paging;
 the test never sets `scrollTop` to manufacture movement or increases the
 existing five-second assertion bound.
 
-#### P6 measured evidence
+#### Historical P6 measured evidence
+
+This subsection records original P6
+`959594b1ad1d8b0a891b9526d2376f30fe66182f`, its earlier server 0.2.1 / ABI 0.11
+runtime and original measurement convention. It is preserved history, not a
+substitute for rebuilding and testing the newly integrated parent.
 
 Local verification uses actual React 18.3.1 with Node 22.20.0 in the pinned
 Linux image and Node 24.19.0 in a separate clean consumer. Package tests are
@@ -362,7 +388,7 @@ were fixed at their causes: lost portal font weight, pixel-versus-unitless
 line height, responsive SVG shrink behavior and offscreen wrapped focus.
 Original image expectations were never refreshed to bless those changes.
 
-#### P6 measured artifact advance
+#### Historical P6 measured artifact advance
 
 The same 2% future-growth rule remains; this is an explained feature baseline,
 not a percentage increase or coverage exception. P1-P5 history is retained in
@@ -374,7 +400,7 @@ entry/shared/lazy files, not only the initial app chunk.
 | Tarball | 169457 | 204840 |
 | Package ESM | 78523 | 89246 |
 | Package CJS | 85845 | 98118 |
-| Declarations | 37834 | 41244 |
+| Declarations, original `.d.ts`-family counter | 37834 | 41244 |
 | Package CSS | 10043 | 8616 |
 | Trading JS | 251684 | 304459 |
 | Trading JS gzip | 74133 | 92744 |
@@ -388,6 +414,76 @@ declaration/tarball growth. Tutorial CSS moves to Trading; namespaced defaults,
 focus outlines and theme/motion contracts explain the stylesheet changes.
 The client-only and hook import boundaries remain independent. Browser-only
 fixture bundles and recorded audit archives are not production app assets.
+
+#### P6 approved parent integration and accounting
+
+The owning P6 branch normally merges exact P5
+`bb0bec99f06e12f3fbe9cd2bf0eee653763f851e`, preserving original P6
+`959594b1ad1d8b0a891b9526d2376f30fe66182f` ancestry and the existing PR base
+ref. P6 presentation/runtime source, all eleven Trading queries and transforms,
+the five original images, the exact 19-fingerprint/86-context contrast policy
+and its 98-report/201-JSON archive remain unchanged. Human review stays open;
+neither integration nor the accounting correction supplies new AT evidence.
+No P7 code or examples are imported.
+
+All five incoming original schema-2 histories remain byte-identical.
+`baseline-metrics-p6-v2.json` additionally preserves the exact original P6
+record (SHA-256 `8ff7a240f83d55c926517afcd9865c9181eb40451e3fb476e211aab086834389`).
+The verified original P6 tarball SHA-256 is
+`148f5df78906b18fc6d9d328faad2efc869d6cfd66cac6e38111013beb7f25ca`.
+It contains **41,244 ESM plus 41,261 CommonJS declaration bytes: 82,505 total**.
+Counting both existing formats changes accounting, not product bytes.
+Corrected historical P1-P5 declaration totals remain
+37,492 / 42,280 / 56,256 / 69,767 / 75,685; P6's actual declaration feature
+cost relative to corrected P5 is 6,820 bytes. The original runtime/CSS/app
+feature budgets, all coverage floors and the same 2% future-growth rule remain.
+The current helper still counts every entry/shared/nested/lazy JS/CJS file,
+all declaration formats, every packaged stylesheet and recursive app assets.
+
+Current-runtime proof must use this checkout's newly built default server/UI:
+server 0.2.3, registry library 0.9.1, host/plugin/FFI crates 0.11.0, index 0.6.1,
+GQL 0.3.6 and unchanged core/AST/Cypher correction
+`1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The six incoming immutable plugin
+locks use official merged release
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`; plugin SDK crate 0.11.1 and host
+crate 0.11.0 share actual native ABI 0.13. Old ABI 0.11 and newer ABI 0.14 are
+not fallbacks. Signatures, hash/target/main-identity checks, foreign/dirty-sibling
+guards and `prepare-build.sh` remain intact. Current DTO and 17-line SSE 0.3.6
+records stay separate from their historical counterparts.
+
+Pre-freeze merged checks pass: **416 package tests, 226 Trading tests,
+18 Node policy/provenance checks and 53 repository tooling tests**. The owning
+server/UI was rebuilt before the locked Rust suite: **809 passed, 32 existing
+ignored**, with strict Clippy/fmt and audit zero vulnerabilities / the same
+15 warnings. The complete original **175/175** packed Linux browser matrix
+and all five original exact PNG images pass under the corrected accounting.
+An additional three-engine regression covers fully opaque content while its
+own overlay is still fading; the audit now observes both within the unchanged
+five-second bound and observes native paints after a completed transition
+before capturing computed colors. It does not accept a transient color, recapture fingerprints
+or alter runtime animation. The rejected intermediate WebKit raw audit/trace
+is retained, rather than treated as a passing run.
+
+Clock preparation also avoids a pre-navigation install/pause protocol race:
+on the blank page only, installation starts before the original anchor and
+`pauseAt` then establishes exactly the same `FIXED_TIME` before app code loads.
+No application time is advanced during this preparation. The visual clock
+still starts paused, lifecycle cases still explicitly resume it, and relative
+timer/recovery assertions and five-second bounds are unchanged. A scheduling-gap
+regression verifies the exact anchor across navigation, relative timers and
+subsequent resume; original image comparisons remain authoritative.
+
+The integrated Linux artifact measures **206,779 tarball / 89,246 ESM /
+98,118 CJS / 82,505 dual declarations / 8,616 package CSS / 304,459 app JS
+(92,744 gzip) / 25,266 app CSS (5,900 gzip)** bytes. Runtime, declaration and
+CSS bytes match the remeasured original P6 artifact. The 1,939-byte tarball
+increase is documentation (0.95%), within the original 204,840-byte budget's
+unchanged 2% future-growth rule; the budget is not raised.
+
+The merged owning-head validation and CI outcomes are recorded on #209 and the
+Part B evidence in #164. Old runtime/binary passes, or borrowing a lower layer's
+binary, are not substituted for the current own-source and independently packed
+frontend gates.
 
 The [retained external caveats](#product-gates-versus-retained-caveats) also
 still apply: external YAML-agent unsupported-model HTTP 400, configured native
@@ -538,7 +634,14 @@ tokens, reduced motion and the height API. Single-overlay compatibility tests
 are not evidence that those unfinished contracts are complete. No standalone
 example or Storybook site is added in P5.
 
-#### P5 measured artifact change
+#### Historical P5 measured artifact change
+
+This records the original P5 head
+`569b1d26e558b838d3a572bf7e2e5fbd6280eeaf`, its prior runtime, and schema-2
+single-format declaration measurement. The exact original record is preserved
+in `baseline-metrics-p5-v2.json`; current accounting and runtime integration are
+described below. These original backend/skip counts are historical, not a
+substitute for rebuilding and validating the current owning checkout.
 
 The clean Linux/amd64 Node 22.20.0 run passes **354 package tests, 95 Trading
 tests, 6 metric-policy tests and 26 browser scenarios**, including all five
@@ -603,7 +706,83 @@ followed by `./tests/plugin_smoke_test.sh --skip-build`: **8 pass / 28 configure
 skips**, with the pinned registry artifacts verified. This is not all-plugin
 coverage. The additional legacy `make test-smoke` convenience target still
 exits 2 because its `build-dynamic` target is absent; that pre-existing blocker
-is not reported as a passing gate or repaired by P5.
+was not reported as a passing gate or repaired by original P5. The approved
+incoming parent later repaired that convenience path; the paragraph above is
+historical evidence, not a current-runtime blocker.
+
+#### P5 approved parent integration and accounting
+
+P5 normally merges exact updated P4
+`2ccf8624533193861e6518cb0c39785f561fa270` into original P5
+`569b1d26e558b838d3a572bf7e2e5fbd6280eeaf`. Both histories and the existing PR
+base ref are retained. No P6/P7 product code, query/financial changes, source
+aliases, image refresh or scope-expanding dependency updates are introduced.
+The same provider-free table, small live composition, scoped retries,
+controlled/uncontrolled sort and Trading-owned lazy inspector/fullscreen
+composition remain the contract.
+
+The original P1/P2/P3/P4 schema-2 files remain byte-identical to the incoming
+parent, and `baseline-metrics-p5-v2.json` adds the byte-identical original P5
+record. Policy tests protect those bytes and retain every earlier budget case.
+The original P5 tarball SHA-256 is
+`3cb4774d8c34e5aee2464b66026210a37ef83abd2f65f84ff82c09dfb59f8aca`.
+Remeasuring that same artifact with the incoming `measurePackageModules`
+convention counts **37,834 ESM + 37,851 CommonJS = 75,685 declaration bytes**.
+That is an accounting correction, not new runtime bytes or a budget relaxation.
+The corrected P1-P4 totals remain **37,492 / 42,280 / 56,256 / 69,767**.
+P5's actual declaration feature cost relative to P4 is **5,918 bytes** when
+both formats are counted; the original 2,959-byte single-format difference
+remains in its historical record.
+
+The current metric scope includes every package JS/CJS/declaration entry and
+shared/nested chunk, every shipped stylesheet, and recursive Trading JS/CSS
+assets. Source maps remain part of tarball size, not executable-byte totals.
+P5 retains its feature/runtime budget and all coverage floors, with the same
+**2% future-growth rule**; it does not replace the incoming accounting with
+the old single-declaration convention.
+
+Current-runtime gates must build this checkout's default server and real UI
+before Rust or live tests. The approved runtime is server 0.2.3, library 0.9.1,
+host/plugin/FFI crates 0.11.0, index 0.6.1 and GQL 0.3.6, with the same reviewed
+core 0.5.8 / AST 0.3.5 / Cypher 0.3.6 source correction. All six signed locks
+come from official merged-main
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`: plugin SDK crate 0.11.1 and host
+0.11.0 have actual native ABI 0.13. Historical ABI 0.11 captures stay separate;
+reproducing them requires their old whole harness/policy, not a pin override
+that bypasses the current guards.
+
+The current DTO and seventeen raw SSE records inherited from P4 remain under
+`dev-tools/react/test/fixtures/server-v1-0.2.3`, separate from old recordings.
+P5's own-source and independent packed-frontend live runs use only its rebuilt
+default binary and actual backend source via `P1_SOURCE_ROOT`. Required
+2000/cost1800/count2, 2050 live/reload, 2150 offline/reconnect, CRUD/live/delete
+and no-navigation assertions remain unchanged. There is no new authoritative
+cursor, timestamp ordering, replay rollback or atomicity claim.
+
+The integrated clean Linux/amd64 gate passes **357 package tests, 102 Trading
+tests, 15 metric-policy tests and 26 browser scenarios**, including all five
+unchanged exact-zero-diff visual PNG images. The existing public-contract and
+literal README checks also pass in independent Node 22.20.0 and 24.19.0
+consumers with React 18.3.1: 9 type programs / 528 negative assertions,
+10 README snippets in all three TypeScript modes, 8 import/SSR modes and
+8 parser guards. Client/auth remain React-free; hook imports remain UI-free.
+
+Measured integrated bytes are **171,115 tarball / 78,523 ESM / 85,845 CJS /
+75,685 dual declarations / 10,043 package CSS / 251,684 Trading JS
+(74,133 gzip) / 21,639 Trading CSS (5,212 gzip)**. Runtime, declaration and CSS
+bytes match the remeasured original P5 artifact. Only the tarball grows:
+**1,658 bytes (0.98%)** for current-runtime and integration documentation.
+The original P5 byte budget is not raised; the same 2% policy passes.
+Coverage percentages and critical client/react floors remain unchanged.
+
+The owning checkout's updated default binary and real UI were built before
+Rust validation. All **38** Cargo summaries total **809 passed / 32 ignored /
+0 failed**; 53 tooling tests, strict locked all-target Clippy, fmt and the
+locked-host audit also pass. The audit retains 15 existing warnings. These
+results do not clear unused legacy-core, embedded-plugin, npm or publisher-
+visibility advisories, and they make no P6 human accessibility claim.
+Final committed-head own-source/packed live and CI evidence is recorded on
+the owning #208 and #164 Part A without rewriting later-layer evidence.
 
 ### Part B Trading result consumers
 
@@ -811,6 +990,9 @@ entrypoints and unused components.
 | Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
 | Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
 
+The app runner also includes seven native-version setup guards. These are
+additional checks, not new Trading behavior coverage or changed product floors.
+
 Schema version 2 remeasures the same source and unchanged test scenarios using
 Vitest's existing `experimentalAstAwareRemapping` option. Legacy V8 remapping
 produced either 241/372 or 242/373 covered package branches on identical runs:
@@ -823,9 +1005,21 @@ branches (339/714 package, 389/522 Trading), so these percentages are **not
 comparable** to the original legacy-V8 measurements. No product code or tests
 were removed, no source was excluded, and no runtime/tool version was changed.
 
-The original P1 artifact baseline was 110,691 bytes packed, 66,865 bytes package ESM, 68,860
-bytes CJS, 18,746 bytes declarations and 10,043 bytes package CSS. Clean Trading
+The corrected P1 artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
+bytes CJS, 37,492 bytes declarations and 10,043 bytes package CSS. Clean Trading
 JS is 223,574 bytes (65,775 gzip), CSS 21,034 bytes (5,163 gzip).
+Schema version 3 counts every emitted package JS/CJS entry and nested chunk,
+both declaration formats, every packaged stylesheet, and recursive Trading
+JS/CSS assets. The unchanged tarball contains 18,746-byte `index.d.ts` and
+18,746-byte `index.d.cts` files; version 2 counted only the former. Its exact
+measurements are retained in `baseline-metrics-v2.json`. P2's original version-2
+record is separately retained in `baseline-metrics-p2-v2.json`: its two
+21,140-byte declaration files total 42,280 bytes, not 21,140. Neither correction
+changes the shipped tarballs: P1 SHA-256
+`f85eae9c85c50b1af98474d1b0524dc12b5ed9e780cf1c5500b4ef7fbad733f0` and P2
+SHA-256 `ee28948165c33c762d3d7fb3ff6e086bda553fe60fd5c12b0499bc7918745140`.
+This is a measurement correction, not artifact growth or a relaxed budget. Source maps and other
+non-runtime files remain covered by the complete tarball byte metric.
 `check-baseline.mjs` rejects any coverage drop or artifact growth above 2%;
 explain and review baseline updates instead of silently accepting them.
 The Linux runner and CI both run this check and retain
@@ -835,11 +1029,14 @@ versions, so compare the pinned environment rather than mixing host coverage.
 P3 introduces multiple entrypoints and shared chunks. Package ESM/CJS metrics
 therefore sum **every shipped file of that format**, including entrypoint
 wrappers, rather than measuring only the now-small root barrel. Declaration
-bytes sum all `.d.ts` files; matching `.d.cts` files are verified separately,
-not double-counted in that established metric. Source maps remain included in
-tarball bytes. Two extra metric-policy cases prove shared chunks are counted
-and missing runtime/declaration formats fail. The original four threshold
-tests and unchanged 2% policy remain authoritative.
+bytes now sum all `.d.ts`, `.d.mts` and `.d.cts` files: the original P3
+measurement omitted its separately shipped CommonJS declarations. P3's exact
+schema-2 record is retained in `baseline-metrics-p3-v2.json`. Its 28,121 ESM
+declaration bytes plus 28,135 CommonJS declaration bytes total 56,256, with no
+product-byte growth. Both P3 module-accounting cases and all incoming P1/P2
+cases remain, including nested assets, CSS, duplicate paths and the original
+four threshold checks. Source maps remain included in tarball bytes. The same
+2% policy and coverage floors are unchanged.
 
 Browser coverage is scenario-based; these percentages are Vitest/V8 only and
 must not be presented as browser or real-server coverage.
@@ -848,15 +1045,17 @@ must not be presented as browser or real-server coverage.
 
 The same pinned Linux gate measured P2 after all 26 browser scenarios and the
 five unchanged, zero-differing-pixel PNG files passed. Only the **artifact size
-baseline** was advanced, with the original P1 bytes retained in
-`artifactChange.p1Sizes`. The 2% growth policy, every P1 coverage floor, all
-included source files, dependency locks and visual expectations are unchanged.
+baseline** was advanced. `artifactChange.p1Sizes` compares the corrected P1
+accounting against P2; the two historical version-2 records remain unchanged.
+The 2% growth policy, every P1 coverage floor, all included source files and
+visual expectations are unchanged. Frontend dependencies are unchanged; the
+approved backend runtime update is recorded separately below.
 
 | Artifact | P1 bytes | P2 bytes | Reason for growth |
 | --- | ---: | ---: | --- |
 | Packed tarball | 110,691 | 125,325 | Runtime, declarations, source maps and the reference/error/ownership documentation |
 | Package ESM / CJS | 66,865 / 68,860 | 72,992 / 75,038 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
-| Declarations | 18,746 | 21,140 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding |
+| Declarations (both formats) | 37,492 | 42,280 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding; the former single-format counts were 18,746 / 21,140 |
 | Trading JS / gzip | 223,574 / 65,775 | 233,695 / 69,038 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
 | Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
 
@@ -872,7 +1071,11 @@ P2's measured whole-package coverage is 77.09% statements / 78.80% lines /
 they are not a claim that #163's final transport/result-contract coverage targets
 are finished.
 
-### Measured P3 transport/type contract cost
+### Historical P3 transport/type contract cost
+
+This is the original schema-2 measurement before the main-runtime integration.
+The table retains its original single-format declaration numbers; the current
+schema-3 declaration budget counts both formats as described above.
 
 The first complete P3 Linux/amd64 Node 22.20.0 run passed the package/type/SSR
 and source-free consumer gates, all 26 browser scenarios and all five original
@@ -911,10 +1114,71 @@ rerendering replaces the client and closes the existing stream. The same real
 provider test passes on P3. No predecessor/other worktree was modified.
 Positive/negative packed type cases, malformed captured DTO mutations and
 auth/cross-instance cases complement the inherited business assertions.
+### P2 approved main-runtime update
 
-### Measured P4 result/state contract cost
+The normal merge of P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18` changes no
+P2 package or Trading runtime source. Its own rebuilt server/UI and new signed
+ABI 0.13 plugins pass the same real Trading scenario with the singleton totals
+above; the new raw capture has 17 SSE events with the observed envelope/result
+shapes documented below. Earlier raw captures remain historical, not a substitute
+for this runtime proof.
+
+The updated layer passes 83 package tests, 64 Trading tests (57 existing plus
+seven runtime-version guards), nine artifact-policy tests and 53 tooling tests.
+The source-free Linux gate passes all 26 browser scenarios and the original five
+exact PNG files. Locked Rust tests report 809 passes / 32 existing ignores;
+`make test-all` reports 840 passes / one existing ignored doctest, with the
+separate limited plugin smoke reporting eight passes / 28 unconfigured skips.
+Strict Clippy/fmt and the selected host audit pass, retaining its 15 existing
+warnings. Final-head CI, binary/lock hashes and independent packed live proof
+are recorded on #205, rather than relabeling older results as current evidence.
+
+### P3 approved main-runtime integration
+
+P3 normally merges exact updated P2
+`f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467`, preserving its original
+`a0569c2ae7b17f51996f431cf2264c636a19f3d1` ancestry, public entrypoints,
+React-free client graph, guarded reads, auth/cancellation and configuration
+lifecycle. No P4-P7 product code is imported. The incoming v1 query DTO is
+byte-identical: `enableArchive` and `memoryBudgetMiB` configure the server or
+instance, not extra top-level fields of the query read DTO. Per-query
+`storageBackend` remains validated, opaque JSON rather than a new client
+creation API.
+
+The original P1/P2 schema-2 records and P3's original schema-2 record remain
+unchanged. Current accounting retains every P3 entry/shared chunk and the
+incoming recursive asset/CSS checks, counts both declaration formats, and
+keeps the same coverage floors and 2% growth rule. New source/lock/binary/live
+evidence belongs to #206; old runtime captures are not relabeled as 0.2.3
+or ABI 0.13 results.
+
+The own rebuilt merge source `5988b1d82cbb4d24dca2d4cb2763c0572d564bf4`
+passes the unchanged actual Trading flow on server 0.2.3, with singleton
+2000/cost 1800/count 2 -> 2050 live/reload -> 2150 offline/reconnect,
+CRUD/live/deletes and no recovery navigation. Its binary SHA-256 is
+`6327ce9a6e938451f50174d634efdf795f011044b5b8eeeafbd8204b74fb3b28`;
+lock SHA-256 is
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+Actual full-view query/reaction/snapshot records are retained separately in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/contract.json` and run through
+the same read-only guards as the original 0.2.1 records.
+
+Fresh checks report 221 package tests, 64 Trading tests, 12 artifact-policy
+cases, 53 tooling tests, and 809 locked Rust passes / 32 existing ignores.
+Strict Clippy/fmt and the selected audit pass with zero vulnerabilities and
+15 retained warnings. The first local full Linux run had a 375-pixel mobile
+ticker-only difference; an unchanged targeted visual rerun and a subsequent
+full 26-scenario rerun passed all five original images. No product, screenshot,
+timeout, readiness or clock assertion was changed to obtain those passes.
+Final packed/current-head CI evidence is recorded on #206 rather than inferred
+from any lower owner's binary or an old plugin cache.
+
+### Historical P4 result/state contract cost
 
 P4 starts at exact P3 `a0569c2ae7b17f51996f431cf2264c636a19f3d1`.
+This section preserves the original `20561c1` evidence on server 0.2.1 /
+SSE 0.3.4 / ABI 0.11. The table's declaration column uses its original
+single-format accounting; it is not the current schema-3 declaration total.
 The first frozen Linux/amd64 Node 22.20.0 run passed **329 package tests,
 82 Trading tests, six unchanged metric-policy tests, all 26 browser scenarios
 and all five original zero-differing-pixel PNG comparisons**. The old size
@@ -980,6 +1244,75 @@ services were not touched. These are development proofs, not automatic
 merge/release authorization; the unchanged external YAML-agent model/HTTP-400
 blocker and configured skips must still be reported against the final PR head.
 
+### P4 approved parent integration and accounting
+
+The normal merge retains P4's raw-key-before-projection semantics, sparse
+deletes, before/after identity changes, explicit adapters and query-scoped
+recovery. It does not replay ambiguous snapshot cuts, infer ordering from
+clocks/signatures, cap result sets, or promise an authoritative cursor.
+The unchanged predecessor red/green tests remain part of the package gate.
+
+`baseline-metrics-p4-v2.json` is the byte-identical original P4 record, alongside
+the incoming original P1/P2/P3 schema-2 files. The retained original P4 tarball
+has SHA-256
+`de1d883e324f9b0597b3e1620df43fa9bb49efd998a24f50b9b4ad1beb075c9a`.
+It contains 34,875 `.d.ts` bytes and 34,892 `.d.cts` bytes: **69,767 total**.
+Current accounting includes both graphs, all entry/shared/nested runtime
+chunks, all packaged CSS and recursive Trading assets. The P4 runtime/artifact
+budget is retained rather than replaced with the smaller P3 feature budget.
+Corrected P1/P2/P3 declaration totals remain 37,492 / 42,280 / 56,256.
+This changes neither product bytes nor the 2% policy or coverage floors.
+
+Current rebuilt-source and packed/browser/live results belong to #207. The
+historical P4 measurements and old runtime recordings are not relabeled as
+current evidence, and current ABI 0.13 guards must not be weakened to run an
+old ABI 0.11 cache or historical image. Reproduce old results only with the
+complete matching historical harness/policy described below.
+
+The own default `target/debug/drasi-server` was rebuilt before Rust integration
+tests. Normal merge `3b39126ae36c9a0da96a4c0e29ad812b181636f6` has exact
+parents original P4 `20561c13` and approved P3 `39f82c9`. Its current
+server 0.2.3 / library 0.9.1 / host SDK 0.11.0 / index 0.6.1 binary has SHA-256
+`eec11ff22242d354b05ef5fb65f1f5240c235a9906298c342d77276ab8feef2d`,
+with lock SHA-256
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+The unchanged own-source live scenario passed with fresh signed SSE 0.3.6 /
+plugin SDK 0.11.1 / ABI 0.13 plugins: singleton 2000/cost 1800/count 2,
+live/reload 2050 and offline/reconnect 2150, CRUD/deletes and no recovery
+navigation or historical candidate rows. This is not a borrowed lower binary.
+
+All 17 raw CDP records from that run remain separate in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson`, with adjacent
+source/manifest/lock/binary/plugin provenance. Tests retain all old recording
+assertions and exercise these current records through the unchanged normalizer
+and default SSE transport. In particular, current lowercase aggregation carries
+before/after without `data`; numeric signatures still exceed JavaScript's safe
+integer range and are never row identity. No authoritative snapshot cursor,
+clock-based ordering or broader plugin compatibility is inferred.
+
+The integrated local gates pass 332 package tests, 89 Trading tests, all
+13 artifact-policy tests (all originals retained), and 53 tooling tests.
+Own rebuilt locked Rust passes 809 tests with 32 existing ignores; fmt,
+strict Clippy, typo validation and the selected audit pass (zero vulnerabilities,
+15 retained warnings). Clean installed Node 22.20.0 and 24.19.0 consumers retain
+nine public programs / 363 negative assertions, five literal README examples,
+eight extraction guards and eight import/SSR checks, including React-free
+client/auth and hook presentation isolation. The full packed Linux run passes
+all 26 scenarios and all five unchanged exact images on its first run.
+The independent source-free frontend also passes the current own-source live
+scenario; it points `P1_SOURCE_ROOT` only at this backend checkout.
+
+Integrated measurements are **189,130 tarball / 98,585 all ESM / 106,000 all
+CJS / 69,767 all declarations / 10,043 package CSS** bytes. Packed Trading
+remains **250,892 JS / 73,795 JS gzip / 21,034 CSS / 5,163 CSS gzip** bytes.
+Only the tarball changes from original P4: **+1,431 bytes (0.76%)** for current
+runtime/compatibility documentation. Executable, CSS and already-shipped
+declaration bytes are unchanged; the declaration metric now counts both graphs.
+The existing P4 byte budget is not raised, and the same 2% policy passes.
+Current-head CI and final provenance remain on #207; external workflow/model,
+configured-skip, embedded-plugin/legacy-workspace, npm/publication and human
+assistive-technology caveats are not converted into passed product claims.
+
 ## Mandatory real-server gate
 
 The primary gate builds the **checked-out server and its Cargo.lock**, not an
@@ -994,24 +1327,29 @@ enabled in this browser run.
 Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
 `1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The default manifest selects only
 the sibling engine 0.5.8 / AST 0.3.5 / Cypher 0.3.6 paths. Registry library
-0.8.9, SDK/host/FFI 0.10.0, index 0.5.8 and GQL 0.3.6 stay selected. This is
-the full compatible source backport, not a published 0.5.8 fix, the rejected
+0.9.1, SDK/host/FFI 0.11.0, index 0.6.1 and GQL 0.3.6 stay selected with
+server 0.2.3. This is the full compatible source backport, not a published
+0.5.8 fix, the rejected
 0.5.9 hook API, or the earlier disposable three-file overlay. See
-[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md).
+[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md)
+and [the approved main-runtime matrix](../../docs/main-runtime-integration.md).
 
 `source_provenance.py` invokes the shared source verifier and resolved-SDK
 policy, checks the caller's commit/lock and exact engine/parser origins, and
 rejects a different caller plugin lock. Native installation reuses
 `scripts/install_plugins.py`, rather than a second installer. Actual loaded
 plugin status/hash/version/ABI metadata is validated by that same shared
-policy and retained in `loaded-plugins.json`.
+policy and retained in `loaded-plugins.json`. The native CLI's reported server
+and SDK versions must also match the verified lock/resolved SDK; a stale
+`target/debug/drasi-server` fails before any test services start. The success
+banner uses that verified binary version, not the historical image version.
 
 For a source-free packed Trading consumer, set `P1_SOURCE_ROOT` to the original
 server checkout. It supplies **backend build provenance and setup helpers
 only**; no package source alias or Tailwind scan is introduced. The frontend
 still consumes the tarball. CI prepares the pinned sibling before its build,
-passes that checkout explicitly, and triggers on Cargo, core pin, shared helper,
-server/UI, package and Trading changes for dependent PR bases.
+passes that checkout explicitly, and triggers on Cargo, Make, core pin, shared
+helper/pins, server/UI, package and Trading changes for dependent PR bases.
 
 Prerequisites: a POSIX host, Docker, the repository's Rust toolchain, Node 22,
 Python 3.13, and access to GHCR/Sigstore for signed plugin
@@ -1027,8 +1365,7 @@ sufficient for `jq-sys`.
 From the repository root, after the fast package/app setup above:
 
 ```sh
-bash scripts/prepare-core.sh
-python3 scripts/plugin_origin.py mode
+bash scripts/prepare-build.sh
 npm --prefix ui ci
 npm --prefix ui run build
 cargo build --locked
@@ -1044,10 +1381,18 @@ P1_PYTHON="$PWD/examples/trading/app/.test-runtime/venv/bin/python" \
 npm --prefix examples/trading/app run test:live
 ```
 
-The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.8**, PostgreSQL source **0.2.7**, SSE
-reaction **0.3.4**, and PostgreSQL/scriptfile bootstrappers **0.2.10** by immutable
-OCI manifest digest and binary SHA256. Their SDK crate is **0.10.0** and their
-independently versioned C ABI is **0.11.0**. The shared installer runs the existing
+Rebuild the default server binary before Rust integration tests as well: some
+tests invoke `target/debug/drasi-server` directly. A build in another target
+directory or a handed-off B1 binary does not update that executable.
+
+The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.11**,
+PostgreSQL source **0.2.10**, SSE reaction **0.3.6**, and PostgreSQL/scriptfile
+bootstrappers **0.2.13** by immutable OCI manifest digest and binary SHA256.
+They come from the merged official main release
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
+(drasi-project/drasi-core#789). Their SDK crate is **0.11.1**; it and the host
+SDK crate **0.11.0** both use the independently versioned C ABI **0.13.0**.
+The shared installer runs the existing
 `plugin install --from-config --locked` with `verifyPlugins: true` and
 independently checks every downloaded binary hash. Missing tools, wrong
 hashes, unsuccessful signatures and unavailable platform pins fail the gate.
@@ -1089,10 +1434,30 @@ These actual server records must never be replaced by the synthetic fixture
 projections. In particular, preserve SSE row signatures as raw text when
 recording: some exceed JavaScript's safe integer range.
 
+The successful isolated B1 candidate runs and earlier integrated P1 run are
+historical evidence, not a substitute for running this gate on the current
+branch's own rebuilt binary. The default gate must still prove singleton
+2000/cost 1800/count 2, live 2050, existing-resource reload 2050, and
+offline/reconnect 2150 without navigation or historical-row selection.
+
+Actual SSE 0.3.6 observations include `message` events with
+`queryId`/`results`/`timestamp`, `ADD`, `DELETE`, `UPDATE` and lowercase
+`aggregation` results. Aggregation carries `before`/`after` without `data`;
+update also carries `data`. ABI compatibility alone does not establish wire
+compatibility. Retain each run's raw observations separately; do not normalize
+them into synthetic fixtures or infer guarantees for unexercised protocol paths.
+
 ### Older image comparison, not a passing fallback
 
-`P1_RUNTIME=image npm --prefix examples/trading/app run test:live` runs the
-separately pinned official Docker image in `test/live/runtime-pins.json`.
+The separately pinned official Docker image in `test/live/runtime-pins.json`
+is historical. For a faithful comparison, use a separate owned checkout of P1
+commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`, including its matching
+platform locks and shared ABI-verification policy, then run
+`P1_RUNTIME=image npm --prefix examples/trading/app run test:live` there.
+Overriding only `P1_PLUGIN_LOCK` in the current checkout is insufficient: the
+current shared ABI 0.13 verifier correctly rejects that image's ABI 0.11 before
+the financial scenario. Do not weaken the current policy to run the old image.
+Neither the image pin nor the original failure recordings have been rewritten.
 That image is version 0.2.1 but comes from commit
 `f78d9f11993eb96a2707617b727949dab2f33ab7` with core **0.5.7**, not the #119
 checkout. Neither a mutable `v0.2.1` tag nor the GitHub release executable is an
@@ -1195,6 +1560,11 @@ These caveats remain visible when discussing readiness for dependent
 development; they do not authorize merge, automatic merge or publication.
 
 ## P7 independent examples and integrated evidence
+
+This section preserves original P7 `cd474f83df7eb15a909b87134ff9822ba45b8116`
+on server 0.2.1 / SSE 0.3.4 / ABI 0.11 and its schema-2 byte convention.
+The [approved main-runtime integration](#p7-approved-main-runtime-integration)
+below has separate current evidence; historical passes are not relabelled.
 
 P7 finishes consumer documentation and introduces **one** small non-Trading
 workspace, `examples/react`. It changes no public package API/runtime/CSS,
@@ -1307,7 +1677,7 @@ All runtime/declaration/style metrics are exactly P6:
 | Bytes | P7 measurement |
 | --- | ---: |
 | Package ESM / CJS, every entry/shared/lazy chunk | 89246 / 98118 |
-| Declarations / package CSS | 41244 / 8616 |
+| Declarations (historical `.d.ts` family only) / package CSS | 41244 / 8616 |
 | Trading JS / gzip | 304459 / 92744 |
 | Trading CSS / gzip | 25266 / 5900 |
 
@@ -1340,3 +1710,83 @@ Trading's 19 existing contrast fingerprints in 86 exact contexts, its
 visible under the **strict no-new-or-worsened** policy. Generic/default-theme
 examples require zero automated violations. Neither result is a WCAG
 conformance claim, human approval, merge authorization or publication.
+
+### P7 approved main-runtime integration
+
+The existing P7 branch normally merges exact P6
+`12402050d8ee490abc5eedbf6aa606c55638d4d0` into its original
+`cd474f83df7eb15a909b87134ff9822ba45b8116` history. It preserves both parents,
+the same draft PR/base and group order; it does not rebase, force-push, move
+repositories, publish, or merge into main. The user-approved runtime/pin
+update supersedes the older version freeze, not the behavior, verification
+or human-review boundaries.
+
+The selected runtime is server **0.2.3**, registry library **0.9.1**,
+host/plugin/FFI crates **0.11.0**, index **0.6.1** and GQL **0.3.6**.
+The core **0.5.8** / AST **0.3.5** / Cypher **0.3.6** paths still select exact
+`1284e9f648634c1faa73fd897a21c2712bb0cbbe`. All six incoming locks retain
+the approved official merged release
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`: plugin SDK crate **0.11.1**
+and actual ABI **0.13.0**, with SSE **0.3.6**. The complete versions,
+digests, signatures and limitations remain in
+[main-runtime integration](../../docs/main-runtime-integration.md).
+There is no old-ABI cache fallback, local-SDK inference, mutable-tag download
+or signature/ABI bypass.
+
+P7 preserves all three cold-storage entries and their real/simulated
+distinction. Its setup now checks the actual default-target executable's
+server/host-SDK version against the current lock/resolved SDK before plugin
+installation. It reuses the backend source verifier for revision,
+manifest/lock hashes, exact selected engine/SDK identities and approved
+plugin-lock provenance. The existing signature/hash/loaded-ABI checks remain.
+Frontend graphs still use installed public exports only; the source root
+supplies backend verification helpers, never frontend aliases or a borrowed
+lower-layer binary. Build this checkout's real UI and `target/debug` server
+before Rust/live checks.
+
+The P6 observation-only fixes are unchanged: readiness includes both the
+owning overlay and content opacity/motion, two real paint frames and recheck
+within the same original bounded poll. Frozen clocks are installed on a
+blank page before pausing at the exact original anchor and navigating. All
+six date/relative-timer/RPC-gap regressions remain in the **181-case**
+inherited three-engine gate. P7's showcase does not install a frozen browser
+clock; its timestamp is visibly simulated data, not a competing clock helper.
+No colors, styles, transitions, image expectations, five-second bounds or
+readiness assertions are forced or relaxed.
+
+Schema **3** counts all package entry/shared/nested/lazy JS/CJS, both
+declaration formats, all package CSS and recursive Trading assets. Original
+P1-P7 schema-2 JSON files remain byte-identical, including
+`baseline-metrics-p7-v2.json`. The retained original P7 tarball
+SHA-256 `664ae1da684690b2cf87dcdf777a765ca3f4a6151a7fffd70ee958d9cd876261`
+already contains **41244 ESM + 41261 CommonJS = 82505 declaration bytes**.
+This is corrected accounting, not new product bytes or a budget increase.
+Corrected P1-P6 declaration totals remain
+**37492 / 42280 / 56256 / 69767 / 75685 / 82505**.
+
+The original P7 feature budgets, critical coverage floors and **2%**
+future-growth ceiling stay in force. Example accounting now recursively
+includes root/nested JS/MJS/CJS and CSS as well as each entry's reachable
+static/shared/lazy closure. Both sides of the virtual-ID regression remain:
+React under an enclosing `trading-consumer` directory passes, while actual
+Trading/source aliases (including virtual/resolved IDs) fail. No virtual
+modules are broadly skipped.
+
+The integrated documentation tarball measures **219805 bytes**, **2023 bytes
+(0.93%)** above original P7, within its unchanged 217782-byte baseline and 2%
+ceiling. Package ESM **89246**, CJS **98118**, complete declarations **82505**
+and CSS **8616** retain their actual runtime/type/style bytes. The original
+41244-byte declaration counter remains only in historical schema-2 records.
+No budget reset is needed to include the current runtime documentation.
+
+Current validation uses the complete installed Node **22.20.0/24.19.0** /
+React **18.3.1** contracts, all **16** existing literal recipes, the
+**181** inherited browser cases and five original images, P7 showcase and
+actual table/hooks cases in all three engines, and the unchanged real Trading
+financial/CRUD/reconnect gate on this checkout's rebuilt server/UI. Exact
+measured counts/bytes, source-free/runtime provenance and final-head CI are
+recorded in #210 and #165; old runtime passes or skipped live jobs are not
+substitutes. Human AT remains pending and the original strict Trading
+contrast fingerprints/raw archive remain unwaived. Configured skips, host
+warnings, unused core/embedded-plugin audit limits and the external YAML
+model failure retain their actual classifications.

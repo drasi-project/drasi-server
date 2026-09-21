@@ -52,6 +52,20 @@ export function assertExampleBudget(evidence, baseline) {
   }
 }
 
+export async function measureExampleAssets(directory) {
+  const files = (await readdir(directory, { recursive: true }))
+    .filter(file => /\.(?:[cm]?js|css)$/.test(file)).sort();
+  const assets = {};
+  for (const file of files) {
+    const content = await readFile(join(directory, file));
+    assets[file.replaceAll('\\', '/')] = {
+      bytes: content.length, gzip: gzipSync(content).length,
+      sha256: createHash('sha256').update(content).digest('hex'),
+    };
+  }
+  return assets;
+}
+
 export async function checkBuild(directory) {
   const graph = JSON.parse(await readFile(join(directory, 'build-graph.json'), 'utf8'));
   for (const chunk of Object.values(graph)) for (const module of chunk.modules) {
@@ -62,16 +76,8 @@ export async function checkBuild(directory) {
   const hooks = assertHooksGraph(graph);
   const html = await readFile(join(directory, 'hooks.html'), 'utf8');
   assert(!/stylesheet|\.css\b/.test(html), 'Hooks HTML unexpectedly loads a stylesheet');
-  const allFiles = (await readdir(join(directory, 'assets'))).filter(file => /\.(js|css)$/.test(file)).sort();
-  const assets = {};
-  for (const name of allFiles) {
-    const content = await readFile(join(directory, 'assets', name));
-    assets[`assets/${name}`] = {
-      bytes: content.length, gzip: gzipSync(content).length,
-      sha256: createHash('sha256').update(content).digest('hex'),
-    };
-  }
-  assert.deepEqual(Object.keys(graph).sort(), Object.keys(assets).filter(file => file.endsWith('.js')).sort(),
+  const assets = await measureExampleAssets(directory);
+  assert.deepEqual(Object.keys(graph).sort(), Object.keys(assets).filter(file => /\.[cm]?js$/.test(file)).sort(),
     'Every emitted entry/shared/lazy JS chunk must be accounted for');
   const entries = {};
   for (const entry of ['index.html', 'hooks.html', 'showcase.html']) {
@@ -82,7 +88,7 @@ export async function checkBuild(directory) {
   const evidence = {
     node: process.version, assets, entries, total: totals(Object.keys(assets), assets),
     hooksPresentationFree: true, hooksChunks: hooks,
-    note: 'Per-entry totals include all reachable shared and lazy chunks; workspace totals count each emitted asset once.',
+    note: 'Per-entry totals include all reachable shared and lazy chunks; workspace totals recursively count all JS/MJS/CJS and CSS once, including nested and root assets.',
   };
   await writeFile(join(directory, 'build-evidence.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
@@ -94,7 +100,7 @@ export async function checkBuild(directory) {
 function totals(files, assets) {
   return files.reduce((sum, file) => {
     assert(assets[file], `Missing measured asset ${file}`);
-    const kind = file.endsWith('.js') ? 'js' : 'css';
+    const kind = file.endsWith('.css') ? 'css' : 'js';
     sum[kind] += assets[file].bytes;
     sum[`${kind}Gzip`] += assets[file].gzip;
     return sum;

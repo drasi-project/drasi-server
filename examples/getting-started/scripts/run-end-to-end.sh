@@ -223,7 +223,7 @@ if [ "${SKIP_BUILD:-}" = "1" ]; then
   fi
 else
   log_step "Step 2: Build Drasi Server (release)"
-  (cd "$SERVER_ROOT" && cargo build --release)
+  (cd "$SERVER_ROOT" && bash scripts/prepare-build.sh && cargo build --locked --release)
 fi
 
 # --- Step 3: Start server -----------------------------------------------------
