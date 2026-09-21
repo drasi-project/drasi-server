@@ -472,7 +472,8 @@ impl DrasiServer {
                     builder,
                     &instance.id,
                     instance.enable_archive,
-                );
+                    instance.memory_budget_bytes,
+                )?;
             }
 
             // Create and add state store provider if configured
@@ -768,6 +769,7 @@ impl DrasiServer {
                                 id: config.id.clone(),
                                 persist_index: config.persist_index,
                                 enable_archive: config.enable_archive,
+                                memory_budget_mib: config.memory_budget_mib.clone(),
                                 state_store: config.state_store.clone(),
                                 secret_store: config.secret_store.clone(),
                                 default_priority_queue_capacity: config
