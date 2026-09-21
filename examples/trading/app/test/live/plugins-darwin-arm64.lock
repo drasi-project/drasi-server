@@ -1,0 +1,83 @@
+# Published main release: drasi-project/drasi-core@3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a
+# Plugin SDK crate 0.11.1 and host SDK crate 0.11.0 both use native ABI 0.13.0.
+version = 1
+
+[plugins."source/http:0.2.11"]
+reference = "ghcr.io/drasi-project/source/http@sha256:1594808f2c265354941183241484075e71b89695a429bfb8f7eb2b0f53271b73"
+version = "0.2.11"
+digest = "sha256:1594808f2c265354941183241484075e71b89695a429bfb8f7eb2b0f53271b73"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "darwin/arm64"
+filename = "libdrasi_source_http.dylib"
+file_hash = "2774a56eade9853f7d041726255e59c1b8f3d553ac6b140601a8fc0495505411"
+
+[plugins."source/http:0.2.11".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."source/postgres:0.2.10"]
+reference = "ghcr.io/drasi-project/source/postgres@sha256:d46a6cc6360771b21a36015b49c546fd269083c1268f704b613505a8e55d3f0e"
+version = "0.2.10"
+digest = "sha256:d46a6cc6360771b21a36015b49c546fd269083c1268f704b613505a8e55d3f0e"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "darwin/arm64"
+filename = "libdrasi_source_postgres.dylib"
+file_hash = "bed5af713449e4a71b622f12087df9c610c935d3f014e77a32608e10ee21b60a"
+
+[plugins."source/postgres:0.2.10".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."bootstrap/postgres:0.2.13"]
+reference = "ghcr.io/drasi-project/bootstrap/postgres@sha256:3e59d8558f5370842b254636bed3b0c3b9ad807756c05cd285b920a7184bc023"
+version = "0.2.13"
+digest = "sha256:3e59d8558f5370842b254636bed3b0c3b9ad807756c05cd285b920a7184bc023"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "darwin/arm64"
+filename = "libdrasi_bootstrap_postgres.dylib"
+file_hash = "75b345187d419faa855dd77e7c608d7a1f3c3f093930c4b7baec0fb94cd33d96"
+
+[plugins."bootstrap/postgres:0.2.13".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."bootstrap/scriptfile:0.2.13"]
+reference = "ghcr.io/drasi-project/bootstrap/scriptfile@sha256:6151d0005f4d50993b565f18aced800b8aefc764597dd844fa9a5028a3902aac"
+version = "0.2.13"
+digest = "sha256:6151d0005f4d50993b565f18aced800b8aefc764597dd844fa9a5028a3902aac"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "darwin/arm64"
+filename = "libdrasi_bootstrap_scriptfile.dylib"
+file_hash = "949092e618527d63c8310057b898995a16d393dac86b26b59791b2ca91471625"
+
+[plugins."bootstrap/scriptfile:0.2.13".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."reaction/sse:0.3.6"]
+reference = "ghcr.io/drasi-project/reaction/sse@sha256:d0758b50f4bb841bdce6f87e34f6c606cabccb1938cac97629a94e34cc980f70"
+version = "0.3.6"
+digest = "sha256:d0758b50f4bb841bdce6f87e34f6c606cabccb1938cac97629a94e34cc980f70"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "darwin/arm64"
+filename = "libdrasi_reaction_sse.dylib"
+file_hash = "4522f3ed443b3bbcbcc123b8ea7d2952d327635451ddeb6e9459bd2cbec313f5"
+
+[plugins."reaction/sse:0.3.6".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"

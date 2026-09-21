@@ -1,0 +1,51 @@
+# Published main release: drasi-project/drasi-core@3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a
+# Plugin SDK crate 0.11.1 and host SDK crate 0.11.0 both use native ABI 0.13.0.
+version = 1
+
+[plugins."source/mock"]
+reference = "ghcr.io/drasi-project/source/mock@sha256:eab51d94c39551e20be91cb1a044fec6ac2c023c58f0985c5f0c287172dbd60e"
+version = "0.2.10"
+digest = "sha256:eab51d94c39551e20be91cb1a044fec6ac2c023c58f0985c5f0c287172dbd60e"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "linux/amd64"
+filename = "libdrasi_source_mock.so"
+file_hash = "f63553fa76fc121cd6d91f9941de84660045e95dbd5d0deabeb668dc0f67c9e3"
+
+[plugins."source/mock".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."reaction/log"]
+reference = "ghcr.io/drasi-project/reaction/log@sha256:82a8e811433d800ef2242cbb34b2f8948e17fd4d19c368464a527594ba557075"
+version = "0.2.7"
+digest = "sha256:82a8e811433d800ef2242cbb34b2f8948e17fd4d19c368464a527594ba557075"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "linux/amd64"
+filename = "libdrasi_reaction_log.so"
+file_hash = "655977707d888e7878c827739c534464b779585bc477b84ceb700137689cbcf1"
+
+[plugins."reaction/log".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
+
+[plugins."reaction/http"]
+reference = "ghcr.io/drasi-project/reaction/http@sha256:84f4a407eab9e9e228ce912d16ebcffac2ba0a4348e3acf8e917c645b14b915c"
+version = "0.3.3"
+digest = "sha256:84f4a407eab9e9e228ce912d16ebcffac2ba0a4348e3acf8e917c645b14b915c"
+sdk_version = "0.11.1"
+core_version = "0.5.8"
+lib_version = "0.9.1"
+platform = "linux/amd64"
+filename = "libdrasi_reaction_http.so"
+file_hash = "8a557c00d12c59b9e3dac0a488531fa32c08c868c66d2d802b29233e7d288565"
+
+[plugins."reaction/http".signature]
+verified = true
+issuer = "https://token.actions.githubusercontent.com"
+subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
