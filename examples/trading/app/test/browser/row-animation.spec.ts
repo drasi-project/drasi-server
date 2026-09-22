@@ -3,6 +3,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { audit } from './axeAudit';
+import { assertRowPulse, type NativeRowAnimationFacts } from './rowAnimationFacts';
 
 async function open(page: Page, owner: string, scenario = 'row-animation', direction?: 'up' | 'down') {
   const errors: string[] = [];
@@ -89,11 +90,29 @@ for (const owner of ['local', 'shared']) {
             starts,
             animations: () => element.getAnimations(),
             sample(animations: Animation[], focused: Element | null) {
-              const animation = animations[0];
+              const pulses = animations.filter(animation => animation instanceof CSSAnimation);
+              const nativeObjects: NativeRowAnimationFacts[] = animations.map(animation => {
+                const timing = animation.effect?.getTiming();
+                return {
+                  type: animation.constructor.name,
+                  animationName: animation instanceof CSSAnimation ? animation.animationName : null,
+                  transitionProperty: animation instanceof CSSTransition ? animation.transitionProperty : null,
+                  targetIsRow: animation.effect instanceof KeyframeEffect && animation.effect.target === element,
+                  duration: typeof timing?.duration === 'object' ? timing.duration.toString() : timing?.duration,
+                  timingEasing: timing?.easing,
+                  keyframeEasings: animation.effect instanceof KeyframeEffect
+                    ? animation.effect.getKeyframes().map(frame => frame.easing) : [],
+                  currentTimeMs: typeof animation.currentTime === 'number' ? animation.currentTime : null,
+                  startTimeMs: typeof animation.startTime === 'number' ? animation.startTime : null,
+                  playState: animation.playState,
+                };
+              });
+              const animation = pulses[0];
               const currentTime = animation?.currentTime;
               const startTime = animation?.startTime;
               const result = {
-                active: animations.length,
+                nativeObjects,
+                active: pulses.length,
                 replaced: !!animation && animation !== previous,
                 duration: animation?.effect?.getTiming().duration,
                 easing: getComputedStyle(element).animationTimingFunction,
@@ -147,8 +166,11 @@ for (const owner of ['local', 'shared']) {
             active: 1, replaced: true, duration: 500, easing: 'ease-in-out',
             sameRow: true, sameInput: true, connected: true, value,
           };
+          assertRowPulse(sample.primary.nativeObjects);
           expect(sample.primary).toMatchObject({ ...animation, inputValue: 'retain this draft', focused: true });
           if (owner === 'shared') {
+            expect(sample.mirror).not.toBeNull();
+            if (sample.mirror) assertRowPulse(sample.mirror.nativeObjects);
             expect(sample.mirror).toMatchObject({ ...animation, inputValue: '', focused: false });
           } else {
             expect(sample.mirror).toBeNull();

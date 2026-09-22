@@ -7,7 +7,9 @@ import type { Page } from '@playwright/test';
 
 type ClockSetupPage = {
   url: () => string;
-  clock: Pick<Page['clock'], 'install' | 'pauseAt'>;
+  goto: (url: string) => Promise<unknown>;
+  evaluate: (callback: () => number) => Promise<number>;
+  clock: Pick<Page['clock'], 'install' | 'pauseAt' | 'runFor' | 'setSystemTime'>;
 };
 
 /** Establish the same paused anchor before any application code is loaded. */
@@ -19,4 +21,12 @@ export async function installPausedClock(page: ClockSetupPage, anchor: Date): Pr
   // setup time cannot make pauseAt(anchor) attempt to move backwards.
   await page.clock.install({ time: new Date(anchor.getTime() - 60_000) });
   await page.clock.pauseAt(anchor);
+  // Pinned Playwright 1.56.1 replays the install/pause wall gap into monotonic
+  // time after navigation. Align its 16ms rAF phase before loading any app.
+  await page.goto('about:blank');
+  const ticks = await page.evaluate(() => performance.now());
+  if (!Number.isFinite(ticks) || ticks < 0) throw new Error('Invalid replayed clock ticks');
+  const remainder = ticks % 16;
+  if (remainder) await page.clock.runFor(16 - remainder);
+  await page.clock.setSystemTime(anchor);
 }

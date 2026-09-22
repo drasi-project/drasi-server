@@ -560,12 +560,31 @@ choice is unreleased development, not the library codec fix, legacy-data repair
 or core merge/release authorization.
 
 The original 181 cases, nine table/SSR cases and 30 row/boundary cases remain
-the **220-case** gate, with all five original exact PNG images. This includes
+the original **220-case** gate, with all five exact PNG images. This includes
 the private generation scalar, opaque tokens, last-active phase/first-pulse
 sentinel, paired primary/mirror native samples at the existing second frame,
 500ms pulses, 200ms test cadence and complete-module-graph SSR fixture.
-No runtime styling, business data, readiness, clock/paint or assertion change
-is part of this propagation.
+Runtime styling, business data, readiness bounds, paint observations and
+application-visible clock advances are unchanged.
+
+Two fixture corrections preserve those product requirements. Native row
+observations distinguish exactly one named 500ms CSSAnimation from the existing
+optional 150ms background-color CSSTransition; unexpected objects, names,
+targets or timings still fail. A real pointer-hover coexistence control and
+focused negative assertions protect this distinction.
+
+Pinned Playwright 1.56.1 replays the install/pause protocol gap into monotonic
+time after navigation even when wall time is correct. Clock preparation now
+replays into a fresh `about:blank`, aligns public performance time to its 16ms
+frame boundary, then restores the original wall anchor with `setSystemTime`.
+No application code runs during alignment; normal navigation and the original
+5000ms advance, ticker speed, deadlines and images are unchanged. Four real
+setup-gap/frame-count probes in each engine add **12 cases**, bringing the
+complete gate to **232**. They require the same wall anchor before/after
+navigation and exactly 312 callbacks, with first/last-frame assertions.
+Earlier 215/220 and isolated ticker-image failures remain retained evidence,
+not passes or diagnosed host flakes; final outcomes belong to the exact-head
+PR record.
 
 All original feature budgets, complete artifact accounting and coverage floors
 remain. P6's active baseline has no allowance; the exact P5-only 110-byte record

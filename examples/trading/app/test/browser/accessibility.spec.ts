@@ -874,12 +874,16 @@ test.describe('installed provider-free consumer', () => {
     const anchor = new Date(FIXED_TIME);
     const delayedPage: Parameters<typeof installPausedClock>[0] = {
       url: () => page.url(),
+      goto: url => page.goto(url),
+      evaluate: callback => page.evaluate(callback),
       clock: {
         install: async options => {
           await page.clock.install(options);
           await new Promise(resolve => setTimeout(resolve, 75));
         },
         pauseAt: value => page.clock.pauseAt(value),
+        runFor: value => page.clock.runFor(value),
+        setSystemTime: value => page.clock.setSystemTime(value),
       },
     };
     await installPausedClock(delayedPage, anchor);
