@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import {
   DataTable, Modal, type ColumnDef, type DataTableProps, type DataTableState, type SortConfig, type TableHeight,
 } from '@drasi/react/components';
-import { useReducedMotion } from '@drasi/react/react';
+import { useReducedMotion, useRowAnimation } from '@drasi/react/react';
 import '@drasi/react/styles.css';
 import './host.css';
 
@@ -377,6 +377,52 @@ function MotionFixture() {
   );
 }
 
+interface AnimationItem { id: string; value: number | string }
+const animationKey = (row: AnimationItem) => row.id;
+const animationValue = (row: AnimationItem) => row.value;
+
+function AnimationNote({ id }: { id: string }) {
+  const [note, setNote] = useState('');
+  return <input aria-label={`Note ${id}`} value={note} onChange={event => setNote(event.target.value)} />;
+}
+
+const animationColumns: readonly ColumnDef<AnimationItem>[] = [
+  { key: 'id', label: 'Item' }, { key: 'value', label: 'Value' },
+  { key: 'note', label: 'Note', sortable: false, format: (_value, row) => <AnimationNote id={row.id} /> },
+];
+
+function RowAnimationFixture() {
+  const [rows, setRows] = useState<readonly AnimationItem[]>([{ id: 'a', value: 10 }, { id: 'b', value: 20 }]);
+  const [mounted, setMounted] = useState(true);
+  const shared = params.get('owner') === 'shared';
+  const { animations, revisions } = useRowAnimation({ rowKey: animationKey, getValue: animationValue, data: shared && mounted ? rows : [] });
+  const update = (id: string, direction: 'up' | 'down' | 'change') => setRows(previous => previous.map(row =>
+    row.id !== id ? row : {
+      ...row,
+      value: direction === 'change' ? `${row.value}!`
+        : Number(row.value) + (direction === 'up' ? 1 : -1),
+    }));
+  return (
+    <>
+      <div className="fixture-controls">
+        {(['up', 'down', 'change'] as const).map(direction => (
+          <button key={direction} type="button" onClick={() => update('a', direction)}>Change a {direction}</button>
+        ))}
+        <button type="button" onClick={() => update('b', 'up')}>Change b up</button>
+        <button type="button" onClick={() => setRows(previous => previous.filter(row => row.id !== 'a'))}>Remove a</button>
+        <button type="button" onClick={() => setMounted(false)}>Unmount restart tables</button>
+      </div>
+      {mounted && (shared ? ['Primary', 'Mirror'] : ['Primary']).map(title => (
+        <DataTable
+          key={title} title={title} rows={rows} columns={animationColumns} rowKey={animationKey}
+          animateOnChange="value" height={200}
+          {...(shared ? { rowAnimations: animations, rowAnimationRevisions: revisions } : {})}
+        />
+      ))}
+    </>
+  );
+}
+
 function DeferredModalFixture() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -440,6 +486,7 @@ function Fixture() {
         : name === 'theme' ? <ThemeFixture />
         : name === 'sizing' ? <SizingFixture />
         : name === 'motion' ? <MotionFixture />
+        : name === 'row-animation' ? <RowAnimationFixture />
         : name === 'states' ? <StateFixture />
         : <><SortTable controlled /><SortTable controlled={false} /></>}
     </main>

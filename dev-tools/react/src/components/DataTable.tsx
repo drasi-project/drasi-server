@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useTableSort, type UseTableSortOptions, type SortConfig } from '../react/useTableSort';
 import { useRowAnimation, type AnimationDirection } from '../react/useRowAnimation';
@@ -95,6 +95,8 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
   animateOnChange?: keyof T;
   /** Optional shared animation state; takes precedence over animateOnChange. */
   rowAnimations?: ReadonlyMap<string, AnimationDirection>;
+  /** Changed tokens restart controlled decoration without changing row identity. Share useRowAnimation.revisions. */
+  rowAnimationRevisions?: ReadonlyMap<string, number>;
   renderRow?: (
     row: T,
     columns: readonly ColumnDef<T>[],
@@ -124,6 +126,20 @@ const SortIndicator = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
     </svg>
   );
 };
+
+function AnimatedRow({ animation, revision, className, children }: {
+  animation: AnimationDirection;
+  revision?: number;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const [cycle, setCycle] = useState({ animation, revision, alternate: false });
+  // Compare rendered tokens rather than their parity: batched updates may skip revisions.
+  if (cycle.animation !== animation || !Object.is(cycle.revision, revision)) {
+    setCycle({ animation, revision, alternate: animation !== null && cycle.animation !== null && !cycle.alternate });
+  }
+  return <tr className={clsx(className, animation && cycle.alternate && 'drasi-row--repeat')}>{children}</tr>;
+}
 
 /**
  * Provider-free presentation with local or controlled sorting and optional
@@ -158,6 +174,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
   renderHeader,
   animateOnChange,
   rowAnimations,
+  rowAnimationRevisions,
   renderRow,
   emptyMessage = 'No data available',
   renderLoading,
@@ -186,6 +203,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     data: rowAnimations === undefined && animateOnChange !== undefined ? rows : undefined,
   });
   const animations = rowAnimations ?? tracked.animations;
+  const revisions = rowAnimations === undefined ? tracked.revisions : rowAnimationRevisions;
   const context: DataTableRenderContext<T, E> = { rows: sortedRows, state, sort, setSort };
   let notice: React.ReactNode = null;
   if (state.error) {
@@ -227,8 +245,8 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     </div>
   ) : null;
 
-  const defaultRow = (row: T, index: number, animation: AnimationDirection) => (
-    <tr className={clsx(
+  const defaultRow = (row: T, index: number, animation: AnimationDirection, revision: number | undefined) => (
+    <AnimatedRow animation={animation} revision={revision} className={clsx(
       'drasi-query-table__row',
       animation === 'up' && 'drasi-row--up',
       animation === 'down' && 'drasi-row--down',
@@ -277,7 +295,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
           </div>
         </td>
       )}
-    </tr>
+    </AnimatedRow>
   );
 
   return (
@@ -338,10 +356,11 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
             {sortedRows?.map((row, index) => {
               const key = rowKey(row);
               const animation = reducedMotion ? null : animations.get(key) ?? null;
+              const revision = revisions?.get(key);
               return (
                 <React.Fragment key={key}>
-                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation))
-                    : defaultRow(row, index, animation)}
+                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation, revision))
+                    : defaultRow(row, index, animation, revision)}
                 </React.Fragment>
               );
             })}

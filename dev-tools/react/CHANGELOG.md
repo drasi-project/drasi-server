@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Restart successive row highlights, including repeated up/down/string changes,
+  without replacing stable rows or losing cell state/focus. The headless hook
+  exposes readonly `revisions`; controlled DataTable owners share them through
+  `rowAnimationRevisions`, as Trading now does for both presentations.
+  Equivalent alternating keyframes preserve the 500ms easing/colors; expiry,
+  removal, independent rows and live reduced-motion cleanup remain bounded.
 - Compact generated whitespace while preserving syntax, identifiers, debug/
   component names, source maps/content and the complete package inventory.
   Original baselines remain; Trading TESTING.md records the separately

@@ -272,6 +272,7 @@ export function HeadlessConsumer(): ReactNode {
   const toggleSort: (column: string) => void = controller.toggleSort;
   const animation: UseRowAnimationResult<Temperature> = useRowAnimation(animationOptions);
   const states: ReadonlyMap<string, AnimationDirection> = animation.animations;
+  const revisions: ReadonlyMap<string, number> = animation.revisions;
   const updateData: (rows: readonly Temperature[]) => void = animation.updateData;
   function update() {
     setSort(null);
@@ -286,8 +287,10 @@ export function HeadlessConsumer(): ReactNode {
     controller.toggleSort(42);
     // @ts-expect-error Animation update callbacks retain the chosen row type.
     animation.updateData([{ routeId: 'north', parcels: 1 }]);
+    // @ts-expect-error Restart tokens are readonly consumer state.
+    animation.revisions.set('cold-room', 1);
   }
-  void [defaultController, stored, explicit, sort, states];
+  void [defaultController, stored, explicit, sort, states, revisions];
   return createElement('button', { type: 'button', onClick: update }, 'Sort without a provider');
 }
 

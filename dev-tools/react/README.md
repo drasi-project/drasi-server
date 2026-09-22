@@ -615,6 +615,7 @@ All presentation props are optional except the first three:
 | `actionsWidth?: string` | Optional CSS width of the actions heading. |
 | `animateOnChange?: keyof T` | Disabled by default. Track the named row property; numbers animate up/down and changed strings animate `change`. Reduced motion suppresses these animations. |
 | `rowAnimations?: ReadonlyMap<string, AnimationDirection>` | Optional owner-supplied animation state keyed by `rowKey`; takes precedence over `animateOnChange`, including an empty map. Reduced motion also suppresses this controlled map's presentation. |
+| `rowAnimationRevisions?: ReadonlyMap<string, number>` | Optional restart tokens for controlled `rowAnimations`. Pass `useRowAnimation().revisions` to restart repeated same-direction decoration. Changed tokens are compared with `Object.is`, including skipped/batched revisions; they never replace `rowKey`. Without tokens, controlled decoration restarts only when its direction changes or is cleared and reapplied. |
 | `renderRow?: (row, columns, animation, defaultRender) => ReactNode` | Replaces one row's rendering. `row` is `T`, `columns` is readonly, and `animation` is `'up' \| 'down' \| 'change' \| null`. Return a `<tr>` or a fragment of table rows, or call `defaultRender()` for the built-in `<tr>`. A parent fragment already owns the stable `rowKey`; wrappers need not invent an index key. |
 | `emptyMessage?: string` | `"No data available"`; `renderEmpty` takes precedence. |
 | `renderLoading`, `renderEmpty`, `renderError`, `renderStale` | Optional state slots; details below. A slot returning `null` suppresses its default rather than falling back. |
@@ -860,8 +861,20 @@ sort controller and animation tracker, then pass their state to DataTable.
 `useRowAnimation<T>` accepts `rowKey`, `getValue`, optional
 `animationDuration` (500ms) and optional readonly `data`. It also returns
 `updateData(readonlyRows)` for manual updates. Null/undefined data retains its
-previous baseline; an empty array clears it. Supply `rowAnimations` to avoid
-each presentation tracking its own changes.
+previous baseline; an empty array clears it. Share `animations` as
+`rowAnimations` and `revisions` as `rowAnimationRevisions` to avoid each
+presentation tracking its own changes.
+
+`animations` retains the direction map; `revisions: ReadonlyMap<string, number>`
+adds per-row restart tokens, starting at zero and advancing on each relevant
+change, even in the same direction. Unchanged tracked values preserve both maps.
+Tokens are removed with their decoration on expiry, row removal, empty input or
+reduced motion. They are not persistent counters or React keys. The lifetime
+restarts after the latest change; updates stopping means the decoration expires,
+not an endless animation. The built-in stylesheet retains its 500ms
+ease-in-out pulse and original theme colors, alternating equivalent keyframes
+without replacing DOM rows, losing cell state/focus or forcing layout. The hook's
+custom `animationDuration` controls state expiry, not the stylesheet duration.
 
 ```tsx
 // @drasi-docs: composed-table.tsx
@@ -888,12 +901,12 @@ export function ReadingViews({ queryId, queryOptions, showAlternate = false }: {
   const query = useDrasiQuery(queryId, queryOptions);
   const { retry: retryConnection } = useDrasiClient();
   const sorting = useTableSort({ defaultSort: { column: 'value', direction: 'desc' } });
-  const { animations } = useRowAnimation({ data: query.data, rowKey, getValue });
+  const { animations, revisions } = useRowAnimation({ data: query.data, rowKey, getValue });
   const presentation = {
     rows: query.data, columns, rowKey,
     state: queryTableState(query, retryConnection),
     sort: sorting.sort, onSortChange: sorting.setSort,
-    rowAnimations: animations,
+    rowAnimations: animations, rowAnimationRevisions: revisions,
   };
   return <>
     <DataTable<Reading, DrasiError> {...presentation} title="Readings" />
@@ -1185,8 +1198,8 @@ subscribes to live `prefers-reduced-motion: reduce` changes. SSR and hosts
 without `matchMedia` report `false`; that SSR value is not a claim about the
 user's eventual preference.
 
-`useRowAnimation` automatically cancels active timers/animations when reduced
-motion becomes active and keeps tracking the latest row baseline. DataTable
+`useRowAnimation` automatically clears active timers, directions and restart
+tokens when reduced motion becomes active and keeps tracking the latest row baseline. DataTable
 also suppresses controlled `rowAnimations` and passes `null` animation to
 custom row renderers in this mode. The stylesheet disables package animations,
 transitions and smooth scrolling under the same media query. Rows, sorting,
@@ -1504,7 +1517,8 @@ and consistency limits remain unchanged.
    query composition, reuse `queryTableState` rather than treating every error
    as shared-connection failure.
 7. Share one query, sort controller and `useRowAnimation` tracker when rendering
-   two views of the same rows. Pass `rowAnimations` to both; it takes precedence
+   two views of the same rows. Pass `rowAnimations` to both, and for P6 repeated
+   highlights also share `rowAnimationRevisions`; the controlled state takes precedence
    over their local `animateOnChange`. Mount optional inspectors only on demand
    and unmount them on close. Retry an inspector-local read without restarting
    the live socket; when its error is the provider's same non-null error object,

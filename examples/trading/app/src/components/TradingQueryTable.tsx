@@ -15,7 +15,7 @@ import type { DrasiError } from '@drasi/react/client';
 import { QueryInspector } from './QueryInspector';
 
 export interface TradingQueryTableProps<T extends object> extends Omit<
-  DataTableProps<T, DrasiError>, 'rows' | 'state' | 'rowAnimations' | 'containerRef'
+  DataTableProps<T, DrasiError>, 'rows' | 'state' | 'rowAnimations' | 'rowAnimationRevisions' | 'containerRef'
 > {
   queryId: string;
   queryOptions: UseDrasiQueryOptions<T>;
@@ -46,7 +46,7 @@ export function TradingQueryTable<T extends object>({
     const value = presentation.animateOnChange === undefined ? undefined : row[presentation.animateOnChange];
     return typeof value === 'number' || typeof value === 'string' ? value : undefined;
   }, [presentation.animateOnChange]);
-  const { animations } = useRowAnimation({
+  const { animations, revisions } = useRowAnimation({
     rowKey: presentation.rowKey,
     getValue,
     data: presentation.animateOnChange === undefined ? undefined : query.data,
@@ -133,6 +133,7 @@ export function TradingQueryTable<T extends object>({
       sort={sorting.sort}
       onSortChange={sorting.setSort}
       rowAnimations={animations}
+      rowAnimationRevisions={revisions}
       containerRef={isExpanded ? undefined : containerRef}
       className={isExpanded ? 'drasi-query-table--expanded'
         : clsx(presentation.className, expanded && 'drasi-query-table--hidden')}

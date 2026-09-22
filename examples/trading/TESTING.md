@@ -181,6 +181,47 @@ Trading keeps normal 400px cards, fullscreen 32px insets/bounds and default
 350ms FLIP transitions. Reduced motion completes transitions without waiting
 for animation frames/timers; it does not stop query updates.
 
+#### Repeated row highlights
+
+The #209 quality follow-up restarts successive up/down/string highlights
+without changing stable row identity, DOM nodes, child state or focus.
+`useRowAnimation` exposes readonly per-row `revisions` alongside its existing
+direction map. Trading's one tracker supplies both `rowAnimations` and
+`rowAnimationRevisions` to the normal and fullscreen DataTables. Standalone
+`animateOnChange` uses the same mechanism automatically; the hook stays
+headless and provider-free tables need no query or Trading data model.
+
+The renderer alternates equivalent keyframe names on changed committed tokens,
+not token parity: batched updates may skip numbers. The 500ms ease-in-out
+profile, success/danger/primary color mixes and expiry after the latest change
+are preserved. No forced layout read, DOM replacement, perpetual animation or
+animation-end dependency is introduced. Removing rows, unmounting or enabling
+reduced motion clears pending state/timers while current values keep updating.
+CSS keyframe names are internal; documented theme variables and direction
+classes remain available.
+
+`rowAnimationRestart.test.tsx` covers repeated directions, shared owners,
+unchanged/independent rows, skipped tokens, StrictMode, retained input state and
+focus, expiry and cleanup. The built-package Trading composition test also
+checks successive same-direction changes in both actual presentations without
+another subscription or read. `row-animation.spec.ts` observes native browser
+Animation objects over five updates separated by a deliberate 200ms cadence,
+including a point after the original one-shot animation would have finished.
+The pre-fix up/down browser runs retained their classes but had no animation
+on later updates; the corrected tests require a new live animation for each
+update, unchanged DOM/input/focus, eventual expiry and no reduced-motion
+animation. Full-rule generic axe reports accompany the default-theme cases.
+These are automated observations, not human screen-reader results.
+
+The distinct active P6 size baseline has **no P5 allowance**. The exact reviewed
+P5 approval from `e1954c0d40fecf640445ff213b356ed01e6505f9` is retained separately
+in `baseline-metrics-p5-quality-v3.json`, protected by a byte-identity test.
+Its original 75725-pass/75726-fail boundary and forgery/non-compounding tests
+continue against that historical fixture. Explicit P6 tests enforce the
+unchanged 2% cap for every metric and reject carrying over the approval.
+Original P1-P6 schema-2 records, all five visual images, contrast fingerprints,
+coverage floors and the open human checklist are unchanged.
+
 P6 additionally enforces the existing critical thresholds on
 `src/components/**`: **90% statements, lines and functions / 85% branches**,
 alongside the unchanged client/react thresholds. Coverage includes all package

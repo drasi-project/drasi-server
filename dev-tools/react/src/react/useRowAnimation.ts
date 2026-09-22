@@ -22,7 +22,7 @@ export interface UseRowAnimationOptions<T> {
   rowKey: (row: T) => string;
   /** Function to extract the value to track for changes. */
   getValue: (row: T) => number | string | undefined;
-  /** Duration of the animation in milliseconds (default: 500). */
+  /** Decoration-state lifetime after the latest change, in milliseconds (default: 500). */
   animationDuration?: number;
   /** Optionally track supplied rows automatically; null/undefined retains the previous baseline. */
   data?: readonly T[] | null;
@@ -31,6 +31,8 @@ export interface UseRowAnimationOptions<T> {
 export interface UseRowAnimationResult<T> {
   /** Map of row keys to their current animation state. */
   animations: Map<string, AnimationDirection>;
+  /** Per-row restart tokens, cleared on expiry/removal. Share with DataTable.rowAnimationRevisions. */
+  revisions: ReadonlyMap<string, number>;
   /** Update tracked data (call when the data changes). */
   updateData: (data: readonly T[]) => void;
 }
@@ -39,7 +41,8 @@ export interface UseRowAnimationResult<T> {
  * Track value changes across rows and trigger CSS animations.
  *
  * For numeric values it emits an 'up' or 'down' direction; for string values it
- * emits a neutral 'change'. `QueryTable` maps these values to the
+ * emits a neutral 'change'. Revisions advance even for repeated directions;
+ * they identify decoration updates, never row identity. `QueryTable` maps these values to the
  * `drasi-row--up`, `drasi-row--down`, and `drasi-row--change` classes shipped in
  * `@drasi/react/styles.css`. Reduced motion cancels active timers/animations,
  * while continuing to track the current baseline for subsequent updates.
@@ -50,9 +53,10 @@ export function useRowAnimation<T>(
   const { rowKey, getValue, animationDuration = 500, data } = options;
   const reducedMotion = useReducedMotion();
 
-  const [animations, setAnimations] = useState<Map<string, AnimationDirection>>(
-    new Map(),
-  );
+  const [state, setState] = useState(() => ({
+    animations: new Map<string, AnimationDirection>(),
+    revisions: new Map<string, number>(),
+  }));
   const prevValuesRef = useRef<Map<string, number | string>>(new Map());
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -68,7 +72,8 @@ export function useRowAnimation<T>(
     if (!reducedMotion) return;
     timeoutsRef.current.forEach(clearTimeout);
     timeoutsRef.current.clear();
-    setAnimations(previous => previous.size === 0 ? previous : new Map());
+    setState(previous => previous.animations.size === 0 ? previous
+      : { animations: new Map(), revisions: new Map() });
   }, [reducedMotion]);
 
   const updateData = useCallback(
@@ -82,7 +87,8 @@ export function useRowAnimation<T>(
         timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
         timeoutsRef.current.clear();
         prevValuesRef.current.clear();
-        setAnimations((prev) => (prev.size === 0 ? prev : new Map()));
+        setState(prev => prev.animations.size === 0 ? prev
+          : { animations: new Map(), revisions: new Map() });
         return;
       }
 
@@ -117,11 +123,13 @@ export function useRowAnimation<T>(
           }
 
           const timeout = setTimeout(() => {
-            setAnimations((prev) => {
-              if (!prev.has(key)) return prev;
-              const updated = new Map(prev);
-              updated.delete(key);
-              return updated;
+            setState((prev) => {
+              if (!prev.animations.has(key)) return prev;
+              const animations = new Map(prev.animations);
+              const revisions = new Map(prev.revisions);
+              animations.delete(key);
+              revisions.delete(key);
+              return { animations, revisions };
             });
             timeoutsRef.current.delete(key);
           }, animationDuration);
@@ -137,20 +145,19 @@ export function useRowAnimation<T>(
         }
       });
 
-      setAnimations((prev) => {
-        const updated = new Map(
-          Array.from(prev).filter(([key]) => currentKeys.has(key)),
+      setState((prev) => {
+        const animations = new Map(
+          Array.from(prev.animations).filter(([key]) => currentKeys.has(key)),
         );
-        newAnimations.forEach((value, key) => updated.set(key, value));
-        if (
-          updated.size === prev.size &&
-          Array.from(updated).every(
-            ([key, value]) => prev.get(key) === value,
-          )
-        ) {
-          return prev;
-        }
-        return updated;
+        if (newAnimations.size === 0 && animations.size === prev.animations.size) return prev;
+        const revisions = new Map(
+          Array.from(prev.revisions).filter(([key]) => currentKeys.has(key)),
+        );
+        newAnimations.forEach((value, key) => {
+          animations.set(key, value);
+          revisions.set(key, (prev.revisions.get(key) ?? -1) + 1);
+        });
+        return { animations, revisions };
       });
 
       prevValuesRef.current = nextValues;
@@ -162,5 +169,5 @@ export function useRowAnimation<T>(
     if (data != null) updateData(data);
   }, [data, updateData]);
 
-  return { animations, updateData };
+  return { ...state, updateData };
 }

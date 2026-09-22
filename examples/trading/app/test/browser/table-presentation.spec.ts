@@ -119,7 +119,7 @@ test('mixed-value sorting is independent of rotations with stable row nodes and 
     await expect(page.locator('th').filter({ hasText: /^Value$/ })).toHaveAttribute('aria-sort', 'ascending');
     expect(await original.evaluate(element => element.isConnected)).toBe(true);
   }
-  await page.locator('th').filter({ hasText: /^Value$/ }).press('Enter');
+  await page.getByRole('button', { name: 'Value', exact: true }).press('Enter');
   await expect(page.locator('tbody tr td:first-child')).toHaveText(['text', 'ten', 'two']);
   await expect(page.locator('th').filter({ hasText: /^Value$/ })).toHaveAttribute('aria-sort', 'descending');
   expect(diagnostics).toEqual([]);

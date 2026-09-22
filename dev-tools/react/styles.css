@@ -331,15 +331,25 @@
 }
 
 .drasi-row--up {
-  animation: drasi-flash-green 0.5s ease-in-out;
+  --drasi-row-highlight: color-mix(in srgb, var(--drasi-color-success, #047857) 20%, transparent);
 }
 
 .drasi-row--down {
-  animation: drasi-flash-red 0.5s ease-in-out;
+  --drasi-row-highlight: color-mix(in srgb, var(--drasi-color-danger, #b91c1c) 20%, transparent);
 }
 
 .drasi-row--change {
-  animation: drasi-flash-blue 0.5s ease-in-out;
+  --drasi-row-highlight: color-mix(in srgb, var(--drasi-color-primary, #1d4ed8) 25%, transparent);
+}
+
+.drasi-row--up,
+.drasi-row--down,
+.drasi-row--change {
+  animation: drasi-row-flash 0.5s ease-in-out;
+}
+
+.drasi-row--repeat {
+  animation-name: drasi-row-flash-repeat;
 }
 
 .drasi-modal-layer {
@@ -393,33 +403,23 @@
   }
 }
 
-@keyframes drasi-flash-green {
+@keyframes drasi-row-flash {
   0%,
   100% {
     background-color: transparent;
   }
   50% {
-    background-color: color-mix(in srgb, var(--drasi-color-success, #047857) 20%, transparent);
+    background-color: var(--drasi-row-highlight);
   }
 }
 
-@keyframes drasi-flash-red {
+@keyframes drasi-row-flash-repeat {
   0%,
   100% {
     background-color: transparent;
   }
   50% {
-    background-color: color-mix(in srgb, var(--drasi-color-danger, #b91c1c) 20%, transparent);
-  }
-}
-
-@keyframes drasi-flash-blue {
-  0%,
-  100% {
-    background-color: transparent;
-  }
-  50% {
-    background-color: color-mix(in srgb, var(--drasi-color-primary, #1d4ed8) 25%, transparent);
+    background-color: var(--drasi-row-highlight);
   }
 }
 

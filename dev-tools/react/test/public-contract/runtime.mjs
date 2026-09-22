@@ -91,6 +91,7 @@ function checkProviderFreeTables(api) {
     defaultSort: { column: 'parcels', direction: 'asc' },
     animateOnChange: 'parcels',
     rowAnimations: new Map([['south', 'up']]),
+    rowAnimationRevisions: new Map([['south', 2]]),
     headerActions: React.createElement('span', null, 'Dispatch desk'),
     headerControls: React.createElement('button', { type: 'button' }, 'Export'),
     headerSlot: React.createElement('p', null, 'App-supplied rows'),
@@ -395,6 +396,7 @@ try {
         rowKey: row => row.id, getValue: row => row.priority,
       });
       assert.equal(animation.animations.size, 0);
+      assert.equal(animation.revisions.size, 0);
       return React.createElement('span', null, 'provider-free sort controller');
     }
     assert(server.renderToString(React.createElement(HeadlessConsumer)).includes('provider-free sort controller'));
