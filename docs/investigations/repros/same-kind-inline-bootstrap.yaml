@@ -1,0 +1,18 @@
+# Synthetic fixture for drasi-project/drasi-server#194.
+# Requires test-only source and bootstrap descriptors registered as
+# `strict-example`. It is not intended to start against production plugins.
+apiVersion: drasi.io/v1
+persistConfig: false
+sources:
+  - kind: strict-example
+    id: example-source
+    autoStart: false
+    endpoint: https://example.invalid
+    credential: test-placeholder
+    durability: required
+    webhook:
+      path: /events
+    bootstrapProvider:
+      kind: strict-example
+queries: []
+reactions: []

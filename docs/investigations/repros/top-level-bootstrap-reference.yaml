@@ -1,0 +1,22 @@
+# Control fixture for drasi-project/drasi-server#194.
+# Requires test-only source and bootstrap descriptors registered as
+# `strict-example`. The provider receives no source-only fields.
+apiVersion: drasi.io/v1
+persistConfig: false
+bootstrapProviders:
+  - id: example-bootstrap
+    kind: strict-example
+    endpoint: https://example.invalid
+    credential: test-placeholder
+sources:
+  - kind: strict-example
+    id: example-source
+    autoStart: false
+    endpoint: https://example.invalid
+    credential: test-placeholder
+    durability: required
+    webhook:
+      path: /events
+    bootstrapProvider: example-bootstrap
+queries: []
+reactions: []
