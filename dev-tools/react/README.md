@@ -172,8 +172,8 @@ bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. `test/fixtures/server-v1-0.2.3/contract.json` separately records the
-own rebuilt merged server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
+cases. The historical `test/fixtures/server-v1-0.2.3/contract.json` separately
+records the own rebuilt server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
 read tests consume both versions. New records are never substituted into the
 old provenance. See [verified compatibility](#verified-compatibility).
 
@@ -372,7 +372,7 @@ objects retain their identity rather than being rewrapped.
 
 The default **`sse034ResultAdapter`** accepts the recorded **untemplated SSE**
 envelope `{ queryId, results, timestamp }`. Its name identifies the original
-0.3.4 contract. Actual current 0.3.6 captures exercise the same observed
+0.3.4 contract. Historical 0.3.6 captures exercise the same observed
 ADD/DELETE/UPDATE/aggregation shapes without changing this API. This is not a
 claim about every plugin version, custom template or unobserved variant:
 
@@ -1027,9 +1027,9 @@ Claims are intentionally narrow, not open-ended minimum versions:
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
 | Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
-| Server | Current approved runtime: **0.2.3**, registry library **0.9.1**, index **0.6.1**, the same reviewed engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. The v1 query read DTO is unchanged; archive/memory settings remain server/instance-owned. |
-| Plugin / ABI | Current signed SSE **0.3.6**, host/FFI crates **0.11.0**, plugin SDK crate **0.11.1**, native ABI **0.13.0**, from official merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`. Immutable platform/digest/hash/signature pins come from the approved parent integration. |
-| Historical runtime evidence | Server **0.2.1**, library **0.8.9**, SSE **0.3.4**, SDK **0.10.0** / ABI **0.11.0** captures remain versioned separately. They are not proof for every 0.2.1 build or a fallback for current ABI 0.13 startup. |
+| Server | Current development runtime: **0.2.3**, registry library **0.9.2**, index **0.6.3**, engine **0.5.9** from the user-approved temporary source `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` (drasi-project/drasi-core#810), AST **0.3.5**, Cypher/GQL **0.3.6**. Only engine/AST/Cypher are path-selected; equal-version sibling SDKs are not consumed. |
+| Plugin / ABI | Current signed SSE **0.3.7**, host/plugin/FFI crates **0.11.2**, native ABI **0.14.0**, from official merged release `70ca432c0f12623ab9b371b2d515180ccc80c2dd`. All six immutable platform/digest/hash/signature locks are inherited from the approved parent. No prior ABI cache fallback or trust relaxation. |
+| Historical runtime evidence | Original server **0.2.1** / library **0.8.9** / SSE **0.3.4** / ABI **0.11.0**, and server **0.2.3** / library **0.9.1** / SSE **0.3.6** / ABI **0.13.0** records remain separately versioned. They are not current ABI 0.14 validation or a fallback for it. |
 
 Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
@@ -1040,47 +1040,41 @@ the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
+`211d0f2a` is unreleased development source: three aggregate and two additive
+outbox paths, not stored-data repair. Registry library 0.9.2 still uses compact
+records and `append`, not the new trim methods or drasi-project/drasi-core#909's
+codec fix. No migration, dropping, broader recovery or publication is implied.
 
-Historical protocol evidence is the real capture at
-`examples/trading/app/test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson`
-and the unmodified REST bodies at `test/fixtures/server-v1/contract.json`.
-The complete **20 original recording lines** are copied verbatim into
-`test/fixtures/server-v1/sse-0.3.4.ndjson` so isolated package tests use the same
-pinned SSE evidence. `contract.json` records its exact source tag, revision and
-serializer provenance separately from the later REST capture.
-The upstream tag
+Historical `test/fixtures/server-v1/sse-0.3.4.ndjson` copies all **20 raw lines**
+verbatim from Trading's `test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson`.
+Adjacent `contract.json` retains actual REST bodies and separate capture,
+source-tag and serializer provenance. The tag
 [`drasi-reaction-sse-v0.3.4`](https://github.com/drasi-project/drasi-core/tree/drasi-reaction-sse-v0.3.4)
-resolves to **`ff2fde26d0f33adcec17b19db7d2533f80b0baab`**. Its
-`lib/src/channels/events.rs::ResultDiff` serde contract establishes noop,
-nullable aggregation-before and before/after updates; its
-`components/reactions/sse/src/sse.rs` serializer emits
-`queryId`/`results`/`timestamp` but **does not transmit internal
-`QueryResult.sequence`**. The capture and exact tagged source have distinct
-roles: not every documented variant occurred in that capture. An unused local
-SSE 0.3.5 checkout is not evidence for this pinned protocol.
+resolves to **`ff2fde26d0f33adcec17b19db7d2533f80b0baab`**:
+`lib/src/channels/events.rs::ResultDiff` defines noop, nullable aggregation-before
+and before/after updates; `components/reactions/sse/src/sse.rs` emits
+`queryId`/`results`/`timestamp`, **not internal `QueryResult.sequence`**.
+The capture does not exercise every source-defined variant; an unused local
+SSE 0.3.5 checkout is not evidence for this protocol.
 
-Current evidence is separate:
-`test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson` contains all **17 unmodified
-CDP records** from the P4 layer's own rebuilt server at normal merge
-`3b39126ae36c9a0da96a4c0e29ad812b181636f6`. The adjacent
-`sse-0.3.6.provenance.json` records the source, manifest/lock/binary hashes and
-official signed ABI 0.13 plugin identity. Tests consume both versioned raw
-recordings through the unchanged adapter; current records also exercise the
-default stream transport and query-ID routing. They include `ADD`/`DELETE`
-with `data`, `UPDATE` with `before`/`after`/`data`, lowercase `aggregation`
-with `before`/`after` **without `data`**, and large numeric signatures that
-remain unsuitable as JavaScript identities. No shared REST/SSE cursor appears
-in these envelopes. Native ABI compatibility alone is not wire-format proof.
-The old raw recording and Part A's separate current DTO fixture are unchanged.
+Historical ABI 0.13 evidence remains separate:
+`test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson` preserves all **17 raw CDP
+records**; adjacent `sse-0.3.6.provenance.json` retains P4's merge revision
+and source/manifest/lock/binary/signature hashes.
+Both recordings still exercise the adapter; 0.3.6 also tests default transport
+and query-ID routing: `ADD`/`DELETE` data, `UPDATE` before/after/data, lowercase
+aggregation before/after **without data**, and unsafe numeric signatures.
+Neither captures a shared cursor. These records and Part A's DTO fixture are
+unchanged, not relabeled as ABI 0.14 proof. Current SSE 0.3.7 needs its own live
+gate; native ABI compatibility alone does not establish wire semantics.
 
 ## P5 / #164 Part A migration
 
-The original presentation/composition work follows #207 at
-`20561c13dd74929855dfbe605bb1fac23e5a49f4` under tracker #161. Its main-runtime
-integration normally merges updated #207 at
-`2ccf8624533193861e6518cb0c39785f561fa270` into the existing P5 history, without
-rebasing or importing P6/P7 features. P3/P4 auth, protocol, identity, recovery
-and consistency limits remain unchanged.
+Original P5 and ABI 0.13 history remains in [Trading TESTING.md](../../examples/trading/TESTING.md).
+The current normal merge adopts #207 at
+`6bb523b65ed8ca6a090dcc92d4ff79eb7c12731d`, preserving P5 table/DCE corrections
+and P3/P4 auth, protocol, identity, recovery and consistency limits.
+No rebase or P6/P7 feature import is involved.
 
 1. Use `/components` `DataTable` for supplied readonly rows, no provider or
    query identity required. Pass application errors through `state`; the error
@@ -1146,7 +1140,7 @@ For Part B, migrate these breaking result contracts:
    `changes` and display-only `receivedAt`/optional `sourceTimestamp`. Preserve
    `before` and `after` on updates, especially key changes.
 4. Remove top-level `routeUnidentified`. The default is the strict recorded
-   SSE format above (`sse034ResultAdapter`, also exercised with current 0.3.6);
+   SSE format above (`sse034ResultAdapter`, also exercised with recorded 0.3.6);
    explicitly choose `createLegacyResultAdapter({ routeUnidentified })` for
    legacy formats. `_deleted` is not a normalized-state tombstone.
 5. Distinguish query `status`/`stale`/`errorScope` from socket status. Keep useful
