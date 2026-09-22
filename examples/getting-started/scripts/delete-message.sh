@@ -29,7 +29,7 @@ if [ -z "$MESSAGE_ID" ]; then
     echo
     echo "Current messages:"
     docker exec getting-started-postgres psql -U drasi_user -d getting_started -c \
-        "SELECT messageid, \"from\", message FROM message ORDER BY messageid;"
+        "SELECT messageid, \"from\", message FROM \"Message\" ORDER BY messageid;"
     exit 1
 fi
 
@@ -38,11 +38,11 @@ echo "Deleting message with ID: $MESSAGE_ID"
 # Show the message being deleted
 echo "Message to delete:"
 docker exec getting-started-postgres psql -U drasi_user -d getting_started -c \
-    "SELECT messageid, \"from\", message FROM message WHERE messageid = $MESSAGE_ID;"
+    "SELECT messageid, \"from\", message FROM \"Message\" WHERE messageid = $MESSAGE_ID;"
 
 # Delete the message
 DELETED=$(docker exec getting-started-postgres psql -U drasi_user -d getting_started -tAc \
-    "DELETE FROM message WHERE messageid = $MESSAGE_ID RETURNING messageid;")
+    "DELETE FROM \"Message\" WHERE messageid = $MESSAGE_ID RETURNING messageid;")
 
 if [ -n "$DELETED" ]; then
     echo "Message deleted successfully!"

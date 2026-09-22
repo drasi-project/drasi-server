@@ -161,26 +161,26 @@ $$;
 GRANT ALL PRIVILEGES ON DATABASE getting_started TO drasi_user;
 GRANT USAGE, CREATE ON SCHEMA public TO drasi_user;
 
-DROP TABLE IF EXISTS message CASCADE;
+DROP TABLE IF EXISTS "Message" CASCADE;
 DROP PUBLICATION IF EXISTS drasi_getting_started_pub;
 
-CREATE TABLE message (
+CREATE TABLE "Message" (
     messageid SERIAL PRIMARY KEY,
     "from"    VARCHAR(255) NOT NULL,
     message   TEXT         NOT NULL,
     created_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
-ALTER TABLE message REPLICA IDENTITY FULL;
-ALTER TABLE message OWNER TO drasi_user;
+ALTER TABLE "Message" REPLICA IDENTITY FULL;
+ALTER TABLE "Message" OWNER TO drasi_user;
 
-INSERT INTO message (messageid, "from", message) VALUES
+INSERT INTO "Message" (messageid, "from", message) VALUES
     (1, 'Buzz Lightyear',  'To infinity and beyond!'),
     (2, 'Brian Kernighan', 'Hello World'),
     (3, 'Antoninus',       'I am Spartacus'),
     (4, 'David',           'I am Spartacus');
-SELECT setval('message_messageid_seq', (SELECT MAX(messageid) FROM message));
+SELECT setval('"Message_messageid_seq"', (SELECT MAX(messageid) FROM "Message"));
 
-CREATE PUBLICATION drasi_getting_started_pub FOR TABLE message;
+CREATE PUBLICATION drasi_getting_started_pub FOR TABLE "Message";
 SQL
 
 # Drop any existing slot first (its catalog snapshot is stale after
@@ -393,7 +393,7 @@ log_step "Step 5: CDC change-detection"
 UNIQUE_FROM="EndToEnd-$(date +%s)"
 log_info "Inserting message ('${UNIQUE_FROM}', 'Hello World')"
 docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-  "INSERT INTO message (\"from\", message) VALUES ('${UNIQUE_FROM}', 'Hello World');" \
+  "INSERT INTO \"Message\" (\"from\", message) VALUES ('${UNIQUE_FROM}', 'Hello World');" \
   >/dev/null
 
 log_info "Polling /api/v1/queries/hello-world-from/results for up to ${RESULT_TIMEOUT}s..."
