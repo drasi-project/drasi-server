@@ -17,6 +17,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useInsertionEffect,
   useMemo,
   useRef,
   useState,
@@ -192,8 +193,9 @@ export function useDrasiClient(): DrasiContextValue {
 
 /**
  * Accumulate raw rows by required domain identity, then derive a typed view.
- * Projection/key changes immediately recompute retained rows without another
- * socket or subscription. Sparse deletes never pass through a transform.
+ * Projection/key changes recompute retained rows without another socket or
+ * subscription. Live batches use only the latest committed key callback;
+ * suspended/abandoned renders cannot publish it. Sparse deletes never transform.
  */
 export function useDrasiQuery<T extends object = ResultRow>(
   queryId: string,
@@ -214,8 +216,13 @@ export function useDrasiQuery<T extends object = ResultRow>(
     scope, rows: null, lastUpdate: null,
     state: { status: 'initial-loading', stale: false, error: null, errorScope: null },
   });
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
+  const getKey = options.getKey;
+  const committedGetKey = useRef(getKey);
+  // Publish before layout effects can deliver events, never during a speculative
+  // render. Insertion effects are inert during SSR and need no browser probe.
+  useInsertionEffect(() => {
+    committedGetKey.current = getKey;
+  }, [getKey]);
   const subscriptionRef = useRef<{ scope: typeof scope; subscription: QuerySubscription } | null>(null);
   const lastGood = useRef<{ scope: typeof scope; data: T[]; lastUpdate: Date | null } | null>(null);
   const retry = useCallback(() => {
@@ -238,7 +245,7 @@ export function useDrasiQuery<T extends object = ResultRow>(
     if (!initialized || !client) return () => { active = false; };
     const handleResult = (batch: QueryResult) => {
       if (!active) return;
-      rawRows = accumulateResult(rawRows, batch, optionsRef.current.getKey, {
+      rawRows = accumulateResult(rawRows, batch, committedGetKey.current, {
         instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
       });
       const rows = rawRows;

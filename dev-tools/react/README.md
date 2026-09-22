@@ -225,6 +225,11 @@ Do not wrap native EventSource and pretend it supports bearer headers.
 Cross-origin cookie use requires appropriate server/proxy credentials and CORS.
 
 The SSE endpoint is supplied by the operator, never inferred from bind settings.
+Shared HTTP(S) URL parsing and safety checks do not trim its path or query:
+`/proxy/events/` stays distinct from `/proxy/events`, and `?opaque=part/`
+retains the slash in the query value. The stream factory and its authentication
+context receive that complete serialized URL. Only the **server base** removes
+its final path delimiter before API/UI paths are appended.
 The supported plugin protocol cannot attest that a proxy routes to the declared
 reaction/instance or reveal native SSE redirect destinations. Use a trusted
 proxy or custom transport if enforcement is required. A generic stream error
@@ -246,6 +251,11 @@ cleanup. Equivalent inline reference arrays, reaction/reconnect objects and
 headers do **not** bounce the connection. Query IDs compare as a set (duplicates
 remain invalid), header names/values are canonicalized, and omitted policy
 fields equal the documented defaults.
+
+Equivalent server-base spellings (including an optional trailing slash, host
+case or the standard explicit port) retain the same client/connection. Endpoint
+path/query differences, including the slash examples above, remain material:
+changing one closes the old stream and initializes the replacement.
 
 Material server, instance, reaction ID, endpoint, query-set, credential/header,
 timeout, retry-policy or reconciliation-limit changes replace the lifecycle. Old requests are aborted,
@@ -431,6 +441,14 @@ Optional `postProcess: (rows: T[]) => T[]` is a pure derived sort/filter; it
 does not remove or mutate the accumulated raw state. All three options reproject
 retained rows reactively without a new socket or subscription. Keep callbacks
 pure and do not mutate their read-only raw input.
+
+Active stream batches use the **latest committed `getKey`**, never a callback
+from a suspended or abandoned render. During a `startTransition` that suspends,
+the current view and its subscription keep their committed identity policy.
+A successful option commit publishes that key before consumer layout effects
+can deliver events; committed transforms and post-processing still reproject
+retained rows without reconnecting. This commit-only publication performs no
+browser-global detection or server-rendering layout effect.
 
 ```ts
 // @drasi-docs: query-options.ts
