@@ -11,6 +11,7 @@ export interface UseDrasiQueryOptions<T extends object = ResultRow> {
   /**
    * Required stable RAW-row identity, including sparse deletes and both sides
    * of updates. Return a nonempty string; invalid keys are errors, not skips.
+   * Active stream callbacks use the latest committed key, not suspended renders.
    */
   getKey: RowKey;
   /**

@@ -39,6 +39,10 @@ All four JS entrypoints ship real ESM/CommonJS exports and conditional `.d.ts`
 and `.d.cts` declarations. Import these paths, not `src`, `dist` or hashed
 shared chunks. The framework-agnostic client is a module of this same package.
 
+Build output compacts whitespace only: syntax/identifiers are not minified,
+debug/component names are preserved, and source maps retain source content.
+Declarations, documentation, CSS and license notices remain in the package.
+
 React and React DOM are **optional installation peers** so client-only
 consumers need not install them. React is required to execute the
 React/component/root entrypoints; browser/SSR applications supply their renderer.
@@ -239,6 +243,11 @@ Do not wrap native EventSource and pretend it supports bearer headers.
 Cross-origin cookie use requires appropriate server/proxy credentials and CORS.
 
 The SSE endpoint is supplied by the operator, never inferred from bind settings.
+Shared HTTP(S) URL parsing and safety checks do not trim its path or query:
+`/proxy/events/` stays distinct from `/proxy/events`, and `?opaque=part/`
+retains the slash in the query value. The stream factory and its authentication
+context receive that complete serialized URL. Only the **server base** removes
+its final path delimiter before API/UI paths are appended.
 The supported plugin protocol cannot attest that a proxy routes to the declared
 reaction/instance or reveal native SSE redirect destinations. Use a trusted
 proxy or custom transport if enforcement is required. A generic stream error
@@ -260,6 +269,11 @@ cleanup. Equivalent inline reference arrays, reaction/reconnect objects and
 headers do **not** bounce the connection. Query IDs compare as a set (duplicates
 remain invalid), header names/values are canonicalized, and omitted policy
 fields equal the documented defaults.
+
+Equivalent server-base spellings (including an optional trailing slash, host
+case or the standard explicit port) retain the same client/connection. Endpoint
+path/query differences, including the slash examples above, remain material:
+changing one closes the old stream and initializes the replacement.
 
 Material server, instance, reaction ID, endpoint, query-set, credential/header,
 timeout, retry-policy or reconciliation-limit changes replace the lifecycle. Old requests are aborted,
@@ -448,6 +462,14 @@ does not remove or mutate the accumulated raw state. All three options reproject
 retained rows reactively without a new socket or subscription. Keep callbacks
 pure and do not mutate their read-only raw input.
 
+Active stream batches use the **latest committed `getKey`**, never a callback
+from a suspended or abandoned render. During a `startTransition` that suspends,
+the current view and its subscription keep their committed identity policy.
+A successful option commit publishes that key before consumer layout effects
+can deliver events; committed transforms and post-processing still reproject
+retained rows without reconnecting. This commit-only publication performs no
+browser-global detection or server-rendering layout effect.
+
 ```ts
 // @drasi-docs: query-options.ts
 import { useDrasiQuery, type UseDrasiQueryOptions } from '@drasi/react/react';
@@ -559,7 +581,7 @@ const rows: readonly Delivery[] = [
   { id: 'south', destination: 'Warehouse B', parcels: 3 },
 ];
 const columns: readonly ColumnDef<Delivery>[] = [
-  { key: 'destination', label: 'Destination' },
+  { key: 'destination', label: 'Destination', align: 'left' },
   { key: 'parcels', label: 'Parcels', align: 'right' },
   {
     key: 'summary', label: 'Summary', sortable: false,
@@ -643,7 +665,7 @@ Loading, empty and stale slots receive that context. `renderError` receives
 | `key: keyof T \| string`, `label: string` | Required property/computed key and heading text. |
 | `format?: (value: unknown, row: T) => ReactNode` | Default: nullish values render `"-"`, otherwise `String(value)`. Computed labels do not create a sortable row property. |
 | `sortable?: boolean` | `true`; `false` disables that heading's sort interaction. |
-| `align?: 'left' \| 'center' \| 'right'` | `'left'`. |
+| `align?: 'left' \| 'center' \| 'right'` | Explicit alignment applies to header and body. Omitted: header left, body inherits host alignment. |
 | `className?: string \| ((value: unknown, row: T) => string)` | Additional cell class. |
 | `headerClassName?: string` | Additional heading class. |
 | `width?: string` | Optional CSS width of the heading. |
@@ -674,12 +696,20 @@ and `/components`.
 | Returned `setSort(next)` | Requests a config or `null`. Explicit `null` clears sorting to input order. |
 | Returned `toggleSort(column)` | New column starts ascending; active column toggles ascending/descending. It does **not** cycle automatically through a third, unsorted state. |
 
-The hook controls state, not row comparison. `DataTable` compares two numbers by
-numeric difference; strings/mixed non-nullish values use
-`String(value).localeCompare(...)`. Nullish values are last ascending and first
-descending. Ties preserve input order. Non-visible row fields may be sorted;
-formatted/computed display text is not a custom comparator. Readonly rows are
-copied before sorting, and `null` sort restores their supplied order.
+The hook controls state, not row comparison. Ascending `DataTable` ordering is:
+JavaScript numbers numerically (including infinities, with NaN after other
+numbers), then other non-nullish values by `String(value)`, then null/undefined.
+Numeric strings are not coerced. Text uses the shared fixed
+`Intl.Collator('en-US', { sensitivity: 'variant', numeric: false })` policy,
+not the environment's default locale. Descending reverses this ordering,
+including putting nullish values first. Equal keys, -0/0, NaNs and nullish ties
+preserve input order. Readonly rows are copied; `sort={null}` restores input order.
+
+SSR and hydration must use the same rows, sort state, string representations
+and compatible Intl data. The fixed English policy preserves Trading name
+collation across differing default locales; it is not a claim of identical
+Unicode ordering across arbitrary ICU versions. Hidden fields remain sortable;
+formatted/computed display text is not a comparator. No comparator API is added.
 
 Each sortable column has a native `<button type="button">` inside
 `<th scope="col">`. Its accessible name is the column label; decorative sort

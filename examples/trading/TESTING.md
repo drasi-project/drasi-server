@@ -776,6 +776,53 @@ visibility advisories, and they make no P6 human accessibility claim.
 Final committed-head own-source/packed live and CI evidence is recorded on
 the owning #208 and #164 Part A without rewriting later-layer evidence.
 
+#### P5 table quality corrections and approved gzip allowance
+
+The quality pass preserves the exact parent endpoint-identity and committed-
+query-key fixes from `2b9890b1adb056bdb419cf94fdd6a701cef53479`. It corrects
+mixed-value sort cycles, ambient-locale hydration differences and explicit
+left body alignment. Numbers (including infinities and explicitly ordered NaN)
+precede nonnumeric text representations; text uses fixed en-US variant
+collation with `numeric: false`, followed by nullish values. Descending reverses
+that ordering while ties stay stable. Omitted body alignment still inherits.
+This is not a universal cross-ICU Unicode-ordering or P6 accessibility claim.
+
+`tableOrdering.test.tsx` covers permutations, transitivity, non-finite numbers,
+signed zero, stable ties and actual Trading name ordering. The test-only
+`table-presentation.spec.ts` bundles installed public entrypoints in memory,
+renders on a real en-US Node server, and hydrates in sv-SE Chromium, Firefox
+and WebKit. It rejects recoverable errors, console warnings/errors and root
+replacement; it also checks inherited host alignment and row identity.
+All three browser regressions failed before the fix, then passed in all three
+engines. The resulting 35 browser cases include the original 26 and all five
+unchanged zero-diff visual PNG images.
+
+Ordinary package experiments and their failures were retained rather than
+discarded: the unoptimized consolidated artifact was 180932 bytes, the bounded
+whitespace/syntax experiment was 175542, and the chosen whitespace-only
+artifact was 168385 before this approval note. All retained the complete
+56-file/18-map inventory, original map source content, notices and public/debug
+names. A single alignment-code consolidation failed both package and app gzip
+limits and was reverted. No archive ordering, hidden exclusions, identifier
+mangling, removed documentation or historical baseline reset was used.
+
+The chosen output passed functional/public/type/SSR/browser/image and own-
+source/independent-packed live checks, but **failed the original Trading gzip
+cap**: 75725 bytes exceeded `74133 * 1.02 = 75615.66` by 109.34 bytes.
+On 2026-09-21 the actual user approved exactly **one fixed 110-byte allowance**
+for this recorded P5 metric. The cap is now **`74133 * 1.02 + 110 = 75725.66`**:
+**75725 passes; 75726 fails**. The original 74133-byte baseline and 2% rule are
+not reset, and the allowance is never multiplied or added to later observations.
+
+`approvedP5TradingJsGzipAllowance` records this approval separately. Policy
+guards bind it to P5 Part A, original P5 head and the fingerprint of all
+original P5 size counters. A different size baseline, layer, metric or amount
+cannot inherit it. A later layer using its own distinct baseline must remove
+this P5-only approval record rather than applying or compounding it.
+Boundary tests retain every other 2% limit, coverage floor and byte-identical
+historical record. This approval is not a blanket budget, behavior, image,
+color/contrast or human assistive-technology waiver.
+
 ### Part B Trading result consumers
 
 Trading now supplies required raw keys and validating projections for all 11

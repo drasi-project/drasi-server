@@ -11,6 +11,23 @@ import { useReducedMotion } from '../react/useReducedMotion';
 import type { ColumnDef, RowAction } from './types';
 import { tableHeight, type TableHeight } from './sizing';
 
+const textOrder = new Intl.Collator('en-US', { sensitivity: 'variant', numeric: false });
+
+/** @internal Numbers, then fixed-English text representations, then nullish values. */
+export function compareTableValues(a: unknown, b: unknown): number {
+  if (a == null) return b == null ? 0 : 1;
+  if (b == null) return -1;
+  if (typeof a === 'number') {
+    if (typeof b !== 'number') return -1;
+    if (Number.isNaN(a)) return Number.isNaN(b) ? 0 : 1;
+    if (Number.isNaN(b)) return -1;
+    // Subtraction would produce NaN for equal infinities.
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (typeof b === 'number') return 1;
+  return textOrder.compare(String(a), String(b));
+}
+
 /** Presentation state only: no transport, provider or query identity is required. */
 export interface DataTableState<E extends Error = Error> {
   loading?: boolean;
@@ -156,12 +173,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     return [...rows].sort((a, b) => {
       const aVal: unknown = Reflect.get(a, sort.column);
       const bVal: unknown = Reflect.get(b, sort.column);
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return sort.direction === 'asc' ? 1 : -1;
-      if (bVal == null) return sort.direction === 'asc' ? -1 : 1;
-      const comparison = typeof aVal === 'number' && typeof bVal === 'number'
-        ? aVal - bVal
-        : String(aVal).localeCompare(String(bVal));
+      const comparison = compareTableValues(aVal, bVal);
       return sort.direction === 'asc' ? comparison : -comparison;
     });
   }, [rows, sort]);
@@ -228,6 +240,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
         return (
           <td key={String(column.key)} className={clsx(
             'drasi-query-table__cell',
+            column.align === 'left' && 'drasi-align--left',
             column.align === 'right' && 'drasi-align--right',
             column.align === 'center' && 'drasi-align--center',
             typeof column.className === 'function' ? column.className(value, row) : column.className,

@@ -234,3 +234,90 @@ test('counts nested Trading chunks and CSS without counting source maps as execu
     tradingCssGzip: ['main', 'theme'].reduce((bytes, content) => bytes + gzipSync(content).length, 0),
   });
 });
+
+async function p5Baseline() {
+  return JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p5-quality-v3.json', import.meta.url), 'utf8'));
+}
+
+test('preserves the reviewed P5 quality approval as byte-identical historical evidence', async () => {
+  const bytes = await readFile(new URL('../fixtures/baseline-metrics-p5-quality-v3.json', import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),
+    '5f87e41b72410779d0af2ef7564af95108ee1e0b90972d63b9425ebaa472102d');
+});
+
+test('keeps the distinct P6 baseline at 2% and rejects carrying over the P5 allowance', async () => {
+  const expected = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(expected.artifactChange.part, 'B / P6');
+  assert.equal(expected.approvedP5TradingJsGzipAllowance, undefined);
+  for (const [metric, bytes] of Object.entries(expected.sizes)) {
+    const sizes = { ...expected.sizes, [metric]: Math.floor(bytes * 1.02) };
+    assertBaseline({ coverage: expected.coverage, sizes }, expected);
+    assert.throws(() => assertBaseline({
+      coverage: expected.coverage, sizes: { ...sizes, [metric]: sizes[metric] + 1 },
+    }, expected), new RegExp(`${metric} grew more than 2%`));
+  }
+  expected.approvedP5TradingJsGzipAllowance = (await p5Baseline()).approvedP5TradingJsGzipAllowance;
+  assert.throws(() => assertBaseline({ coverage: expected.coverage, sizes: expected.sizes }, expected),
+    /applies only to its original recorded baseline/);
+});
+
+test('uses the actual-user-approved P5 allowance exactly once: 75725 passes, 75726 fails', async () => {
+  const expected = await p5Baseline();
+  const unchanged = structuredClone(expected);
+  const observed = { coverage: structuredClone(expected.coverage), sizes: { ...expected.sizes, tradingJsGzip: 75725 } };
+  assertBaseline(observed, expected);
+  assertBaseline(observed, expected);
+  assert.deepEqual(expected, unchanged, 'Successful measurements must not become a compounded baseline');
+  assert.equal(expected.sizes.tradingJsGzip, 74133);
+  assert.throws(() => assertBaseline({ ...observed, sizes: { ...observed.sizes, tradingJsGzip: 75726 } }, expected),
+    /tradingJsGzip exceeds the approved P5 cap/);
+});
+
+test('retains the original 2% boundary when the explicit P5 approval is absent', async () => {
+  const expected = await p5Baseline();
+  delete expected.approvedP5TradingJsGzipAllowance;
+  const observed = { coverage: expected.coverage, sizes: { ...expected.sizes, tradingJsGzip: 75615 } };
+  assertBaseline(observed, expected);
+  assert.throws(() => assertBaseline({ ...observed, sizes: { ...observed.sizes, tradingJsGzip: 75616 } }, expected), /more than 2%/);
+  assert.throws(() => assertBaseline({ ...observed, sizes: { ...observed.sizes, tradingJsGzip: 75725 } }, expected), /more than 2%/);
+});
+
+test('never applies the P5 gzip allowance to another artifact or to coverage', async () => {
+  const expected = await p5Baseline();
+  for (const [metric, bytes] of Object.entries(expected.sizes)) {
+    if (metric === 'tradingJsGzip') continue;
+    const observed = {
+      coverage: expected.coverage,
+      sizes: { ...expected.sizes, [metric]: Math.floor(bytes * 1.02) + 1 },
+    };
+    assert.throws(() => assertBaseline(observed, expected), new RegExp(`${metric} grew more than 2%`));
+  }
+  const observed = { coverage: structuredClone(expected.coverage), sizes: { ...expected.sizes, tradingJsGzip: 75725 } };
+  observed.coverage.package.lines -= 0.01;
+  assert.throws(() => assertBaseline(observed, expected), /package lines coverage regressed/);
+});
+
+test('rejects allowance reuse for a changed size baseline, another layer or an altered approval', async () => {
+  const mutations = [
+    record => { record.sizes.tradingJsGzip = 75725; },
+    record => { record.sizes.packageTarball += 1; },
+    record => { record.artifactChange.part = 'B / P6'; },
+    record => { record.artifactChange.issue = 165; },
+    record => { record.p5MeasurementChange.originalP5Head = 'not-the-approved-record'; },
+    record => { record.approvedP5TradingJsGzipAllowance.bytes = 111; },
+    record => { record.approvedP5TradingJsGzipAllowance.baselineSizesSha256 = 'another-baseline'; },
+    record => { record.approvedP5TradingJsGzipAllowance = null; },
+    record => {
+      record.sizes.tradingJsGzip = 75725;
+      const sorted = Object.entries(record.sizes).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+      record.approvedP5TradingJsGzipAllowance.baselineSizesSha256 =
+        createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
+    },
+  ];
+  for (const mutate of mutations) {
+    const expected = await p5Baseline();
+    mutate(expected);
+    assert.throws(() => assertBaseline({ coverage: expected.coverage, sizes: expected.sizes }, expected),
+      /applies only to its original recorded baseline/);
+  }
+});
