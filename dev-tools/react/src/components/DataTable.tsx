@@ -3,13 +3,30 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useTableSort, type UseTableSortOptions, type SortConfig } from '../react/useTableSort';
 import { useRowAnimation, type AnimationDirection } from '../react/useRowAnimation';
 import { useReducedMotion } from '../react/useReducedMotion';
 import type { ColumnDef, RowAction } from './types';
 import { tableHeight, type TableHeight } from './sizing';
+
+const textOrder = new Intl.Collator('en-US', { sensitivity: 'variant', numeric: false });
+
+/** @internal Numbers, then fixed-English text representations, then nullish values. */
+export function compareTableValues(a: unknown, b: unknown): number {
+  if (a == null) return b == null ? 0 : 1;
+  if (b == null) return -1;
+  if (typeof a === 'number') {
+    if (typeof b !== 'number') return -1;
+    if (Number.isNaN(a)) return Number.isNaN(b) ? 0 : 1;
+    if (Number.isNaN(b)) return -1;
+    // Subtraction would produce NaN for equal infinities.
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (typeof b === 'number') return 1;
+  return textOrder.compare(String(a), String(b));
+}
 
 /** Presentation state only: no transport, provider or query identity is required. */
 export interface DataTableState<E extends Error = Error> {
@@ -78,6 +95,8 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
   animateOnChange?: keyof T;
   /** Optional shared animation state; takes precedence over animateOnChange. */
   rowAnimations?: ReadonlyMap<string, AnimationDirection>;
+  /** Changed tokens restart controlled decoration without changing row identity. Share useRowAnimation.revisions. */
+  rowAnimationRevisions?: ReadonlyMap<string, number>;
   renderRow?: (
     row: T,
     columns: readonly ColumnDef<T>[],
@@ -107,6 +126,23 @@ const SortIndicator = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
     </svg>
   );
 };
+
+function AnimatedRow({ animation, revision, className, children }: {
+  animation: AnimationDirection;
+  revision?: number;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const [cycle, setCycle] = useState({ animation, revision, alternate: animation === null ? null : false });
+  // Compare rendered tokens rather than their parity: batched updates may skip revisions.
+  if (cycle.animation !== animation || !Object.is(cycle.revision, revision)) {
+    // An inactive commit may never be painted; retain the last active phase.
+    const alternate = animation === null ? cycle.alternate
+      : cycle.alternate === null ? false : !cycle.alternate;
+    setCycle({ animation, revision, alternate });
+  }
+  return <tr className={clsx(className, animation && cycle.alternate && 'drasi-row--repeat')}>{children}</tr>;
+}
 
 /**
  * Provider-free presentation with local or controlled sorting and optional
@@ -141,6 +177,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
   renderHeader,
   animateOnChange,
   rowAnimations,
+  rowAnimationRevisions,
   renderRow,
   emptyMessage = 'No data available',
   renderLoading,
@@ -156,12 +193,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     return [...rows].sort((a, b) => {
       const aVal: unknown = Reflect.get(a, sort.column);
       const bVal: unknown = Reflect.get(b, sort.column);
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return sort.direction === 'asc' ? 1 : -1;
-      if (bVal == null) return sort.direction === 'asc' ? -1 : 1;
-      const comparison = typeof aVal === 'number' && typeof bVal === 'number'
-        ? aVal - bVal
-        : String(aVal).localeCompare(String(bVal));
+      const comparison = compareTableValues(aVal, bVal);
       return sort.direction === 'asc' ? comparison : -comparison;
     });
   }, [rows, sort]);
@@ -174,6 +206,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     data: rowAnimations === undefined && animateOnChange !== undefined ? rows : undefined,
   });
   const animations = rowAnimations ?? tracked.animations;
+  const revisions = rowAnimations === undefined ? tracked.revisions : rowAnimationRevisions;
   const context: DataTableRenderContext<T, E> = { rows: sortedRows, state, sort, setSort };
   let notice: React.ReactNode = null;
   if (state.error) {
@@ -215,8 +248,8 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     </div>
   ) : null;
 
-  const defaultRow = (row: T, index: number, animation: AnimationDirection) => (
-    <tr className={clsx(
+  const defaultRow = (row: T, index: number, animation: AnimationDirection, revision: number | undefined) => (
+    <AnimatedRow animation={animation} revision={revision} className={clsx(
       'drasi-query-table__row',
       animation === 'up' && 'drasi-row--up',
       animation === 'down' && 'drasi-row--down',
@@ -228,6 +261,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
         return (
           <td key={String(column.key)} className={clsx(
             'drasi-query-table__cell',
+            column.align === 'left' && 'drasi-align--left',
             column.align === 'right' && 'drasi-align--right',
             column.align === 'center' && 'drasi-align--center',
             typeof column.className === 'function' ? column.className(value, row) : column.className,
@@ -264,7 +298,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
           </div>
         </td>
       )}
-    </tr>
+    </AnimatedRow>
   );
 
   return (
@@ -325,10 +359,11 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
             {sortedRows?.map((row, index) => {
               const key = rowKey(row);
               const animation = reducedMotion ? null : animations.get(key) ?? null;
+              const revision = revisions?.get(key);
               return (
                 <React.Fragment key={key}>
-                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation))
-                    : defaultRow(row, index, animation)}
+                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation, revision))
+                    : defaultRow(row, index, animation, revision)}
                 </React.Fragment>
               );
             })}

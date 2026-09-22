@@ -38,10 +38,21 @@ test('simulated states retain useful data and retry is explicit and deterministi
     const query = simulatedQuery(status, simulatedRows, () => { retries += 1; });
     assert.equal(query.status, status);
     assert.equal(query.data === null, status === 'initial-loading');
+    assert.equal(query.loading, status === 'initial-loading');
+    assert.equal(query.loading, query.data === null && query.error === null && status !== 'terminal-error');
+    assert.equal(query.stale, query.data !== null && status !== 'live' && status !== 'empty');
+    assert.equal(query.lastUpdate === null, status === 'initial-loading');
     if (status === 'empty') assert.deepEqual(query.data, []);
-    if (query.stale) assert.equal(query.data, simulatedRows);
+    else if (status !== 'initial-loading') assert.equal(query.data, simulatedRows);
+    if (query.stale) {
+      assert.equal(query.data, simulatedRows);
+      assert.equal(query.data.length, 2);
+      assert.equal(query.loading, false, `${status} retains a baseline; it is not initial loading`);
+    }
     if (status === 'terminal-error') assert.equal(query.error?.code, 'INVALID_PAYLOAD');
     if (status === 'stale-last-good-data') assert.equal(query.error?.code, 'SERVER_UNAVAILABLE');
+    assert.equal(query.error !== null, status === 'terminal-error' || status === 'stale-last-good-data');
+    assert.equal(query.errorScope, query.error ? 'query' : null);
     query.retry();
   }
   assert.equal(retries, simulatedStates.length);

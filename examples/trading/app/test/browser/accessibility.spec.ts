@@ -846,7 +846,7 @@ test.describe('installed provider-free consumer', () => {
     const tracked = page.getByRole('table', { name: 'Tracked motion' }).getByRole('row').filter({ hasText: 'Bravo' });
     const controlled = page.getByRole('table', { name: 'Controlled motion' }).getByRole('row').filter({ hasText: 'Bravo' });
     await expect(controlled).toHaveClass(/drasi-row--up/);
-    await expect(controlled).toHaveCSS('animation-name', 'drasi-flash-green');
+    await expect(controlled).toHaveCSS('animation-name', 'drasi-row-flash');
     await page.getByRole('button', { name: 'Update quantities' }).click();
     await expect(tracked).toHaveClass(/drasi-row--up/);
     await expect(tracked).toHaveCSS('animation-duration', '0.5s');

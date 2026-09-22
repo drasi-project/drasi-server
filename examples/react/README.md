@@ -17,6 +17,34 @@ raw key. The validated render model deliberately renames it to `key` and
 `temperatureC` to `celsius`. The package extracts raw identity before
 projection, including sparse deletes; the view's `rowKey` is separate.
 
+## Run only the simulated showcase
+
+This **server-free** path needs Node and the frontend dependencies, not Rust,
+Drasi Server, Python, plugins, a database or registry access for plugin setup.
+From the repository root:
+
+```sh
+npm --prefix dev-tools/react ci --ignore-scripts
+npm --prefix dev-tools/react run build
+cd examples/react
+npm ci --install-links --ignore-scripts
+npm run build
+node test/preview.mjs
+```
+
+Open **http://127.0.0.1:15373/showcase.html**; stop the owned foreground
+listener with Ctrl+C. `P7_WEB_PORT` can select another free loopback port.
+The page uses deterministic, clearly labelled fixtures and makes no API/SSE
+requests. Retained reconnecting/resynchronizing rows are stale, **not loading**;
+initial loading has no baseline. Retry and refresh completion are simulation
+controls, not a real network-recovery test.
+
+This command only serves built frontend files. Its live-page links cannot
+supply a backend: use the separate real startup below for those entries.
+**`npm start` intentionally starts the real server and signed-plugin setup**;
+it is not the server-free preview command. Automated browser checks exercise
+the preview without substituting it for actual runtime or human AT evidence.
+
 ## Run the real example
 
 Use Node **22.20.0** or **24.19.0**, React/React DOM **18.3.1**, the repository's

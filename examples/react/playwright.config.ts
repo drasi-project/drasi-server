@@ -31,6 +31,7 @@ export default defineConfig({
   ],
   webServer: live ? undefined : {
     command: 'node test/preview.mjs',
+    env: { P7_SOURCE_ROOT: `${process.cwd()}/.runtime/no-backend-for-static-preview` },
     url: `http://127.0.0.1:${port}/showcase.html`,
     timeout: 30_000, reuseExistingServer: false, stdout: 'pipe', stderr: 'pipe',
   },

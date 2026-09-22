@@ -12,6 +12,8 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractReadmeExamples } from './readme-examples.mjs';
+import { checkInstallRecipes } from './install-recipes.mjs';
+import { checkDocumentationLinks } from './documentation-links.mjs';
 
 const fixtures = fileURLToPath(new URL('.', import.meta.url));
 const entrypoints = {
@@ -421,6 +423,8 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
   const output = join(destination, 'public-contract');
   await mkdir(output);
   run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'readme-examples-check.mjs')], app, 30_000);
+  run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'install-recipes-check.mjs')], app, 30_000);
+  run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'documentation-links-check.mjs')], app, 30_000);
   const require = createRequire(join(app, 'package.json'));
   const packageRoot = join(app, 'node_modules/@drasi/react');
   const manifest = await json(join(packageRoot, 'package.json'));
@@ -438,7 +442,7 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
     await copyFile(join(fixtures, 'runtime.mjs'), runner);
     for (const kind of kinds) {
       for (const format of ['esm', 'cjs']) {
-        run(process.execPath, [runner, kind, format], directory, 30_000);
+        run(process.execPath, ['--enable-source-maps', runner, kind, format], directory, 30_000);
       }
     }
     const fixtureNames = directory === clientOnly ? ['client'] : ['hooks', 'components'];
@@ -449,10 +453,21 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
       }
     }
   }
+  const dceRunner = join(app, 'contract-dce.mjs');
+  await copyFile(join(fixtures, 'dce.mjs'), dceRunner);
+  run(process.execPath, [dceRunner], app, 30_000);
+  proof.unusedComponentsEliminated = true;
   // The installed README is the sole source of runnable documentation. These
   // programs are checked with noEmit, never imported/executed or networked.
   const readme = await readFile(join(packageRoot, 'README.md'), 'utf8');
   const examples = extractReadmeExamples(readme);
+  proof.documentationLinks = await checkDocumentationLinks({
+    'dev-tools/react/README.md': readme,
+    'dev-tools/react/CHANGELOG.md': await readFile(join(packageRoot, 'CHANGELOG.md'), 'utf8'),
+    'examples/react/README.md': await readFile(join(destination, 'examples/react/README.md'), 'utf8'),
+    'examples/trading/TESTING.md': await readFile(join(destination, 'examples/trading/TESTING.md'), 'utf8'),
+  });
+  proof.installation = await checkInstallRecipes({ artifact, packageRoot, output, readme });
   proof.readme = {
     sha256: createHash('sha256').update(readme).digest('hex'),
     all: await compileReadme(app, output, examples, 'readme', manifest),

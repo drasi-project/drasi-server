@@ -141,9 +141,23 @@ describe('Trading-owned table composition', () => {
     expect(apple.textContent).toContain('$111.00');
     expect(apple.className).toContain('drasi-row--up');
     expect(original.querySelector('tbody .drasi-row--up')?.textContent).toContain('AAPL');
+    const originalApple = original.querySelector('tbody .drasi-row--up');
+    if (!originalApple) throw new Error('Expected the original animated row');
+    const remove = within(apple).getByRole('button', { name: 'Remove from watchlist' });
+    remove.focus();
+    for (const price of [112, 113]) {
+      const previousClass = apple.className;
+      act(() => backend.changePrice('AAPL', price));
+      expect(within(expanded).getByRole('row', { name: /^AAPL / })).toBe(apple);
+      expect(apple.textContent).toContain(`$${price}.00`);
+      expect(apple.className).not.toBe(previousClass);
+      expect(original.querySelector('tbody .drasi-row--up')).toBe(originalApple);
+      expect(originalApple.className).toBe(apple.className);
+      expect(document.activeElement).toBe(remove);
+    }
     expect(backend.requests.slice(before)).toEqual([]);
     expect(sources).toHaveLength(1);
-    fireEvent.click(within(apple).getByRole('button', { name: 'Remove from watchlist' }));
+    fireEvent.click(remove);
     await waitFor(() => expect(within(expanded).queryByRole('row', { name: /^AAPL / })).toBeNull());
     fireEvent.click(within(expanded).getByRole('button', { name: 'Collapse table' }));
     await waitFor(() => expect(document.querySelector('.drasi-query-table--expanded')).toBeNull());

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- P7 copied-local/tarball onboarding now enforces the tested single-React
+  install boundary; fresh minimal consumers execute the installed recipes and
+  server-render public controls. Simulation loading matches the hook contract.
+- Add task-first navigation, subscriber-state/computation guidance, corrected
+  historical evidence links and an explicitly server-free showcase recipe;
+  no query-cache, virtualization or new runtime/platform promise is introduced.
+- Preserve opaque restart identity across React-batched expiry/reactivation
+  and inactive/active commits before a browser paint. Keep only one per-hook
+  scalar and the rendered row's phase; expired/deleted map entries still clear.
+  Stable rows/focus, first activation, timing, colors and reduced motion remain.
+- Restart successive row highlights, including repeated up/down/string changes,
+  without replacing stable rows or losing cell state/focus. The headless hook
+  exposes readonly `revisions`; controlled DataTable owners share them through
+  `rowAnimationRevisions`, as Trading now does for both presentations.
+  Equivalent alternating keyframes preserve the 500ms easing/colors; expiry,
+  removal, independent rows and live reduced-motion cleanup remain bounded.
+- Compact generated whitespace while preserving syntax, identifiers, debug/
+  component names, source maps/content and the complete package inventory.
+  Original baselines remain; Trading TESTING.md records the separately
+  user-approved, fixed 110-byte P5 Trading gzip allowance.
+- Make table ordering transitive: numeric values precede fixed-English text
+  representations, then nullish values; handle NaN, infinities and stable ties.
+  Use explicit en-US variant/numeric:false collation for SSR/hydration rather
+  than ambient locale, preserving Trading's English name ordering.
+- Apply explicit left alignment to body cells as well as headings; omitted
+  body alignment still inherits. Cover real cross-locale hydration, host
+  alignment and mixed-order permutations without changing original images.
+- Prevent suspended or abandoned concurrent option renders from changing the
+  active query's raw key callback. Publish committed keys before layout-phase
+  event delivery without recreating subscriptions/sockets or adding SSR
+  browser-global probes/layout-effect warnings. Committed projection changes
+  and hidden raw-row retention remain reactive.
+- Preserve explicit SSE endpoint path/query trailing slashes, including signed
+  or opaque query values, instead of applying server-base trimming to them.
+  Provider identity uses the same separation: equivalent server bases stay
+  stable, while meaningful endpoint changes replace the connection. Existing
+  URL safety validation, authentication and read-only ownership are unchanged.
+
 ### Parent integration
 - Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
   host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
@@ -48,8 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before projection with sparse deletes. All 13 inherited recipes and parser
   assertions are retained; required-name guards cover the additions.
 - Precise links to existing verified P6
-  [measured evidence](../../examples/trading/TESTING.md#p6-measured-evidence)
-  and [artifact measurements](../../examples/trading/TESTING.md#p6-measured-artifact-advance),
+  [measured evidence](../../examples/trading/TESTING.md#historical-p6-measured-evidence)
+  and [artifact measurements](../../examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
   separate from subsequent-change validation and the nine-part **PENDING HUMAN**
   screen-reader checklist. Trading's 19 retained contrast fingerprints in 86
   exact contexts remain unwaived strict non-regression evidence, not a

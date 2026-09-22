@@ -13,42 +13,94 @@ deployment defaults belong to the application.
 this repository. Trading uses a local `file:` dependency; no npm publication,
 repository transfer or separate framework-agnostic package is implied.
 
+## Choose your starting point
+
+| Task | Start here |
+| --- | --- |
+| Install into an existing app | [Copied-local or tarball installation](#installation-and-entrypoints); build first and keep one React identity. |
+| Display rows you already own | [Provider-free DataTable](#provider-free-datatable); no Drasi provider or connection. |
+| Display one live query quickly | [DrasiProvider + QueryTable quickstart](#quickstart); provision references separately. |
+| Build cards or custom markup | [Hooks-only UI](#hooks-only-ui-and-scoped-retry); no presentation/CSS import required. |
+| Share data across multiple views | [One hoisted hook and app-owned composition](#app-owned-composition), with [per-subscriber cost guidance](#subscriber-state-and-computation-cost). |
+| Explore controls without a server | [Server-free simulated showcase](../../examples/react/README.md#run-only-the-simulated-showcase). |
+| Diagnose or adapt an integration | [Errors/retry](#errors-and-recovery), [troubleshooting](#troubleshooting), [auth/transports](#authentication-and-injected-transports), [SSR](#ssr-and-import-safety), [migration](#119-bootstrap-to-connect-only-migration). |
+
+For lookup, use the [public symbol map](#public-symbol-map), [connection options](#connection-options),
+[hook contracts](#hooks-raw-identity-and-derived-views), [components](#components),
+[sorting](#sorting), [themes/portals](#scoped-themes-and-portals) and [sizing](#table-sizing).
+Versioned [compatibility and evidence](#verified-compatibility) are separate from
+human accessibility acceptance.
+
+## Data flow and ownership
+
+Operator-owned resources feed a read-only client/SSE stream, then subscriber-local
+raw rows, validated projections and custom UI or `DataTable`. A provider shares
+one connection, **not a query cache**. `QueryTable` composes the hook and table;
+`DataTable` and `Modal` need no provider. The app owns provisioning, actions,
+layout and extra announcements.
+
 ## Installation and entrypoints
 
-Build the local package before consuming it:
+**Use a copied local install or a tarball, not npm's default symlink for a
+directory `file:` dependency.** A symlink can resolve the package's development
+React separately from your renderer and fail with an invalid hook call even
+when both copies report 18.3.1. Both recipes share the consumer's React.
+
+First build explicitly from the repository root:
 
 ```sh
-npm --prefix dev-tools/react ci
+npm --prefix dev-tools/react ci --ignore-scripts
 npm --prefix dev-tools/react run build
 ```
 
-Repository consumers such as Trading declare
-`"@drasi/react": "file:../../../dev-tools/react"` (that path is relative to
-Trading's `app/package.json`). Adjust a local `file:` path for your own
-consumer, and rebuild the package after package-source changes.
+Then choose **one** recipe from your application's directory. Set the path to
+your actual built package folder or tarball; these commands also install the
+measured renderer peers.
 
-For an application outside the checkout, pack the built package from the
-repository root:
+Copied-local installation:
 
 ```sh
-(cd dev-tools/react && npm pack --pack-destination ../..)
+# @drasi-install: copied-local
+DRASI_PACKAGE_DIR="/absolute/path/to/drasi-server/dev-tools/react"
+npm install --save-exact --ignore-scripts --install-links "$DRASI_PACKAGE_DIR" react@18.3.1 react-dom@18.3.1
 ```
 
-`prepack` rebuilds the artifact using the package's installed build tools.
-Use the filename printed by `npm pack` (currently `drasi-react-0.1.0.tgz`).
-Then, **from your application's directory**, install that file and the measured
-React renderers; replace the example filesystem path with your actual checkout:
+`--install-links` packs the directory's distributable files into a regular
+installed directory instead of symlinking its development environment.
+Keep that setting on subsequent installs/CI (`npm ci --ignore-scripts --install-links`);
+optionally put `install-links=true` in the **consumer project's** `.npmrc`,
+not global npm configuration. Trading retains its repository-local `file:`
+dependency; a bare `file:` declaration alone is not single-React guidance.
+
+Alternatively, pack the already-built package from the repository root:
 
 ```sh
-npm install --save-exact /path/to/drasi-server/drasi-react-0.1.0.tgz react@18.3.1 react-dom@18.3.1
+(cd dev-tools/react && npm pack --ignore-scripts --pack-destination ../..)
+```
+
+Then install the printed archive (currently `drasi-react-0.1.0.tgz`):
+
+```sh
+# @drasi-install: tarball
+DRASI_PACKAGE_TARBALL="/absolute/path/to/drasi-server/drasi-react-0.1.0.tgz"
+npm install --save-exact --ignore-scripts "$DRASI_PACKAGE_TARBALL" react@18.3.1 react-dom@18.3.1
 ```
 
 A client-only application can instead install the same tarball with
-`npm install --save-exact --omit=peer /path/to/drasi-server/drasi-react-0.1.0.tgz`
+`npm install --save-exact --ignore-scripts --omit=peer /path/to/drasi-server/drasi-react-0.1.0.tgz`
 and use only `/client`. Commit the consumer lockfile. These are **local-file
 installs**, not instructions to fetch an available `@drasi/react` npm release.
 No source aliases, Tailwind source scanning or install-time rebuilding are
-needed by a tarball consumer.
+needed. Fresh minimal consumers execute these literal recipes from the
+installed README and render public controls in ESM/CommonJS with React 18.3.1.
+
+Copied installs are snapshots: rebuild, then reinstall. `npm install` may
+treat an unchanged-version file dependency as satisfied. Use the copied-install
+`npm ci` command above, or give a rebuilt tarball a new local path and update
+the lock via its recipe. Restart the bundler after dependency changes; inspect
+`npm ls react react-dom @drasi/react` when resolution is unexpected.
+Do not patch third-party files, add source aliases, weaken type checks or
+clear global caches to hide duplicate React or stale artifacts.
 
 | Import | Contents and dependencies |
 | --- | --- |
@@ -61,6 +113,10 @@ needed by a tarball consumer.
 All four JS entrypoints ship real ESM/CommonJS exports and conditional `.d.ts`
 and `.d.cts` declarations. Import these paths, not `src`, `dist` or hashed
 shared chunks. The framework-agnostic client is a module of this same package.
+
+Build output compacts whitespace only: syntax/identifiers are not minified,
+debug/component names are preserved, and source maps retain source content.
+Declarations, documentation, CSS and license notices remain in the package.
 
 React and React DOM are **optional installation peers** so client-only
 consumers need not install them. React is required to execute the
@@ -301,6 +357,11 @@ Do not wrap native EventSource and pretend it supports bearer headers.
 Cross-origin cookie use requires appropriate server/proxy credentials and CORS.
 
 The SSE endpoint is supplied by the operator, never inferred from bind settings.
+Shared HTTP(S) URL parsing and safety checks do not trim its path or query:
+`/proxy/events/` stays distinct from `/proxy/events`, and `?opaque=part/`
+retains the slash in the query value. The stream factory and its authentication
+context receive that complete serialized URL. Only the **server base** removes
+its final path delimiter before API/UI paths are appended.
 The supported plugin protocol cannot attest that a proxy routes to the declared
 reaction/instance or reveal native SSE redirect destinations. Use a trusted
 proxy or custom transport if enforcement is required. A generic stream error
@@ -324,6 +385,11 @@ cleanup. Equivalent inline reference arrays, reaction/reconnect objects and
 headers do **not** bounce the connection. Query IDs compare as a set (duplicates
 remain invalid), header names/values are canonicalized, and omitted policy
 fields equal the documented defaults.
+
+Equivalent server-base spellings (including an optional trailing slash, host
+case or the standard explicit port) retain the same client/connection. Endpoint
+path/query differences, including the slash examples above, remain material:
+changing one closes the old stream and initializes the replacement.
 
 Material server, instance, reaction ID, endpoint, query-set, credential/header,
 timeout, retry-policy or reconciliation-limit changes replace the lifecycle. Old requests are aborted,
@@ -567,6 +633,14 @@ does not remove or mutate the accumulated raw state. All three options reproject
 retained rows reactively without a new socket or subscription. Keep callbacks
 pure and do not mutate their read-only raw input.
 
+Active stream batches use the **latest committed `getKey`**, never a callback
+from a suspended or abandoned render. During a `startTransition` that suspends,
+the current view and its subscription keep their committed identity policy.
+A successful option commit publishes that key before consumer layout effects
+can deliver events; committed transforms and post-processing still reproject
+retained rows without reconnecting. This commit-only publication performs no
+browser-global detection or server-rendering layout effect.
+
 ```ts
 // @drasi-docs: query-options.ts
 import { useDrasiQuery, type UseDrasiQueryOptions } from '@drasi/react/react';
@@ -702,6 +776,50 @@ fault isolation**: initial validation and shared reconnection revalidate
 failure during that shared validation can block the shared connection and
 affect every subscription. Malformed unidentifiable/protocol failures can also
 terminate the shared stream.
+
+### Subscriber state and computation cost
+
+One provider multiplexes **one SSE connection**, not one shared query cache.
+Each `useDrasiQuery` call independently fetches its baseline, reconciles
+overlap/recovery, accumulates raw rows and derives its view. Two hooks or two
+`QueryTable`s with the same query ID still mean two subscriptions with their
+own REST reads, state, memory and projection work.
+
+Accepted updates rekey/project the retained set; a small delta does not imply
+that only one row is transformed or rendered. Sparse delete payloads are
+handled by raw identity, never passed to `transform`; remaining current rows
+can still be reprojected. A `null` transform hides a row but retains its raw
+identity/data. `postProcess` is a derived view, not a raw-state eviction policy:
+filtering or slicing visible rows does not bound retained memory.
+
+Keep `getKey`, `transform` and `postProcess` pure. Keep their references stable
+when their semantics have not changed, with correct closure dependencies;
+do not hide changing semantics behind stale callbacks. Committed callback
+changes reproject retained rows without resubscription, while abandoned renders
+cannot replace the active ingestion key. The raw `getKey` and transformed
+table `rowKey` remain separate contracts.
+
+For shared data, [hoist one query hook](#app-owned-composition) and pass its
+result to multiple presentations rather than mounting extra `QueryTable`s.
+Share both animation direction and revision maps when using `useRowAnimation`.
+This reduces duplicate subscriber work without introducing a cache API.
+
+For larger or faster feeds, use supported operator-owned query features
+such as `WHERE`, selective `RETURN` projections and supported aggregations
+(for example `sum`/`count`) to reduce upstream result volume where appropriate.
+Measure representative snapshot row counts, visible versus filtered rows,
+update burst size/rate, memory, snapshot/retry frequency, and projection,
+React render and layout time on your actual target devices. Browser performance
+tools and React profiling can separate transformation cost from rendering;
+avoid logging row contents or credentials while measuring.
+
+There is no built-in virtualization or large/high-rate throughput guarantee.
+`maxPendingChanges` bounds observed overlap during a pending snapshot, **not**
+result-set rows or memory for accepted data. These choices do not strengthen
+the [best-effort snapshot/live contract](#snapshotstream-consistency-and-limits):
+there is no shared REST/SSE cursor, and delayed older events can still require
+an explicit refresh. Measure against your application's latency/memory needs,
+not an invented universal row limit or benchmark.
 
 #### Hooks-only UI and scoped retry
 
@@ -839,7 +957,7 @@ const rows: readonly Delivery[] = [
   { id: 'south', destination: 'Warehouse B', parcels: 3 },
 ];
 const columns: readonly ColumnDef<Delivery>[] = [
-  { key: 'destination', label: 'Destination' },
+  { key: 'destination', label: 'Destination', align: 'left' },
   { key: 'parcels', label: 'Parcels', align: 'right' },
   {
     key: 'summary', label: 'Summary', sortable: false,
@@ -873,6 +991,7 @@ All presentation props are optional except the first three:
 | `actionsWidth?: string` | Optional CSS width of the actions heading. |
 | `animateOnChange?: keyof T` | Disabled by default. Track the named row property; numbers animate up/down and changed strings animate `change`. Reduced motion suppresses these animations. |
 | `rowAnimations?: ReadonlyMap<string, AnimationDirection>` | Optional owner-supplied animation state keyed by `rowKey`; takes precedence over `animateOnChange`, including an empty map. Reduced motion also suppresses this controlled map's presentation. |
+| `rowAnimationRevisions?: ReadonlyMap<string, number>` | Optional restart tokens for controlled `rowAnimations`. Pass `useRowAnimation().revisions` to restart repeated same-direction decoration. Changed tokens are compared with `Object.is`, including skipped/batched revisions; they never replace `rowKey`. Without tokens, controlled decoration restarts only when its direction changes or is cleared and reapplied. |
 | `renderRow?: (row, columns, animation, defaultRender) => ReactNode` | Replaces one row's rendering. `row` is `T`, `columns` is readonly, and `animation` is `'up' \| 'down' \| 'change' \| null`. Return a `<tr>` or a fragment of table rows, or call `defaultRender()` for the built-in `<tr>`. A parent fragment already owns the stable `rowKey`; wrappers need not invent an index key. |
 | `emptyMessage?: string` | `"No data available"`; `renderEmpty` takes precedence. |
 | `renderLoading`, `renderEmpty`, `renderError`, `renderStale` | Optional state slots; details below. A slot returning `null` suppresses its default rather than falling back. |
@@ -923,7 +1042,7 @@ Loading, empty and stale slots receive that context. `renderError` receives
 | `key: keyof T \| string`, `label: string` | Required property/computed key and heading text. |
 | `format?: (value: unknown, row: T) => ReactNode` | Default: nullish values render `"-"`, otherwise `String(value)`. Computed labels do not create a sortable row property. |
 | `sortable?: boolean` | `true`; `false` disables that heading's sort interaction. |
-| `align?: 'left' \| 'center' \| 'right'` | `'left'`. |
+| `align?: 'left' \| 'center' \| 'right'` | Explicit alignment applies to header and body. Omitted: header left, body inherits host alignment. |
 | `className?: string \| ((value: unknown, row: T) => string)` | Additional cell class. |
 | `headerClassName?: string` | Additional heading class. |
 | `width?: string` | Optional CSS width of the heading. |
@@ -1017,12 +1136,20 @@ and `/components`.
 | Returned `setSort(next)` | Requests a config or `null`. Explicit `null` clears sorting to input order. |
 | Returned `toggleSort(column)` | New column starts ascending; active column toggles ascending/descending. It does **not** cycle automatically through a third, unsorted state. |
 
-The hook controls state, not row comparison. `DataTable` compares two numbers by
-numeric difference; strings/mixed non-nullish values use
-`String(value).localeCompare(...)`. Nullish values are last ascending and first
-descending. Ties preserve input order. Non-visible row fields may be sorted;
-formatted/computed display text is not a custom comparator. Readonly rows are
-copied before sorting, and `null` sort restores their supplied order.
+The hook controls state, not row comparison. Ascending `DataTable` ordering is:
+JavaScript numbers numerically (including infinities, with NaN after other
+numbers), then other non-nullish values by `String(value)`, then null/undefined.
+Numeric strings are not coerced. Text uses the shared fixed
+`Intl.Collator('en-US', { sensitivity: 'variant', numeric: false })` policy,
+not the environment's default locale. Descending reverses this ordering,
+including putting nullish values first. Equal keys, -0/0, NaNs and nullish ties
+preserve input order. Readonly rows are copied; `sort={null}` restores input order.
+
+SSR and hydration must use the same rows, sort state, string representations
+and compatible Intl data. The fixed English policy preserves Trading name
+collation across differing default locales; it is not a claim of identical
+Unicode ordering across arbitrary ICU versions. Hidden fields remain sortable;
+formatted/computed display text is not a comparator. No comparator API is added.
 
 Each sortable column has a native `<button type="button">` inside
 `<th scope="col">`. Its accessible name is the column label; decorative sort
@@ -1177,9 +1304,10 @@ is provider-free and tracks application rows, not raw query identities:
 | --- | --- |
 | `rowKey: (row: T) => string` | Required stable, unique render/animation identity; must match the consuming table's `rowKey`. |
 | `getValue: (row: T) => number \| string \| undefined` | Required tracked value; `undefined` supplies no comparable baseline for that row. This is not a query transform. |
-| `animationDuration?: number` | **500** ms until a changed row's animation entry expires. Supply a suitable finite nonnegative duration for your own tracker. |
+| `animationDuration?: number` | **500** ms until decoration state expires after the latest change. This does not change the stylesheet's duration; supply a suitable finite nonnegative duration for your own tracker. |
 | `data?: readonly T[] \| null` | Optional automatic updates after rendering. Null/undefined retains the previous baseline; an empty array clears tracking and timers. |
 | `animations: Map<string, AnimationDirection>` | Current animation entries, initially empty; treat this returned state as read-only. Supply it as `rowAnimations` to share it across presentations. |
+| `revisions: ReadonlyMap<string, number>` | Opaque restart tokens, including repeated changes in the same direction. Share as `rowAnimationRevisions`; not row keys or persistent counters. |
 | `updateData: (data: readonly T[]) => void` | Manual tracking update for owners that do not supply `data`. It updates animation state, not query rows. |
 | `AnimationDirection` | `'up' \| 'down' \| 'change' \| null`. Numeric increases/decreases select up/down; other unequal defined string/number pairs select change. Null or an absent map entry means no animation. |
 
@@ -1188,8 +1316,23 @@ timer; removed rows lose their entries/timers, and unmount clears timers.
 Reduced motion cancels active entries while retaining the latest baseline.
 The hook returns state, not markup or CSS; only a consuming presentation maps
 directions to classes. See [reduced motion](#reduced-motion) for live preference
-changes. Supply `rowAnimations` to avoid each presentation tracking its own
-changes.
+changes. Share both maps to avoid each presentation tracking its own changes.
+
+`animations` retains the direction map; `revisions: ReadonlyMap<string, number>`
+adds opaque per-row restart tokens for relevant changes, even in the same
+direction. Unchanged tracked values preserve both maps.
+Tokens are removed with their decoration on expiry, row removal, empty input or
+reduced motion. A single per-hook scalar in React state survives that cleanup;
+there is no history of deleted rows, and token values are not persistent counters
+or React keys. Expiry and reactivation coalesced into one React batch therefore
+still have different decoration identities. The renderer retains its last active
+phase across inactive commits, even when the browser has not painted between
+them, while preserving the first activation's original phase. The lifetime
+restarts after the latest change; updates stopping means the decoration expires,
+not an endless animation. The built-in stylesheet retains its 500ms
+ease-in-out pulse and original theme colors, alternating equivalent keyframes
+without replacing DOM rows, losing cell state/focus or forcing layout. The hook's
+custom `animationDuration` controls state expiry, not the stylesheet duration.
 
 ```tsx
 // @drasi-docs: composed-table.tsx
@@ -1216,12 +1359,12 @@ export function ReadingViews({ queryId, queryOptions, showAlternate = false }: {
   const query = useDrasiQuery(queryId, queryOptions);
   const { retry: retryConnection } = useDrasiClient();
   const sorting = useTableSort({ defaultSort: { column: 'value', direction: 'desc' } });
-  const { animations } = useRowAnimation({ data: query.data, rowKey, getValue });
+  const { animations, revisions } = useRowAnimation({ data: query.data, rowKey, getValue });
   const presentation = {
     rows: query.data, columns, rowKey,
     state: queryTableState(query, retryConnection),
     sort: sorting.sort, onSortChange: sorting.setSort,
-    rowAnimations: animations,
+    rowAnimations: animations, rowAnimationRevisions: revisions,
   };
   return <>
     <DataTable<Reading, DrasiError> {...presentation} title="Readings" />
@@ -1516,8 +1659,8 @@ subscribes to live `prefers-reduced-motion: reduce` changes. SSR and hosts
 without `matchMedia` report `false`; that SSR value is not a claim about the
 user's eventual preference.
 
-`useRowAnimation` automatically cancels active timers/animations when reduced
-motion becomes active and keeps tracking the latest row baseline. DataTable
+`useRowAnimation` automatically clears active timers, directions and restart
+tokens when reduced motion becomes active and keeps tracking the latest row baseline. DataTable
 also suppresses controlled `rowAnimations` and passes `null` animation to
 custom row renderers in this mode. The stylesheet disables package animations,
 transitions and smooth scrolling under the same media query. Rows, sorting,
@@ -1964,8 +2107,8 @@ Automated rule scans (including axe), DOM/ARIA assertions, browser
 accessibility-tree inspection and real-browser keyboard tests provide distinct
 evidence; none is a human screen-reader review or universal browser/AT claim.
 P6 gate counts and artifact/coverage measurements are recorded in
-[P6 measured evidence](../../examples/trading/TESTING.md#p6-measured-evidence)
-and [P6 measured artifact advance](../../examples/trading/TESTING.md#p6-measured-artifact-advance);
+[historical P6 measured evidence](../../examples/trading/TESTING.md#historical-p6-measured-evidence)
+and [historical P6 artifact advance](../../examples/trading/TESTING.md#historical-p6-measured-artifact-advance);
 the owning P6 draft PR records its exact-head CI outcomes. The implemented
 keyboard, modal, theme, sizing and motion contracts have that automated
 evidence. Older P1-P5 passes remain historical, not substitutes for it or for
@@ -2019,7 +2162,8 @@ and consistency limits remain unchanged.
    query composition, reuse `queryTableState` rather than treating every error
    as shared-connection failure.
 7. Share one query, sort controller and `useRowAnimation` tracker when rendering
-   two views of the same rows. Pass `rowAnimations` to both; it takes precedence
+   two views of the same rows. Pass `rowAnimations` to both, and for P6 repeated
+   highlights also share `rowAnimationRevisions`; the controlled state takes precedence
    over their local `animateOnChange`. Mount optional inspectors only on demand
    and unmount them on close. Retry an inspector-local read without restarting
    the live socket; when its error is the provider's same non-null error object,

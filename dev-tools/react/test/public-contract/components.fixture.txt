@@ -93,6 +93,7 @@ export type SuppliedColumnsAreReadonly = Assert<Equal<DataTableProps<Temperature
 export type SuppliedActionsAreReadonly = Assert<Equal<DataTableProps<Temperature>['actions'], readonly RowAction<Temperature>[] | undefined>>;
 export type CustomRowColumnsAreReadonly = Assert<Equal<Parameters<NonNullable<DataTableProps<Temperature>['renderRow']>>[1], readonly ColumnDef<Temperature>[]>>;
 export type AnimationMapsAreReadonly = Assert<Equal<DataTableProps<Temperature>['rowAnimations'], ReadonlyMap<string, AnimationDirection> | undefined>>;
+export type AnimationRevisionsAreReadonly = Assert<Equal<DataTableProps<Temperature>['rowAnimationRevisions'], ReadonlyMap<string, number> | undefined>>;
 export type DefaultStateUsesError = Assert<Equal<DataTableState['error'], Error | null | undefined>>;
 
 interface Temperature {
@@ -104,6 +105,11 @@ interface Delivery {
   routeId: string;
   parcels: number;
 }
+
+export const explicitLeft: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'left' };
+export const inheritedAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station' };
+// @ts-expect-error Alignment remains the existing physical left/center/right contract.
+export const unsupportedLogicalAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'start' };
 
 export const columns: ColumnDef<Temperature>[] = [{
   key: 'celsius', label: 'Temperature', align: 'right', sortable: true,
@@ -291,6 +297,7 @@ export const standalone: DataTableProps<Temperature, SensorError> = {
   state: sensorState, sort: null, defaultSort: sort,
   title: 'Warehouse temperatures', actions: suppliedActions, actionsWidth: '6rem',
   animateOnChange: 'celsius', rowAnimations: suppliedAnimations,
+  rowAnimationRevisions: new Map([['cold-room', 2]]),
   className: 'warehouse-card', style: { maxWidth: '50rem' },
   containerRef: createRef<HTMLDivElement>(),
   tableClassName: 'warehouse-scroll', headerClassName: 'warehouse-head',
@@ -422,6 +429,8 @@ export const nonNullableSortCallback: DataTableProps<Temperature> = { ...emptySt
 export const invalidControlledSort: DataTableProps<Temperature> = { ...emptyStandalone, sort: 'celsius' };
 // @ts-expect-error Animation maps use the published direction union.
 export const invalidAnimationMap: DataTableProps<Temperature> = { ...emptyStandalone, rowAnimations: new Map([['cold-room', 'flash']]) };
+// @ts-expect-error Restart tokens are numeric rather than row identities.
+export const invalidAnimationRevisions: DataTableProps<Temperature> = { ...emptyStandalone, rowAnimationRevisions: new Map([['cold-room', 'next']]) };
 // @ts-expect-error Container refs identify the card element, not an action button.
 export const wrongContainerRef: DataTableProps<Temperature> = { ...emptyStandalone, containerRef: createRef<HTMLButtonElement>() };
 // @ts-expect-error A header replacement must return renderable content.

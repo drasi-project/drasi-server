@@ -20,7 +20,7 @@ export function simulatedQuery(status: QueryStatus, rows: Reading[], retry: () =
     data: status === 'initial-loading' ? null : status === 'empty' ? [] : rows,
     status,
     stale,
-    loading: ['initial-loading', 'reconnecting', 'resynchronizing'].includes(status),
+    loading: status === 'initial-loading',
     error: status === 'terminal-error' ? new DrasiError('INVALID_PAYLOAD') :
       status === 'stale-last-good-data' ? new DrasiError('SERVER_UNAVAILABLE') : null,
     errorScope: status === 'terminal-error' || status === 'stale-last-good-data' ? 'query' : null,

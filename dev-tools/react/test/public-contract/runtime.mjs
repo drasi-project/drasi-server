@@ -57,6 +57,13 @@ const queryOptions = {
 function checkProviderFreeTables(api) {
   assert.equal(typeof api.DataTable, 'function');
   assert.equal(typeof api.queryTableState, 'function');
+  for (const name of ['DataTable', 'QueryTable', 'queryTableState', 'CodeIcon', 'ExpandIcon', 'CollapseIcon']) {
+    assert.equal(api[name].name, name, `Public/debug component name changed: ${name}`);
+  }
+  assert.throws(() => api.queryTableState(null, () => {}), error => {
+    assert.match(error.stack, /src[/\\]components[/\\]QueryTable\.tsx:\d+:\d+/, 'Published source map did not locate the original source');
+    return error instanceof TypeError;
+  });
   for (const name of ['CodeViewerDialog', 'formatQueryConfig', 'QueryInspector']) {
     assert.equal(api[name], undefined, `App-owned tutorial API leaked: ${name}`);
   }
@@ -70,7 +77,7 @@ function checkProviderFreeTables(api) {
     Object.freeze({ routeId: 'east', parcels: 3 }),
   ]);
   const columns = Object.freeze([
-    { key: 'routeId', label: 'Route' },
+    { key: 'routeId', label: 'Route', align: 'left' },
     { key: 'parcels', label: 'Parcels', align: 'right' },
     { key: 'summary', label: 'Summary', sortable: false, format: (_value, row) => `${row.routeId} delivery` },
   ]);
@@ -84,6 +91,7 @@ function checkProviderFreeTables(api) {
     defaultSort: { column: 'parcels', direction: 'asc' },
     animateOnChange: 'parcels',
     rowAnimations: new Map([['south', 'up']]),
+    rowAnimationRevisions: new Map([['south', 2]]),
     headerActions: React.createElement('span', null, 'Dispatch desk'),
     headerControls: React.createElement('button', { type: 'button' }, 'Export'),
     headerSlot: React.createElement('p', null, 'App-supplied rows'),
@@ -115,6 +123,7 @@ function checkProviderFreeTables(api) {
   assert.equal((html.match(/class="drasi-query-table__sort-button"/g) ?? []).length, 2);
   assert(!/<th\b[^>]*(?:role="button"|tabindex=)/i.test(html), 'Headings must not replace native sort buttons');
   assert.match(html, /<th[^>]*scope="col"[^>]*><span class="drasi-visually-hidden">Actions<\/span><\/th>/);
+  assert.match(html, /<td class="[^"]*drasi-align--left[^"]*">north<\/td>/);
   assert(html.includes('drasi-row--up'));
   assert(!html.includes('View code') && !html.includes('Expand table'));
 
@@ -167,6 +176,18 @@ function checkProviderFreeTables(api) {
   ]) {
     assert.throws(() => render({ height }), TypeError, `Invalid height was accepted: ${String(height)}`);
   }
+  const mixed = [{ routeId: 'two', parcels: 2 }, { routeId: 'ten', parcels: 10 }, { routeId: 'text', parcels: '11' }];
+  for (let index = 0; index < mixed.length; index++) {
+    const mixedHtml = render({ rows: mixed.slice(index).concat(mixed.slice(0, index)), sort: { column: 'parcels', direction: 'asc' } });
+    assert(mixedHtml.indexOf('two delivery') < mixedHtml.indexOf('ten delivery'));
+    assert(mixedHtml.indexOf('ten delivery') < mixedHtml.indexOf('text delivery'));
+  }
+  const textHtml = render({
+    rows: [{ routeId: 'z', parcels: 'Z' }, { routeId: 'accent', parcels: '\u00c4' }, { routeId: 'a', parcels: 'A' }],
+    sort: { column: 'parcels', direction: 'asc' },
+  });
+  assert(textHtml.indexOf('a delivery') < textHtml.indexOf('accent delivery'));
+  assert(textHtml.indexOf('accent delivery') < textHtml.indexOf('z delivery'));
 
   const error = new Error('Warehouse refresh unavailable');
   for (const scenario of [
@@ -256,6 +277,7 @@ try {
     for (const name of ['DrasiClient', 'DrasiSSEClient', 'DrasiError',
       'accumulateResult', 'sse034ResultAdapter', 'createLegacyResultAdapter']) {
       assert.equal(typeof api[name], 'function', `Missing ${name} from client export`);
+      assert.equal(api[name].name, name, `Public/debug client name changed: ${name}`);
     }
     for (const name of ['DataTable', 'QueryTable', 'Modal', 'useReducedMotion']) {
       assert.equal(api[name], undefined, `React/UI API leaked through the client runtime: ${name}`);
@@ -360,6 +382,12 @@ try {
       checkProviderFreeModal(api);
     }
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
+    for (const name of [
+      'DrasiProvider', 'useDrasiClient', 'useDrasiQuery', 'useDrasiConnectionStatus',
+      'useDrasiServerUiUrl', 'useDrasiQueryDefinition', 'useRowAnimation', 'useTableSort',
+    ]) {
+      assert.equal(hooks[name].name, name, `Public/debug React binding name changed: ${name}`);
+    }
     function HeadlessConsumer() {
       const initial = hooks.useTableSort({ defaultSort: { column: 'priority', direction: 'desc' } });
       const controlled = hooks.useTableSort({ sort: null, defaultSort: { column: 'priority', direction: 'asc' } });
@@ -374,6 +402,7 @@ try {
         rowKey: row => row.id, getValue: row => row.priority,
       });
       assert.equal(animation.animations.size, 0);
+      assert.equal(animation.revisions.size, 0);
       return React.createElement('span', null, 'provider-free sort controller');
     }
     assert(server.renderToString(React.createElement(HeadlessConsumer)).includes('provider-free sort controller'));
@@ -436,7 +465,16 @@ try {
             return React.createElement('span', null, 'query state slot');
           },
         }));
-    const html = server.renderToString(React.createElement(hooks.DrasiProvider, options, child));
+    const renderErrors = [];
+    const originalError = console.error;
+    let html;
+    try {
+      console.error = (...args) => { renderErrors.push(args); };
+      html = server.renderToString(React.createElement(hooks.DrasiProvider, options, child));
+    } finally {
+      console.error = originalError;
+    }
+    assert.deepEqual(renderErrors, [], `${specifier} emitted server-rendering warnings/errors`);
     assert(html.includes('idle SSR consumer'));
     if (kind !== 'react') {
       assert(html.includes('Warehouse temperatures'));

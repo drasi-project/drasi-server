@@ -15,9 +15,14 @@ test('explicit simulation renders every state, useful stale rows and determinist
   for (const status of ['initial-loading', 'empty', 'live', 'reconnecting', 'resynchronizing', 'stale-last-good-data', 'terminal-error']) {
     await state.selectOption(status);
     await expect(page.getByText(`Simulated query: ${status}`, { exact: false })).toBeVisible();
+    await expect(page.getByRole('status', { name: 'Loading', exact: true })).toHaveCount(status === 'initial-loading' ? 1 : 0);
     if (status === 'initial-loading') await expect(page.getByRole('table')).toHaveCount(0);
     else if (status === 'empty') await expect(page.getByText('No simulated readings.')).toBeVisible();
     else await expect(page.getByRole('cell', { name: 'sim-probe-101', exact: true })).toBeVisible();
+    if (['reconnecting', 'resynchronizing', 'stale-last-good-data', 'terminal-error'].includes(status)) {
+      await expect(page.getByRole('row')).toHaveCount(3);
+      await expect(page.getByText(`Simulated query: ${status} (last-good data)`, { exact: true })).toBeVisible();
+    }
     await audit(page, info, status);
   }
   await page.getByRole('button', { name: 'Retry simulated query' }).click();
