@@ -1,4 +1,4 @@
-.github/workflows/*.lock.yml linguist-generated=true merge=ours
+.github/workflows/*.lock.yml linguist-generated=true
 
 # Always check out shell scripts with LF line endings, regardless of the
 # host's core.autocrlf setting. Bash treats a trailing CR as part of the
