@@ -343,7 +343,16 @@ try {
             return React.createElement('span', null, 'query state slot');
           },
         }));
-    const html = server.renderToString(React.createElement(hooks.DrasiProvider, options, child));
+    const renderErrors = [];
+    const originalError = console.error;
+    let html;
+    try {
+      console.error = (...args) => { renderErrors.push(args); };
+      html = server.renderToString(React.createElement(hooks.DrasiProvider, options, child));
+    } finally {
+      console.error = originalError;
+    }
+    assert.deepEqual(renderErrors, [], `${specifier} emitted server-rendering warnings/errors`);
     assert(html.includes('idle SSR consumer'));
     if (kind !== 'react') {
       assert(html.includes('Warehouse temperatures'));

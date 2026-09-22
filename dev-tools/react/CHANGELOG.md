@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Prevent suspended or abandoned concurrent option renders from changing the
+  active query's raw key callback. Publish committed keys before layout-phase
+  event delivery without recreating subscriptions/sockets or adding SSR
+  browser-global probes/layout-effect warnings. Committed projection changes
+  and hidden raw-row retention remain reactive.
+- Preserve explicit SSE endpoint path/query trailing slashes, including signed
+  or opaque query values, instead of applying server-base trimming to them.
+  Provider identity uses the same separation: equivalent server bases stay
+  stable, while meaningful endpoint changes replace the connection. Existing
+  URL safety validation, authentication and read-only ownership are unchanged.
+
 ### Parent integration
 - Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
   host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)

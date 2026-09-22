@@ -19,7 +19,7 @@ import type {
   ResultReconciliationOptions, ResultRow,
 } from './types';
 import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
-import { instancePath, isIdentifier, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
+import { instancePath, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
 import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
 import { subscribeToQuery } from './subscription';
 
@@ -78,8 +78,7 @@ export class DrasiClient {
         new Set(options.queryIds).size !== options.queryIds.length || !isIdentifier(options.reaction?.id)) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
-    this.baseUrl = validateHttpUrl(options.serverUrl, details);
-    if (new URL(this.baseUrl).search) throw new DrasiError('INVALID_CONFIGURATION', details);
+    this.baseUrl = normalizeServerUrl(options.serverUrl, details);
     this.reaction = {
       id: options.reaction.id,
       endpoint: validateHttpUrl(options.reaction.endpoint, details),
