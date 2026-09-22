@@ -245,7 +245,7 @@ describe('QueryTable', () => {
     expect(format).toHaveBeenCalled();
   });
 
-  it('retains string, mixed-value and null ordering without coercing raw cells', async () => {
+  it('orders numbers before text and preserves null ordering without coercing raw cells', async () => {
     interface Row { code: string; value: unknown }
     const table = renderTable<Row>({
       queryId: 'stocks',
@@ -263,9 +263,9 @@ describe('QueryTable', () => {
     await table.connect();
     const codes = () => screen.getAllByRole('row').slice(1)
       .map(row => within(row).getAllByRole('cell')[0].textContent);
-    expect(codes()).toEqual(['ten', 'two', 'numeric', 'null', 'missing']);
+    expect(codes()).toEqual(['numeric', 'ten', 'two', 'null', 'missing']);
     expect(screen.getAllByText('-')).toHaveLength(2);
     fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
-    expect(codes()).toEqual(['null', 'missing', 'numeric', 'two', 'ten']);
+    expect(codes()).toEqual(['null', 'missing', 'two', 'ten', 'numeric']);
   });
 });

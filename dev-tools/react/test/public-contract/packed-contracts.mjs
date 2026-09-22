@@ -416,7 +416,7 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
     await copyFile(join(fixtures, 'runtime.mjs'), runner);
     for (const kind of kinds) {
       for (const format of ['esm', 'cjs']) {
-        run(process.execPath, [runner, kind, format], directory, 30_000);
+        run(process.execPath, ['--enable-source-maps', runner, kind, format], directory, 30_000);
       }
     }
     const fixtureNames = directory === clientOnly ? ['client'] : ['hooks', 'components'];

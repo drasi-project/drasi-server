@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Compact generated whitespace while preserving syntax, identifiers, debug/
+  component names, source maps/content and the complete package inventory.
+  Original baselines remain; Trading TESTING.md records the separately
+  user-approved, fixed 110-byte P5 Trading gzip allowance.
+- Make table ordering transitive: numeric values precede fixed-English text
+  representations, then nullish values; handle NaN, infinities and stable ties.
+  Use explicit en-US variant/numeric:false collation for SSR/hydration rather
+  than ambient locale, preserving Trading's English name ordering.
+- Apply explicit left alignment to body cells as well as headings; omitted
+  body alignment still inherits. Cover real cross-locale hydration, host
+  alignment and mixed-order permutations without changing original images.
 - Prevent suspended or abandoned concurrent option renders from changing the
   active query's raw key callback. Publish committed keys before layout-phase
   event delivery without recreating subscriptions/sockets or adding SSR

@@ -29,7 +29,7 @@ export interface ColumnDef<T extends object = Record<string, unknown>> {
   format?: (value: unknown, row: T) => ReactNode;
   /** Whether this column is sortable (default: true). */
   sortable?: boolean;
-  /** Text alignment (default: 'left'). */
+  /** Explicit cell/header alignment. Omitted: header left, body inherits. */
   align?: 'left' | 'center' | 'right';
   /** Additional CSS classes; callbacks receive the raw value and typed row. */
   className?: string | ((value: unknown, row: T) => string);

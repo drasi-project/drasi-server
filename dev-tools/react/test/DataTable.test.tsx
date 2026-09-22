@@ -140,7 +140,7 @@ describe('provider-free DataTable', () => {
   it.each([
     { values: [12, 3, -1, 3], expected: ['2', '1', '3', '0'] },
     { values: ['b', 'a', 'c', 'a'], expected: ['1', '3', '0', '2'] },
-    { values: [null, '10', undefined, 2, '2'], expected: ['1', '3', '4', '0', '2'] },
+    { values: [null, '10', undefined, 2, '2'], expected: ['3', '1', '4', '0', '2'] },
   ])('preserves numeric/string/null/mixed comparisons and stable ties: $values', ({ values, expected }) => {
     render(<DataTable
       rows={Object.freeze(values.map((value, index) => Object.freeze({ code: String(index), value })))}

@@ -121,6 +121,12 @@
     "esmDeclarations": 37834,
     "commonJsDeclarations": 37851
   },
+  "approvedP5TradingJsGzipAllowance": {
+    "bytes": 110,
+    "baselineSizesSha256": "5e8ad7efb5c8f9dc59ad0308844c5643bdaf2e5d81d7f5fd24fdefaee249ba15",
+    "approval": "Actual user approved the documented one-time allowance on 2026-09-21 for P5 quality fixes in #208 / #164 Part A.",
+    "reason": "Only tradingJsGzip may use 74133 * 1.02 + 110 = 75725.66. The observed 75725 bytes failed the original cap by 109.34 bytes; 75726 must still fail. Original sizes, historical records, every other metric, coverage, behavior, images and human accessibility policy are unchanged. This fixed allowance must not compound or carry to a distinct later-layer baseline."
+  },
   "coverage": {
     "package": {
       "statements": 62.52,

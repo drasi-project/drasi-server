@@ -105,6 +105,11 @@ interface Delivery {
   parcels: number;
 }
 
+export const explicitLeft: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'left' };
+export const inheritedAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station' };
+// @ts-expect-error Alignment remains the existing physical left/center/right contract.
+export const unsupportedLogicalAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'start' };
+
 export const columns: ColumnDef<Temperature>[] = [{
   key: 'celsius', label: 'Temperature', align: 'right', sortable: true,
   format(value, row) {
