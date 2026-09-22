@@ -21,7 +21,11 @@ projection, including sparse deletes; the view's `rowKey` is separate.
 
 This **server-free** path needs Node and the frontend dependencies, not Rust,
 Drasi Server, Python, plugins, a database or registry access for plugin setup.
-From the repository root:
+The checkout commands below use the tested **Node 24.19.0 / npm 11.17.0**
+copied-local install. For **Node 22.20.0 / npm 10.9.3**, use the
+[source-free tarball path](#build-and-install-boundaries), then run
+`node test/preview.mjs` from its `examples/react` directory.
+From the repository root on the copied-local setup:
 
 ```sh
 npm --prefix dev-tools/react ci --ignore-scripts
@@ -60,6 +64,11 @@ Linux builds
 also need libjq/Oniguruma development libraries as documented there.
 No database, Trading API or Docker container is needed by this example.
 
+The local checkout commands below use **Node 24.19.0 / npm 11.17.0**.
+For **Node 22.20.0 / npm 10.9.3**, build the backend/package explicitly, then
+use the [tarball consumer](#build-and-install-boundaries) and its `npm start`
+command. That npm 10.9.3 directory-copy path invokes package `prepare` despite
+`--ignore-scripts`; it is not accepted as lifecycle-free installation.
 From the repository root:
 
 ```sh
@@ -179,7 +188,8 @@ These seed data are disposable; this is not a production durability demo.
 
 ## Build and install boundaries
 
-The example's `file:` dependency still resolves **public built exports**.
+The example's `file:` dependency still resolves **public built exports** on
+the tested npm 11.17.0 copied-local path.
 Its `.npmrc` enables npm's `install-links`: the local dependency is packed
 into a regular installed directory rather than linking to the package's
 development dependencies. Always use `--ignore-scripts`; rebuild the package

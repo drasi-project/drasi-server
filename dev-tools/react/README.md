@@ -17,7 +17,7 @@ repository transfer or separate framework-agnostic package is implied.
 
 | Task | Start here |
 | --- | --- |
-| Install into an existing app | [Copied-local or tarball installation](#installation-and-entrypoints); build first and keep one React identity. |
+| Install into an existing app | [Portable tarball installation](#installation-and-entrypoints); build first and keep one React identity. |
 | Display rows you already own | [Provider-free DataTable](#provider-free-datatable); no Drasi provider or connection. |
 | Display one live query quickly | [DrasiProvider + QueryTable quickstart](#quickstart); provision references separately. |
 | Build cards or custom markup | [Hooks-only UI](#hooks-only-ui-and-scoped-retry); no presentation/CSS import required. |
@@ -41,44 +41,21 @@ layout and extra announcements.
 
 ## Installation and entrypoints
 
-**Use a copied local install or a tarball, not npm's default symlink for a
-directory `file:` dependency.** A symlink can resolve the package's development
-React separately from your renderer and fail with an invalid hook call even
-when both copies report 18.3.1. Both recipes share the consumer's React.
+**Portable: install a built tarball**, tested on Node 22.20.0 /
+npm 10.9.3 and Node 24.19.0 / npm 11.17.0. A default directory `file:` symlink
+can resolve the package's development React separately from your renderer,
+causing invalid hook calls even when both copies report 18.3.1.
 
 First build explicitly from the repository root:
 
 ```sh
 npm --prefix dev-tools/react ci --ignore-scripts
 npm --prefix dev-tools/react run build
-```
-
-Then choose **one** recipe from your application's directory. Set the path to
-your actual built package folder or tarball; these commands also install the
-measured renderer peers.
-
-Copied-local installation:
-
-```sh
-# @drasi-install: copied-local
-DRASI_PACKAGE_DIR="/absolute/path/to/drasi-server/dev-tools/react"
-npm install --save-exact --ignore-scripts --install-links "$DRASI_PACKAGE_DIR" react@18.3.1 react-dom@18.3.1
-```
-
-`--install-links` packs the directory's distributable files into a regular
-installed directory instead of symlinking its development environment.
-Keep that setting on subsequent installs/CI (`npm ci --ignore-scripts --install-links`);
-optionally put `install-links=true` in the **consumer project's** `.npmrc`,
-not global npm configuration. Trading retains its repository-local `file:`
-dependency; a bare `file:` declaration alone is not single-React guidance.
-
-Alternatively, pack the already-built package from the repository root:
-
-```sh
 (cd dev-tools/react && npm pack --ignore-scripts --pack-destination ../..)
 ```
 
-Then install the printed archive (currently `drasi-react-0.1.0.tgz`):
+From your application's directory, install the printed archive and renderer
+peers, using the actual path:
 
 ```sh
 # @drasi-install: tarball
@@ -86,13 +63,34 @@ DRASI_PACKAGE_TARBALL="/absolute/path/to/drasi-server/drasi-react-0.1.0.tgz"
 npm install --save-exact --ignore-scripts "$DRASI_PACKAGE_TARBALL" react@18.3.1 react-dom@18.3.1
 ```
 
+Optional copied-local alternative, **Node 24.19.0 / npm 11.17.0 only**:
+
+```sh
+# @drasi-install: copied-local (Node 24.19.0, npm 11.17.0)
+DRASI_PACKAGE_DIR="/absolute/path/to/drasi-server/dev-tools/react"
+npm install --save-exact --ignore-scripts --install-links "$DRASI_PACKAGE_DIR" react@18.3.1 react-dom@18.3.1
+```
+
+The tested Node 22.20.0 / npm 10.9.3 directory-copy path invokes `prepare`
+despite `--ignore-scripts`, even with command-scoped ignore propagation.
+That mode is unsupported: use the tarball, not a lifecycle bypass. This is an
+observation of **npm 10.9.3**, not every npm 10 release.
+
+On the supported copied-local setup, `--install-links` installs distributable
+files rather than a development symlink. Retain it for reinstall/CI with
+`npm ci --ignore-scripts --install-links`, or set `install-links=true` in the
+consumer project's `.npmrc`, never global config. Trading's existing local
+dependency/startup and the package's `prepare` behavior are unchanged.
+
 A client-only application can instead install the same tarball with
 `npm install --save-exact --ignore-scripts --omit=peer /path/to/drasi-server/drasi-react-0.1.0.tgz`
 and use only `/client`. Commit the consumer lockfile. These are **local-file
 installs**, not instructions to fetch an available `@drasi/react` npm release.
 No source aliases, Tailwind source scanning or install-time rebuilding are
-needed. Fresh minimal consumers execute these literal recipes from the
-installed README and render public controls in ESM/CommonJS with React 18.3.1.
+needed by supported recipes. Fresh minimal consumers execute the installed
+README commands and render ESM/CommonJS controls with one React 18.3.1 identity.
+Unsupported directory modes are executed negative controls, not successful
+installs or skipped validation.
 
 Copied installs are snapshots: rebuild, then reinstall. `npm install` may
 treat an unchanged-version file dependency as satisfied. Use the copied-install

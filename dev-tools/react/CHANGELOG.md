@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- P7 copied-local/tarball onboarding now enforces the tested single-React
-  install boundary; fresh minimal consumers execute the installed recipes and
-  server-render public controls. Simulation loading matches the hook contract.
+- P7 uses portable tarball-first and version-scoped copied-local installation
+  with one React identity; fresh minimal consumers execute the installed
+  recipes and server-render public controls. Simulation loading matches the hook contract.
 - Add task-first navigation, subscriber-state/computation guidance, corrected
   historical evidence links and an explicitly server-free showcase recipe;
   no query-cache, virtualization or new runtime/platform promise is introduced.
