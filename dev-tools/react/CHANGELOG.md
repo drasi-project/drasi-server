@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compact generated whitespace while preserving syntax, identifiers, debug/
   component names, source maps/content and the complete package inventory.
   Original baselines remain; Trading TESTING.md records the separately
-  user-approved, fixed 110-byte P5 Trading gzip allowance.
+  user-approved, fixed 110-byte P5 Trading gzip allowance, not applied to P6/P7.
 - Make table ordering transitive: numeric values precede fixed-English text
   representations, then nullish values; handle NaN, infinities and stable ties.
   Use explicit en-US variant/numeric:false collation for SSR/hydration rather
@@ -46,7 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stable, while meaningful endpoint changes replace the connection. Existing
   URL safety validation, authentication and read-only ownership are unchanged.
 
-### Parent integration
+### Current development-source integration
+- Adopt the approved engine 0.5.9 source `211d0f2a` and registry library 0.9.2,
+  SDK 0.11.2, index 0.6.3 and signed SSE 0.3.7 / ABI 0.14 by normal merge.
+  Only engine/AST/Cypher use paths; sibling SDKs remain unused.
+- Keep the quality fixes/tests above, P3/P4 contracts, P6 overlay/focus/theme/
+  sizing/motion/complete-graph SSR, P7's 16 recipes/independent entries,
+  budgets and accessibility history.
+- Require own rebuilt-runtime/packed/browser/live proof; `1284e9f` / library
+  0.9.1 / ABI 0.13 results stay historical. The temporary pin is not a release,
+  library-codec adoption or stored-data repair guarantee.
+
+### Historical ABI 0.13 parent integration
 - Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
   host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
   runtime while retaining the reviewed engine correction and all P3/P4 contracts.

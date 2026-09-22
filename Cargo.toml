@@ -47,7 +47,7 @@ drasi-lib = { version = "0.9.1", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.5.8"
+drasi-core = "0.5.9"
 
 # Core bootstrap providers (used by the application API)
 drasi-bootstrap-noop = "0.2.12"
@@ -57,7 +57,7 @@ drasi-bootstrap-application = "0.2.12"
 drasi-reaction-application = "0.3.10"
 
 # Index plugins
-drasi-index-rocksdb = "0.6.1"
+drasi-index-rocksdb = "0.6.3"
 
 # State store plugins
 drasi-state-store-redb = "0.2.5"
@@ -66,10 +66,10 @@ drasi-state-store-redb = "0.2.5"
 drasi-wal-redb = "0.2.8"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.11.0"
+drasi-plugin-sdk = "0.11.2"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.11.0", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { version = "0.11.2", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -126,7 +126,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.5.8"
+drasi-core = "0.5.9"
 
 [lints.rust]
 warnings = "deny"
@@ -151,7 +151,7 @@ type_complexity = "allow"
 large_enum_variant = "allow"
 
 
-# Compatible backport: drasi-project/drasi-core#933 and drasi-project/drasi-core#934.
+# Temporary development source: drasi-project/drasi-core#810, not a released fix.
 # `make prepare-core` verifies the exact revision in .drasi-core-revision.
 # All three overrides keep engine/parser types unified; library and SDK stay registry-sourced.
 [patch.crates-io]

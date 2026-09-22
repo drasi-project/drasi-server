@@ -52,14 +52,20 @@ the preview without substituting it for actual runtime or human AT evidence.
 ## Run the real example
 
 Use Node **22.20.0** or **24.19.0**, React/React DOM **18.3.1**, the repository's
-Rust toolchain, Python **3.11+** and access to GHCR/Sigstore. The tested server
-setup is the approved server **0.2.3**, registry library **0.9.1** and
-host/plugin/FFI crates **0.11.0** with the same exact engine correction.
-Signed plugins from merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
-use plugin SDK **0.11.1** and actual native ABI **0.13.0**, including SSE
-**0.3.6**, HTTP source **0.2.11** and scriptfile bootstrap **0.2.13**.
+Rust toolchain, Python **3.11+** and access to GHCR/Sigstore. The current
+development setup selects server **0.2.3**, registry library **0.9.2** and
+host/plugin/FFI crates **0.11.2**. Only engine **0.5.9**, AST **0.3.5** and
+Cypher **0.3.6** use the user-approved temporary source
+`211d0f2a79aa2ad0f7cb841937f52013fe95ded6` from drasi-project/drasi-core#810.
+The sibling's equal-version SDKs are not consumed.
+Signed plugins from merged release `70ca432c0f12623ab9b371b2d515180ccc80c2dd`
+use SDK **0.11.2** and native ABI **0.14.0**, including SSE **0.3.7**,
+HTTP source **0.2.12** and scriptfile bootstrap **0.2.14**.
 See [the approved runtime and immutable pin provenance](../../docs/main-runtime-integration.md).
-Earlier server 0.2.1 / ABI 0.11 evidence is historical, not a startup fallback.
+Earlier ABI 0.11/0.13 evidence is historical, not a startup fallback.
+The temporary engine pin is not a released fix or a stored-data repair:
+registry library 0.9.2 does not consume drasi-project/drasi-core#909's codec
+change or the new outbox trim methods. No core merge/publication is implied.
 Linux builds
 also need libjq/Oniguruma development libraries as documented there.
 No database, Trading API or Docker container is needed by this example.
