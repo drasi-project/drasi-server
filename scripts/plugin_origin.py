@@ -16,9 +16,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 SDK_PACKAGES = ("drasi-host-sdk", "drasi-plugin-sdk", "drasi-ffi-primitives")
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
-REGISTRY_SDK_VERSION = "0.11.0"
-REGISTRY_LIB_VERSION = "0.9.1"
-PLUGIN_ABI_VERSION = "0.13.0"
+REGISTRY_SDK_VERSION = "0.11.2"
+REGISTRY_LIB_VERSION = "0.9.2"
+PLUGIN_ABI_VERSION = "0.14.0"
 
 
 class PluginOriginError(Exception):
