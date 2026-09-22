@@ -4,7 +4,7 @@ This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-serv
 Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
 at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
 separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
-at `7b9601784f37ca3680359b7fc29a52f9f286d15f`. It protects the existing Trading
+at `650ae978b2d23832c2370f172d4a530bc76e4e0f`. It protects the existing Trading
 application, not a second demo. P1 does not redesign its query, package API,
 CSS or components. The reviewed engine/security/source-backed setup changes
 come from B1, whose history and policies are retained.
@@ -18,9 +18,11 @@ checks or the entire unused core workspace are green, nor merge authorization.
 
 P2 ([#162](https://github.com/drasi-project/drasi-server/issues/162)) originally
 built on P1 `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`. Its normal parent update
-now incorporates exact P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18`, including
-the approved main-runtime and official signed-plugin changes below, while
-retaining original P2 `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97` ancestry.
+now incorporates exact P1 `74bebe2e585946ac52fce9b37473790b7c377bea`, including
+the approved newer-main graph, temporary `211d0f2a` engine source and official
+ABI 0.14 plugins below. Original P2
+`3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97` and its prior normal-update
+`5a24356384a96e396e468e44af9b339fb9005d3b` ancestry are retained.
 The package still
 connects to explicit existing references with GETs only; Trading owns automatic
 setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
@@ -28,9 +30,11 @@ setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
 
 P3 ([#163 Part A](https://github.com/drasi-project/drasi-server/issues/163))
 originally built on P2 `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97`.
-Its normal parent integration retains original P3
-`a0569c2ae7b17f51996f431cf2264c636a19f3d1` and incorporates exact updated
-P2 `f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467`, without importing P4-P7.
+Its current normal parent integration retains original P3
+`a0569c2ae7b17f51996f431cf2264c636a19f3d1`, the earlier integrations and
+endpoint-identity fix `5a198eb3d6b50ce61cdd306173698faa12e6682b`, and incorporates
+exact updated P2 `d784446d7e2ca369c2ae0a3e3c560455d54369a6`.
+No P4-P7 product code is imported.
 It completes the public client/transport/type/entrypoint and material
 configuration contract. P3's historical passes do not imply acceptance of the
 later Part B identity, canonical-delta or snapshot/reconnect/stale contracts.
@@ -38,12 +42,13 @@ The Part B consumer changes and focused proof obligations are described below;
 the measured historical evidence remains unchanged.
 
 P4 normally integrates exact updated P3
-`39f82c9e7124c512eaad2047bda3222732387297`, retaining original P4
-`20561c13dd74929855dfbe605bb1fac23e5a49f4` ancestry and the complete result,
-identity, adapter and bounded-recovery contract. This brings the approved
-server 0.2.3 / SSE 0.3.6 / ABI 0.13 runtime into the owning P4 branch, not
-P5-P7 product features. Current evidence is recorded separately from the
-original ABI 0.11 captures and historical measurements below.
+`887ff332df02b6d42a56a97a853a3522ec7e42db`, retaining original P4 ancestry and
+the commit-phase query-key correction at
+`2b9890b1adb056bdb419cf94fdd6a701cef53479`. The complete identity, adapter,
+reactive-projection and bounded-recovery contract stays intact. Current
+`211d0f2a` / registry library 0.9.2 / SDK 0.11.2 / ABI 0.14 evidence must be
+proved on this owning branch; earlier `1284e9f` / ABI 0.11 and 0.13 captures
+and measurements remain historical. No P5-P7 product code is imported.
 
 ## Behavior inventory, version 1
 
@@ -340,7 +345,7 @@ entrypoints and unused components.
 | Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
 | Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
 
-The app runner also includes seven native-version setup guards. These are
+The app runner also includes nine native-version setup guards. These are
 additional checks, not new Trading behavior coverage or changed product floors.
 
 Schema version 2 remeasures the same source and unchanged test scenarios using
@@ -464,28 +469,88 @@ rerendering replaces the client and closes the existing stream. The same real
 provider test passes on P3. No predecessor/other worktree was modified.
 Positive/negative packed type cases, malformed captured DTO mutations and
 auth/cross-instance cases complement the inherited business assertions.
-### P2 approved main-runtime update
 
-The normal merge of P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18` changes no
-P2 package or Trading runtime source. Its own rebuilt server/UI and new signed
-ABI 0.13 plugins pass the same real Trading scenario with the singleton totals
-above; the new raw capture has 17 SSE events with the observed envelope/result
+### P2 current development-source update
+
+The normal merge of P1 `74bebe2e585946ac52fce9b37473790b7c377bea` retains
+P2's reference-only, GET-only package and app-owned bounded/shared setup.
+Package and Trading runtime sources, query definitions, negative ownership
+cases, financial assertions, original images and complete artifact budgets
+are unchanged. The inherited source/runtime guards now require core 0.5.9,
+index 0.6.3 and registry SDK 0.11.2, rejecting the earlier versions.
+
+This selection needs its own rebuilt server/UI, signed ABI 0.14 plugins and
+actual browser/Trading evidence. The `211d0f2a` pin is temporary development
+source, not a released fix; the older `1284e9f` reports below are historical.
+Current commands, exact-head provenance and CI results are recorded on #205.
+Neither unchanged frontend bytes nor earlier lower-layer passes substitute
+for the current mixed graph's live proof.
+
+Own local verification passes 83 package tests, 66 Trading tests (57 existing
+plus nine runtime-version guards), nine artifact-policy tests and 54 tooling
+tests. The complete source-free Linux gate passes all 26 browser scenarios and
+five original exact PNG files with unchanged artifact bytes and coverage.
+The own rebuilt UI/default server passes 809 locked Rust tests / 32 existing
+ignores; full plugin-dependent testing passes 840 / one ignored doctest, with
+the separate legacy smoke still eight passes / 28 unconfigured skips.
+Formatting, strict Clippy and the selected host audit pass with 15 existing
+warnings, without suppressions or dependency changes beyond the inherited graph.
+
+The actual new-runtime Trading gate passes fresh setup, no-write reload and
+all CRUD/live/delete/reconnect assertions, including the unfiltered singleton
+2000/cost 1800/count 2 -> 2050 live/reload -> 2150 after reconnect. Its 17 raw
+SSE 0.3.7 events retain the observed `queryId`/`results`/`timestamp` envelope
+and `ADD`/`DELETE`/`UPDATE`/`aggregation` shapes; aggregation has `before`/`after`
+without `data`. This is observed compatibility, not a stronger protocol claim.
+
+An initial local gate run concurrent with native builds failed the WebKit
+two-tab readiness assertion and differed by 454 pixels in the animated desktop
+ticker. Both diagnostics are retained. The full unchanged gate then passed
+without concurrent Rust work; no clock, readiness, timeout, assertion, image,
+query or artifact-budget adjustment was made. Fresh final-head CI remains
+separate evidence on #205.
+
+### Historical P2 ABI 0.13 main-runtime update
+
+The earlier normal merge of P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18`
+changed no P2 package or Trading runtime source. Its own rebuilt server/UI and
+signed ABI 0.13 plugins passed the real Trading scenario with the singleton totals
+above; that raw capture has 17 SSE events with the observed envelope/result
 shapes documented below. Earlier raw captures remain historical, not a substitute
 for this runtime proof.
 
-The updated layer passes 83 package tests, 64 Trading tests (57 existing plus
+That layer passed 83 package tests, 64 Trading tests (57 existing plus
 seven runtime-version guards), nine artifact-policy tests and 53 tooling tests.
-The source-free Linux gate passes all 26 browser scenarios and the original five
-exact PNG files. Locked Rust tests report 809 passes / 32 existing ignores;
-`make test-all` reports 840 passes / one existing ignored doctest, with the
+The source-free Linux gate passed all 26 browser scenarios and the original five
+exact PNG files. Locked Rust tests reported 809 passes / 32 existing ignores;
+`make test-all` reported 840 passes / one existing ignored doctest, with the
 separate limited plugin smoke reporting eight passes / 28 unconfigured skips.
-Strict Clippy/fmt and the selected host audit pass, retaining its 15 existing
-warnings. Final-head CI, binary/lock hashes and independent packed live proof
-are recorded on #205, rather than relabeling older results as current evidence.
+Strict Clippy/fmt and the selected host audit passed, retaining its 15 existing
+warnings. Its CI, binary/lock hashes and independent packed live proof remain
+in #205's historical evidence, not relabeled as proof for the newer runtime.
 
-### P3 approved main-runtime integration
+### P3 current development-source integration
 
-P3 normally merges exact updated P2
+The current P3 parent is
+`d784446d7e2ca369c2ae0a3e3c560455d54369a6`. Its source/setup/runtime selection
+is the same temporary `211d0f2a` / registry library 0.9.2 / SDK 0.11.2 /
+native ABI 0.14 graph described below. P3 retains all public entrypoints,
+React-free client runtime/type graphs, guarded reads, auth/cancellation and
+provider ownership/identity behavior. In particular, explicit endpoint
+path/query slashes remain significant while equivalent server bases do not
+churn the connection; all 17 endpoint regressions are unchanged.
+
+Older core 0.5.8 / `1284e9f` / ABI 0.13 results and fixtures stay historical,
+not current-runtime evidence. This graph must build its own embedded UI/default
+server before binary-launching tests and run the same raw financial/CRUD/live
+gates. Run timing-sensitive packed browser/visual checks after heavy native
+work, not concurrently. The same 2% artifact cap, source coverage floors,
+clock/readiness assertions, all 11 query definitions and five original images
+remain authoritative. Current proof and final-head CI belong to #206.
+
+### Historical P3 ABI 0.13 main-runtime integration
+
+The earlier P3 integration normally merged exact P2
 `f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467`, preserving its original
 `a0569c2ae7b17f51996f431cf2264c636a19f3d1` ancestry, public entrypoints,
 React-free client graph, guarded reads, auth/cancellation and configuration
@@ -502,8 +567,8 @@ keeps the same coverage floors and 2% growth rule. New source/lock/binary/live
 evidence belongs to #206; old runtime captures are not relabeled as 0.2.3
 or ABI 0.13 results.
 
-The own rebuilt merge source `5988b1d82cbb4d24dca2d4cb2763c0572d564bf4`
-passes the unchanged actual Trading flow on server 0.2.3, with singleton
+That own rebuilt merge source `5988b1d82cbb4d24dca2d4cb2763c0572d564bf4`
+passed the unchanged actual Trading flow on server 0.2.3, with singleton
 2000/cost 1800/count 2 -> 2050 live/reload -> 2150 offline/reconnect,
 CRUD/live/deletes and no recovery navigation. Its binary SHA-256 is
 `6327ce9a6e938451f50174d634efdf795f011044b5b8eeeafbd8204b74fb3b28`;
@@ -513,15 +578,15 @@ Actual full-view query/reaction/snapshot records are retained separately in
 `dev-tools/react/test/fixtures/server-v1-0.2.3/contract.json` and run through
 the same read-only guards as the original 0.2.1 records.
 
-Fresh checks report 221 package tests, 64 Trading tests, 12 artifact-policy
+Those checks reported 221 package tests, 64 Trading tests, 12 artifact-policy
 cases, 53 tooling tests, and 809 locked Rust passes / 32 existing ignores.
 Strict Clippy/fmt and the selected audit pass with zero vulnerabilities and
 15 retained warnings. The first local full Linux run had a 375-pixel mobile
 ticker-only difference; an unchanged targeted visual rerun and a subsequent
 full 26-scenario rerun passed all five original images. No product, screenshot,
 timeout, readiness or clock assertion was changed to obtain those passes.
-Final packed/current-head CI evidence is recorded on #206 rather than inferred
-from any lower owner's binary or an old plugin cache.
+Those packed/CI results remain in #206's historical evidence and do not
+validate the newer `211d0f2a` / ABI 0.14 selection.
 
 ### Historical P4 result/state contract cost
 
@@ -594,7 +659,7 @@ services were not touched. These are development proofs, not automatic
 merge/release authorization; the unchanged external YAML-agent model/HTTP-400
 blocker and configured skips must still be reported against the final PR head.
 
-### P4 approved parent integration and accounting
+### Historical P4 ABI 0.13 integration and accounting
 
 The normal merge retains P4's raw-key-before-projection semantics, sparse
 deletes, before/after identity changes, explicit adapters and query-scoped
@@ -613,15 +678,15 @@ budget is retained rather than replaced with the smaller P3 feature budget.
 Corrected P1/P2/P3 declaration totals remain 37,492 / 42,280 / 56,256.
 This changes neither product bytes nor the 2% policy or coverage floors.
 
-Current rebuilt-source and packed/browser/live results belong to #207. The
-historical P4 measurements and old runtime recordings are not relabeled as
-current evidence, and current ABI 0.13 guards must not be weakened to run an
+At that ABI 0.13 integration, rebuilt-source and packed/browser/live results
+belonged to #207. Those measurements and old runtime recordings are not
+relabeled as current evidence. Its ABI 0.13 guards were not weakened to run an
 old ABI 0.11 cache or historical image. Reproduce old results only with the
 complete matching historical harness/policy described below.
 
 The own default `target/debug/drasi-server` was rebuilt before Rust integration
 tests. Normal merge `3b39126ae36c9a0da96a4c0e29ad812b181636f6` has exact
-parents original P4 `20561c13` and approved P3 `39f82c9`. Its current
+parents original P4 `20561c13` and approved P3 `39f82c9`. That
 server 0.2.3 / library 0.9.1 / host SDK 0.11.0 / index 0.6.1 binary has SHA-256
 `eec11ff22242d354b05ef5fb65f1f5240c235a9906298c342d77276ab8feef2d`,
 with lock SHA-256
@@ -634,8 +699,8 @@ navigation or historical candidate rows. This is not a borrowed lower binary.
 All 17 raw CDP records from that run remain separate in
 `dev-tools/react/test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson`, with adjacent
 source/manifest/lock/binary/plugin provenance. Tests retain all old recording
-assertions and exercise these current records through the unchanged normalizer
-and default SSE transport. In particular, current lowercase aggregation carries
+assertions and exercise those records through the unchanged normalizer
+and default SSE transport. In particular, recorded lowercase aggregation carries
 before/after without `data`; numeric signatures still exceed JavaScript's safe
 integer range and are never row identity. No authoritative snapshot cursor,
 clock-based ordering or broader plugin compatibility is inferred.
@@ -663,6 +728,30 @@ Current-head CI and final provenance remain on #207; external workflow/model,
 configured-skip, embedded-plugin/legacy-workspace, npm/publication and human
 assistive-technology caveats are not converted into passed product claims.
 
+### P4 current development-source integration
+
+P4's normal merge of exact P3 `887ff332df02b6d42a56a97a853a3522ec7e42db`
+retains its original work and `2b9890b` concurrent-render correction. The
+captured raw `getKey` is still published only at commit before layout
+notifications. All four concurrent/StrictMode/committed-projection/no-churn
+regressions, 17 endpoint tests and packed SSR console/browser-global traps
+remain authoritative. No new shared cache, protocol, UI, query, recovery
+promise or historical-data filtering is introduced.
+
+The current source/runtime/pin policy below applies: clean temporary `211d0f2a`
+engine/parser source, registry SDK even when equal-version sibling SDKs exist,
+and the six official signed ABI 0.14 locks. Own embedded UI/default-server
+build precedes serial Rust tests; record the actual used binary hash after
+any test relink. Browser/visual work runs only after heavy native builds.
+Both installed Node versions and the source-free Trading frontend need fresh
+proof against this own runtime, not a lower owner's binary or old ABI cache.
+
+P3/P4 historical fixtures, all artifact histories, coverage floors, complete
+declaration/asset accounting and the existing 2% budget stay intact. Current
+head/source/binary/live/CI results belong to #207. The temporary source is not
+a released fix, library-codec adoption, legacy-data repair, broader recovery
+guarantee, publication or completed human assistive-technology acceptance.
+
 ## Mandatory real-server gate
 
 The primary gate builds the **checked-out server and its Cargo.lock**, not an
@@ -675,14 +764,25 @@ enabled in this browser run.
 ### Integrated source and shared setup
 
 Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
-`1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The default manifest selects only
-the sibling engine 0.5.8 / AST 0.3.5 / Cypher 0.3.6 paths. Registry library
-0.9.1, SDK/host/FFI 0.11.0, index 0.6.1 and GQL 0.3.6 stay selected with
-server 0.2.3. This is the full compatible source backport, not a published
-0.5.8 fix, the rejected
-0.5.9 hook API, or the earlier disposable three-file overlay. See
+`211d0f2a79aa2ad0f7cb841937f52013fe95ded6`, the user-approved existing source
+from drasi-project/drasi-core#810. This is a **temporary development source
+pin**, not a released fix or permission to merge/publish it. The default
+manifest selects only sibling engine 0.5.9 / AST 0.3.5 / Cypher 0.3.6.
+Library 0.9.2, SDK/host/FFI 0.11.2, index 0.6.3, functions 0.5.9, middleware
+0.5.10 and GQL 0.3.6 remain registry-sourced with server 0.2.3. Equal-version
+SDKs in the sibling workspace are not selected or permission to build plugins
+there. The older `1284e9f` / core 0.5.8 / ABI 0.13 reports are historical.
+See
 [B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md)
 and [the approved main-runtime matrix](../../docs/main-runtime-integration.md).
+
+Relative to released core 0.5.9, the selected source includes three aggregate
+production paths and two additive merged-main outbox paths, not only a
+three-file overlay. Registry library 0.9.2 calls `append`, not the new trim
+methods. Engine-only selection does not consume drasi-project/drasi-core#909's
+library codec change: compact MessagePack remains selected. These tests use
+fresh owned state and make no old-record repair, record-dropping, output-only
+clearing, persistence migration or general recovery claim.
 
 `source_provenance.py` invokes the shared source verifier and resolved-SDK
 policy, checks the caller's commit/lock and exact engine/parser origins, and
@@ -735,13 +835,14 @@ Rebuild the default server binary before Rust integration tests as well: some
 tests invoke `target/debug/drasi-server` directly. A build in another target
 directory or a handed-off B1 binary does not update that executable.
 
-The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.11**,
-PostgreSQL source **0.2.10**, SSE reaction **0.3.6**, and PostgreSQL/scriptfile
-bootstrappers **0.2.13** by immutable OCI manifest digest and binary SHA256.
+The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.12**,
+PostgreSQL source **0.2.11**, SSE reaction **0.3.7**, and PostgreSQL/scriptfile
+bootstrappers **0.2.14** by immutable OCI manifest digest and binary SHA256.
 They come from the merged official main release
-`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
-(drasi-project/drasi-core#789). Their SDK crate is **0.11.1**; it and the host
-SDK crate **0.11.0** both use the independently versioned C ABI **0.13.0**.
+`70ca432c0f12623ab9b371b2d515180ccc80c2dd`, publication run
+[35281678998](https://github.com/drasi-project/drasi-core/actions/runs/35281678998).
+Both plugin and host SDK crates are **0.11.2**, with independently versioned
+C ABI **0.14.0**. ABI 0.11/0.13 caches are incompatible, not fallbacks.
 The shared installer runs the existing
 `plugin install --from-config --locked` with `verifyPlugins: true` and
 independently checks every downloaded binary hash. Missing tools, wrong
@@ -790,12 +891,13 @@ branch's own rebuilt binary. The default gate must still prove singleton
 2000/cost 1800/count 2, live 2050, existing-resource reload 2050, and
 offline/reconnect 2150 without navigation or historical-row selection.
 
-Actual SSE 0.3.6 observations include `message` events with
+Historical SSE 0.3.6 observations include `message` events with
 `queryId`/`results`/`timestamp`, `ADD`, `DELETE`, `UPDATE` and lowercase
 `aggregation` results. Aggregation carries `before`/`after` without `data`;
 update also carries `data`. ABI compatibility alone does not establish wire
-compatibility. Retain each run's raw observations separately; do not normalize
-them into synthetic fixtures or infer guarantees for unexercised protocol paths.
+compatibility; current SSE 0.3.7 must pass the actual gate independently.
+Retain each run's raw observations separately; do not normalize them into
+synthetic fixtures or infer guarantees for unexercised protocol paths.
 
 ### Older image comparison, not a passing fallback
 
@@ -805,7 +907,7 @@ commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`, including its matching
 platform locks and shared ABI-verification policy, then run
 `P1_RUNTIME=image npm --prefix examples/trading/app run test:live` there.
 Overriding only `P1_PLUGIN_LOCK` in the current checkout is insufficient: the
-current shared ABI 0.13 verifier correctly rejects that image's ABI 0.11 before
+current shared ABI 0.14 verifier correctly rejects that image's ABI 0.11 before
 the financial scenario. Do not weaken the current policy to run the old image.
 Neither the image pin nor the original failure recordings have been rewritten.
 That image is version 0.2.1 but comes from commit
@@ -884,9 +986,11 @@ expected results. They are never substituted for live responses.
 
 This historical defect is tracked by the existing
 [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680).
-The separately approved source prerequisite now comes from #204 and
-[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934).
-No released fix or data migration is claimed. The current gate must prove the
+The earlier compatible prerequisite used
+[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934);
+its reports remain historical. The current #204 development prerequisite uses
+the exact `211d0f2a` source from drasi-project/drasi-core#810 with the newer
+registry graph. No released fix or data migration is claimed. The current gate must prove the
 correct singleton 2000 -> live/reload 2050 -> offline/reconnect 2150 result on
 this branch's own rebuilt server; earlier handed-off binary results are not a
 substitute.
@@ -900,11 +1004,13 @@ results and cleanup. `make test-all` retains the original smoke script: its
 presented as coverage of every plugin. No new skips or expected failures are
 added to the mandatory Trading gate.
 
-The unchanged YAML agent can fail HTTP 400 for an unsupported model before
-validation. That is external infrastructure, not a passed check or a reason
-to change models/credentials here. The selected server audit reports zero
-vulnerabilities with 15 existing warnings; the unused legacy core workspace's
-h2/Azure findings remain red and are not waived. See
+Classify YAML from the actual current workflow and run. Newer main gates the
+agent to the top stack layer, so this layer normally skips it: that is not
+executed validation, a pass, or the older HTTP 400/504 outcome. Historical
+infrastructure failures remain recorded; no model/credential changes or
+approval bypass is made here. The selected host audit and its 15 existing
+warnings are distinct from unused-workspace findings and dependencies embedded
+in signed plugin binaries; no broader audit pass is inferred. See
 [the scoped server security disposition](../../docs/server-security-dependencies.md).
 These caveats remain visible when discussing readiness for dependent
 development; they do not authorize merge, automatic merge or publication.

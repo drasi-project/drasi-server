@@ -1,17 +1,17 @@
-# Published main release: drasi-project/drasi-core@3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a
-# Plugin SDK crate 0.11.1 and host SDK crate 0.11.0 both use native ABI 0.13.0.
+# Published main release: drasi-project/drasi-core@70ca432c0f12623ab9b371b2d515180ccc80c2dd
+# Plugin SDK and host SDK crate 0.11.2 both use native ABI 0.14.0.
 version = 1
 
 [plugins."source/mock"]
-reference = "ghcr.io/drasi-project/source/mock@sha256:eab51d94c39551e20be91cb1a044fec6ac2c023c58f0985c5f0c287172dbd60e"
-version = "0.2.10"
-digest = "sha256:eab51d94c39551e20be91cb1a044fec6ac2c023c58f0985c5f0c287172dbd60e"
-sdk_version = "0.11.1"
-core_version = "0.5.8"
-lib_version = "0.9.1"
+reference = "ghcr.io/drasi-project/source/mock@sha256:3f84bd5dcdced4f9c7eacc2f4019f41e080ad1575af1607ca7885f1ee3333374"
+version = "0.2.11"
+digest = "sha256:3f84bd5dcdced4f9c7eacc2f4019f41e080ad1575af1607ca7885f1ee3333374"
+sdk_version = "0.11.2"
+core_version = "0.5.9"
+lib_version = "0.9.2"
 platform = "linux/amd64"
 filename = "libdrasi_source_mock.so"
-file_hash = "f63553fa76fc121cd6d91f9941de84660045e95dbd5d0deabeb668dc0f67c9e3"
+file_hash = "96db77924131819e920a0f74d42b8d03ca4732d2641b53a7d42f4ec1d0c3bb81"
 
 [plugins."source/mock".signature]
 verified = true
@@ -19,15 +19,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."reaction/log"]
-reference = "ghcr.io/drasi-project/reaction/log@sha256:82a8e811433d800ef2242cbb34b2f8948e17fd4d19c368464a527594ba557075"
-version = "0.2.7"
-digest = "sha256:82a8e811433d800ef2242cbb34b2f8948e17fd4d19c368464a527594ba557075"
-sdk_version = "0.11.1"
-core_version = "0.5.8"
-lib_version = "0.9.1"
+reference = "ghcr.io/drasi-project/reaction/log@sha256:ac6d4533aa9efd001e82f49ef5a06a4b6d069cd2af090df2a5df7a77c8dab3c8"
+version = "0.2.8"
+digest = "sha256:ac6d4533aa9efd001e82f49ef5a06a4b6d069cd2af090df2a5df7a77c8dab3c8"
+sdk_version = "0.11.2"
+core_version = "0.5.9"
+lib_version = "0.9.2"
 platform = "linux/amd64"
 filename = "libdrasi_reaction_log.so"
-file_hash = "655977707d888e7878c827739c534464b779585bc477b84ceb700137689cbcf1"
+file_hash = "1e43f237fecf97171fe5c85f8153675d6ab8e347466c8e1d0c7b994a55cd02e8"
 
 [plugins."reaction/log".signature]
 verified = true
@@ -35,15 +35,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."reaction/http"]
-reference = "ghcr.io/drasi-project/reaction/http@sha256:84f4a407eab9e9e228ce912d16ebcffac2ba0a4348e3acf8e917c645b14b915c"
-version = "0.3.3"
-digest = "sha256:84f4a407eab9e9e228ce912d16ebcffac2ba0a4348e3acf8e917c645b14b915c"
-sdk_version = "0.11.1"
-core_version = "0.5.8"
-lib_version = "0.9.1"
+reference = "ghcr.io/drasi-project/reaction/http@sha256:dca94b31513f4288202ba34470fc3e08c5c80526db7af48de9cc41b0ccfc4cbc"
+version = "0.3.4"
+digest = "sha256:dca94b31513f4288202ba34470fc3e08c5c80526db7af48de9cc41b0ccfc4cbc"
+sdk_version = "0.11.2"
+core_version = "0.5.9"
+lib_version = "0.9.2"
 platform = "linux/amd64"
 filename = "libdrasi_reaction_http.so"
-file_hash = "8a557c00d12c59b9e3dac0a488531fa32c08c868c66d2d802b29233e7d288565"
+file_hash = "d71e54e9a291c03095164be746dc7a08ed2f254394ab6f5a6d37734eaf27fe73"
 
 [plugins."reaction/http".signature]
 verified = true
