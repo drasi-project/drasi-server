@@ -1,10 +1,18 @@
 # Compatible engine source prerequisite
 
-> **Current runtime:** the user-approved bottom-up merge now retains main's
-> library/SDK/index versions and uses verified main-signed ABI 0.13 plugins.
+> **Current runtime:** the user-approved newer-main integration uses the exact
+> temporary `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` engine 0.5.9 source
+> from drasi-project/drasi-core#810 with registry library 0.9.2, SDK/FFI 0.11.2,
+> index 0.6.3 and official main-signed ABI 0.14 plugins.
 > See [Main runtime integration](main-runtime-integration.md) for the current
 > matrix, pins and checks. The frozen-version matrix and successful runs below
 > are the **historical September 18 delivery**, not claims about today's pins.
+> Backport `1284e9f6` and drasi-project/drasi-core#933/#934 remain unchanged
+> historical work. That core 0.5.8 cannot satisfy the current callers' core
+> ^0.5.9/API requirements. The earlier rejection of `211d0f2a` below concerned
+> library 0.8.9, not today's explicitly approved source consumption.
+
+## Historical September 18 backport delivery (superseded)
 
 This checkout temporarily consumes the reviewed aggregate-identity correction
 for [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680)

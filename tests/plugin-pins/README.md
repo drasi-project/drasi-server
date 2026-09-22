@@ -1,9 +1,9 @@
 # Reviewed registry plugin pins
 
-> **Current pins:** mock 0.2.10, log 0.2.7, HTTP reaction 0.3.3, with shared
-> scriptfile 0.2.13, from merged main release
-> `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`. Plugin SDK crate 0.11.1 and
-> host SDK crate 0.11.0 both use verified native ABI 0.13.0. See
+> **Current pins:** mock 0.2.11, log 0.2.8, HTTP reaction 0.3.4, with shared
+> scriptfile 0.2.14, from merged main release
+> `70ca432c0f12623ab9b371b2d515180ccc80c2dd`. Plugin and host SDK crate
+> 0.11.2 use native ABI 0.14.0. See
 > [current source/signature/availability proof](../../docs/main-runtime-integration.md).
 > The older matrix and timestamps below are preserved **historical evidence**,
 > not descriptions of the current lockfiles. No unmerged-branch artifact is pinned.
@@ -12,27 +12,33 @@
 
 These locks and the shared locks in
 [`examples/trading/app/test/live`](../../examples/trading/app/test/live)
-come from the published, merged-main release linked above. They cover Linux
-amd64, Linux arm64, and macOS arm64. Each entry pins an immutable OCI/platform
-manifest digest, the binary SHA-256, and the verified GitHub Actions issuer and
-`publish-plugins.yml@refs/heads/main` identity.
+come from the published, merged-main release
+[`70ca432c0f12623ab9b371b2d515180ccc80c2dd`](https://github.com/drasi-project/drasi-core/tree/70ca432c0f12623ab9b371b2d515180ccc80c2dd).
+They cover Linux amd64, Linux arm64, and macOS arm64. Each entry pins an
+immutable OCI/platform manifest digest, the binary SHA-256, and the verified
+GitHub Actions issuer and `publish-plugins.yml@refs/heads/main` identity.
 
 `python3 scripts/install_plugins.py --group getting-started --server-bin PATH --plugins-dir DIRECTORY`
-selects only `source/postgres:0.2.10`, `bootstrap/postgres:0.2.13`, and
-`reaction/log:0.2.7`. It validates both shared lock sets before selecting those
+selects only `source/postgres:0.2.11`, `bootstrap/postgres:0.2.14`, and
+`reaction/log:0.2.8`. It validates both shared lock sets before selecting those
 three kinds; the other Trading/test pins are inputs to this validation, not
 additional Getting Started plugins. The shared helper and pins are reused
 without changing Trading startup or its queries.
 
 The helper checks the reachable Cargo graph with `cargo metadata --locked`:
-the host, plugin SDK, and FFI crates must resolve from crates.io at **0.11.0**,
-and `drasi-lib` must resolve from crates.io at **0.9.1**. The published plugins
-use SDK crate **0.11.1**; both it and the host SDK use native compatibility
-metadata **0.13.0**. Crate versions and native ABI metadata are separate.
+the host, plugin SDK, and FFI crates must resolve from crates.io at **0.11.2**,
+and `drasi-lib` must resolve from crates.io at **0.9.2**. The published plugins
+use SDK crate **0.11.2**, core **0.5.9**, and library **0.9.2**; both the plugins
+and host use native compatibility metadata **0.14.0**. Crate versions and native
+ABI metadata are separate. The preceding ABI **0.13.0** pins cannot be reused
+with this host.
 Unlike the registry-only predecessor, this engine-prerequisite checkout also
-requires the pinned sibling engine before Cargo runs. Make entry points prepare
-it automatically; use `make prepare-core` before direct Cargo commands.
-Preparing the engine does not select or build its unused SDK/library plugins.
+requires the exact `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` sibling source
+before Cargo runs. Make entry points prepare it automatically; use
+`make prepare-core` before direct Cargo commands. Preparing this temporary
+engine/AST/Cypher source pin does not select its unused SDK/library, even though
+their version numbers match the registry crates. The signed plugins remain the
+official release artifacts, not builds from this unmerged engine branch.
 
 Installation uses the server's existing `plugin install --from-config --locked`
 command with signature verification enabled and automatic installation off.

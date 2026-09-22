@@ -4,7 +4,7 @@ This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-serv
 Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
 at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
 separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
-at `7b9601784f37ca3680359b7fc29a52f9f286d15f`. It protects the existing Trading
+at `650ae978b2d23832c2370f172d4a530bc76e4e0f`. It protects the existing Trading
 application, not a second demo. P1 does not redesign its query, package API,
 CSS or components. The reviewed engine/security/source-backed setup changes
 come from B1, whose history and policies are retained.
@@ -171,7 +171,7 @@ entrypoints and unused components.
 | Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
 | Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
 
-The app runner also includes seven native-version setup guards. These are
+The app runner also includes nine native-version setup guards. These are
 additional checks, not new Trading behavior coverage or changed product floors.
 
 Schema version 2 remeasures the same source and unchanged test scenarios using
@@ -217,14 +217,25 @@ enabled in this browser run.
 ### Integrated source and shared setup
 
 Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
-`1284e9f648634c1faa73fd897a21c2712bb0cbbe`. The default manifest selects only
-the sibling engine 0.5.8 / AST 0.3.5 / Cypher 0.3.6 paths. Registry library
-0.9.1, SDK/host/FFI 0.11.0, index 0.6.1 and GQL 0.3.6 stay selected with
-server 0.2.3. This is the full compatible source backport, not a published
-0.5.8 fix, the rejected
-0.5.9 hook API, or the earlier disposable three-file overlay. See
+`211d0f2a79aa2ad0f7cb841937f52013fe95ded6`, the user-approved existing source
+from drasi-project/drasi-core#810. This is a **temporary development source
+pin**, not a released fix or permission to merge/publish it. The default
+manifest selects only sibling engine 0.5.9 / AST 0.3.5 / Cypher 0.3.6.
+Library 0.9.2, SDK/host/FFI 0.11.2, index 0.6.3, functions 0.5.9, middleware
+0.5.10 and GQL 0.3.6 remain registry-sourced with server 0.2.3. Equal-version
+SDKs in the sibling workspace are not selected or permission to build plugins
+there. The older `1284e9f` / core 0.5.8 / ABI 0.13 reports are historical.
+See
 [B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md)
 and [the approved main-runtime matrix](../../docs/main-runtime-integration.md).
+
+Relative to released core 0.5.9, the selected source includes three aggregate
+production paths and two additive merged-main outbox paths, not only a
+three-file overlay. Registry library 0.9.2 calls `append`, not the new trim
+methods. Engine-only selection does not consume drasi-project/drasi-core#909's
+library codec change: compact MessagePack remains selected. These tests use
+fresh owned state and make no old-record repair, record-dropping, output-only
+clearing, persistence migration or general recovery claim.
 
 `source_provenance.py` invokes the shared source verifier and resolved-SDK
 policy, checks the caller's commit/lock and exact engine/parser origins, and
@@ -277,13 +288,14 @@ Rebuild the default server binary before Rust integration tests as well: some
 tests invoke `target/debug/drasi-server` directly. A build in another target
 directory or a handed-off B1 binary does not update that executable.
 
-The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.11**,
-PostgreSQL source **0.2.10**, SSE reaction **0.3.6**, and PostgreSQL/scriptfile
-bootstrappers **0.2.13** by immutable OCI manifest digest and binary SHA256.
+The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.12**,
+PostgreSQL source **0.2.11**, SSE reaction **0.3.7**, and PostgreSQL/scriptfile
+bootstrappers **0.2.14** by immutable OCI manifest digest and binary SHA256.
 They come from the merged official main release
-`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`
-(drasi-project/drasi-core#789). Their SDK crate is **0.11.1**; it and the host
-SDK crate **0.11.0** both use the independently versioned C ABI **0.13.0**.
+`70ca432c0f12623ab9b371b2d515180ccc80c2dd`, publication run
+[35281678998](https://github.com/drasi-project/drasi-core/actions/runs/35281678998).
+Both plugin and host SDK crates are **0.11.2**, with independently versioned
+C ABI **0.14.0**. ABI 0.11/0.13 caches are incompatible, not fallbacks.
 The shared installer runs the existing
 `plugin install --from-config --locked` with `verifyPlugins: true` and
 independently checks every downloaded binary hash. Missing tools, wrong
@@ -332,12 +344,13 @@ branch's own rebuilt binary. The default gate must still prove singleton
 2000/cost 1800/count 2, live 2050, existing-resource reload 2050, and
 offline/reconnect 2150 without navigation or historical-row selection.
 
-Actual SSE 0.3.6 observations include `message` events with
+Historical SSE 0.3.6 observations include `message` events with
 `queryId`/`results`/`timestamp`, `ADD`, `DELETE`, `UPDATE` and lowercase
 `aggregation` results. Aggregation carries `before`/`after` without `data`;
 update also carries `data`. ABI compatibility alone does not establish wire
-compatibility. Retain each run's raw observations separately; do not normalize
-them into synthetic fixtures or infer guarantees for unexercised protocol paths.
+compatibility; current SSE 0.3.7 must pass the actual gate independently.
+Retain each run's raw observations separately; do not normalize them into
+synthetic fixtures or infer guarantees for unexercised protocol paths.
 
 ### Older image comparison, not a passing fallback
 
@@ -347,7 +360,7 @@ commit `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`, including its matching
 platform locks and shared ABI-verification policy, then run
 `P1_RUNTIME=image npm --prefix examples/trading/app run test:live` there.
 Overriding only `P1_PLUGIN_LOCK` in the current checkout is insufficient: the
-current shared ABI 0.13 verifier correctly rejects that image's ABI 0.11 before
+current shared ABI 0.14 verifier correctly rejects that image's ABI 0.11 before
 the financial scenario. Do not weaken the current policy to run the old image.
 Neither the image pin nor the original failure recordings have been rewritten.
 That image is version 0.2.1 but comes from commit
@@ -426,9 +439,11 @@ expected results. They are never substituted for live responses.
 
 This historical defect is tracked by the existing
 [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680).
-The separately approved source prerequisite now comes from #204 and
-[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934).
-No released fix or data migration is claimed. The current gate must prove the
+The earlier compatible prerequisite used
+[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934);
+its reports remain historical. The current #204 development prerequisite uses
+the exact `211d0f2a` source from drasi-project/drasi-core#810 with the newer
+registry graph. No released fix or data migration is claimed. The current gate must prove the
 correct singleton 2000 -> live/reload 2050 -> offline/reconnect 2150 result on
 this branch's own rebuilt server; earlier handed-off binary results are not a
 substitute.
@@ -442,11 +457,13 @@ results and cleanup. `make test-all` retains the original smoke script: its
 presented as coverage of every plugin. No new skips or expected failures are
 added to the mandatory Trading gate.
 
-The unchanged YAML agent can fail HTTP 400 for an unsupported model before
-validation. That is external infrastructure, not a passed check or a reason
-to change models/credentials here. The selected server audit reports zero
-vulnerabilities with 15 existing warnings; the unused legacy core workspace's
-h2/Azure findings remain red and are not waived. See
+Classify YAML from the actual current workflow and run. Newer main gates the
+agent to the top stack layer, so this layer normally skips it: that is not
+executed validation, a pass, or the older HTTP 400/504 outcome. Historical
+infrastructure failures remain recorded; no model/credential changes or
+approval bypass is made here. The selected host audit and its 15 existing
+warnings are distinct from unused-workspace findings and dependencies embedded
+in signed plugin binaries; no broader audit pass is inferred. See
 [the scoped server security disposition](../../docs/server-security-dependencies.md).
 These caveats remain visible when discussing readiness for dependent
 development; they do not authorize merge, automatic merge or publication.
