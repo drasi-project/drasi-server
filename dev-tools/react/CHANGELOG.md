@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compact generated whitespace while preserving syntax, identifiers, debug/
   component names, source maps/content and the complete package inventory.
   Original baselines remain; Trading TESTING.md records the separately
-  user-approved, fixed 110-byte P5 Trading gzip allowance.
+  user-approved, fixed 110-byte P5 Trading gzip allowance, not applied to P6.
 - Make table ordering transitive: numeric values precede fixed-English text
   representations, then nullish values; handle NaN, infinities and stable ties.
   Use explicit en-US variant/numeric:false collation for SSR/hydration rather
@@ -40,7 +40,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stable, while meaningful endpoint changes replace the connection. Existing
   URL safety validation, authentication and read-only ownership are unchanged.
 
-### Parent integration
+### Current development-source integration
+- Normally integrate the approved exact `211d0f2a` engine 0.5.9 / registry
+  library 0.9.2 / SDK 0.11.2 / index 0.6.3 / signed SSE 0.3.7 / native ABI
+  0.14 selection while retaining P5 table/DCE fixes, P3 endpoint identity and P4 contracts,
+  including commit-only query keys and their concurrent-render/SSR regressions.
+  Only engine/AST/Cypher are path-selected; unused sibling SDKs are not consumed.
+- Preserve P6 overlay/focus/theme/sizing/motion contracts, bounded row restart
+  identity, paired native-animation observations and complete-graph SSR tests.
+  Its active budgets and historical accessibility evidence are unchanged.
+- Keep earlier `1284e9f` / library 0.9.1 / ABI 0.13 proof historical and require
+  own rebuilt-runtime/packed/browser/live checks. The temporary engine pin is
+  not a released fix, library-codec adoption or stored-data repair guarantee.
+
+### Historical ABI 0.13 parent integration
 - Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
   host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
   runtime while retaining the reviewed engine correction and all P3/P4 contracts.

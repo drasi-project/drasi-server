@@ -185,7 +185,8 @@ class LockedTradingPluginsTests(unittest.TestCase):
         original = tomllib.loads(path.read_text())["plugins"]
         for field, value in (
             ("sdk_version", "0.10.0"), ("sdk_version", "0.11.0"),
-            ("lib_version", "0.9.0"), ("platform", "linux/arm64"),
+            ("sdk_version", "0.11.1"), ("lib_version", "0.9.1"),
+            ("core_version", "0.5.8"), ("platform", "linux/arm64"),
             ("signature", {
                 "verified": True, "issuer": installer.ISSUER,
                 "subject": installer.SUBJECT.replace("@refs/heads/main", "@refs/heads/experimental"),
@@ -206,13 +207,14 @@ class LockedTradingPluginsTests(unittest.TestCase):
         for reference, pin in self.pins.items():
             category, kind = reference.split(":")[0].split("/")
             plugins.append({
-                "id": f"{category}/{kind}", "sdkVersion": "0.13.0",
+                "id": f"{category}/{kind}", "sdkVersion": "0.14.0",
                 "pluginVersion": pin["version"], "fileHash": pin["file_hash"],
                 "status": "Loaded", "kinds": [{"category": category.title(), "kind": kind}],
             })
         installer.validate_loaded_plugins(plugins, self.pins)
         for field, wrong in (
-            ("sdkVersion", "0.11.0"), ("sdkVersion", "0.14.0"),
+            ("sdkVersion", "0.11.0"), ("sdkVersion", "0.13.0"),
+            ("sdkVersion", "0.15.0"),
             ("pluginVersion", "999.0.0"),
             ("fileHash", "0" * 64), ("status", "Failed"), ("kinds", []),
         ):
@@ -297,7 +299,7 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
                 if mode == "local":
                     for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
                         replace_package(
-                            metadata, package(name, "0.9.1" if name == "drasi-lib" else "0.11.0", None),
+                            metadata, package(name, "0.9.2" if name == "drasi-lib" else "0.11.2", None),
                         )
                 _, selected = plugin_origin.classify(metadata)
                 core = {
