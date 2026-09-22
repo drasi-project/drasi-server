@@ -69,34 +69,69 @@ for (const owner of ['local', 'shared']) {
       const input = row.getByRole('textbox', { name: 'Note a' });
       await input.fill('retain this draft');
       await input.focus();
-      const observer = await row.evaluateHandle(element => {
-        if (!(element instanceof HTMLTableRowElement)) throw new Error('Expected an animated table row');
-        const originalInput = element.querySelector('input');
-        let previous: Animation | undefined;
-        const starts: string[] = [];
-        const onStart = (event: AnimationEvent) => {
-          if (event.target === element) starts.push(event.animationName);
+      const mirror = owner === 'shared'
+        ? await page.getByRole('table', { name: 'Mirror', exact: true }).locator('tbody tr').first().elementHandle()
+        : null;
+      if (owner === 'shared') expect(mirror).not.toBeNull();
+      const observer = await row.evaluateHandle((element, mirrorElement) => {
+        const observe = (element: Element) => {
+          if (!(element instanceof HTMLTableRowElement)) throw new Error('Expected an animated table row');
+          const originalInput = element.querySelector('input');
+          const originalTable = element.closest('table');
+          if (!originalInput || !originalTable) throw new Error('Expected the initial row input and table');
+          let previous: Animation | undefined;
+          const starts: string[] = [];
+          const onStart = (event: AnimationEvent) => {
+            if (event.target === element) starts.push(event.animationName);
+          };
+          element.addEventListener('animationstart', onStart);
+          return {
+            starts,
+            animations: () => element.getAnimations(),
+            sample(animations: Animation[], focused: Element | null) {
+              const animation = animations[0];
+              const currentTime = animation?.currentTime;
+              const startTime = animation?.startTime;
+              const result = {
+                active: animations.length,
+                replaced: !!animation && animation !== previous,
+                duration: animation?.effect?.getTiming().duration,
+                easing: getComputedStyle(element).animationTimingFunction,
+                sameRow: originalTable.querySelector('tbody tr') === element,
+                sameInput: originalInput === element.querySelector('input'),
+                connected: element.isConnected,
+                value: element.cells[1]?.textContent,
+                inputValue: originalInput.value,
+                focused: focused === originalInput,
+                currentTimeMs: typeof currentTime === 'number' ? currentTime : null,
+                startTimeMs: typeof startTime === 'number' ? startTime : null,
+              };
+              previous = animation;
+              return result;
+            },
+            dispose() { element.removeEventListener('animationstart', onStart); },
+          };
         };
-        element.addEventListener('animationstart', onStart);
+        const primary = observe(element);
+        const mirror = mirrorElement ? observe(mirrorElement) : null;
         return {
-          starts,
+          starts: primary.starts,
+          mirrorStarts: mirror?.starts,
           sample() {
-            const animations = element.getAnimations();
-            const animation = animations[0];
-            const result = {
-              active: animations.length,
-              replaced: !!animation && animation !== previous,
-              duration: animation?.effect?.getTiming().duration,
-              easing: getComputedStyle(element).animationTimingFunction,
-              sameInput: originalInput === element.querySelector('input'),
-              connected: element.isConnected,
+            const sampledAtMs = performance.now();
+            const primaryAnimations = primary.animations();
+            const mirrorAnimations = mirror?.animations();
+            const focused = document.activeElement;
+            return {
+              sampledAtMs,
+              primary: primary.sample(primaryAnimations, focused),
+              mirror: mirror && mirrorAnimations ? mirror.sample(mirrorAnimations, focused) : null,
+              completedAtMs: performance.now(),
             };
-            previous = animation;
-            return result;
           },
-          dispose() { element.removeEventListener('animationstart', onStart); },
+          dispose() { primary.dispose(); mirror?.dispose(); },
         };
-      });
+      }, mirror);
       const samples = [];
       try {
         await page.getByRole('button', { name: 'Change b up', exact: true }).dispatchEvent('click');
@@ -104,22 +139,26 @@ for (const owner of ['local', 'shared']) {
           await page.getByRole('button', { name: `Change a ${direction}`, exact: true }).dispatchEvent('click');
           const value = direction === 'change' ? `10${'!'.repeat(index)}` : String(10 + (direction === 'up' ? index : -index));
           await expect(row.getByRole('cell').nth(1)).toHaveText(value);
-          await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-          samples.push(await observer.evaluate(state => state.sample()));
-          await expect(input).toBeFocused();
-          await expect(input).toHaveValue('retain this draft');
+          // Read both rows at the same paint boundary, before later RPCs can outlive the pulse.
+          const sample = await observer.evaluate(state => new Promise<ReturnType<typeof state.sample>>(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve(state.sample())))));
+          samples.push(sample);
+          const animation = {
+            active: 1, replaced: true, duration: 500, easing: 'ease-in-out',
+            sameRow: true, sameInput: true, connected: true, value,
+          };
+          expect(sample.primary).toMatchObject({ ...animation, inputValue: 'retain this draft', focused: true });
           if (owner === 'shared') {
-            const mirror = page.getByRole('table', { name: 'Mirror', exact: true }).locator('tbody tr').first();
-            await expect(mirror.getByRole('cell').nth(1)).toHaveText(value);
-            expect(await mirror.evaluate(element => element.getAnimations().length)).toBe(1);
+            expect(sample.mirror).toMatchObject({ ...animation, inputValue: '', focused: false });
+          } else {
+            expect(sample.mirror).toBeNull();
           }
           // Deliberate update cadence, not a readiness or animation-settlement wait.
           if (index < 5) await page.waitForTimeout(200);
         }
-        expect(samples).toEqual(Array.from({ length: 5 }, () => ({
-          active: 1, replaced: true, duration: 500, easing: 'ease-in-out', sameInput: true, connected: true,
-        })));
+        expect(samples).toHaveLength(5);
         expect(await observer.evaluate(state => state.starts.length)).toBe(5);
+        if (owner === 'shared') expect(await observer.evaluate(state => state.mirrorStarts?.length)).toBe(5);
         await expect(table.locator('tbody tr').nth(1)).not.toHaveClass(/drasi-row--/);
         await expect(row).not.toHaveClass(/drasi-row--/);
         expect(await row.evaluate(element => element.getAnimations().length)).toBe(0);
@@ -133,6 +172,7 @@ for (const owner of ['local', 'shared']) {
         });
         await observer.evaluate(state => state.dispose());
         await observer.dispose();
+        await mirror?.dispose();
       }
     });
   }
