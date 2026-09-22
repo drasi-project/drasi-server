@@ -1,5 +1,113 @@
 # Main runtime integration for the engine prerequisite
 
+## Current newer-main development source selection
+
+The approved normal merge of #119
+`739613b927b4c00e92444bebf52c9bd71a90f547` brings main
+`77dcf5df807286dde22e50f93efc78ddf252ef35` above prior #204
+`ba53d5044aa65e45257a7524c6c67890c5eaf128`, preserving both histories.
+The user chose the existing exact
+[`211d0f2a79aa2ad0f7cb841937f52013fe95ded6`](https://github.com/drasi-project/drasi-core/commit/211d0f2a79aa2ad0f7cb841937f52013fe95ded6)
+source from [drasi-project/drasi-core#810](https://github.com/drasi-project/drasi-core/pull/810).
+This is a **temporary source pin for current-main development**, not a released
+aggregate fix or a released-only dependency closure. It authorizes no core
+change, merge, publication, or retargeting of the older compatible backport.
+
+| Component | Current selection |
+| --- | --- |
+| Engine / AST / Cypher | 0.5.9 / 0.3.5 / 0.3.6, only the three sibling path patches at exact `211d0f2a` |
+| Library | 0.9.2, registry |
+| Host SDK / plugin SDK / FFI primitives | 0.11.2, registry; native ABI 0.14.0 |
+| RocksDB / Cypher and GQL functions / middleware | 0.6.3 / 0.5.9 / 0.5.10, registry |
+| GQL parser | 0.3.6, registry, sharing the patched AST |
+| rustls / webpki / AWS-LC / AWS-LC sys / h2 | 0.23.45 / 0.103.15 / 1.18.1 / 0.45.0 / 0.4.16, inherited root security closure |
+
+The source pin is recorded in `.drasi-core-revision`; Cargo path lock entries
+alone do not record a Git revision. Existing preparation reads that file for
+Make, local builds, CI, Docker, devcontainers and cross-builds. It obtains only
+an absent sibling and rejects wrong or dirty existing source without changing
+it. An existing shared worktree link must not be repointed by preparation:
+the one coordinated transition requires explicit owner quiescence and guarded
+replacement of the link alone. Neither core worktree is modified.
+
+Relative to the published core 0.5.9 source at
+`70ca432c0f12623ab9b371b2d515180ccc80c2dd`, this pin includes the three reviewed
+aggregate production paths **and two additive outbox production paths** from
+merged drasi-project/drasi-core#927, plus four test-only paths. It is not a
+three-file release backport. Root/selected manifests, AST/Cypher sources and
+result-aware hook APIs match that published release. Registry library 0.9.2
+uses `append`, not the newer trim methods. Source compatibility still requires
+the mixed graph's own build and runtime evidence; the older backport's passes
+are not substituted.
+
+All six inherited plugin lockfiles stay exactly as reviewed in #119. Their
+eight kinds use official merged release source
+[`70ca432c0f12623ab9b371b2d515180ccc80c2dd`](https://github.com/drasi-project/drasi-core/commit/70ca432c0f12623ab9b371b2d515180ccc80c2dd):
+HTTP source 0.2.12, PostgreSQL/mock sources 0.2.11, PostgreSQL/scriptfile
+bootstrap 0.2.14, SSE 0.3.7, log 0.2.8, and HTTP reaction 0.3.4.
+All use SDK crate 0.11.2 and native ABI 0.14.0. Prior ABI 0.13 caches are not
+compatible and cannot be reused as a fallback. Plugins are not built from the
+temporary engine branch, even though that workspace's unused SDK has the same
+crate version as the registry SDK.
+
+Installation retains immutable digests, binary hashes and the exact issuer
+`https://token.actions.githubusercontent.com` / subject
+`https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main`.
+[Publication run 35281678998](https://github.com/drasi-project/drasi-core/actions/runs/35281678998)
+published the three platforms successfully but failed its visibility step.
+It is not described as an overall successful workflow. Root's anonymous
+availability, full-signature and binary checks are prior artifact evidence;
+this mixed graph requires its own native/runtime checks.
+
+**Persistence boundary:** engine-only selection does not consume
+drasi-project/drasi-core#909's library codec change. The registry library still
+uses compact `rmp_serde::to_vec`. No reconstruction of legacy data, record
+dropping, output clearing, migration, broader recovery guarantee, or new
+published-release claim follows. Existing server audit warnings, unused-core
+workspace advisories, embedded-plugin coverage and human accessibility
+limitations remain unwaived. Earlier validation below is labeled historical;
+current evidence is recorded on #204/#202 against its actual inputs.
+
+### Validation of the current selection
+
+Locked metadata and the full target tree select one identity for each patched
+package. Compared with the exact incoming 621-package registry lock, only the
+three selected source/checksum pairs are removed; all versions, other records,
+dependency arrays, resolved features and dependency-kind/target edges match.
+Unrelated Windows edge rebindings from the targeted Cargo update were rejected,
+not adopted. Equal-version unused SDKs still select registry mode, and all three
+public local-plugin build targets reject this configuration before building.
+
+The own UI/default server build, strict Clippy, formatting and 46 tooling tests
+pass. Ordinary locked Rust tests report 809 passes and 32 existing ignores;
+`make test-all` reports 840 passes and one ignored doctest. Its separate legacy
+smoke reports eight passes and 28 skips, not 36 tested plugin kinds. Eight exact
+core aggregate/retained-source regressions pass (753 other tests filtered out).
+Cargo Audit reports zero vulnerabilities and the same 15 warnings.
+
+All eight official plugins pass fresh isolated-HOME installation and actual
+native ABI 0.14 startup, required-factory/hash/version checks and embedded UI
+serving. Missing plugins and preserved ABI 0.11/0.13 artifacts fail startup
+without fallback. Clean public source preparation fetches exact `211d0f2a`;
+the real unprivileged devcontainer preflight also passes without changing
+parent ownership. These checks do not substitute for a full devcontainer
+post-create build or final-head container CI.
+
+The own real PostgreSQL/original Flask/CDC/raw-SSE API trial creates all 11
+unchanged queries and one reaction, and verifies every query remains running.
+Watchlist, portfolio and order CRUD pass. Every captured authoritative summary
+is a singleton: initial 2000/cost 1800/count 2, then 2050 live and after
+existing-resource reuse, then 2150 offline and after reconnection. Full rows
+are retained without filtering or choosing a historical row. The disposable
+fixture supplies the original UI's complete order-duration fields; an earlier
+incomplete payload correctly failed and is retained separately, not counted as
+a passing run. This is an API/raw-wire trial, not an unchanged P1 browser gate
+or persisted-data recovery claim. P1 owns its subsequent integrated browser
+validation; final-head CI and any environmental limitations are recorded
+separately on the PR.
+
+## Historical September 20 main integration (superseded)
+
 This is the user-approved, history-preserving update to draft
 [#204](https://github.com/drasi-project/drasi-server/pull/204).
 It merges #119 head `116cdbd5595b5adf27c2314c1d46cb8f076ad08e`

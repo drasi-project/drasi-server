@@ -159,8 +159,8 @@ bodies** for a full query, full SSE reaction and snapshot, with backend
 revision/binary/lock/plugin provenance. They were captured by the real Trading
 harness, not inferred from synthetic fakes. Tests consume those records and
 separately mutate them to exercise malformed, unauthorized and cross-instance
-cases. `test/fixtures/server-v1-0.2.3/contract.json` separately records the
-own rebuilt merged server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
+cases. The historical `test/fixtures/server-v1-0.2.3/contract.json` separately
+records the own rebuilt server 0.2.3 / SSE 0.3.6 / ABI 0.13 responses; the same public
 read tests consume both versions. New records are never substituted into the
 old provenance. See [verified compatibility](#verified-compatibility).
 
@@ -506,9 +506,9 @@ Claims are intentionally narrow, not open-ended minimum versions:
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
 | Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
-| Server | Current approved runtime: **0.2.3**, registry library **0.9.1**, index **0.6.1**, the same reviewed engine **0.5.8** source at `1284e9f648634c1faa73fd897a21c2712bb0cbbe`, AST **0.3.5**, Cypher/GQL **0.3.6**. The v1 query read DTO is unchanged; archive/memory settings remain server/instance-owned. |
-| Plugin / ABI | Current signed SSE **0.3.6**, host/FFI crates **0.11.0**, plugin SDK crate **0.11.1**, native ABI **0.13.0**, from official merged release `3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`. Immutable platform/digest/hash/signature pins come from the approved parent integration. |
-| Historical runtime evidence | Server **0.2.1**, library **0.8.9**, SSE **0.3.4**, SDK **0.10.0** / ABI **0.11.0** captures remain versioned separately. They are not proof for every 0.2.1 build or a fallback for current ABI 0.13 startup. |
+| Server | Current development runtime: **0.2.3**, registry library **0.9.2**, index **0.6.3**, engine **0.5.9** from the user-approved temporary source `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` (drasi-project/drasi-core#810), AST **0.3.5**, Cypher/GQL **0.3.6**. Only engine/AST/Cypher are path-selected; equal-version sibling SDKs are not consumed. |
+| Plugin / ABI | Current signed SSE **0.3.7**, host/plugin/FFI crates **0.11.2**, native ABI **0.14.0**, from official merged release `70ca432c0f12623ab9b371b2d515180ccc80c2dd`. All six immutable platform/digest/hash/signature locks are inherited from the approved parent. No prior ABI cache fallback or trust relaxation. |
+| Historical runtime evidence | Original server **0.2.1** / library **0.8.9** / SSE **0.3.4** / ABI **0.11.0**, and server **0.2.3** / library **0.9.1** / SSE **0.3.6** / ABI **0.13.0** records remain separately versioned. They are not current ABI 0.14 validation or a fallback for it. |
 
 Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
@@ -519,6 +519,12 @@ the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
+The current `211d0f2a` engine is an unreleased development pin, not a released
+fix or a claim to repair stored records. Its three aggregate and two additive
+outbox production paths do not select drasi-project/drasi-core#909's library
+codec change: registry library 0.9.2 still uses compact records and `append`,
+not the newer trim methods. No migration, record dropping, broader recovery
+guarantee, core modification or publication is implied.
 
 ## P3 migration
 

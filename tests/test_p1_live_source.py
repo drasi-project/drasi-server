@@ -28,10 +28,10 @@ def fixture():
             "manifest_path": str(CORE / folder / "Cargo.toml") if folder else f"/registry/{name}/Cargo.toml",
         }
         for name, version, folder in [
-            ("drasi-core", "0.5.8", "core"),
+            ("drasi-core", "0.5.9", "core"),
             ("drasi-query-ast", "0.3.5", "query-ast"),
             ("drasi-query-cypher", "0.3.6", "query-cypher"),
-            ("drasi-index-rocksdb", "0.6.1", None),
+            ("drasi-index-rocksdb", "0.6.3", None),
             ("drasi-query-gql", "0.3.6", None),
         ]
     ]}
@@ -42,15 +42,18 @@ class LiveSourceProvenanceTests(unittest.TestCase):
         selected = provenance.selected_engine(fixture(), CORE)
         self.assertEqual(len(selected), 5)
         self.assertIsNone(selected["drasi-core"]["source"])
+        self.assertEqual(selected["drasi-core"]["version"], "0.5.9")
         self.assertEqual(selected["drasi-query-cypher"]["version"], "0.3.6")
-        self.assertEqual(selected["drasi-index-rocksdb"]["version"], "0.6.1")
+        self.assertEqual(selected["drasi-index-rocksdb"]["version"], "0.6.3")
         self.assertEqual(selected["drasi-index-rocksdb"]["source"], REGISTRY)
 
     def test_rejects_unapproved_engine_version(self):
-        metadata = fixture()
-        metadata["packages"][0]["version"] = "0.5.9"
-        with self.assertRaisesRegex(ValueError, "version"):
-            provenance.selected_engine(metadata, CORE)
+        for version in ("0.5.8", "0.6.0"):
+            with self.subTest(version=version):
+                metadata = fixture()
+                metadata["packages"][0]["version"] = version
+                with self.assertRaisesRegex(ValueError, "version"):
+                    provenance.selected_engine(metadata, CORE)
 
     def test_rejects_registry_engine_disguised_by_same_version(self):
         metadata = fixture()
@@ -77,10 +80,12 @@ class LiveSourceProvenanceTests(unittest.TestCase):
             provenance.selected_engine(metadata, CORE)
 
     def test_rejects_the_previous_registry_index_version(self):
-        metadata = fixture()
-        metadata["packages"][3]["version"] = "0.5.8"
-        with self.assertRaisesRegex(ValueError, "version"):
-            provenance.selected_engine(metadata, CORE)
+        for version in ("0.5.8", "0.6.1"):
+            with self.subTest(version=version):
+                metadata = fixture()
+                metadata["packages"][3]["version"] = version
+                with self.assertRaisesRegex(ValueError, "version"):
+                    provenance.selected_engine(metadata, CORE)
 
     def test_rejects_an_unapproved_gql_version(self):
         metadata = fixture()
