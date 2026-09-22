@@ -30,7 +30,6 @@ export default defineConfig({
   minifyWhitespace: true,
   minifySyntax: false,
   minifyIdentifiers: false,
-  keepNames: true,
   clean: true,
   treeshake: true,
   splitting: true,

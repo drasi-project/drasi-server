@@ -213,6 +213,15 @@ update, unchanged DOM/input/focus, eventual expiry and no reduced-motion
 animation. Full-rule generic axe reports accompany the default-theme cases.
 These are automated observations, not human screen-reader results.
 
+The inherited en-US Node / sv-SE browser hydration fixture executes its complete
+generated SSR module graph. P6's existing top-level `React.lazy` initializer
+retains a separate client-only ModalLayer chunk even when the Modal export is
+unused; P5's one-file SSR setup therefore stopped before running Node. The P6
+fixture writes every emitted chunk/asset to an owned temporary directory and
+executes the single entry normally, then removes that directory. It does not
+flatten or eagerly load the client layer, skip hydration, replace the original
+root, or relax warning/error, locale, keyboard or alignment assertions.
+
 The distinct active P6 size baseline has **no P5 allowance**. The exact reviewed
 P5 approval from `e1954c0d40fecf640445ff213b356ed01e6505f9` is retained separately
 in `baseline-metrics-p5-quality-v3.json`, protected by a byte-identity test.

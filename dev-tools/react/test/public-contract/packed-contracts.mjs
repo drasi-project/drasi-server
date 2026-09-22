@@ -449,6 +449,10 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
       }
     }
   }
+  const dceRunner = join(app, 'contract-dce.mjs');
+  await copyFile(join(fixtures, 'dce.mjs'), dceRunner);
+  run(process.execPath, [dceRunner], app, 30_000);
+  proof.unusedComponentsEliminated = true;
   // The installed README is the sole source of runnable documentation. These
   // programs are checked with noEmit, never imported/executed or networked.
   const readme = await readFile(join(packageRoot, 'README.md'), 'utf8');
