@@ -296,6 +296,12 @@ try {
   } else {
     if (kind === 'components' || kind === 'root') checkProviderFreeTables(api);
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
+    for (const name of [
+      'DrasiProvider', 'useDrasiClient', 'useDrasiQuery', 'useDrasiConnectionStatus',
+      'useDrasiServerUiUrl', 'useDrasiQueryDefinition', 'useRowAnimation', 'useTableSort',
+    ]) {
+      assert.equal(hooks[name].name, name, `Public/debug React binding name changed: ${name}`);
+    }
     function HeadlessConsumer() {
       const initial = hooks.useTableSort({ defaultSort: { column: 'priority', direction: 'desc' } });
       const controlled = hooks.useTableSort({ sort: null, defaultSort: { column: 'priority', direction: 'asc' } });
