@@ -50,6 +50,7 @@ export function isIdentifier(value: unknown): value is string {
   }
 }
 
+/** Validate and serialize without trimming meaningful path or query content. */
 export function validateHttpUrl(value: string, details: DrasiErrorDetails): string {
   try {
     const url = new URL(value);
@@ -57,10 +58,17 @@ export function validateHttpUrl(value: string, details: DrasiErrorDetails): stri
         url.hash || ['0.0.0.0', '[::]'].includes(url.hostname)) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
-    return url.toString().replace(/\/$/, '');
+    return url.toString();
   } catch {
     throw new DrasiError('INVALID_CONFIGURATION', details);
   }
+}
+
+/** Normalize only the base used to append API/UI paths, never a stream endpoint. */
+export function normalizeServerUrl(value: string, details: DrasiErrorDetails): string {
+  const url = validateHttpUrl(value, details);
+  if (new URL(url).search) throw new DrasiError('INVALID_CONFIGURATION', details);
+  return url.replace(/\/$/, '');
 }
 
 /** Never use convenience routes: every read has the same explicit instance. */

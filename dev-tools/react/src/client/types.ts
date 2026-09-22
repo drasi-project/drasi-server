@@ -115,7 +115,7 @@ export interface Component<T> {
 /** Existing SSE reaction reference, not a deployment definition. */
 export interface ReactionReference {
   readonly id: string;
-  /** Absolute browser-reachable HTTP(S) URL, possibly served by a reverse proxy. */
+  /** Absolute browser-reachable HTTP(S) URL. Path/query trailing slashes are significant and preserved. */
   readonly endpoint: string;
 }
 

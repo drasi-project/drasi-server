@@ -222,6 +222,11 @@ Do not wrap native EventSource and pretend it supports bearer headers.
 Cross-origin cookie use requires appropriate server/proxy credentials and CORS.
 
 The SSE endpoint is supplied by the operator, never inferred from bind settings.
+Shared HTTP(S) URL parsing and safety checks do not trim its path or query:
+`/proxy/events/` stays distinct from `/proxy/events`, and `?opaque=part/`
+retains the slash in the query value. The stream factory and its authentication
+context receive that complete serialized URL. Only the **server base** removes
+its final path delimiter before API/UI paths are appended.
 The supported plugin protocol cannot attest that a proxy routes to the declared
 reaction/instance or reveal native SSE redirect destinations. Use a trusted
 proxy or custom transport if enforcement is required. A generic stream error
@@ -243,6 +248,11 @@ cleanup. Equivalent inline reference arrays, reaction/reconnect objects and
 headers do **not** bounce the connection. Query IDs compare as a set (duplicates
 remain invalid), header names/values are canonicalized, and omitted policy
 fields equal the documented defaults.
+
+Equivalent server-base spellings (including an optional trailing slash, host
+case or the standard explicit port) retain the same client/connection. Endpoint
+path/query differences, including the slash examples above, remain material:
+changing one closes the old stream and initializes the replacement.
 
 Material server, instance, reaction ID, endpoint, query-set, credential/header,
 timeout or retry-policy changes replace the lifecycle. Old requests are aborted,

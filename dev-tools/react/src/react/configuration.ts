@@ -4,14 +4,14 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import type { DrasiClientOptions } from '../client/DrasiClient';
-import { validateHttpUrl } from '../client/resources';
+import { normalizeServerUrl, validateHttpUrl } from '../client/resources';
 
 /** Compare data by value, callable transports/auth/routing separately by identity. Never log this key. */
 export function configurationKey(options: DrasiClientOptions): string | null {
   try {
     const { reconnect } = options;
     return JSON.stringify([
-      validateHttpUrl(options.serverUrl, {}), options.instanceId,
+      normalizeServerUrl(options.serverUrl, {}), options.instanceId,
       [...options.queryIds].sort(), options.reaction.id,
       validateHttpUrl(options.reaction.endpoint, {}),
       options.credentials ?? 'same-origin',
