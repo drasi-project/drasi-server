@@ -19,10 +19,10 @@ def digest(path):
 
 def selected_engine(metadata, core_root):
     expected = {
-        "drasi-core": ("0.5.8", "core"),
+        "drasi-core": ("0.5.9", "core"),
         "drasi-query-ast": ("0.3.5", "query-ast"),
         "drasi-query-cypher": ("0.3.6", "query-cypher"),
-        "drasi-index-rocksdb": ("0.6.1", None),
+        "drasi-index-rocksdb": ("0.6.3", None),
         "drasi-query-gql": ("0.3.6", None),
     }
     result = {}
@@ -91,7 +91,7 @@ def main():
             raise ValueError("Caller Trading plugin lock differs from the shared reviewed pins")
         pins = install_plugins.read_pins(approved_lock, target)
         print(json.dumps({
-            "classification": "checked-out integrated default source; not an overlay or released fix",
+            "classification": "checked-out temporary development engine source; not an overlay or released fix",
             "serverRevision": revision,
             "sourceRoot": str(root),
             "engineGit": (root / ".drasi-core-revision").read_text().strip(),
