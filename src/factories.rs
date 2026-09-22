@@ -461,10 +461,75 @@ pub async fn create_secret_store_from_registry(
         descriptor.config_version()
     );
 
-    let provider = descriptor.create_secret_store(&config.config).await?;
+    // The secret store must be created before the host can inject its full
+    // secret-aware resolver into plugins. Environment references are still safe
+    // to resolve during this bootstrap step.
+    let resolved_config = resolve_environment_references(&config.config, "secretStore")?;
+    let provider = descriptor.create_secret_store(&resolved_config).await?;
     // Box<dyn SecretStoreProvider> → Arc<dyn SecretStoreProvider>
     let arc: Arc<dyn SecretStoreProvider> = Arc::from(provider);
     Ok(arc)
+}
+
+fn resolve_environment_references(
+    value: &serde_json::Value,
+    path: &str,
+) -> Result<serde_json::Value> {
+    match value {
+        serde_json::Value::String(value) => {
+            let config_value: ConfigValue<String> =
+                serde_json::from_value(serde_json::Value::String(value.clone()))
+                    .with_context(|| format!("invalid environment reference at '{path}'"))?;
+            match config_value {
+                ConfigValue::EnvironmentVariable { .. } => DtoMapper::new()
+                    .resolve_string(&config_value)
+                    .map(serde_json::Value::String)
+                    .with_context(|| {
+                        format!("failed to resolve environment reference at '{path}'")
+                    }),
+                ConfigValue::Static(_) => Ok(serde_json::Value::String(value.clone())),
+                ConfigValue::Secret { .. } => unreachable!("string values cannot encode secrets"),
+            }
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                resolve_environment_references(value, &format!("{path}[{index}]"))
+            })
+            .collect(),
+        serde_json::Value::Object(values)
+            if matches!(
+                values.get("kind").and_then(serde_json::Value::as_str),
+                Some("EnvironmentVariable")
+            ) =>
+        {
+            let config_value: ConfigValue<String> = serde_json::from_value(value.clone())
+                .with_context(|| format!("invalid environment reference at '{path}'"))?;
+            DtoMapper::new()
+                .resolve_string(&config_value)
+                .map(serde_json::Value::String)
+                .with_context(|| format!("failed to resolve environment reference at '{path}'"))
+        }
+        serde_json::Value::Object(values)
+            if matches!(
+                values.get("kind").and_then(serde_json::Value::as_str),
+                Some("Secret")
+            ) =>
+        {
+            anyhow::bail!(
+                "secret store bootstrap config at '{path}' cannot reference the secret store itself"
+            )
+        }
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| {
+                resolve_environment_references(value, &format!("{path}.{key}"))
+                    .map(|resolved| (key.clone(), resolved))
+            })
+            .collect(),
+        _ => Ok(value.clone()),
+    }
 }
 
 /// Get plugin metadata for a source kind from the registry.
@@ -654,7 +719,46 @@ pub async fn build_identity_provider_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use drasi_lib::secret_store::MemorySecretStoreProvider;
+    use drasi_plugin_sdk::descriptor::SecretStorePluginDescriptor;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    struct RecordingSecretStoreDescriptor {
+        received_config: Arc<Mutex<Option<serde_json::Value>>>,
+    }
+
+    #[async_trait]
+    impl SecretStorePluginDescriptor for RecordingSecretStoreDescriptor {
+        fn kind(&self) -> &str {
+            "recording"
+        }
+
+        fn config_version(&self) -> &str {
+            "1.0.0"
+        }
+
+        fn config_schema_json(&self) -> String {
+            "{}".to_string()
+        }
+
+        fn config_schema_name(&self) -> &str {
+            "secretStore.recording.Config"
+        }
+
+        async fn create_secret_store(
+            &self,
+            config_json: &serde_json::Value,
+        ) -> Result<Box<dyn SecretStoreProvider>> {
+            *self
+                .received_config
+                .lock()
+                .expect("recording descriptor lock should not be poisoned") =
+                Some(config_json.clone());
+            Ok(Box::new(MemorySecretStoreProvider::new()))
+        }
+    }
 
     fn test_registry() -> PluginRegistry {
         let mut registry = PluginRegistry::new();
@@ -835,6 +939,138 @@ mod tests {
             .and_then(|r| r.as_inline())
             .unwrap();
         assert_eq!(inline.config["host"], "inline.local");
+    }
+
+    #[tokio::test]
+    async fn test_secret_store_factory_resolves_environment_references_recursively() {
+        let received_config = Arc::new(Mutex::new(None));
+        let mut registry = PluginRegistry::new();
+        registry.register_secret_store(Arc::new(RecordingSecretStoreDescriptor {
+            received_config: received_config.clone(),
+        }));
+        let registry = tokio::sync::RwLock::new(registry);
+        let config = SecretStoreConfig {
+            kind: "recording".to_string(),
+            config: serde_json::json!({
+                "path": "${DRASI_TEST_SECRET_STORE_PATH_UNSET_196:-./data/secrets.json}",
+                "manifestDir": "${CARGO_MANIFEST_DIR}",
+                "options": {
+                    "backup": {
+                        "kind": "EnvironmentVariable",
+                        "name": "DRASI_TEST_SECRET_STORE_BACKUP_UNSET_196",
+                        "default": "./data/secrets.backup.json"
+                    },
+                    "mode": "readonly",
+                    "enabled": true,
+                    "retries": 3,
+                    "optional": null
+                },
+                "labels": [
+                    "static",
+                    "${DRASI_TEST_SECRET_STORE_LABEL_UNSET_196:-resolved}"
+                ]
+            }),
+        };
+        let original_config = config.clone();
+
+        create_secret_store_from_registry(&registry, &config)
+            .await
+            .expect("environment references should resolve before provider creation");
+
+        let received = received_config
+            .lock()
+            .expect("recording descriptor lock should not be poisoned")
+            .clone()
+            .expect("descriptor should receive configuration");
+        assert_eq!(received["path"], "./data/secrets.json");
+        assert_eq!(
+            received["manifestDir"],
+            std::env::var("CARGO_MANIFEST_DIR")
+                .expect("Cargo should set CARGO_MANIFEST_DIR for tests")
+        );
+        assert_eq!(received["options"]["backup"], "./data/secrets.backup.json");
+        assert_eq!(received["options"]["mode"], "readonly");
+        assert_eq!(received["options"]["enabled"], true);
+        assert_eq!(received["options"]["retries"], 3);
+        assert!(received["options"]["optional"].is_null());
+        assert_eq!(received["labels"][0], "static");
+        assert_eq!(received["labels"][1], "resolved");
+        assert_eq!(
+            config, original_config,
+            "factory must preserve unresolved config for persistence"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_store_factory_reports_missing_environment_field_path() {
+        let received_config = Arc::new(Mutex::new(None));
+        let mut registry = PluginRegistry::new();
+        registry.register_secret_store(Arc::new(RecordingSecretStoreDescriptor {
+            received_config: received_config.clone(),
+        }));
+        let registry = tokio::sync::RwLock::new(registry);
+        let config = SecretStoreConfig {
+            kind: "recording".to_string(),
+            config: serde_json::json!({
+                "credentials": {
+                    "token": "${DRASI_TEST_SECRET_STORE_REQUIRED_UNSET_196}"
+                }
+            }),
+        };
+
+        let error = match create_secret_store_from_registry(&registry, &config).await {
+            Ok(_) => panic!("a missing required environment variable must fail"),
+            Err(error) => error,
+        };
+        let diagnostic = format!("{error:#}");
+
+        assert!(diagnostic.contains("secretStore.credentials.token"));
+        assert!(diagnostic.contains("DRASI_TEST_SECRET_STORE_REQUIRED_UNSET_196"));
+        assert!(
+            received_config
+                .lock()
+                .expect("recording descriptor lock should not be poisoned")
+                .is_none(),
+            "descriptor must not run when bootstrap resolution fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_store_factory_rejects_secret_self_reference() {
+        let received_config = Arc::new(Mutex::new(None));
+        let mut registry = PluginRegistry::new();
+        registry.register_secret_store(Arc::new(RecordingSecretStoreDescriptor {
+            received_config: received_config.clone(),
+        }));
+        let registry = tokio::sync::RwLock::new(registry);
+        let config = SecretStoreConfig {
+            kind: "recording".to_string(),
+            config: serde_json::json!({
+                "credentials": [{
+                    "token": {
+                        "kind": "Secret",
+                        "name": "secret-store-token"
+                    }
+                }]
+            }),
+        };
+
+        let error = match create_secret_store_from_registry(&registry, &config).await {
+            Ok(_) => panic!("secret store bootstrap must reject Secret references"),
+            Err(error) => error,
+        };
+        let diagnostic = error.to_string();
+
+        assert!(diagnostic.contains("secretStore.credentials[0].token"));
+        assert!(diagnostic.contains("cannot reference the secret store itself"));
+        assert!(!diagnostic.contains("secret-store-token"));
+        assert!(
+            received_config
+                .lock()
+                .expect("recording descriptor lock should not be poisoned")
+                .is_none(),
+            "descriptor must not run when bootstrap resolution fails"
+        );
     }
 
     // ==========================================================================
