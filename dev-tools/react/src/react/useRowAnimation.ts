@@ -31,7 +31,7 @@ export interface UseRowAnimationOptions<T> {
 export interface UseRowAnimationResult<T> {
   /** Map of row keys to their current animation state. */
   animations: Map<string, AnimationDirection>;
-  /** Per-row restart tokens, cleared on expiry/removal. Share with DataTable.rowAnimationRevisions. */
+  /** Opaque restart tokens; entries clear on expiry/removal. Share with DataTable.rowAnimationRevisions. */
   revisions: ReadonlyMap<string, number>;
   /** Update tracked data (call when the data changes). */
   updateData: (data: readonly T[]) => void;
@@ -56,6 +56,7 @@ export function useRowAnimation<T>(
   const [state, setState] = useState(() => ({
     animations: new Map<string, AnimationDirection>(),
     revisions: new Map<string, number>(),
+    nextRevision: 0,
   }));
   const prevValuesRef = useRef<Map<string, number | string>>(new Map());
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -73,7 +74,7 @@ export function useRowAnimation<T>(
     timeoutsRef.current.forEach(clearTimeout);
     timeoutsRef.current.clear();
     setState(previous => previous.animations.size === 0 ? previous
-      : { animations: new Map(), revisions: new Map() });
+      : { ...previous, animations: new Map(), revisions: new Map() });
   }, [reducedMotion]);
 
   const updateData = useCallback(
@@ -88,7 +89,7 @@ export function useRowAnimation<T>(
         timeoutsRef.current.clear();
         prevValuesRef.current.clear();
         setState(prev => prev.animations.size === 0 ? prev
-          : { animations: new Map(), revisions: new Map() });
+          : { ...prev, animations: new Map(), revisions: new Map() });
         return;
       }
 
@@ -129,7 +130,7 @@ export function useRowAnimation<T>(
               const revisions = new Map(prev.revisions);
               animations.delete(key);
               revisions.delete(key);
-              return { animations, revisions };
+              return { ...prev, animations, revisions };
             });
             timeoutsRef.current.delete(key);
           }, animationDuration);
@@ -155,9 +156,9 @@ export function useRowAnimation<T>(
         );
         newAnimations.forEach((value, key) => {
           animations.set(key, value);
-          revisions.set(key, (prev.revisions.get(key) ?? -1) + 1);
+          revisions.set(key, prev.nextRevision);
         });
-        return { animations, revisions };
+        return { animations, revisions, nextRevision: prev.nextRevision + (newAnimations.size > 0 ? 1 : 0) };
       });
 
       prevValuesRef.current = nextValues;
@@ -169,5 +170,5 @@ export function useRowAnimation<T>(
     if (data != null) updateData(data);
   }, [data, updateData]);
 
-  return { ...state, updateData };
+  return { animations: state.animations, revisions: state.revisions, updateData };
 }

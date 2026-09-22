@@ -5,6 +5,7 @@ import {
   StrictMode, useEffect, useRef, useState, type CSSProperties, type RefObject,
 } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import {
   DataTable, Modal, type ColumnDef, type DataTableProps, type DataTableState, type SortConfig, type TableHeight,
 } from '@drasi/react/components';
@@ -423,6 +424,42 @@ function RowAnimationFixture() {
   );
 }
 
+function RowBoundaryFixture() {
+  const direction = params.get('direction') === 'down' ? 'down' : 'up';
+  const [rows, setRows] = useState<readonly AnimationItem[]>([{ id: 'a', value: 10 }]);
+  const [active, setActive] = useState(false);
+  const [stages, setStages] = useState<string[]>([]);
+  const container = useRef<HTMLDivElement>(null);
+  const activate = () => {
+    setRows(previous => previous.map(row => ({ ...row, value: Number(row.value) + (direction === 'up' ? 1 : -1) })));
+    setActive(true);
+  };
+  const rowClass = () => {
+    const row = container.current?.querySelector('tbody tr');
+    if (!row) throw new Error('Expected the boundary fixture row');
+    return row.className;
+  };
+  return <>
+    <div className="fixture-controls">
+      <button type="button" onClick={activate}>Activate boundary</button>
+      <button type="button" onClick={() => {
+        flushSync(() => setActive(false));
+        const inactive = rowClass();
+        flushSync(activate);
+        setStages([inactive, rowClass()]);
+      }}>Reactivate before paint</button>
+      <button type="button" onClick={() => setActive(false)}>Clear boundary</button>
+    </div>
+    <output className="fixture-output" data-testid="boundary-stages" aria-label="Committed boundary stages">{JSON.stringify(stages)}</output>
+    <DataTable
+      title="Boundary" containerRef={container} rows={rows} columns={animationColumns} rowKey={animationKey}
+      rowAnimations={new Map(active ? [['a', direction]] : [])}
+      rowAnimationRevisions={new Map(active ? [['a', 0]] : [])}
+      height={200}
+    />
+  </>;
+}
+
 function DeferredModalFixture() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -487,6 +524,7 @@ function Fixture() {
         : name === 'sizing' ? <SizingFixture />
         : name === 'motion' ? <MotionFixture />
         : name === 'row-animation' ? <RowAnimationFixture />
+        : name === 'row-boundary' ? <RowBoundaryFixture />
         : name === 'states' ? <StateFixture />
         : <><SortTable controlled /><SortTable controlled={false} /></>}
     </main>

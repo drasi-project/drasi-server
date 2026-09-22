@@ -133,10 +133,13 @@ function AnimatedRow({ animation, revision, className, children }: {
   className: string;
   children: React.ReactNode;
 }) {
-  const [cycle, setCycle] = useState({ animation, revision, alternate: false });
+  const [cycle, setCycle] = useState({ animation, revision, alternate: animation === null ? null : false });
   // Compare rendered tokens rather than their parity: batched updates may skip revisions.
   if (cycle.animation !== animation || !Object.is(cycle.revision, revision)) {
-    setCycle({ animation, revision, alternate: animation !== null && cycle.animation !== null && !cycle.alternate });
+    // An inactive commit may never be painted; retain the last active phase.
+    const alternate = animation === null ? cycle.alternate
+      : cycle.alternate === null ? false : !cycle.alternate;
+    setCycle({ animation, revision, alternate });
   }
   return <tr className={clsx(className, animation && cycle.alternate && 'drasi-row--repeat')}>{children}</tr>;
 }

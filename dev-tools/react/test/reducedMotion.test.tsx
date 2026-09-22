@@ -57,7 +57,8 @@ it('cancels live animation timers on a mode change and keeps the latest data bas
   act(() => hook.result.current.updateData([{ id: 'A', value: 10 }]));
   act(() => hook.result.current.updateData([{ id: 'A', value: 20 }]));
   expect(hook.result.current.animations.get('A')).toBe('up');
-  expect(hook.result.current.revisions.get('A')).toBe(0);
+  const firstRevision = hook.result.current.revisions.get('A');
+  expect(typeof firstRevision).toBe('number');
   expect(vi.getTimerCount()).toBe(1);
   preference.set(true);
   expect(hook.result.current.animations.size).toBe(0);
@@ -70,7 +71,8 @@ it('cancels live animation timers on a mode change and keeps the latest data bas
   preference.set(false);
   act(() => hook.result.current.updateData([{ id: 'A', value: 30 }]));
   expect(hook.result.current.animations.get('A')).toBe('down');
-  expect(hook.result.current.revisions.get('A')).toBe(0);
+  expect(typeof hook.result.current.revisions.get('A')).toBe('number');
+  expect(hook.result.current.revisions.get('A')).not.toBe(firstRevision);
   hook.unmount();
   expect(vi.getTimerCount()).toBe(0);
   expect(preference.listeners.size).toBe(0);

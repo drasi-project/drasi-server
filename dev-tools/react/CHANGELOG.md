@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Preserve opaque restart identity across React-batched expiry/reactivation
+  and inactive/active commits before a browser paint. Keep only one per-hook
+  scalar and the rendered row's phase; expired/deleted map entries still clear.
+  Stable rows/focus, first activation, timing, colors and reduced motion remain.
 - Restart successive row highlights, including repeated up/down/string changes,
   without replacing stable rows or losing cell state/focus. The headless hook
   exposes readonly `revisions`; controlled DataTable owners share them through

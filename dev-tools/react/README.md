@@ -866,10 +866,15 @@ previous baseline; an empty array clears it. Share `animations` as
 presentation tracking its own changes.
 
 `animations` retains the direction map; `revisions: ReadonlyMap<string, number>`
-adds per-row restart tokens, starting at zero and advancing on each relevant
-change, even in the same direction. Unchanged tracked values preserve both maps.
+adds opaque per-row restart tokens for relevant changes, even in the same
+direction. Unchanged tracked values preserve both maps.
 Tokens are removed with their decoration on expiry, row removal, empty input or
-reduced motion. They are not persistent counters or React keys. The lifetime
+reduced motion. A single per-hook scalar in React state survives that cleanup;
+there is no history of deleted rows, and token values are not persistent counters
+or React keys. Expiry and reactivation coalesced into one React batch therefore
+still have different decoration identities. The renderer retains its last active
+phase across inactive commits, even when the browser has not painted between
+them, while preserving the first activation's original phase. The lifetime
 restarts after the latest change; updates stopping means the decoration expires,
 not an endless animation. The built-in stylesheet retains its 500ms
 ease-in-out pulse and original theme colors, alternating equivalent keyframes

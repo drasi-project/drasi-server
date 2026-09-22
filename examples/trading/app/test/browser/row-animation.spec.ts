@@ -4,12 +4,59 @@
 import { test, expect, type Page } from '@playwright/test';
 import { audit } from './axeAudit';
 
-async function open(page: Page, owner: string) {
+async function open(page: Page, owner: string, scenario = 'row-animation', direction?: 'up' | 'down') {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`/__components/?case=row-animation&owner=${owner}`);
+  const query = new URLSearchParams({ case: scenario, owner, ...(direction ? { direction } : {}) });
+  await page.goto(`/__components/?${query}`);
   await expect(page.getByTestId('strict-setups')).toHaveText('2');
   return errors;
+}
+
+for (const direction of ['up', 'down'] as const) {
+  test(`inactive/reactivated ${direction} commits before paint restart the native animation`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const errors = await open(page, 'controlled', 'row-boundary', direction);
+    const row = page.getByRole('table', { name: 'Boundary', exact: true }).locator('tbody tr');
+    const input = row.getByRole('textbox', { name: 'Note a' });
+    await input.fill('keep this boundary draft');
+    await input.focus();
+    await page.getByRole('button', { name: 'Activate boundary', exact: true }).dispatchEvent('click');
+    await expect(row.getByRole('cell').nth(1)).toHaveText(direction === 'up' ? '11' : '9');
+    const original = await row.evaluateHandle(element => {
+      const animation = element.getAnimations()[0];
+      if (!animation) throw new Error('Expected the initial native row animation');
+      return { row: element, input: element.querySelector('input'), animation };
+    });
+    try {
+      // Both React commits run in one event, with no style/layout read between them.
+      await page.getByRole('button', { name: 'Reactivate before paint', exact: true }).dispatchEvent('click');
+      const stages: string[] = JSON.parse(await page.getByTestId('boundary-stages').innerText());
+      expect(stages).toHaveLength(2);
+      expect(stages[0]).not.toContain('drasi-row--');
+      expect(stages[1]).toContain(`drasi-row--${direction}`);
+      await expect(row.getByRole('cell').nth(1)).toHaveText(direction === 'up' ? '12' : '8');
+      expect(await row.evaluate((element, prior) => {
+        const animations = element.getAnimations();
+        return {
+          active: animations.length,
+          restarted: !!animations[0] && animations[0] !== prior.animation,
+          sameRow: element === prior.row,
+          sameInput: element.querySelector('input') === prior.input,
+        };
+      }, original)).toEqual({ active: 1, restarted: true, sameRow: true, sameInput: true });
+      await expect(row).toHaveCSS('animation-duration', '0.5s');
+      await expect(row).toHaveCSS('animation-timing-function', 'ease-in-out');
+      await expect(input).toBeFocused();
+      await expect(input).toHaveValue('keep this boundary draft');
+      await page.getByRole('button', { name: 'Clear boundary', exact: true }).dispatchEvent('click');
+      await expect(row).not.toHaveClass(/drasi-row--/);
+      expect(await row.evaluate(element => element.getAnimations().length)).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await original.dispose();
+    }
+  });
 }
 
 for (const owner of ['local', 'shared']) {
