@@ -114,9 +114,8 @@ async fn test_source_lifecycle_operations() {
     server.start().await.expect("Failed to start server");
 
     // Wait for source to reach Running before lifecycle operations
-    let graph = server.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &server.component_graph(),
         "lifecycle_source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -135,7 +134,7 @@ async fn test_source_lifecycle_operations() {
 
     // Wait for source to reach Stopped before removal
     drasi_lib::wait_for_status(
-        &graph,
+        &server.component_graph(),
         "lifecycle_source",
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -218,7 +217,20 @@ async fn test_concurrent_start_stop_operations() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Sources are now auto-started on first startup
+    for i in 1..=5 {
+        timeout(
+            Duration::from_secs(5),
+            server
+                .computation_component(&format!("concurrent_source_{i}"))
+                .unwrap()
+                .wait_started(),
+        )
+        .await
+        .expect("source startup should complete")
+        .expect("source should start");
+    }
+
+    // Sources are now ready after first startup.
     // Test concurrent stop operations instead
     let mut stop_tasks = vec![];
     for i in 1..=5 {
@@ -259,11 +271,10 @@ async fn test_concurrent_start_stop_operations() {
     assert!(server.is_running().await);
 
     // Wait for all sources to reach Running before stopping
-    let graph = server.component_graph();
     for i in 1..=5 {
         let source_id = format!("concurrent_source_{i}");
         drasi_lib::wait_for_status(
-            &graph,
+            &server.component_graph(),
             &source_id,
             &[ComponentStatus::Running],
             std::time::Duration::from_secs(5),

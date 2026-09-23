@@ -21,6 +21,15 @@ use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::Path;
 
+pub(crate) const REMOVED_EXECUTION_MODE_MESSAGE: &str =
+    "executionMode has been removed. ComputationGraph is the only runtime; remove executionMode from the server and instance configuration.";
+
+pub(crate) fn removed_execution_mode_error(error: &str) -> Option<&'static str> {
+    (error.contains("unknown field `executionMode`")
+        || error.contains("unknown field `execution_mode`"))
+    .then_some(REMOVED_EXECUTION_MODE_MESSAGE)
+}
+
 /// Unified error type for configuration operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -28,10 +37,13 @@ pub enum ConfigError {
     IoError(#[from] std::io::Error),
 
     #[error("Failed to parse YAML: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[source] serde_yaml::Error),
 
     #[error("Failed to parse JSON: {0}")]
-    JsonError(#[from] serde_json::Error),
+    JsonError(#[source] serde_json::Error),
+
+    #[error("{REMOVED_EXECUTION_MODE_MESSAGE}")]
+    RemovedExecutionMode,
 
     #[error(
         "Failed to parse config file '{path}': YAML error: {yaml_err}, JSON error: {json_err}"
@@ -47,6 +59,26 @@ pub enum ConfigError {
 
     #[error("Unknown fields in configuration: {0}")]
     FieldValidationError(#[from] super::validation::ValidationError),
+}
+
+impl From<serde_yaml::Error> for ConfigError {
+    fn from(error: serde_yaml::Error) -> Self {
+        if removed_execution_mode_error(&error.to_string()).is_some() {
+            Self::RemovedExecutionMode
+        } else {
+            Self::YamlError(error)
+        }
+    }
+}
+
+impl From<serde_json::Error> for ConfigError {
+    fn from(error: serde_json::Error) -> Self {
+        if removed_execution_mode_error(&error.to_string()).is_some() {
+            Self::RemovedExecutionMode
+        } else {
+            Self::JsonError(error)
+        }
+    }
 }
 
 /// Deserialize YAML.
@@ -127,6 +159,9 @@ pub fn load_config_file<P: AsRef<Path>>(path: P) -> Result<DrasiServerConfig, Co
     let config = match serde_yaml::from_str::<DrasiServerConfig>(&content) {
         Ok(config) => config,
         Err(yaml_err) => {
+            if removed_execution_mode_error(&yaml_err.to_string()).is_some() {
+                return Err(ConfigError::RemovedExecutionMode);
+            }
             // If YAML fails, try JSON
             match serde_json::from_str::<DrasiServerConfig>(&content) {
                 Ok(config) => config,

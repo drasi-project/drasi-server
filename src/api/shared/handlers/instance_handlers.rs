@@ -24,22 +24,19 @@ use crate::api::models::{BootstrapProviderConfig, BootstrapProviderRef};
 use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::api::shared::responses::{ApiResponse, StatusResponse};
-use crate::config::{DrasiLibInstanceConfig, ExecutionModeConfig, ReactionConfig, SourceConfig};
+use crate::config::{DrasiLibInstanceConfig, ReactionConfig, SourceConfig};
 use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::{ConfigurationSnapshot, DrasiLib, ExecutionMode};
+use drasi_lib::{ConfigurationSnapshot, DrasiLib};
 
 /// Request body for creating a new instance
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schema(as = CreateInstanceRequest)]
 pub struct CreateInstanceRequest {
-    /// Execution engine; omitted values inherit the server default.
-    #[serde(default)]
-    pub execution_mode: Option<ExecutionModeConfig>,
     /// Unique identifier for the new instance
     pub id: String,
 
@@ -93,15 +90,6 @@ pub async fn create_instance(
     }
 
     let instance_id = request.id.clone();
-    let execution_mode = registry
-        .execution_mode_policy()
-        .resolve(request.execution_mode)
-        .map_err(|_| {
-            ErrorResponse::new(
-                error_codes::INVALID_REQUEST,
-                "executionMode conflicts with the server's forced execution mode",
-            )
-        })?;
     let persist_index = request.persist_index.unwrap_or(false);
     let enable_archive = request.enable_archive.unwrap_or(false);
     let memory_budget_mib = request.memory_budget_mib;
@@ -120,9 +108,7 @@ pub async fn create_instance(
     }
 
     // Create a new DrasiLib instance with optional configuration
-    let mut builder = DrasiLib::builder()
-        .with_id(&instance_id)
-        .with_execution_mode(execution_mode.into());
+    let mut builder = DrasiLib::builder().with_id(&instance_id);
 
     if let Some(capacity) = request.default_priority_queue_capacity {
         builder = builder.with_priority_queue_capacity(capacity);
@@ -189,7 +175,6 @@ pub async fn create_instance(
     // Persist configuration if enabled
     if let Some(persistence) = &config_persistence {
         let instance_config = DrasiLibInstanceConfig {
-            execution_mode: Some(execution_mode),
             id: ConfigValue::Static(instance_id.clone()),
             persist_index,
             enable_archive,
@@ -223,7 +208,7 @@ pub async fn create_instance(
 
 /// Request body for cloning an instance's configuration into another instance.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schema(as = CloneInstanceRequest)]
 pub struct CloneInstanceRequest {
     /// ID of the instance whose configuration will be copied
@@ -252,8 +237,7 @@ pub struct CloneInstanceResponse {
 /// Takes an atomic snapshot of the source instance and recreates all
 /// components (sources, queries, reactions) in the target instance.
 /// All cloned components have auto-start disabled.
-/// Legacy creation failures roll back previously created components. Computation
-/// mode retains added nodes and reports their creation failures in the response.
+/// Added nodes are retained, with creation failures reported in the response.
 pub async fn clone_instance(
     registry: InstanceRegistry,
     read_only: Arc<bool>,
@@ -296,7 +280,6 @@ pub async fn clone_instance(
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
     let mut reactions_created: Vec<String> = Vec::new();
-    let computation_mode = target_core.execution_mode() == ExecutionMode::ComputationGraph;
     let mut errors = Vec::new();
 
     // Phase 1: Create sources
@@ -332,18 +315,8 @@ pub async fn clone_instance(
                 Ok(s) => s,
                 Err(e) => {
                     log::error!("Clone: failed to create source '{}': {e}", src_snap.id);
-                    if computation_mode {
-                        errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
-                        continue;
-                    }
-                    let rb = rollback_sources(&target_core, &sources_created).await;
-                    return Err(clone_error(
-                        error_codes::SOURCE_CREATE_FAILED,
-                        format!("Failed to create source '{}': {e}", src_snap.id),
-                        "source",
-                        &src_snap.id,
-                        rb,
-                    ));
+                    errors.push(format!("Failed to create source '{}': {e}", src_snap.id));
+                    continue;
                 }
             };
 
@@ -352,18 +325,8 @@ pub async fn clone_instance(
             .await
         {
             log::error!("Clone: failed to add source '{}': {e}", src_snap.id);
-            if computation_mode {
-                errors.push(format!("Failed to add source '{}': {e}", src_snap.id));
-                continue;
-            }
-            let rb = rollback_sources(&target_core, &sources_created).await;
-            return Err(clone_error(
-                error_codes::SOURCE_CREATE_FAILED,
-                format!("Failed to add source '{}': {e}", src_snap.id),
-                "source",
-                &src_snap.id,
-                rb,
-            ));
+            errors.push(format!("Failed to add source '{}': {e}", src_snap.id));
+            continue;
         }
 
         // Track the cloned source's bootstrap provider so it survives the next
@@ -380,19 +343,15 @@ pub async fn clone_instance(
         }
 
         sources_created.push(src_snap.id.clone());
-        if computation_mode {
-            if let Err(e) =
-                wait_for_computation_creation(&target_core, "source", &src_snap.id).await
-            {
-                log::warn!(
-                    "Clone: source '{}' was added but creation failed: {e}",
-                    src_snap.id
-                );
-                errors.push(format!(
-                    "Source '{}' was added but creation failed: {e}",
-                    src_snap.id
-                ));
-            }
+        if let Err(e) = wait_for_computation_creation(&target_core, "source", &src_snap.id).await {
+            log::warn!(
+                "Clone: source '{}' was added but creation failed: {e}",
+                src_snap.id
+            );
+            errors.push(format!(
+                "Source '{}' was added but creation failed: {e}",
+                src_snap.id
+            ));
         }
     }
 
@@ -407,35 +366,20 @@ pub async fn clone_instance(
 
         if let Err(e) = target_core.add_query(query_config).await {
             log::error!("Clone: failed to add query '{}': {e}", q_snap.id);
-            if computation_mode {
-                errors.push(format!("Failed to add query '{}': {e}", q_snap.id));
-                continue;
-            }
-            let mut rb = rollback_queries(&target_core, &queries_created).await;
-            rb.extend(rollback_sources(&target_core, &sources_created).await);
-            return Err(clone_error(
-                error_codes::QUERY_CREATE_FAILED,
-                format!("Failed to add query '{}': {e}", q_snap.id),
-                "query",
-                &q_snap.id,
-                rb,
-            ));
+            errors.push(format!("Failed to add query '{}': {e}", q_snap.id));
+            continue;
         }
 
         queries_created.push(q_snap.id.clone());
-        if computation_mode {
-            if let Err(e) =
-                wait_for_computation_creation(&target_core, "query", &q_snap.id).await
-            {
-                log::warn!(
-                    "Clone: query '{}' was added but creation failed: {e}",
-                    q_snap.id
-                );
-                errors.push(format!(
-                    "Query '{}' was added but creation failed: {e}",
-                    q_snap.id
-                ));
-            }
+        if let Err(e) = wait_for_computation_creation(&target_core, "query", &q_snap.id).await {
+            log::warn!(
+                "Clone: query '{}' was added but creation failed: {e}",
+                q_snap.id
+            );
+            errors.push(format!(
+                "Query '{}' was added but creation failed: {e}",
+                q_snap.id
+            ));
         }
     }
 
@@ -462,20 +406,8 @@ pub async fn clone_instance(
                 Ok(r) => r,
                 Err(e) => {
                     log::error!("Clone: failed to create reaction '{}': {e}", rx_snap.id);
-                    if computation_mode {
-                        errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
-                        continue;
-                    }
-                    let mut rb = rollback_reactions(&target_core, &reactions_created).await;
-                    rb.extend(rollback_queries(&target_core, &queries_created).await);
-                    rb.extend(rollback_sources(&target_core, &sources_created).await);
-                    return Err(clone_error(
-                        error_codes::REACTION_CREATE_FAILED,
-                        format!("Failed to create reaction '{}': {e}", rx_snap.id),
-                        "reaction",
-                        &rx_snap.id,
-                        rb,
-                    ));
+                    errors.push(format!("Failed to create reaction '{}': {e}", rx_snap.id));
+                    continue;
                 }
             };
 
@@ -484,36 +416,20 @@ pub async fn clone_instance(
             .await
         {
             log::error!("Clone: failed to add reaction '{}': {e}", rx_snap.id);
-            if computation_mode {
-                errors.push(format!("Failed to add reaction '{}': {e}", rx_snap.id));
-                continue;
-            }
-            let mut rb = rollback_reactions(&target_core, &reactions_created).await;
-            rb.extend(rollback_queries(&target_core, &queries_created).await);
-            rb.extend(rollback_sources(&target_core, &sources_created).await);
-            return Err(clone_error(
-                error_codes::REACTION_CREATE_FAILED,
-                format!("Failed to add reaction '{}': {e}", rx_snap.id),
-                "reaction",
-                &rx_snap.id,
-                rb,
-            ));
+            errors.push(format!("Failed to add reaction '{}': {e}", rx_snap.id));
+            continue;
         }
 
         reactions_created.push(rx_snap.id.clone());
-        if computation_mode {
-            if let Err(e) =
-                wait_for_computation_creation(&target_core, "reaction", &rx_snap.id).await
-            {
-                log::warn!(
-                    "Clone: reaction '{}' was added but creation failed: {e}",
-                    rx_snap.id
-                );
-                errors.push(format!(
-                    "Reaction '{}' was added but creation failed: {e}",
-                    rx_snap.id
-                ));
-            }
+        if let Err(e) = wait_for_computation_creation(&target_core, "reaction", &rx_snap.id).await {
+            log::warn!(
+                "Clone: reaction '{}' was added but creation failed: {e}",
+                rx_snap.id
+            );
+            errors.push(format!(
+                "Reaction '{}' was added but creation failed: {e}",
+                rx_snap.id
+            ));
         }
     }
 
@@ -535,105 +451,4 @@ pub async fn clone_instance(
         reactions_created,
         errors,
     })))
-}
-
-// =============================================================================
-// Clone rollback helpers
-// =============================================================================
-//
-// These helpers are intentionally **best-effort**: each call to
-// `DrasiLib::remove_*` is attempted in sequence and any error is recorded
-// but does not stop the loop. This is safe at this call site for the
-// following reasons:
-//
-// 1. **All cloned components are stopped**. `clone_instance` forces
-//    `auto_start = false` for every cloned source/query/reaction (see
-//    Phases 1–3 above), so rollback is removing components that were
-//    never started.
-// 2. **Removal happens in dependent-first order** (reactions → queries →
-//    sources). This means each component being removed has already had
-//    its dependents removed in a prior helper call (or never had any),
-//    so `DrasiLib`'s internal `can_remove` dependent check should not
-//    reject the removal.
-// 3. **Teardown of a never-started component is essentially a map
-//    removal**. With `cleanup = false`, no provider-level
-//    deprovisioning runs; the component is simply unregistered from the
-//    runtime map.
-// 4. **Graph deregister failures are absorbed inside `remove_*`**
-//    (the entry is marked `Error` and `Ok(())` is returned), so most
-//    realistic failure modes never reach the caller.
-//
-// The realistic failure surface is therefore (a) concurrent mutation
-// races (a sibling request creating a dependent between phase 1 and
-// rollback — narrow given the lack of an instance-wide lock) or
-// (b) bugs/panics in `drasi-lib` internals. In either case, refusing
-// to roll back or retrying would not be safer than logging and
-// continuing — the alternative is leaving the user in a state where
-// some components were rolled back and others were not, with no
-// record of which is which.
-//
-// Each helper returns a `Vec<String>` of human-readable rollback
-// failures (empty on the happy path). The caller threads these into
-// the outgoing `ErrorResponse.details.technical_details` so an
-// operator who hits the rare race can identify any orphans for
-// manual cleanup. The rollback log lines are emitted at `error!` so
-// they are visible in default-level operator logs without needing
-// `RUST_LOG=warn`.
-
-async fn rollback_sources(core: &Arc<DrasiLib>, sources: &[String]) -> Vec<String> {
-    let mut failures = Vec::new();
-    for source_id in sources {
-        if let Err(e) = core.remove_source(source_id, false).await {
-            log::error!("Clone rollback: failed to remove source '{source_id}': {e}");
-            failures.push(format!("source '{source_id}': {e}"));
-        }
-    }
-    failures
-}
-
-async fn rollback_queries(core: &Arc<DrasiLib>, queries: &[String]) -> Vec<String> {
-    let mut failures = Vec::new();
-    for query_id in queries {
-        if let Err(e) = core.remove_query(query_id).await {
-            log::error!("Clone rollback: failed to remove query '{query_id}': {e}");
-            failures.push(format!("query '{query_id}': {e}"));
-        }
-    }
-    failures
-}
-
-async fn rollback_reactions(core: &Arc<DrasiLib>, reactions: &[String]) -> Vec<String> {
-    let mut failures = Vec::new();
-    for reaction_id in reactions {
-        if let Err(e) = core.remove_reaction(reaction_id, false).await {
-            log::error!("Clone rollback: failed to remove reaction '{reaction_id}': {e}");
-            failures.push(format!("reaction '{reaction_id}': {e}"));
-        }
-    }
-    failures
-}
-
-/// Build an `ErrorResponse` for a clone-phase failure, attaching any
-/// rollback failures into `ErrorDetail::technical_details` so operators
-/// have a structured list of any orphans to inspect manually.
-fn clone_error(
-    code: &'static str,
-    primary_message: String,
-    component_type: &str,
-    component_id: &str,
-    rollback_failures: Vec<String>,
-) -> ErrorResponse {
-    let technical_details = if rollback_failures.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "Rollback was best-effort and the following components could not be removed and may be orphaned: {}",
-            rollback_failures.join("; ")
-        ))
-    };
-    ErrorResponse::new(code, primary_message).with_details(ErrorDetail {
-        component_type: Some(component_type.to_string()),
-        component_id: Some(component_id.to_string()),
-        technical_details,
-    })
 }

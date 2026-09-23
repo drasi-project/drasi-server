@@ -61,11 +61,10 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Start the server
     core.start().await?;
-    let graph = core.component_graph();
 
     // Wait for source to be running
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "counter-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -80,7 +79,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Wait for source to be stopped before restart
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "counter-source",
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -93,7 +92,7 @@ async fn test_data_flow_with_server_restart() -> Result<()> {
 
     // Wait for components to start
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "counter-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -159,18 +158,17 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
 
     // Start server
     core.start().await?;
-    let graph = core.component_graph();
 
     // Wait for sources to reach Running
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "sensors-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
     )
     .await?;
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "alert-handler",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -181,7 +179,7 @@ async fn test_multiple_sources_and_queries() -> Result<()> {
     assert!(core.is_running().await);
 
     // Remove dependent queries before removing the source
-    // (ComponentGraph now validates dependency integrity)
+    // The graph enforces dependency integrity.
     core.remove_reaction("alert-handler", true).await?;
     core.remove_query("sensor-alerts").await?;
     core.remove_query("combined-view").await?;
@@ -227,11 +225,10 @@ async fn test_component_failure_recovery() -> Result<()> {
 
     // Start server - all components should start even with the "bad" query
     core.start().await?;
-    let graph = core.component_graph();
 
     // Wait for source to reach Running
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -246,7 +243,7 @@ async fn test_component_failure_recovery() -> Result<()> {
 
     // Wait for source to reach Stopped before restart
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -257,7 +254,7 @@ async fn test_component_failure_recovery() -> Result<()> {
 
     // Wait for source to reach Running after restart
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),

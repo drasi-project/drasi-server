@@ -74,7 +74,9 @@ pub struct InstanceListItem {
 #[serde(rename_all = "camelCase")]
 pub struct InstanceRuntimeInfo {
     pub instance_id: String,
-    pub execution_mode: crate::config::ExecutionModeConfig,
+    /// Fixed informational runtime name, not a configurable execution mode.
+    #[schema(example = "computationGraph")]
+    pub runtime: &'static str,
     pub running: bool,
 }
 

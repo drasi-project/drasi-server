@@ -24,7 +24,9 @@ use drasi_core::models::{
     Element, ElementMetadata, ElementPropertyMap, ElementReference, ElementValue, SourceChange,
 };
 use drasi_lib::channels::dispatcher::{ChangeDispatcher, ChannelChangeDispatcher};
-use drasi_lib::channels::{BootstrapEvent, ComponentStatus, SubscriptionResponse};
+use drasi_lib::channels::{
+    BootstrapEvent, ComponentStatus, SourceEventWrapper, SubscriptionResponse,
+};
 use drasi_lib::config::SourceSubscriptionSettings;
 use drasi_lib::context::SourceRuntimeContext;
 use drasi_lib::Source as SourceTrait;
@@ -40,6 +42,7 @@ struct BootstrapMockSource {
     status: Arc<RwLock<ComponentStatus>>,
     /// Elements to send during bootstrap.
     bootstrap_elements: Vec<Element>,
+    dispatchers: RwLock<Vec<ChannelChangeDispatcher<SourceEventWrapper>>>,
 }
 
 impl BootstrapMockSource {
@@ -48,6 +51,7 @@ impl BootstrapMockSource {
             id: id.to_string(),
             status: Arc::new(RwLock::new(ComponentStatus::Stopped)),
             bootstrap_elements: elements,
+            dispatchers: RwLock::new(Vec::new()),
         }
     }
 }
@@ -88,6 +92,7 @@ impl SourceTrait for BootstrapMockSource {
         let dispatcher =
             ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
         let receiver = dispatcher.create_receiver().await?;
+        self.dispatchers.write().await.push(dispatcher);
 
         // Create a bootstrap channel and send bootstrap elements
         let (bootstrap_tx, bootstrap_rx) = mpsc::channel::<BootstrapEvent>(100);
@@ -168,13 +173,20 @@ async fn test_bootstrap_data_appears_in_query_results() {
     let server = Arc::new(server);
     server.start().await.expect("Failed to start server");
 
-    // Wait for bootstrap to complete
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    let results = server
-        .get_query_results("bootstrap-query")
-        .await
-        .expect("Failed to get query results");
+    let results = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let results = server
+                .get_query_results("bootstrap-query")
+                .await
+                .expect("Failed to get query results");
+            if results.len() >= 3 {
+                break results;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Bootstrap results should be applied before the deadline");
 
     assert_eq!(
         results.len(),
@@ -206,6 +218,5 @@ async fn test_bootstrap_data_appears_in_query_results() {
         "Missing Gamma in {names:?}",
     );
 
-    // Clean up — stop may fail if source already finished, that's OK
-    let _ = server.stop().await;
+    server.shutdown().await.expect("Failed to shut down server");
 }

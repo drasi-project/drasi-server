@@ -98,6 +98,25 @@ async fn create_test_router_with_id(
 
     // Start the core
     core.start().await.expect("Failed to start core");
+    for id in [
+        "test-source",
+        "query-source",
+        "auto-source",
+        "log-source",
+        "reaction-source",
+        "reaction-query",
+        "auto-query",
+        "test-reaction",
+        "auto-reaction",
+    ] {
+        timeout(
+            Duration::from_secs(10),
+            core.computation_component(id).unwrap().wait_started(),
+        )
+        .await
+        .expect("fixture node should start within the deadline")
+        .expect("fixture node should start successfully");
+    }
 
     let read_only = Arc::new(false);
     let config_persistence: Option<Arc<drasi_server::persistence::ConfigPersistence>> = None;
@@ -184,8 +203,9 @@ async fn test_instances_endpoint() {
     let test_instance = instances.iter().find(|i| i["id"] == "test-server").unwrap();
 
     // Verify richer InstanceDto fields
-    assert!(test_instance["source_count"].as_u64().unwrap() >= 3); // test-source, query-source, auto-source
-    assert!(test_instance["reaction_count"].as_u64().unwrap() >= 2); // test-reaction, auto-reaction
+    assert_eq!(test_instance["source_count"], 6); // Five fixtures plus graph observability.
+    assert_eq!(test_instance["query_count"], 2);
+    assert_eq!(test_instance["reaction_count"], 2);
     assert!(test_instance["links"]["self"].is_string());
     assert!(test_instance["links"]["sources"]
         .as_str()
@@ -205,7 +225,6 @@ async fn test_instances_endpoint() {
 async fn test_source_lifecycle_via_api() {
     let (router, core, _registry) = create_test_router().await;
     let base = format!("/instances/{}", "test-server");
-    let graph = core.component_graph();
 
     // List sources (pre-registered via builder)
     let response = router
@@ -255,7 +274,7 @@ async fn test_source_lifecycle_via_api() {
 
     // Wait for source to reach Running before attempting stop
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -283,7 +302,7 @@ async fn test_source_lifecycle_via_api() {
 
     // Wait for source to reach Stopped before attempting start
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -311,7 +330,7 @@ async fn test_source_lifecycle_via_api() {
 
     // Wait for source to reach Running before attempting second stop
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -339,7 +358,7 @@ async fn test_source_lifecycle_via_api() {
 
     // Wait for source to reach Stopped before deleting
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),

@@ -34,6 +34,9 @@ mod plugin;
 #[derive(Parser)]
 #[command(name = "drasi-server")]
 #[command(about = "Standalone Drasi server for data change processing")]
+#[command(
+    after_help = "ComputationGraph is the only runtime. Remove obsolete --execution-mode flags and executionMode configuration fields."
+)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(long_version = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -53,10 +56,6 @@ struct Cli {
     /// Override the server port
     #[arg(short, long, global = true)]
     port: Option<u16>,
-
-    /// Force the engine behind ordinary source/query/reaction APIs for all instances
-    #[arg(long, global = true, value_enum)]
-    execution_mode: Option<drasi_server::config::ExecutionModeConfig>,
 
     /// Directory to scan for plugin shared libraries (defaults to binary directory)
     #[arg(long, global = true)]
@@ -154,15 +153,7 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            run_server(
-                config,
-                port,
-                plugins_dir,
-                skip_verification,
-                ui_override,
-                cli.execution_mode,
-            )
-            .await
+            run_server(config, port, plugins_dir, skip_verification, ui_override).await
         }
         Some(Commands::Validate {
             config,
@@ -194,7 +185,6 @@ async fn main() -> Result<()> {
                 cli.plugins_dir,
                 cli.skip_verification,
                 ui_override,
-                cli.execution_mode,
             )
             .await
         }
@@ -208,7 +198,6 @@ async fn run_server(
     plugins_dir: Option<PathBuf>,
     skip_verification: bool,
     ui_override: Option<bool>,
-    execution_mode_override: Option<drasi_server::config::ExecutionModeConfig>,
 ) -> Result<()> {
     // Load .env file if it exists (for environment variable interpolation)
     // Look for .env in the same directory as the config file
@@ -327,13 +316,12 @@ async fn run_server(
     };
     info!("Plugins directory: {}", plugins_dir.display());
 
-    let server = DrasiServer::new_with_execution_mode(
+    let server = DrasiServer::new(
         config_path,
         final_port,
         plugins_dir,
         skip_verification,
         final_enable_ui,
-        execution_mode_override,
     )
     .await?;
     server.run().await?;

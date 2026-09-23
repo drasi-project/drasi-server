@@ -2,6 +2,12 @@
 
 This directory contains a progressive learning collection of configuration examples that demonstrate the features and capabilities of Drasi Server.
 
+Every example uses ComputationGraph, the only runtime, including multi-instance
+configurations. Do not add `executionMode` fields or `--execution-mode` flags:
+obsolete selectors are rejected. Source/reaction plugins still use the supported
+adapters; successful creation acknowledges graph nodes, while component status
+and explicit start responses report readiness.
+
 ## Learning Path
 
 The examples are organized into numbered folders representing a progression from basic to advanced concepts:

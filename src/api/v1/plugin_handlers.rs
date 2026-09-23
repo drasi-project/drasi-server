@@ -23,6 +23,7 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
+use drasi_lib::component_graph::ComponentKind;
 
 use crate::api::shared::error::{error_codes, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
@@ -307,71 +308,51 @@ pub async fn list_dependents(
     Path(plugin_id): Path<String>,
 ) -> impl IntoResponse {
     // Verify the plugin exists
-    let plugin_info = match orchestrator.get_plugin_info(&plugin_id).await {
-        Some(info) => info,
-        None => {
-            return ErrorResponse::new(
-                error_codes::PLUGIN_NOT_FOUND,
-                format!("Plugin '{plugin_id}' is not loaded"),
-            )
-            .into_json_response();
-        }
-    };
-
-    // Scan all instances for components using this plugin
-    let mut dependents = Vec::new();
-
-    for (instance_id, core) in instances.list().await {
-        let graph = core.component_graph();
-        let graph_read = graph.read().await;
-
-        // Check sources
-        for (source_id, _status) in
-            graph_read.list_by_kind(&drasi_lib::component_graph::ComponentKind::Source)
-        {
-            if let Some(node) = graph_read.get_component(&source_id) {
-                if node.metadata.get("pluginId").map(|s| s.as_str()) == Some(&plugin_id) {
-                    let kind = node.metadata.get("kind").cloned().unwrap_or_default();
-                    let is_running = node.status == drasi_lib::channels::ComponentStatus::Running;
-                    dependents.push(serde_json::json!({
-                        "instanceId": instance_id,
-                        "componentId": source_id,
-                        "componentType": "source",
-                        "kind": kind,
-                        "running": is_running,
-                    }));
-                }
-            }
-        }
-
-        // Check reactions
-        for (reaction_id, _status) in
-            graph_read.list_by_kind(&drasi_lib::component_graph::ComponentKind::Reaction)
-        {
-            if let Some(node) = graph_read.get_component(&reaction_id) {
-                if node.metadata.get("pluginId").map(|s| s.as_str()) == Some(&plugin_id) {
-                    let kind = node.metadata.get("kind").cloned().unwrap_or_default();
-                    let is_running = node.status == drasi_lib::channels::ComponentStatus::Running;
-                    dependents.push(serde_json::json!({
-                        "instanceId": instance_id,
-                        "componentId": reaction_id,
-                        "componentType": "reaction",
-                        "kind": kind,
-                        "running": is_running,
-                    }));
-                }
-            }
-        }
+    if orchestrator.get_plugin_info(&plugin_id).await.is_none() {
+        return ErrorResponse::new(
+            error_codes::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin_id}' is not loaded"),
+        )
+        .into_json_response();
     }
+
+    let dependents = collect_plugin_dependents(&instances, &plugin_id).await;
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "pluginId": plugin_id,
-            "dependentCount": plugin_info.dependent_count,
+            "dependentCount": dependents.len(),
             "dependents": dependents,
         })),
     )
+}
+
+async fn collect_plugin_dependents(
+    instances: &InstanceRegistry,
+    plugin_id: &str,
+) -> Vec<serde_json::Value> {
+    let mut dependents = Vec::new();
+    for (instance_id, core) in instances.list().await {
+        for node in core.get_graph().await.nodes {
+            let component_type = match node.kind {
+                ComponentKind::Source => "source",
+                ComponentKind::Reaction => "reaction",
+                _ => continue,
+            };
+            if node.metadata.get("pluginId").map(String::as_str) != Some(plugin_id) {
+                continue;
+            }
+            dependents.push(serde_json::json!({
+                "instanceId": instance_id,
+                "componentId": node.id,
+                "componentType": component_type,
+                "kind": node.metadata.get("kind").cloned().unwrap_or_default(),
+                "running": node.status == drasi_lib::ComponentStatus::Running,
+            }));
+        }
+    }
+    dependents
 }
 
 #[utoipa::path(
@@ -591,4 +572,115 @@ pub fn build_plugin_router(
         .layer(Extension(orchestrator))
         .layer(Extension(instances))
         .layer(Extension(read_only))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use drasi_reaction_application::ApplicationReaction;
+    use drasi_source_application::{ApplicationSource, ApplicationSourceConfig};
+    use serde_json::json;
+    use std::{collections::HashMap, time::Duration};
+
+    #[tokio::test]
+    async fn dependents_use_graph_metadata_and_preserve_instance_scope() {
+        let registry = InstanceRegistry::new();
+        for instance_id in ["first", "second"] {
+            let core = Arc::new(
+                drasi_lib::DrasiLib::builder()
+                    .with_id(instance_id)
+                    .build()
+                    .await
+                    .unwrap(),
+            );
+            let mut metadata = HashMap::from([
+                ("pluginId".into(), "fixture-plugin".into()),
+                ("pluginVersion".into(), "1.2.3".into()),
+                ("kind".into(), "application".into()),
+            ]);
+            if instance_id == "second" {
+                metadata.remove("pluginVersion");
+            }
+            let (source, _) = ApplicationSource::new(
+                "shared-source",
+                ApplicationSourceConfig {
+                    properties: HashMap::from([(
+                        "password".into(),
+                        json!("plugin-secret-do-not-echo"),
+                    )]),
+                    durability: None,
+                },
+            )
+            .unwrap();
+            core.add_source_with_metadata(source, metadata.clone())
+                .await
+                .unwrap();
+            let (reaction, _) = ApplicationReaction::builder("shared-reaction")
+                .with_queries(Vec::new())
+                .with_auto_start(false)
+                .build();
+            core.add_reaction_with_metadata(reaction, metadata)
+                .await
+                .unwrap();
+            let (unrelated, _) = ApplicationSource::new(
+                "unrelated",
+                ApplicationSourceConfig {
+                    properties: HashMap::new(),
+                    durability: None,
+                },
+            )
+            .unwrap();
+            core.add_source_with_metadata(
+                unrelated,
+                HashMap::from([
+                    ("pluginId".into(), "other-plugin".into()),
+                    ("pluginVersion".into(), "1.2.3".into()),
+                ]),
+            )
+            .await
+            .unwrap();
+            core.start().await.unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                core.computation_component("shared-source")
+                    .unwrap()
+                    .wait_started(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                core.computation_component("shared-reaction")
+                    .unwrap()
+                    .wait_created(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            registry.add(instance_id.into(), core).await.unwrap();
+        }
+        let dependents = collect_plugin_dependents(&registry, "fixture-plugin").await;
+        assert_eq!(dependents.len(), 4);
+        for instance_id in ["first", "second"] {
+            for (kind, id, running) in [
+                ("source", "shared-source", true),
+                ("reaction", "shared-reaction", false),
+            ] {
+                assert!(
+                    dependents.contains(&json!({
+                        "instanceId":instance_id, "componentId":id, "componentType":kind,
+                        "kind":"application", "running":running
+                    })),
+                    "{dependents:?}"
+                );
+            }
+        }
+        assert!(!serde_json::to_string(&dependents)
+            .unwrap()
+            .contains("plugin-secret-do-not-echo"));
+        for (_, core) in registry.list().await {
+            core.shutdown().await.unwrap();
+        }
+    }
 }

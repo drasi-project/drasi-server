@@ -41,7 +41,6 @@ use crate::factories::{create_reaction_locked, create_source_locked};
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::ExecutionMode;
 
 /// The default solutions directory
 pub const DEFAULT_SOLUTIONS_DIR: &str = "./solutions";
@@ -55,7 +54,7 @@ struct SolutionPluginRef {
 
 /// Internal structure for parsing solution template files
 #[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SolutionTemplateFile {
     name: String,
     #[serde(default)]
@@ -568,8 +567,7 @@ pub async fn create_solution_template(
 /// 1. Create all components with autoStart=false
 /// 2. Start components that had autoStart=true (sources → queries → reactions)
 ///
-/// Legacy creation failures roll back already-created components. Computation
-/// mode retains added nodes and reports creation and start health separately.
+/// Added nodes are retained, with creation and start health reported separately.
 pub async fn deploy_solution(
     registry: InstanceRegistry,
     persistence: Option<Arc<ConfigPersistence>>,
@@ -596,7 +594,6 @@ pub async fn deploy_solution(
             ));
         }
     };
-    let computation_mode = core.execution_mode() == ExecutionMode::ComputationGraph;
 
     // Load the template YAML
     let yaml_content = if let Some(template_id) = &request.template_id {
@@ -650,6 +647,11 @@ pub async fn deploy_solution(
     let template: SolutionTemplateFile = match serde_yaml::from_str(&resolved_yaml) {
         Ok(t) => t,
         Err(e) => {
+            if let Some(message) =
+                crate::config::loader::removed_execution_mode_error(&e.to_string())
+            {
+                return Err(ErrorResponse::new(error_codes::INVALID_REQUEST, message));
+            }
             return Err(ErrorResponse::new(
                 error_codes::INVALID_REQUEST,
                 format!("Failed to parse template: {e}"),
@@ -856,10 +858,7 @@ pub async fn deploy_solution(
     let mut creation_errors: Vec<SolutionDeployError> = Vec::new();
 
     // Track which components to start
-    let mut sources_to_start: Vec<String> = Vec::new();
-    let mut queries_to_start: Vec<String> = Vec::new();
-    let mut reactions_to_start: Vec<String> = Vec::new();
-    let mut computation_components = Vec::new();
+    let mut components_to_start = Vec::new();
 
     // Create sources (stopped)
     for (mut source_config, should_start) in validated_sources {
@@ -877,53 +876,31 @@ pub async fn deploy_solution(
                         &source_id,
                         e.to_string(),
                     ));
-                    if computation_mode {
-                        continue;
-                    }
-                    // Rollback already-created sources
-                    rollback_sources(&core, &created_sources).await;
-                    return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                        creation_errors,
-                    ))));
+                    continue;
                 }
             };
 
-        let addition = if computation_mode {
-            core.add_source_with_metadata(source, plugin_meta).await
-        } else {
-            core.add_source(source).await
-        };
-        if let Err(e) = addition {
+        if let Err(e) = core.add_source_with_metadata(source, plugin_meta).await {
             creation_errors.push(SolutionDeployError::creation(
                 "source",
                 &source_id,
                 e.to_string(),
             ));
-            if computation_mode {
-                continue;
-            }
-            rollback_sources(&core, &created_sources).await;
-            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                creation_errors,
-            ))));
+            continue;
         }
 
         created_sources.push(source_id.clone());
-        if computation_mode {
-            match wait_for_computation_creation(&core, "source", &source_id).await {
-                Ok(handle) => {
-                    if should_start {
-                        computation_components.push(("source", source_id, handle));
-                    }
+        match wait_for_computation_creation(&core, "source", &source_id).await {
+            Ok(handle) => {
+                if should_start {
+                    components_to_start.push(("source", source_id, handle));
                 }
-                Err(e) => creation_errors.push(SolutionDeployError::creation(
-                    "source",
-                    &source_id,
-                    e.to_string(),
-                )),
             }
-        } else if should_start {
-            sources_to_start.push(source_id);
+            Err(e) => creation_errors.push(SolutionDeployError::creation(
+                "source",
+                &source_id,
+                e.to_string(),
+            )),
         }
     }
 
@@ -945,14 +922,7 @@ pub async fn deploy_solution(
                     &query_id,
                     e.to_string(),
                 ));
-                if computation_mode {
-                    continue;
-                }
-                rollback_queries(&core, &created_queries).await;
-                rollback_sources(&core, &created_sources).await;
-                return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                    creation_errors,
-                ))));
+                continue;
             }
         };
 
@@ -962,32 +932,21 @@ pub async fn deploy_solution(
                 &query_id,
                 e.to_string(),
             ));
-            if computation_mode {
-                continue;
-            }
-            rollback_queries(&core, &created_queries).await;
-            rollback_sources(&core, &created_sources).await;
-            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                creation_errors,
-            ))));
+            continue;
         }
 
         created_queries.push(query_id.clone());
-        if computation_mode {
-            match wait_for_computation_creation(&core, "query", &query_id).await {
-                Ok(handle) => {
-                    if should_start {
-                        computation_components.push(("query", query_id, handle));
-                    }
+        match wait_for_computation_creation(&core, "query", &query_id).await {
+            Ok(handle) => {
+                if should_start {
+                    components_to_start.push(("query", query_id, handle));
                 }
-                Err(e) => creation_errors.push(SolutionDeployError::creation(
-                    "query",
-                    &query_id,
-                    e.to_string(),
-                )),
             }
-        } else if should_start {
-            queries_to_start.push(query_id);
+            Err(e) => creation_errors.push(SolutionDeployError::creation(
+                "query",
+                &query_id,
+                e.to_string(),
+            )),
         }
     }
 
@@ -1007,151 +966,62 @@ pub async fn deploy_solution(
                         &reaction_id,
                         e.to_string(),
                     ));
-                    if computation_mode {
-                        continue;
-                    }
-                    rollback_reactions(&core, &created_reactions).await;
-                    rollback_queries(&core, &created_queries).await;
-                    rollback_sources(&core, &created_sources).await;
-                    return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                        creation_errors,
-                    ))));
+                    continue;
                 }
             };
 
-        let addition = if computation_mode {
-            core.add_reaction_with_metadata(reaction, plugin_meta).await
-        } else {
-            core.add_reaction(reaction).await
-        };
-        if let Err(e) = addition {
+        if let Err(e) = core.add_reaction_with_metadata(reaction, plugin_meta).await {
             creation_errors.push(SolutionDeployError::creation(
                 "reaction",
                 &reaction_id,
                 e.to_string(),
             ));
-            if computation_mode {
-                continue;
-            }
-            rollback_reactions(&core, &created_reactions).await;
-            rollback_queries(&core, &created_queries).await;
-            rollback_sources(&core, &created_sources).await;
-            return Ok(Json(ApiResponse::success(SolutionDeployResponse::failed(
-                creation_errors,
-            ))));
+            continue;
         }
 
         created_reactions.push(reaction_id.clone());
-        if computation_mode {
-            match wait_for_computation_creation(&core, "reaction", &reaction_id).await {
-                Ok(handle) => {
-                    if should_start {
-                        computation_components.push(("reaction", reaction_id, handle));
-                    }
+        match wait_for_computation_creation(&core, "reaction", &reaction_id).await {
+            Ok(handle) => {
+                if should_start {
+                    components_to_start.push(("reaction", reaction_id, handle));
                 }
-                Err(e) => creation_errors.push(SolutionDeployError::creation(
-                    "reaction",
-                    &reaction_id,
-                    e.to_string(),
-                )),
             }
-        } else if should_start {
-            reactions_to_start.push(reaction_id);
+            Err(e) => creation_errors.push(SolutionDeployError::creation(
+                "reaction",
+                &reaction_id,
+                e.to_string(),
+            )),
         }
     }
 
     // ===== PHASE 3: START =====
-    // All components created successfully. Now start those with autoStart=true.
+    // Start successfully created components that requested autoStart=true.
     // Start order: sources → queries → reactions
 
     let mut components_started: Vec<String> = Vec::new();
     let mut start_errors: Vec<SolutionDeployError> = Vec::new();
 
-    if computation_mode {
-        for (component_type, id, handle) in computation_components {
-            match handle.start().await {
-                Ok(()) => components_started.push(format!("{component_type}:{id}")),
-                Err(e) => start_errors.push(SolutionDeployError::start(
-                    component_type,
-                    id,
-                    e.to_string(),
-                )),
-            }
-        }
-        persist_after_operation(&persistence, "deploying solution").await?;
-        let success = creation_errors.is_empty();
-        creation_errors.extend(start_errors);
-        return Ok(Json(ApiResponse::success(SolutionDeployResponse {
-            success,
-            sources_created: created_sources,
-            queries_created: created_queries,
-            reactions_created: created_reactions,
-            components_started,
-            errors: creation_errors,
-        })));
-    }
-
-    // Start sources
-    for source_id in &sources_to_start {
-        if let Err(e) = core.start_source(source_id).await {
-            start_errors.push(SolutionDeployError::start(
-                "source",
-                source_id,
+    for (component_type, id, handle) in components_to_start {
+        match handle.start().await {
+            Ok(()) => components_started.push(format!("{component_type}:{id}")),
+            Err(e) => start_errors.push(SolutionDeployError::start(
+                component_type,
+                id,
                 e.to_string(),
-            ));
-        } else {
-            components_started.push(format!("source:{source_id}"));
+            )),
         }
     }
-
-    // Start queries
-    for query_id in &queries_to_start {
-        if let Err(e) = core.start_query(query_id).await {
-            start_errors.push(SolutionDeployError::start("query", query_id, e.to_string()));
-        } else {
-            components_started.push(format!("query:{query_id}"));
-        }
-    }
-
-    // Start reactions
-    for reaction_id in &reactions_to_start {
-        if let Err(e) = core.start_reaction(reaction_id).await {
-            start_errors.push(SolutionDeployError::start(
-                "reaction",
-                reaction_id,
-                e.to_string(),
-            ));
-        } else {
-            components_started.push(format!("reaction:{reaction_id}"));
-        }
-    }
-
-    // Persist changes
-    if let Some(p) = &persistence {
-        if let Err(e) = p.save().await {
-            log::warn!("Failed to persist config after solution deployment: {e}");
-        }
-    }
-
-    // Return result
-    if start_errors.is_empty() {
-        Ok(Json(ApiResponse::success(SolutionDeployResponse::success(
-            created_sources,
-            created_queries,
-            created_reactions,
-            components_started,
-        ))))
-    } else {
-        // Partial success - all components created but some had start errors
-        Ok(Json(ApiResponse::success(SolutionDeployResponse {
-            success: true, // Creation succeeded, only start had issues
-            sources_created: created_sources,
-            queries_created: created_queries,
-            reactions_created: created_reactions,
-            components_started,
-            errors: start_errors,
-        })))
-    }
+    persist_after_operation(&persistence, "deploying solution").await?;
+    let success = creation_errors.is_empty();
+    creation_errors.extend(start_errors);
+    Ok(Json(ApiResponse::success(SolutionDeployResponse {
+        success,
+        sources_created: created_sources,
+        queries_created: created_queries,
+        reactions_created: created_reactions,
+        components_started,
+        errors: creation_errors,
+    })))
 }
 
 /// Resolve variables in YAML content using the provided variable map.
@@ -1177,33 +1047,6 @@ fn resolve_yaml_variables(
             }
         })
         .to_string()
-}
-
-/// Rollback: delete created sources
-async fn rollback_sources(core: &Arc<drasi_lib::DrasiLib>, sources: &[String]) {
-    for source_id in sources {
-        if let Err(e) = core.remove_source(source_id, false).await {
-            log::warn!("Failed to rollback source '{source_id}': {e}");
-        }
-    }
-}
-
-/// Rollback: delete created queries
-async fn rollback_queries(core: &Arc<drasi_lib::DrasiLib>, queries: &[String]) {
-    for query_id in queries {
-        if let Err(e) = core.remove_query(query_id).await {
-            log::warn!("Failed to rollback query '{query_id}': {e}");
-        }
-    }
-}
-
-/// Rollback: delete created reactions
-async fn rollback_reactions(core: &Arc<drasi_lib::DrasiLib>, reactions: &[String]) {
-    for reaction_id in reactions {
-        if let Err(e) = core.remove_reaction(reaction_id, false).await {
-            log::warn!("Failed to rollback reaction '{reaction_id}': {e}");
-        }
-    }
 }
 
 #[cfg(test)]

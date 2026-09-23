@@ -130,7 +130,7 @@ pub struct SolutionTemplateDetail {
 
 /// Request to deploy a solution template.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolutionDeployRequest {
     /// Template ID to deploy (mutually exclusive with yaml)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,7 +158,7 @@ impl SolutionDeployRequest {
 
 /// Request to create a new solution template from existing components.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSolutionTemplateRequest {
     /// Unique ID for the template (used as filename)
     pub id: String,

@@ -149,6 +149,10 @@ pub(crate) fn contains_yaml_anchor_or_alias(text: &str) -> bool {
 }
 
 fn parse_error(format: &str, e: impl std::fmt::Display) -> (StatusCode, axum::Json<ErrorResponse>) {
+    let diagnostic = e.to_string();
+    if let Some(message) = crate::config::loader::removed_execution_mode_error(&diagnostic) {
+        return ErrorResponse::new(error_codes::INVALID_REQUEST, message).with_status();
+    }
     ErrorResponse::new(
         error_codes::INVALID_REQUEST,
         format!("Failed to parse {format} request body"),
@@ -156,7 +160,7 @@ fn parse_error(format: &str, e: impl std::fmt::Display) -> (StatusCode, axum::Js
     .with_details(ErrorDetail {
         component_type: None,
         component_id: None,
-        technical_details: Some(e.to_string()),
+        technical_details: Some(diagnostic),
     })
     .with_status()
 }

@@ -58,14 +58,11 @@ async fn test_drasi_lib_builder_with_redb_wal_provider() -> Result<()> {
 
     core.start().await?;
     assert!(core.is_running().await);
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.computation_control().is_ok());
+    assert_eq!(
+        core.get_source_status("__component_graph__").await?,
+        drasi_lib::ComponentStatus::Running
+    );
 
     core.stop().await?;
     assert!(!core.is_running().await);

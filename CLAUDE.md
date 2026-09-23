@@ -77,32 +77,35 @@ The actual data processing functionality is provided by drasi-lib:
 1. **Sources** - Data ingestion from various systems (PostgreSQL, HTTP, gRPC, etc.)
 2. **Queries** - Continuous Cypher queries over data with joins and bootstrap
 3. **Reactions** - Automated responses to changes (webhooks, SSE, logging, etc.)
-4. **Channels** - Inter-component communication
-5. **Routers** - Message routing between components
+4. **ComputationGraph** - The only runtime, owning component nodes, pipes, and lifecycle
+5. **Plugin adapters** - Bridge existing Source/Reaction implementations into graph nodes
 
 ### Data Flow Architecture
 
 ```
-Sources → Bootstrap Router → Queries → Data Router → Reactions
-         ↓                           ↓
-    Label Extraction          Query Results
-         ↓                           ↓
-    Filtered Data              Change Events
+Source adapters → Graph pipes → Query nodes → Graph pipes → Reaction adapters
+        ↓                           ↓
+ Bootstrap data                Query results
 ```
 
 ### Channel Communication
 
-All components communicate through async channels:
-- Bootstrap requests flow through `BootstrapRouter`
-- Data changes flow through `DataRouter` 
-- Subscriptions managed by `SubscriptionRouter`
-- Each component has send/receive channel pairs
+ComputationGraph owns dataflow and readiness. Existing source/reaction plugin
+interfaces remain adapters, including their channel and subscription contracts.
+The server must use DrasiLib's public graph-backed APIs, not construct a shadow
+runtime graph or call removed managers.
+The built-in `__component_graph__` source remains a graph-backed observability
+adapter, not a legacy runtime. Preserve its public inspection behavior.
 
 ## Configuration
 
 ### Configuration File Support
 
-DrasiServer supports YAML configuration files for defining server settings and queries:
+DrasiServer supports YAML configuration files for defining server settings and queries.
+ComputationGraph is unconditional. Do not add runtime selectors: root/per-instance
+`executionMode`, `--execution-mode`, and builder mode methods have been removed.
+Reject obsolete configuration fields with removal guidance, including values
+that previously selected ComputationGraph.
 
 ```bash
 cargo run -- --config config/server.yaml
@@ -255,7 +258,11 @@ volume for `./data/` in containerized deployments.
 
 ### Configuration Persistence
 
-Persistence uses a snapshot-based approach: when saving, `ConfigPersistence::save()` calls `snapshot_configuration()` on each DrasiLib instance via the ComponentGraph. The ComponentGraph is the single source of truth — there are no shadow caches or separate registration steps. Mutations flow through the ComponentGraph, and the persisted YAML is reconstructed from the current graph state at save time.
+Persistence uses a snapshot-based approach: `ConfigPersistence::save()` calls
+`snapshot_configuration()` on each DrasiLib instance. ComputationGraph is the
+authoritative runtime state. The server preserves config-only references and
+settings separately, but must not keep a shadow runtime graph. YAML is
+reconstructed from the live graph and preserved configuration without selectors.
 
 DrasiServer separates two independent concepts:
 
@@ -281,7 +288,7 @@ DrasiServer separates two independent concepts:
 - This allows dynamic query creation without persistence (useful for programmatic usage)
 
 **Behavior:**
-- When persistence enabled: `save()` snapshots component state from the ComponentGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
+- When persistence enabled: `save()` snapshots component state from ComputationGraph and writes to YAML using atomic writes (temp file + rename) to prevent corruption
 - When persistence disabled: API mutations work but changes are lost on restart
 - When read-only: all create/delete operations via API are rejected
 
@@ -485,6 +492,9 @@ issue, since the runtime is now ahead of the on-disk YAML.
 - Plugin registry uses `Arc<RwLock<PluginRegistry>>` for concurrent read/write access
 - Configuration persisted to YAML files (when persistence enabled)
 - In-memory state for active components
+- Create/upsert success acknowledges node addition, not readiness. Initialization
+  and auto-start health are observed on the node; explicit start waits and reports
+  failures. Clone and solution deployment retain added nodes on partial failure.
 
 ### Bootstrap Mechanism
 - Queries can request initial data from sources
@@ -573,5 +583,5 @@ server.run().await?;
 - Plugin signature verification is enabled by default (`verifyPlugins: true` in config). Use `--skip-verification` CLI flag or `verifyPlugins: false` to disable. Uses Sigstore/cosign keyless verification against the Rekor transparency log.
 - **Plugin lifecycle management**: Plugins can be loaded and installed at runtime via the `/api/v1/plugins/` API. Dynamic upgrade/replacement of a running plugin is not currently supported — restart the server to replace a plugin.
 - **Plugin registry is mutable**: Uses `Arc<RwLock<PluginRegistry>>` — shared types (PluginRegistry, PluginLockfile, PluginLifecycleManager, PluginWatcher) live in `drasi-host-sdk`, re-exported by this repo
-- **Component metadata**: Sources and reactions carry `pluginId` and `pluginVersion` in their ComponentGraph metadata
+- **Component metadata**: Sources and reactions retain plugin identity/version on authoritative graph nodes; inspect via public DrasiLib APIs
 - **Shared plugin operations**: `PluginOperations` in `src/plugin_operations.rs` provides the single source of truth for plugin management used by CLI, init, startup, and API

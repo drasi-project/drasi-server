@@ -308,7 +308,6 @@ drasi-server [OPTIONS] [COMMAND]
 |--------|-------|---------|-------------|
 | `--config <PATH>` | `-c` | `config/server.yaml` | Path to the configuration file |
 | `--port <PORT>` | `-p` | (from config) | Override the server port |
-| `--execution-mode <MODE>` | | (from config) | Force `component-graph` or `computation-graph` for all instances |
 | `--plugins-dir <PATH>` | | `plugins/` beside the binary | Directory containing plugin shared libraries |
 | `--skip-verification` | | `false` | Disable plugin signature verification; use only for trusted local development builds |
 | `--enable-ui` | | | Enable Web UI (overrides config) |
@@ -348,55 +347,47 @@ drasi-server doctor --all  # Include optional deps
 
 ### Execution Engine
 
-`ComponentGraph` remains the default. Select `ComputationGraph` without changing
-your source, query, or reaction configuration. The existing component, lifecycle,
-status, and query-results endpoints use the selected engine. Server does not
+`ComputationGraph` is the only runtime. Ordinary source, query, reaction,
+lifecycle, status, and query-results endpoints all use that graph. Server does not
 expose all of the lower-level graph-management APIs available in the Rust library.
+Existing Source/Reaction and dynamic-plugin adapters remain supported; this is
+not a full native-plugin port and does not migrate stored data.
+The built-in `__component_graph__` observability source still exposes the live
+graph's topology; its historical name does not imply a second runtime.
 
 These instructions apply to the `agentofreality-parallel-computation-graph`
 branch. Use a [local development build](#computationgraph-development); do not
 assume published binaries, images, or plugins include these changes.
 
-#### Choose an engine
+#### Configure instances
 
-| Engine | CLI `--execution-mode` | YAML or JSON `executionMode` |
-|--------|------------------------|------------------------------|
-| ComponentGraph (default) | `component-graph` | `componentGraph` |
-| ComputationGraph | `computation-graph` | `computationGraph` |
-
-Save this small configuration as `config/engines.yaml`. It creates two empty
-instances: `analytics` inherits the root setting, while `compatibility` overrides it.
+Save this small configuration as `config/instances.yaml`. Both instances have
+their own ComputationGraph; no engine selection or feature flag is required.
 
 ```yaml
 apiVersion: drasi.io/v1
 host: 127.0.0.1
 port: 8080
-executionMode: computationGraph
 instances:
   - id: analytics
-  - id: compatibility
-    executionMode: componentGraph
+  - id: monitoring
 ```
 
 ```bash
-# Use the selections in the file
-drasi-server --config config/engines.yaml
-
-# Alternatively, force every instance to use ComputationGraph
-drasi-server --config config/engines.yaml --execution-mode computation-graph
+drasi-server --config config/instances.yaml
 ```
 
-At startup, precedence is **CLI > instance `executionMode` > root
-`executionMode` > `componentGraph`**. In a single-instance configuration, use the
-root field alongside `sources`, `queries`, and `reactions`.
+New instances created by `POST /api/v1/instances`, for example
+`{"id":"reporting"}`, use the same single runtime, independently of instance order.
 
-New instances created by `POST /api/v1/instances` inherit the server-level
-default, not the first instance's engine. A request can override it, for example
-`{"id":"reporting","executionMode":"componentGraph"}`. If that conflicts with a
-CLI-forced mode, creation returns HTTP 400 with code `INVALID_REQUEST` and message
-`executionMode conflicts with the server's forced execution mode`.
+**Upgrade configuration:** remove root and per-instance `executionMode` fields,
+including values previously set to `computationGraph`. All obsolete selector
+values are rejected, not normalized or silently ignored. Configuration loading
+explains that ComputationGraph is the only runtime; instance creation returns
+HTTP 400 with code `INVALID_REQUEST` and the same removal guidance. The
+`--execution-mode` CLI flag is also rejected. There is no ComponentGraph fallback.
 
-#### Check the running engine
+#### Check instance health
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/instances/analytics/runtime
@@ -409,7 +400,7 @@ For the running `analytics` instance, the response is:
   "success": true,
   "data": {
     "instanceId": "analytics",
-    "executionMode": "computationGraph",
+    "runtime": "computationGraph",
     "running": true
   },
   "error": null
@@ -418,18 +409,21 @@ For the running `analytics` instance, the response is:
 
 This reads the live instance, not just its configuration. `running` describes the
 instance; it does not mean every source, query, and reaction is ready.
+`runtime` is a fixed informational name, not a selector.
 
-#### Saved selections and restarts
+#### Creation, persistence, and restarts
 
 With `persistConfig: true` (the default) and a writable configuration file, an API
-change saves the running engines and the server-level default separately.
-Redundant default values may be omitted from the YAML. **A CLI-forced mode is
-included in the next API-triggered save**, so removing the flag later may not
-restore the previous default. Use `persistConfig: false` if those changes should
-not be saved.
+change saves graph-backed configuration without an engine selector. Per-instance
+index, state-store, capacity, and plugin settings retain their existing meanings.
+Use `persistConfig: false` if API changes should not be saved.
 
-Engine selection applies when an instance is created; restart to apply a file
-change. Selecting an engine does **not** migrate existing stored state.
+Successful create/upsert responses acknowledge an added graph node, not completed
+initialization or activation. Inspect component status, events, and errors for
+readiness; explicit start operations wait for startup and report failures. Clone
+and solution deployment retain added nodes and report creation/start health
+instead of rolling back prior nodes. Restart to apply configuration-file changes.
+No stored-state migration is performed.
 
 Core library documentation:
 [design](https://github.com/drasi-project/drasi-core/blob/agentofreality-parallel-computation-graph/lib/docs/computation-graph-design.md),
@@ -877,8 +871,7 @@ drasi-server plugin install-all --registry ghcr.io/my-org
 
 Drasi Server uses YAML configuration files. Many fields support environment
 variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
-`executionMode` requires one of the literal values listed in
-[Execution Engine](#execution-engine).
+The single [execution engine](#execution-engine) needs no configuration selector.
 
 ### Server Settings
 
@@ -888,7 +881,6 @@ variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
 | `host` | string | `0.0.0.0` | Server bind address |
 | `port` | integer | `8080` | Server port |
 | `logLevel` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `executionMode` | string | `componentGraph` | Default engine for configured and API-created instances; see [Execution Engine](#execution-engine) for per-instance overrides and CLI precedence |
 | `persistConfig` | boolean | `true` | Enable saving API changes to config file |
 | `persistIndex` | boolean | `false` | When `true`, registers a RocksDB index provider named `rocksdb` as the default index backend for all queries in the instance (data stored under `./data/<instance-key>/index`). When `false`, queries use in-memory indexes. Individual queries can override the backend via `storageBackend`. |
 | `memoryBudgetMiB` | integer | RocksDB provider default | Optional shared RocksDB memory budget, in MiB, for all query databases in the instance. Requires `persistIndex: true`. Set it at the root only in single-instance mode; with explicit `instances`, set it on each persistent instance. |
@@ -2163,8 +2155,9 @@ Drasi Server includes a Makefile with common development commands.
 
 Use matching Server and Core checkouts on the feature branch, with the
 [source-build prerequisites and directory layout](#option-2-build-from-source).
-Server enables the `drasi-lib` `computation` feature. Rebuilding Server includes
-local Core changes, but does not rebuild the plugin shared libraries.
+ComputationGraph is unconditional in `drasi-lib`, including builds with default
+features disabled. Rebuilding Server includes local Core changes, but does not
+rebuild the plugin shared libraries.
 
 From `drasi-server/`, build Server and its plugins separately:
 
@@ -2172,8 +2165,8 @@ From `drasi-server/`, build Server and its plugins separately:
 cargo build --locked --release --bin drasi-server
 make build-local-plugins
 
-# Use config/engines.yaml from the Execution Engine example
-./target/release/drasi-server --config config/engines.yaml \
+# Use config/instances.yaml from the Execution Engine example
+./target/release/drasi-server --config config/instances.yaml \
   --plugins-dir ./target/release/plugins --skip-verification --disable-ui
 ```
 
@@ -2190,10 +2183,12 @@ disables the UI because a Cargo-only build does not build its assets; see
 See [plugin version fields](docs/plugin-architecture.md#version-validation)
 for the distinction between package, configuration, and SDK versions.
 
-Rust callers can use
-`DrasiServerBuilder::with_execution_mode(ExecutionMode::ComputationGraph)` to
-select the engine for all instance builders. Without that override, supplied
-instance builders keep their own selections.
+Rust callers use `DrasiServerBuilder::new()` or `DrasiLib::builder()` directly.
+`ExecutionMode`, `ExecutionModeConfig`, `ExecutionModePolicy`,
+`with_execution_mode`, and `DrasiServer::new_with_execution_mode` have been
+removed. Use `DrasiServer::new` for configuration-file construction. The
+`/instances/{instanceId}/runtime` response no longer includes `executionMode`;
+its informational `runtime` field is always `"computationGraph"`.
 
 ### Available Commands
 

@@ -21,7 +21,6 @@ use std::path::Path;
 use std::str::FromStr;
 
 // Import the config enums from api::models
-use super::ExecutionModeConfig;
 use crate::api::mappings::{DtoMapper, QueryConfigMapper};
 use crate::api::models::{
     ConfigValue, IdentityProviderConfig, QueryConfigDto, ReactionConfig, SecretStoreConfig,
@@ -47,9 +46,6 @@ pub struct DrasiServerConfig {
     /// API version marker for file identification (e.g., "drasi.io/v1")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_version: Option<String>,
-    /// Default execution engine for configured and API-created instances.
-    #[serde(default, skip_serializing_if = "ExecutionModeConfig::is_default")]
-    pub execution_mode: ExecutionModeConfig,
     /// Unique identifier for this server instance (defaults to UUID)
     #[serde(default = "default_id")]
     pub id: ConfigValue<String>,
@@ -173,7 +169,6 @@ impl Default for DrasiServerConfig {
     fn default() -> Self {
         Self {
             api_version: None,
-            execution_mode: ExecutionModeConfig::default(),
             id: default_id(),
             host: ConfigValue::Static("0.0.0.0".to_string()),
             port: ConfigValue::Static(8080),
@@ -287,9 +282,6 @@ fn default_solutions_dir() -> Option<String> {
 #[schema(as = DrasiLibInstanceConfig)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DrasiLibInstanceConfig {
-    /// Override the server default execution engine for this instance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_mode: Option<ExecutionModeConfig>,
     /// Unique identifier for this DrasiLib instance
     #[serde(default = "default_id")]
     pub id: ConfigValue<String>,
@@ -350,7 +342,6 @@ pub struct DrasiLibInstanceConfig {
 /// Resolved instance settings with ConfigValue evaluated
 #[derive(Debug, Clone)]
 pub struct ResolvedInstanceConfig {
-    pub execution_mode: drasi_lib::ExecutionMode,
     pub id: String,
     pub persist_index: bool,
     pub enable_archive: bool,
@@ -408,7 +399,6 @@ impl DrasiServerConfig {
     pub fn resolved_instances(&self, mapper: &DtoMapper) -> Result<Vec<ResolvedInstanceConfig>> {
         let raw_instances: Vec<DrasiLibInstanceConfig> = if self.instances.is_empty() {
             vec![DrasiLibInstanceConfig {
-                execution_mode: None,
                 id: self.id.clone(),
                 persist_index: self.persist_index,
                 enable_archive: self.enable_archive,
@@ -499,10 +489,6 @@ impl DrasiServerConfig {
             }
 
             resolved.push(ResolvedInstanceConfig {
-                execution_mode: instance
-                    .execution_mode
-                    .unwrap_or(self.execution_mode)
-                    .into(),
                 id,
                 persist_index: instance.persist_index,
                 enable_archive: instance.enable_archive,

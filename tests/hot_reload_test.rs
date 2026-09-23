@@ -90,7 +90,7 @@ fn new_orchestrator() -> Arc<PluginOrchestrator> {
 async fn assert_package_versions_and_component_startup(
     registry: Arc<RwLock<PluginRegistry>>,
 ) -> anyhow::Result<()> {
-    use drasi_lib::{ComponentStatus, DrasiLib, ExecutionMode, Query};
+    use drasi_lib::{ComponentStatus, DrasiLib, Query};
     use drasi_server::config::{ReactionConfig, SourceConfig};
     use drasi_server::factories::{create_reaction_locked, create_source_locked};
 
@@ -113,86 +113,78 @@ async fn assert_package_versions_and_component_startup(
             );
         }
     }
-    for mode in [
-        ExecutionMode::ComponentGraph,
-        ExecutionMode::ComputationGraph,
-    ] {
-        let core = DrasiLib::builder()
-            .with_id(format!("package-version-{mode:?}"))
-            .with_execution_mode(mode)
-            .build()
-            .await?;
-        let result = async {
-            let (source, metadata) = create_source_locked(
-                &registry,
-                SourceConfig {
-                    kind: "mock".into(),
-                    id: "version-source".into(),
-                    auto_start: true,
-                    bootstrap_provider: None,
-                    identity_provider: None,
-                    config: serde_json::json!({
-                        "dataType": {"type": "generic"},
-                        "intervalMs": 1000
-                    }),
-                },
+    let core = DrasiLib::builder()
+        .with_id("package-version")
+        .build()
+        .await?;
+    let result = async {
+        let (source, metadata) = create_source_locked(
+            &registry,
+            SourceConfig {
+                kind: "mock".into(),
+                id: "version-source".into(),
+                auto_start: true,
+                bootstrap_provider: None,
+                identity_provider: None,
+                config: serde_json::json!({
+                    "dataType": {"type": "generic"},
+                    "intervalMs": 1000
+                }),
+            },
+        )
+        .await?;
+        assert_eq!(
+            metadata.get("pluginVersion").map(String::as_str),
+            registry.read().await.source_package_version("mock")
+        );
+        core.add_source_with_metadata(source, metadata).await?;
+        core.add_query(
+            Query::cypher("version-query")
+                .query("MATCH (n) RETURN n")
+                .from_source("version-source")
+                .enable_bootstrap(false)
+                .auto_start(true)
+                .build(),
+        )
+        .await?;
+        let (reaction, metadata) = create_reaction_locked(
+            &registry,
+            ReactionConfig {
+                kind: "log".into(),
+                id: "version-reaction".into(),
+                queries: vec!["version-query".into()],
+                auto_start: true,
+                identity_provider: None,
+                config: serde_json::json!({}),
+            },
+        )
+        .await?;
+        assert_eq!(
+            metadata.get("pluginVersion").map(String::as_str),
+            registry.read().await.reaction_package_version("log")
+        );
+        core.add_reaction_with_metadata(reaction, metadata).await?;
+        core.start().await?;
+        for id in ["version-source", "version-query", "version-reaction"] {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                core.computation_component(id)?.wait_started(),
             )
-            .await?;
-            assert_eq!(
-                metadata.get("pluginVersion").map(String::as_str),
-                registry.read().await.source_package_version("mock")
-            );
-            core.add_source_with_metadata(source, metadata).await?;
-            core.add_query(
-                Query::cypher("version-query")
-                    .query("MATCH (n) RETURN n")
-                    .from_source("version-source")
-                    .enable_bootstrap(false)
-                    .auto_start(true)
-                    .build(),
-            )
-            .await?;
-            let (reaction, metadata) = create_reaction_locked(
-                &registry,
-                ReactionConfig {
-                    kind: "log".into(),
-                    id: "version-reaction".into(),
-                    queries: vec!["version-query".into()],
-                    auto_start: true,
-                    identity_provider: None,
-                    config: serde_json::json!({}),
-                },
-            )
-            .await?;
-            assert_eq!(
-                metadata.get("pluginVersion").map(String::as_str),
-                registry.read().await.reaction_package_version("log")
-            );
-            core.add_reaction_with_metadata(reaction, metadata).await?;
-            core.start().await?;
-            if mode == ExecutionMode::ComputationGraph {
-                for id in ["version-source", "version-query", "version-reaction"] {
-                    tokio::time::timeout(
-                        Duration::from_secs(10),
-                        core.computation_component(id)?.wait_started(),
-                    )
-                    .await??;
-                }
-            }
-            assert_eq!(
-                core.get_source_status("version-source").await?,
-                ComponentStatus::Running
-            );
-            assert_eq!(
-                core.get_reaction_status("version-reaction").await?,
-                ComponentStatus::Running
-            );
-            Ok::<_, anyhow::Error>(())
+            .await??;
         }
-        .await;
-        core.shutdown().await?;
-        result?;
+        assert_eq!(
+            core.get_source_status("version-source").await?,
+            ComponentStatus::Running
+        );
+        assert_eq!(
+            core.get_reaction_status("version-reaction").await?,
+            ComponentStatus::Running
+        );
+        Ok::<_, anyhow::Error>(())
     }
+    .await;
+    core.shutdown().await?;
+    result?;
     Ok(())
 }
 

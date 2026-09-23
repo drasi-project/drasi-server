@@ -86,14 +86,11 @@ async fn test_drasi_lib_builder_with_redb_provider() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
 
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.computation_control().is_ok());
+    assert_eq!(
+        core.get_source_status("__component_graph__").await?,
+        drasi_lib::ComponentStatus::Running
+    );
 
     core.stop().await?;
     assert!(!core.is_running().await);
@@ -120,14 +117,11 @@ async fn test_drasi_server_builder_with_state_store_provider() -> Result<()> {
     core.start().await?;
     assert!(core.is_running().await);
 
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.computation_control().is_ok());
+    assert_eq!(
+        core.get_source_status("__component_graph__").await?,
+        drasi_lib::ComponentStatus::Running
+    );
 
     core.stop().await?;
 
@@ -249,14 +243,8 @@ async fn test_redb_creates_database_file() -> Result<()> {
     // Start to trigger initialization
     core.start().await?;
 
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.is_running().await);
+    assert!(core.computation_control().is_ok());
 
     core.stop().await?;
 
@@ -332,23 +320,8 @@ async fn test_redb_provider_isolation() -> Result<()> {
     assert!(core1.is_running().await);
     assert!(core2.is_running().await);
 
-    drasi_lib::wait_for_status(
-        &core1.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("core1 component graph should reach Running");
-
-    drasi_lib::wait_for_status(
-        &core2.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("core2 component graph should reach Running");
+    assert!(core1.computation_control().is_ok());
+    assert!(core2.computation_control().is_ok());
 
     core1.stop().await?;
     core2.stop().await?;

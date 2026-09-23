@@ -35,8 +35,8 @@ pub use builder::DrasiServerBuilder;
 pub use builder_result::DrasiServerWithHandles;
 pub use config::{
     default_plugin_registry, load_config_file, save_config_file, ConfigError,
-    DrasiLibInstanceConfig, DrasiServerConfig, ExecutionModeConfig, PluginDependency,
-    ReactionConfig, ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
+    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig,
+    ResolvedInstanceConfig, SourceConfig, StateStoreConfig,
 };
 pub use factories::{create_reaction, create_source, create_state_store_provider};
 pub use index_provider::PERSISTENT_INDEX_PROVIDER_NAME;
@@ -58,7 +58,6 @@ pub use drasi_lib::{
     // Core server
     DrasiLib,
     DrasiLibConfig as ServerConfig,
-    ExecutionMode,
     // Builder types
     Query,
     // Config types for API and file-based config

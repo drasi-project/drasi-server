@@ -35,7 +35,7 @@ mod api_query_joins_tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    /// Minimal stub source that satisfies ComponentGraph source validation.
+    /// Minimal stub source for graph-backed query dependencies.
     struct StubSource {
         id: String,
     }
@@ -94,7 +94,7 @@ mod api_query_joins_tests {
     async fn create_test_environment() -> (Arc<DrasiLib>, Arc<bool>, Option<Arc<ConfigPersistence>>)
     {
         // Register stub sources for all sources referenced by queries in these tests.
-        // ComponentGraph now validates that referenced sources exist.
+        // Supply each referenced source before starting dependent queries.
         let core = DrasiLib::builder()
             .with_id("test-server")
             .with_source(StubSource::new("source1"))

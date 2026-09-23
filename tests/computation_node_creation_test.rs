@@ -28,7 +28,7 @@ use drasi_lib::{
     channels::{ComponentStatus, QueryResult, SubscriptionResponse},
     computation::v1::{GraphEntity, GraphEntityId, GraphError, PluginIdentity, RealizationState},
     context::{ReactionRuntimeContext, SourceRuntimeContext},
-    DrasiLib, ExecutionMode, Query, Reaction, Source,
+    DrasiLib, Query, Reaction, Source,
 };
 use drasi_plugin_sdk::{ReactionPluginDescriptor, SourcePluginDescriptor};
 use drasi_server::{
@@ -273,20 +273,12 @@ struct Harness {
 }
 
 impl Harness {
-    async fn new(mode: &str, running: bool) -> Self {
+    async fn new(running: bool) -> Self {
         let original: DrasiServerConfig = serde_json::from_value(json!({
             "id": "native",
-            "executionMode": mode,
         }))
         .unwrap();
-        let core = Arc::new(
-            DrasiLib::builder()
-                .with_id("native")
-                .with_execution_mode(original.execution_mode.into())
-                .build()
-                .await
-                .unwrap(),
-        );
+        let core = Arc::new(DrasiLib::builder().with_id("native").build().await.unwrap());
         if running {
             core.start().await.unwrap();
         }
@@ -381,11 +373,7 @@ async fn assert_status(harness: &Harness, resource: &str, id: &str, expected: &s
 
 #[tokio::test]
 async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_persist_failures() {
-    let harness = Harness::new("computationGraph", true).await;
-    assert_eq!(
-        harness.core.execution_mode(),
-        ExecutionMode::ComputationGraph
-    );
+    let harness = Harness::new(true).await;
     for (resource, kind, method, probe) in [
         ("sources", "mock", "POST", &harness.source_probe),
         ("sources", "mock", "PUT", &harness.source_probe),
@@ -455,7 +443,7 @@ async fn native_post_and_put_acknowledge_added_nodes_before_initialization_and_p
 
 #[tokio::test]
 async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_waits() {
-    let harness = Harness::new("computationGraph", false).await;
+    let harness = Harness::new(false).await;
     for (resource, kind, probe) in [
         ("sources", "mock", &harness.source_probe),
         ("reactions", "log", &harness.reaction_probe),
@@ -491,7 +479,7 @@ async fn native_create_does_not_autostart_a_stopped_instance_but_explicit_start_
 
 #[tokio::test]
 async fn native_query_creation_keeps_invalid_configuration_and_start_reports_failure() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     let config = json!({
         "id": "invalid-query", "query": INVALID_QUERY, "queryLanguage": "Cypher",
         "sources": [{"sourceId": "missing-source"}], "autoStart": true,
@@ -526,7 +514,7 @@ async fn native_query_creation_keeps_invalid_configuration_and_start_reports_fai
 
 #[tokio::test]
 async fn native_factory_failures_remain_create_errors_without_nodes() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     for (resource, kind) in [("sources", "mock"), ("reactions", "log")] {
         let mut config = json!({
             "id": "factory-failure", "kind": kind, "autoStart": true, "failFactory": true,
@@ -556,7 +544,7 @@ async fn native_factory_failures_remain_create_errors_without_nodes() {
 
 #[tokio::test]
 async fn native_query_attach_starts_one_temporary_reaction_and_streams_results() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     let (source, input) = ApplicationSource::new(
         "input",
         ApplicationSourceConfig {
@@ -633,7 +621,7 @@ async fn native_query_attach_starts_one_temporary_reaction_and_streams_results()
 
 #[tokio::test]
 async fn native_solution_preserves_source_and_reaction_plugin_version_nodes() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     let yaml = serde_yaml::to_string(&json!({
         "name": "Plugin metadata",
         "sources": [{"kind": "mock", "id": "source", "autoStart": false}],
@@ -682,7 +670,7 @@ async fn native_solution_preserves_source_and_reaction_plugin_version_nodes() {
 
 #[tokio::test]
 async fn native_solution_reports_core_construction_deadline_and_retains_failed_node() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     let yaml = serde_yaml::to_string(&json!({
         "name": "Deferred creation",
         "sources": [{
@@ -764,7 +752,7 @@ async fn native_solution_reports_core_construction_deadline_and_retains_failed_n
 
 #[tokio::test]
 async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_health() {
-    let harness = Harness::new("computationGraph", true).await;
+    let harness = Harness::new(true).await;
     let yaml = serde_yaml::to_string(&json!({
         "name": "Native partial deployment",
         "sources": [
@@ -841,15 +829,8 @@ async fn native_solution_retains_committed_nodes_and_reports_creation_and_start_
 
 #[tokio::test]
 async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_failure() {
-    let harness = Harness::new("computationGraph", true).await;
-    let origin = Arc::new(
-        DrasiLib::builder()
-            .with_id("origin")
-            .with_execution_mode(ExecutionMode::ComputationGraph)
-            .build()
-            .await
-            .unwrap(),
-    );
+    let harness = Harness::new(true).await;
+    let origin = Arc::new(DrasiLib::builder().with_id("origin").build().await.unwrap());
     origin
         .add_source(MockSource::new("clone-source"))
         .await
@@ -925,26 +906,36 @@ async fn native_clone_keeps_failed_nodes_and_prior_additions_after_a_factory_fai
 }
 
 #[tokio::test]
-async fn legacy_start_failure_is_still_a_create_http_failure() {
-    let harness = Harness::new("componentGraph", true).await;
+async fn default_runtime_reports_autostart_failures_as_node_health() {
+    let harness = Harness::new(true).await;
     for (resource, kind) in [("sources", "mock"), ("reactions", "log")] {
         let mut config = json!({
-            "id": format!("{resource}-legacy-failure"),
+            "id": format!("{resource}-failure"),
             "kind": kind, "autoStart": true, "failStart": true,
         });
         if resource == "reactions" {
             config["queries"] = json!([]);
         }
+        let id = config["id"].as_str().unwrap().to_string();
         let (status, body) =
             request(&harness.app, "POST", &format!("/api/v1/{resource}"), config).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
-        assert!(body["message"]
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let handle = harness.core.computation_component(&id).unwrap();
+        let error = tokio::time::timeout(DEADLINE, handle.wait_started())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(error.to_string().contains("fixture start failure"));
+        let health = assert_status(&harness, resource, &id, "Error").await;
+        assert!(health["data"]["error_message"]
             .as_str()
             .unwrap()
             .contains("fixture start failure"));
+        let persisted = serde_json::to_value(harness.saved()).unwrap();
+        assert_eq!(persisted[resource][0]["id"], id);
     }
     assert_eq!(harness.source_probe.starts.load(Ordering::SeqCst), 1);
     assert_eq!(harness.reaction_probe.starts.load(Ordering::SeqCst), 1);
-    assert!(!harness.config_path.exists());
+    assert!(harness.config_path.exists());
     harness.core.stop().await.unwrap();
 }

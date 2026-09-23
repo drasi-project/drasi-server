@@ -142,7 +142,7 @@ pub async fn create_instance(
     .await
 }
 
-/// Inspect the actual engine behind this instance's ordinary component APIs.
+/// Inspect the sole runtime's identity and the live instance's running state.
 #[utoipa::path(
     get,
     path = "/api/v1/instances/{instanceId}/runtime",
@@ -164,7 +164,7 @@ pub async fn get_instance_runtime(
     Ok(Json(ApiResponse::success(
         crate::api::shared::InstanceRuntimeInfo {
             instance_id,
-            execution_mode: core.execution_mode().into(),
+            runtime: "computationGraph",
             running: core.is_running().await,
         },
     )))
@@ -174,7 +174,7 @@ pub async fn get_instance_runtime(
 ///
 /// Returns an atomic point-in-time snapshot of all components (sources, queries,
 /// reactions) with their configuration properties and dependency edges.
-/// Data is read directly from the ComponentGraph — the single source of truth.
+/// Data is read from ComputationGraph — the single source of truth.
 #[utoipa::path(
     get,
     path = "/api/v1/instances/{instanceId}/snapshot",

@@ -104,6 +104,10 @@ impl ReactionPluginDescriptor for MockReactionDescriptor {
 
 /// Build a router with two DrasiLib instances: a populated source and an empty target.
 async fn create_clone_test_router() -> Router {
+    create_clone_test_router_with_internal_source(false).await
+}
+
+async fn create_clone_test_router_with_internal_source(include_internal: bool) -> Router {
     // --- Source instance: has a source, query, and reaction ---
     let mock_src = create_mock_source("clone-src");
     let mock_reaction = create_mock_reaction("clone-rx", vec!["clone-query".to_string()]);
@@ -114,11 +118,15 @@ async fn create_clone_test_router() -> Router {
         .auto_start(true)
         .build();
 
-    let source_core = DrasiLib::builder()
+    let mut source_builder = DrasiLib::builder()
         .with_id(SOURCE_INSTANCE)
         .with_source(mock_src)
         .with_query(clone_query)
-        .with_reaction(mock_reaction)
+        .with_reaction(mock_reaction);
+    if include_internal {
+        source_builder = source_builder.with_source(create_mock_source("__internal_hidden"));
+    }
+    let source_core = source_builder
         .build()
         .await
         .expect("Failed to build source instance");
@@ -358,22 +366,18 @@ async fn test_clone_preserves_query_config() {
 }
 
 /// Clone filters out internal sources (those starting with "__").
-/// The __component_graph__ source created by DrasiLib should not be cloned.
 #[tokio::test]
 async fn test_clone_filters_internal_sources() {
-    let router = create_clone_test_router().await;
+    let router = create_clone_test_router_with_internal_source(true).await;
 
-    // First verify the source instance has a __component_graph__ source
-    // (DrasiLib creates this automatically)
     let source_sources = get_list(router.clone(), SOURCE_INSTANCE, "sources").await;
-    let _source_source_ids: Vec<&str> = source_sources["data"]
+    let source_ids: Vec<&str> = source_sources["data"]
         .as_array()
         .unwrap()
         .iter()
         .map(|s| s["id"].as_str().unwrap())
         .collect();
-    // The list may or may not expose internal sources depending on the API filter,
-    // but the snapshot will contain them - the key point is the clone skips them.
+    assert!(source_ids.contains(&"__internal_hidden"));
 
     // Clone
     let (status, json) = clone_request(router.clone(), TARGET_INSTANCE, SOURCE_INSTANCE).await;
@@ -394,28 +398,13 @@ async fn test_clone_filters_internal_sources() {
 
     // Also verify target sources list has no internal sources
     let target_sources = get_list(router.clone(), TARGET_INSTANCE, "sources").await;
-    let target_ids: Vec<&str> = target_sources["data"]
+    let mut target_ids: Vec<&str> = target_sources["data"]
         .as_array()
         .unwrap()
         .iter()
         .map(|s| s["id"].as_str().unwrap())
         .collect();
 
-    // Should have clone-src but NOT __component_graph__ (from the clone)
-    assert!(
-        target_ids.contains(&"clone-src"),
-        "Target should have clone-src"
-    );
-    for id in &target_ids {
-        // __component_graph__ created by the target's own DrasiLib is OK,
-        // but there should be at most one (not duplicated from clone)
-        if id.starts_with("__") {
-            // This is the target instance's own internal source, not a cloned one.
-            // Ensure it wasn't in the sourcesCreated list
-            assert!(
-                !sources_created.iter().any(|s| s.as_str().unwrap() == *id),
-                "Internal source '{id}' should not appear in sourcesCreated"
-            );
-        }
-    }
+    target_ids.sort_unstable();
+    assert_eq!(target_ids, ["__component_graph__", "clone-src"]);
 }

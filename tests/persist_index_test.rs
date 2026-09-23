@@ -118,14 +118,11 @@ async fn test_drasi_lib_builder_with_rocksdb_provider() -> Result<()> {
     // Start and stop to verify basic operation
     core.start().await?;
     assert!(core.is_running().await);
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.computation_control().is_ok());
+    assert_eq!(
+        core.get_source_status("__component_graph__").await?,
+        drasi_lib::ComponentStatus::Running
+    );
 
     core.stop().await?;
     assert!(!core.is_running().await);
@@ -156,14 +153,11 @@ async fn test_drasi_server_builder_with_default_index_provider() -> Result<()> {
     // Start and verify
     core.start().await?;
     assert!(core.is_running().await);
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    assert!(core.computation_control().is_ok());
+    assert_eq!(
+        core.get_source_status("__component_graph__").await?,
+        drasi_lib::ComponentStatus::Running
+    );
 
     core.stop().await?;
 
@@ -298,14 +292,12 @@ async fn test_rocksdb_creates_data_directory() -> Result<()> {
 
     // Start to trigger index creation
     core.start().await?;
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
+    tokio::time::timeout(
         std::time::Duration::from_secs(5),
+        core.computation_component("test-query")?.wait_started(),
     )
     .await
-    .expect("component graph should reach Running");
+    .expect("query should finish starting")?;
 
     core.stop().await?;
 
@@ -372,22 +364,8 @@ async fn test_rocksdb_provider_isolation() -> Result<()> {
     core1.start().await?;
     core2.start().await?;
 
-    drasi_lib::wait_for_status(
-        &core1.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("core1 component graph should reach Running");
-    drasi_lib::wait_for_status(
-        &core2.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("core2 component graph should reach Running");
+    assert!(core1.computation_control().is_ok());
+    assert!(core2.computation_control().is_ok());
 
     assert!(core1.is_running().await);
     assert!(core2.is_running().await);
@@ -433,14 +411,14 @@ async fn test_per_query_storage_backend_override() -> Result<()> {
         .await?;
 
     core.start().await?;
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "__component_graph__",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    for id in ["persisted-query", "volatile-query"] {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            core.computation_component(id)?.wait_started(),
+        )
+        .await
+        .expect("query should finish starting")?;
+    }
     core.stop().await?;
 
     // RocksDB materializes one on-disk database per persisted query under
@@ -474,39 +452,26 @@ async fn test_unregistered_named_backend_fails_query_startup() -> Result<()> {
         .build();
 
     // No index provider registered at all.
-    let build_result = DrasiLib::builder()
+    let core = DrasiLib::builder()
         .with_id("test-unregistered-backend")
         .with_query(query)
         .build()
-        .await;
+        .await?;
 
-    let core = match build_result {
-        // Rejected at build time — an acceptable failure.
-        Err(_) => return Ok(()),
-        Ok(core) => core,
-    };
-
-    // Otherwise the failure must surface at startup: either start() errors, or
-    // the query never reaches Running (it must not silently use in-memory).
-    if core.start().await.is_err() {
-        return Ok(());
-    }
-
-    let reached_running = drasi_lib::wait_for_status(
-        &core.component_graph(),
-        "needs-rocksdb",
-        &[drasi_lib::channels::ComponentStatus::Running],
-        std::time::Duration::from_secs(3),
+    core.start().await?;
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        core.computation_component("needs-rocksdb")?.wait_started(),
     )
-    .await
-    .is_ok();
-    let _ = core.stop().await;
+    .await?
+    .expect_err("unregistered storage backend must fail node startup");
 
-    assert!(
-        !reached_running,
-        "a query referencing the unregistered 'rocksdb' backend must fail query \
-         startup, not silently fall back to in-memory indexes"
+    assert!(error.to_string().contains("rocksdb"), "{error}");
+    assert_eq!(
+        core.get_query_status("needs-rocksdb").await?,
+        drasi_lib::ComponentStatus::Error
     );
+    core.shutdown().await?;
 
     Ok(())
 }
@@ -607,14 +572,12 @@ async fn assert_create_instance_persist_index_via_http(
             .build(),
     )
     .await?;
-    drasi_lib::wait_for_status(
-        &core.component_graph(),
-        &query_id,
-        &[drasi_lib::channels::ComponentStatus::Running],
+    tokio::time::timeout(
         std::time::Duration::from_secs(5),
+        core.computation_component(&query_id)?.wait_started(),
     )
     .await
-    .expect("query should reach Running");
+    .expect("query should reach Running")?;
     core.stop().await?;
 
     let index_path = data_dir.join("index");

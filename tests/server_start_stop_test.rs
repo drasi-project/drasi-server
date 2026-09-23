@@ -53,9 +53,8 @@ async fn test_server_start_stop_cycle() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running before testing stop
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -72,7 +71,7 @@ async fn test_server_start_stop_cycle() -> Result<()> {
 
     // Wait for source to reach Stopped before restarting
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -89,7 +88,7 @@ async fn test_server_start_stop_cycle() -> Result<()> {
 
     // Wait for source to reach Running again
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -135,9 +134,8 @@ async fn test_server_with_query() -> Result<()> {
     assert!(core.is_running().await);
 
     // Wait for components to reach Running before stopping
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),

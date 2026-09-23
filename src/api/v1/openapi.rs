@@ -37,7 +37,7 @@ use crate::api::shared::{
     ApiResponseSchema, ApiVersionsResponse, ComponentListItem, ErrorDetail, ErrorResponse,
     HealthResponse, InstanceLinks, InstanceListItem, InstanceRuntimeInfo, StatusResponse,
 };
-use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig, ExecutionModeConfig};
+use crate::config::{DrasiLibInstanceConfig, DrasiServerConfig};
 use crate::plugin_registry::PluginRegistry;
 use std::collections::BTreeMap;
 use utoipa::openapi::schema::{AllOf, Discriminator, ObjectBuilder, OneOf, Ref, Schema};
@@ -111,7 +111,6 @@ use utoipa::openapi::RefOr;
             StatusResponse,
             InstanceListItem,
             InstanceRuntimeInfo,
-            ExecutionModeConfig,
             InstanceLinks,
             CreateInstanceRequest,
             CloneInstanceRequest,

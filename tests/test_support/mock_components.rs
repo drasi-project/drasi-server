@@ -15,8 +15,8 @@
 //! Mock source and reaction implementations for testing DrasiLib.
 
 use async_trait::async_trait;
-use drasi_lib::channels::dispatcher::ChangeDispatcher;
-use drasi_lib::channels::{ComponentStatus, SubscriptionResponse};
+use drasi_lib::channels::dispatcher::{ChangeDispatcher, ChannelChangeDispatcher};
+use drasi_lib::channels::{ComponentStatus, SourceEventWrapper, SubscriptionResponse};
 use drasi_lib::component_graph::{ComponentUpdate, ComponentUpdateSender};
 use drasi_lib::context::{ReactionRuntimeContext, SourceRuntimeContext};
 use drasi_lib::Reaction as ReactionTrait;
@@ -37,6 +37,8 @@ struct MockSourceInner {
     status: RwLock<ComponentStatus>,
     instance_id: RwLock<String>,
     update_tx: RwLock<Option<ComponentUpdateSender>>,
+    // Keep one idle stream alive per subscription, including across restarts.
+    dispatchers: RwLock<Vec<ChannelChangeDispatcher<SourceEventWrapper>>>,
 }
 
 impl MockSource {
@@ -47,6 +49,7 @@ impl MockSource {
                 status: RwLock::new(ComponentStatus::Stopped),
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
+                dispatchers: RwLock::new(Vec::new()),
             }),
             auto_start: true,
         }
@@ -118,10 +121,9 @@ impl SourceTrait for MockSource {
         &self,
         settings: drasi_lib::config::SourceSubscriptionSettings,
     ) -> anyhow::Result<SubscriptionResponse> {
-        use drasi_lib::channels::dispatcher::ChannelChangeDispatcher;
-        let dispatcher =
-            ChannelChangeDispatcher::<drasi_lib::channels::SourceEventWrapper>::new(100);
+        let dispatcher = ChannelChangeDispatcher::new(100);
         let receiver = dispatcher.create_receiver().await?;
+        self.inner.dispatchers.write().await.push(dispatcher);
         Ok(SubscriptionResponse {
             query_id: settings.query_id,
             source_id: self.inner.id.clone(),

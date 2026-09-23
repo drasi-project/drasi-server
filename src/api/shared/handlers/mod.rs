@@ -293,7 +293,7 @@ mod tests {
             InputEnvelope, OutputEnvelope, PipeRequirements, PortDescriptor, PortDirection, PortId,
             RealizationState, Transformer,
         },
-        DrasiError, DrasiLib, ExecutionMode,
+        DrasiError, DrasiLib,
     };
     use std::{task::Poll, time::Duration};
 
@@ -330,7 +330,6 @@ mod tests {
     async fn computation_creation_wait_times_out_after_30_seconds_for_blocked_transformer() {
         let core = DrasiLib::builder()
             .with_id("blocked-transformer-timeout")
-            .with_execution_mode(ExecutionMode::ComputationGraph)
             .build()
             .await
             .unwrap();

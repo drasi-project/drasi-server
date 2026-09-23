@@ -48,9 +48,8 @@ async fn test_server_start_stop_cycle() {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running before stopping
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -64,7 +63,7 @@ async fn test_server_start_stop_cycle() {
 
     // Wait for source to reach Stopped before restarting
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[drasi_lib::channels::ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -106,9 +105,8 @@ async fn test_components_with_auto_start() {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -151,18 +149,17 @@ async fn test_components_without_auto_start() {
     core.start().await.expect("Failed to start");
     assert!(core.is_running().await);
 
-    // Only the internal component graph source should auto-start.
-    let graph = core.component_graph();
-    drasi_lib::wait_for_status(
-        &graph,
-        "__component_graph__",
-        &[ComponentStatus::Running],
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    .expect("component graph should reach Running");
+    for id in ["test-source", "test-query", "test-reaction"] {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            core.computation_component(id).unwrap().wait_created(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
 
-    // Never-started components retain their initial Added state.
+    // Never-started components retain the Added presentation after native creation.
     assert_eq!(
         core.get_source_status("test-source")
             .await
@@ -213,9 +210,8 @@ async fn test_restart_with_components() {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "restart-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -229,7 +225,7 @@ async fn test_restart_with_components() {
 
     // Wait for source to reach Stopped before restarting
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "restart-source",
         &[ComponentStatus::Stopped],
         std::time::Duration::from_secs(5),
@@ -243,7 +239,7 @@ async fn test_restart_with_components() {
 
     // Wait for source to reach Running after restart
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "restart-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -285,9 +281,8 @@ async fn test_multiple_query_sources() {
     assert!(core.is_running().await);
 
     // Wait for sources to reach Running
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "source1",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -336,9 +331,8 @@ async fn test_multiple_reaction_queries() {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "test-source",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),
@@ -395,9 +389,8 @@ async fn test_query_with_joins() {
     assert!(core.is_running().await);
 
     // Wait for source to reach Running
-    let graph = core.component_graph();
     drasi_lib::wait_for_status(
-        &graph,
+        &core.component_graph(),
         "join-source1",
         &[ComponentStatus::Running],
         std::time::Duration::from_secs(5),

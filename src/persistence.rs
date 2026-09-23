@@ -17,8 +17,8 @@ use crate::api::models::bootstrap::{
 };
 use crate::api::models::{ConfigValue, IdentityProviderConfig, QueryConfigDto};
 use crate::config::{
-    DrasiLibInstanceConfig, DrasiServerConfig, ExecutionModeConfig, PluginDependency,
-    ReactionConfig, SourceConfig, TrustedIdentity,
+    DrasiLibInstanceConfig, DrasiServerConfig, PluginDependency, ReactionConfig, SourceConfig,
+    TrustedIdentity,
 };
 use crate::instance_registry::InstanceRegistry;
 use anyhow::Result;
@@ -35,7 +35,6 @@ use tokio::sync::RwLock;
 /// configuration on the first persist operation.
 #[derive(Clone)]
 struct PreservedServerSettings {
-    default_execution_mode: ExecutionModeConfig,
     enable_ui: bool,
     memory_budget_mib_by_instance: IndexMap<String, ConfigValue<usize>>,
     plugin_registry: Option<String>,
@@ -48,7 +47,7 @@ struct PreservedServerSettings {
     cors_allowed_origins: Vec<String>,
     /// Top-level `identityProviders` from the original single-instance config.
     ///
-    /// Identity providers are config-only (they have no runtime ComponentGraph
+    /// Identity providers are config-only (they have no runtime graph
     /// representation) so they cannot be recovered from `snapshot_configuration()`.
     /// They must be preserved here and re-emitted by `save()`.
     identity_providers: Vec<IdentityProviderConfig>,
@@ -60,7 +59,7 @@ struct PreservedServerSettings {
     /// Top-level `bootstrapProviders` from the original single-instance config.
     ///
     /// Like identity providers, top-level bootstrap providers are config-only
-    /// (they have no runtime ComponentGraph representation) so they cannot be
+    /// (they have no runtime graph representation) so they cannot be
     /// recovered from `snapshot_configuration()`. They must be preserved here
     /// and re-emitted by `save()`.
     bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
@@ -72,8 +71,8 @@ struct PreservedServerSettings {
 /// Snapshot-based persistence for DrasiServerConfig.
 ///
 /// Uses a single-source-of-truth approach: all component state lives in the
-/// ComponentGraph inside each DrasiLib instance. There is no shadow state or
-/// separate registration cache — the `save()` method calls
+/// ComputationGraph inside each DrasiLib instance. Runtime state is not cached
+/// separately — the `save()` method calls
 /// `snapshot_configuration()` on every registered instance to capture the
 /// current sources, queries, and reactions, then serialises them to YAML.
 ///
@@ -210,7 +209,6 @@ impl ConfigPersistence {
             archive_settings,
             solutions_dir,
             preserved: PreservedServerSettings {
-                default_execution_mode: original_config.execution_mode,
                 enable_ui: original_config.enable_ui,
                 memory_budget_mib_by_instance: {
                     let mut by_instance: IndexMap<String, ConfigValue<usize>> = original_config
@@ -460,9 +458,6 @@ impl ConfigPersistence {
         let mut instance_configs = Vec::new();
 
         for (id, core) in self.registry.list().await {
-            let actual_mode = ExecutionModeConfig::from(core.execution_mode());
-            let execution_mode =
-                (actual_mode != self.preserved.default_execution_mode).then_some(actual_mode);
             let snapshot = core
                 .snapshot_configuration()
                 .await
@@ -551,7 +546,6 @@ impl ConfigPersistence {
             // Check if this is a dynamically created instance
             let instance_config = if let Some(dynamic_config) = dynamic_instance_configs.get(&id) {
                 DrasiLibInstanceConfig {
-                    execution_mode,
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index: dynamic_config.persist_index,
                     enable_archive: dynamic_config.enable_archive,
@@ -594,7 +588,6 @@ impl ConfigPersistence {
                 }
             } else {
                 DrasiLibInstanceConfig {
-                    execution_mode,
                     id: ConfigValue::Static(snapshot.instance_id.clone()),
                     persist_index,
                     enable_archive,
@@ -627,12 +620,7 @@ impl ConfigPersistence {
             instance_configs.push(instance_config);
         }
 
-        // Keep a distinct root default even when only one overridden instance remains.
-        let flatten_single = matches!(
-            instance_configs.as_slice(),
-            [instance] if instance.execution_mode.is_none()
-        );
-        let wrapper_config = if flatten_single {
+        let wrapper_config = if instance_configs.len() == 1 {
             // Single instance → use single-instance format (root-level fields)
             let instance = instance_configs.remove(0);
             // In single-instance format, identityProviders move to the top
@@ -651,7 +639,6 @@ impl ConfigPersistence {
                 self.preserved.bootstrap_providers.clone()
             };
             DrasiServerConfig {
-                execution_mode: self.preserved.default_execution_mode,
                 api_version: None,
                 id: instance.id,
                 host: ConfigValue::Static(self.host.clone()),
@@ -693,7 +680,6 @@ impl ConfigPersistence {
                 .unwrap_or_default();
 
             DrasiServerConfig {
-                execution_mode: self.preserved.default_execution_mode,
                 api_version: None,
                 id: ConfigValue::Static(first_id),
                 host: ConfigValue::Static(self.host.clone()),
@@ -1282,8 +1268,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg_path = tmp.path().join("server.yaml");
 
-        // DrasiLib automatically creates an internal `__component_graph__` source.
-        // Additionally add a user source whose id starts with `__` to verify filtering.
+        // Internal source ids start with `__` and must not be persisted.
         let core = build_core(
             "inst1",
             vec![
