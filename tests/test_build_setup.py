@@ -96,6 +96,71 @@ print(os.environ["FIXTURE_MODE"])
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Usage:", result.stderr)
 
+    def test_yaml_validation_prepares_sources_and_reports_preparation_failure(self):
+        def script(document, step):
+            job = document.split("\n  build_validation:\n", 1)[1]
+            body = job.split(f"      - name: {step}\n", 1)[1].split("        run: |\n", 1)[1]
+            lines = []
+            for line in body.splitlines():
+                if line and not line.startswith("          "):
+                    break
+                lines.append(line[10:])
+            return "\n".join(lines).rstrip("\n") + "\n"
+
+        documents = [
+            (ROOT / f".github/workflows/validate-yaml-snippets.{extension}").read_text()
+            for extension in ("md", "lock.yml")
+        ]
+        build, compiled_build = [
+            script(document, "Build server and run config validation tests")
+            for document in documents
+        ]
+        failure, compiled_failure = [
+            script(document, "Fail if any validation step failed") for document in documents
+        ]
+        self.assertEqual(build, compiled_build)
+        self.assertEqual(failure, compiled_failure)
+        for tool, body in (
+            ("sudo", "exit 0\n"),
+            ("dpkg-architecture", "echo fixture-architecture\n"),
+            ("cargo", 'printf \'["cargo","%s"]\\n\' "$*" >> "$POLICY_LOG"\n'),
+        ):
+            stub = self.directory / "bin" / tool
+            stub.write_text("#!/bin/bash\n" + body)
+            stub.chmod(0o755)
+
+        results = self.directory / "results"
+        build = build.replace("/tmp/gh-aw/agent", str(results))
+        failure = failure.replace("/tmp/gh-aw/agent", str(results))
+        for fail_core in ("0", "1"):
+            with self.subTest(fail_core=fail_core):
+                if self.core.exists():
+                    self.core.rmdir()
+                self.log.write_text("")
+                environment = {**self.env, "FAIL_CORE": fail_core}
+                result = subprocess.run(
+                    ["bash", "-c", build], cwd=self.server, env=environment,
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.calls(), [
+                    ["core", ""],
+                    ["cargo", "test --test readme_examples_validation_test"],
+                    ["cargo", "test --test example_configs_validation_test"],
+                    ["cargo", "test --test config_parsing_failure_test"],
+                ])
+                report = (results / "validation-results.txt").read_text()
+                self.assertIn("## prepare pinned core source\n", report)
+                self.assertIn("exit_code=17" if fail_core == "1" else "exit_code=0", report)
+                self.assertEqual(report.count("exit_code="), 5)
+                gate = subprocess.run(
+                    ["bash", "-c", failure], cwd=self.server, env=environment,
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(gate.returncode, int(fail_core), gate.stderr)
+                if fail_core == "1":
+                    self.assertIn("One or more validation steps failed", gate.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
