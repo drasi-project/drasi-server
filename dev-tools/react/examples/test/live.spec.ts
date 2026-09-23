@@ -227,6 +227,9 @@ test('QueryTable client projection failure and local retry leave the healthy que
   await visible(page, evidence, 3, 5);
   const northReads = reads(evidence, 'north-room');
   const southReads = reads(evidence, 'south-room');
+  const southRequests = () => evidence.requests.filter(request =>
+    new URL(request.url).pathname.startsWith(`${instance}/queries/south-room`)).length;
+  const initialSouthRequests = southRequests();
   expect(northReads).toBe(1);
   expect(southReads).toBe(1);
   expect(streams(evidence)).toHaveLength(1);
@@ -240,6 +243,7 @@ test('QueryTable client projection failure and local retry leave the healthy que
   await expect(connection(page).getByRole('status')).toHaveText('Connection: stream open');
   expect(reads(evidence, 'north-room')).toBe(northReads);
   expect(reads(evidence, 'south-room')).toBe(southReads);
+  expect(southRequests()).toBe(initialSouthRequests);
   await audit(page, info, 'querytable-client-projection-error');
 
   evidence.phase = 'query-local-retry-with-bad-projection';
@@ -247,6 +251,7 @@ test('QueryTable client projection failure and local retry leave the healthy que
   await expect.poll(() => reads(evidence, 'north-room')).toBe(northReads + 1);
   await expect(room(page, 'North').getByRole('alert')).toContainText('RESULT_PROCESSING_FAILED');
   expect(reads(evidence, 'south-room')).toBe(southReads);
+  expect(southRequests()).toBe(initialSouthRequests);
   expect(streams(evidence)).toHaveLength(1);
   await expect(connection(page).getByRole('status')).toHaveText('Connection: stream open');
 
@@ -255,6 +260,7 @@ test('QueryTable client projection failure and local retry leave the healthy que
   await visible(page, evidence, 3, 5);
   expect(reads(evidence, 'north-room')).toBe(northReads + 1);
   expect(reads(evidence, 'south-room')).toBe(southReads);
+  expect(southRequests()).toBe(initialSouthRequests);
   expect(streams(evidence)).toHaveLength(1);
   expect(evidence.navigations).toHaveLength(1);
   await audit(page, info, 'querytable-projection-restored');
