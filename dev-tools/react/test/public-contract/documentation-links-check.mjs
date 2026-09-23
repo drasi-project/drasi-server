@@ -4,8 +4,8 @@ import test from 'node:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkDocumentationLinks, checkInstalledDocumentationLinks, markdownAnchors, relativeMarkdownLinks } from './documentation-links.mjs';
-import { documentationFiles, loadDocumentation } from './documents.mjs';
+import { checkDocumentationLinks, checkInstalledDocumentationLinks, markdownAnchors, relativeMarkdownLinks, repositoryLinkTarget } from './documentation-links.mjs';
+import { documentationFiles, loadDocumentation, repositorySourceRef } from './documents.mjs';
 
 test('matches actual historical headings, punctuation, duplicate slugs and stable aliases', () => {
   const anchors = markdownAnchors([
@@ -63,6 +63,18 @@ test('installed guide links cannot rely on missing or escaped repository files',
 
 test('repository-only example links still target a real canonical path and heading', async () => {
   await assert.rejects(checkDocumentationLinks({
-    'dev-tools/react/README.md': '[Wrong example](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md#not-a-heading)',
+    'dev-tools/react/README.md': `[Wrong example](https://github.com/drasi-project/drasi-server/blob/${repositorySourceRef}/dev-tools/react/examples/README.md#not-a-heading)`,
   }), /Missing documentation anchor/);
+});
+
+test('repository links cannot claim main contains unmerged staging files', async () => {
+  const path = 'dev-tools/react/examples/README.md#run-the-real-example';
+  assert.throws(() => repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/blob/main/${path}`),
+    /declares ref main/);
+  assert.deepEqual(repositoryLinkTarget(`https://github.com/drasi-project/drasi-server/blob/${repositorySourceRef}/${path}`),
+    { kind: 'blob', ref: repositorySourceRef, path });
+  const proof = await checkDocumentationLinks();
+  assert.equal(proof.networkRequests, 0);
+  assert(proof.checked.some(link => link.ref === repositorySourceRef &&
+    link.verification.includes('remote availability requires post-push verification')));
 });

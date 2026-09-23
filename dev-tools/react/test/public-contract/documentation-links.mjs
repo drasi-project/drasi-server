@@ -3,14 +3,23 @@ import assert from 'node:assert/strict';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { documentationFiles } from './documents.mjs';
+import { documentationFiles, repositorySourceRef } from './documents.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const documents = [
   ...documentationFiles.map(file => `dev-tools/react/${file}`),
   'dev-tools/react/examples/README.md', 'examples/react/README.md', 'examples/trading/TESTING.md',
 ];
-const repositoryLink = /^https:\/\/github\.com\/drasi-project\/drasi-server\/(?:blob|tree)\/main\//;
+const repositoryLink = /^https:\/\/github\.com\/drasi-project\/drasi-server\/(blob|tree)\/([^/]+)\/(.+)$/;
+
+export function repositoryLinkTarget(target) {
+  const match = repositoryLink.exec(target);
+  if (!match) return null;
+  const [, kind, ref, path] = match;
+  assert.equal(ref, repositorySourceRef,
+    `Repository link declares ref ${ref}, not the staging source ref ${repositorySourceRef}: ${target}`);
+  return { kind, ref, path };
+}
 
 function prose(markdown) {
   const lines = [];
@@ -88,9 +97,9 @@ export async function checkDocumentationLinks(overrides = {}) {
     const markdown = await load(source);
     const targets = [...relativeMarkdownLinks(markdown), ...markdownLinks(markdown).filter(target => repositoryLink.test(target))];
     for (const target of targets) {
-      const fromRepository = repositoryLink.test(target);
-      const [path, fragment] = target.replace(repositoryLink, '').split('#');
-      const file = path ? resolve(fromRepository ? root : dirname(source), decodeURIComponent(path)) : source;
+      const repositoryTarget = repositoryLinkTarget(target);
+      const [path, fragment] = (repositoryTarget?.path ?? target).split('#');
+      const file = path ? resolve(repositoryTarget ? root : dirname(source), decodeURIComponent(path)) : source;
       const local = relative(root, file);
       assert(local !== '..' && !local.startsWith(`..${sep}`), `Documentation link escapes repository: ${name} -> ${target}`);
       const info = await stat(file);
@@ -100,8 +109,12 @@ export async function checkDocumentationLinks(overrides = {}) {
         assert(markdownAnchors(await load(file)).has(decodeURIComponent(fragment)),
           `Missing documentation anchor: ${name} -> ${target}`);
       }
-      checked.push({ source: name, target });
+      checked.push({
+        source: name, target,
+        verification: repositoryTarget ? 'Declared staging ref plus local checkout path/anchor only; remote availability requires post-push verification' : 'Local repository path/anchor',
+        ...(repositoryTarget ? { ref: repositoryTarget.ref, repositoryPath: path } : {}),
+      });
     }
   }
-  return { documents, checked };
+  return { documents, checked, networkRequests: 0 };
 }

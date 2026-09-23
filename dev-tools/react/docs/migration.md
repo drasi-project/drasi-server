@@ -84,7 +84,7 @@ Trading's normal tables remain **400px**; fullscreen retains the **32px**
 inset and `calc(100vw - 64px)` / `calc(100vh - 64px)` bounds. All eleven
 queries, raw identity/projection rules, financial calculations, default-sort
 discrepancy, snippets and server-UI links remain app-owned and unchanged.
-P6's [normal P5 merge](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#p6-newer-main-development-source-propagation)
+P6's [normal P5 merge](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#p6-newer-main-development-source-propagation)
 retains original/ABI 0.13/quality ancestry and requires its own rebuilt runtime,
 never a predecessor binary. Bounded row tokens/phase, paired observations,
 complete-graph SSR, controls, Trading design and strict legacy contrast remain.
@@ -97,8 +97,8 @@ Automated rule scans (including axe), DOM/ARIA assertions, browser
 accessibility-tree inspection and real-browser keyboard tests provide distinct
 evidence; none is a human screen-reader review or universal browser/AT claim.
 P6 gate counts and artifact/coverage measurements are recorded in
-[historical P6 measured evidence](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-evidence)
-and [historical P6 artifact advance](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-artifact-advance);
+[historical P6 measured evidence](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-evidence)
+and [historical P6 artifact advance](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-artifact-advance);
 the owning P6 draft PR records its exact-head CI outcomes. The implemented
 keyboard, modal, theme, sizing and motion contracts have that automated
 evidence. Older P1-P5 passes remain historical, not substitutes for it or for
@@ -114,7 +114,7 @@ contrast-clean, WCAG-conformance or a human AT result.
 
 No actual human assistive-technology review is available for P6. Human
 acceptance remains **PENDING HUMAN**; complete the reproducible **nine-part**
-[manual screen-reader checklist](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#manual-screen-reader-checklist-pending)
+[manual screen-reader checklist](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#manual-screen-reader-checklist-pending)
 with exact OS/browser/AT versions, date, revision and actual outcomes.
 P7 documentation/example development is authorized while that review remains
 open; no automation is human approval. Development readiness after measured
@@ -122,7 +122,7 @@ gates does not authorize merge, release or publication.
 
 ## P5 / #164 Part A migration
 
-P5's [normal P4 integration](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#p5-newer-main-development-source-propagation)
+P5's [normal P4 integration](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#p5-newer-main-development-source-propagation)
 retains original/ABI 0.13 history, table/DCE fixes and P3/P4 auth, protocol,
 identity, recovery and consistency limits. No rebase or P6/P7 feature import.
 

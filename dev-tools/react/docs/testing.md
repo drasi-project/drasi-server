@@ -18,6 +18,11 @@ test source and runnable examples are not part of the installed tarball.
 | Installed consumer API and docs | `test/public-contract/`: ESM/CJS, both declarations, strict SSR console/global traps, names/maps, tree shaking, React-free client, hooks without CSS, all 16 literal recipes and real single-React installs. | Recipes compile from installed documents; compilation alone is not live execution. |
 | Runnable examples | `examples/test/showcase.spec.ts` checks clearly simulated states and row-action Modal/focus composition with no API calls. `examples/test/live.spec.ts` runs the table, hooks and `QueryTable` on actual pre-created resources, including update/delete/empty/recovery and isolated client-projection failure/retry. | The projection-error control is deliberately client-side, not a server or protocol outage. |
 
+`ModalLoadingFailure.test.tsx` separately rejects the real Modal lazy-loader
+promise and checks the owner's error boundary receives the original error,
+with no late portal/focus/scroll/pointer ownership. Expected React diagnostics
+are captured and asserted rather than silencing unrelated errors.
+
 ## Commands from the repository root
 
 Build the package explicitly and use the
@@ -44,11 +49,11 @@ It builds an ordinary tarball, creates a locked source-free consumer, compiles
 the installed guides and runs the inherited browser/visual matrix plus the
 canonical server-free showcase. It does not replace actual backend validation.
 
-Follow the [repository example setup](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md#run-the-real-example)
+Follow the [repository example setup](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md#run-the-real-example)
 to build this checkout's UI/server and prepare the approved source/plugins,
 then run `npm --prefix dev-tools/react/examples run test:live`. The normal and
 source-free paths use the same example-owned startup. Trading's separate
-[real financial/CRUD gate](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md)
+[real financial/CRUD gate](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md)
 remains mandatory. Finish heavy Rust compilation before timing-sensitive
 browsers; do not hide failures by increasing bounds or refreshing image files.
 
@@ -56,10 +61,14 @@ Keep full raw failures, axe violations/incomplete results, source/binary/pin
 provenance and exact test counts. Passing automation is not human screen-reader
 acceptance. New example entries must have explicit measured asset scope;
 retain every existing entry/shared/lazy asset and the headless zero-CSS check.
+Offline documentation tests verify shipped local files, declared staging-ref
+semantics and matching checkout paths/anchors. They make no network requests
+and are not proof that an unpushed file exists remotely. After an ordinary
+staging push, verify the example/provenance URLs against that declared ref.
 
 ## Verified compatibility
 
-[P7 integration evidence](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#p7-current-development-source-integration)
+[P7 integration evidence](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#p7-current-development-source-integration)
 records the normal P6 merge, retained original/quality ancestry and contracts,
 checks and full artifact accounting. Claims exclude untested browser/AT versions;
 historical P6/P7 passes are not current proof or human AT approval.
@@ -68,7 +77,7 @@ historical P6/P7 passes are not current proof or human AT approval.
 | --- | --- |
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
-| Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
+| Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
 | Server | Current development runtime: **0.2.3**, registry library **0.9.2**, index **0.6.3**, engine **0.5.9** from the user-approved temporary source `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` (drasi-project/drasi-core#810), AST **0.3.5**, Cypher/GQL **0.3.6**. Only engine/AST/Cypher are path-selected; equal-version sibling SDKs are not consumed. |
 | Plugin / ABI | Current signed SSE **0.3.7**, host/plugin/FFI crates **0.11.2**, native ABI **0.14.0**, from official merged release `70ca432c0f12623ab9b371b2d515180ccc80c2dd`. All six immutable platform/digest/hash/signature locks are inherited from the approved parent. No prior ABI cache fallback or trust relaxation. |
 | Historical runtime evidence | Original server **0.2.1** / library **0.8.9** / SSE **0.3.4** / ABI **0.11.0**, and server **0.2.3** / library **0.9.1** / SSE **0.3.6** / ABI **0.13.0** records remain separately versioned. They are not current ABI 0.14 validation or a fallback for it. |
@@ -77,8 +86,8 @@ Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
 identity or incompatible reaction membership fail with typed errors. No older
 server fallback, query-language substitution or newer SDK/ABI upgrade is
-attempted. See [engine prerequisites](https://github.com/drasi-project/drasi-server/blob/main/docs/engine-prerequisite.md) and
-the [approved main-runtime integration](https://github.com/drasi-project/drasi-server/blob/main/docs/main-runtime-integration.md).
+attempted. See [engine prerequisites](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/docs/engine-prerequisite.md) and
+the [approved main-runtime integration](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
@@ -132,10 +141,10 @@ For contributions, use this repository's
 [issue tracker](https://github.com/drasi-project/drasi-server/issues), not a
 separate published-package repository. Keep changes at their owning boundary:
 
-- [Package tests](https://github.com/drasi-project/drasi-server/tree/main/dev-tools/react/test) cover clients, transport/DTO validation, actual hooks
+- [Package tests](https://github.com/drasi-project/drasi-server/tree/agentofreality-react-independent-examples/dev-tools/react/test) cover clients, transport/DTO validation, actual hooks
   and provider lifecycles, tables, modal/theme/motion and regression behavior.
-- [Installed public contracts](https://github.com/drasi-project/drasi-server/tree/main/dev-tools/react/test/public-contract) are invoked by the
-  documented [Trading packed-consumer gate](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#reproducible-visual-and-packed-consumer-gate).
+- [Installed public contracts](https://github.com/drasi-project/drasi-server/tree/agentofreality-react-independent-examples/dev-tools/react/test/public-contract) are invoked by the
+  documented [Trading packed-consumer gate](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#reproducible-visual-and-packed-consumer-gate).
   They compile **literal** marked recipes from the installed tarball against
   its real exports and inspect runtime/declaration/SSR dependency graphs.
   Source aliases or locally rewritten copies are not a substitute.
@@ -145,9 +154,9 @@ separate published-package repository. Keep changes at their owning boundary:
   `test/public-contract/documents.mjs`, and retain/extend
   `readme-examples-check.mjs` guards. Do not suppress diagnostics or relax
   installed negative assertions to make a recipe pass.
-- Real-server protocol fixtures in [test/fixtures/server-v1](https://github.com/drasi-project/drasi-server/tree/main/dev-tools/react/test/fixtures/server-v1)
+- Real-server protocol fixtures in [test/fixtures/server-v1](https://github.com/drasi-project/drasi-server/tree/agentofreality-react-independent-examples/dev-tools/react/test/fixtures/server-v1)
   retain capture provenance; synthetic examples do not expand that evidence.
-  Trading-specific contribution guidance is [app-owned](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/CONTRIBUTING.md).
+  Trading-specific contribution guidance is [app-owned](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/CONTRIBUTING.md).
 
 `test/ResultRegression.test.jsx` is a portable behavioral proof run unchanged
 on archived P3 **`a0569c2`** and the P4 implementation. All three cases fail on P3 with
@@ -172,7 +181,7 @@ replace the existing package/consumer gates or change artifact-size baselines.
 
 Trading continues to consume built local exports. Its unchanged query
 definitions, financial transforms, provisioning and tutorial snippets stay
-app-owned. [Trading TESTING.md](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md) documents
+app-owned. [Trading TESTING.md](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md) documents
 the locked clean-tarball gate, all three browsers, five original exact PNG images,
 coverage/size budgets and authoritative real-server financial/CRUD/reconnect
 assertions. Synthetic tests are not proof that a real plugin emits a shape.

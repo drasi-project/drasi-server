@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+export const repositorySourceRef = 'agentofreality-react-independent-examples';
+
 export const documentationFiles = [
   'README.md', 'CHANGELOG.md',
   'docs/getting-started.md', 'docs/reference.md', 'docs/connection.md',

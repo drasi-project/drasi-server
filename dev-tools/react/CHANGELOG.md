@@ -91,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - P7 / #165 consumer documentation and the linked
-  [repository example workspace](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md): a live
+  [repository example workspace](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md): a live
   cold-storage table, a hooks-only semantic UI and an explicitly simulated,
   provider-free component showcase. This is documentation/examples work on
   unchanged private-package APIs, not a published npm release.
@@ -104,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before projection with sparse deletes. All 13 inherited recipes and parser
   assertions are retained; required-name guards cover the additions.
 - Precise links to existing verified P6
-  [measured evidence](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-evidence)
-  and [artifact measurements](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
+  [measured evidence](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-evidence)
+  and [artifact measurements](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
   separate from subsequent-change validation and the nine-part **PENDING HUMAN**
   screen-reader checklist. Trading's 19 retained contrast fingerprints in 86
   exact contexts remain unwaived strict non-regression evidence, not a

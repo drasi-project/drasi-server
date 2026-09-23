@@ -150,7 +150,7 @@ are distinct from optional, app-triggered query-definition inspection.
 
 ### Example workspace
 
-The [canonical repository examples](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md)
+The [canonical repository examples](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md)
 live at `dev-tools/react/examples`, beside this package. Their source and setup
 scripts are repository-only, not included in the installed tarball:
 
