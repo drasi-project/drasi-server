@@ -68,13 +68,15 @@ P6's current normal update merges exact P5
 subsequent row/observation fixes remain in history. No P7 features, original
 design change, accessibility-policy waiver or human acceptance are imported.
 
-P7 / #165 adds the independent [cold-storage examples](../react/README.md)
+P7 / #165 adds the independent [cold-storage examples](../../dev-tools/react/examples/README.md)
 above exact P6 `959594b1ad1d8b0a891b9526d2376f30fe66182f`.
 The actual user expressly authorized continuing examples/documentation while
 human screen-reader review remains open. That permission is **not** a human
 review, contrast waiver or merge/publication approval. P7's evidence is
 [separate from the historical layers](#p7-independent-examples-and-integrated-evidence);
 the nine-part human checklist below remains pending and unchanged.
+The later [consumer-quality follow-up](#p7-canonical-examples-and-developer-guides)
+reorganizes its docs and canonical workspace without changing Trading.
 
 ## Behavior inventory, version 1
 
@@ -2145,3 +2147,50 @@ substitutes. Human AT remains pending and the original strict Trading
 contrast fingerprints/raw archive remain unwaived. Configured skips, host
 warnings, unused core/embedded-plugin audit limits and the external YAML
 model failure retain their actual classifications.
+
+### P7 canonical examples and developer guides
+
+The user explicitly chose **"Put the canonical examples with the React package
+(Recommended)"**. The single workspace moves from `examples/react` to
+`dev-tools/react/examples`; the old location retains only a documentation
+pointer and ignores for existing generated artifacts, not an app or source
+alias. The source-free consumer copies the canonical workspace under the same
+relative path, installs the real tarball, and copies only its shipped guides
+and notices beside it so local documentation links resolve. No parent package
+source, manifest or build output supplies module resolution.
+
+The short package README teaches provider-free `DataTable` first. Five shipped
+guides retain the complete reference, connection/hosting contract, migrations,
+historical evidence and testing map. All sixteen original literal recipe
+bodies remain byte-identical; the installed-doc collector checks every guide,
+relative shipped link, recipe, ESM/CJS declaration path and actual supported
+installation recipe. Prior README anchors remain compatibility landings.
+
+The fourth page, `/query-table.html`, uses public `QueryTable` directly against
+the existing cold-chain resources. Query state/error slots avoid an extra
+hook subscription. Its labelled client-only projection-error control leaves
+real server rows and stream payloads untouched; retry rereads North only,
+while South and the shared connection stay healthy. The three real pages each
+retain update/delete/empty/reload, transport recovery and operator-owned
+missing-resource repair checks in all three engines, plus the new local-retry
+flow. The original simulated showcase still proves no API/SSE requests and
+retains row-action Modal focus/theming checks. These are separate from actual
+human AT acceptance.
+
+The user then explicitly selected **"Approve these scoped documentation/example
+baselines (Recommended)"**. `p7-consumer-baseline-approval.json` records the
+measured scope and initial failures. Only `sizes.packageTarball` advances to
+**225320 bytes** for five added guides (**65 archive files**), with the normal
+2% cap **229826.4**. The prior **217782** baseline, **222137.64** cap and
+`914ba88b` artifact **222072** are retained, including an exact immutable copy
+of its schema-3 baseline. All runtime/type/style/Trading limits and coverage
+floors are unchanged; the P5-only allowance remains unavailable.
+
+Only the new example entry receives a new baseline: complete reachable
+JS/gzip/CSS/gzip **230748 / 75560 / 7462 / 1981**, with the same 2% policy.
+The three old entry baselines and entire workspace-total baseline stay
+unchanged; measured total **236706 / 78449 / 7462 / 1981** fits them.
+Headless CSS remains literally zero. Policy tests retain the original example
+record, reject unknown entries and check each old/new bound at a one-byte
+breach. Final actual counts, artifact bytes and CI results belong in #210/#165,
+not in rewritten historical reports.

@@ -1,10 +1,11 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { extractInstallRecipes } from './install-recipes.mjs';
+import { loadDocumentation } from './documents.mjs';
 
-const markdown = await readFile(new URL('../../README.md', import.meta.url), 'utf8');
+const markdown = Object.values(await loadDocumentation(fileURLToPath(new URL('../../', import.meta.url)))).join('\n');
 
 test('extracts the two literal primary install recipes and measured React peers', () => {
   const recipes = extractInstallRecipes(markdown);

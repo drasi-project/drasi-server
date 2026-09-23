@@ -7,7 +7,7 @@ import { moduleIdentity } from './scripts/module-identity.mjs';
 export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom'] },
   build: {
-    rollupOptions: { input: ['index.html', 'hooks.html', 'showcase.html'] },
+    rollupOptions: { input: ['index.html', 'query-table.html', 'hooks.html', 'showcase.html'] },
   },
   plugins: [{
     name: 'record-built-import-graph',

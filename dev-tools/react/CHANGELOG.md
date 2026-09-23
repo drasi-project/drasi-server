@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Rehome the single runnable cold-storage workspace beside the package at
+  `dev-tools/react/examples`; retain built-artifact-only consumption and add a
+  real `QueryTable` entry with query-local projection/retry coverage.
+- Replace the long onboarding README with a first-use table and five shipped
+  guides. Installed-document checks retain all 16 recipes, local guide links,
+  installation caveats and the complete API/migration/history reference.
 - P7 uses portable tarball-first and version-scoped copied-local installation
   with one React identity; fresh minimal consumers execute the installed
   recipes and server-render public controls. Simulation loading matches the hook contract.
@@ -85,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - P7 / #165 consumer documentation and the linked
-  [examples/react workspace](../../examples/react/README.md): a live
+  [repository example workspace](https://github.com/drasi-project/drasi-server/blob/main/dev-tools/react/examples/README.md): a live
   cold-storage table, a hooks-only semantic UI and an explicitly simulated,
   provider-free component showcase. This is documentation/examples work on
   unchanged private-package APIs, not a published npm release.
@@ -98,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before projection with sparse deletes. All 13 inherited recipes and parser
   assertions are retained; required-name guards cover the additions.
 - Precise links to existing verified P6
-  [measured evidence](../../examples/trading/TESTING.md#historical-p6-measured-evidence)
-  and [artifact measurements](../../examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
+  [measured evidence](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-evidence)
+  and [artifact measurements](https://github.com/drasi-project/drasi-server/blob/main/examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
   separate from subsequent-change validation and the nine-part **PENDING HUMAN**
   screen-reader checklist. Trading's 19 retained contrast fingerprints in 86
   exact contexts remain unwaived strict non-regression evidence, not a

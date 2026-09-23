@@ -1,14 +1,16 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { documentationFiles } from './documents.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const documents = [
-  'dev-tools/react/README.md', 'dev-tools/react/CHANGELOG.md',
-  'examples/react/README.md', 'examples/trading/TESTING.md',
+  ...documentationFiles.map(file => `dev-tools/react/${file}`),
+  'dev-tools/react/examples/README.md', 'examples/react/README.md', 'examples/trading/TESTING.md',
 ];
+const repositoryLink = /^https:\/\/github\.com\/drasi-project\/drasi-server\/(?:blob|tree)\/main\//;
 
 function prose(markdown) {
   const lines = [];
@@ -36,10 +38,42 @@ export function markdownAnchors(markdown) {
   return anchors;
 }
 
-export function relativeMarkdownLinks(markdown) {
+function markdownLinks(markdown) {
   return [...prose(markdown).matchAll(/(?<!!)\[[^\]\n]+\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g)]
-    .map(match => match[1])
+    .map(match => match[1]);
+}
+
+export function relativeMarkdownLinks(markdown) {
+  return markdownLinks(markdown)
     .filter(target => !/^[a-z][a-z0-9+.-]*:/i.test(target) && !target.startsWith('//'));
+}
+
+export async function checkInstalledDocumentationLinks(packageRoot, contents) {
+  const packagePath = await realpath(packageRoot);
+  const checked = [];
+  for (const name of documentationFiles) {
+    assert.equal(typeof contents[name], 'string', `Missing installed document: ${name}`);
+  }
+  for (const [name, markdown] of Object.entries(contents)) {
+    for (const target of relativeMarkdownLinks(markdown)) {
+      const [path, fragment] = target.split('#');
+      const source = resolve(packagePath, name);
+      const file = path ? resolve(dirname(source), decodeURIComponent(path)) : source;
+      const local = relative(packagePath, file);
+      assert(local !== '..' && !local.startsWith(`..${sep}`),
+        `Installed documentation link escapes package: ${name} -> ${target}`);
+      const resolved = await realpath(file);
+      assert.equal(resolved, file, `Installed documentation must not resolve a source alias: ${target}`);
+      assert((await stat(file)).isFile(), `Installed link must name a shipped file: ${target}`);
+      if (fragment) {
+        const text = contents[local] ?? await readFile(file, 'utf8');
+        assert(markdownAnchors(text).has(decodeURIComponent(fragment)),
+          `Missing installed documentation anchor: ${name} -> ${target}`);
+      }
+      checked.push({ source: name, target });
+    }
+  }
+  return checked;
 }
 
 export async function checkDocumentationLinks(overrides = {}) {
@@ -51,9 +85,12 @@ export async function checkDocumentationLinks(overrides = {}) {
   const checked = [];
   for (const name of documents) {
     const source = resolve(root, name);
-    for (const target of relativeMarkdownLinks(await load(source))) {
-      const [path, fragment] = target.split('#');
-      const file = path ? resolve(dirname(source), decodeURIComponent(path)) : source;
+    const markdown = await load(source);
+    const targets = [...relativeMarkdownLinks(markdown), ...markdownLinks(markdown).filter(target => repositoryLink.test(target))];
+    for (const target of targets) {
+      const fromRepository = repositoryLink.test(target);
+      const [path, fragment] = target.replace(repositoryLink, '').split('#');
+      const file = path ? resolve(fromRepository ? root : dirname(source), decodeURIComponent(path)) : source;
       const local = relative(root, file);
       assert(local !== '..' && !local.startsWith(`..${sep}`), `Documentation link escapes repository: ${name} -> ${target}`);
       const info = await stat(file);

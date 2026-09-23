@@ -16,8 +16,8 @@ const artifact = resolve(artifactArgument);
 const destination = resolve(destinationArgument);
 const trading = fileURLToPath(new URL('../../../', import.meta.url));
 const app = join(destination, 'examples/trading/app');
-const examples = fileURLToPath(new URL('../../../../react/', import.meta.url));
-const exampleApp = join(destination, 'examples/react');
+const examples = fileURLToPath(new URL('../../../../../dev-tools/react/examples/', import.meta.url));
+const exampleApp = join(destination, 'dev-tools/react/examples');
 
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: 'inherit' });

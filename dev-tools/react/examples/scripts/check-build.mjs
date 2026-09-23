@@ -80,7 +80,7 @@ export async function checkBuild(directory) {
   assert.deepEqual(Object.keys(graph).sort(), Object.keys(assets).filter(file => /\.[cm]?js$/.test(file)).sort(),
     'Every emitted entry/shared/lazy JS chunk must be accounted for');
   const entries = {};
-  for (const entry of ['index.html', 'hooks.html', 'showcase.html']) {
+  for (const entry of ['index.html', 'query-table.html', 'hooks.html', 'showcase.html']) {
     const js = entryGraph(graph, entry);
     const css = [...new Set(js.flatMap(file => graph[file].css))].sort();
     entries[entry] = { jsFiles: js, cssFiles: css, ...totals([...js, ...css], assets) };

@@ -1,7 +1,8 @@
 // Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -13,7 +14,7 @@ const graph = () => ({
   'shared.js': { entry: null, imports: [], dynamicImports: [], css: [], modules: [{ id: '@drasi/react/dist/react/index.js', sources: [] }] },
 });
 test('built dependency proof normalizes actual virtual IDs and walks static, shared and lazy chunks', () => {
-  const root = '/__w/_temp/trading-consumer/examples/react';
+  const root = '/__w/_temp/trading-consumer/dev-tools/react/examples';
   const virtual = moduleIdentity(`\0${root}/node_modules/react/jsx-runtime.js?commonjs-module`, root);
   assert.deepEqual(virtual, { id: 'node_modules/react/jsx-runtime.js?commonjs-module', sourceMap: null });
   assertExampleModule(virtual.id);
@@ -25,9 +26,9 @@ test('built dependency proof normalizes actual virtual IDs and walks static, sha
   });
   assertExampleModule(library.id);
   for (const raw of [
-    `${root}/../trading/app/src/App.tsx`,
-    `\0${root}/../trading/app/src/App.tsx?commonjs-module`,
-    `${root}/../../dev-tools/react/src/react/index.ts`,
+    `${root}/../../../examples/trading/app/src/App.tsx`,
+    `\0${root}/../../../examples/trading/app/src/App.tsx?commonjs-module`,
+    `${root}/../src/react/index.ts`,
     `${root}/node_modules/@drasi/react/src/react/index.ts`,
     '\0unknown-helper.js',
   ]) {
@@ -44,6 +45,22 @@ test('proof rejects component code hidden in a shared or lazy package chunk', ()
   const fixture = graph();
   fixture['shared.js'].modules[0].sources = ['../src/components/Modal.tsx'];
   assert.throws(() => assertHooksGraph(fixture), /component implementation/);
+});
+
+test('the convenience-table entry accounts for shared and lazy presentation code without widening hooks', () => {
+  const fixture = graph();
+  fixture['query-table.js'] = {
+    entry: 'query-table.html', imports: ['shared.js', 'table.js'], dynamicImports: [], css: [], modules: [],
+  };
+  fixture['table.js'] = {
+    entry: null, imports: [], dynamicImports: ['modal.js'], css: ['table.css'],
+    modules: [{ id: '@drasi/react/dist/components/index.js', sources: ['../src/components/QueryTable.tsx'] }],
+  };
+  fixture['modal.js'] = { entry: null, imports: [], dynamicImports: [], css: [], modules: [] };
+  assert.deepEqual(entryGraph(fixture, 'query-table.html'), ['modal.js', 'query-table.js', 'shared.js', 'table.js']);
+  assert.deepEqual(assertHooksGraph(fixture), ['hooks.js', 'shared.js']);
+  delete fixture['modal.js'];
+  assert.throws(() => entryGraph(fixture, 'query-table.html'), /Missing emitted chunk modal\.js/);
 });
 test('proof rejects component CSS, missing chunks and Trading or primitive imports', () => {
   const css = graph();
@@ -68,6 +85,32 @@ test('example budgets count every entry and enforce exactly the inherited 2% gro
   assert.throws(() => assertExampleBudget({ total: boundary, entries: {} }, baseline), /entry set/);
   assert.throws(() => assertExampleBudget({ total: boundary, entries: { 'hooks.html': { ...boundary, css: 1 } } }, baseline), /growth budget/);
   assert.throws(() => assertExampleBudget({ total: { ...boundary, js: undefined }, entries: { 'hooks.html': boundary } }, baseline), /Missing example/);
+});
+
+test('the approved QueryTable entry is the only baseline addition and retains every original cap', async () => {
+  const bytes = await readFile(new URL('baseline-metrics-original.json', import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),
+    'affe56d1808dfb2d60d7e6e5a9c79d8ac9ad54381416c4ef2a8d7944bb017fdd');
+  const original = JSON.parse(bytes);
+  const baseline = JSON.parse(await readFile(new URL('baseline-metrics.json', import.meta.url), 'utf8'));
+  const restored = structuredClone(baseline);
+  delete restored.entries['query-table.html'];
+  assert.deepEqual(restored, original);
+  assert.deepEqual(baseline.entries['query-table.html'], { js: 230748, jsGzip: 75560, css: 7462, cssGzip: 1981 });
+  for (const [name, expected] of Object.entries({ total: baseline.total, ...baseline.entries })) {
+    for (const metric of ['js', 'jsGzip', 'css', 'cssGzip']) {
+      const evidence = structuredClone(baseline);
+      const scope = name === 'total' ? evidence.total : evidence.entries[name];
+      scope[metric] = Math.floor(expected[metric] * 1.02);
+      assert.doesNotThrow(() => assertExampleBudget(evidence, baseline));
+      scope[metric] += 1;
+      assert.throws(() => assertExampleBudget(evidence, baseline), /growth budget/);
+    }
+  }
+  const uncounted = structuredClone(baseline);
+  uncounted.entries['unreviewed.html'] = baseline.entries['query-table.html'];
+  assert.throws(() => assertExampleBudget(uncounted, baseline), /entry set changed/);
+  assert.equal(baseline.entries['hooks.html'].css, 0);
 });
 
 test('example inventory includes root/nested JS, MJS, CJS and CSS but not source maps', async context => {

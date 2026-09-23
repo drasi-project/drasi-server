@@ -225,6 +225,36 @@ test('keeps all seven original schema-2 records byte-identical', async () => {
   }
 });
 
+test('advances only the explicitly approved documentation archive baseline and retains its exact prior record', async () => {
+  const priorBytes = await readFile(new URL('../fixtures/baseline-metrics-p7-pre-guides-v3.json', import.meta.url));
+  assert.equal(createHash('sha256').update(priorBytes).digest('hex'),
+    '3a9db73a1a0dacc2614858f2bb0df9f73657fc45c109407e1d890a4f8b239b24');
+  const prior = JSON.parse(priorBytes);
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  const approval = JSON.parse(await readFile(new URL('../fixtures/p7-consumer-baseline-approval.json', import.meta.url), 'utf8'));
+  assert.deepEqual(current.consumerDocumentationChange, {
+    approval: 'p7-consumer-baseline-approval.json',
+    previousBaseline: 'baseline-metrics-p7-pre-guides-v3.json',
+  });
+  const restored = structuredClone(current);
+  delete restored.consumerDocumentationChange;
+  restored.sizes.packageTarball = prior.sizes.packageTarball;
+  assert.deepEqual(restored, prior, 'No other baseline, coverage, metric scope or historical field may advance');
+  assert.equal(current.sizes.packageTarball, 225320);
+  assert.equal(approval.authorization.decision, 'Approve these scoped documentation/example baselines (Recommended)');
+  assert.equal(approval.packageArchive.previousArtifactBytes, 222072);
+  assert.equal(approval.packageArchive.previousCapBytes, 222137.64);
+  assert.equal(approval.packageArchive.baselineBytes, current.sizes.packageTarball);
+  assert.equal(approval.packageArchive.archiveEntries, 65);
+  assert.equal(approval.packageArchive.futureGrowthPercent, 2);
+  assert.equal(approval.packageArchive.addedFiles.length, 5);
+  assert.throws(() => assertBaseline({ coverage: prior.coverage, sizes: current.sizes }, prior), /packageTarball grew more than 2%/);
+  assertBaseline({ coverage: current.coverage, sizes: { ...current.sizes, packageTarball: 229826 } }, current);
+  assert.throws(() => assertBaseline({
+    coverage: current.coverage, sizes: { ...current.sizes, packageTarball: 229827 },
+  }, current), /packageTarball grew more than 2%/);
+});
+
 test('rejects missing formats, duplicate files and invalid packed measurements', () => {
   assert.throws(() => measurePackageFiles(packageFiles.filter(file => !file.path.endsWith('.cjs'))), /Missing packed packageCjs/);
   assert.throws(() => measurePackageFiles([...packageFiles, packageFiles[0]]), /duplicate package path/);

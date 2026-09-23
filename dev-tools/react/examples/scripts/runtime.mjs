@@ -39,7 +39,7 @@ async function get(url) {
 }
 
 export async function startExample(env = process.env) {
-  const source = resolve(env.P7_SOURCE_ROOT ?? fileURLToPath(new URL('../../../', import.meta.url)));
+  const source = resolve(env.P7_SOURCE_ROOT ?? fileURLToPath(new URL('../../../../', import.meta.url)));
   const binary = join(source, 'target/debug/drasi-server');
   await access(binary);
   await access(join(exampleRoot, 'dist/index.html'));
@@ -152,7 +152,7 @@ export async function startExample(env = process.env) {
     await writeFile(join(directory, 'provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
     web = await serveExample({ dist: join(exampleRoot, 'dist'), rest, events, port: webPort });
     await writeFile(join(directory, 'ready.json'), JSON.stringify({ web: web.url, rest, feed, events }, null, 2) + '\n');
-    console.log(`Example ready: ${web.url}\nHooks: ${web.url}/hooks.html\nSimulated states: ${web.url}/showcase.html\nFeed: ${feed}\nFrom examples/react: npm run feed -- ${feed} warm\nOwned diagnostics: ${directory}`);
+    console.log(`Example ready: ${web.url}\nQueryTable: ${web.url}/query-table.html\nHooks: ${web.url}/hooks.html\nSimulated states: ${web.url}/showcase.html\nFeed: ${feed}\nFrom dev-tools/react/examples: npm run feed -- ${feed} warm\nOwned diagnostics: ${directory}`);
     return {
       web: web.url, rest, feed, events, directory, close, requests: web.requests,
       setStreamsAvailable: web.setStreamsAvailable,

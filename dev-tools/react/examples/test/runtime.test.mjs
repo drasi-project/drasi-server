@@ -26,6 +26,7 @@ async function assets(t) {
   await mkdir(join(dist, 'assets'), { recursive: true });
   const files = {
     'index.html': '<!doctype html><title>Owned live entry</title>',
+    'query-table.html': '<!doctype html><title>Owned QueryTable entry</title>',
     'hooks.html': '<!doctype html><title>Owned hooks entry</title>',
     'showcase.html': '<!doctype html><title>Owned simulated entry</title>',
     'assets/main.js': 'export const owned = true;\n',
@@ -66,7 +67,7 @@ async function webServer(t, dist, options = {}) {
   return { ...web, close };
 }
 
-test('static handler serves the three built entries and assets with correct MIME and host headers', bounded, async t => {
+test('static handler serves every canonical entry and assets with correct MIME and host headers', bounded, async t => {
   const { dist, files } = await assets(t);
   const web = await webServer(t, dist);
   for (const [name, content] of Object.entries(files)) {

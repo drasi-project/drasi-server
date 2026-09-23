@@ -5,7 +5,9 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractReadmeExamples, requiredReadmeExamples } from './readme-examples.mjs';
+import { fileURLToPath } from 'node:url';
+import { loadDocumentation } from './documents.mjs';
+import { extractDocumentationExamples, extractReadmeExamples, requiredReadmeExamples } from './readme-examples.mjs';
 
 function fence(name, code = 'export {};', language = name.endsWith('.tsx') ? 'tsx' : 'ts') {
   return `\`\`\`${language}\n// @drasi-docs: ${name}\n${code}\n\`\`\`\n`;
@@ -76,4 +78,22 @@ test('rejects diagnostic suppression in runnable documentation', () => {
     assert.throws(() => extractReadmeExamples(required + fence('unchecked.ts', `// ${directive}\nexport {};`)),
       /suppresses compiler checks/);
   }
+});
+
+test('checks every original recipe across the intended package-owned guides with source locations', async () => {
+  const documents = await loadDocumentation(fileURLToPath(new URL('../../', import.meta.url)));
+  const examples = extractDocumentationExamples(documents);
+  assert.deepEqual(examples.map(example => example.name).sort(), [...requiredReadmeExamples].sort());
+  assert.equal(examples.find(example => example.name === 'data-table.tsx').source, 'README.md');
+  assert.equal(examples.find(example => example.name === 'quickstart.tsx').source, 'docs/getting-started.md');
+  assert(examples.every(example => example.line > 0 && documents[example.source].includes(example.code.trim())));
+});
+
+test('missing and duplicate guide recipes fail rather than falling back to another source', () => {
+  const documents = { 'README.md': required, 'docs/guide.md': fence('client.ts') };
+  assert.throws(() => extractDocumentationExamples(documents), /Duplicate documented example across files: client\.ts/);
+  assert.throws(() => extractDocumentationExamples({ 'docs/guide.md': fence('client.ts') }), /Missing marked documentation examples/);
+  assert.throws(() => extractDocumentationExamples({
+    'README.md': required, 'docs/guide.md': fence('unchecked.ts', '// @ts-ignore\nexport {};'),
+  }), /suppresses compiler checks/);
 });

@@ -15,7 +15,7 @@
     "test:live": "node test/run-live.mjs"
   },
   "dependencies": {
-    "@drasi/react": "file:../../dev-tools/react",
+    "@drasi/react": "file:..",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

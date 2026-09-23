@@ -16,7 +16,6 @@ on:
       - "ui/**"
       - "dev-tools/react/**"
       - "examples/trading/**"
-      - "examples/react/**"
       - ".github/workflows/react-package.yml"
   push:
     branches:
@@ -35,7 +34,6 @@ on:
       - "ui/**"
       - "dev-tools/react/**"
       - "examples/trading/**"
-      - "examples/react/**"
       - ".github/workflows/react-package.yml"
   workflow_dispatch:
 
@@ -65,7 +63,7 @@ jobs:
           cache-dependency-path: |
             dev-tools/react/package-lock.json
             examples/trading/app/package-lock.json
-            examples/react/package-lock.json
+            dev-tools/react/examples/package-lock.json
 
       - name: Install package dependencies
         working-directory: dev-tools/react
@@ -124,7 +122,7 @@ jobs:
         env:
           HOME: /root
         run: |
-          cd "$RUNNER_TEMP/trading-consumer/examples/react"
+          cd "$RUNNER_TEMP/trading-consumer/dev-tools/react/examples"
           npm run test:browser 2>&1 | tee "$RUNNER_TEMP/examples-browser.log"
 
       - name: Retain coverage, browser diagnostics and logs
@@ -142,9 +140,9 @@ jobs:
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/coverage/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/playwright-report/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/test-results/
-            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/react/dist/
-            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/react/playwright-report/
-            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/react/test-results/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/dist/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/playwright-report/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/test-results/
             examples/trading/app/test/fixtures/p6-predecessor-axe-evidence.json.gz
             examples/trading/app/test/fixtures/p6-contrast-evidence.json
             examples/trading/app/test/fixtures/trading-axe-baseline.json
@@ -169,7 +167,7 @@ jobs:
           cache-dependency-path: |
             dev-tools/react/package-lock.json
             examples/trading/app/package-lock.json
-            examples/react/package-lock.json
+            dev-tools/react/examples/package-lock.json
             ui/package-lock.json
 
       - name: Set up Python for the real Trading API
@@ -226,7 +224,7 @@ jobs:
         env:
           P7_SOURCE_ROOT: ${{ github.workspace }}
         run: |
-          cd "$RUNNER_TEMP/trading-consumer/examples/react"
+          cd "$RUNNER_TEMP/trading-consumer/dev-tools/react/examples"
           npm run test:live 2>&1 | tee "$RUNNER_TEMP/examples-live.log"
 
       - name: Retain real contracts, service logs and browser failures
@@ -244,8 +242,8 @@ jobs:
             ${{ runner.temp }}/trading-consumer/examples/trading/app/.test-runtime/live-*/*.yaml
             ${{ runner.temp }}/trading-consumer/examples/trading/app/playwright-report/live/
             ${{ runner.temp }}/trading-consumer/examples/trading/app/test-results/live/
-            ${{ runner.temp }}/trading-consumer/examples/react/.runtime/live-*/*.log
-            ${{ runner.temp }}/trading-consumer/examples/react/.runtime/live-*/*.json
-            ${{ runner.temp }}/trading-consumer/examples/react/.runtime/live-*/*.yaml
-            ${{ runner.temp }}/trading-consumer/examples/react/playwright-report/live/
-            ${{ runner.temp }}/trading-consumer/examples/react/test-results/live/
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.log
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.json
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.yaml
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/playwright-report/live/
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/test-results/live/

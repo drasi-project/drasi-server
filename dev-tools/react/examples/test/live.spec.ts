@@ -23,7 +23,7 @@ const instance = '/api/v1/instances/cold-chain';
 const reaction = `${instance}/reactions/cold-chain-events`;
 const queryIds = ['north-room', 'south-room'] as const;
 type QueryId = typeof queryIds[number];
-const entries = ['/', '/hooks.html'] as const;
+const entries = ['/', '/hooks.html', '/query-table.html'] as const;
 type Entry = typeof entries[number];
 type WireMessage = { requestId: string; timestamp: number; eventName: string; eventId: string; data: string };
 interface Evidence {
@@ -167,8 +167,14 @@ async function visible(page: Page, evidence: Evidence, north: number, south: num
   for (const [index, probe] of probes.entries()) {
     const section = room(page, probe.room);
     const temperature = index === 0 ? north : south;
-    await expect(section.getByRole('status').filter({ hasText: `${probe.room} room query:` }))
-      .toHaveText(`${probe.room} room query: ${temperature === null ? 'empty' : 'live'}`);
+    if (new URL(page.url()).pathname === '/query-table.html' && temperature !== null) {
+      await expect(section.getByRole('table', { name: `${probe.room} room` })).toBeVisible();
+      await expect(section.getByRole('alert')).toHaveCount(0);
+      await expect(section.getByRole('status')).toHaveCount(0);
+    } else {
+      await expect(section.getByRole('status').filter({ hasText: `${probe.room} room query:` }))
+        .toHaveText(`${probe.room} room query: ${temperature === null ? 'empty' : 'live'}`);
+    }
     await expect(section.getByText(probes[index === 0 ? 1 : 0].probeId, { exact: true })).toHaveCount(0);
     await expect(section.getByText(probe.probeId, { exact: true })).toHaveCount(temperature === null ? 0 : 1);
     if (temperature !== null) await expect(section.getByText(temperature.toFixed(1), { exact: true })).toBeVisible();
@@ -185,7 +191,7 @@ function readOnly(evidence: Evidence) {
       .test(new URL(request.url).pathname))).toEqual([]);
 }
 async function keyboard(page: Page, evidence: Evidence, entry: Entry) {
-  if (entry === '/') {
+  if (entry !== '/hooks.html') {
     const heading = room(page, 'North').getByRole('columnheader', { name: 'Temperature (C)' });
     await heading.getByRole('button').focus();
     await page.keyboard.press('Enter');
@@ -213,6 +219,45 @@ test.afterEach(async ({ request, evidence }) => {
   evidence.phase = 'cleanup';
   await transport(request, evidence, 'online');
   await seed(request, evidence);
+  readOnly(evidence);
+});
+
+test('QueryTable client projection failure and local retry leave the healthy query and shared stream alone', async ({ page, evidence }, info) => {
+  await page.goto('/query-table.html');
+  await visible(page, evidence, 3, 5);
+  const northReads = reads(evidence, 'north-room');
+  const southReads = reads(evidence, 'south-room');
+  expect(northReads).toBe(1);
+  expect(southReads).toBe(1);
+  expect(streams(evidence)).toHaveLength(1);
+  evidence.phase = 'deliberate-client-projection-failure';
+  const control = page.getByLabel('Reject North projection (client-only demo)');
+  await control.check();
+  await expect(room(page, 'North').getByRole('alert')).toContainText('RESULT_PROCESSING_FAILED');
+  await expect(room(page, 'North').getByRole('status')).toHaveText('North room query: terminal-error (last-good data)');
+  await expect(room(page, 'North').getByText('3.0', { exact: true })).toBeVisible();
+  await expect(room(page, 'South').getByText('5.0', { exact: true })).toBeVisible();
+  await expect(connection(page).getByRole('status')).toHaveText('Connection: stream open');
+  expect(reads(evidence, 'north-room')).toBe(northReads);
+  expect(reads(evidence, 'south-room')).toBe(southReads);
+  await audit(page, info, 'querytable-client-projection-error');
+
+  evidence.phase = 'query-local-retry-with-bad-projection';
+  await room(page, 'North').getByRole('button', { name: 'Retry query', exact: true }).click();
+  await expect.poll(() => reads(evidence, 'north-room')).toBe(northReads + 1);
+  await expect(room(page, 'North').getByRole('alert')).toContainText('RESULT_PROCESSING_FAILED');
+  expect(reads(evidence, 'south-room')).toBe(southReads);
+  expect(streams(evidence)).toHaveLength(1);
+  await expect(connection(page).getByRole('status')).toHaveText('Connection: stream open');
+
+  evidence.phase = 'restore-validating-projection-without-resubscription';
+  await control.uncheck();
+  await visible(page, evidence, 3, 5);
+  expect(reads(evidence, 'north-room')).toBe(northReads + 1);
+  expect(reads(evidence, 'south-room')).toBe(southReads);
+  expect(streams(evidence)).toHaveLength(1);
+  expect(evidence.navigations).toHaveLength(1);
+  await audit(page, info, 'querytable-projection-restored');
   readOnly(evidence);
 });
 

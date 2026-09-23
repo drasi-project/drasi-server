@@ -1,3 +1,4 @@
+# Retain ignored local artifacts from before the canonical workspace moved.
 node_modules/
 dist/
 .runtime/

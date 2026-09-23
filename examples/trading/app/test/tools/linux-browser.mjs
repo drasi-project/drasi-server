@@ -39,11 +39,11 @@ if (args[0] !== '--inside') {
   const packageDir = '/work/dev-tools/react';
   const consumer = '/work/consumer';
   const consumerApp = `${consumer}/examples/trading/app`;
-  const exampleApp = `${consumer}/examples/react`;
+  const exampleApp = `${consumer}/dev-tools/react/examples`;
   await mkdir(packageDir, { recursive: true });
   await cp('/repo/dev-tools/react', packageDir, {
     recursive: true,
-    filter: path => !['node_modules', 'dist', 'coverage'].includes(basename(path)),
+    filter: path => !['node_modules', 'dist', 'coverage', '.runtime', '.test-runtime', 'test-results', 'playwright-report'].includes(basename(path)),
   });
   try {
     run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], packageDir);
