@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
 use log::{debug, error, info, warn};
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
@@ -675,6 +676,15 @@ impl DrasiServer {
 
     #[allow(clippy::print_stdout)]
     pub async fn run(mut self) -> Result<()> {
+        #[cfg(unix)]
+        let (mut interrupt, mut terminate) = {
+            use tokio::signal::unix::{signal, SignalKind};
+            (
+                signal(SignalKind::interrupt()).context("Failed to register SIGINT handler")?,
+                signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?,
+            )
+        };
+
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
         println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
@@ -807,38 +817,91 @@ impl DrasiServer {
         };
 
         // Start web API if enabled
-        if self.enable_api {
-            self.start_api(
-                instances.clone(),
-                registry.clone(),
-                config_persistence.clone(),
-                solutions_dir,
-            )
-            .await?;
+        let (api_shutdown, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+        let mut api_task = if self.enable_api {
+            let task = self
+                .start_api(
+                    instances.clone(),
+                    registry.clone(),
+                    config_persistence.clone(),
+                    solutions_dir,
+                    api_shutdown_receiver,
+                )
+                .await?;
             info!(
                 "Drasi Server started successfully with API on port {}",
                 self.port
             );
+            Some(task)
         } else {
             info!("Drasi Server started successfully (API disabled)");
-        }
+            None
+        };
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
+        #[cfg(unix)]
+        let signal_result = tokio::select! {
+            received = interrupt.recv() => received.context("SIGINT signal stream closed"),
+            received = terminate.recv() => received.context("SIGTERM signal stream closed"),
+        };
+        #[cfg(not(unix))]
+        let signal_result = tokio::signal::ctrl_c()
+            .await
+            .context("Failed to listen for Ctrl+C");
 
         info!("Shutting down Drasi Server");
+        let _ = api_shutdown.send(());
 
-        // Cancel the hot-reload watcher task if running
-        if let Some(handle) = self.watcher_handle.take() {
-            handle.abort();
-            let _ = handle.await;
-            info!("Plugin hot-reload watcher stopped");
+        let shutdown_result = tokio::time::timeout(Duration::from_secs(30), async {
+            let mut failures = Vec::new();
+            if let Err(error) = signal_result {
+                failures.push(error.to_string());
+            }
+
+            if let Some(handle) = self.watcher_handle.take() {
+                handle.abort();
+                if let Err(error) = handle.await {
+                    if !error.is_cancelled() {
+                        failures.push(format!("Plugin hot-reload watcher failed: {error}"));
+                    }
+                }
+                info!("Plugin hot-reload watcher stopped");
+            }
+
+            if let Some(task) = api_task.as_mut() {
+                match tokio::time::timeout(Duration::from_secs(5), &mut *task).await {
+                    Ok(Ok(Ok(()))) => info!("Web API stopped"),
+                    Ok(Ok(Err(error))) => failures.push(format!("Web API failed: {error}")),
+                    Ok(Err(error)) => failures.push(format!("Web API task failed: {error}")),
+                    Err(_) => {
+                        task.abort();
+                        failures.push("Web API did not drain within 5 seconds".to_string());
+                    }
+                }
+            }
+
+            for (id, core) in registry.list().await {
+                if let Err(error) = core.stop().await {
+                    error!("Failed to stop instance '{id}': {error}");
+                    failures.push(format!("Failed to stop instance '{id}': {error}"));
+                }
+            }
+
+            anyhow::ensure!(
+                failures.is_empty(),
+                "Shutdown failed: {}",
+                failures.join("; ")
+            );
+            Ok(())
+        })
+        .await
+        .context("Drasi Server shutdown timed out after 30 seconds");
+
+        if let Some(task) = api_task {
+            task.abort();
         }
+        shutdown_result??;
 
-        for (_id, core) in registry.list().await {
-            core.stop().await?;
-        }
-
+        info!("Drasi Server shutdown complete");
         Ok(())
     }
 
@@ -848,7 +911,8 @@ impl DrasiServer {
         registry: InstanceRegistry,
         config_persistence: Option<Arc<ConfigPersistence>>,
         solutions_dir: Option<String>,
-    ) -> Result<()> {
+        shutdown: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<tokio::task::JoinHandle<std::io::Result<()>>> {
         // Create OpenAPI documentation for v1 with cache
         let mut openapi_v1 = api::ApiDocV1::openapi();
         let registry_version = {
@@ -961,13 +1025,17 @@ impl DrasiServer {
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-        tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                error!("Web API server error: {e}");
+        Ok(tokio::spawn(async move {
+            let result = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown.await;
+                })
+                .await;
+            if let Err(error) = &result {
+                error!("Web API server error: {error}");
             }
-        });
-
-        Ok(())
+            result
+        }))
     }
 }
 

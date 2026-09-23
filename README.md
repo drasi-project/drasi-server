@@ -287,6 +287,20 @@ drasi-server --port 9090
 cargo run -- --config config/server.yaml
 ```
 
+### Shutdown
+
+On Unix, SIGINT (Ctrl+C) and SIGTERM run the same shutdown sequence. Other
+platforms retain Ctrl+C shutdown. Signal handlers are installed before instances
+start on Unix; subsequent signals do not start cleanup again.
+
+Shutdown stops accepting new HTTP connections, cancels the plugin hot-reload
+watcher, allows up to 5 seconds for HTTP requests to drain, and stops registered
+instances. Cleanup has a 30-second overall deadline. A drain timeout, cleanup
+failure, or overall timeout produces a nonzero exit status, not graceful success.
+Long-lived HTTP streams can exhaust the drain deadline. Configure container or
+service-manager termination grace periods above 30 seconds to allow cleanup to
+finish. SIGKILL cannot run cleanup and still requires durable crash recovery.
+
 ### Command Line Reference
 
 ```
