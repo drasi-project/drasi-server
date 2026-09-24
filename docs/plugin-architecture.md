@@ -168,7 +168,11 @@ The Server API (`GET /api/v1/plugins`) reports three different versions:
 | `sdkVersion` | The plugin/host interface compatibility version, not the Cargo package version of `drasi-plugin-sdk` |
 
 For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
-The native manifest also exposes its wire version. Header/ABI/wire compatibility
+The native manifest also exposes its wire version. Current native plugins use
+wire version 2 (binary computation envelopes and bulk MessagePack buffers).
+Rebuild native plugins from the matching SDK; the unreleased wire-version-1
+prototype is rejected. Legacy ABI 0.15 and persisted JSON formats are unchanged.
+Header/ABI/wire compatibility
 is checked independently of the legacy SDK; absent legacy-only version fields
 remain empty, never synthesized.
 Local auto-install resolutions retain declared `abi_family` and `abi_version`
