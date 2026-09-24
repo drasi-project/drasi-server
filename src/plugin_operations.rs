@@ -347,13 +347,39 @@ impl PluginOperations {
         reference: &str,
         registry_override: Option<&str>,
     ) -> Result<std::path::PathBuf> {
+        self.install_from_registry_with_policy(reference, registry_override, true)
+            .await
+    }
+
+    /// Runtime installation must not overwrite a library that may be mapped.
+    pub async fn install_new_from_registry(
+        &self,
+        reference: &str,
+        registry_override: Option<&str>,
+    ) -> Result<std::path::PathBuf> {
+        self.install_from_registry_with_policy(reference, registry_override, false)
+            .await
+    }
+
+    async fn install_from_registry_with_policy(
+        &self,
+        reference: &str,
+        registry_override: Option<&str>,
+        replace_existing: bool,
+    ) -> Result<std::path::PathBuf> {
         let registry_value = registry_override
             .map(String::from)
             .unwrap_or_else(|| self.default_registry.clone());
 
         match PluginSourceKind::parse(&registry_value) {
-            PluginSourceKind::LocalDir(dir) => self.install_from_local_dir(reference, &dir).await,
-            PluginSourceKind::Oci(_) => self.install_from_oci(reference, &registry_value).await,
+            PluginSourceKind::LocalDir(dir) => {
+                self.install_from_local_dir(reference, &dir, replace_existing)
+                    .await
+            }
+            PluginSourceKind::Oci(_) => {
+                self.install_from_oci(reference, &registry_value, replace_existing)
+                    .await
+            }
         }
     }
 
@@ -414,9 +440,15 @@ impl PluginOperations {
         &self,
         reference: &str,
         dir: &Path,
+        replace_existing: bool,
     ) -> Result<std::path::PathBuf> {
         let local = LocalDirRegistry::new(dir);
         let resolved = local.resolve(reference)?;
+        anyhow::ensure!(
+            replace_existing || !self.plugins_dir.join(&resolved.filename).exists(),
+            "Plugin file '{}' already exists; restart the server to replace installed plugins",
+            resolved.filename
+        );
         let dest = local.install(&resolved, &self.plugins_dir)?;
 
         // Update lockfile
@@ -449,6 +481,7 @@ impl PluginOperations {
         &self,
         reference: &str,
         registry_url: &str,
+        replace_existing: bool,
     ) -> Result<std::path::PathBuf> {
         use drasi_host_sdk::registry::{
             CosignVerifier, OciRegistryClient, PluginResolver, SignatureStatus,
@@ -470,6 +503,11 @@ impl PluginOperations {
 
         log::info!("Resolving plugin '{reference}' from '{registry_url}'...",);
         let resolved = resolver.resolve(reference, registry_url).await?;
+        anyhow::ensure!(
+            replace_existing || !self.plugins_dir.join(&resolved.filename).exists(),
+            "Plugin file '{}' already exists; restart the server to replace installed plugins",
+            resolved.filename
+        );
 
         log::info!(
             "Downloading {} (version {}, platform {})...",

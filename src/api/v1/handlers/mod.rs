@@ -18,11 +18,13 @@
 //! path annotations for OpenAPI documentation. The actual business logic
 //! is implemented in the shared handlers module.
 
+mod computation_handlers;
 mod query_handlers;
 mod reaction_handlers;
 mod solution_handlers;
 mod source_handlers;
 
+pub use computation_handlers::*;
 pub use query_handlers::*;
 pub use reaction_handlers::*;
 pub use solution_handlers::*;

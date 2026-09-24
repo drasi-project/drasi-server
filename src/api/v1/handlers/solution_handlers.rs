@@ -159,9 +159,10 @@ pub async fn deploy_solution(
 /// Clone another instance's configuration into this instance
 ///
 /// Takes an atomic snapshot of the source instance and recreates all
-/// components (sources, queries, reactions) in the target instance.
+/// components and reconstructible native graphs in the target instance.
 /// All cloned components are created in the stopped state.
-/// On failure, already-created components are rolled back.
+/// Added nodes are retained on partial failure. Unsupported native external
+/// bindings are rejected before any target mutation.
 #[utoipa::path(
     post,
     path = "/api/v1/instances/{instanceId}/clone",

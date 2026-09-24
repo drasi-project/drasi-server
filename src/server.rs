@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{routing::get, Router};
 use indexmap::IndexMap;
 use log::{debug, error, info, warn};
@@ -97,6 +97,19 @@ impl DrasiServer {
 
         // Auto-install plugins from registry if configured
         if config.auto_install_plugins && !config.plugins.is_empty() {
+            if config.verify_plugins {
+                let registry = config
+                    .plugin_registry
+                    .as_deref()
+                    .unwrap_or("ghcr.io/drasi-project");
+                anyhow::ensure!(
+                    !matches!(
+                        drasi_host_sdk::registry::PluginSourceKind::parse(registry),
+                        drasi_host_sdk::registry::PluginSourceKind::LocalDir(_)
+                    ),
+                    "Local plugin discovery executes metadata before signature verification; use signed OCI plugins or explicitly disable verification for trusted local builds"
+                );
+            }
             crate::plugin_install::auto_install_plugins(&config, &plugins_dir, false).await?;
         }
 
@@ -220,13 +233,19 @@ impl DrasiServer {
                             }
                         }
                         FileIntegrityStatus::NoHash => {
-                            debug!("{filename} — no hash in lockfile (legacy entry)");
+                            warn!("{filename} — no integrity hash in lockfile; cannot verify the local binary");
+                            if let Some(ref mut allowed) = verified_files {
+                                allowed.remove(filename);
+                            }
                         }
                         FileIntegrityStatus::Missing => {
                             debug!("{filename} — file not on disk");
                         }
                         FileIntegrityStatus::Error(e) => {
                             warn!("{filename} — integrity check error: {e}");
+                            if let Some(ref mut allowed) = verified_files {
+                                allowed.remove(filename);
+                            }
                         }
                     }
                 }
@@ -279,71 +298,74 @@ impl DrasiServer {
             .await;
 
         // Start plugin hot-reload watcher if configured
-        let watcher_handle = if config.hot_reload_plugins {
-            use drasi_host_sdk::watcher::{PluginWatcher, PluginWatcherConfig};
+        let start_watcher = || {
+            if config.hot_reload_plugins {
+                use drasi_host_sdk::watcher::{PluginWatcher, PluginWatcherConfig};
 
-            let watcher_config = PluginWatcherConfig {
-                plugins_dir: plugins_dir.clone(),
-                debounce: std::time::Duration::from_millis(config.hot_reload_debounce_ms),
-            };
-            let mut watcher = PluginWatcher::new(watcher_config);
-            let mut rx = watcher.subscribe();
-            let orchestrator_for_watcher = plugin_orchestrator.clone();
+                let watcher_config = PluginWatcherConfig {
+                    plugins_dir: plugins_dir.clone(),
+                    debounce: std::time::Duration::from_millis(config.hot_reload_debounce_ms),
+                };
+                let mut watcher = PluginWatcher::new(watcher_config);
+                let mut rx = watcher.subscribe();
+                let orchestrator_for_watcher = plugin_orchestrator.clone();
 
-            // Start the filesystem watcher
-            if let Err(e) = watcher.start() {
-                warn!("Failed to start notify-based plugin watcher: {e}. Falling back to polling.");
-                if let Err(e) = watcher.start_polling() {
-                    warn!("Failed to start polling plugin watcher: {e}");
-                }
-            }
-
-            // Spawn a task that receives file events and applies the configured policy
-            let handle = tokio::spawn(async move {
-                // Keep the watcher alive for the duration of this task
-                let _watcher = watcher;
-                loop {
-                    match rx.recv().await {
-                        Ok(event) => {
-                            use drasi_host_sdk::plugin_types::PluginFileEvent;
-                            match event {
-                                PluginFileEvent::Added(path) | PluginFileEvent::Changed(path) => {
-                                    info!("Plugin file change detected: {}", path.display());
-                                    match orchestrator_for_watcher
-                                        .load_plugin_locked(&path, None)
-                                        .await
-                                    {
-                                        Ok(info) => info!(
-                                            "Hot-reloaded plugin: {} ({})",
-                                            info.id, info.status
-                                        ),
-                                        Err(e) => warn!(
-                                            "Failed to hot-reload plugin {}: {e}",
-                                            path.display()
-                                        ),
-                                    }
-                                }
-                                PluginFileEvent::Removed(path) => {
-                                    info!("Plugin file removed: {}", path.display());
-                                }
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            warn!("Plugin watcher lagged, missed {n} events");
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            break;
-                        }
+                // Start the filesystem watcher
+                if let Err(e) = watcher.start() {
+                    warn!("Failed to start notify-based plugin watcher: {e}. Falling back to polling.");
+                    if let Err(e) = watcher.start_polling() {
+                        warn!("Failed to start polling plugin watcher: {e}");
                     }
                 }
-            });
-            info!(
-                "Plugin hot-reload enabled (debounce: {}ms)",
-                config.hot_reload_debounce_ms
-            );
-            Some(handle)
-        } else {
-            None
+
+                // Spawn a task that receives file events and applies the configured policy
+                let handle = tokio::spawn(async move {
+                    // Keep the watcher alive for the duration of this task
+                    let _watcher = watcher;
+                    loop {
+                        match rx.recv().await {
+                            Ok(event) => {
+                                use drasi_host_sdk::plugin_types::PluginFileEvent;
+                                match event {
+                                    PluginFileEvent::Added(path)
+                                    | PluginFileEvent::Changed(path) => {
+                                        info!("Plugin file change detected: {}", path.display());
+                                        match orchestrator_for_watcher
+                                            .load_plugin_locked(&path, None)
+                                            .await
+                                        {
+                                            Ok(info) => info!(
+                                                "Hot-reloaded plugin: {} ({})",
+                                                info.id, info.status
+                                            ),
+                                            Err(e) => warn!(
+                                                "Failed to hot-reload plugin {}: {e}",
+                                                path.display()
+                                            ),
+                                        }
+                                    }
+                                    PluginFileEvent::Removed(path) => {
+                                        info!("Plugin file removed: {}", path.display());
+                                    }
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Plugin watcher lagged, missed {n} events");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                break;
+                            }
+                        }
+                    }
+                });
+                info!(
+                    "Plugin hot-reload enabled (debounce: {}ms)",
+                    config.hot_reload_debounce_ms
+                );
+                Some(handle)
+            } else {
+                None
+            }
         };
 
         // Resolve server settings using the mapper
@@ -451,131 +473,155 @@ impl DrasiServer {
             }
         };
 
-        for instance in resolved_instances {
-            let mut builder = DrasiLib::builder().with_id(&instance.id);
+        let preparation = async {
+            for instance in resolved_instances {
+                let mut builder = DrasiLib::builder().with_id(&instance.id);
 
-            // Set capacity defaults if configured (resolve env vars)
-            if let Some(capacity) = instance.default_priority_queue_capacity {
-                builder = builder.with_priority_queue_capacity(capacity);
-            }
-            if let Some(capacity) = instance.default_dispatch_buffer_capacity {
-                builder = builder.with_dispatch_buffer_capacity(capacity);
-            }
+                // Set capacity defaults if configured (resolve env vars)
+                if let Some(capacity) = instance.default_priority_queue_capacity {
+                    builder = builder.with_priority_queue_capacity(capacity);
+                }
+                if let Some(capacity) = instance.default_dispatch_buffer_capacity {
+                    builder = builder.with_dispatch_buffer_capacity(capacity);
+                }
 
-            // Filesystem-safe key shared by the persistent index and WAL paths.
-            let safe_id = instance_storage_key(&instance.id);
+                // Filesystem-safe key shared by the persistent index and WAL paths.
+                let safe_id = instance_storage_key(&instance.id);
 
-            // Register the persistent RocksDB index provider as the instance
-            // default when persist_index is enabled.
-            if instance.persist_index {
-                builder = crate::index_provider::apply_rocksdb_index(
-                    builder,
-                    &instance.id,
-                    instance.enable_archive,
-                    instance.memory_budget_bytes,
-                )?;
-            }
+                // Register the persistent RocksDB index provider as the instance
+                // default when persist_index is enabled.
+                if instance.persist_index {
+                    builder = crate::index_provider::apply_rocksdb_index(
+                        builder,
+                        &instance.id,
+                        instance.enable_archive,
+                        instance.memory_budget_bytes,
+                    )?;
+                }
 
-            // Create and add state store provider if configured
-            if let Some(state_store_config) = instance.state_store.clone() {
+                // Create and add state store provider if configured
+                if let Some(state_store_config) = instance.state_store.clone() {
+                    info!(
+                        "Enabling persistent state store for instance '{}' with {} provider",
+                        instance.id,
+                        state_store_config.kind()
+                    );
+                    let state_store_provider = create_state_store_provider(state_store_config)?;
+                    builder = builder.with_state_store_provider(state_store_provider);
+                }
+
+                // Create WAL provider for durable source event persistence
+                {
+                    let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
+                    info!(
+                        "Enabling WAL provider for instance '{}' at: {}",
+                        instance.id,
+                        wal_path.display()
+                    );
+                    let wal_provider = Arc::new(RedbWalProvider::new(&wal_path));
+                    builder = builder.with_wal_provider(wal_provider);
+                }
+                // Attach the process-wide secret store provider to this instance's builder
+                if instance.secret_store.is_some() {
+                    if let Some(ref provider) = process_secret_store {
+                        builder = builder.with_secret_store_provider(provider.clone());
+                    }
+                }
+
+                // Build the identity-provider map for this instance. Sources and
+                // reactions can reference entries here via `identityProvider: <id>`.
+                let identity_providers =
+                    build_identity_provider_map(&plugin_registry, &instance.identity_providers)
+                        .await?;
+                // Build the bootstrap-provider config map for this instance. Sources
+                // can reference entries here via `bootstrapProvider: <id>`; each
+                // referencing source instantiates its own provider from the config.
+                let bootstrap_providers =
+                    build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
+                // Create and add sources from config
                 info!(
-                    "Enabling persistent state store for instance '{}' with {} provider",
-                    instance.id,
-                    state_store_config.kind()
+                    "Loading {} source(s) from configuration for instance '{}'",
+                    instance.sources.len(),
+                    instance.id
                 );
-                let state_store_provider = create_state_store_provider(state_store_config)?;
-                builder = builder.with_state_store_provider(state_store_provider);
-            }
-
-            // Create WAL provider for durable source event persistence
-            {
-                let wal_path = PathBuf::from(format!("./data/{safe_id}/wal"));
-                info!(
-                    "Enabling WAL provider for instance '{}' at: {}",
-                    instance.id,
-                    wal_path.display()
-                );
-                let wal_provider = Arc::new(RedbWalProvider::new(&wal_path));
-                builder = builder.with_wal_provider(wal_provider);
-            }
-            // Attach the process-wide secret store provider to this instance's builder
-            if instance.secret_store.is_some() {
-                if let Some(ref provider) = process_secret_store {
-                    builder = builder.with_secret_store_provider(provider.clone());
-                }
-            }
-
-            // Build the identity-provider map for this instance. Sources and
-            // reactions can reference entries here via `identityProvider: <id>`.
-            let identity_providers =
-                build_identity_provider_map(&plugin_registry, &instance.identity_providers).await?;
-            // Build the bootstrap-provider config map for this instance. Sources
-            // can reference entries here via `bootstrapProvider: <id>`; each
-            // referencing source instantiates its own provider from the config.
-            let bootstrap_providers =
-                build_bootstrap_provider_config_map(&instance.bootstrap_providers)?;
-            // Create and add sources from config
-            info!(
-                "Loading {} source(s) from configuration for instance '{}'",
-                instance.sources.len(),
-                instance.id
-            );
-            for source_config in instance.sources.clone() {
-                let source_config =
-                    resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
-                let identity_ref = source_config.identity_provider().map(str::to_string);
-                let (source, plugin_meta) =
-                    create_source_locked(&plugin_registry, source_config).await?;
-                if let Some(id) = identity_ref {
-                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Source references unknown identityProvider '{id}'. \
+                for source_config in instance.sources.clone() {
+                    let source_config =
+                        resolve_source_bootstrap_provider(source_config, &bootstrap_providers)?;
+                    let identity_ref = source_config.identity_provider().map(str::to_string);
+                    let (source, plugin_meta) =
+                        create_source_locked(&plugin_registry, source_config).await?;
+                    if let Some(id) = identity_ref {
+                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Source references unknown identityProvider '{id}'. \
                              Declared providers: {:?}",
-                            identity_providers.keys().collect::<Vec<_>>()
-                        )
-                    })?;
-                    source.set_identity_provider(provider).await;
+                                identity_providers.keys().collect::<Vec<_>>()
+                            )
+                        })?;
+                        source.set_identity_provider(provider).await;
+                    }
+                    builder = builder.with_source_metadata(source, plugin_meta);
                 }
-                builder = builder.with_source_metadata(source, plugin_meta);
-            }
 
-            // Add queries from config (already resolved in config/types.rs)
-            for query_config in &instance.queries {
-                builder = builder.with_query(query_config.clone());
-            }
+                // Add queries from config (already resolved in config/types.rs)
+                for query_config in &instance.queries {
+                    builder = builder.with_query(query_config.clone());
+                }
 
-            // Create and add reactions from config
-            for reaction_config in instance.reactions.clone() {
-                let identity_ref = reaction_config.identity_provider().map(str::to_string);
-                let (reaction, plugin_meta) =
-                    create_reaction_locked(&plugin_registry, reaction_config).await?;
-                if let Some(id) = identity_ref {
-                    let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Reaction references unknown identityProvider '{id}'. \
+                // Create and add reactions from config
+                for reaction_config in instance.reactions.clone() {
+                    let identity_ref = reaction_config.identity_provider().map(str::to_string);
+                    let (reaction, plugin_meta) =
+                        create_reaction_locked(&plugin_registry, reaction_config).await?;
+                    if let Some(id) = identity_ref {
+                        let provider = identity_providers.get(&id).cloned().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Reaction references unknown identityProvider '{id}'. \
                              Declared providers: {:?}",
-                            identity_providers.keys().collect::<Vec<_>>()
-                        )
-                    })?;
-                    reaction.set_identity_provider(provider).await;
+                                identity_providers.keys().collect::<Vec<_>>()
+                            )
+                        })?;
+                        reaction.set_identity_provider(provider).await;
+                    }
+                    builder = builder.with_reaction_metadata(reaction, plugin_meta);
                 }
-                builder = builder.with_reaction_metadata(reaction, plugin_meta);
+
+                // Build and initialize the core
+                let core = builder.build().await.context("Failed to create DrasiLib")?;
+
+                instances.push(PreparedInstance {
+                    id_hint: Some(instance.id),
+                    persist_index: instance.persist_index,
+                    enable_archive: instance.enable_archive,
+                    core: core.clone(),
+                    bootstrap_providers,
+                });
+                for graph in &instance.computation_graphs {
+                    let registry = plugin_registry.read().await;
+                    crate::computation::register_graph(graph, &core, &registry)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to configure computation graph '{}'",
+                                graph.definition.graph_id
+                            )
+                        })?;
+                }
             }
-
-            // Build and initialize the core
-            let core = builder
-                .build()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create DrasiLib: {e}"))?;
-
-            instances.push(PreparedInstance {
-                id_hint: Some(instance.id),
-                persist_index: instance.persist_index,
-                enable_archive: instance.enable_archive,
-                core,
-                bootstrap_providers,
-            });
+            Ok::<_, anyhow::Error>(())
         }
+        .await;
+        if let Err(error) = preparation {
+            return Err(crate::computation::cleanup_failed_preparation(
+                instances
+                    .into_iter()
+                    .map(|instance| instance.core)
+                    .collect(),
+                error,
+            )
+            .await);
+        }
+        let watcher_handle = start_watcher();
 
         Ok(Self {
             instances,
@@ -673,8 +719,25 @@ impl DrasiServer {
         OpenOptions::new().append(true).open(path).is_ok()
     }
 
-    #[allow(clippy::print_stdout)]
     pub async fn run(mut self) -> Result<()> {
+        let cores = self
+            .instances
+            .iter()
+            .map(|instance| instance.core.clone())
+            .collect();
+        let result = self.run_until_shutdown().await;
+        if let Some(handle) = self.watcher_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => Err(crate::computation::cleanup_failed_preparation(cores, error).await),
+        }
+    }
+
+    #[allow(clippy::print_stdout)]
+    async fn run_until_shutdown(&mut self) -> Result<()> {
         println!("Starting Drasi Server");
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
         println!("  Rust: {}", env!("DRASI_RUSTC_VERSION"));
@@ -785,6 +848,7 @@ impl DrasiServer {
                                 reactions: config.reactions.clone(),
                                 identity_providers: config.identity_providers.clone(),
                                 bootstrap_providers: config.bootstrap_providers.clone(),
+                                computation_graphs: config.computation_graphs.clone(),
                             }]
                         } else {
                             config.instances.clone()
@@ -837,8 +901,21 @@ impl DrasiServer {
             info!("Plugin hot-reload watcher stopped");
         }
 
-        for (_id, core) in registry.list().await {
-            core.stop().await?;
+        let cores: Vec<_> = registry
+            .list()
+            .await
+            .into_iter()
+            .map(|(_, core)| (*core).clone())
+            .collect();
+        let mut failure = None;
+        for core in &cores {
+            if let Err(error) = core.shutdown().await {
+                log::error!("Failed to shut down instance: {error}");
+                failure = Some(anyhow::Error::from(error));
+            }
+        }
+        if let Some(error) = failure {
+            return Err(crate::computation::cleanup_failed_preparation(cores, error).await);
         }
 
         Ok(())
@@ -859,10 +936,7 @@ impl DrasiServer {
             reg.version()
         };
 
-        // Keep the OpenAPI cache alive for future hot-reload support.
-        // Currently the spec is generated once at startup; the cache will
-        // auto-regenerate when the plugin registry version changes.
-        let _openapi_cache = Arc::new(api::v1::OpenApiCache::new(
+        let openapi_cache = Arc::new(api::v1::OpenApiCache::new(
             openapi_v1.clone(),
             self.plugin_registry.clone(),
             registry_version,
@@ -894,8 +968,17 @@ impl DrasiServer {
             .nest("/api/v1", v1_router)
             // Nest plugin management API under /api/v1/plugins
             .nest("/api/v1/plugins", plugin_router)
-            // Swagger UI and OpenAPI spec for v1
-            .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", openapi_v1.clone()));
+            .route(
+                "/api/v1/openapi.json",
+                get(move || {
+                    let cache = openapi_cache.clone();
+                    async move { axum::Json(cache.get_spec().await) }
+                }),
+            )
+            .merge(
+                SwaggerUi::new("/api/v1/docs")
+                    .config(utoipa_swagger_ui::Config::from("/api/v1/openapi.json")),
+            );
 
         // Serve the Drasi Server Admin UI if enabled
         let ui_dir = std::path::Path::new("ui/dist");
@@ -995,6 +1078,92 @@ pub fn register_core_plugins(registry: &mut PluginRegistry) {
 #[cfg(test)]
 mod single_runtime_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn native_graph_configuration_is_registered_before_instance_start() {
+        use drasi_lib::computation::v1::*;
+        let resource = ResourceId::try_new("middleware").unwrap();
+        let definition = MiddlewareTransformerDefinition {
+            id: ComponentId::try_new("native-transformer").unwrap(),
+            output_stream: StreamId::try_new("native/out").unwrap(),
+            middleware: Vec::new(),
+            pipeline: Vec::new(),
+        };
+        let specification = definition.specification(resource.clone()).unwrap();
+        let topology: DesiredTopology = serde_json::from_value(serde_json::json!({
+            "version":1, "graph_id":"configured-native", "revision":1, "allow_incomplete":true,
+            "components":[{
+                "descriptor":specification.descriptor, "role":specification.role, "completion":null,
+                "streams":{}, "lifecycle":LifecyclePolicy::default(), "input_merge":InputMergePolicy::default(),
+                "construction":ComponentConstruction::Factory(specification),
+            }],
+            "resources":[{
+                "id":resource, "role":ResourceRole::Middleware,
+                "ownership":ResourceOwnership::Borrowed, "binding":"instance-middleware",
+            }],
+            "resource_configurations":{"middleware":{"kind":"middleware"}},
+            "relationships":[], "boundary_relationships":[], "requirements":PipeRequirements::default(),
+        })).unwrap();
+        let graph_config = crate::computation::ComputationGraphConfig {
+            auto_start: false,
+            definition: topology,
+        };
+        let config = crate::config::DrasiServerConfig {
+            id: crate::api::models::ConfigValue::Static("native-startup".into()),
+            computation_graphs: vec![graph_config.clone()],
+            ..Default::default()
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("server.yaml");
+        config.save_to_file(&path).unwrap();
+        let server = DrasiServer::new(
+            path.clone(),
+            8080,
+            directory.path().join("plugins"),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+        let core = &server.instances[0].core;
+        assert!(!core.is_running().await);
+        let handle = core
+            .get_computation_graph("configured-native")
+            .await
+            .unwrap();
+        assert_eq!(
+            handle.deployment().await.unwrap().summary,
+            OperationSummary::Completed
+        );
+        assert!(!handle.observed().components[&definition.id].started);
+        let snapshot = core.snapshot_computation_configuration().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(
+                crate::computation::configurations_from_snapshot(&snapshot).unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(vec![graph_config]).unwrap()
+        );
+        core.start().await.unwrap();
+        assert!(core.is_running().await);
+        assert!(!handle.info().auto_start);
+        core.shutdown().await.unwrap();
+
+        let mut config = config;
+        config.computation_graphs[0].auto_start = true;
+        config.save_to_file(&path).unwrap();
+        let failed = DrasiServer::new(path, 8080, directory.path().join("plugins"), false, false)
+            .await
+            .unwrap();
+        let core = failed.instances[0].core.clone();
+        let error = failed.run().await.unwrap_err();
+        assert!(error.to_string().contains("startup"), "{error:#}");
+        assert!(!core.is_running().await);
+        assert!(
+            core.start().await.is_err(),
+            "failed server startup must permanently shut down its owned core"
+        );
+    }
 
     #[tokio::test]
     async fn configured_instances_use_the_graph_without_selectors() {

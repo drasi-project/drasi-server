@@ -5,15 +5,19 @@ the static (builtin) and dynamic (cdylib) plugin loading approaches.
 
 ## Overview
 
-Drasi Server supports two build modes for plugins:
+Drasi Server always registers a small set of core descriptors and loads other
+plugins dynamically. It has no `builtin-plugins` / `dynamic-plugins` engine or
+server build selector. Two independent dynamic ABI families share one host:
 
-| Mode | Feature Flag | How Plugins Are Loaded |
-|------|-------------|----------------------|
-| **Static** (default) | `builtin-plugins` | Plugins are statically linked into the server binary |
-| **Dynamic** | `dynamic-plugins` | Plugins are self-contained `.so`/`.dylib`/`.dll` files loaded at runtime |
+| Family | ABI | Entry points |
+|--------|-----|--------------|
+| Source / Reaction / Bootstrap (and existing provider descriptors) | `0.15` | `drasi_plugin_metadata`, `drasi_plugin_init` |
+| Native ComputationGraph factories | `1.0` | `drasi_computation_plugin_metadata`, `drasi_computation_plugin_entry` |
 
-Both modes use the same plugin source code — the `export_plugin!` macro generates FFI
-entry points only when the `dynamic-plugin` feature is enabled on a plugin crate.
+Each producer enables its own `dynamic-plugin` feature. Legacy `export_plugin!`
+and native `export_computation_plugin!` are separate contracts; native plugins do
+not implement Source/Reaction just to cross the boundary. Both run on the same
+ComputationGraph runtime, with no fallback engine or runtime selector.
 
 ## Architecture Diagram
 
@@ -24,9 +28,9 @@ entry points only when the `dynamic-plugin` feature is enabled on a plugin crate
 │  API routes, config persistence, OpenAPI spec, server lifecycle  │
 │  Uses DrasiLib for query processing                              │
 │                                                                  │
-│  Build modes:                                                    │
-│  • builtin-plugins (default): static linking, no FFI overhead    │
-│  • dynamic-plugins: uses drasi-host-sdk to load cdylib plugins   │
+│  Plugin families:                                                │
+│  • Legacy Source/Reaction/Bootstrap ABI 0.15                       │
+│  • Independent native ComputationGraph ABI 1.0                    │
 ├──────────────────────────────────────────────────────────────────┤
 │                      drasi-host-sdk (library crate)              │
 │                                                                  │
@@ -64,6 +68,8 @@ entry points only when the `dynamic-plugin` feature is enabled on a plugin crate
 | Crate | Location | Role |
 |-------|----------|------|
 | `drasi-plugin-sdk` | `drasi-core/components/plugin-sdk` | Plugin-side SDK: FFI types, vtables, `export_plugin!` macro, vtable generation, FfiLogger, FfiStateStoreProxy |
+| `drasi-computation-plugin-abi` | `drasi-core/components/computation-plugin-abi` | Independent native ABI 1.0 C layouts and version headers |
+| `drasi-computation-plugin-sdk` | `drasi-core/components/computation-plugin-sdk` | Native factory metadata, wire serialization, producer-owned handles and export macro |
 | `drasi-host-sdk` | `drasi-core/components/host-sdk` | Host-side SDK: `PluginLoader`, proxy types (impl Source/Reaction/SourcePlugin), callback wiring, schema merging |
 | `drasi-server` | `drasi-server/` | Application: REST API, config persistence, OpenAPI spec, server lifecycle — uses `drasi-host-sdk` for dynamic loading |
 | `drasi-lib` | `drasi-core/lib/` | Core processing: query engine, routers, channels — no FFI awareness |
@@ -71,7 +77,7 @@ entry points only when the `dynamic-plugin` feature is enabled on a plugin crate
 
 ## Plugin Types
 
-Drasi supports three types of plugins:
+Ordinary components retain their existing descriptor contracts:
 
 ### Source Plugins
 Ingest data from external systems (PostgreSQL, HTTP, gRPC, etc.) and emit `SourceChange` events.
@@ -91,25 +97,39 @@ Provide initial data snapshots to populate queries when sources are connected.
 **Trait**: `drasi_lib::bootstrap::BootstrapProvider`
 **Descriptor**: `drasi_plugin_sdk::descriptor::BootstrapPluginDescriptor`
 
+### Native ComputationGraph Plugins
+
+Native factories declare typed ports, schemas, roles, configuration versions and
+explicit capabilities. Host `NativeFactory` implements Core's `ComponentFactory`;
+transactional participants also register with the instance's transaction factory
+registry. Server config uses `computationGraphs` with factory-only desired
+topologies and explicit resource construction recipes.
+
+`GET /api/v1/plugins/computation` exposes native manifests without instance secrets.
+Native runtime IDs are family/version-qualified: `computation:<id>@<version>`.
+The same plugin may supply several factories; its own package version is not the
+ABI version or a factory's configuration version.
+
 ## How Dynamic Plugin Loading Works
 
 ### Loading Sequence
 
 ```
-1. Server starts with --features dynamic-plugins
+1. Server verifies signatures and local integrity, producing an exact filename allowlist
    ↓
 2. PluginLoader scans plugin directory for matching .so/.dylib/.dll files
    ↓
 3. For each plugin file:
-   a. dlopen() the shared library
-   b. Resolve drasi_plugin_metadata() → PluginMetadata
-   c. Validate SDK version (major.minor must match host)
-   d. Validate target triple (must match host)
-   e. Resolve drasi_plugin_init() → FfiPluginRegistration
-   f. Call init → plugin initializes its tokio runtime, installs FfiLogger
-   g. Wire log callback (plugin → host logging)
-   h. Wire lifecycle callback (plugin → host events)
-   i. Extract descriptor vtables into proxy types
+   a. Only an allowed candidate may reach dlopen()
+   b. Explicit family dispatch: native symbols use ABI 1.0; invalid/partial native
+      declarations fail without invoking a legacy initializer
+   c. For legacy plugins, continue with the existing ABI 0.15 flow:
+      Resolve drasi_plugin_metadata() → PluginMetadata
+      Validate SDK version (major.minor must match host) and target triple
+      Resolve drasi_plugin_init() → FfiPluginRegistration
+      Call init → plugin initializes its tokio runtime, installs FfiLogger
+      Wire log and lifecycle callbacks
+      Extract descriptor vtables into proxy types
    ↓
 4. Register proxy types into PluginRegistry
    ↓
@@ -119,10 +139,10 @@ Provide initial data snapshots to populate queries when sources are connected.
 
 ### Plugin Entry Points
 
-Every cdylib plugin exports exactly two symbols:
+Legacy cdylib plugins export these symbols (additional callback symbols may exist):
 
 ```rust
-// Returns version/compatibility metadata (safe to call with any ABI)
+// Returns version/compatibility metadata after the binary has been trusted
 #[no_mangle]
 pub extern "C" fn drasi_plugin_metadata() -> *const PluginMetadata
 
@@ -147,6 +167,21 @@ The Server API (`GET /api/v1/plugins`) reports three different versions:
 | `kinds[].configVersion` | The configuration format for a plugin kind, from `config_version()` |
 | `sdkVersion` | The plugin/host interface compatibility version, not the Cargo package version of `drasi-plugin-sdk` |
 
+For native plugins, `sdkVersion` records the independent native ABI (`1.0.0`).
+The native manifest also exposes its wire version. Header/ABI/wire compatibility
+is checked independently of the legacy SDK; absent legacy-only version fields
+remain empty, never synthesized.
+Local auto-install resolutions retain declared `abi_family` and `abi_version`
+from embedded metadata, irrespective of the binary's filename. The current
+`plugins.lock` format does not carry these declarations, so lockfile-only
+resolutions leave them unknown; family validation still occurs when loading.
+
+Runtime load, install, and filesystem watching share verification and family
+dispatch. Verification-enabled loading fails closed when a candidate is not
+verifiable. Runtime installation refuses to overwrite an existing plugin binary;
+replacing loaded code requires a server restart. Both ABI families keep their
+libraries pinned; there is no hot unloading.
+
 Startup and runtime loading both retain the package version. Source and reaction
 metadata also use it for `pluginVersion`. If the package version is unavailable,
 the plugin listing uses an empty string and component metadata omits
@@ -156,6 +191,11 @@ For matching local Server and plugin builds on the ComputationGraph branch, see
 [ComputationGraph development](../README.md#computationgraph-development).
 
 ## FFI Boundary Design
+
+The opaque Rust object examples below describe the **legacy ABI only**. Native
+ComputationGraph ABI 1.0 uses serialized wire data and opaque producer-owned
+handles. It does not exchange Rust trait objects, futures, allocators, or native
+`SourceChange` memory layouts between independently built libraries.
 
 ### Opaque Pointer Pattern
 

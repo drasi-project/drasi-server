@@ -23,7 +23,7 @@
 use crate::plugin_registry::PluginRegistry;
 use anyhow::Result;
 use drasi_host_sdk::callbacks::{self, CallbackContext};
-use drasi_host_sdk::loader::{PluginLoader, PluginLoaderConfig};
+use drasi_host_sdk::loader::{LoadedPluginFamily, PluginLoader, PluginLoaderConfig};
 use drasi_host_sdk::plugin_types::{PluginCategory, PluginKindEntry};
 use drasi_host_sdk::ConfigResolverFn;
 use drasi_plugin_sdk::descriptor::SecretStorePluginDescriptor;
@@ -42,12 +42,9 @@ use std::sync::Arc;
 /// plugin type.  This means a new plugin type is never silently skipped just
 /// because its type name was not added to this list.
 ///
-/// Filename matching only selects candidates. `PluginLoader::load_all` opens
-/// each candidate and, when `drasi_plugin_metadata()` is available, validates
-/// its SDK version and target platform. Missing or null metadata produces a
-/// warning but does not reject the candidate; the loader continues by resolving
-/// and invoking the required `drasi_plugin_init()` entry point. The candidate is
-/// accepted only if initialization succeeds and returns a plugin registration.
+/// Filename matching only selects candidates. `PluginLoader::load_all_families`
+/// dispatches native ComputationGraph ABI 1.0 and legacy plugin ABI 0.15 explicitly.
+/// Invalid native declarations never fall back to the legacy entry point.
 ///
 /// The two entries cover:
 /// - Unix shared libraries (`libdrasi_<type>_<name>.so` / `.dylib`)
@@ -82,6 +79,9 @@ pub struct PluginLoadStats {
     pub bootstrap_descriptors: usize,
     pub secret_store_descriptors: usize,
     pub identity_provider_descriptors: usize,
+    pub computation_factories: usize,
+    /// Rejected candidates, including incompatible or incomplete ABI declarations.
+    pub failures: Vec<(PathBuf, String)>,
     /// Per-plugin information for orchestrator registration.
     pub loaded_plugins: Vec<StartupPluginRecord>,
     /// Config resolver injection handles for all loaded plugin cdylibs.
@@ -161,6 +161,12 @@ pub fn load_plugins(
     }
 
     let config = if let Some(allowed) = allowed_files {
+        anyhow::ensure!(
+            allowed
+                .iter()
+                .all(|name| !name.contains(['*', '?', '[', ']', '/', '\\'])),
+            "verified plugin allowlist must contain literal filenames, not patterns"
+        );
         // When an allowlist is provided, only load verified plugins.
         // Warn about any plugin files on disk that are being skipped.
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -192,7 +198,7 @@ pub fn load_plugins(
         .map(|c| c.into_raw())
         .unwrap_or(std::ptr::null_mut());
 
-    let loaded = loader.load_all(
+    let batch = loader.load_all_families(
         ctx_ptr,
         callbacks::default_log_callback_fn(),
         ctx_ptr,
@@ -201,10 +207,50 @@ pub fn load_plugins(
 
     let mut stats = PluginLoadStats {
         plugins_skipped: skipped_count,
+        plugins_failed: batch.failures.len(),
+        failures: batch.failures,
         ..PluginLoadStats::default()
     };
+    for (path, error) in &stats.failures {
+        warn!("Failed to load plugin '{}': {error}", path.display());
+    }
 
-    for mut plugin in loaded {
+    for family in batch.loaded {
+        let mut plugin = match family {
+            LoadedPluginFamily::Legacy(plugin) => plugin,
+            LoadedPluginFamily::Computation { file_path, plugin } => {
+                let metadata = plugin.metadata();
+                let plugin_id = drasi_host_sdk::plugin_registry::computation_plugin_id(metadata);
+                let plugin_version = metadata.plugin.version.to_string();
+                let sdk_version = metadata.abi_version.clone();
+                match registry.register_computation_plugin(plugin) {
+                    Ok(kinds) => {
+                        info!(
+                            "  [cdylib/computation] {plugin_id}: {} factories (ABI {sdk_version})",
+                            kinds.len()
+                        );
+                        stats.computation_factories += kinds.len();
+                        stats.loaded_plugins.push(StartupPluginRecord {
+                            plugin_id,
+                            file_path,
+                            kinds,
+                            plugin_version,
+                            sdk_version,
+                        });
+                        stats.plugins_loaded += 1;
+                    }
+                    Err(error) => {
+                        warn!(
+                            "Failed to register native plugin '{}': {error:#}",
+                            file_path.display()
+                        );
+                        stats.plugins_failed += 1;
+                        stats.failures.push((file_path, format!("{error:#}")));
+                    }
+                }
+                continue;
+            }
+        };
         let package_version = plugin.plugin_version();
         if package_version.is_none() {
             log::warn!(
@@ -357,12 +403,14 @@ pub fn load_plugins(
         + stats.reaction_descriptors
         + stats.bootstrap_descriptors
         + stats.secret_store_descriptors
-        + stats.identity_provider_descriptors;
+        + stats.identity_provider_descriptors
+        + stats.computation_factories;
 
     if stats.plugins_loaded > 0 {
         info!(
-            "cdylib plugin loading complete: {} loaded, {} unrecognised (skipped), {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores, {} identity providers)",
+            "cdylib plugin loading complete: {} loaded, {} failed, {} unrecognised (skipped), {} descriptors ({} sources, {} reactions, {} bootstraps, {} secret_stores, {} identity providers, {} computation factories)",
             stats.plugins_loaded,
+            stats.plugins_failed,
             stats.plugins_skipped,
             total_descriptors,
             stats.source_descriptors,
@@ -370,6 +418,12 @@ pub fn load_plugins(
             stats.bootstrap_descriptors,
             stats.secret_store_descriptors,
             stats.identity_provider_descriptors,
+            stats.computation_factories,
+        );
+    } else if stats.plugins_failed > 0 {
+        warn!(
+            "No plugins loaded; {} candidate(s) failed",
+            stats.plugins_failed
         );
     } else {
         debug!("No cdylib plugins found in '{}'", dir.display());

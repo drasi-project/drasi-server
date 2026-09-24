@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use log::{debug, info, warn};
+use log::{debug, info};
 use tokio::sync::{broadcast, Mutex, RwLock};
 
 use drasi_host_sdk::lifecycle::PluginLifecycleManager;
@@ -181,8 +181,18 @@ impl PluginOrchestrator {
 
         let _guard = self.dir_mutex.lock().await;
 
+        if self.verification_config.enabled {
+            let registry = registry_override.unwrap_or_else(|| ops.default_registry());
+            anyhow::ensure!(
+                !matches!(
+                    drasi_host_sdk::registry::PluginSourceKind::parse(registry),
+                    drasi_host_sdk::registry::PluginSourceKind::LocalDir(_)
+                ),
+                "Local plugin metadata cannot be executed before verification; use a signed OCI plugin or explicitly disable verification"
+            );
+        }
         let path = ops
-            .install_from_registry(reference, registry_override)
+            .install_new_from_registry(reference, registry_override)
             .await
             .context("Failed to install plugin from registry")?;
 
@@ -208,55 +218,82 @@ impl PluginOrchestrator {
 
     /// Verify a plugin if verification is enabled in the server configuration.
     ///
-    /// When `verification_config.enabled` is `true`, checks the lockfile cache
-    /// first. If no cached verification exists, performs Sigstore/cosign
-    /// verification. When disabled, this is a no-op.
+    /// Reverify signed OCI provenance and local integrity before any metadata
+    /// scan or library load. A missing verification is never permission to load.
     async fn verify_if_enabled(&self, path: &Path) -> anyhow::Result<()> {
         if !self.verification_config.enabled {
             return Ok(());
         }
 
-        // Check lockfile for cached verification result
-        if let Some(plugins_dir) = &self.plugins_dir {
-            if let Ok(Some(lockfile)) = drasi_host_sdk::lockfile::PluginLockfile::read(plugins_dir)
+        use drasi_host_sdk::registry::{
+            matches_trusted_identity, CosignVerifier, RegistryAuth, SignatureStatus,
+        };
+        let dir = self
+            .plugins_dir
+            .as_ref()
+            .context("Verification requires a plugins directory")?;
+        let lockfile = drasi_host_sdk::lockfile::PluginLockfile::read(dir)?
+            .context("Plugin verification requires a lockfile; install the signed plugin first")?;
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("Invalid plugin filename")?;
+        let entry = lockfile
+            .plugins
+            .values()
+            .find(|entry| entry.filename == filename)
+            .context(
+                "Plugin is not in the verification allowlist; install the signed plugin first",
+            )?;
+        let expected_hash = entry
+            .file_hash
+            .as_ref()
+            .context("Plugin has no recorded integrity hash")?;
+        let hash = drasi_host_sdk::lockfile::compute_file_hash(path)?;
+        anyhow::ensure!(
+            &hash == expected_hash,
+            "Plugin integrity verification failed for {filename}"
+        );
+        anyhow::ensure!(
+            !entry.reference.starts_with("file:"),
+            "Local plugins do not have verifiable OCI signatures"
+        );
+        let auth = match PluginOperations::registry_auth() {
+            RegistryAuth::Anonymous => oci_client::secrets::RegistryAuth::Anonymous,
+            RegistryAuth::Basic { username, password } => {
+                oci_client::secrets::RegistryAuth::Basic(username, password)
+            }
+        };
+        let verifier = CosignVerifier::new(self.verification_config.clone());
+        match verifier.verify_plugin(&entry.reference, &auth).await {
+            SignatureStatus::Verified(result)
+                if matches_trusted_identity(
+                    &result,
+                    &self.verification_config.effective_identities(),
+                ) =>
             {
-                if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-                    if let Some(entry) = lockfile.get(filename) {
-                        if entry.signature.is_some() {
-                            debug!("Plugin '{filename}' has cached verification in lockfile");
-                            return Ok(());
-                        }
-                    }
-                }
+                Ok(())
+            }
+            SignatureStatus::Verified(_) => {
+                anyhow::bail!("Plugin signature is not from a trusted identity")
+            }
+            SignatureStatus::Unsigned => anyhow::bail!("Plugin has no verified signature"),
+            SignatureStatus::Tampered(reason) => {
+                anyhow::bail!("Plugin signature verification failed: {reason}")
             }
         }
-
-        // No cached result — log a warning but allow loading.
-        // Full re-verification against the OCI registry requires network access
-        // and the original image reference, which we don't have at this point.
-        // The lockfile-based check above covers the install-then-load path;
-        // for direct load-from-disk, we trust the file if it passes metadata
-        // validation during load.
-        warn!(
-            "Plugin '{}' has no cached signature verification. \
-             Consider installing via the registry for full verification.",
-            path.display()
-        );
-        Ok(())
     }
 
     /// Load a plugin from disk and register it.
     ///
     /// Creates a `PluginInfo` record tracking the operational state.
-    /// **Note:** This method does NOT acquire the directory mutex or run
-    /// verification. For external triggers (API, hot-reload), prefer
-    /// [`load_plugin_locked`] or [`install_and_load`].
+    /// Uses the same locking and verification policy as API and watcher loads.
     pub async fn load_plugin(
         &self,
         path: &std::path::Path,
         callback_context: Option<Arc<CallbackContext>>,
     ) -> anyhow::Result<PluginInfo> {
-        self.load_plugin_inner(path, callback_context).await
+        self.load_plugin_locked(path, callback_context).await
     }
 
     /// Internal: load + register without locking or verification.
@@ -265,7 +302,15 @@ impl PluginOrchestrator {
         path: &std::path::Path,
         callback_context: Option<Arc<CallbackContext>>,
     ) -> anyhow::Result<PluginInfo> {
-        let file_hash = drasi_host_sdk::lockfile::compute_file_hash(path).unwrap_or_default();
+        let canonical_path = path.canonicalize().context("Cannot resolve plugin file")?;
+        for info in self.plugin_infos.read().await.values() {
+            if info.file_path == canonical_path
+                || info.file_path.canonicalize().ok().as_ref() == Some(&canonical_path)
+            {
+                anyhow::bail!("Plugin '{}' is already loaded from this file; restart the server to replace it", info.id);
+            }
+        }
+        let file_hash = drasi_host_sdk::lockfile::compute_file_hash(path)?;
 
         // Read metadata before loading (metadata-only scan, no init)
         let metadata = drasi_host_sdk::loader::scan_plugin_metadata(path);
@@ -282,7 +327,7 @@ impl PluginOrchestrator {
         if let Some(m) = &metadata {
             if self.plugin_infos.read().await.contains_key(&m.plugin_id) {
                 anyhow::bail!(
-                    "Plugin '{}' is already loaded. Unload the server and restart to replace it.",
+                    "Plugin '{}' is already loaded. Restart the server to replace it.",
                     m.plugin_id
                 );
             }
@@ -292,7 +337,7 @@ impl PluginOrchestrator {
 
         let info = PluginInfo {
             id: plugin_id.clone(),
-            file_path: path.to_path_buf(),
+            file_path: canonical_path,
             file_hash,
             plugin_version,
             sdk_version,
@@ -305,7 +350,12 @@ impl PluginOrchestrator {
         self.plugin_infos
             .write()
             .await
-            .insert(plugin_id, info.clone());
+            .insert(plugin_id.clone(), info.clone());
+        let _ = self.event_tx.send(PluginEvent::Loaded {
+            plugin_id,
+            version: info.plugin_version.clone(),
+            kinds: info.kinds.clone(),
+        });
 
         Ok(info)
     }

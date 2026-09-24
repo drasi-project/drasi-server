@@ -68,6 +68,8 @@ pub mod error_codes {
 
     pub const INSTANCE_NOT_FOUND: &str = "INSTANCE_NOT_FOUND";
     pub const INSTANCE_CREATE_FAILED: &str = "INSTANCE_CREATE_FAILED";
+    pub const COMPUTATION_NOT_FOUND: &str = "COMPUTATION_NOT_FOUND";
+    pub const COMPUTATION_OPERATION_FAILED: &str = "COMPUTATION_OPERATION_FAILED";
 
     pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
     pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
@@ -213,6 +215,7 @@ fn status_from_code(code: &str) -> StatusCode {
         | error_codes::QUERY_NOT_FOUND
         | error_codes::REACTION_NOT_FOUND
         | error_codes::INSTANCE_NOT_FOUND
+        | error_codes::COMPUTATION_NOT_FOUND
         | error_codes::PLUGIN_NOT_FOUND
         | error_codes::PLUGIN_FILE_NOT_FOUND
         | error_codes::PLUGIN_KIND_NOT_FOUND => StatusCode::NOT_FOUND,
@@ -254,6 +257,7 @@ impl From<DrasiError> for ErrorResponse {
                     "source" => error_codes::SOURCE_NOT_FOUND,
                     "query" => error_codes::QUERY_NOT_FOUND,
                     "reaction" => error_codes::REACTION_NOT_FOUND,
+                    "computation" => error_codes::COMPUTATION_NOT_FOUND,
                     _ => error_codes::INTERNAL_ERROR,
                 };
 

@@ -25,7 +25,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use drasi_lib::component_graph::ComponentKind;
 
-use crate::api::shared::error::{error_codes, ErrorResponse};
+use crate::api::shared::error::{error_codes, ErrorDetail, ErrorResponse};
 use crate::api::shared::extractor::ConfigBody;
 use crate::instance_registry::InstanceRegistry;
 use crate::plugin_orchestrator::PluginOrchestrator;
@@ -67,6 +67,22 @@ pub struct PluginKindsResponse {
     pub sources: Vec<PluginKindInfoDto>,
     pub reactions: Vec<PluginKindInfoDto>,
     pub bootstrappers: Vec<PluginKindInfoDto>,
+    pub computation: Vec<ComputationFactoryInfo>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputationFactoryInfo {
+    pub plugin_id: String,
+    #[schema(value_type = serde_json::Value)]
+    pub metadata: drasi_host_sdk::computation::FactoryMetadata,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct ComputationPluginMetadataResponse {
+    /// Independent ABI/wire versions, plugin identities, factory interfaces and schemas.
+    #[schema(value_type = Vec<serde_json::Value>)]
+    pub plugins: Vec<drasi_host_sdk::computation::PluginMetadata>,
 }
 
 /// Information about a specific plugin kind.
@@ -98,6 +114,9 @@ pub struct PluginDependentDto {
     pub component_type: String,
     pub kind: String,
     pub running: bool,
+    /// Native graph scope (absent for legacy component dependents).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph_id: Option<String>,
 }
 
 #[utoipa::path(
@@ -111,8 +130,23 @@ pub struct PluginDependentDto {
 /// List all loaded plugins with their status, kinds, and metadata.
 pub async fn list_plugins(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
+    Extension(instances): Extension<InstanceRegistry>,
 ) -> impl IntoResponse {
-    let plugins = orchestrator.list_plugins().await;
+    let mut plugins = orchestrator.list_plugins().await;
+    for plugin in &mut plugins {
+        match collect_plugin_dependents(&instances, &plugin.id).await {
+            Ok(dependents) => {
+                plugin.dependent_count = dependents.len();
+                orchestrator
+                    .update_dependent_count(&plugin.id, dependents.len())
+                    .await;
+                if let Some(updated) = orchestrator.get_plugin_info(&plugin.id).await {
+                    plugin.status = updated.status;
+                }
+            }
+            Err(error) => return error.into_json_response(),
+        }
+    }
     (
         StatusCode::OK,
         Json(serde_json::json!({ "plugins": plugins })),
@@ -134,10 +168,23 @@ pub async fn list_plugins(
 /// Get details for a specific loaded plugin.
 pub async fn get_plugin(
     Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
+    Extension(instances): Extension<InstanceRegistry>,
     Path(plugin_id): Path<String>,
 ) -> impl IntoResponse {
     match orchestrator.get_plugin_info(&plugin_id).await {
-        Some(info) => (StatusCode::OK, Json(serde_json::json!(info))),
+        Some(mut info) => match collect_plugin_dependents(&instances, &plugin_id).await {
+            Ok(dependents) => {
+                orchestrator
+                    .update_dependent_count(&plugin_id, dependents.len())
+                    .await;
+                info.dependent_count = dependents.len();
+                if let Some(updated) = orchestrator.get_plugin_info(&plugin_id).await {
+                    info.status = updated.status;
+                }
+                (StatusCode::OK, Json(serde_json::json!(info)))
+            }
+            Err(error) => error.into_json_response(),
+        },
         None => ErrorResponse::new(
             error_codes::PLUGIN_NOT_FOUND,
             format!("Plugin '{plugin_id}' is not loaded"),
@@ -164,6 +211,20 @@ pub async fn list_kinds(
     let sources = reg.source_plugin_infos();
     let reactions = reg.reaction_plugin_infos();
     let bootstrappers = reg.bootstrapper_plugin_infos();
+    let computation: Vec<_> = reg
+        .computation_plugin_metadata()
+        .into_iter()
+        .flat_map(|plugin| {
+            let plugin_id = drasi_host_sdk::plugin_registry::computation_plugin_id(&plugin);
+            plugin
+                .factories
+                .into_iter()
+                .map(move |metadata| ComputationFactoryInfo {
+                    plugin_id: plugin_id.clone(),
+                    metadata,
+                })
+        })
+        .collect();
 
     (
         StatusCode::OK,
@@ -171,8 +232,25 @@ pub async fn list_kinds(
             "sources": sources,
             "reactions": reactions,
             "bootstrappers": bootstrappers,
+            "computation": computation,
         })),
     )
+}
+
+#[utoipa::path(
+    get, path = "/api/v1/plugins/computation", tag = "Plugins",
+    responses((status = 200, description = "Native plugin and factory metadata (no instance configuration)", body = ComputationPluginMetadataResponse))
+)]
+pub async fn computation_plugin_metadata(
+    Extension(orchestrator): Extension<Arc<PluginOrchestrator>>,
+) -> Json<ComputationPluginMetadataResponse> {
+    Json(ComputationPluginMetadataResponse {
+        plugins: orchestrator
+            .registry()
+            .read()
+            .await
+            .computation_plugin_metadata(),
+    })
 }
 
 #[utoipa::path(
@@ -218,9 +296,10 @@ pub async fn load_plugin(
     let canonical_dir = match plugins_dir.canonicalize() {
         Ok(d) => d,
         Err(e) => {
-            return ErrorResponse::new(
+            return plugin_operation_error(
                 error_codes::INTERNAL_ERROR,
-                format!("Cannot resolve plugins directory: {e}"),
+                "Cannot resolve plugins directory",
+                e,
             )
             .into_json_response();
         }
@@ -249,7 +328,8 @@ pub async fn load_plugin(
     match orchestrator.load_plugin_locked(&canonical_path, None).await {
         Ok(info) => (StatusCode::OK, Json(serde_json::json!(info))),
         Err(e) => {
-            ErrorResponse::new(error_codes::PLUGIN_LOAD_FAILED, format!("{e}")).into_json_response()
+            plugin_operation_error(error_codes::PLUGIN_LOAD_FAILED, "Plugin loading failed", e)
+                .into_json_response()
         }
     }
 }
@@ -284,9 +364,26 @@ pub async fn install_plugin(
         .await
     {
         Ok(info) => (StatusCode::CREATED, Json(serde_json::json!(info))),
-        Err(e) => ErrorResponse::new(error_codes::PLUGIN_INSTALL_FAILED, format!("{e}"))
-            .into_json_response(),
+        Err(e) => plugin_operation_error(
+            error_codes::PLUGIN_INSTALL_FAILED,
+            "Plugin installation or loading failed",
+            e,
+        )
+        .into_json_response(),
     }
+}
+
+fn plugin_operation_error(
+    code: &str,
+    message: &str,
+    error: impl std::fmt::Display,
+) -> ErrorResponse {
+    log::error!("{message}: {error}");
+    ErrorResponse::new(code, message).with_details(ErrorDetail {
+        component_type: Some("plugin".to_string()),
+        component_id: None,
+        technical_details: Some(error.to_string()),
+    })
 }
 
 #[utoipa::path(
@@ -316,7 +413,13 @@ pub async fn list_dependents(
         .into_json_response();
     }
 
-    let dependents = collect_plugin_dependents(&instances, &plugin_id).await;
+    let dependents = match collect_plugin_dependents(&instances, &plugin_id).await {
+        Ok(dependents) => dependents,
+        Err(error) => return error.into_json_response(),
+    };
+    orchestrator
+        .update_dependent_count(&plugin_id, dependents.len())
+        .await;
 
     (
         StatusCode::OK,
@@ -331,7 +434,7 @@ pub async fn list_dependents(
 async fn collect_plugin_dependents(
     instances: &InstanceRegistry,
     plugin_id: &str,
-) -> Vec<serde_json::Value> {
+) -> Result<Vec<serde_json::Value>, ErrorResponse> {
     let mut dependents = Vec::new();
     for (instance_id, core) in instances.list().await {
         for node in core.get_graph().await.nodes {
@@ -351,8 +454,75 @@ async fn collect_plugin_dependents(
                 "running": node.status == drasi_lib::ComponentStatus::Running,
             }));
         }
+        if plugin_id.starts_with("computation:") {
+            use drasi_lib::computation::v1::{
+                ComponentEntityConstruction, ComponentLifecycle, GraphEntity,
+            };
+            let inventory = core.inspect_computation_inventory().await?;
+            for (scope, snapshot) in &inventory.scopes {
+                for entity in snapshot.topology.nodes.values() {
+                    let GraphEntity::Component(component) = entity else {
+                        continue;
+                    };
+                    let Some(plugin) = component.plugin_identity() else {
+                        continue;
+                    };
+                    if format!("computation:{}@{}", plugin.id, plugin.version) != plugin_id {
+                        continue;
+                    }
+                    let kind = match &component.construction {
+                        ComponentEntityConstruction::Factory { implementation, .. } => {
+                            Some(implementation.name.as_ref())
+                        }
+                        ComponentEntityConstruction::External => None,
+                    };
+                    dependents.push(serde_json::json!({
+                        "instanceId": instance_id,
+                        "graphId": scope.root_graph,
+                        "owners": scope.owners,
+                        "componentId": component.desired.descriptor.id(),
+                        "componentType": "computation",
+                        "kind": kind,
+                        "running": component.observed.as_ref().is_some_and(|state| state.lifecycle == ComponentLifecycle::Running),
+                    }));
+                }
+            }
+        }
     }
-    dependents
+    Ok(dependents)
+}
+
+pub(crate) fn native_configuration_schema(
+    schema: &drasi_host_sdk::computation::ConfigSchema,
+) -> serde_json::Value {
+    use drasi_host_sdk::computation::ConfigType;
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    for (name, field) in &schema.fields {
+        let mut property = serde_json::Map::new();
+        let kind = match field.value_type {
+            ConfigType::Boolean => Some("boolean"),
+            ConfigType::Integer => Some("integer"),
+            ConfigType::String => Some("string"),
+            ConfigType::Object => Some("object"),
+            ConfigType::Array => Some("array"),
+            ConfigType::Json => None,
+        };
+        if let Some(kind) = kind {
+            property.insert("type".into(), serde_json::json!(kind));
+            if kind == "array" {
+                property.insert("items".into(), serde_json::json!({}));
+            }
+        }
+        if field.secret {
+            property.insert("writeOnly".into(), serde_json::json!(true));
+        }
+        properties.insert(name.clone(), serde_json::Value::Object(property));
+        if field.required {
+            required.push(name.clone());
+        }
+    }
+    serde_json::json!({"type":"object", "properties":properties, "required":required, "additionalProperties":schema.allow_additional})
 }
 
 #[utoipa::path(
@@ -377,6 +547,25 @@ pub async fn get_kind_schema(
     let registry = orchestrator.registry();
     let reg = registry.read().await;
 
+    if category == "computation" {
+        let matches: Vec<_> = reg
+            .computation_plugin_metadata()
+            .into_iter()
+            .flat_map(|plugin| plugin.factories)
+            .filter(|factory| factory.implementation.name.as_ref() == kind)
+            .collect();
+        return match matches.as_slice() {
+            [factory] => (StatusCode::OK, Json(serde_json::json!({
+                "kind":kind, "category":category,
+                "implementation":factory.implementation,
+                "configVersion":factory.configuration_version,
+                "schema":native_configuration_schema(&factory.configuration),
+            }))),
+            [] => ErrorResponse::new(error_codes::PLUGIN_KIND_NOT_FOUND, "Native factory not found").into_json_response(),
+            _ => ErrorResponse::new(error_codes::INVALID_REQUEST, "Multiple native factory versions match; use /plugins/computation for version-qualified metadata").into_json_response(),
+        };
+    }
+
     let infos = match category.as_str() {
         "source" | "sources" => reg.source_plugin_infos(),
         "reaction" | "reactions" => reg.reaction_plugin_infos(),
@@ -385,7 +574,7 @@ pub async fn get_kind_schema(
             return ErrorResponse::new(
                 error_codes::PLUGIN_INVALID_CATEGORY,
                 format!(
-                    "Unknown category '{category}'. Valid categories: source, reaction, bootstrap"
+                    "Unknown category '{category}'. Valid categories: source, reaction, bootstrap, computation"
                 ),
             )
             .into_json_response();
@@ -546,6 +735,10 @@ pub fn plugin_routes() -> axum::Router {
 
     axum::Router::new()
         .route("/", axum::routing::get(list_plugins))
+        .route(
+            "/computation",
+            axum::routing::get(computation_plugin_metadata),
+        )
         .nest("/kinds", kinds_router)
         .route("/load", axum::routing::post(load_plugin))
         .route("/install", axum::routing::post(install_plugin))
@@ -660,7 +853,9 @@ mod tests {
             .unwrap();
             registry.add(instance_id.into(), core).await.unwrap();
         }
-        let dependents = collect_plugin_dependents(&registry, "fixture-plugin").await;
+        let dependents = collect_plugin_dependents(&registry, "fixture-plugin")
+            .await
+            .unwrap();
         assert_eq!(dependents.len(), 4);
         for instance_id in ["first", "second"] {
             for (kind, id, running) in [

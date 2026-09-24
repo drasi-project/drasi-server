@@ -52,6 +52,13 @@ use utoipa::openapi::RefOr;
         super::handlers::create_instance,
         super::handlers::get_instance_snapshot,
         super::handlers::get_instance_runtime,
+        super::handlers::get_computation_configuration,
+        super::handlers::list_computation_graphs,
+        super::handlers::create_computation_graph,
+        super::handlers::inspect_computation_graph,
+        super::handlers::start_computation_graph,
+        super::handlers::stop_computation_graph,
+        super::handlers::delete_computation_graph,
         super::handlers::list_sources,
         super::handlers::create_source_handler,
         super::handlers::upsert_source_handler,
@@ -98,6 +105,7 @@ use utoipa::openapi::RefOr;
         super::plugin_handlers::install_plugin,
         super::plugin_handlers::list_dependents,
         super::plugin_handlers::list_kinds,
+        super::plugin_handlers::computation_plugin_metadata,
         super::plugin_handlers::get_kind_schema,
         // Missing instance handlers
         super::handlers::stream_all_component_events,
@@ -125,6 +133,12 @@ use utoipa::openapi::RefOr;
             LogMessageDto,
             DrasiServerConfig,
             DrasiLibInstanceConfig,
+            crate::computation::ComputationGraphConfig,
+            crate::computation::ComputationResourceConfig,
+            super::handlers::ComputationGraphInfo,
+            super::handlers::ComputationGraphInspection,
+            super::handlers::ComputationComponentInfo,
+            super::handlers::ComputationConfigurationSnapshotSchema,
             QueryConfigDto,
             SourceSubscriptionConfigDto,
             SourceMiddlewareConfigDto,
@@ -152,6 +166,8 @@ use utoipa::openapi::RefOr;
             super::plugin_handlers::PluginKindDto,
             super::plugin_handlers::PluginKindsResponse,
             super::plugin_handlers::PluginKindInfoDto,
+            super::plugin_handlers::ComputationFactoryInfo,
+            super::plugin_handlers::ComputationPluginMetadataResponse,
             super::plugin_handlers::PluginDependentsResponse,
             super::plugin_handlers::PluginDependentDto,
             super::plugin_handlers::LoadPluginRequest,
@@ -162,6 +178,7 @@ use utoipa::openapi::RefOr;
         (name = "API", description = "API version information"),
         (name = "Health", description = "Health check endpoints"),
         (name = "Instances", description = "DrasiLib instance management"),
+        (name = "Computation", description = "Native graph lifecycle and inspection; configuration exports are privileged and may contain secrets"),
         (name = "Sources", description = "Data source management"),
         (name = "Queries", description = "Continuous query management"),
         (name = "Reactions", description = "Reaction management"),
@@ -193,6 +210,24 @@ pub struct ApiDocV1;
 pub fn inject_plugin_schemas(openapi: &mut utoipa::openapi::OpenApi, registry: &PluginRegistry) {
     let components = openapi.components.get_or_insert_with(Default::default);
     let schemas = &mut components.schemas;
+    for plugin in registry.computation_plugin_metadata() {
+        for factory in plugin.factories {
+            let identity = serde_json::json!([
+                plugin.plugin.id,
+                plugin.plugin.version,
+                factory.implementation.name,
+                factory.implementation.version
+            ])
+            .to_string();
+            let name = format!(
+                "NativeComputationConfig_{}",
+                crate::instance_paths::instance_storage_key(&identity)
+            );
+            let schema =
+                super::plugin_handlers::native_configuration_schema(&factory.configuration);
+            inject_schemas_from_json(&serde_json::json!({name: schema}).to_string(), schemas);
+        }
+    }
 
     // Collect (kind, schema_name) pairs for discriminator mappings
     let mut source_entries: Vec<(String, String)> = Vec::new();

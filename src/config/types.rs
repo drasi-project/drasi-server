@@ -160,6 +160,9 @@ pub struct DrasiServerConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
+    /// Named native graphs hosted by this instance, alongside ordinary components.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub computation_graphs: Vec<crate::computation::ComputationGraphConfig>,
     /// Optional list of DrasiLib instances when running in multi-tenant mode
     #[serde(default)]
     pub instances: Vec<DrasiLibInstanceConfig>,
@@ -196,6 +199,7 @@ impl Default for DrasiServerConfig {
             reactions: Vec::new(),
             identity_providers: Vec::new(),
             bootstrap_providers: Vec::new(),
+            computation_graphs: Vec::new(),
             instances: Vec::new(),
         }
     }
@@ -337,6 +341,8 @@ pub struct DrasiLibInstanceConfig {
     #[serde(default)]
     #[schema(value_type = Vec<serde_json::Value>)]
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub computation_graphs: Vec<crate::computation::ComputationGraphConfig>,
 }
 
 /// Resolved instance settings with ConfigValue evaluated
@@ -355,6 +361,7 @@ pub struct ResolvedInstanceConfig {
     pub reactions: Vec<ReactionConfig>,
     pub identity_providers: Vec<IdentityProviderConfig>,
     pub bootstrap_providers: Vec<TopLevelBootstrapProviderConfig>,
+    pub computation_graphs: Vec<crate::computation::ComputationGraphConfig>,
 }
 
 /// Validate hostname format according to RFC 1123
@@ -412,6 +419,7 @@ impl DrasiServerConfig {
                 reactions: self.reactions.clone(),
                 identity_providers: self.identity_providers.clone(),
                 bootstrap_providers: self.bootstrap_providers.clone(),
+                computation_graphs: self.computation_graphs.clone(),
             }]
         } else {
             self.instances.clone()
@@ -428,6 +436,22 @@ impl DrasiServerConfig {
                 ));
             }
             seen.insert(id.clone());
+            let mut graph_ids = HashSet::new();
+            for graph in &instance.computation_graphs {
+                anyhow::ensure!(
+                    graph.definition.version == 1,
+                    "Instance '{id}': unsupported computation graph configuration version",
+                );
+                drasi_lib::computation::v1::ComponentId::try_new(
+                    graph.definition.graph_id.as_str(),
+                )?;
+                crate::computation::validate_definition(graph)?;
+                anyhow::ensure!(
+                    graph_ids.insert(graph.definition.graph_id.clone()),
+                    "Instance '{id}': duplicate computation graph '{}'",
+                    graph.definition.graph_id,
+                );
+            }
 
             let default_priority_queue_capacity =
                 if let Some(capacity) = instance.default_priority_queue_capacity.as_ref() {
@@ -502,6 +526,7 @@ impl DrasiServerConfig {
                 reactions: instance.reactions.clone(),
                 identity_providers: instance.identity_providers.clone(),
                 bootstrap_providers: instance.bootstrap_providers.clone(),
+                computation_graphs: instance.computation_graphs.clone(),
             });
         }
 
@@ -526,6 +551,10 @@ impl DrasiServerConfig {
                  set memoryBudgetMiB on each persistent instance"
             ));
         }
+        anyhow::ensure!(
+            self.instances.is_empty() || self.computation_graphs.is_empty(),
+            "Root computationGraphs cannot be used with explicit instances; set computationGraphs on each instance"
+        );
 
         // Resolve server settings to validate them
         let mapper = DtoMapper::new();

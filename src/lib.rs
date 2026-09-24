@@ -15,6 +15,7 @@
 pub mod api;
 pub mod builder;
 pub mod builder_result;
+pub mod computation;
 pub mod config;
 pub mod dynamic_loading;
 pub mod factories;

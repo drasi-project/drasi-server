@@ -351,7 +351,9 @@ drasi-server doctor --all  # Include optional deps
 lifecycle, status, and query-results endpoints all use that graph. Server does not
 expose all of the lower-level graph-management APIs available in the Rust library.
 Existing Source/Reaction and dynamic-plugin adapters remain supported; this is
-not a full native-plugin port and does not migrate stored data.
+not a migration of existing plugin ABIs or stored data. The same host also loads
+independent native ComputationGraph ABI 1.0 plugins alongside the existing
+Source/Reaction/Bootstrap ABI 0.15 libraries.
 The built-in `__component_graph__` observability source still exposes the live
 graph's topology; its historical name does not imply a second runtime.
 
@@ -410,6 +412,87 @@ For the running `analytics` instance, the response is:
 This reads the live instance, not just its configuration. `running` describes the
 instance; it does not mean every source, query, and reaction is ready.
 `runtime` is a fixed informational name, not a selector.
+
+#### Native computation graphs
+
+Declare `computationGraphs` at the root for a single instance, or on each
+entry in `instances`. Each item has `autoStart` (default `true`) and `definition`,
+the Core version-1 `DesiredTopology` configuration. The inner definition retains
+Core's field names (for example `graph_id` and `resource_configurations`); it is
+not a second engine selector. Root graphs cannot be mixed with explicit instances.
+Graph definitions must contain version-qualified factory specifications and
+reconstructible pipes, not preconstructed Rust objects or external pipe bindings.
+
+For a runnable native counter -> middleware -> arithmetic -> capture pipeline,
+generate the definition from the loaded plugin's actual descriptors rather than
+guessing port schemas or plugin versions:
+
+```bash
+# From drasi-server; use only trusted local builds with verification disabled.
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
+  --manifest-path ../drasi-core/Cargo.toml -p drasi-computation-standard \
+  --features dynamic-plugin --target-dir ./target
+# macOS: .dylib; Linux: .so; Windows: drasi_computation_standard.dll
+cargo run --offline --example native-computation -- \
+  ./target/debug/libdrasi_computation_standard.dylib ./native-output.jsonl \
+  > ./native-server.yaml
+cargo run --offline --bin drasi-server -- --config ./native-server.yaml \
+  --plugins-dir ./target/debug --skip-verification --disable-ui
+```
+
+The example emits four graph-change envelopes with values `24, 30, 36, 42`
+and the `Projected` label. Its counter and standalone arithmetic are volatile
+demonstrations, not durable replay sources. Capture acknowledges write and flush,
+not fsync durability or exactly-once external effects. The example disables config
+persistence and UI assets explicitly. Existing source/query/reaction declarations can coexist
+with these native graphs in the same instance.
+
+Host resources are explicit entries in `definition.resources`, paired by resource
+ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
+values are `memoryIndexes`, `rocksdbIndexes` (requires `path` and graph ownership),
+`middleware`, `queryMiddleware`, `transactionalTransformers`, and `configuration`.
+Native transaction participants are included in `transactionalTransformers`; durable
+transactions require persistent atomic indexes, not `memoryIndexes`. Configuration
+references use `env:NAME`, `env-json:NAME`, `secret:NAME`, or `secret-json:NAME`;
+only the `-json` forms parse a reference as JSON. The `configuration` resource
+uses the instance's secret provider. Secrets are not copied into saved recipes.
+
+Persistence reads actual graph snapshots, including resource recipes, rather than
+keeping a second component registry. Removing the last graph saves an empty native
+list; multi-instance save, restart, and clone preserve graph declarations. Clone
+disables graph auto-start. External root components, external pipes, or resources
+without recipes are rejected before a partial clone or config-file overwrite.
+This includes every resource referenced by factory dependencies, configuration
+references, component attachments, or retained/ranked pipes. A live resource
+rebind that clears its recipe makes the graph unexportable; Server never restores
+that recipe from an older configuration or infers it from the live handle.
+Clone does not copy external files or plugin-specific state. Solution templates
+remain explicit selections of ordinary source/query/reaction components.
+
+Administrative endpoints under `/api/v1/instances/{instanceId}/computation`:
+
+| Endpoint | Behavior |
+|----------|----------|
+| `GET /graphs` | Registered graph lifecycle summaries |
+| `POST /graphs` | Register a `ComputationGraphConfig` (JSON or YAML) |
+| `GET /graphs/{id}` | Components, pipes, resource roles and observed status, without configuration values |
+| `POST /graphs/{id}/start` or `/stop` | Await lifecycle outcome; failures are errors, not successful acknowledgements |
+| `DELETE /graphs/{id}` | Remove the graph and await owned-resource cleanup |
+| `GET /configuration` | Full versioned ordinary/native configuration snapshot (`Cache-Control: no-store`) |
+
+Graph registration acknowledges the declaration, not successful creation or
+activation of every node. Inspect realization and lifecycle state after adding a
+graph. Mutations honor read-only mode and persistence errors. The old `/snapshot`
+response is unchanged. **Full configuration exports may contain secrets** and belong
+behind the same trusted administrative access boundary as configuration mutation;
+Server does not add authentication here. They are never published by topology-as-data.
+
+`GET /api/v1/plugins/computation` exposes native ABI, schemas, and factory metadata;
+`/plugins/kinds` adds a `computation` collection without changing legacy categories.
+Native plugin IDs are `computation:<id>@<version>`. Loading, installation, and watcher
+discovery share family dispatch and verification. Invalid native declarations never
+fall back to ABI 0.15. Replacing a loaded plugin or overwriting an installed binary
+at runtime is rejected: restart to replace it. There is no hot unloading.
 
 #### Creation, persistence, and restarts
 

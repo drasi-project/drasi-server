@@ -425,7 +425,36 @@ pub fn validate_with_plugins(
     let (_found, missing_plugins) = check_plugin_availability(&requirements, &registry);
 
     // 4. Validate component configs against schemas
-    let config_errors = validate_component_configs(config, &registry);
+    let mut config_errors = validate_component_configs(config, &registry);
+    for graph in config.computation_graphs.iter().chain(
+        config
+            .instances
+            .iter()
+            .flat_map(|instance| &instance.computation_graphs),
+    ) {
+        let validation = crate::computation::validate_definition(graph).and_then(|()| {
+            graph
+                .definition
+                .build(drasi_lib::computation::v1::TopologyBindings {
+                    factories: registry.computation_factory_registry()?,
+                    ..Default::default()
+                })
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+        });
+        if let Err(error) = validation {
+            config_errors.push(ComponentValidationReport {
+                component_type: "computation".into(),
+                component_id: graph.definition.graph_id.clone(),
+                plugin_kind: "computationGraph".into(),
+                errors: vec![FieldError {
+                    field: "definition".into(),
+                    message: format!("{error:#}"),
+                    code: None,
+                }],
+            });
+        }
+    }
 
     FullValidationResult {
         env_warnings,

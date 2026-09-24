@@ -4,6 +4,40 @@ This directory contains the comprehensive test suite for Drasi Server, including
 
 ## Quick Start
 
+The native ABI integration suite requires real, separately built plugin libraries.
+Build these once before the full suite (no `--all-features` or bundled jq):
+
+```bash
+# From drasi-server/
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo build --offline --locked \
+  --manifest-path ../drasi-core/Cargo.toml --target-dir ./target \
+  -p drasi-computation-standard -p drasi-source-mock -p drasi-reaction-log \
+  -p drasi-bootstrap-scriptfile \
+  --features dynamic-plugin
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 cargo test --offline --test native_computation_test
+```
+
+The default fixture directory is `target/debug`; override it with
+`DRASI_SERVER_TEST_PLUGINS_DIR`. `DRASI_NATIVE_STANDARD_PLUGIN` overrides just the
+native standard library, allowing the completed Core fixture to be used while
+keeping legacy fixtures in the Server directory:
+
+```bash
+# macOS; use the corresponding .so or .dll on other platforms.
+DRASI_NATIVE_STANDARD_PLUGIN=../drasi-core/target/debug/libdrasi_computation_standard.dylib \
+  CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3 \
+  cargo test --offline --test native_computation_test
+```
+
+Missing libraries fail with the build prerequisite,
+never a successful skip. The wrong-ABI fixture is built by `rustc` during the test.
+Coverage includes mixed ABI discovery, pre-`dlopen` verification, native factory
+metadata/events, exact output, resource recipes and transaction providers, privileged
+snapshots, persistence/restart/clone, empty graph lists, and read-only/error responses.
+The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, and
+batch counters. Counter reconstruction deliberately starts a new volatile run;
+these roundtrips do not claim durable source recovery or capture-file fsync.
+
 ```bash
 # Run all automated tests (recommended)
 cargo test

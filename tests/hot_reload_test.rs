@@ -651,6 +651,7 @@ logLevel: info
 persistConfig: false
 hotReloadPlugins: true
 hotReloadDebounceMs: 200
+verifyPlugins: false
 sources: []
 queries: []
 reactions: []

@@ -197,6 +197,9 @@ async fn install_if_missing(
             reference: locked_entry.reference.clone(),
             version: locked_entry.version.clone(),
             sdk_version: locked_entry.sdk_version.clone(),
+            // The lockfile has no ABI declaration; do not infer one from its filename or SDK.
+            abi_family: None,
+            abi_version: None,
             core_version: locked_entry.core_version.clone(),
             lib_version: locked_entry.lib_version.clone(),
             platform: locked_entry.platform.clone(),
@@ -347,6 +350,8 @@ async fn auto_install_from_local_dir(
                     reference: format!("file://{}", info.file_path.display()),
                     version: info.version,
                     sdk_version: info.sdk_version,
+                    abi_family: info.abi_family,
+                    abi_version: info.abi_version,
                     core_version: String::new(),
                     lib_version: String::new(),
                     platform: env!("TARGET_TRIPLE").to_string(),

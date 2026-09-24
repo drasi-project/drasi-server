@@ -73,8 +73,8 @@ struct PreservedServerSettings {
 /// Uses a single-source-of-truth approach: all component state lives in the
 /// ComputationGraph inside each DrasiLib instance. Runtime state is not cached
 /// separately — the `save()` method calls
-/// `snapshot_configuration()` on every registered instance to capture the
-/// current sources, queries, and reactions, then serialises them to YAML.
+/// `snapshot_computation_configuration()` on every registered instance to capture
+/// ordinary components and native graph declarations, then serialises them to YAML.
 ///
 /// Writes are atomic (temp file → rename) to prevent corruption on crash.
 pub struct ConfigPersistence {
@@ -433,6 +433,10 @@ impl ConfigPersistence {
             }
             crate::api::models::ConfigValue::Secret { name } => name.clone(),
         };
+        // Only config-only instance settings belong here. Native declarations
+        // are always read from the authoritative graph snapshot during save().
+        let mut config = config;
+        config.computation_graphs.clear();
         instance_configs.insert(id, config);
     }
 
@@ -459,9 +463,11 @@ impl ConfigPersistence {
 
         for (id, core) in self.registry.list().await {
             let snapshot = core
-                .snapshot_configuration()
+                .snapshot_computation_configuration()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to snapshot instance '{id}': {e}"))?;
+            let computation_graphs = crate::computation::configurations_from_snapshot(&snapshot)?;
+            let snapshot = snapshot.instance;
 
             let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
             let enable_archive = *self.archive_settings.get(&id).unwrap_or(&false);
@@ -561,6 +567,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
+                    computation_graphs,
                     // Identity providers are config-only and never appear in
                     // `snapshot_configuration()`. Prefer the dynamic config's
                     // list (set when the instance was registered via the API),
@@ -603,6 +610,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
+                    computation_graphs,
                     identity_providers: self
                         .preserved
                         .identity_providers_by_instance
@@ -667,6 +675,7 @@ impl ConfigPersistence {
                 reactions: instance.reactions,
                 identity_providers,
                 bootstrap_providers,
+                computation_graphs: instance.computation_graphs,
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -715,6 +724,7 @@ impl ConfigPersistence {
                 // Same as identityProviders: bootstrapProviders live per-instance
                 // in multi-instance format.
                 bootstrap_providers: Vec::new(),
+                computation_graphs: Vec::new(),
                 instances: instance_configs,
             }
         };

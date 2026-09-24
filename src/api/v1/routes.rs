@@ -83,6 +83,26 @@ fn build_dynamic_instance_router() -> Router {
         // Instance snapshot
         .route("/snapshot", get(handlers::get_instance_snapshot))
         .route("/runtime", get(handlers::get_instance_runtime))
+        .route(
+            "/computation/configuration",
+            get(handlers::get_computation_configuration),
+        )
+        .route(
+            "/computation/graphs",
+            get(handlers::list_computation_graphs).post(handlers::create_computation_graph),
+        )
+        .route(
+            "/computation/graphs/:id",
+            get(handlers::inspect_computation_graph).delete(handlers::delete_computation_graph),
+        )
+        .route(
+            "/computation/graphs/:id/start",
+            post(handlers::start_computation_graph),
+        )
+        .route(
+            "/computation/graphs/:id/stop",
+            post(handlers::stop_computation_graph),
+        )
         // Source routes
         .route("/sources", get(handlers::list_sources))
         .route("/sources", post(handlers::create_source_handler))

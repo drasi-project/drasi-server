@@ -30,7 +30,7 @@ use crate::instance_paths::instance_storage_key;
 use crate::instance_registry::InstanceRegistry;
 use crate::persistence::ConfigPersistence;
 use crate::plugin_registry::PluginRegistry;
-use drasi_lib::{ConfigurationSnapshot, DrasiLib};
+use drasi_lib::DrasiLib;
 
 /// Request body for creating a new instance
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -192,6 +192,7 @@ pub async fn create_instance(
             queries: Vec::new(),
             identity_providers: Vec::new(),
             bootstrap_providers: Vec::new(),
+            computation_graphs: Vec::new(),
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -228,6 +229,8 @@ pub struct CloneInstanceResponse {
     pub queries_created: Vec<String>,
     /// IDs of reactions created in the target instance
     pub reactions_created: Vec<String>,
+    /// IDs of native graphs created in the target instance (auto-start disabled).
+    pub computation_graphs_created: Vec<String>,
     /// Any errors encountered during the clone
     pub errors: Vec<String>,
 }
@@ -261,13 +264,37 @@ pub async fn clone_instance(
         )
     })?;
 
-    let snapshot: ConfigurationSnapshot =
-        source_core.snapshot_configuration().await.map_err(|e| {
+    let snapshot = source_core
+        .snapshot_computation_configuration()
+        .await
+        .map_err(|e| {
             ErrorResponse::new(
                 error_codes::INTERNAL_ERROR,
-                format!("Failed to capture snapshot of source instance: {e}"),
+                "Failed to capture source instance configuration",
             )
+            .with_details(ErrorDetail {
+                component_type: Some("instance".to_string()),
+                component_id: Some(source_instance_id.to_string()),
+                technical_details: Some(e.to_string()),
+            })
         })?;
+    // Reject unsupported bindings before adding any ordinary or native nodes.
+    let mut computation_graphs = crate::computation::configurations_from_snapshot(&snapshot)
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                "Source instance contains native bindings that cannot be cloned",
+            )
+            .with_details(ErrorDetail {
+                component_type: Some("instance".to_string()),
+                component_id: Some(source_instance_id.to_string()),
+                technical_details: Some(format!("{error:#}")),
+            })
+        })?;
+    for graph in &mut computation_graphs {
+        graph.auto_start = false;
+    }
+    let snapshot = snapshot.instance;
 
     // Get target instance (must already exist)
     let target_core = registry.get(target_instance_id).await.ok_or_else(|| {
@@ -280,6 +307,7 @@ pub async fn clone_instance(
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
     let mut reactions_created: Vec<String> = Vec::new();
+    let mut computation_graphs_created = Vec::new();
     let mut errors = Vec::new();
 
     // Phase 1: Create sources
@@ -433,6 +461,24 @@ pub async fn clone_instance(
         }
     }
 
+    for config in computation_graphs {
+        let id = &config.definition.graph_id;
+        let registry = plugin_registry.read().await;
+        match crate::computation::register_graph(&config, &target_core, &registry).await {
+            Ok(handle) => {
+                computation_graphs_created.push(id.clone());
+                match handle.deployment().await {
+                    Ok(report) if report.summary == drasi_lib::computation::v1::OperationSummary::Completed => {}
+                    Ok(_) => errors.push(format!("Computation graph '{id}' was added but creation failed; inspect graph observations")),
+                    Err(error) => errors.push(format!("Computation graph '{id}' was added but deployment failed: {error}")),
+                }
+            }
+            Err(error) => {
+                log::error!("Clone: failed to add computation graph '{id}': {error:#}");
+                errors.push(format!("Failed to add computation graph '{id}': {error:#}"));
+            }
+        }
+    }
     persist_after_operation(&config_persistence, "cloning instance").await?;
 
     log::info!(
@@ -449,6 +495,7 @@ pub async fn clone_instance(
         sources_created,
         queries_created,
         reactions_created,
+        computation_graphs_created,
         errors,
     })))
 }
