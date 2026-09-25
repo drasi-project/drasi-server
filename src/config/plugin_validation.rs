@@ -25,7 +25,7 @@
 
 use log::warn;
 use serde_json::Value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::schema_validation::validate_component_configs;
 use crate::config::types::DrasiServerConfig;
@@ -114,6 +114,7 @@ pub struct FullValidationResult {
     pub env_warnings: Vec<ReferenceWarning>,
     pub missing_plugins: Vec<MissingPlugin>,
     pub config_errors: Vec<ComponentValidationReport>,
+    pub plugin_compatibility_errors: Vec<(PathBuf, String)>,
     pub plugins_loaded: usize,
     /// `true` when no plugins directory was found or it was empty.
     pub plugins_not_loaded: bool,
@@ -123,7 +124,9 @@ impl FullValidationResult {
     /// Returns `true` when there are hard errors (config errors or missing
     /// env vars without defaults).
     pub fn has_errors(&self) -> bool {
-        !self.env_warnings.is_empty() || !self.config_errors.is_empty()
+        !self.env_warnings.is_empty()
+            || !self.config_errors.is_empty()
+            || !self.plugin_compatibility_errors.is_empty()
     }
 }
 
@@ -404,9 +407,11 @@ pub fn validate_with_plugins(
 
     let mut plugins_loaded: usize = 0;
     let mut plugins_not_loaded = true;
+    let mut plugin_compatibility_errors = Vec::new();
 
     if let Some(dir) = plugins_dir {
         if dir.exists() {
+            plugin_compatibility_errors = crate::plugin_install::plugin_compatibility_errors(dir);
             match crate::dynamic_loading::load_plugins(dir, &mut registry, None, None) {
                 Ok(stats) => {
                     plugins_loaded = stats.plugins_loaded;
@@ -431,6 +436,7 @@ pub fn validate_with_plugins(
         env_warnings,
         missing_plugins,
         config_errors,
+        plugin_compatibility_errors,
         plugins_loaded,
         plugins_not_loaded,
     }
