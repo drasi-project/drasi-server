@@ -61,6 +61,7 @@ jobs:
           cache-dependency-path: |
             dev-tools/react/package-lock.json
             examples/trading/app/package-lock.json
+            dev-tools/react/examples/package-lock.json
 
       - name: Install package dependencies
         working-directory: dev-tools/react
@@ -115,6 +116,13 @@ jobs:
             "$RUNNER_TEMP/trading-consumer/examples/trading/app" \
             dev-tools/react/coverage/coverage-summary.json
 
+      - name: Independent simulated examples in Chromium, Firefox and WebKit
+        env:
+          HOME: /root
+        run: |
+          cd "$RUNNER_TEMP/trading-consumer/dev-tools/react/examples"
+          npm run test:browser 2>&1 | tee "$RUNNER_TEMP/examples-browser.log"
+
       - name: Retain coverage, browser diagnostics and logs
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -130,6 +138,9 @@ jobs:
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/coverage/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/playwright-report/
             ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/examples/trading/app/test-results/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/dist/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/playwright-report/
+            ${{ env.TRADING_ARTIFACT_ROOT }}/trading-consumer/dev-tools/react/examples/test-results/
             examples/trading/app/test/fixtures/p6-predecessor-axe-evidence.json.gz
             examples/trading/app/test/fixtures/p6-contrast-evidence.json
             examples/trading/app/test/fixtures/trading-axe-baseline.json
@@ -154,6 +165,7 @@ jobs:
           cache-dependency-path: |
             dev-tools/react/package-lock.json
             examples/trading/app/package-lock.json
+            dev-tools/react/examples/package-lock.json
             ui/package-lock.json
 
       - name: Set up Python for the real Trading API
@@ -189,11 +201,11 @@ jobs:
           node examples/trading/app/test/tools/packed-consumer.mjs \
             "$RUNNER_TEMP/drasi-react-0.1.0.tgz" "$RUNNER_TEMP/trading-consumer"
 
-      - name: Build Trading and install its browser
+      - name: Build Trading and install the verified browsers
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
         run: |
           npm run --ignore-scripts build
-          npx --no-install playwright install --with-deps chromium
+          npx --no-install playwright install --with-deps chromium firefox webkit
 
       - name: Mandatory real-server provisioning, CRUD, live and reconnect smoke
         working-directory: ${{ runner.temp }}/trading-consumer/examples/trading/app
@@ -205,6 +217,13 @@ jobs:
           P1_SERVER_REVISION: ${{ github.sha }}
           P1_PYTHON: ${{ runner.temp }}/trading-python/bin/python
         run: npm run test:live 2>&1 | tee "$RUNNER_TEMP/trading-live.log"
+
+      - name: Independent examples on actual pre-created resources in all three browsers
+        env:
+          P7_SOURCE_ROOT: ${{ github.workspace }}
+        run: |
+          cd "$RUNNER_TEMP/trading-consumer/dev-tools/react/examples"
+          npm run test:live 2>&1 | tee "$RUNNER_TEMP/examples-live.log"
 
       - name: Retain real contracts, service logs and browser failures
         if: always()
@@ -221,3 +240,8 @@ jobs:
             ${{ runner.temp }}/trading-consumer/examples/trading/app/.test-runtime/live-*/*.yaml
             ${{ runner.temp }}/trading-consumer/examples/trading/app/playwright-report/live/
             ${{ runner.temp }}/trading-consumer/examples/trading/app/test-results/live/
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.log
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.json
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/.runtime/live-*/*.yaml
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/playwright-report/live/
+            ${{ runner.temp }}/trading-consumer/dev-tools/react/examples/test-results/live/

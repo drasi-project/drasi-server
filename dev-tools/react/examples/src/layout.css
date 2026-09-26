@@ -1,0 +1,22 @@
+/* Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0. */
+body { margin: 0; background: #fff; color: #111827; }
+a { color: #1d4ed8; }
+button, select, input { font: inherit; }
+button, select { padding: 0.3rem 0.5rem; }
+button:not(:disabled), select, input { cursor: pointer; }
+:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 3px; }
+.example-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); }
+.example-controls { padding: 1rem; }
+.example-theme {
+  --drasi-color-surface: #f0f9ff;
+  --drasi-color-dialog: #f0f9ff;
+  --drasi-color-text: #0c4a6e;
+  --drasi-color-muted: #075985;
+  --drasi-color-subtle: #075985;
+  --drasi-color-primary: #075985;
+  --drasi-color-focus: #075985;
+  --drasi-color-row-hover: #e0f2fe;
+  --drasi-color-action-hover: #bae6fd;
+  --drasi-line-height: 1.5;
+  --drasi-example-height: 20rem;
+}

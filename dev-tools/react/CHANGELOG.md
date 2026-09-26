@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Rehome the single runnable cold-storage workspace beside the package at
+  `dev-tools/react/examples`; retain built-artifact-only consumption and add a
+  real `QueryTable` entry with query-local projection/retry coverage.
+- Replace the long onboarding README with a first-use table and five shipped
+  guides. Installed-document checks retain all 16 recipes, local guide links,
+  installation caveats and the complete API/migration/history reference.
+- P7 uses portable tarball-first and version-scoped copied-local installation
+  with one React identity; fresh minimal consumers execute the installed
+  recipes and server-render public controls. Simulation loading matches the hook contract.
+- Add task-first navigation, subscriber-state/computation guidance, corrected
+  historical evidence links and an explicitly server-free showcase recipe;
+  no query-cache, virtualization or new runtime/platform promise is introduced.
 - Preserve opaque restart identity across React-batched expiry/reactivation
   and inactive/active commits before a browser paint. Keep only one per-hook
   scalar and the rendered row's phase; expired/deleted map entries still clear.
@@ -21,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compact generated whitespace while preserving syntax, identifiers, debug/
   component names, source maps/content and the complete package inventory.
   Original baselines remain; Trading TESTING.md records the separately
-  user-approved, fixed 110-byte P5 Trading gzip allowance, not applied to P6.
+  user-approved, fixed 110-byte P5 Trading gzip allowance, not applied to P6/P7.
 - Make table ordering transitive: numeric values precede fixed-English text
   representations, then nullish values; handle NaN, infinities and stable ties.
   Use explicit en-US variant/numeric:false collation for SSR/hydration rather
@@ -41,28 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URL safety validation, authentication and read-only ownership are unchanged.
 
 ### Current development-source integration
-- Normally integrate the approved exact `211d0f2a` engine 0.5.9 / registry
-  library 0.9.2 / SDK 0.11.2 / index 0.6.3 / signed SSE 0.3.7 / native ABI
-  0.14 selection while retaining P5 table/DCE fixes, P3 endpoint identity and P4 contracts,
-  including commit-only query keys and their concurrent-render/SSR regressions.
-  Only engine/AST/Cypher are path-selected; unused sibling SDKs are not consumed.
-- Preserve P6 overlay/focus/theme/sizing/motion contracts, bounded row restart
-  identity, paired native-animation observations and complete-graph SSR tests.
-  Its active budgets and historical accessibility evidence are unchanged.
-- Keep earlier `1284e9f` / library 0.9.1 / ABI 0.13 proof historical and require
-  own rebuilt-runtime/packed/browser/live checks. The temporary engine pin is
-  not a released fix, library-codec adoption or stored-data repair guarantee.
+- Adopt the approved engine 0.5.9 source `211d0f2a` and registry library 0.9.2,
+  SDK 0.11.2, index 0.6.3 and signed SSE 0.3.7 / ABI 0.14 by normal merge.
+  Only engine/AST/Cypher use paths; sibling SDKs remain unused.
+- Keep the quality fixes/tests above, P3/P4 contracts, P6 overlay/focus/theme/
+  sizing/motion/complete-graph SSR, P7's 16 recipes/independent entries,
+  budgets and accessibility history.
+- Require own rebuilt-runtime/packed/browser/live proof; `1284e9f` / library
+  0.9.1 / ABI 0.13 results stay historical. The temporary pin is not a release,
+  library-codec adoption or stored-data repair guarantee.
 
 ### Historical ABI 0.13 parent integration
 - Normally integrate the approved server 0.2.3 / registry library 0.9.1 /
   host SDK 0.11.0 / signed SSE 0.3.6 (plugin SDK 0.11.1, native ABI 0.13)
   runtime while retaining the reviewed engine correction and all P3/P4 contracts.
-- Keep original runtime fixtures and P1/P2/P3/P4/P5/P6 schema-2 measurements historical.
+- Keep original runtime fixtures and P1/P2/P3/P4/P5/P6/P7 schema-2 measurements historical.
   Current accounting includes both shipped declaration formats, all package
   chunks/CSS and recursive Trading assets without changing coverage floors or
   the 2% growth policy. The original P5 tarball contains 37,834 ESM and 37,851
   CommonJS declaration bytes; original P6 ships 41,244 ESM and 41,261 CommonJS
   declaration bytes. Counting both adds no product bytes.
+- Preserve P7's three entrypoints, all 16 literal recipes and the virtual-ID
+  independence regression. Its example-owned startup checks the actual binary
+  against the current locked server/host SDK and reuses backend source/pin
+  provenance; example asset accounting includes root/nested JS/MJS/CJS and CSS.
 - Document that new archive/memory-budget controls are server/instance settings:
   the query read DTO is unchanged and `storageBackend` remains opaque JSON.
   Existing P5 composition and P6 modal/focus/theme/sizing/motion contracts are
@@ -76,6 +90,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native ABI compatibility is not a universal wire-format claim.
 
 ### Added
+- P7 / #165 consumer documentation and the linked
+  [repository example workspace](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/dev-tools/react/examples/README.md): a live
+  cold-storage table, a hooks-only semantic UI and an explicitly simulated,
+  provider-free component showcase. This is documentation/examples work on
+  unchanged private-package APIs, not a published npm release.
+- Complete public-symbol, option/default/callback and low-level client method
+  reference, animation/status helpers, explicit #119 bootstrap-to-connect-only
+  migration, local-file/tarball installation, troubleshooting, hosting/security
+  responsibilities and contribution/test/license paths.
+- Three additional literal README recipes: hooks-only live state with
+  query-local/shared retry, provider-free actions/state slots, and raw identity
+  before projection with sparse deletes. All 13 inherited recipes and parser
+  assertions are retained; required-name guards cover the additions.
+- Precise links to existing verified P6
+  [measured evidence](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-evidence)
+  and [artifact measurements](https://github.com/drasi-project/drasi-server/blob/agentofreality-react-independent-examples/examples/trading/TESTING.md#historical-p6-measured-artifact-advance),
+  separate from subsequent-change validation and the nine-part **PENDING HUMAN**
+  screen-reader checklist. Trading's 19 retained contrast fingerprints in 86
+  exact contexts remain unwaived strict non-regression evidence, not a
+  zero-violation/WCAG result; generic/default-theme audits require zero
+  automated violations. P7 development does not imply human acceptance,
+  merge permission or publication.
 - P6 / #164 Part B provider-free, controlled `Modal` and `ModalProps`, backed
   by pinned Radix Dialog 1.1.15. Required nonempty accessible title rendered
   visually hidden; empty/whitespace titles throw `TypeError`. Optional
@@ -308,5 +344,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Human screen-reader acceptance remains pending; automated rule, DOM/ARIA,
   accessibility-tree and keyboard checks are not a substitute for actual AT
   review. Development evidence is not merge/release permission.
-- Standalone examples/Storybook (#165), publication and repository transfer
-  remain separate. The package stays private and backend/SDK pins are unchanged.
+- Publication and repository transfer remain separately authorized. P7's
+  example workspace does not publish the package, introduce public APIs or
+  require Storybook. The package stays private and backend/SDK pins are unchanged.

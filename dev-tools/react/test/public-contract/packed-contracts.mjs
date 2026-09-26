@@ -11,7 +11,10 @@ import { copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from '
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractReadmeExamples } from './readme-examples.mjs';
+import { extractDocumentationExamples } from './readme-examples.mjs';
+import { loadDocumentation } from './documents.mjs';
+import { checkInstallRecipes } from './install-recipes.mjs';
+import { checkDocumentationLinks, checkInstalledDocumentationLinks } from './documentation-links.mjs';
 
 const fixtures = fileURLToPath(new URL('.', import.meta.url));
 const entrypoints = {
@@ -409,7 +412,7 @@ async function compileReadme(directory, output, examples, label, manifest) {
         boundary: label === 'client-readme' ? 'client' : label === 'headless-readme' ? 'react' : 'root',
       }),
       examples: examples.map((example, index) => ({
-        name: example.name, readmeLine: example.line, file: relative(directory, files[index]),
+        name: example.name, sourceDocument: example.source, sourceLine: example.line, file: relative(directory, files[index]),
       })),
     };
   }
@@ -421,6 +424,8 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
   const output = join(destination, 'public-contract');
   await mkdir(output);
   run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'readme-examples-check.mjs')], app, 30_000);
+  run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'install-recipes-check.mjs')], app, 30_000);
+  run(process.execPath, ['--test', '--test-reporter=dot', join(fixtures, 'documentation-links-check.mjs')], app, 30_000);
   const require = createRequire(join(app, 'package.json'));
   const packageRoot = join(app, 'node_modules/@drasi/react');
   const manifest = await json(join(packageRoot, 'package.json'));
@@ -453,10 +458,32 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
   await copyFile(join(fixtures, 'dce.mjs'), dceRunner);
   run(process.execPath, [dceRunner], app, 30_000);
   proof.unusedComponentsEliminated = true;
-  // The installed README is the sole source of runnable documentation. These
+  // Installed documents are the sole source of runnable documentation. These
   // programs are checked with noEmit, never imported/executed or networked.
-  const readme = await readFile(join(packageRoot, 'README.md'), 'utf8');
-  const examples = extractReadmeExamples(readme);
+  const documents = await loadDocumentation(packageRoot);
+  const readme = documents['README.md'];
+  const examples = extractDocumentationExamples(documents);
+  const consumerDocs = join(destination, 'dev-tools/react');
+  for (const file of [...Object.keys(documents), 'LICENSE', 'NOTICE']) {
+    const target = join(consumerDocs, file);
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(join(packageRoot, file), target);
+  }
+  const exampleReadme = await readFile(join(consumerDocs, 'examples/README.md'), 'utf8');
+  proof.installedDocumentation = {
+    files: Object.fromEntries(Object.entries(documents).map(([file, text]) =>
+      [file, { sha256: createHash('sha256').update(text).digest('hex') }])),
+    links: await checkInstalledDocumentationLinks(packageRoot, documents),
+    copiedExampleLinks: await checkInstalledDocumentationLinks(consumerDocs, {
+      ...documents, 'examples/README.md': exampleReadme,
+    }),
+  };
+  proof.documentationLinks = await checkDocumentationLinks({
+    ...Object.fromEntries(Object.entries(documents).map(([file, text]) => [`dev-tools/react/${file}`, text])),
+    'dev-tools/react/examples/README.md': exampleReadme,
+    'examples/trading/TESTING.md': await readFile(join(destination, 'examples/trading/TESTING.md'), 'utf8'),
+  });
+  proof.installation = await checkInstallRecipes({ artifact, packageRoot, output, readme: Object.values(documents).join('\n') });
   proof.readme = {
     sha256: createHash('sha256').update(readme).digest('hex'),
     all: await compileReadme(app, output, examples, 'readme', manifest),
@@ -465,7 +492,7 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
     clientOnly: await compileReadme(clientOnly, output,
       examples.filter(example => ['client.ts', 'auth.ts'].includes(example.name)), 'client-readme', manifest),
   };
-  console.log(`Packed README: ${examples.length} marked examples checked in NodeNext ESM/CJS and bundler modes; client/auth also React-free, reduced-motion also hook-only (no execution)`);
+  console.log(`Packed documentation: ${examples.length} marked examples from ${Object.keys(documents).length} installed documents checked in NodeNext ESM/CJS and bundler modes; client/auth also React-free, reduced-motion also hook-only (no execution)`);
   await saveJson(join(output, 'proofs.json'), proof);
   console.log(`Packed public contracts passed (React 18.3.1; ${process.version}): ${output}`);
 }
