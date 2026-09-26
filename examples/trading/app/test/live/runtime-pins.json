@@ -1,0 +1,11 @@
+{
+  "serverVersion": "0.2.1",
+  "serverImage": "ghcr.io/drasi-project/drasi-server@sha256:b381a946bf0ca7725a3a623fe2e28f4b017feda52f631aff37386adb9974e1f5",
+  "serverCommit": "f78d9f11993eb96a2707617b727949dab2f33ab7",
+  "pluginCommit": "e05938237fd8c2c8a46bb40580c6971e53088fce",
+  "drasiLib": "0.8.9",
+  "drasiCore": "0.5.7",
+  "sdkVersion": "0.10.0",
+  "ffiAbi": "0.11.0",
+  "postgresImage": "postgres:14-alpine@sha256:1a916758fce623be724e9371461f13e0d48627b434989bd1873d96343d017f94"
+}

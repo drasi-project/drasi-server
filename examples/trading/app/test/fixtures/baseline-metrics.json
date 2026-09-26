@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 3,
+  "previousMeasurement": "baseline-metrics-v2.json",
+  "artifactScope": "All package dist JS/CJS/declaration entries and chunks, all packaged CSS, and all recursive Trading JS/CSS assets; maps remain included in the tarball total",
+  "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
+  "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
+  "coverage": {
+    "package": {
+      "statements": 62.52,
+      "branches": 47.47,
+      "functions": 64.84,
+      "lines": 64.93
+    },
+    "trading": {
+      "statements": 83.79,
+      "branches": 74.52,
+      "functions": 82.01,
+      "lines": 84.83
+    }
+  },
+  "sizes": {
+    "packageTarball": 110691,
+    "packageEsm": 66865,
+    "packageCjs": 68860,
+    "packageTypes": 37492,
+    "packageCss": 10043,
+    "tradingJs": 223574,
+    "tradingJsGzip": 65775,
+    "tradingCss": 21034,
+    "tradingCssGzip": 5163
+  }
+}
