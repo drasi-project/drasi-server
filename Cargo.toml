@@ -36,7 +36,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Drasi core library (all middleware, using system libjq instead of bundled-jq)
-drasi-lib = { version = "0.9.1", features = [
+drasi-lib = { version = "0.9.3", features = [
   "middleware-jq",
   "middleware-decoder",
   "middleware-map",
@@ -47,29 +47,29 @@ drasi-lib = { version = "0.9.1", features = [
 ] }
 
 # Core models (for SourceMiddlewareConfig and other shared types)
-drasi-core = "0.5.8"
+drasi-core = "0.5.10"
 
 # Core bootstrap providers (used by the application API)
-drasi-bootstrap-noop = "0.2.12"
-drasi-bootstrap-application = "0.2.12"
+drasi-bootstrap-noop = "0.2.15"
+drasi-bootstrap-application = "0.2.15"
 
 # Core reaction (used by the application API)
-drasi-reaction-application = "0.3.10"
+drasi-reaction-application = "0.3.13"
 
 # Index plugins
-drasi-index-rocksdb = "0.6.3"
+drasi-index-rocksdb = "0.6.4"
 
 # State store plugins
-drasi-state-store-redb = "0.2.5"
+drasi-state-store-redb = "0.2.8"
 
 # WAL plugins
-drasi-wal-redb = "0.2.8"
+drasi-wal-redb = "0.2.10"
 
 # Plugin SDK
-drasi-plugin-sdk = "0.11.2"
+drasi-plugin-sdk = "0.11.3"
 
 # Host SDK for dynamic plugin loading
-drasi-host-sdk = { version = "0.11.2", features = ["registry", "fetcher", "watcher"] }
+drasi-host-sdk = { version = "0.11.3", features = ["registry", "fetcher", "watcher"] }
 oci-client = "0.16"
 
 # Server-specific dependencies
@@ -125,7 +125,7 @@ futures = "0.3"
 tower = { version = "0.4", features = ["util"] }
 hyper = { version = "1.0", features = ["full"] }
 rstest = "0.18"
-drasi-core = "0.5.8"
+drasi-core = "0.5.10"
 
 [lints.rust]
 warnings = "deny"
@@ -134,7 +134,7 @@ warnings = "deny"
 # Use rustls with aws-lc-rs instead of ring to avoid ring's macOS cross-compilation
 # assembly architecture mismatch (ring compiles asm for target instead of host).
 ureq = { version = "3", default-features = false, features = ["json", "rustls-no-provider", "rustls-webpki-roots"] }
-rustls = { version = "0.23.45", default-features = false, features = ["aws-lc-rs"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["aws-lc-rs"] }
 flate2 = "1"
 tar = "0.4"
 serde_json = "1"

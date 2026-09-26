@@ -127,7 +127,8 @@ async fn test_components_with_auto_start() {
 #[tokio::test]
 async fn test_components_without_auto_start() {
     let test_source = create_mock_source("test-source");
-    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()]);
+    let test_reaction = create_mock_reaction("test-reaction", vec!["test-query".to_string()])
+        .with_auto_start(false);
 
     let query = Query::cypher("test-query")
         .query("MATCH (n) RETURN n")
@@ -163,6 +164,14 @@ async fn test_components_without_auto_start() {
 
     // Server should still be running
     assert!(core.is_running().await);
+    assert_eq!(
+        core.get_query_status("test-query").await.unwrap(),
+        ComponentStatus::Added
+    );
+    assert_eq!(
+        core.get_reaction_status("test-reaction").await.unwrap(),
+        ComponentStatus::Added
+    );
 
     core.stop().await.ok();
 }
