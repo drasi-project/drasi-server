@@ -29,6 +29,18 @@ connects to explicit existing references with GETs only; Trading owns automatic
 setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
 `TradingProvider.tsx`. This does not change the business/visual baseline below.
 
+P3 ([#163 Part A](https://github.com/drasi-project/drasi-server/issues/163))
+originally built on P2 `3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97`.
+Its current normal parent integration retains original P3
+`a0569c2ae7b17f51996f431cf2264c636a19f3d1`, the earlier integrations and
+endpoint-identity fix `5a198eb3d6b50ce61cdd306173698faa12e6682b`, and incorporates
+exact updated P2 `d784446d7e2ca369c2ae0a3e3c560455d54369a6`.
+No P4-P7 product code is imported.
+It completes the public client/transport/type/entrypoint and material
+configuration contract. Part B identity, canonical deltas and complete
+snapshot/reconnect/stale state remain pending; no acceptance of those later
+contracts is implied by P3's passes.
+
 ## Behavior inventory, version 1
 
 Paths in the assertion column are relative to `app/test`. A synthetic test
@@ -132,6 +144,46 @@ query definitions and financial rows are untouched; raw diagnostic REST reads
 still record the actual isolated bind values.
 
 ## Fast checks
+
+### P3 contract additions
+
+Package `test/resources.test.ts` consumes the versioned, unmodified server
+response bodies in `test/fixtures/server-v1/contract.json`, captured from the
+actual frozen backend by the live harness. The fixture records server revision,
+binary SHA256, Cargo.lock hash, engine revision, SDK and SSE plugin/ABI versions.
+Synthetic full-view fixtures now include the real required read fields and
+scoped links; this changes no creation body, query text, source/join order,
+snapshot row or business expectation. The live harness records two extra
+read-only query full views alongside its existing authoritative observations.
+
+`test/transport.test.ts` covers static/rotating auth, native fetch receiver
+binding, credentials/headers on every endpoint, custom stream options,
+401/403, explicit and late cancellation, request/body/auth deadlines,
+redirect refusal and identical resource IDs across instances. Native SSE
+header/status limitations and authenticated Node REST-only reads are explicit.
+`test/DrasiLifecycle.test.tsx` uses real providers/clients, not hook mocks:
+equivalent inline values preserve the single stream; material references,
+credentials, policy and callable changes dispose the old scope. StrictMode,
+unmount, stale snapshot/events/retry callbacks, query-local automatic retry and
+controlled app-owned binding are covered. Legacy wire alternatives are
+characterized at their typed object boundary, not relabeled as Part B's
+official canonical adapters.
+
+The existing clean tarball consumer invokes the public contract suite under
+`dev-tools/react/test/public-contract`. It tests ESM/CommonJS and conditional
+declarations for all four exports, positive/negative generic API examples,
+React 18 SSR and import-time DOM/network traps. An isolated peer-omitted
+client-only install has neither React runtime nor React types, and its
+declaration/runtime graphs are checked. Hook imports cannot reach composed
+components/tutorial code/CSS. Marked runnable README snippets are compiled
+against the installed tarball. The package and Trading still build without
+source aliases or lifecycle rebuilding in the consumer.
+Eight parser checks require all five marked README examples and reject duplicate
+names, path traversal, wrong fence languages, unterminated fences and compiler
+diagnostic suppression. The actual installed README is hashed and compiled in
+ESM, CommonJS and bundler modes; the client/auth snippets also compile with
+React and React types absent. Parallel hand-written examples alone are not
+treated as documentation proof.
 
 From the repository root:
 
@@ -272,6 +324,18 @@ The Linux runner and CI both run this check and retain
 `test-results/measured-baseline.json`. V8 counters can differ across Node
 versions, so compare the pinned environment rather than mixing host coverage.
 
+P3 introduces multiple entrypoints and shared chunks. Package ESM/CJS metrics
+therefore sum **every shipped file of that format**, including entrypoint
+wrappers, rather than measuring only the now-small root barrel. Declaration
+bytes now sum all `.d.ts`, `.d.mts` and `.d.cts` files: the original P3
+measurement omitted its separately shipped CommonJS declarations. P3's exact
+schema-2 record is retained in `baseline-metrics-p3-v2.json`. Its 28,121 ESM
+declaration bytes plus 28,135 CommonJS declaration bytes total 56,256, with no
+product-byte growth. Both P3 module-accounting cases and all incoming P1/P2
+cases remain, including nested assets, CSS, duplicate paths and the original
+four threshold checks. Source maps remain included in tarball bytes. The same
+2% policy and coverage floors are unchanged.
+
 Browser coverage is scenario-based; these percentages are Vitest/V8 only and
 must not be presented as browser or real-server coverage.
 
@@ -304,6 +368,50 @@ P2's measured whole-package coverage is 77.09% statements / 78.80% lines /
 99.28% lines / 92.98% branches / 100% functions. These improve every P1 floor;
 they are not a claim that #163's final transport/result-contract coverage targets
 are finished.
+
+### Historical P3 transport/type contract cost
+
+This is the original schema-2 measurement before the main-runtime integration.
+The table retains its original single-format declaration numbers; the current
+schema-3 declaration budget counts both formats as described above.
+
+The first complete P3 Linux/amd64 Node 22.20.0 run passed the package/type/SSR
+and source-free consumer gates, all 26 browser scenarios and all five original
+PNG comparisons. The old 2% **size** gate then correctly rejected the feature
+growth. The following measured sizes advance that artifact baseline with this
+explicit explanation; P1 and P2 bytes remain in `artifactChange.p1Sizes` and
+`p2Sizes`. No coverage floor, 2% policy, query/financial assertion, CSS or
+visual baseline was reduced/changed to achieve a pass.
+
+| Artifact | P2 bytes | P3 measured baseline bytes | Reason |
+| --- | ---: | ---: | --- |
+| Packed tarball | 125,325 | 155,916 | Runtime/type/source-map additions plus full transport/auth/SSR/migration docs and shipped CHANGELOG |
+| All package ESM / CJS | 72,992 / 75,038 | 84,754 / 91,229 | Complete DTO/JSON/link guards, shared auth/cancellation, scoped lifecycle and all entrypoint/shared-chunk wrappers |
+| All `.d.ts` declarations | 21,140 | 28,121 | Named read/transport/hook/column contracts, physical type boundaries and subpath exports |
+| Trading JS / gzip | 233,695 / 69,038 | 240,826 / 70,541 | New client contract and typed app-boundary handling; not a new dependency or React copy |
+| Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
+
+Current-run exact measurements remain in `test-results/measured-baseline.json`;
+small subsequent documentation/guard refinements are still subject to the same
+2% cap above this recorded measurement, not an unbounded budget increase.
+The root barrel alone is only hundreds of bytes after splitting, so measuring
+only it would be misleading; all shipped modules are counted.
+
+The pinned run measured whole-package S/L/B/F
+**87.38 / 89.03 / 83.22 / 89.42%**, Trading
+**87.40 / 88.24 / 78.10 / 86.45%**, and the unchanged provisioner
+**98.81 / 99.28 / 92.98 / 100%**. Client modules measured
+**97.08 / 98.87 / 94.21 / 99.15%**; `DrasiContext.tsx` measured
+**95.62 / 100 / 85.32 / 100%**. These exceed the current critical-code
+90/90/85/90 targets without excluding product code. They do not complete
+Part B's missing identity/normalization/consistency/state scenarios.
+
+For before/after evidence, the equivalent-inline-configuration provider test
+was replayed against an isolated archive of exact P2 `3e9833c`: it fails because
+rerendering replaces the client and closes the existing stream. The same real
+provider test passes on P3. No predecessor/other worktree was modified.
+Positive/negative packed type cases, malformed captured DTO mutations and
+auth/cross-instance cases complement the inherited business assertions.
 
 ### P2 current development-source update
 
@@ -363,6 +471,65 @@ separate limited plugin smoke reporting eight passes / 28 unconfigured skips.
 Strict Clippy/fmt and the selected host audit passed, retaining its 15 existing
 warnings. Its CI, binary/lock hashes and independent packed live proof remain
 in #205's historical evidence, not relabeled as proof for the newer runtime.
+
+### P3 current development-source integration
+
+The current P3 parent is
+`d784446d7e2ca369c2ae0a3e3c560455d54369a6`. Its source/setup/runtime selection
+is the same temporary `211d0f2a` / registry library 0.9.2 / SDK 0.11.2 /
+native ABI 0.14 graph described below. P3 retains all public entrypoints,
+React-free client runtime/type graphs, guarded reads, auth/cancellation and
+provider ownership/identity behavior. In particular, explicit endpoint
+path/query slashes remain significant while equivalent server bases do not
+churn the connection; all 17 endpoint regressions are unchanged.
+
+Older core 0.5.8 / `1284e9f` / ABI 0.13 results and fixtures stay historical,
+not current-runtime evidence. This graph must build its own embedded UI/default
+server before binary-launching tests and run the same raw financial/CRUD/live
+gates. Run timing-sensitive packed browser/visual checks after heavy native
+work, not concurrently. The same 2% artifact cap, source coverage floors,
+clock/readiness assertions, all 11 query definitions and five original images
+remain authoritative. Current proof and final-head CI belong to #206.
+
+### Historical P3 ABI 0.13 main-runtime integration
+
+The earlier P3 integration normally merged exact P2
+`f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467`, preserving its original
+`a0569c2ae7b17f51996f431cf2264c636a19f3d1` ancestry, public entrypoints,
+React-free client graph, guarded reads, auth/cancellation and configuration
+lifecycle. No P4-P7 product code is imported. The incoming v1 query DTO is
+byte-identical: `enableArchive` and `memoryBudgetMiB` configure the server or
+instance, not extra top-level fields of the query read DTO. Per-query
+`storageBackend` remains validated, opaque JSON rather than a new client
+creation API.
+
+The original P1/P2 schema-2 records and P3's original schema-2 record remain
+unchanged. Current accounting retains every P3 entry/shared chunk and the
+incoming recursive asset/CSS checks, counts both declaration formats, and
+keeps the same coverage floors and 2% growth rule. New source/lock/binary/live
+evidence belongs to #206; old runtime captures are not relabeled as 0.2.3
+or ABI 0.13 results.
+
+That own rebuilt merge source `5988b1d82cbb4d24dca2d4cb2763c0572d564bf4`
+passed the unchanged actual Trading flow on server 0.2.3, with singleton
+2000/cost 1800/count 2 -> 2050 live/reload -> 2150 offline/reconnect,
+CRUD/live/deletes and no recovery navigation. Its binary SHA-256 is
+`6327ce9a6e938451f50174d634efdf795f011044b5b8eeeafbd8204b74fb3b28`;
+lock SHA-256 is
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+Actual full-view query/reaction/snapshot records are retained separately in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/contract.json` and run through
+the same read-only guards as the original 0.2.1 records.
+
+Those checks reported 221 package tests, 64 Trading tests, 12 artifact-policy
+cases, 53 tooling tests, and 809 locked Rust passes / 32 existing ignores.
+Strict Clippy/fmt and the selected audit pass with zero vulnerabilities and
+15 retained warnings. The first local full Linux run had a 375-pixel mobile
+ticker-only difference; an unchanged targeted visual rerun and a subsequent
+full 26-scenario rerun passed all five original images. No product, screenshot,
+timeout, readiness or clock assertion was changed to obtain those passes.
+Those packed/CI results remain in #206's historical evidence and do not
+validate the newer `211d0f2a` / ABI 0.14 selection.
 
 ## Mandatory real-server gate
 

@@ -20,20 +20,17 @@ import {
   useDrasiQueryDefinition,
   useDrasiServerUiUrl,
 } from '../react/DrasiContext';
-import { useRowAnimation, AnimationDirection } from '../react/useRowAnimation';
+import { useRowAnimation, type AnimationDirection } from '../react/useRowAnimation';
 import { CodeViewerDialog } from './CodeViewerDialog';
 import { CodeIcon, ExpandIcon, CollapseIcon } from './icons';
-import {
-  ColumnDef,
-  RowAction,
-  SortConfig,
-  UseDrasiQueryOptions,
-} from '../types';
+import type { QueryConfig, ResultRow } from '../client/types';
+import type { UseDrasiQueryOptions } from '../react/types';
+import type { ColumnDef, RowAction, SortConfig } from './types';
 
-export type { ColumnDef, RowAction, SortConfig } from '../types';
+export type { ColumnDef, RowAction, SortConfig } from './types';
 
 /** Props for the {@link QueryTable} component. */
-export interface QueryTableProps<T> {
+export interface QueryTableProps<T extends object = ResultRow> {
   /** Drasi query id to subscribe to over the shared connection. */
   queryId: string;
   /** Column definitions. */
@@ -158,10 +155,10 @@ const ActionSpinner: React.FC = () => (
 );
 
 /** Format a query config object into a readable, YAML-like string. */
-function formatQueryConfig(config: Record<string, any>): string {
+function formatQueryConfig(config: QueryConfig): string {
   const lines: string[] = [];
 
-  const addField = (label: string, value: any) => {
+  const addField = (label: string, value: unknown) => {
     if (value === undefined || value === null) return;
     if (typeof value === 'string') {
       lines.push(`${label}: ${value}`);
@@ -227,7 +224,7 @@ function formatQueryConfig(config: Record<string, any>): string {
 
   addField('enableBootstrap', config.enableBootstrap);
   addField('bootstrapBufferSize', config.bootstrapBufferSize);
-  if (config.middleware?.length) {
+  if (Array.isArray(config.middleware) && config.middleware.length) {
     lines.push(`middleware: [${config.middleware.join(', ')}]`);
   }
   addField('priorityQueueCapacity', config.priorityQueueCapacity);
@@ -258,7 +255,7 @@ function formatQueryConfig(config: Record<string, any>): string {
  *   queryId="watchlist-query"
  *   columns={[
  *     { key: 'symbol', label: 'Symbol' },
- *     { key: 'price', label: 'Price', format: formatCurrency, align: 'right' },
+ *     { key: 'price', label: 'Price', format: (_, row) => formatCurrency(row.price), align: 'right' },
  *   ]}
  *   rowKey={(row) => row.symbol}
  *   defaultSort={{ column: 'symbol', direction: 'asc' }}
@@ -266,7 +263,7 @@ function formatQueryConfig(config: Record<string, any>): string {
  * />
  * ```
  */
-export function QueryTable<T extends Record<string, any>>({
+export function QueryTable<T extends object = ResultRow>({
   queryId,
   columns,
   rowKey,
@@ -291,7 +288,7 @@ export function QueryTable<T extends Record<string, any>>({
   const effectiveQueryOptions = useMemo<UseDrasiQueryOptions<T>>(
     () => ({
       ...queryOptions,
-      getKey: queryOptions?.getKey ?? ((row: any) => rowKey(row as T)),
+      getKey: queryOptions?.getKey ?? rowKey,
     }),
     [queryOptions, rowKey],
   );
@@ -449,8 +446,8 @@ export function QueryTable<T extends Record<string, any>>({
     if (!data || !sort) return data;
 
     return [...data].sort((a, b) => {
-      const aVal = a[sort.column as keyof T];
-      const bVal = b[sort.column as keyof T];
+      const aVal: unknown = Reflect.get(a, sort.column);
+      const bVal: unknown = Reflect.get(b, sort.column);
 
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return sort.direction === 'asc' ? 1 : -1;
@@ -470,9 +467,8 @@ export function QueryTable<T extends Record<string, any>>({
   }, [data, sort]);
 
   // Get cell value
-  const getCellValue = (row: T, column: ColumnDef<T>): any => {
-    const key = column.key as keyof T;
-    return row[key];
+  const getCellValue = (row: T, column: ColumnDef<T>): unknown => {
+    return Reflect.get(row, column.key);
   };
 
   // Render cell content

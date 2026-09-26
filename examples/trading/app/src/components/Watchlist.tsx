@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction } from '@drasi/react';
+import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator, RemoveIcon, AddIcon, SelectDialog } from './shared';
 import { Stock } from '@/types';
@@ -29,9 +29,9 @@ const CODE_SNIPPET = `<QueryTable<Stock>
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
     { key: 'price', label: 'Price', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.price) },
     { key: 'changePercent', label: 'Change', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => <ChangeIndicator value={row.changePercent} /> },
   ]}
   rowKey={(row) => row.symbol}
   animateOnChange="price"
@@ -107,17 +107,17 @@ export const Watchlist: React.FC = () => {
       key: 'price',
       label: 'Price',
       align: 'right',
-      format: (value) => formatCurrency(value),
+      format: (_value, row) => formatCurrency(row.price),
       className: 'font-mono',
     },
     {
       key: 'changePercent',
       label: 'Change',
       align: 'right',
-      format: (value) => <ChangeIndicator value={value} />,
-      className: (value) => clsx(
+      format: (_value, row) => <ChangeIndicator value={row.changePercent} />,
+      className: (_value, row) => clsx(
         'font-mono text-sm',
-        value >= 0 ? 'text-trading-green' : 'text-trading-red'
+        row.changePercent >= 0 ? 'text-trading-green' : 'text-trading-red'
       ),
     },
   ];
@@ -153,7 +153,7 @@ export const Watchlist: React.FC = () => {
       
       <QueryTable<Stock>
         queryId="watchlist-query"
-        queryOptions={tradingQueryOptions<Stock>('watchlist-query')}
+        queryOptions={tradingQueryOptions('watchlist-query')}
         title="Watchlist"
         columns={columns}
         rowKey={(row) => row.symbol}

@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { DrasiSSEClient, type DrasiSSEClientOptions, type EventSourceFactory } from './DrasiSSEClient';
+import { DrasiSSEClient, type EventSourceFactory } from './DrasiSSEClient';
 import type {
-  Component, ConnectionStatus, QueryConfig, QueryResult, ReactionConfig,
-  ReactionReference, RouteUnidentified,
-} from '../types';
+  Component, ConnectionStatus, DrasiHeaders, QueryConfig, QueryResult, ReactionConfig,
+  ReactionReference, ReconnectOptions, ResultRow, RouteUnidentified,
+} from './types';
 import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
-import { instancePath, isIdentifier, readQuery, readReaction, readResponse, requireRunning, validateHttpUrl } from './resources';
+import { instancePath, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
+import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
 
 /** References to pre-existing resources. No option enables resource management. */
 export interface DrasiClientOptions {
@@ -28,13 +29,17 @@ export interface DrasiClientOptions {
   queryIds: readonly string[];
   reaction: ReactionReference;
   routeUnidentified?: RouteUnidentified;
+  /** Invoked with the global receiver; must honor RequestInit.signal. GETs only. */
   fetch?: typeof globalThis.fetch;
+  /** REST and custom SSE credentials; default same-origin. Native SSE cannot honor omit. */
+  credentials?: RequestCredentials;
+  /** Shared auth. Custom headers require an eventSourceFactory when opening a stream, not for REST-only reads. */
+  headers?: DrasiHeaders;
   eventSourceFactory?: EventSourceFactory;
   /** REST timeout per request, including reading its body (default 10000 ms). */
   requestTimeoutMs?: number;
   /** SSE and snapshot retries are bounded by the same policy. */
-  reconnect?: Pick<DrasiSSEClientOptions,
-    'maxReconnectAttempts' | 'initialReconnectDelayMs' | 'maxReconnectDelayMs' | 'connectionTimeoutMs'>;
+  reconnect?: ReconnectOptions;
 }
 
 /**
@@ -48,6 +53,8 @@ export class DrasiClient {
   private readonly queryIds: Set<string>;
   private readonly reaction: ReactionReference;
   private readonly fetcher: typeof globalThis.fetch;
+  private readonly credentials: RequestCredentials;
+  private readonly headers?: DrasiHeaders;
   private readonly requestTimeoutMs: number;
   private readonly maxRetries: number;
   private readonly retryDelay: number;
@@ -66,14 +73,18 @@ export class DrasiClient {
         new Set(options.queryIds).size !== options.queryIds.length || !isIdentifier(options.reaction?.id)) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
-    this.baseUrl = validateHttpUrl(options.serverUrl, details);
-    if (new URL(this.baseUrl).search) throw new DrasiError('INVALID_CONFIGURATION', details);
+    this.baseUrl = normalizeServerUrl(options.serverUrl, details);
     this.reaction = {
       id: options.reaction.id,
       endpoint: validateHttpUrl(options.reaction.endpoint, details),
     };
     this.queryIds = new Set(options.queryIds);
-    this.fetcher = (options.fetch ?? globalThis.fetch).bind(globalThis);
+    const fetcher = options.fetch ?? globalThis.fetch;
+    if (typeof fetcher !== 'function') throw new DrasiError('INVALID_CONFIGURATION', details);
+    this.fetcher = fetcher.bind(globalThis);
+    this.credentials = validateCredentials(options.credentials, details);
+    this.headers = typeof options.headers === 'function'
+      ? options.headers : requestHeaders(options.headers, undefined, details);
     this.requestTimeoutMs = options.requestTimeoutMs ?? 10000;
     this.maxRetries = options.reconnect?.maxReconnectAttempts ?? 10;
     this.retryDelay = options.reconnect?.initialReconnectDelayMs ?? 1000;
@@ -85,6 +96,8 @@ export class DrasiClient {
       ...options.reconnect,
       routeUnidentified: options.routeUnidentified,
       eventSourceFactory: options.eventSourceFactory,
+      headers: this.headers,
+      credentials: this.credentials,
       errorDetails: this.details('reaction', this.reaction.id),
       validate: signal => this.validateResources(signal),
     });
@@ -110,8 +123,20 @@ export class DrasiClient {
       const url = suffix === 'config'
         ? `${instancePath(this.baseUrl, this.instanceId, kind, id)}?view=full`
         : instancePath(this.baseUrl, this.instanceId, kind, id, 'results');
-      const response = await this.fetcher(url, { method: 'GET', signal: controller.signal });
-      const data = await readResponse(response, details);
+      const data = await abortable((async () => {
+        const headers = typeof this.headers === 'function'
+          ? await resolveHeaders(this.headers, {
+            url, transport: 'rest', instanceId: this.instanceId, signal: controller.signal,
+          }, details)
+          : requestHeaders(this.headers, 'rest', details);
+        const response = await this.fetcher(url, {
+          method: 'GET', headers, credentials: this.credentials,
+          redirect: 'manual', signal: controller.signal,
+        });
+        controller.signal.throwIfAborted();
+        if (response.redirected) throw new DrasiError('INCOMPATIBLE_RESOURCE', details);
+        return readResponse(response, details);
+      })(), controller.signal);
       controller.signal.throwIfAborted();
       return data;
     } catch (error) {
@@ -183,17 +208,17 @@ export class DrasiClient {
     return (await this.getQuery(queryId, signal)).config;
   }
 
-  async getQueryResults(queryId: string, signal?: AbortSignal): Promise<any[]> {
+  async getQueryResults(queryId: string, signal?: AbortSignal): Promise<ResultRow[]> {
     requireRunning(await this.getQuery(queryId, signal), this.details('query', queryId));
     const data = await this.read('queries', queryId, 'results', signal);
-    if (!Array.isArray(data)) throw new DrasiError('INVALID_PAYLOAD', this.details('query', queryId));
-    return data;
+    return readRows(data, this.details('query', queryId));
   }
 
   /**
    * Listen before fetching a snapshot; replay buffered deltas afterward. On
    * reconnect, discard stale rows with a fresh snapshot. Permanent failures
    * terminate this subscription; transient snapshot failures have bounded retries.
+   * Supply onError to handle failures; otherwise only the safe error code is logged.
    */
   subscribe(
     queryId: string,
@@ -206,6 +231,9 @@ export class DrasiClient {
       onError(error);
       return () => {};
     }
+    const reportError = onError ?? ((error: DrasiError) => {
+      console.error('Drasi query subscription failed:', error.code);
+    });
     const queuedResults: QueryResult[] = [];
     let active = true;
     let snapshotReady = false;
@@ -257,7 +285,7 @@ export class DrasiClient {
         if (!active || generation !== snapshotGeneration || isAbortError(error)) return;
         const failure = asDrasiError(error, this.details('query', queryId));
         snapshotController = null;
-        onError?.(failure);
+        reportError(failure);
         if (!failure.retryable || snapshotRetryAttempts >= this.maxRetries) {
           stop();
           return;
@@ -273,7 +301,7 @@ export class DrasiClient {
         connectionWasInterrupted = true;
         suspendSnapshot();
         if (status.error && !status.reconnecting) {
-          onError?.(status.error);
+          reportError(status.error);
           stop();
         }
         return;

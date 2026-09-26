@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient, type DrasiClientOptions } from '../src/client/DrasiClient';
 import { DrasiError } from '../src/client/errors';
 import { fakeEventSourceFactory } from './FakeEventSource';
-import { ReadServer, deferred, failure, json, refs } from './server';
+import { ReadServer, component, deferred, failure, json, queryConfig, refs } from './server';
 
 const clients: DrasiClient[] = [];
 const servers: ReadServer[] = [];
@@ -76,12 +76,10 @@ describe('connect-only DrasiClient', () => {
     const connected = client.initialize();
     expect(server.fetch).toHaveBeenCalledTimes(2);
     expect(factory.instances).toHaveLength(0);
-    second.resolve(json({ id: 'other', status: 'Running',
-      config: { id: 'other', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
+    second.resolve(json(component('queries', 'other', queryConfig('other'))));
     await Promise.resolve();
     expect(factory.instances).toHaveLength(0);
-    first.resolve(json({ id: 'stocks', status: 'Running',
-      config: { id: 'stocks', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
+    first.resolve(json(component('queries', 'stocks', queryConfig('stocks'))));
     await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
     factory.instances[0].open();
     await connected;
@@ -292,6 +290,17 @@ describe('connect-only DrasiClient', () => {
 });
 
 describe('snapshot/live lifecycle', () => {
+  it('reports a malformed snapshot even when a direct consumer omitted its error callback', async () => {
+    const { client, server, open } = setup();
+    await open();
+    server.snapshot = async () => json([42]);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    client.subscribe('stocks', vi.fn());
+    await vi.waitFor(() => expect(log).toHaveBeenCalledExactlyOnceWith(
+      'Drasi query subscription failed:', 'INVALID_PAYLOAD',
+    ));
+  });
+
   it('subscribes before snapshot fetch and replays queued deltas afterward', async () => {
     const { client, server, factory, open } = setup();
     const snapshot = deferred<Response>();
