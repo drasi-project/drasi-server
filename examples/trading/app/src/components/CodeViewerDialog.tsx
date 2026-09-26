@@ -15,12 +15,12 @@
 import React, {
   useState,
   useEffect,
-  useCallback,
   useRef,
-  useId,
 } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from '@drasi/react/components';
+import * as Tabs from '@radix-ui/react-tabs';
 import clsx from 'clsx';
+import './CodeViewerDialog.css';
 
 export interface CodeViewerDialogProps {
   /** Whether the dialog is open. */
@@ -42,8 +42,7 @@ export interface CodeViewerDialogProps {
 type TabId = 'react' | 'cypher';
 
 /**
- * Trading's tutorial presentation. Overlay/focus ownership is deferred to P6;
- * asynchronous definition content must remain live while this dialog is open.
+ * Trading's tutorial presentation with shared modal behavior and live definition content.
  */
 export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
   isOpen,
@@ -56,88 +55,72 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('cypher');
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousBodyOverflowRef = useRef<string | null>(null);
-  const titleId = useId();
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    },
-    [onClose],
-  );
-
-  useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      previousBodyOverflowRef.current = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      if (previousBodyOverflowRef.current !== null) {
-        document.body.style.overflow = previousBodyOverflowRef.current;
-        previousBodyOverflowRef.current = null;
-      }
-    };
-  }, [isOpen, handleKeyDown]);
+  const copyAttemptRef = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab('cypher');
       setCopied(false);
+      setCopyFailed(false);
     }
+
+    return () => {
+      // Clipboard writes cannot be aborted; invalidate feedback from a closed viewer.
+      copyAttemptRef.current += 1;
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   const handleCopy = async () => {
     const textToCopy = activeTab === 'react' ? reactCode : cypherQuery;
+    const attempt = ++copyAttemptRef.current;
     try {
       await navigator.clipboard.writeText(textToCopy);
+      if (attempt !== copyAttemptRef.current) return;
+
       setCopied(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      setCopyFailed(false);
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => {
         setCopied(false);
         copyTimerRef.current = null;
       }, 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+      if (attempt !== copyAttemptRef.current) return;
+
+      setCopied(false);
+      setCopyFailed(true);
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
     }
   };
 
-  useEffect(
-    () => () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    },
-    [],
-  );
-
-  const handleOverlayClick = (event: React.MouseEvent) => {
-    if (event.target === event.currentTarget) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
-
-  const currentCode = activeTab === 'react' ? reactCode : cypherQuery;
-
-  return createPortal(
-    <div
-      className="drasi-code-dialog__overlay"
-      onClick={handleOverlayClick}
+  return (
+    <Modal
+      open={isOpen}
+      title={title}
+      onClose={onClose}
+      className="drasi-code-dialog"
+      overlayClassName="drasi-code-dialog__overlay"
     >
-      <div
-        className="drasi-code-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
+      <Tabs.Root
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabId)}
+        activationMode="automatic"
+        className="drasi-code-dialog__tab-root"
       >
         {/* Header */}
         <div className="drasi-code-dialog__header">
           <div className="drasi-code-dialog__title-group">
-            <h2 id={titleId} className="drasi-code-dialog__title">
+            <h2 className="drasi-code-dialog__title">
               {title}
             </h2>
             {drasiUiUrl && (
@@ -150,6 +133,8 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
               >
                 <svg
                   className="drasi-icon"
+                  aria-hidden="true"
+                  focusable="false"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -174,6 +159,8 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
           >
             <svg
               className="drasi-icon drasi-icon--medium"
+              aria-hidden="true"
+              focusable="false"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -189,35 +176,34 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="drasi-code-dialog__tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'cypher'}
-            onClick={() => setActiveTab('cypher')}
-            className={clsx(
-              'drasi-code-dialog__tab',
-              activeTab === 'cypher'
-                ? 'drasi-code-dialog__tab--active'
-                : 'drasi-code-dialog__tab--inactive',
-            )}
+        <div className="drasi-code-dialog__tabs">
+          <Tabs.List
+            className="drasi-code-dialog__tablist"
+            aria-label="Code examples"
           >
-            Query Definition
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'react'}
-            onClick={() => setActiveTab('react')}
-            className={clsx(
-              'drasi-code-dialog__tab',
-              activeTab === 'react'
-                ? 'drasi-code-dialog__tab--active'
-                : 'drasi-code-dialog__tab--inactive',
-            )}
-          >
-            React Code
-          </button>
+            <Tabs.Trigger
+              value="cypher"
+              className={clsx(
+                'drasi-code-dialog__tab',
+                activeTab === 'cypher'
+                  ? 'drasi-code-dialog__tab--active'
+                  : 'drasi-code-dialog__tab--inactive',
+              )}
+            >
+              Query Definition
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="react"
+              className={clsx(
+                'drasi-code-dialog__tab',
+                activeTab === 'react'
+                  ? 'drasi-code-dialog__tab--active'
+                  : 'drasi-code-dialog__tab--inactive',
+              )}
+            >
+              React Code
+            </Tabs.Trigger>
+          </Tabs.List>
 
           {/* Copy button */}
           <div className="drasi-code-dialog__copy-container">
@@ -235,6 +221,8 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
                 <>
                   <svg
                     className="drasi-icon"
+                    aria-hidden="true"
+                    focusable="false"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -252,6 +240,8 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
                 <>
                   <svg
                     className="drasi-icon"
+                    aria-hidden="true"
+                    focusable="false"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -267,18 +257,36 @@ export const CodeViewerDialog: React.FC<CodeViewerDialogProps> = ({
                 </>
               )}
             </button>
+            <span role="status" className="drasi-code-dialog__status">
+              {copyFailed
+                ? 'Unable to copy code. Select and copy the text instead.'
+                : copied ? 'Code copied to clipboard.' : ''}
+            </span>
           </div>
         </div>
 
         {/* Code content */}
-        <div className="drasi-code-dialog__content">
+        <Tabs.Content
+          value="cypher"
+          tabIndex={0}
+          className="drasi-code-dialog__content"
+        >
           {statusSlot}
           <pre className="drasi-code-dialog__code">
-            <code>{currentCode}</code>
+            <code>{cypherQuery}</code>
           </pre>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        </Tabs.Content>
+        <Tabs.Content
+          value="react"
+          tabIndex={0}
+          className="drasi-code-dialog__content"
+        >
+          {statusSlot}
+          <pre className="drasi-code-dialog__code">
+            <code>{reactCode}</code>
+          </pre>
+        </Tabs.Content>
+      </Tabs.Root>
+    </Modal>
   );
 };

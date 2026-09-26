@@ -11,7 +11,8 @@ bugs; do not update visual expectations to hide an unexplained regression.
 
 ## Table composition boundaries
 
-Trading is the only example consumer in P5 ([#164 Part A](https://github.com/drasi-project/drasi-server/issues/164)).
+Trading remains the only example consumer through P6
+([#164](https://github.com/drasi-project/drasi-server/issues/164)).
 Keep domain definitions, transformations, filtering, default sorts and tutorial
 snippets in this app. Do not change the eleven Cypher queries or the known
 market-mover default ordering as part of a presentation refactor.
@@ -21,6 +22,8 @@ market-mover default ordering as part of a presentation refactor.
 | Query rows, status, last-good data and query-local retry | `useDrasiQuery` from `@drasi/react/react`; raw `getKey` and validating `transform` stay explicit. |
 | A live table without tutorials or overlays | `QueryTable` from `@drasi/react/components`; it composes the hook and `DataTable`, not the Trading wrapper. |
 | Provider-free presentation for supplied rows | `DataTable` from `@drasi/react/components`; columns, transformed `rowKey`, state slots, typed cells/actions/rows/header and controlled/uncontrolled sort. |
+| Generic modal behavior and local theme propagation | `Modal` / `ModalProps` from `/components`; visible content/close controls remain app-owned. |
+| Motion preference and shared row animation | `useReducedMotion` / `useRowAnimation` from `/react`; no component, Radix, React DOM or CSS dependency in that entrypoint. |
 | Trading fullscreen, tutorial code and server-UI links | App-owned `TradingQueryTable.tsx`, `QueryInspector.tsx` and `CodeViewerDialog.tsx`. The wrapper reuses `DataTable`, not a second table implementation. |
 
 `TradingQueryTable` shares one headless `useTableSort` controller and one
@@ -42,11 +45,69 @@ shared connection failures still use the connection owner's retry. Keep
 displayed tutorial snippets aligned with the app-owned wrapper.
 
 Import client, hooks and presentation through their independent entrypoints,
-and opt into `@drasi/react/styles.css` explicitly. P5 preserves existing CSS,
-markup, animations and all five original visual PNG images. P6 owns the
-remaining focus, shared overlay/scroll-lock, theming/portal, reduced-motion and
-height contracts; do not migrate unrelated forms or claim those checks here.
+and opt into `@drasi/react/styles.css` explicitly. P5 preserved the existing CSS,
+markup, animations and all five original visual PNG images; its measured
+results remain historical. P6's bounded contracts below do not authorize a
+broader form/business rewrite or replacing those images.
 No standalone example app or Storybook site is needed before #165.
+
+## P6 presentation boundaries
+
+- Reuse the package Modal through Trading's narrow shared `BaseDialog` adapter
+  or app-owned fullscreen/CodeViewer composition. Supply controlled `open`,
+  `onClose`, a meaningful accessible `title` and visible keyboard close/cancel
+  controls. Preserve card/form/action markup and associate field labels.
+  Use valid typed focus refs for initial/return/fallback targets; do not create
+  competing global Escape, scroll-lock or focus managers.
+- Preserve native sort buttons inside `<th scope="col">`, the header's
+  `aria-sort`, table naming from `title`/`ariaLabel` and labelled row actions.
+  Keep the named viewport's native focus stop and focus outline so tables with
+  no sortable columns/actions remain keyboard-scrollable. If replacing rows,
+  headers or notices, the app owns equivalent semantics.
+  Default cell updates are not a live-region announcement policy.
+- Keep CodeViewer and its styles app-owned. Its pinned Radix Tabs **1.1.13**
+  controls the named tablist, linked panels, roving ArrowLeft/ArrowRight/
+  Home/End focus with automatic selection, and Enter/Space activation. Copy
+  stays outside the tablist. Lazy reads, async copy/display, cancellation,
+  retry scopes, snippet formatting and UI links must remain intact.
+- Keep Trading's exact dark token values on its own `body`; generic package
+  components use light `var()` fallbacks. Modal snapshots local resolved
+  `--drasi-*` tokens and typography into its portal. Ancestor attribute,
+  resize and preferred-color-scheme changes refresh them; arbitrary CSSOM or
+  stylesheet replacement without those signals does not. Do not restore
+  global dark package defaults or require package-source Tailwind scanning.
+  Retain Trading's explicit `--drasi-line-height: 1.5`; copying a computed pixel
+  line height is not a promise to preserve unitless descendant scaling.
+- Use `height={400}` (or `'400px'`), never `height="h-[400px]"`. The typed
+  `TableHeight` contract rejects arbitrary/class strings, and runtime validation
+  rejects negative/nonfinite values. Tokens can hold `calc()`/`clamp()`;
+  percentages require a sized parent. An explicit prop wins over
+  `style.height`. Keep the normal 400px card and fullscreen 32px inset/bounds.
+- Preserve default 350ms FLIP behavior. `useReducedMotion` must also handle
+  preference changes mid-transition: cancel/complete motion without waiting
+  on transition events or delaying live data. `useRowAnimation` and DataTable
+  already suppress local and controlled animations under reduced motion.
+
+Use the complete [package reference](../../dev-tools/react/README.md#components)
+and [P6 migration](../../dev-tools/react/README.md#p6--164-part-b-migration)
+instead of private implementation imports or unsafe type casts.
+The package remains private. Feature work does not independently change
+backend/SDK/plugin pins; normal parent integration inherits only the separately
+approved current runtime documented in `docs/main-runtime-integration.md`.
+Retain all original literal README recipes; additions must compile from the
+installed tarball with the existing strict public-contract checker.
+
+Record automated rule scans, DOM/ARIA assertions, accessibility-tree evidence
+and real-browser keyboard results separately. None is a human AT review.
+P6 totals and measurements are in TESTING.md, with exact-head CI in the owning
+draft PR. Keep every full-rule axe result: Trading's exact preserved-design
+fingerprints permit only measured legacy findings, not new/worsened nodes,
+different contexts or lower ratios. Generic/default themes require zero
+violations; neither result implies human acceptance. Actual screen-reader
+acceptance is still pending. Follow the
+[manual checklist](TESTING.md#manual-screen-reader-checklist-pending), record
+exact versions/date/outcomes, and do not describe development readiness as
+permission to merge or release.
 
 ## Learning Exercises
 

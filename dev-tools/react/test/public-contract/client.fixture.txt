@@ -393,3 +393,12 @@ export function typedStreamCallbacks(stream: DrasiSSEClient): () => void {
 }
 // @ts-expect-error Package source is not a public type-resolution escape hatch.
 import type { DrasiClientOptions as PrivateOptions } from '@drasi/react/src/client/DrasiClient';
+
+// @ts-expect-error Generic dialogs are not part of the React-free client entrypoint.
+import { Modal as ClientModal } from '@drasi/react/client';
+// @ts-expect-error Modal props must not introduce React declarations into the client graph.
+import type { ModalProps as ClientModalProps } from '@drasi/react/client';
+// @ts-expect-error Presentation sizing belongs to the components entrypoint.
+import type { TableHeight as ClientTableHeight } from '@drasi/react/client';
+// @ts-expect-error The motion preference is a React hook, not a client API.
+import { useReducedMotion as ClientReducedMotion } from '@drasi/react/client';

@@ -40,7 +40,7 @@ describe('provider-free DataTable', () => {
     expect(rows.map(row => row.code)).toEqual(['b', 'a', 'c']);
     expect(ref.current?.contains(screen.getByRole('table'))).toBe(true);
     expect(screen.getByRole('columnheader', { name: 'Rack' }).style.width).toBe('5rem');
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: /code|expand/i })).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -100,7 +100,7 @@ describe('provider-free DataTable', () => {
     const clear = ({ setSort }: { setSort: (sort: SortConfig | null) => void }) => <button onClick={() => setSort(null)}>Clear</button>;
     const table = render(<StrictMode><DataTable {...controlled} sort={{ column: 'code', direction: 'asc' }} renderHeader={clear} /></StrictMode>);
     expect(codes()).toEqual(['a', 'b', 'c']);
-    fireEvent.click(screen.getByRole('columnheader', { name: 'Units' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Units' }));
     expect(onSortChange).toHaveBeenCalledExactlyOnceWith({ column: 'units', direction: 'asc' });
     expect(codes()).toEqual(['a', 'b', 'c']);
     table.rerender(<StrictMode><DataTable {...controlled} sort={{ column: 'units', direction: 'desc' }} renderHeader={clear} /></StrictMode>);
@@ -115,7 +115,8 @@ describe('provider-free DataTable', () => {
     expect(onSortChange).toHaveBeenCalledTimes(2);
   });
 
-  it('uses defaultSort only on mount, toggles by keyboard and can clear uncontrolled sorting', () => {
+  it('uses defaultSort only on mount, toggles by keyboard and can clear uncontrolled sorting', async () => {
+    const user = userEvent.setup();
     const onSortChange = vi.fn();
     const renderHeader: DataTableProps<Rack>['renderHeader'] = ({ setSort }) => <button onClick={() => setSort(null)}>Clear</button>;
     const table = render(<StrictMode><DataTable {...props} defaultSort={{ column: 'units', direction: 'desc' }} onSortChange={onSortChange} renderHeader={renderHeader} /></StrictMode>);
@@ -123,11 +124,11 @@ describe('provider-free DataTable', () => {
     table.rerender(<StrictMode><DataTable {...props} defaultSort={{ column: 'code', direction: 'asc' }} onSortChange={onSortChange} renderHeader={renderHeader} /></StrictMode>);
     expect(codes()).toEqual(['c', 'b', 'a']);
     expect(onSortChange).not.toHaveBeenCalled();
-    const header = screen.getByRole('columnheader', { name: 'Rack' });
-    fireEvent.click(header);
-    fireEvent.keyDown(header, { key: 'Enter' });
+    const button = screen.getByRole('button', { name: 'Rack' });
+    await user.click(button);
+    await user.keyboard('{Enter}');
     expect(codes()).toEqual(['c', 'b', 'a']);
-    fireEvent.keyDown(header, { key: ' ' });
+    await user.keyboard(' ');
     expect(codes()).toEqual(['a', 'b', 'c']);
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(codes()).toEqual(['b', 'a', 'c']);
@@ -149,7 +150,7 @@ describe('provider-free DataTable', () => {
       defaultSort={{ column: 'value', direction: 'asc' }}
     />);
     expect(codes()).toEqual(expected);
-    fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Value' }));
     expect(screen.getByRole('columnheader', { name: 'Value' }).getAttribute('aria-sort')).toBe('descending');
     if (values.includes(null)) expect(codes().slice(0, 2)).toEqual(['0', '2']);
   });

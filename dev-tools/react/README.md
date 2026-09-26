@@ -3,8 +3,9 @@
 React building blocks for UIs driven by [Drasi](https://drasi.io) Continuous
 Queries: one shared SSE connection, query hooks, a provider-free `DataTable`
 and a small live `QueryTable` composition. Tables support shared or local
-sorting, state slots and optional row animation without requiring tutorial
-or overlay UI. The client connects to **existing resources**. Provisioning,
+sorting, state slots and motion-aware row animation without requiring tutorial
+or overlay UI. An optional provider-free `Modal` supplies generic dialog
+behavior, not application chrome. The client connects to **existing resources**. Provisioning,
 query definitions, transforms, business routing, inspection/fullscreen UI and
 deployment defaults belong to the application.
 
@@ -29,8 +30,8 @@ Tailwind source scanning or install-time rebuilding are needed to consume it.
 | Import | Contents and dependencies |
 | --- | --- |
 | `@drasi/react/client` | `DrasiClient`, `DrasiSSEClient`, `DrasiError`, result adapters, `accumulateResult` and connection/transport/read/result types. **No React/React DOM runtime or type imports.** |
-| `@drasi/react/react` | Providers, query/status/definition hooks, `useTableSort`, `useRowAnimation` and named result/options types, including `SortConfig`. React, but no composed components, React DOM, tutorial code or CSS. |
-| `@drasi/react/components` | Provider-free `DataTable`, live `QueryTable`, pure `queryTableState`, optional icons and typed column/action/state/slot/props contracts. React, `clsx` and headless hooks; no tutorial/dialog/fullscreen implementation or implicit CSS. `SortConfig` is also re-exported here. |
+| `@drasi/react/react` | Providers, query/status/definition hooks, `useTableSort`, `useRowAnimation`, `useReducedMotion` and named result/options types, including `SortConfig`. React, but no composed components, Radix, React DOM, tutorial code or CSS. |
+| `@drasi/react/components` | Provider-free `DataTable` and `Modal`, live `QueryTable`, pure `queryTableState`, optional icons and typed column/action/state/slot/props contracts, including `ModalProps` and `TableHeight`. The client-only modal layer uses pinned Radix Dialog **1.1.15** and `scroll-into-view-if-needed` **3.1.0**, including their portal/geometry dependencies. No tutorial/fullscreen implementation or implicit CSS. `SortConfig` is also re-exported here. |
 | `@drasi/react` | Deliberate convenience re-exports of all three groups. This is **not** a React-free import. |
 | `@drasi/react/styles.css` | Explicit package-owned stylesheet, never imported by the JS modules. |
 
@@ -46,9 +47,16 @@ React and React DOM are **optional installation peers** so client-only
 consumers need not install them. React is required to execute the
 React/component/root entrypoints; browser/SSR applications supply their renderer.
 Install the tested React and React DOM **18.3.1** versions for those applications.
-The headless hooks and table implementation do not import React DOM. No React
-copy is bundled or hidden in another dependency. The exact peer range
+The headless `/react` graph does not import React DOM or Radix. The
+`/components` and root graphs include the dialog primitive; use the narrower
+entrypoints for headless consumers. No React copy is bundled or hidden in
+another dependency. The exact peer range
 deliberately makes no React 19 or future-major claim.
+
+The exported props/options and hook declarations include JSDoc for editor
+hover/completion. Import named types such as `ModalProps`, `TableHeight`,
+`DataTableProps` and `UseRowAnimationOptions` from their public entrypoints;
+do not depend on a private helper or hashed declaration filename.
 
 Import the component stylesheet once when using presentation:
 
@@ -434,6 +442,7 @@ different domain keys remain distinct. There is no serialized-value deduplicatio
 | `useDrasiServerUiUrl()` | Instance-scoped UI URL when initialized, otherwise `null`. |
 | `useRowAnimation(options)` | `UseRowAnimationResult`; exported `AnimationDirection` and `UseRowAnimationOptions`. |
 | `useTableSort(options?)` | `UseTableSortResult`: `{ sort, setSort, toggleSort }`; provider-free, with `UseTableSortOptions` and `SortConfig`. See [sorting](#sorting). |
+| `useReducedMotion()` | Live boolean for `prefers-reduced-motion: reduce`; `false` during SSR or without `matchMedia`. Provider-free; see [reduced motion](#reduced-motion). |
 
 All Drasi provider/query hooks preserve `DrasiError` objects, not just messages.
 `UseDrasiQueryOptions<T extends object = ResultRow>` requires both:
@@ -597,25 +606,27 @@ All presentation props are optional except the first three:
 | `state?: DataTableState<E>` | `{}`; presentation-only loading/error/stale/retry state, described below. |
 | `sort`, `defaultSort`, `onSortChange` | Same contract as `useTableSort`; initially unsorted unless a sort is provided. See [sorting](#sorting). |
 | `title?: string` | No title by default. |
+| `ariaLabel?: string` | Accessible name on `<table>`; defaults to `title`. Supply a meaningful name when there is no visible title. |
 | `headerActions?: ReactNode` | Content beside the title on the left. |
 | `headerControls?: ReactNode` | Content on the right; no built-in code-view/fullscreen controls. |
 | `headerSlot?: ReactNode` | Content below the header, above the table. |
 | `renderHeader?: (context: DataTableHeaderContext<T, E>) => ReactNode` | Replaces the header. Call `context.defaultRender()` to wrap/augment the default title/actions/controls; return `null` to omit it. |
 | `actions?: readonly RowAction<T>[]` | No actions by default. Nonempty actions add one trailing column. |
 | `actionsWidth?: string` | Optional CSS width of the actions heading. |
-| `animateOnChange?: keyof T` | Disabled by default. Track the named row property; numbers animate up/down and changed strings animate `change`. |
-| `rowAnimations?: ReadonlyMap<string, AnimationDirection>` | Optional owner-supplied animation state keyed by `rowKey`; takes precedence over `animateOnChange`, including an empty map. |
+| `animateOnChange?: keyof T` | Disabled by default. Track the named row property; numbers animate up/down and changed strings animate `change`. Reduced motion suppresses these animations. |
+| `rowAnimations?: ReadonlyMap<string, AnimationDirection>` | Optional owner-supplied animation state keyed by `rowKey`; takes precedence over `animateOnChange`, including an empty map. Reduced motion also suppresses this controlled map's presentation. |
+| `rowAnimationRevisions?: ReadonlyMap<string, number>` | Optional restart tokens for controlled `rowAnimations`. Pass `useRowAnimation().revisions` to restart repeated same-direction decoration. Changed tokens are compared with `Object.is`, including skipped/batched revisions; they never replace `rowKey`. Without tokens, controlled decoration restarts only when its direction changes or is cleared and reapplied. |
 | `renderRow?: (row, columns, animation, defaultRender) => ReactNode` | Replaces one row's rendering. `row` is `T`, `columns` is readonly, and `animation` is `'up' \| 'down' \| 'change' \| null`. Return a `<tr>` or a fragment of table rows, or call `defaultRender()` for the built-in `<tr>`. A parent fragment already owns the stable `rowKey`; wrappers need not invent an index key. |
 | `emptyMessage?: string` | `"No data available"`; `renderEmpty` takes precedence. |
 | `renderLoading`, `renderEmpty`, `renderError`, `renderStale` | Optional state slots; details below. A slot returning `null` suppresses its default rather than falling back. |
 | `className?: string`, `style?: CSSProperties` | Additional card class and inline styles. |
 | `containerRef?: Ref<HTMLDivElement>` | Ref to the card for app-owned layout/composition. |
-| `tableClassName?: string` | Additional **scroll-container** class, not a class on `<table>`. |
+| `tableClassName?: string` | Additional class on the named, focusable **scroll-container** region, not on `<table>`. Preserve scrolling and focus visibility when overriding it. |
 | `headerClassName?: string` | Additional `<thead>` class; individual headings use `ColumnDef.headerClassName`. |
 | `titleClassName?: string` | Additional normal-header title class. |
 | `headerSlotClassName?: string` | Additional wrapper class for `headerSlot`. |
 | `rowClassName?: string \| ((row: T, index: number) => string)` | Additional class on the default row; `index` is its position in the sorted view. |
-| `height?: string` | Legacy additional **class name**, not a CSS length. The existing CSS default is 400px. Height-prop completion belongs to P6; passing `"500px"` here does not set a pixel height. |
+| `height?: TableHeight` | Finite nonnegative pixel number, explicit CSS length/percentage, `'0'`, `'auto'` or custom-property reference. Overrides `style.height`. Omitted: respect `style.height`, then inherited `--drasi-table-height`, then `400px`. See [table sizing](#table-sizing). |
 
 `DataTableState<E>` has no connection/query semantics:
 
@@ -664,7 +675,8 @@ Loading, empty and stale slots receive that context. `renderError` receives
 `onClick: (row: T) => void`. The label supplies the button's accessible name
 and title. Optional `disabled(row)` and `loading(row)` return booleans and
 default to false; either disables the button and prevents its click callback.
-Loading shows the existing spinner instead of the icon. Optional `className`
+Loading sets `aria-busy="true"` and shows the spinner instead of the icon.
+The action column has a visually hidden **Actions** heading. Optional `className`
 and `hoverClassName` customize the button; the hover class applies only when
 enabled and not loading.
 
@@ -699,6 +711,28 @@ and compatible Intl data. The fixed English policy preserves Trading name
 collation across differing default locales; it is not a claim of identical
 Unicode ordering across arbitrary ICU versions. Hidden fields remain sortable;
 formatted/computed display text is not a comparator. No comparator API is added.
+
+Each sortable column has a native `<button type="button">` inside
+`<th scope="col">`. Its accessible name is the column label; decorative sort
+icons are hidden from assistive technology. The active header, not its button,
+has `aria-sort="ascending"` or `"descending"`; unsorted headers omit it.
+The `<th>` itself is not interactive or separately focusable. Tab reaches the
+button, and native Enter/Space activation makes one sort request per action.
+`sortable: false` renders plain heading text with no sort button.
+
+Every rendered table also has a native keyboard scroll stop: its viewport is
+`role="region"` with `tabIndex={0}`, named
+`${ariaLabel ?? title ?? 'Data'} table viewport`. Tab can focus the viewport;
+native Arrow/PageUp/PageDown scrolling works when its content overflows,
+without requiring a sortable column or row-action button. This does not turn
+rows/cells into interactive controls or add custom key handlers. Sorting and
+enabled action buttons keep their own native focus stops. The viewport's
+focus-visible outline uses `--drasi-color-focus`.
+
+Default loading/stale notices use `role="status"` and default errors use
+`role="alert"`. Individual live cell changes are **not** automatically announced
+as a live region. Applications own any additional announcement policy and the
+semantics/focus behavior of replacement headers, rows and state slots.
 
 Uncontrolled sorting with an explicit reset action:
 
@@ -827,8 +861,25 @@ sort controller and animation tracker, then pass their state to DataTable.
 `useRowAnimation<T>` accepts `rowKey`, `getValue`, optional
 `animationDuration` (500ms) and optional readonly `data`. It also returns
 `updateData(readonlyRows)` for manual updates. Null/undefined data retains its
-previous baseline; an empty array clears it. Supply `rowAnimations` to avoid
-each presentation tracking its own changes.
+previous baseline; an empty array clears it. Share `animations` as
+`rowAnimations` and `revisions` as `rowAnimationRevisions` to avoid each
+presentation tracking its own changes.
+
+`animations` retains the direction map; `revisions: ReadonlyMap<string, number>`
+adds opaque per-row restart tokens for relevant changes, even in the same
+direction. Unchanged tracked values preserve both maps.
+Tokens are removed with their decoration on expiry, row removal, empty input or
+reduced motion. A single per-hook scalar in React state survives that cleanup;
+there is no history of deleted rows, and token values are not persistent counters
+or React keys. Expiry and reactivation coalesced into one React batch therefore
+still have different decoration identities. The renderer retains its last active
+phase across inactive commits, even when the browser has not painted between
+them, while preserving the first activation's original phase. The lifetime
+restarts after the latest change; updates stopping means the decoration expires,
+not an endless animation. The built-in stylesheet retains its 500ms
+ease-in-out pulse and original theme colors, alternating equivalent keyframes
+without replacing DOM rows, losing cell state/focus or forcing layout. The hook's
+custom `animationDuration` controls state expiry, not the stylesheet duration.
 
 ```tsx
 // @drasi-docs: composed-table.tsx
@@ -855,12 +906,12 @@ export function ReadingViews({ queryId, queryOptions, showAlternate = false }: {
   const query = useDrasiQuery(queryId, queryOptions);
   const { retry: retryConnection } = useDrasiClient();
   const sorting = useTableSort({ defaultSort: { column: 'value', direction: 'desc' } });
-  const { animations } = useRowAnimation({ data: query.data, rowKey, getValue });
+  const { animations, revisions } = useRowAnimation({ data: query.data, rowKey, getValue });
   const presentation = {
     rows: query.data, columns, rowKey,
     state: queryTableState(query, retryConnection),
     sort: sorting.sort, onSortChange: sorting.setSort,
-    rowAnimations: animations,
+    rowAnimations: animations, rowAnimationRevisions: revisions,
   };
   return <>
     <DataTable<Reading, DrasiError> {...presentation} title="Readings" />
@@ -891,10 +942,301 @@ for live queries; removing tutorial coupling does not remove those checks.
 Generic `CodeIcon`, `ExpandIcon` and `CollapseIcon` remain optional exports;
 rendering an icon alone creates no behavior. CSS remains namespaced,
 package-owned and an **explicit** import; consumers do not need Tailwind.
-This P5 composition work leaves CSS byte-for-byte unchanged, including legacy
-dialog/fullscreen rules still used by Trading. P6 focus management, overlay
-coordination, theming, reduced-motion and height completion are separate.
+P5 left CSS byte-for-byte unchanged. P6 adds the generic modal, scoped theme
+fallbacks, keyboard semantics, reduced motion and explicit sizing described
+below; Trading's code-viewer CSS now belongs to the app.
 No pagination, selection or virtualization is provided.
+
+#### Table sizing
+
+`TableHeight` is exported by `/components` and root. Accepted values are:
+
+- A **finite, nonnegative number**, in pixels, including `0`.
+- A nonnegative explicit length/percentage string using `px`, `rem`, `em`,
+  `ch`, `ex`, `lh`, `rlh`, `vw`, `vh`, `vmin`, `vmax`, `svw`, `svh`, `lvw`,
+  `lvh`, `dvw`, `dvh`, `cm`, `mm`, `in`, `pt`, `pc` or `%`.
+- Unitless `'0'`, or `'auto'`.
+- `var(--name)`, optionally with one literal nonnegative length, `'0'` or
+  `'auto'` fallback, for example `var(--drasi-panel-height, 20rem)`.
+
+Percentages require a sized parent. Use a custom property for `calc()` or
+`clamp()` expressions; they are not direct `height` prop values. The property
+name must start with `--` followed by a letter or underscore, then letters,
+digits, underscores or hyphens. Invalid runtime values throw `TypeError`,
+including negative/nonfinite numbers, unsupported expressions and class names.
+TypeScript rejects arbitrary/class strings, but its number/template types
+cannot express every runtime constraint; validate untrusted JavaScript input.
+
+Validation checks prop syntax and numeric bounds, not the computed CSS
+cascade. Define referenced custom properties with usable size values or supply
+a literal fallback, such as `var(--drasi-panel-height, 20rem)`. SSR cannot
+evaluate inherited custom properties. The omitted prop's 400px default is not
+an implicit fallback for an explicit unresolved `var(--name)`.
+
+An explicit `height` wins over `style.height`. Without it, inline
+`style.height` wins over the inherited `--drasi-table-height` token, whose
+stylesheet fallback is **400px**. This applies to DataTable state cards and
+QueryTable as well as tables with rows. Class-based layout belongs in
+`className`, not `height`.
+CSS border/padding minima still apply; `0` is not a visibility or collapse
+flag. Provide enough space for headers and controls in the chosen layout.
+
+```tsx
+// @drasi-docs: table-sizing.tsx
+import type { CSSProperties } from 'react';
+import { DataTable, type ColumnDef, type TableHeight } from '@drasi/react/components';
+import '@drasi/react/styles.css';
+
+interface Job { id: string; priority: number }
+const rows: readonly Job[] = [{ id: 'dispatch', priority: 1 }];
+const columns: readonly ColumnDef<Job>[] = [
+  { key: 'id', label: 'Job' }, { key: 'priority', label: 'Priority' },
+];
+const responsiveHeight: TableHeight = 'var(--drasi-panel-height, 20rem)';
+const layout: CSSProperties & { '--drasi-panel-height': string } = {
+  '--drasi-panel-height': 'clamp(18rem, 50vh, 36rem)',
+};
+
+export function SizedJobs() {
+  return <section style={layout}>
+    <DataTable<Job>
+      rows={rows} columns={columns} rowKey={row => row.id}
+      title="Fixed-size jobs" height={400}
+    />
+    <DataTable<Job>
+      rows={rows} columns={columns} rowKey={row => row.id}
+      ariaLabel="Responsive jobs" height={responsiveHeight}
+    />
+  </section>;
+}
+```
+
+#### Modal
+
+`Modal` is a controlled, provider-free dialog primitive exported by
+`/components` and root. Import `styles.css`; no Drasi connection, table,
+Tailwind setup or domain-specific header/footer is required.
+
+| `ModalProps` prop | Default / contract |
+| --- | --- |
+| `open: boolean` | Required controlled visibility. The owner closes by setting `false` or unmounting. |
+| `onClose: () => void` | Required close request for a topmost Escape/outside dismissal. No event or boolean argument. Update `open`; ignoring the request leaves the modal open. Programmatic prop changes do not request another close. |
+| `title: string` | Required meaningful, nonempty accessible name, rendered as a visually hidden title connected by `aria-labelledby`. Empty/whitespace or non-string runtime values throw `TypeError`, even when closed. Render a visible heading in children when appropriate. |
+| `description?: string` | Optional short, visually hidden description connected by `aria-describedby`. Omit for complex structured content rather than flattening it into one announcement. |
+| `children: ReactNode` | Required app-owned content. Include a **visible, keyboard-operable close/cancel control** wired to the same owner. No close button is inserted for you. |
+| `initialFocusRef?: RefObject<HTMLElement>` | Valid focusable descendant to focus on opening; otherwise the dialog content itself receives focus. A target outside the content is not used. |
+| `returnFocusRef?: RefObject<HTMLElement>` | Preferred focus target after closing, subject to validity and any surviving top modal. |
+| `fallbackFocusRef?: RefObject<HTMLElement>` | App-owned fallback when the explicit return target and focused opening control are unavailable. |
+| `themeRef?: RefObject<HTMLElement>` | Explicit theme source; defaults to a hidden inline anchor at the modal's React position. Does not change the portal destination. |
+| `className?: string` | Replaces the optional default `drasi-modal-surface` decoration. Structural `drasi-modal-content` remains. |
+| `style?: CSSProperties` | Inline content styles. No default inline content override. |
+| `overlayClassName?: string` | Replaces the default centered/dimmed `drasi-modal-overlay` decoration. Structural `drasi-modal-layer` remains. |
+| `overlayStyle?: CSSProperties` | Inline overlay styles, applied after the copied theme. |
+| `closeOnEscape?: boolean` | `true`; Escape requests closing only the top layer. Setting `false` does not dismiss a lower modal instead. |
+| `closeOnOutsideClick?: boolean` | `true`; a primary pointer press outside the content requests closing. The pointer's default focus movement is prevented even when dismissal is disabled, retaining focus while a controlled close is pending or declined. Background controls remain shielded. |
+
+SSR and initial hydration render exactly one hidden inline theme anchor,
+preserved when the client layer loads. The public wrapper imports only React;
+the primitive and portal-theme layout effects stay in the client-only layer.
+After browser mount, that layer loads lazily; mounting a closed Modal also
+warms it. Only a ready, open layer acquires focus/scroll ownership. Closing or
+unmounting during loading cannot open a late overlay. Loading failures
+propagate to the owner's React error boundary rather than silently acting like
+a working dialog.
+
+The body portal has `role="dialog"` and `aria-modal="true"`. Pinned Radix
+Dialog **1.1.15** owns focus containment, the Tab/Shift+Tab loop, topmost
+dismissal, outside-pointer shielding, background `aria-hidden` management and
+reference-counted scroll locking across independent/nested instances. Do not
+add a competing document-level Escape handler, body-overflow toggle or global
+focus manager around it.
+
+Focus visibility is a separate, bounded scroll operation. When a non-root
+focused target is physically inside the dialog content, the client layer uses
+`scroll-into-view-if-needed` **3.1.0** with the owning overlay as its boundary,
+nearest block/inline alignment and `scrollMode: 'if-needed'`. Movement is
+**instant**, including with default animations enabled; it does not animate
+focus into view or wait for transition events. Root-content focus and events
+from a nested portal outside that content are excluded. Background scrolling
+must remain unchanged.
+
+The maintained helper handles scroll geometry, including transformed
+containers, instead of adding a custom focus or rectangle-calculation
+algorithm. Radix still owns focus movement, containment, restoration,
+dismissal and locks. The dependency cost is two additional locked runtime
+packages: the helper and `compute-scroll-into-view` **3.1.1**, both using public
+npm SHA512 artifacts. Their imports stay behind the client-only modal boundary,
+outside the `/client` and `/react` runtime/type graphs. Size evidence must
+include every emitted entry/shared/
+lazy chunk, not just the public wrapper; final byte measurements are separate
+from this dependency inventory.
+
+On close, focus restoration prefers a valid explicit `returnFocusRef`, then
+the element focused at opening, then `fallbackFocusRef`, then surviving top
+dialog content, then the document body. If another modal survives, targets
+outside that modal are not eligible. Disconnected, disabled, hidden, inert
+or otherwise unfocusable targets are not focused. Cleanup can restore focus
+on the primitive's deferred zero-delay task, not necessarily synchronously
+inside the owner's state update.
+
+Styling overrides are **not an accessibility opt-out**. Preserve modal
+positioning/stacking, content scrolling on small viewports, labels, focus
+visibility and usable close controls. The default surface is 32rem wide,
+bounded by the viewport; content height is bounded by
+`calc(100dvh - 2rem)` and scrolls when necessary.
+
+#### Scoped themes and portals
+
+The default palette is light. Defaults are `var()` **fallbacks at usage**,
+not global `:root` dark tokens or component-local assignments that shadow
+ancestor values. Set `--drasi-*` custom properties on a local wrapper to style
+one table/dialog subtree without changing unrelated hosts.
+
+| Token | Core fallback / use |
+| --- | --- |
+| `--drasi-color-surface` | `#fff`; table and sticky headings. |
+| `--drasi-color-dialog` | `#fff`; default modal surface. |
+| `--drasi-color-overlay` | `rgb(0 0 0 / 70%)`; default modal backdrop. |
+| `--drasi-color-border` | `#d1d5db`; table/header/modal borders. |
+| `--drasi-color-primary` | `#1d4ed8`; active sorting, loading, actions and neutral row flashes. |
+| `--drasi-color-success` | `#047857`; positive row flashes. |
+| `--drasi-color-danger` | `#b91c1c`; table error text and negative row flashes. |
+| `--drasi-color-text` | `#111827`; table/modal text. |
+| `--drasi-color-muted` | `#4b5563`; headings. |
+| `--drasi-color-subtle` | `#4b5563`; empty content, icons and small spinners. |
+| `--drasi-color-row-border` | `#e5e7eb`; row separators. |
+| `--drasi-color-row-hover` | `#f3f4f6`; row hover. |
+| `--drasi-color-action-hover` | `#e5e7eb`; action/icon hover. |
+| `--drasi-color-focus` | `#1d4ed8`; focus-visible outlines. |
+| `--drasi-table-height` | `400px`; omitted table height. |
+| `--drasi-radius` | `0.5rem`; table/default modal corners. |
+| `--drasi-line-height` | `1.5` for tables; `inherit` for modal content. A unitless value preserves proportional line height when child font sizes change. |
+
+Row-flash peaks use `color-mix(in srgb, <token> <percentage>, transparent)`:
+success/danger at **20%**, primary at **25%**. They no longer hard-code Trading
+colors. Trading explicitly supplies its original success/danger/primary
+values, retaining those flash colors and the default 500ms timing.
+
+`Modal` copies resolved `--drasi-*` values, including arbitrary locally
+defined prefixed tokens, and the source's font family, font size, font weight,
+line height and direction to its body portal. Known tokens absent at the source, including
+the overlay token, are reset in the portal so their usage fallbacks apply.
+The default source is its hidden inline anchor; `themeRef` selects another
+element. Ancestor attribute changes
+(including class/style), resize and preferred-color-scheme changes trigger a
+re-read. Arbitrary CSSOM edits or stylesheet replacement without one of those
+signals are **not automatically watched**: reopen the modal or change a theme
+source/ancestor attribute. This is theme propagation, not a global theme store.
+
+Typography copied from computed styles is not a reconstruction of the
+ancestor's CSS inheritance rules. In particular, a computed `24px` line height
+does not retain the proportional behavior of an original unitless `1.5` when
+descendant font sizes change. Set `--drasi-line-height: 1.5` on the theme source
+for that behavior. Trading sets this token explicitly on its own `body`;
+modal content uses the token when present and otherwise inherits, while tables
+retain their `1.5` fallback.
+
+`--drasi-color-code` is a legacy token copied for Trading's app-owned code
+viewer, not a generic component requirement. Its styles and dark palette live
+in the Trading app, not in the package. Custom colors/content still require
+contrast and focus-visibility review.
+
+This example needs no provider. Its modal uses the same scoped values as the
+table even though the dialog is portaled to `body`.
+
+```tsx
+// @drasi-docs: scoped-modal.tsx
+import { useRef, useState, type CSSProperties } from 'react';
+import { DataTable, Modal, type ColumnDef } from '@drasi/react/components';
+import '@drasi/react/styles.css';
+
+interface Delivery { id: string; parcels: number }
+type ScopedStyle = CSSProperties & Partial<Record<`--drasi-${string}`, string | number>>;
+const theme: ScopedStyle = {
+  fontFamily: 'system-ui, sans-serif',
+  '--drasi-color-surface': '#f8fafc',
+  '--drasi-color-dialog': '#f8fafc',
+  '--drasi-color-text': '#0f172a',
+  '--drasi-color-muted': '#334155',
+  '--drasi-color-border': '#94a3b8',
+  '--drasi-color-primary': '#075985',
+  '--drasi-color-focus': '#075985',
+  '--drasi-table-height': '20rem',
+};
+const columns: readonly ColumnDef<Delivery>[] = [
+  { key: 'id', label: 'Delivery' }, { key: 'parcels', label: 'Parcels' },
+];
+const rows: readonly Delivery[] = [{ id: 'north', parcels: 12 }];
+
+export function DeliveryPanel() {
+  const [open, setOpen] = useState(false);
+  const scope = useRef<HTMLElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const close = () => setOpen(false);
+  return <section ref={scope} style={theme}>
+    <h2 ref={heading} tabIndex={-1}>Dispatch desk</h2>
+    <DataTable<Delivery>
+      rows={rows} columns={columns} rowKey={row => row.id} title="Deliveries"
+    />
+    <button ref={trigger} type="button" onClick={() => setOpen(true)}>Delivery details</button>
+    <Modal
+      open={open} onClose={close} title="Delivery details"
+      description="Review the current dispatch count."
+      initialFocusRef={closeButton} returnFocusRef={trigger}
+      fallbackFocusRef={heading} themeRef={scope}
+    >
+      <h2>Delivery details</h2>
+      <p>North route: {rows[0].parcels} parcels.</p>
+      <button ref={closeButton} type="button" onClick={close}>Close details</button>
+    </Modal>
+  </section>;
+}
+```
+
+#### Reduced motion
+
+`useReducedMotion(): boolean` is exported by `/react` and root, with no
+component, Radix, React DOM or CSS dependency in the hook entrypoint. It
+subscribes to live `prefers-reduced-motion: reduce` changes. SSR and hosts
+without `matchMedia` report `false`; that SSR value is not a claim about the
+user's eventual preference.
+
+`useRowAnimation` automatically clears active timers, directions and restart
+tokens when reduced motion becomes active and keeps tracking the latest row baseline. DataTable
+also suppresses controlled `rowAnimations` and passes `null` animation to
+custom row renderers in this mode. The stylesheet disables package animations,
+transitions and smooth scrolling under the same media query. Rows, sorting,
+errors and live state updates never wait for a transition-end event.
+
+Custom application motion remains the application's responsibility. Trading
+keeps its default **350ms** FLIP expansion/collapse; reduced motion completes
+it immediately without animation frames or transition timers, including when
+the preference changes mid-transition. This does not delay query data updates.
+
+The following headless recipe imports no package UI or stylesheet:
+
+```tsx
+// @drasi-docs: reduced-motion.tsx
+import { useReducedMotion, useRowAnimation } from '@drasi/react/react';
+
+interface Delivery { id: string; parcels: number }
+const rowKey = (row: Delivery) => row.id;
+const getValue = (row: Delivery) => row.parcels;
+
+export function DeliveryCounts({ rows }: { rows: readonly Delivery[] }) {
+  const reducedMotion = useReducedMotion();
+  const { animations } = useRowAnimation({ data: rows, rowKey, getValue });
+  return <ul>{rows.map(row => <li
+    key={row.id}
+    style={{
+      transition: reducedMotion ? 'none' : 'background-color 150ms',
+      backgroundColor: reducedMotion || !animations.has(row.id) ? 'transparent' : '#e0f2fe',
+    }}
+  >{row.id}: {row.parcels} parcels</li>)}</ul>;
+}
+```
 
 ### Low-level clients
 
@@ -1004,8 +1346,10 @@ expose no HTTP status, even when the underlying cause is an auth failure.
 All entrypoints are safe to import/require without DOM/network activity.
 `DataTable` can server-render real non-Drasi rows and state slots **without a
 provider or browser/network globals**. Rendering providers and an initial
-QueryTable does not run effects or open streams. App-owned interactive portals
-require a browser DOM; open dialogs/fullscreen are not a package SSR feature.
+QueryTable does not run effects or open streams. `Modal`, whether `open` or
+closed, renders only one hidden inline theme anchor during SSR and initial
+hydration, with no body-portal content. Focus, scroll ownership and interactive portals require a browser
+DOM. `useReducedMotion` has a deterministic `false` server snapshot.
 A direct client can perform REST-only reads in Node with native/injected fetch,
 including auth, without React or EventSource. **Default live execution is
 browser-only**: missing EventSource produces `INVALID_CONFIGURATION`.
@@ -1014,13 +1358,16 @@ SSR is not a server-side live subscription or a preloaded query snapshot.
 Clean packed tests use DOM/network traps, ESM and CommonJS, NodeNext
 `.mts`/`.cts` and bundler resolution with `skipLibCheck: false`. Client-only
 tests omit peers and verify no React runtime or `@types/react` declaration graph;
-hooks do not load presentation/CSS. Marked runnable snippets in this README are
+hooks do not load presentation, Radix, React DOM or CSS. Marked runnable snippets in this README are
 extracted from the installed tarball and type-checked against its real exports.
 No source aliases or hidden React copies satisfy these contracts.
 
 ## Verified compatibility
 
 Claims are intentionally narrow, not open-ended minimum versions:
+the configurations below retain the exercised P1-P5 baseline. P6-specific
+current-head outcomes remain separately pending until recorded in its evidence
+section; adding a new component is not proof of every browser/AT combination.
 
 | Surface | Exercised configuration |
 | --- | --- |
@@ -1068,6 +1415,76 @@ Neither captures a shared cursor. These records and Part A's DTO fixture are
 unchanged, not relabeled as ABI 0.14 proof. Current SSE 0.3.7 needs its own live
 gate; native ABI compatibility alone does not establish wire semantics.
 
+## P6 / #164 Part B migration
+
+P6 completes the bounded presentation contracts on top of P5; it does not
+change P3/P4 connection, result, raw-key, retry or state-slot semantics.
+
+1. Replace the legacy height **class** prop: `height="h-[400px]"` becomes
+   `height={400}` or `height="400px"`. Earlier length-like strings were merely
+   added as class names and did not set a length. Move real classes to
+   `className`. Review `style.height` precedence and percentage parent sizing;
+   put `calc()`/`clamp()` in a custom property when using `height`.
+2. Keep a visible table `title`, or supply `ariaLabel`. Sorting uses a native
+   button inside each column header, not an interactive `<th>`; custom CSS and
+   automation should target the button for activation and the header for
+   `aria-sort`. Preserve the named viewport's native keyboard scroll stop,
+   action labels and focus-visible styling.
+3. Compose generic overlays with `Modal`/`ModalProps`. Supply controlled
+   `open`, `onClose`, a meaningful `title` and a visible close/cancel control.
+   Use typed focus refs rather than competing global key/focus/scroll handlers.
+   Replace optional surface/overlay decorations only when the app supplies
+   suitable positioning, scrolling, contrast and focus styles.
+4. Set scoped theme tokens explicitly. Default components are light, not
+   implicitly Trading-dark. Portals inherit from their inline source or
+   `themeRef`, subject to the documented refresh signals. Trading retains its
+   exact dark values on its own `body` and owns CodeViewer CSS.
+5. Use `useReducedMotion` for app-specific transitions. Automatic row animation
+   and controlled table animation maps already respect the preference; do not
+   add a second animation lifecycle or block data updates on transition events.
+6. Keep tutorial inspection, its asynchronous display/copy/retry/cancellation,
+   and fullscreen layout app-owned. Trading's narrow `BaseDialog` adapter uses
+   the same Modal; its CodeViewer uses app-only Radix Tabs **1.1.13**, with
+   ArrowLeft/ArrowRight/Home/End automatic selection, Enter/Space activation,
+   named tab/panel relationships and copy outside the tablist. These are not
+   package tutorial APIs.
+
+Trading's normal tables remain **400px**; fullscreen retains the **32px**
+inset and `calc(100vw - 64px)` / `calc(100vh - 64px)` bounds. All eleven
+queries, raw identity/projection rules, financial calculations, default-sort
+discrepancy, snippets and server-UI links remain app-owned and unchanged.
+P6 normally merges exact P5 `67c7a2fdea39f8fe13fd7f5394e17dd2543cb8ca` above
+quality head `bb071b0cf3ee4f509dd2834ecba488a27a26ef90`, retaining original P6
+and earlier ABI 0.13 history. The current development graph is described above;
+it requires this owning checkout's rebuilt-runtime proof, not a predecessor's
+binary. Bounded row tokens/phase, paired observations, complete-graph SSR,
+controls, original Trading design and strict legacy-contrast policy remain.
+P6's budgets have no P5-only allowance. The package stays private; no P7
+features, human acceptance or release permission are imported.
+
+### Accessibility evidence and remaining acceptance
+
+Automated rule scans (including axe), DOM/ARIA assertions, browser
+accessibility-tree inspection and real-browser keyboard tests provide distinct
+evidence; none is a human screen-reader review or universal browser/AT claim.
+P6 gate counts and artifact/coverage measurements are recorded in
+[Trading TESTING.md](../../examples/trading/TESTING.md#p6-presentation-contracts-and-evidence);
+the owning draft PR records exact-head CI outcomes.
+P1-P5 passes below and in that file remain historical, not proof of this layer.
+
+Generic/default-theme audits require zero violations. Trading deliberately
+retains its original colors: full-rule axe reports use a strictly bounded
+predecessor comparison to fail new/worsened findings by element, state,
+browser, colors and typography. The 19 recorded contrast element/state
+findings and incomplete checks remain visible. A passing non-regression gate
+is **not** a contrast-clean, WCAG-conformance or human AT result.
+
+No actual human assistive-technology review is available for P6. Human
+acceptance remains **pending**; use the reproducible
+[manual screen-reader checklist](../../examples/trading/TESTING.md#manual-screen-reader-checklist-pending)
+and record exact OS/browser/AT versions, date and outcomes. Development
+readiness after measured gates does not authorize merge, release or publication.
+
 ## P5 / #164 Part A migration
 
 Original P5 and ABI 0.13 history remains in [Trading TESTING.md](../../examples/trading/TESTING.md).
@@ -1099,16 +1516,18 @@ No rebase or P6/P7 feature import is involved.
    query composition, reuse `queryTableState` rather than treating every error
    as shared-connection failure.
 7. Share one query, sort controller and `useRowAnimation` tracker when rendering
-   two views of the same rows. Pass `rowAnimations` to both; it takes precedence
+   two views of the same rows. Pass `rowAnimations` to both, and for P6 repeated
+   highlights also share `rowAnimationRevisions`; the controlled state takes precedence
    over their local `animateOnChange`. Mount optional inspectors only on demand
    and unmount them on close. Retry an inspector-local read without restarting
    the live socket; when its error is the provider's same non-null error object,
    use the provider's shared connection retry instead.
 
-Keep the explicit CSS import. Existing CSS and the legacy `height` **class**
-contract are unchanged; P6 focus/overlay/theming/reduced-motion/height work is
-not completed by this migration. There is no new example app/Storybook (#165),
-backend protocol or publication change.
+Keep the explicit CSS import. At P5, existing CSS and the legacy `height`
+**class** contract were unchanged; P5 did not complete P6
+focus/overlay/theming/reduced-motion/height work. Apply the P6 migration above
+when moving past that historical boundary. There is no new example
+app/Storybook (#165), backend protocol or publication change.
 
 ## P4 / #163 Part B migration
 
@@ -1176,8 +1595,9 @@ semantics; the undetectable delayed-event limit above still applies.
 
 Vitest coverage includes all `src/**/*.{ts,tsx}` product code. It enforces
 **90% statements, lines and functions and 85% branches**, separately for
-`src/client/**` and `src/react/**`. These subtree floors do not replace the
-existing package/consumer gates or change artifact-size baselines.
+`src/client/**`, `src/react/**` and, starting in P6, `src/components/**`.
+No product-source exclusions are used to meet these floors. They do not
+replace the existing package/consumer gates or change artifact-size baselines.
 
 Trading continues to consume built local exports. Its unchanged query
 definitions, financial transforms, provisioning and tutorial snippets stay
@@ -1191,8 +1611,8 @@ preserved separately. The 2% future-growth policy and coverage floors do not
 change with this accounting correction.
 
 Keep `"private": true`. Publishing, repository transfer, credentials/workflows,
-new examples/Storybook (#165) and P6 focus/overlay/theming/reduced-motion/height
-completion remain separately authorized. P5 covers only #164 Part A composition.
+and new examples/Storybook (#165) remain separately authorized. P5 covers only
+#164 Part A composition; P6 adds the bounded presentation contracts above.
 These API/documentation contracts do not constitute an all-checks-passed or
 merge-readiness claim.
 

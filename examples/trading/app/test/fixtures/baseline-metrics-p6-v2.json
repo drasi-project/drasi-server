@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 2,
+  "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
+  "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
+  "artifactChange": {
+    "issue": 164,
+    "part": "B / P6",
+    "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
+    "reason": "P6 adds a client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal via scroll-into-view-if-needed 3.1.0, inherited portal themes, validated sizing, native sort/scroll semantics and live reduced motion. All entries/shared/lazy chunks are counted. Measured Trading JS grows by 52775 bytes (gzip 18611), including these maintained primitives and adapters; package ESM/CJS grow by 10723/12273 bytes, declarations by 3410 bytes, while package CSS shrinks by 1427 bytes after moving tutorial styles to Trading. The tarball includes the full new reference and executable recipes. Original Trading colors, all five original zero-diff PNG images, financial behavior, SDK/plugin pins, inherited coverage floors and the 2% future-growth policy remain unchanged. New component floors are enforced without product exclusions. Trading full-rule axe results use exact predecessor non-regression fingerprints, never a blanket contrast exclusion or zero-violation claim; human AT and preserved contrast findings remain open. See examples/trading/TESTING.md.",
+    "p5Change": {
+      "issue": 164,
+      "part": "A / P5",
+      "predecessor": "20561c13dd74929855dfbe605bb1fac23e5a49f4",
+      "reason": "P5 extracts provider-free DataTable, typed state/header/row composition and controlled sorting while moving tutorial/fullscreen code into Trading. Package ESM/CJS shrink across all entries/shared chunks; declarations grow by 2959 bytes for the new presentation, slot/error, sort and animation contracts. Trading JavaScript grows by 792 bytes and generated CSS by 605 bytes under its unchanged source-scanning config, now including the app-owned dialog/fullscreen modules. Package CSS remains exactly 10043 bytes. All 26 packed Linux browser scenarios and five original zero-diff PNG images passed before this measured artifact advance. Ten literal README recipes compile against the installed artifact. No dependencies, protocol, financial behavior, image baselines, coverage exclusions/floors or 2% future-growth policy were changed. P6 styling/accessibility work remains open. See examples/trading/TESTING.md."
+    },
+    "p4Change": {
+      "issue": 163,
+      "part": "B / P4",
+      "predecessor": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
+      "reason": "P4 replaces permissive result guessing with strict versioned normalization and an explicit legacy adapter; adds raw stable identity, before/after changes, bounded visible snapshot reconciliation, scoped state/retry and reactive guarded projections. Named declarations, executable migration docs and safe last-good-data UI account for the measured feature cost. All 26 packed Linux browser scenarios and all five original exact PNG images passed before this artifact baseline advance. All entrypoints/shared chunks remain counted. No dependency, CSS, PNG, coverage exclusion, original coverage floor or 2% policy relaxation; critical client/react coverage thresholds are now enforced. See examples/trading/TESTING.md."
+    },
+    "p3Change": {
+      "issue": 163,
+      "part": "A / P3",
+      "predecessor": "3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97",
+      "reason": "P3 added full read-DTO/JSON/link validation, auth/credential/cancellation policy, semantic provider reconfiguration, named generic types and real ESM/CJS/type entrypoints. Metrics count every shared chunk and entrypoint. Expanded contract/migration docs and CHANGELOG ship in the tarball."
+    },
+    "p2Change": {
+      "issue": 162,
+      "predecessor": "a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059",
+      "reason": "P2 added instance-scoped reference validation, named errors, bounded read-only retries, controlled React binding, and app-owned shared provisioning."
+    },
+    "p1Sizes": {
+      "packageTarball": 110691,
+      "packageEsm": 66865,
+      "packageCjs": 68860,
+      "packageTypes": 18746,
+      "packageCss": 10043,
+      "tradingJs": 223574,
+      "tradingJsGzip": 65775,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    },
+    "p2Sizes": {
+      "packageTarball": 125325,
+      "packageEsm": 72992,
+      "packageCjs": 75038,
+      "packageTypes": 21140,
+      "packageCss": 10043,
+      "tradingJs": 233695,
+      "tradingJsGzip": 69038,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    },
+    "p3Sizes": {
+      "packageTarball": 155916,
+      "packageEsm": 84754,
+      "packageCjs": 91229,
+      "packageTypes": 28121,
+      "packageCss": 10043,
+      "tradingJs": 240826,
+      "tradingJsGzip": 70541,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    },
+    "p4Sizes": {
+      "packageTarball": 187699,
+      "packageEsm": 98585,
+      "packageCjs": 106000,
+      "packageTypes": 34875,
+      "packageCss": 10043,
+      "tradingJs": 250892,
+      "tradingJsGzip": 73795,
+      "tradingCss": 21034,
+      "tradingCssGzip": 5163
+    },
+    "p5Sizes": {
+      "packageTarball": 169457,
+      "packageEsm": 78523,
+      "packageCjs": 85845,
+      "packageTypes": 37834,
+      "packageCss": 10043,
+      "tradingJs": 251684,
+      "tradingJsGzip": 74133,
+      "tradingCss": 21639,
+      "tradingCssGzip": 5212
+    },
+    "p3FinalCi": {
+      "revision": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
+      "run": "https://github.com/drasi-project/drasi-server/actions/runs/35436454291",
+      "sizes": {
+        "packageTarball": 155715,
+        "packageEsm": 84877,
+        "packageCjs": 91352,
+        "packageTypes": 28121,
+        "packageCss": 10043,
+        "tradingJs": 240901,
+        "tradingJsGzip": 70550,
+        "tradingCss": 21034,
+        "tradingCssGzip": 5163
+      }
+    }
+  },
+  "coverage": {
+    "package": {
+      "statements": 62.52,
+      "branches": 47.47,
+      "functions": 64.84,
+      "lines": 64.93
+    },
+    "trading": {
+      "statements": 83.79,
+      "branches": 74.52,
+      "functions": 82.01,
+      "lines": 84.83
+    }
+  },
+  "sizes": {
+    "packageTarball": 204840,
+    "packageEsm": 89246,
+    "packageCjs": 98118,
+    "packageTypes": 41244,
+    "packageCss": 8616,
+    "tradingJs": 304459,
+    "tradingJsGzip": 92744,
+    "tradingCss": 25266,
+    "tradingCssGzip": 5900
+  }
+}

@@ -91,6 +91,7 @@ function checkProviderFreeTables(api) {
     defaultSort: { column: 'parcels', direction: 'asc' },
     animateOnChange: 'parcels',
     rowAnimations: new Map([['south', 'up']]),
+    rowAnimationRevisions: new Map([['south', 2]]),
     headerActions: React.createElement('span', null, 'Dispatch desk'),
     headerControls: React.createElement('button', { type: 'button' }, 'Export'),
     headerSlot: React.createElement('p', null, 'App-supplied rows'),
@@ -117,6 +118,11 @@ function checkProviderFreeTables(api) {
   assert(html.indexOf('east delivery') < html.indexOf('north delivery'));
   assert(html.indexOf('north delivery') < html.indexOf('waiting delivery'));
   assert(html.includes('aria-sort="ascending"'));
+  assert(html.includes('aria-label="Warehouse deliveries"'));
+  assert.match(html, /<th(?=[^>]*scope="col")(?=[^>]*aria-sort="ascending")[^>]*><button type="button"[^>]*>/);
+  assert.equal((html.match(/class="drasi-query-table__sort-button"/g) ?? []).length, 2);
+  assert(!/<th\b[^>]*(?:role="button"|tabindex=)/i.test(html), 'Headings must not replace native sort buttons');
+  assert.match(html, /<th[^>]*scope="col"[^>]*><span class="drasi-visually-hidden">Actions<\/span><\/th>/);
   assert.match(html, /<td class="[^"]*drasi-align--left[^"]*">north<\/td>/);
   assert(html.includes('drasi-row--up'));
   assert(!html.includes('View code') && !html.includes('Expand table'));
@@ -132,6 +138,44 @@ function checkProviderFreeTables(api) {
   assert.deepEqual(rows.map(row => row.routeId), ['north', 'south', 'waiting', 'east']);
   assert.equal(notifications, 0, 'SSR/default/controlled props triggered a sort callback');
 
+  const named = render({
+    ariaLabel: 'Dispatch queue',
+    actions: [{ icon: 'Send', label: 'Dispatch delivery', onClick() {}, loading: () => true }],
+  });
+  assert(named.includes('aria-label="Dispatch queue"'));
+  assert(named.includes('aria-label="Dispatch delivery"'));
+  assert(named.includes('aria-busy="true"') && named.includes('disabled=""'));
+  const nonInteractive = render({
+    title: undefined, columns: [{ key: 'routeId', label: 'Route', sortable: false }],
+  });
+  assert(!nonInteractive.includes('<button'), 'The scroll-stop case must not rely on interactive cells');
+  for (const [markup, name] of [
+    [html, 'Warehouse deliveries'], [named, 'Dispatch queue'], [nonInteractive, 'Data'],
+  ]) {
+    const viewport = markup.match(/<div\b[^>]*role="region"[^>]*>/)?.[0];
+    assert(viewport, 'Table viewport must retain its region semantics');
+    assert(viewport.includes(`aria-label="${name} table viewport"`), 'Viewport naming precedence changed');
+    assert(viewport.includes('tabindex="0"'), 'Viewport must be focusable without sortable/action cells');
+  }
+  for (const [height, expected] of [
+    [400, '400px'], [0, '0px'], [12.5, '12.5px'],
+    ['20rem', '20rem'], ['75%', '75%'], ['0', '0'], ['auto', 'auto'],
+    ['var(--drasi-panel-height)', 'var(--drasi-panel-height)'],
+    ['var(--drasi-panel-height, 20rem)', 'var(--drasi-panel-height, 20rem)'],
+  ]) {
+    const sized = render({ height, style: { height: '2rem' } });
+    assert(sized.includes(`style="height:${expected}"`), `Height did not override inline height: ${String(height)}`);
+  }
+  assert(render({ style: { height: '17rem' } }).includes('style="height:17rem"'));
+  assert(!/<div[^>]*style="[^"]*height:/.test(render({})), 'Omitted height must retain the CSS token fallback');
+  for (const height of [
+    -1, NaN, Infinity, -Infinity, '-1px', '-20rem', 'h-[400px]', 'warehouse-height',
+    '', '400', 'calc(100vh - 64px)', 'clamp(10rem, 50vh, 40rem)',
+    'var(panel-height)', 'var(--panel-height, -2rem)', 'var(--panel-height, calc(100% - 2rem))',
+    null, true, {},
+  ]) {
+    assert.throws(() => render({ height }), TypeError, `Invalid height was accepted: ${String(height)}`);
+  }
   const mixed = [{ routeId: 'two', parcels: 2 }, { routeId: 'ten', parcels: 10 }, { routeId: 'text', parcels: '11' }];
   for (let index = 0; index < mixed.length; index++) {
     const mixedHtml = render({ rows: mixed.slice(index).concat(mixed.slice(0, index)), sort: { column: 'parcels', direction: 'asc' } });
@@ -189,6 +233,42 @@ function checkProviderFreeTables(api) {
   assert.deepEqual(accesses, [], 'Provider-free DataTable SSR touched browser/network globals');
 }
 
+function checkProviderFreeModal(api) {
+  assert.equal(typeof api.Modal, 'function');
+  let closeRequests = 0;
+  const children = React.createElement('button', { type: 'button' }, 'Visible close control');
+  for (const open of [false, true]) {
+    for (const overrides of [
+      {},
+      {
+        initialFocusRef: { current: null }, returnFocusRef: { current: null },
+        fallbackFocusRef: { current: null }, themeRef: { current: null },
+        className: 'warehouse-dialog', overlayClassName: 'warehouse-overlay',
+        style: { width: '24rem' }, overlayStyle: { padding: '1rem' },
+        closeOnEscape: false, closeOnOutsideClick: false,
+      },
+    ]) {
+      const html = server.renderToString(React.createElement(api.Modal, {
+        open, title: 'Warehouse details', description: 'Review current readings.',
+        onClose() { closeRequests += 1; },
+        ...overrides,
+      }, children));
+      assert.match(html, /^<span\b(?=[^>]* hidden="")(?=[^>]* data-drasi-modal-anchor="")[^>]*><\/span>$/,
+        'Modal SSR must contain only one hidden inline theme anchor');
+      for (const portalContent of ['role="dialog"', 'Warehouse details', 'Review current readings.', 'Visible close control']) {
+        assert(!html.includes(portalContent), `Modal portal content rendered without a DOM: ${portalContent}`);
+      }
+    }
+    for (const title of ['', '   ', null, undefined, 42]) {
+      assert.throws(() => server.renderToString(React.createElement(api.Modal, {
+        open, title, onClose() { closeRequests += 1; },
+      }, children)), TypeError, 'Modal accepted a missing, blank or non-string accessible name');
+    }
+  }
+  assert.equal(closeRequests, 0, 'SSR requested an implicit modal close');
+  assert.deepEqual(accesses, [], 'Provider-free open/closed Modal SSR touched browser/network globals');
+}
+
 try {
   const api = await load(specifier);
   assert.deepEqual(accesses, [], `${specifier} import touched browser/network globals`);
@@ -198,6 +278,9 @@ try {
       'accumulateResult', 'sse034ResultAdapter', 'createLegacyResultAdapter']) {
       assert.equal(typeof api[name], 'function', `Missing ${name} from client export`);
       assert.equal(api[name].name, name, `Public/debug client name changed: ${name}`);
+    }
+    for (const name of ['DataTable', 'QueryTable', 'Modal', 'useReducedMotion']) {
+      assert.equal(api[name], undefined, `React/UI API leaked through the client runtime: ${name}`);
     }
     const client = new api.DrasiClient(options);
     const sse = new api.DrasiSSEClient();
@@ -294,7 +377,10 @@ try {
         `Client import loaded React: ${file}`);
     }
   } else {
-    if (kind === 'components' || kind === 'root') checkProviderFreeTables(api);
+    if (kind === 'components' || kind === 'root') {
+      checkProviderFreeTables(api);
+      checkProviderFreeModal(api);
+    }
     const hooks = kind === 'components' ? await load('@drasi/react/react') : api;
     for (const name of [
       'DrasiProvider', 'useDrasiClient', 'useDrasiQuery', 'useDrasiConnectionStatus',
@@ -309,12 +395,20 @@ try {
       assert.equal(controlled.sort, null);
       assert.equal(typeof controlled.setSort, 'function');
       assert.equal(typeof controlled.toggleSort, 'function');
+      assert.equal(typeof hooks.useReducedMotion, 'function');
+      assert.equal(hooks.useReducedMotion(), false, 'Reduced motion must have a deterministic false SSR snapshot');
+      const animation = hooks.useRowAnimation({
+        data: Object.freeze([{ id: 'dispatch', priority: 1 }]),
+        rowKey: row => row.id, getValue: row => row.priority,
+      });
+      assert.equal(animation.animations.size, 0);
+      assert.equal(animation.revisions.size, 0);
       return React.createElement('span', null, 'provider-free sort controller');
     }
     assert(server.renderToString(React.createElement(HeadlessConsumer)).includes('provider-free sort controller'));
-    assert.deepEqual(accesses, [], 'Headless sort SSR touched browser/network globals');
+    assert.deepEqual(accesses, [], 'Headless sort/motion SSR touched browser/network globals');
     if (kind === 'react') {
-      for (const name of ['DataTable', 'QueryTable', 'queryTableState', 'CodeViewerDialog']) {
+      for (const name of ['DataTable', 'QueryTable', 'queryTableState', 'Modal', 'CodeViewerDialog']) {
         assert.equal(api[name], undefined, `Hooks runtime exports presentation: ${name}`);
       }
     } else {
@@ -391,7 +485,9 @@ try {
       assert.equal(typeof api.DrasiClient, 'function');
       assert.equal(typeof api.QueryTable, 'function');
       assert.equal(typeof api.DataTable, 'function');
+      assert.equal(typeof api.Modal, 'function');
       assert.equal(typeof api.useTableSort, 'function');
+      assert.equal(typeof api.useReducedMotion, 'function');
       assert.equal(typeof api.accumulateResult, 'function');
       assert.equal(typeof api.sse034ResultAdapter, 'function');
       assert.equal(typeof api.createLegacyResultAdapter, 'function');
@@ -410,8 +506,8 @@ try {
     assert.throws(() => import.meta.resolve(privatePath), error => error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED');
   }
   const proof = kind === 'client' ? 'idle construction; browser-free Node REST'
-    : kind === 'react' ? 'idle import; headless and provider SSR'
-      : 'provider-free supplied-row SSR; scoped query adapter and live-table SSR';
+    : kind === 'react' ? 'idle import; headless sort/motion and provider SSR'
+      : 'provider-free supplied-row and modal SSR; scoped query adapter and live-table SSR';
   console.log(`Packed ${specifier} ${format}: ${proof}; explicit CSS resolves`);
 } finally {
   for (const [name, descriptor] of originalGlobals) {

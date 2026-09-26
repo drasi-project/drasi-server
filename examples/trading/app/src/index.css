@@ -17,6 +17,23 @@ limitations under the License. */
 @tailwind utilities;
 
 body {
+  --drasi-color-surface: #131825;
+  --drasi-color-dialog: #1e2433;
+  --drasi-color-code: #0d1117;
+  --drasi-color-border: #1f2937;
+  --drasi-color-primary: #3b82f6;
+  --drasi-color-success: #10b981;
+  --drasi-color-danger: #ef4444;
+  --drasi-color-text: #e5e7eb;
+  --drasi-color-muted: #9ca3af;
+  --drasi-color-subtle: #6b7280;
+  --drasi-color-row-border: rgb(31 41 55 / 50%);
+  --drasi-color-row-hover: rgb(31 41 55 / 20%);
+  --drasi-color-action-hover: rgb(31 41 55 / 50%);
+  --drasi-color-focus: #93c5fd;
+  --drasi-table-height: 400px;
+  --drasi-radius: 0.5rem;
+  --drasi-line-height: 1.5;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -53,4 +70,17 @@ code {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
+}
+
+.trading-expanded-dialog {
+  overflow: hidden;
+}
+
+.trading-dialog-overlay {
+  align-items: safe center;
+}
+
+.trading-dialog {
+  max-height: none;
+  overflow: visible;
 }

@@ -169,16 +169,35 @@ test('retains P5 feature bytes separately from counting its already-shipped Comm
   ]);
   assert.equal(sizes.packageTypes, 75685);
   assert.deepEqual(current.coverage, historical.coverage);
+  assert.deepEqual(current.artifactChange.p5Sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
+});
+
+test('retains P6 feature bytes while counting both already-shipped declaration formats', async () => {
+  const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-v2.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(historical.schemaVersion, 2);
+  assert.equal(current.previousP6Measurement, 'baseline-metrics-p6-v2.json');
+  assert.equal(historical.sizes.packageTypes, 41244);
+  assert.equal(current.p6MeasurementChange.esmDeclarations, historical.sizes.packageTypes);
+  assert.equal(current.p6MeasurementChange.commonJsDeclarations, 41261);
+  const sizes = measurePackageFiles([
+    ...packageFiles.filter(file => !file.path.endsWith('.d.ts')),
+    { path: 'dist/types.d.ts', bytes: current.p6MeasurementChange.esmDeclarations },
+    { path: 'dist/types.d.cts', bytes: current.p6MeasurementChange.commonJsDeclarations },
+  ]);
+  assert.equal(sizes.packageTypes, 82505);
+  assert.deepEqual(current.coverage, historical.coverage);
   assert.deepEqual(current.sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
 });
 
-test('keeps all five original schema-2 records byte-identical', async () => {
+test('keeps all six original schema-2 records byte-identical', async () => {
   const hashes = {
     'baseline-metrics-v2.json': '11770739c8a262ebe3890be470f54dede21a0780675188e77aa4019429203bb3',
     'baseline-metrics-p2-v2.json': '48a764c44412023de17241b366364e753b696781ecbe094e5c72dbc97e8abc38',
     'baseline-metrics-p3-v2.json': '72413b925b27dbbac6c6e9a24a482813ce20bf58c6e5fd012bb75b6e59166dfa',
     'baseline-metrics-p4-v2.json': '4cd852a8dce5700130b73db15b94b0e41ef884e6231b004f509c8e768e8eeb73',
     'baseline-metrics-p5-v2.json': 'e48ad1d7d1fdd2b6410ac4b54e7bc841dd43c371a4558c3c64dc1fcd235337b2',
+    'baseline-metrics-p6-v2.json': '8ff7a240f83d55c926517afcd9865c9181eb40451e3fb476e211aab086834389',
   };
   for (const [name, expected] of Object.entries(hashes)) {
     const bytes = await readFile(new URL(`../fixtures/${name}`, import.meta.url));
@@ -217,8 +236,30 @@ test('counts nested Trading chunks and CSS without counting source maps as execu
 });
 
 async function p5Baseline() {
-  return JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  return JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p5-quality-v3.json', import.meta.url), 'utf8'));
 }
+
+test('preserves the reviewed P5 quality approval as byte-identical historical evidence', async () => {
+  const bytes = await readFile(new URL('../fixtures/baseline-metrics-p5-quality-v3.json', import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),
+    '5f87e41b72410779d0af2ef7564af95108ee1e0b90972d63b9425ebaa472102d');
+});
+
+test('keeps the distinct P6 baseline at 2% and rejects carrying over the P5 allowance', async () => {
+  const expected = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(expected.artifactChange.part, 'B / P6');
+  assert.equal(expected.approvedP5TradingJsGzipAllowance, undefined);
+  for (const [metric, bytes] of Object.entries(expected.sizes)) {
+    const sizes = { ...expected.sizes, [metric]: Math.floor(bytes * 1.02) };
+    assertBaseline({ coverage: expected.coverage, sizes }, expected);
+    assert.throws(() => assertBaseline({
+      coverage: expected.coverage, sizes: { ...sizes, [metric]: sizes[metric] + 1 },
+    }, expected), new RegExp(`${metric} grew more than 2%`));
+  }
+  expected.approvedP5TradingJsGzipAllowance = (await p5Baseline()).approvedP5TradingJsGzipAllowance;
+  assert.throws(() => assertBaseline({ coverage: expected.coverage, sizes: expected.sizes }, expected),
+    /applies only to its original recorded baseline/);
+});
 
 test('uses the actual-user-approved P5 allowance exactly once: 75725 passes, 75726 fails', async () => {
   const expected = await p5Baseline();

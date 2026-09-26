@@ -29,6 +29,7 @@ const CODE_SNIPPET = `<TradingQueryTable<PortfolioRow>
   queryId="portfolio-query"
   queryOptions={tradingQueryOptions('portfolio-query')}
   title="Portfolio"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
@@ -243,6 +244,7 @@ export const Portfolio: React.FC = () => {
       onClick={() => setDialogMode('add')}
       className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
       title="Add position"
+      aria-label="Add position"
     >
       <AddIcon />
     </button>
@@ -254,6 +256,7 @@ export const Portfolio: React.FC = () => {
         queryId="portfolio-query"
         queryOptions={tradingQueryOptions('portfolio-query')}
         title="Portfolio"
+        height={400}
         columns={columns}
         rowKey={portfolioRowKey}
         animateOnChange="currentPrice"

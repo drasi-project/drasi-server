@@ -264,8 +264,8 @@ The UI is built on a **standalone, reusable component package**,
 `dev-tools/react` directory but is completely independent of this example. The app
 consumes it exactly like an external dependency (`@drasi/react`). The package
 provides a single multiplexed SSE connection, React hooks for live query results,
-provider-free `DataTable` presentation, a headless sort controller and a small
-live `QueryTable` composition. Trading's local `TradingQueryTable` adds the
+provider-free `DataTable` presentation and `Modal`, headless sort/motion hooks
+and a small live `QueryTable` composition. Trading's local `TradingQueryTable` adds the
 demo's tutorial and fullscreen UI; those features are not package behavior.
 
 A component subscribes to a continuous query with the `useDrasiQuery` hook (or by
@@ -353,7 +353,10 @@ from this example so it can be reused in any Drasi application:
 | `useDrasiQuery` | Subscribe to a query; returns its accumulated, live result set |
 | `useDrasiConnectionStatus` | Track connection/reconnection state |
 | `useTableSort` / `useRowAnimation` | Headless sort and animation state shared by multiple presentations |
+| `useReducedMotion` | Live reduced-motion preference, with a false server-rendering snapshot |
 | `DataTable` | Provider-free presentation of readonly rows and app-owned state |
+| `Modal` / `ModalProps` | Controlled, provider-free dialog behavior; Trading supplies visible cards, forms and close controls |
+| `TableHeight` | Validated numeric/explicit-unit/token table sizes, not utility class names |
 | `QueryTable` / `queryTableState` | Small live table composition / pure query-to-presentation state adapter |
 | `DrasiClient` / `DrasiSSEClient` | Low-level orchestrator and SSE multiplexer |
 
@@ -367,8 +370,9 @@ declarations, and self-contained stylesheet.
 The app imports transport/types from `@drasi/react/client`, bindings from
 `@drasi/react/react`, and presentation from `@drasi/react/components`.
 The root remains a convenience export. Client-only consumers need no React
-runtime or React types; hooks do not load components, React DOM or CSS. Neither
-table imports CSS implicitly or contains tutorial/dialog implementations.
+runtime or React types; hooks do not load components, Radix, React DOM or CSS.
+The components/root entrypoints include Modal's pinned Radix Dialog dependency.
+Neither table imports CSS implicitly or contains tutorial/fullscreen behavior.
 All entrypoints ship real ESM/CommonJS and declaration artifacts. Trading
 retains React 18.3.1; React 19 is not claimed.
 
@@ -429,10 +433,91 @@ outside the reusable package.
 See the package's [P5 migration](../../dev-tools/react/README.md#p5--164-part-a-migration)
 and [composition recipes](../../dev-tools/react/README.md#app-owned-composition).
 This follows #207 at `20561c13dd74929855dfbe605bb1fac23e5a49f4` under tracker
-#161. Package CSS remains byte-for-byte unchanged, including the legacy
-dialog/fullscreen rules used here. P6 focus management, coordinated overlays,
-theming, reduced-motion and height completion remain separate; no new example
-app/Storybook (#165) or backend/protocol change is included.
+#161. At P5, package CSS remained byte-for-byte unchanged, including the
+legacy dialog/fullscreen rules used here. The P6 contract below supersedes
+that historical presentation boundary; no new example app/Storybook (#165)
+or backend/protocol change is included.
+
+#### Dialog, theme, sizing and motion contracts (P6 / #164 Part B)
+
+Fullscreen, the lazy CodeViewer and the narrow shared `BaseDialog` adapter use
+the same package `Modal`. Trading still owns the visible titles, cards, forms,
+actions and close/cancel controls; field labels are associated with inputs.
+Modal's required title supplies its accessible name, and its body portal
+provides focus containment, topmost Escape/outside dismissal, background
+pointer shielding and shared scroll ownership through pinned Radix Dialog
+**1.1.15**. Closing restores focus to an eligible return/opening/fallback
+target without escaping a surviving modal. Do not add competing document-level
+Escape listeners or body-overflow toggles to individual Trading dialogs.
+
+The shared adapter keeps `trading-dialog` cards at natural height with visible
+overflow, while the scrollable `trading-dialog-overlay` uses safe centering.
+This preserves the app-owned card rendering rather than adding a second card
+scrollbar. Small-height checks must still verify scrolling and visibility of
+keyboard-focused controls, including first/last-control wrapping. Modal's
+maintained geometry helper reveals an in-content focused control instantly
+only when needed, bounded to that dialog's overlay; default decorative motion
+does not make focus revelation animate or permit background-page scrolling.
+
+CodeViewer remains app-owned and mounts only while inspection is open.
+Definition reads, asynchronous display/copy updates, retry scopes and close
+cancellation are unchanged. App-only Radix Tabs **1.1.13** supplies a named
+tablist and linked tabs/panels, ArrowLeft/ArrowRight/Home/End automatic
+selection and Enter/Space activation. Copy is outside the tablist; tutorial
+snippets, formatting and server-UI links have not moved back into the package.
+
+Package components now default to light colors, with scoped `var()` fallbacks.
+Trading explicitly retains its exact dark values on `body` in
+`app/src/index.css`; `CodeViewerDialog.css` owns code-viewer presentation.
+Modal copies resolved local `--drasi-*` tokens and typography from its inline
+theme source into the body portal. Trading also sets
+`--drasi-line-height: 1.5` on `body`, preserving unitless proportions for
+differently sized titles, tabs and content. A copied computed pixel line
+height alone cannot preserve those proportions. See the package's
+[theme contract and refresh limits](../../dev-tools/react/README.md#scoped-themes-and-portals)
+before adding a custom wrapper. The generic package needs neither Tailwind
+nor source scanning; Trading's own utility classes remain app-specific.
+
+Tables and tutorial snippets use `height={400}`, not the old `h-[400px]`
+height class. The normal **400px** card, fullscreen **32px** inset and
+`calc(100vw - 64px)` / `calc(100vh - 64px)` bounds are retained. A length or
+custom-property reference is also valid; invalid runtime sizes throw instead
+of silently becoming classes. `height` overrides `style.height`; omitting it
+preserves inline height or the inherited token's 400px fallback.
+
+Sort buttons are native controls inside column headers, with `aria-sort` on
+the header and a table name from `ariaLabel` or `title`. Row actions retain
+names, disabled behavior and loading/busy state. Each table viewport is also a
+named, native focus stop for Arrow/PageUp/PageDown scrolling when content
+overflows; non-sortable tables without actions do not depend on interactive
+cells for keyboard access. Default **350ms** fullscreen
+motion is unchanged. Reduced motion suppresses automatic/controlled row
+animation and completes expansion/collapse immediately; changing preference
+mid-transition cancels/completes pending motion without delaying data updates.
+
+StockTicker's waiting and populated views both expose the named region
+**Live stock ticker**. This semantic region does not add `aria-live`
+announcements or change its existing animation, data handling or pixels.
+
+All eleven queries, raw keys, financial transforms, provisioning, sorting
+defaults and the documented market-mover discrepancy remain frozen. The five
+original visual PNG images remain the unchanged compatibility expectations,
+not replacements for accessibility evidence. The package remains private.
+The original P6 feature kept its predecessor's runtime pins; the approved
+normal parent integration now inherits server 0.2.3, registry library 0.9.1,
+host SDK 0.11.0 and the signed SSE 0.3.6 / native ABI 0.13 plugin set.
+This does not change the presentation, query, result or no-cursor guarantees.
+
+See the [P6 migration and executable recipes](../../dev-tools/react/README.md#p6--164-part-b-migration)
+and [P6 evidence/checklist](TESTING.md#p6-presentation-contracts-and-evidence).
+The linked evidence records measured gates; the owning draft PR records
+exact-head CI. Full-rule Trading axe checks reject new/worsened findings
+against exact predecessor fingerprints without changing original colors or
+hiding retained violations/incomplete checks. Generic controls still require
+zero violations. This is non-regression, not contrast-clean status. Automated
+axe, DOM/ARIA, accessibility-tree and keyboard checks do **not** establish a
+human screen-reader pass. Actual human AT acceptance remains pending;
+development readiness is not merge/release permission.
 
 #### Result identity and recovery (#163 Part B)
 

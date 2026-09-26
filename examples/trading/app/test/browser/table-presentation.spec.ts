@@ -5,8 +5,9 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 import { build } from 'vite';
@@ -15,7 +16,8 @@ import type { ContractRow } from './table-contract-view';
 const app = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 let client: string;
-let server: string;
+let serverEntry: string;
+let serverDirectory: string | undefined;
 let css: string;
 
 test.use({ locale: 'sv-SE' });
@@ -40,16 +42,34 @@ async function fixtureBundle(entry: string, ssr: boolean): Promise<string> {
     },
   });
   assert(!Array.isArray(result) && 'output' in result, 'Expected a single in-memory test bundle');
-  const chunk = result.output.find(item => item.type === 'chunk' && item.isEntry);
+  const entries = result.output.filter(item => item.type === 'chunk' && item.isEntry);
+  assert.equal(entries.length, 1, 'Expected one fixture entry');
+  const chunk = entries[0];
   assert(chunk?.type === 'chunk');
-  assert.equal(result.output.filter(item => item.type === 'chunk').length, 1);
-  return chunk.code;
+  if (!ssr) {
+    assert.equal(result.output.filter(item => item.type === 'chunk').length, 1);
+    return chunk.code;
+  }
+  // P6 retains a lazy client-only modal chunk; execute Node's real module graph.
+  await mkdir(join(app, '.test-runtime'), { recursive: true });
+  serverDirectory = await mkdtemp(join(app, '.test-runtime/table-ssr-'));
+  for (const output of result.output) {
+    const file = resolve(serverDirectory, output.fileName);
+    assert(file.startsWith(`${serverDirectory}${sep}`), 'Fixture output escaped its owned directory');
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, output.type === 'chunk' ? output.code : output.source);
+  }
+  return join(serverDirectory, chunk.fileName);
 }
 
 test.beforeAll(async () => {
   client = await fixtureBundle('table-contract-client.tsx', false);
-  server = await fixtureBundle('table-contract-ssr.ts', true);
+  serverEntry = await fixtureBundle('table-contract-ssr.ts', true);
   css = await readFile(require.resolve('@drasi/react/styles.css'), 'utf8');
+});
+
+test.afterAll(async () => {
+  if (serverDirectory) await rm(serverDirectory, { recursive: true, force: true });
 });
 
 async function prepare(page: Page, html = '') {
@@ -66,11 +86,8 @@ async function prepare(page: Page, html = '') {
 }
 
 test('real en-US SSR hydrates in a Swedish browser without replacing rows or reporting mismatches', async ({ page }) => {
-  const rendered = JSON.parse(execFileSync(process.execPath, [
-    '--input-type=module',
-  ], {
+  const rendered = JSON.parse(execFileSync(process.execPath, [serverEntry], {
     cwd: app,
-    input: server,
     env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', NODE_ENV: 'development' },
     encoding: 'utf8',
   }));
@@ -119,7 +136,7 @@ test('mixed-value sorting is independent of rotations with stable row nodes and 
     await expect(page.locator('th').filter({ hasText: /^Value$/ })).toHaveAttribute('aria-sort', 'ascending');
     expect(await original.evaluate(element => element.isConnected)).toBe(true);
   }
-  await page.locator('th').filter({ hasText: /^Value$/ }).press('Enter');
+  await page.getByRole('button', { name: 'Value', exact: true }).press('Enter');
   await expect(page.locator('tbody tr td:first-child')).toHaveText(['text', 'ten', 'two']);
   await expect(page.locator('th').filter({ hasText: /^Value$/ })).toHaveAttribute('aria-sort', 'descending');
   expect(diagnostics).toEqual([]);
