@@ -1,0 +1,192 @@
+// Copyright 2026 The Drasi Authors.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+import {
+  DrasiClient,
+  DrasiError,
+  type DrasiClientOptions,
+  type ConnectionStatus,
+  type DrasiErrorCode,
+  type DrasiErrorDetails,
+  type ReactionReference,
+  type QueryConfig,
+  type ReactionConfig,
+  type Component,
+  type ResultRow,
+  type QueryResult,
+} from '@drasi/react/client';
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Assert<T extends true> = T;
+export type DefaultRowIsUnknownRecord = Assert<Equal<ResultRow, Record<string, unknown>>>;
+export type DefaultResultIsUnknownRecord = Assert<Equal<QueryResult['data'][number], Record<string, unknown>>>;
+
+interface Temperature {
+  stationId: string;
+  celsius: number;
+}
+
+interface Delivery {
+  routeId: string;
+  parcels: number;
+  delayed: boolean;
+}
+
+const reaction: ReactionReference = { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' };
+export const options: DrasiClientOptions = {
+  serverUrl: 'https://drasi.example',
+  instanceId: 'warehouse-west',
+  queryIds: ['temperatures', 'deliveries'],
+  reaction,
+  credentials: 'include',
+  headers: { 'X-Consumer': 'packed-contract' },
+  routeUnidentified(rows, deliver) {
+    const input: ResultRow[] = rows;
+    deliver('temperatures', input);
+    // @ts-expect-error Unidentified wire values must be narrowed.
+    rows[0].stationId.toUpperCase();
+    // @ts-expect-error Primitive values are not result rows.
+    deliver('temperatures', [42]);
+  },
+};
+
+export const headerObject: DrasiClientOptions = { ...options, headers: new Headers({ Accept: 'application/json' }) };
+export const headerPairs: DrasiClientOptions = { ...options, headers: [['X-Consumer', 'packed-contract']] };
+export const sameOrigin: DrasiClientOptions = { ...options, credentials: 'same-origin' };
+export const omitCredentials: DrasiClientOptions = { ...options, credentials: 'omit' };
+export const freshHeaders: DrasiClientOptions = {
+  ...options,
+  async headers(context) {
+    const signal: AbortSignal = context.signal;
+    const transport: 'rest' | 'sse' = context.transport;
+    const url: string = context.url;
+    // @ts-expect-error Request context does not expose arbitrary transport fields.
+    context.defaultInstance;
+    signal.throwIfAborted();
+    return { 'X-Transport': transport, 'X-Endpoint': url };
+  },
+  eventSourceFactory(url, transport) {
+    const endpoint: string = url;
+    const headers: Headers = transport.headers;
+    const credentials: RequestCredentials = transport.credentials;
+    const signal: AbortSignal = transport.signal;
+    // @ts-expect-error SSE credentials are typed, not an unstructured value.
+    const secret: number = transport.credentials;
+    void [endpoint, headers, credentials, signal, secret];
+    return { onopen: null, onmessage: null, onerror: null, addEventListener() {}, close() {} };
+  },
+};
+
+// @ts-expect-error Instance identity is mandatory; there is no implicit default instance.
+export const missingInstance: DrasiClientOptions = { serverUrl: options.serverUrl, queryIds: options.queryIds, reaction };
+// @ts-expect-error Resource definitions are not connection options.
+export const queryDefinitions: DrasiClientOptions = { ...options, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n', sources: [] }] };
+// @ts-expect-error Source deployment is app-owned.
+export const sourceDefinitions: DrasiClientOptions = { ...options, sources: [{ id: 'sensors', kind: 'http' }] };
+// @ts-expect-error Reaction deployment is app-owned.
+export const reactionDefinitions: DrasiClientOptions = { ...options, reactions: [{ id: 'warehouse-events', kind: 'sse', port: 9000 }] };
+// @ts-expect-error A default instance cannot be supplied as an alternative to an explicit reference.
+export const defaultInstance: DrasiClientOptions = { ...options, defaultInstance: true };
+// @ts-expect-error A browser-reachable endpoint is required, not server bind settings.
+export const bindPort: ReactionReference = { id: 'warehouse-events', port: 9000 };
+// @ts-expect-error Credentials use the fetch credentials union, not arbitrary strings.
+export const badCredentials: DrasiClientOptions = { ...options, credentials: 'always' };
+// @ts-expect-error Header values are strings, not numbers.
+export const badHeaders: DrasiClientOptions = { ...options, headers: { 'X-Consumer': 42 } };
+// @ts-expect-error Header providers must return HeadersInit or a promise of HeadersInit.
+export const badHeadersProvider: DrasiClientOptions = { ...options, headers: async () => 42 };
+// @ts-expect-error Reaction references do not carry desired server-side configuration.
+export const reactionDeployment: ReactionReference = { ...reaction, kind: 'sse', queries: ['temperatures'] };
+
+const queryConfig: QueryConfig = {
+  id: 'temperatures',
+  query: 'MATCH (s:Station) RETURN s.stationId AS stationId, s.celsius AS celsius',
+  queryLanguage: 'Cypher',
+  sources: [{ sourceId: 'sensors', nodes: ['Station'], relations: [], pipeline: [] }],
+  autoStart: false,
+  middleware: [],
+  enableBootstrap: true,
+  bootstrapBufferSize: 100,
+  outboxCapacity: 100,
+  bootstrapTimeoutSecs: 30,
+};
+const reactionConfig: ReactionConfig = { id: reaction.id, kind: 'sse', queries: ['temperatures'], port: 9000 };
+const queryPath = '/api/v1/instances/warehouse-west/queries/temperatures';
+const reactionPath = '/api/v1/instances/warehouse-west/reactions/warehouse-events';
+export const query: Component<QueryConfig> = {
+  id: queryConfig.id, status: 'Running', config: queryConfig,
+  links: { self: queryPath, full: `${queryPath}?view=full` },
+};
+export const events: Component<ReactionConfig> = {
+  id: reaction.id, status: 'Running', config: reactionConfig,
+  links: { self: reactionPath, full: `${reactionPath}?view=full` },
+};
+// @ts-expect-error Read DTO language fields remain typed.
+export const badQuery: QueryConfig = { ...queryConfig, queryLanguage: 'SQL' };
+// @ts-expect-error Component status is the server's finite status union.
+export const badStatus: Component<QueryConfig> = { ...query, status: 'Ready' };
+// @ts-expect-error Flattened plugin values are unknown until narrowed.
+export const unsafePort: number = reactionConfig.port;
+
+export const details: DrasiErrorDetails = {
+  instanceId: options.instanceId, resourceKind: 'query', resourceId: 'temperatures',
+  status: 404, resourceStatus: 'Stopped',
+};
+export const code: DrasiErrorCode = 'QUERY_NOT_FOUND';
+export const failure = new DrasiError(code, details);
+export const connection: ConnectionStatus = { connected: false, reconnecting: false, error: failure };
+const retryable: boolean = failure.retryable;
+const status: number | undefined = failure.status;
+const resourceId: string | undefined = failure.resourceId;
+void [retryable, status, resourceId, connection];
+// @ts-expect-error Error discriminants cannot be arbitrary strings.
+export const badCode: DrasiErrorCode = 'UNKNOWN_ERROR';
+// @ts-expect-error HTTP status is numeric.
+export const badDetails: DrasiErrorDetails = { ...details, status: '404' };
+// @ts-expect-error Only typed resource kinds are accepted.
+export const badKind: DrasiErrorDetails = { resourceKind: 'table' };
+// @ts-expect-error Error details do not accept unstructured secret/raw-response fields.
+export const rawError: DrasiErrorDetails = { ...details, responseBody: 'untrusted body' };
+// @ts-expect-error Connection failures are structured Drasi errors.
+export const badConnection: ConnectionStatus = { connected: false, error: 'offline' };
+
+export async function typedClientCallbacks(client: DrasiClient) {
+  const untypedRows: ResultRow[] = await client.getQueryResults('temperatures');
+  // @ts-expect-error Default REST values cannot be consumed as known numbers.
+  const unsafeNumber: number = untypedRows[0].celsius;
+  // @ts-expect-error A transport read cannot establish an application's row schema.
+  const temperatures: Temperature[] = await client.getQueryResults('temperatures');
+  const unsubscribe = client.subscribe('temperatures', result => {
+    const wire: QueryResult = result;
+    const raw: ResultRow[] = result.data;
+    // @ts-expect-error Default subscription values are unknown, not any.
+    result.data[0].celsius.toFixed(1);
+    void [wire, raw];
+  }, error => {
+    const errorCode: DrasiErrorCode = error.code;
+    // @ts-expect-error Typed error callbacks do not expose arbitrary properties.
+    error.serverSecret;
+    void errorCode;
+  });
+  void [unsafeNumber, temperatures];
+  return unsubscribe;
+}
+
+export function typedBatches(temperatures: QueryResult<Temperature>, deliveries: QueryResult<Delivery>) {
+  const celsius: number = temperatures.data[0].celsius;
+  const parcels: number = deliveries.data[0].parcels;
+  // @ts-expect-error Generic batches keep distinct non-Trading row models separate.
+  const crossed: QueryResult<Delivery> = temperatures;
+  // @ts-expect-error Generic rows do not expose the other domain's properties.
+  temperatures.data[0].routeId;
+  void [celsius, parcels, crossed];
+}
+
+export const batch: QueryResult<Delivery> = {
+  queryId: 'deliveries', timestamp: 1, snapshot: true,
+  data: [{ routeId: 'north', parcels: 7, delayed: false }],
+};
+// @ts-expect-error Package source is not a public type-resolution escape hatch.
+import type { DrasiClientOptions as PrivateOptions } from '@drasi/react/src/client/DrasiClient';

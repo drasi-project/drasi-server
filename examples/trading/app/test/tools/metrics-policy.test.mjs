@@ -40,6 +40,26 @@ test('rejects missing mandatory metrics rather than passing a partial measuremen
   assert.throws(() => assertBaseline({ ...baseline, sizes: {} }, baseline), /Artifact metric set changed/);
 });
 
+test('measures all P3 entrypoints and shared chunks including both declaration formats, but not maps', () => {
+  const files = {
+    'package/dist/index.js': 2, 'package/dist/client/index.js': 3, 'package/dist/chunk-client.js': 500,
+    'package/dist/index.cjs': 4, 'package/dist/react/index.cjs': 5, 'package/dist/chunk-react.cjs': 600,
+    'package/dist/index.d.ts': 6, 'package/dist/client/index.d.ts': 7, 'package/dist/types-shared.d.ts': 700,
+    'package/dist/index.d.cts': 1000, 'package/dist/index.js.map': 1000, 'package/README.md': 1000,
+    'package/styles.css': 13,
+  };
+  assert.deepEqual(measurePackageModules(Object.keys(files), path => files[path]), {
+    packageEsm: 505, packageCjs: 609, packageTypes: 1713, packageCss: 13,
+  });
+});
+
+test('does not accept an artifact missing any mandatory runtime or declaration format', () => {
+  for (const missing of ['.js', '.cjs', '.d.ts', '.css']) {
+    const files = ['.js', '.cjs', '.d.ts', '.css'].filter(suffix => suffix !== missing).map(suffix => `package/dist/index${suffix}`);
+    assert.throws(() => measurePackageModules(files, () => 1), /Missing packed/);
+  }
+});
+
 const packageFiles = [
   { path: 'dist/index.js', bytes: 1000 },
   { path: 'dist/index.cjs', bytes: 1000 },
@@ -97,6 +117,22 @@ test('rejects a secondary chunk exceeding the same 2% budget even when index is 
     sizes: measurePackageFiles([...packageFiles, { path: 'dist/chunks/added.js', bytes: 21 }]),
   };
   assert.throws(() => assertBaseline(observed, expected), /packageEsm grew more than 2%/);
+});
+
+test('retains the P3 schema-2 record while counting its separately shipped CommonJS declarations', async () => {
+  const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p3-v2.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(historical.schemaVersion, 2);
+  assert.equal(historical.sizes.packageTypes, 28121);
+  assert.equal(current.p3MeasurementChange.esmDeclarations, historical.sizes.packageTypes);
+  assert.equal(current.p3MeasurementChange.commonJsDeclarations, 28135);
+  const sizes = measurePackageFiles([
+    ...packageFiles.filter(file => !file.path.endsWith('.d.ts')),
+    { path: 'dist/types.d.ts', bytes: current.p3MeasurementChange.esmDeclarations },
+    { path: 'dist/types.d.cts', bytes: current.p3MeasurementChange.commonJsDeclarations },
+  ]);
+  assert.equal(sizes.packageTypes, 56256);
+  assert.deepEqual(current.coverage, historical.coverage);
 });
 
 test('rejects missing formats, duplicate files and invalid packed measurements', () => {

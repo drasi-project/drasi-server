@@ -1,0 +1,139 @@
+// Copyright 2026 The Drasi Authors.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+import { createElement, type ReactNode } from 'react';
+import {
+  QueryTable,
+  type ColumnDef,
+  type RowAction,
+  type SortConfig,
+  type QueryTableProps,
+} from '@drasi/react/components';
+import type {
+  DrasiClientOptions, ConnectionStatus, DrasiErrorCode, DrasiErrorDetails,
+  ReactionReference, QueryConfig, ReactionConfig, Component, ResultRow, QueryResult,
+} from '@drasi/react/client';
+import type {
+  UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult,
+  DrasiProviderProps, DrasiContextValue,
+} from '@drasi/react/react';
+import * as Root from '@drasi/react';
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Assert<T extends true> = T;
+
+// Root compatibility must expose the very same contracts, not weaker aliases.
+export type RootOptions = Assert<Equal<Root.DrasiClientOptions, DrasiClientOptions>>;
+export type RootStatus = Assert<Equal<Root.ConnectionStatus, ConnectionStatus>>;
+export type RootCode = Assert<Equal<Root.DrasiErrorCode, DrasiErrorCode>>;
+export type RootDetails = Assert<Equal<Root.DrasiErrorDetails, DrasiErrorDetails>>;
+export type RootReaction = Assert<Equal<Root.ReactionReference, ReactionReference>>;
+export type RootQueryConfig = Assert<Equal<Root.QueryConfig, QueryConfig>>;
+export type RootReactionConfig = Assert<Equal<Root.ReactionConfig, ReactionConfig>>;
+export type RootComponent = Assert<Equal<Root.Component<QueryConfig>, Component<QueryConfig>>>;
+export type RootRow = Assert<Equal<Root.ResultRow, ResultRow>>;
+export type RootResult = Assert<Equal<Root.QueryResult, QueryResult>>;
+export type RootHookOptions = Assert<Equal<Root.UseDrasiQueryOptions, UseDrasiQueryOptions>>;
+export type RootHookResult = Assert<Equal<Root.UseDrasiQueryResult, UseDrasiQueryResult>>;
+export type RootDefinitionResult = Assert<Equal<Root.UseDrasiQueryDefinitionResult, UseDrasiQueryDefinitionResult>>;
+export type RootProvider = Assert<Equal<Root.DrasiProviderProps, DrasiProviderProps>>;
+export type RootContext = Assert<Equal<Root.DrasiContextValue, DrasiContextValue>>;
+export type RootColumn = Assert<Equal<Root.ColumnDef<Temperature>, ColumnDef<Temperature>>>;
+export type RootAction = Assert<Equal<Root.RowAction<Temperature>, RowAction<Temperature>>>;
+export type RootSort = Assert<Equal<Root.SortConfig, SortConfig>>;
+export type RootTable = Assert<Equal<Root.QueryTableProps<Temperature>, QueryTableProps<Temperature>>>;
+
+interface Temperature {
+  stationId: string;
+  celsius: number;
+}
+
+interface Delivery {
+  routeId: string;
+  parcels: number;
+}
+
+export const columns: ColumnDef<Temperature>[] = [{
+  key: 'celsius', label: 'Temperature', align: 'right', sortable: true,
+  format(value, row) {
+    const degrees: number = row.celsius;
+    const cell: unknown = value;
+    // @ts-expect-error Computed/untyped cell values require narrowing.
+    value.toFixed(1);
+    // @ts-expect-error Format callbacks receive their declared row, not another domain's row.
+    row.parcels;
+    return `${degrees}: ${typeof cell === 'number' ? cell.toFixed(1) : 'unknown'}`;
+  },
+  className(value, row) {
+    const station: string = row.stationId;
+    // @ts-expect-error Class callbacks cannot assume the cell's runtime type.
+    const hot: number = value;
+    void hot;
+    return station && typeof value === 'number' && value > 30 ? 'hot' : 'normal';
+  },
+}];
+
+export const computed: ColumnDef<Temperature> = {
+  key: 'display-temperature', label: 'Display', format: (_value, row) => `${row.celsius} C`,
+};
+export const actions: RowAction<Temperature>[] = [{
+  icon: null, label: 'Inspect',
+  onClick(row) {
+    const station: string = row.stationId;
+    // @ts-expect-error Action callbacks preserve their declared row model.
+    row.routeId;
+    void station;
+  },
+  disabled: row => row.celsius < -273,
+  loading: row => row.stationId === 'pending',
+}];
+export const sort: SortConfig = { column: 'celsius', direction: 'desc' };
+// @ts-expect-error Sort direction is a closed union.
+export const invalidSort: SortConfig = { column: 'celsius', direction: 'down' };
+// @ts-expect-error Column format must return renderable content.
+export const invalidFormatter: ColumnDef<Temperature> = { key: 'celsius', label: 'Temperature', format: () => ({ invalid: true }) };
+// @ts-expect-error Row action predicates must return boolean.
+export const invalidAction: RowAction<Temperature> = { icon: null, label: 'Inspect', onClick() {}, disabled: row => row.stationId };
+
+export const table: QueryTableProps<Temperature> = {
+  queryId: 'temperatures', columns, actions, defaultSort: sort,
+  rowKey: row => row.stationId,
+  animateOnChange: 'celsius',
+  rowClassName(row, index) {
+    const degrees: number = row.celsius;
+    const position: number = index;
+    // @ts-expect-error Table callbacks do not lose their row generic.
+    row.parcels;
+    return degrees > 30 && position === 0 ? 'first-hot' : '';
+  },
+  onSortChange(next) {
+    const value: SortConfig = next;
+    // @ts-expect-error Sort callbacks retain their direction union.
+    const impossible: 'down' = next.direction;
+    void [value, impossible];
+  },
+  renderRow(row, definitions, animation, defaultRender) {
+    const station: string = row.stationId;
+    const ownColumns: ColumnDef<Temperature>[] = definitions;
+    const rendered: ReactNode = defaultRender();
+    void [station, ownColumns, animation];
+    return rendered;
+  },
+};
+export const deliveryTable: QueryTableProps<Delivery> = {
+  queryId: 'deliveries',
+  columns: [{ key: 'parcels', label: 'Parcels', format: (_value, row) => row.parcels.toFixed(0) }],
+  rowKey: row => row.routeId,
+  actions: [{ icon: null, label: 'Dispatch', onClick: row => { row.parcels.toFixed(0); } }],
+};
+// @ts-expect-error A table cannot accidentally use callbacks for another row model.
+export const crossedTables: QueryTableProps<Delivery> = table;
+// @ts-expect-error Animation keys must be real row properties.
+export const badAnimation: QueryTableProps<Temperature> = { ...table, animateOnChange: 'parcels' };
+// @ts-expect-error Table props do not deploy queries.
+export const tableDeployment: QueryTableProps<Temperature> = { ...table, queries: [{ query: 'MATCH (n) RETURN n' }] };
+
+export const rendered = createElement(QueryTable<Temperature>, table);
+export const rootRendered = createElement(Root.QueryTable<Delivery>, deliveryTable);

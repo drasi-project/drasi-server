@@ -1,9 +1,5 @@
 {
-  "schemaVersion": 3,
-  "previousMeasurement": "baseline-metrics-v2.json",
-  "previousP2Measurement": "baseline-metrics-p2-v2.json",
-  "previousP3Measurement": "baseline-metrics-p3-v2.json",
-  "artifactScope": "All package dist JS/CJS/declaration entries and chunks, all packaged CSS, and all recursive Trading JS/CSS assets; maps remain included in the tarball total",
+  "schemaVersion": 2,
   "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "artifactChange": {
@@ -20,7 +16,7 @@
       "packageTarball": 110691,
       "packageEsm": 66865,
       "packageCjs": 68860,
-      "packageTypes": 37492,
+      "packageTypes": 18746,
       "packageCss": 10043,
       "tradingJs": 223574,
       "tradingJsGzip": 65775,
@@ -31,27 +27,13 @@
       "packageTarball": 125325,
       "packageEsm": 72992,
       "packageCjs": 75038,
-      "packageTypes": 42280,
+      "packageTypes": 21140,
       "packageCss": 10043,
       "tradingJs": 233695,
       "tradingJsGzip": 69038,
       "tradingCss": 21034,
       "tradingCssGzip": 5163
     }
-  },
-  "measurementChange": {
-    "parent": "e361d1c3369e83213f0bb164ab2be66569ea7e18",
-    "reason": "Count the already-shipped index.d.cts as well as index.d.ts for both P1 and P2, retaining their original version-2 records. This changes accounting, not artifacts, coverage floors or the 2% growth policy.",
-    "p1TarballSha256": "f85eae9c85c50b1af98474d1b0524dc12b5ed9e780cf1c5500b4ef7fbad733f0",
-    "p2TarballSha256": "ee28948165c33c762d3d7fb3ff6e086bda553fe60fd5c12b0499bc7918745140"
-  },
-  "p3MeasurementChange": {
-    "parent": "f8e06c3415d5190f71b2f9ad3e294b7fe2d8c467",
-    "originalP3Head": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
-    "p3TarballSha256": "4d636b2cd77d49bd6c2d1d32aed4cee7e91bd8cc2f94f60ad81c644f1919a0af",
-    "reason": "Retain P3 entrypoint/shared-chunk accounting and include all of its already-shipped CommonJS declarations. The original schema-2 P3 record remains byte-identical; no product-byte, coverage-floor or 2% policy increase is inferred from counting both formats.",
-    "esmDeclarations": 28121,
-    "commonJsDeclarations": 28135
   },
   "coverage": {
     "package": {
@@ -71,7 +53,7 @@
     "packageTarball": 155916,
     "packageEsm": 84754,
     "packageCjs": 91229,
-    "packageTypes": 56256,
+    "packageTypes": 28121,
     "packageCss": 10043,
     "tradingJs": 240826,
     "tradingJsGzip": 70541,
