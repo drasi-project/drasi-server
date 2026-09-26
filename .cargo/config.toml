@@ -4,13 +4,12 @@
 [alias]
 xtask = "run --package xtask --"
 
-# To use local path-based dependencies for development:
-# 1. Uncomment the [patch.crates-io] section
-# 2. Run: cargo build
-#
-# To use published crates from crates.io:
-# 1. Keep the [patch.crates-io] section commented
-# 2. Run: cargo build
+# The root Cargo.toml selects only the compatible engine/AST/Cypher sibling paths.
+# Run `make prepare-core` to obtain or verify .drasi-core-revision.
+# Library/SDK/FFI remain registry-sourced; merely having a sibling does not mean
+# its SDK or plugins are consumed. See docs/engine-prerequisite.md.
+# The commented overrides below are for deliberate broader local development,
+# not part of the engine-only prerequisite or its verified compatibility matrix.
 
 # Cross-compilation target flags (used by `cross` tool)
 [target.x86_64-unknown-linux-musl]

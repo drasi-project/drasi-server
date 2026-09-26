@@ -84,7 +84,7 @@ curl http://localhost:8080/health
 
 **Option B: Using Cargo**
 
-> **Prerequisites:** Rust 1.70+ **and** Node.js / npm (required to build the
+> **Prerequisites:** The Rust toolchain in `rust-toolchain.toml` **and** Node.js / npm (required to build the
 > bundled Web UI).
 
 ```bash
@@ -244,6 +244,12 @@ make build-release   # builds the Rust binary AND the Web UI (ui/dist)
 > `make build-release` (recommended) or run `make build-ui` separately. If
 > `ui/dist` is missing at startup, the server logs a warning and `/ui`
 > returns 404.
+
+Default builds use the reviewed released registry dependencies and need no
+sibling core checkout. The Makefile checks their locked origins before building;
+see [the released runtime and upgrade guidance](docs/main-runtime-integration.md).
+Explicit local SDK development remains separate and requires matching selected
+workspace identities.
 
 ### Option 3: Interactive Setup
 
@@ -2787,16 +2793,19 @@ docker compose restart drasi-server
 git clone https://github.com/drasi-project/drasi-server.git
 cd drasi-server
 
-# Build (default: all plugins statically linked)
-cargo build --release
+# Build the server and embedded UI using the locked registry dependencies
+make build-release
 
 # Run tests
-cargo test
+cargo test --locked
 
 # Format and lint
 cargo fmt
-cargo clippy
+cargo clippy --locked
 ```
+
+See [the released runtime](docs/main-runtime-integration.md) for provenance,
+plugin selection and persistent-state reconstruction requirements.
 
 ### Feature Flags
 

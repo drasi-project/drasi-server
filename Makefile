@@ -20,7 +20,7 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins download-test-plugins \
-        build-local-plugins build-local-plugins-debug
+        build-local-plugins build-local-plugins-debug test-tooling prepare-build
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -43,22 +43,6 @@ else
     SERVER_BIN := drasi-server
 endif
 
-# Auto-discover volume mounts for cross-compilation from local [patch.crates-io] paths.
-# When developing with local path overrides in .cargo/config.toml, cross needs those
-# directories mounted into its Docker container. If no local patches exist (crates
-# come from crates.io), this produces an empty value and cross works normally.
-CROSS_PATCH_VOLUMES := $(shell \
-  grep -oP 'path\s*=\s*"\K[^"]+' .cargo/config.toml 2>/dev/null | \
-  while read p; do \
-    d="$$p"; \
-    while [ "$$d" != "/" ]; do \
-      if [ -f "$$d/Cargo.toml" ] && grep -q '^\[workspace\]' "$$d/Cargo.toml" 2>/dev/null; then \
-        echo "$$d"; break; \
-      fi; \
-      d=$$(dirname "$$d"); \
-    done; \
-  done | sort -u | while read r; do printf -- '-v %s:%s ' "$$r" "$$r"; done)
-
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -70,6 +54,7 @@ help:
 	@echo "  make demo               - Run the getting-started example"
 	@echo ""
 	@echo "Build:"
+	@echo "  make prepare-build      - Verify the locked dependency origin"
 	@echo "  make build              - Build debug binary and UI"
 	@echo "  make build-release      - Build release binary and UI"
 	@echo "  make build-ui           - Build only the web UI"
@@ -86,11 +71,12 @@ help:
 	@echo "  make test-smoke         - Plugin smoke test"
 	@echo "  make vscode-test        - Run VSCode extension tests"
 	@echo ""
-	@echo "Plugins (local development with ../drasi-core):"
+	@echo "Plugins (local builds require Cargo-resolved matching local SDKs):"
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
 	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
-	@echo "  make download-test-plugins      - Download test plugins from OCI registry (no drasi-core needed)"
+	@echo "  make download-test-plugins      - Download signed registry test plugins"
+	@echo "  make test-tooling               - Test plugin dependency-origin and setup policy"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make clippy             - Run linter"
@@ -112,10 +98,10 @@ help:
 # === Getting Started ===
 
 # Check dependencies and create config
-setup: doctor
+setup: prepare-build doctor
 	@echo ""
 	@echo "Building Drasi Server..."
-	@cargo build
+	@cargo build --locked
 	@echo ""
 	@if [ ! -f "config/server.yaml" ]; then \
 		echo "Creating default configuration..."; \
@@ -128,38 +114,36 @@ setup: doctor
 	@echo "Setup complete! Run 'make run' to start the server."
 
 # Build and run (debug mode)
-run: build-ui
-	cargo run
+run: prepare-build build-ui
+	cargo run --locked
 
 # Build and run with custom config
-run-config: build-ui
+run-config: prepare-build build-ui
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Usage: make run-config CONFIG=path/to/config.yaml"; \
 		exit 1; \
 	fi
-	cargo run -- --config $(CONFIG)
+	cargo run --locked -- --config "$(CONFIG)"
 
 # Build and run (release mode)
-run-release: build-ui
-	cargo run --release
+run-release: prepare-build build-ui
+	cargo run --locked --release
 
 # === Build ===
 
+prepare-build:
+	@bash scripts/prepare-build.sh
+
 # Build the web UI (requires Node.js/npm)
 build-ui:
-	@if command -v npm >/dev/null 2>&1; then \
-		echo "Building web UI..."; \
-		cd ui && npm install --prefer-offline && npm run build; \
-		echo "UI built successfully at ui/dist/"; \
-	else \
-		echo "Warning: npm not found, skipping UI build. Install Node.js to build the UI."; \
-	fi
+	@echo "Building web UI..."
+	cd ui && npm ci && npm run build
 
-build: build-ui
-	cargo build
+build: prepare-build build-ui
+	cargo build --locked
 
-build-release: build-ui
-	cargo build --release
+build-release: prepare-build build-ui
+	cargo build --locked --release
 
 build-cross:
 	@if [ -z "$(TARGET)" ]; then \
@@ -167,7 +151,13 @@ build-cross:
 		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --target $(TARGET)
+	@set -eu; \
+	mode="$$(bash scripts/prepare-build.sh)"; \
+	if [ "$$mode" = local ]; then \
+		export DRASI_CORE_WORKSPACE="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+		export CROSS_BUILD_ENV_VOLUMES=DRASI_CORE_WORKSPACE; \
+	fi; \
+	cross build --locked --target-dir target/cross --target "$(TARGET)"
 
 build-cross-release:
 	@if [ -z "$(TARGET)" ]; then \
@@ -175,105 +165,101 @@ build-cross-release:
 		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	CROSS_CONTAINER_OPTS="$(CROSS_PATCH_VOLUMES)" cross build --target-dir target/cross --release --target $(TARGET)
+	@set -eu; \
+	mode="$$(bash scripts/prepare-build.sh)"; \
+	if [ "$$mode" = local ]; then \
+		export DRASI_CORE_WORKSPACE="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+		export CROSS_BUILD_ENV_VOLUMES=DRASI_CORE_WORKSPACE; \
+	fi; \
+	cross build --locked --target-dir target/cross --release --target "$(TARGET)"
 
-clippy:
-	cargo clippy --all-targets -- -D warnings
+clippy: prepare-build
+	cargo clippy --locked --all-targets -- -D warnings
 
-fmt:
+fmt: prepare-build
 	cargo fmt
 
-fmt-check:
+fmt-check: prepare-build
 	cargo fmt -- --check
 
-test:
-	cargo test
+test: prepare-build
+	cargo test --locked
+
+test-tooling:
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
 
 # Run ALL tests: build/download test plugins, run cargo tests (including #[ignore]),
 # plugin smoke tests, and VSCode extension tests.
-# Prefers building from local drasi-core if available; falls back to downloading
-# pre-built plugins from the OCI registry.
-test-all:
-	@if [ -d "../drasi-core" ]; then \
-		echo "=== Building plugins from local drasi-core ==="; \
-		$(MAKE) build-local-plugins-debug; \
-	else \
-		echo "=== drasi-core not found, downloading plugins from OCI registry ==="; \
-		$(MAKE) download-test-plugins; \
-	fi
+# Build local plugins only when Cargo resolves matching local SDK/host/FFI code.
+# Registry mode uses the reviewed released graph and signed plugins.
+test-all: prepare-build
+	@mode="$$(python3 scripts/plugin_origin.py mode)" && \
+	case "$$mode" in \
+		local) $(MAKE) build-local-plugins-debug ;; \
+		registry) $(MAKE) download-test-plugins ;; \
+		*) echo "Unsupported plugin dependency origin: $$mode" >&2; exit 1 ;; \
+	esac
 	@echo "=== Building server binary ==="
-	cargo build
+	cargo build --locked
 	@echo "=== Running unit and integration tests (including ignored/E2E) ==="
-	cargo test --tests -- --include-ignored
+	cargo test --locked --tests -- --include-ignored
 	@echo "=== Running doctests ==="
-	cargo test --doc
+	cargo test --locked --doc
 	@echo "=== Running plugin smoke tests ==="
 	./tests/plugin_smoke_test.sh --skip-build
 	@echo "=== All tests passed ==="
 
 # Plugin smoke tests: start server and create every plugin kind, verify no crash
-test-smoke:
+test-smoke: prepare-build
 	@echo "=== Plugin smoke test ==="
 	./tests/plugin_smoke_test.sh
 
-# Build cdylib test plugins (mock source, log reaction, http reaction, scriptfile bootstrap)
-# needed by solution deployment and E2E tests.
-# Plugins are built from ../drasi-core and copied to target/debug/plugins/.
-# Download pre-built test plugins from the OCI registry (no local drasi-core needed).
+# Download signed test plugins needed by solution deployment and E2E tests.
+# No sibling checkout is required for the released registry graph.
 # Uses the server's built-in `plugin install` CLI to fetch mock source, log reaction,
 # http reaction, and scriptfile bootstrap plugins.
-download-test-plugins:
+download-test-plugins: prepare-build
 	@echo "=== Downloading test plugins from OCI registry ==="
-	@mkdir -p target/debug/plugins
-	cargo run -- plugin install source/mock --plugins-dir target/debug/plugins
-	cargo run -- plugin install reaction/log --plugins-dir target/debug/plugins
-	cargo run -- plugin install reaction/http --plugins-dir target/debug/plugins
-	cargo run -- plugin install bootstrap/scriptfile --plugins-dir target/debug/plugins
+	cargo build --locked
+	python3 scripts/install_plugins.py --group test \
+		--server-bin target/debug/$(SERVER_BIN) --plugins-dir target/debug/plugins
 	@echo "=== Test plugins downloaded to target/debug/plugins/ ==="
-	@ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) 2>/dev/null || echo "Warning: No plugin files found"
 
 build-local-test-plugins:
-	@echo "=== Building cdylib test plugins from drasi-core ==="
-	cd ../drasi-core && cargo build --lib -p drasi-source-mock --features drasi-source-mock/dynamic-plugin
-	cd ../drasi-core && cargo build --lib -p drasi-reaction-log --features drasi-reaction-log/dynamic-plugin
-	cd ../drasi-core && cargo build --lib -p drasi-reaction-http --features drasi-reaction-http/dynamic-plugin
-	cd ../drasi-core && cargo build --lib -p drasi-bootstrap-scriptfile --features drasi-bootstrap-scriptfile/dynamic-plugin
-	@mkdir -p target/debug/plugins
-	@echo "Copying test plugins to target/debug/plugins/..."
-	@cp ../drasi-core/target/debug/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/ 2>/dev/null && \
-		echo "Test plugins copied successfully:" && \
-		ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) || \
-		echo "Warning: No test plugin files found to copy"
+	@set -eu; \
+	core_root="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+	plugins_dir="$(CURDIR)/target/debug/plugins"; \
+	cd "$$core_root"; \
+	cargo build --locked --lib \
+		-p drasi-source-mock -p drasi-reaction-log -p drasi-reaction-http -p drasi-bootstrap-scriptfile \
+		--features drasi-source-mock/dynamic-plugin,drasi-reaction-log/dynamic-plugin,drasi-reaction-http/dynamic-plugin,drasi-bootstrap-scriptfile/dynamic-plugin; \
+	mkdir -p "$$plugins_dir"; \
+	for plugin in drasi_source_mock drasi_reaction_log drasi_reaction_http drasi_bootstrap_scriptfile; do \
+		cp "target/debug/$(PLUGIN_LIB_PREFIX)$$plugin.$(PLUGIN_LIB_EXT)" "$$plugins_dir/"; \
+	done
 	@echo "=== Test plugins ready in target/debug/plugins/ ==="
 
-# Build ALL cdylib plugins from local ../drasi-core (release mode) and copy to target/release/plugins/.
-# Use this when developing with [patch.crates-io] pointing to local drasi-core, so plugins match
-# the server binary. Registry-downloaded plugins will NOT be ABI-compatible with local changes.
+# Build ALL cdylib plugins from the workspace supplying the server's local SDKs.
+# Engine/AST/parser path patches alone do not select that workspace's SDK or ABI.
 build-local-plugins:
-	@echo "=== Building all cdylib plugins from local drasi-core (release) ==="
-	cd ../drasi-core && make build-plugins-release
-	@mkdir -p target/release/plugins
-	@echo "Copying plugins to target/release/plugins/..."
-	@cp ../drasi-core/target/release/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/release/plugins/ 2>/dev/null && \
-		echo "Plugins copied successfully:" && \
-		ls -1 target/release/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) || \
-		echo "Warning: No plugin files found to copy"
+	@set -eu; \
+	core_root="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+	$(MAKE) -C "$$core_root" build-plugins-release; \
+	mkdir -p target/release/plugins; \
+	cp "$$core_root"/target/release/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/release/plugins/
 	@echo "=== Local plugins ready in target/release/plugins/ ==="
 
-# Build ALL cdylib plugins from local ../drasi-core (debug mode) and copy to target/debug/plugins/.
+# Debug counterpart; the same Cargo-origin check rejects unused SDK siblings.
 build-local-plugins-debug:
-	@echo "=== Building all cdylib plugins from local drasi-core (debug) ==="
-	cd ../drasi-core && make build-plugins
-	@mkdir -p target/debug/plugins
-	@echo "Copying plugins to target/debug/plugins/..."
-	@cp ../drasi-core/target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/ 2>/dev/null && \
-		echo "Plugins copied successfully:" && \
-		ls -1 target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) || \
-		echo "Warning: No plugin files found to copy"
+	@set -eu; \
+	core_root="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+	$(MAKE) -C "$$core_root" build-plugins; \
+	mkdir -p target/debug/plugins; \
+	cp "$$core_root"/target/debug/plugins/$(PLUGIN_LIB_PREFIX)drasi_*.$(PLUGIN_LIB_EXT) target/debug/plugins/
 	@echo "=== Local plugins ready in target/debug/plugins/ ==="
 
-dev-run:
-	cargo run -- --config config/server.yaml
+dev-run: prepare-build
+	cargo run --locked -- --config config/server.yaml
 
 dev-build: fmt clippy test
 	@echo "Dev build complete!"
@@ -320,7 +306,7 @@ doctor:
 	@echo ""
 
 # Validate configuration
-validate:
+validate: prepare-build
 	@if [ -z "$(CONFIG)" ]; then \
 		echo "Validating config/server.yaml..."; \
 		cargo run --release -- validate --config config/server.yaml 2>/dev/null || echo "Note: validate subcommand not yet implemented"; \

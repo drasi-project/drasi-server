@@ -2,9 +2,6 @@ name: Getting Started Test
 
 on:
   pull_request:
-    branches:
-      - main
-      - feature-lib
   push:
     branches:
       - main
