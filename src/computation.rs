@@ -15,7 +15,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
+use drasi_host_sdk::management::HostConfigurationResolver;
 use drasi_lib::{computation::v1::*, DrasiLib};
 use serde::{Deserialize, Serialize};
 
@@ -154,52 +154,6 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
     Ok(())
 }
 
-struct InstanceConfigurationResolver {
-    secrets: Option<Arc<dyn drasi_lib::secret_store::SecretStoreProvider>>,
-}
-
-fn reference(key: &str) -> Result<(&str, &str)> {
-    let (kind, name) = key.split_once(':').context(
-        "configuration reference must be env:NAME, env-json:NAME, secret:NAME or secret-json:NAME",
-    )?;
-    anyhow::ensure!(
-        matches!(kind, "env" | "env-json" | "secret" | "secret-json")
-            && !name.is_empty()
-            && !name.chars().any(char::is_control),
-        "invalid configuration reference"
-    );
-    Ok((kind, name))
-}
-
-#[async_trait]
-impl ConfigurationResolver for InstanceConfigurationResolver {
-    fn validate_reference(&self, key: &str) -> Result<()> {
-        reference(key)?;
-        Ok(())
-    }
-
-    async fn resolve(&self, key: &str) -> Result<serde_json::Value> {
-        let (kind, name) = reference(key)?;
-        let value = if kind.starts_with("env") {
-            std::env::var(name)
-                .with_context(|| format!("environment reference {name} is unavailable"))?
-        } else {
-            self.secrets
-                .as_ref()
-                .context("this instance has no secret provider")?
-                .get_secret(name)
-                .await
-                .with_context(|| format!("secret reference {name} is unavailable"))?
-        };
-        if kind.ends_with("-json") {
-            serde_json::from_str(&value)
-                .with_context(|| format!("reference {key} is not valid JSON"))
-        } else {
-            Ok(serde_json::Value::String(value))
-        }
-    }
-}
-
 /// Bind only explicitly declared host resources. Their recipes stay in the
 /// graph's desired configuration and are not recovered from live object pointers.
 pub async fn build_graph(
@@ -268,9 +222,7 @@ pub async fn build_graph(
             ComputationResourceConfig::Configuration => ResourceHandle::new(
                 ResourceRole::SecretStore,
                 Arc::new(ConfigurationResolverResource(Arc::new(
-                    InstanceConfigurationResolver {
-                        secrets: services.secrets.clone(),
-                    },
+                    HostConfigurationResolver::new(services.secrets.clone()),
                 ))),
             ),
         };
