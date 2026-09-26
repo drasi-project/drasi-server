@@ -1,369 +1,402 @@
-// Copyright 2025 The Drasi Authors.
-//
+// Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import { describe, expect, it, vi } from 'vitest';
-import { DrasiClient } from '../src/client/DrasiClient';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DrasiClient, type DrasiClientOptions } from '../src/client/DrasiClient';
+import { DrasiError } from '../src/client/errors';
 import { fakeEventSourceFactory } from './FakeEventSource';
+import { ReadServer, deferred, failure, json, refs } from './server';
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
+const clients: DrasiClient[] = [];
+const servers: ReadServer[] = [];
+function setup(options: Partial<DrasiClientOptions> = {}) {
+  const server = new ReadServer();
+  const factory = fakeEventSourceFactory();
+  const client = new DrasiClient({ ...refs, fetch: server.fetch, eventSourceFactory: factory.create, ...options });
+  clients.push(client);
+  servers.push(server);
+  const open = async () => {
+    const connected = client.initialize();
+    await vi.waitFor(() => expect(factory.instances.length).toBeGreaterThan(0));
+    factory.instances[factory.instances.length - 1].open();
+    await connected;
+  };
+  return { client, server, factory, open };
 }
 
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-} {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((currentResolve) => {
-    resolve = currentResolve;
-  });
-  return { promise, resolve };
-}
+afterEach(async () => {
+  for (const client of clients.splice(0)) await client.disconnect();
+  // Request-level invariant across every initialize/subscribe/retry/reconnect.
+  for (const server of servers.splice(0)) {
+    expect(server.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+    expect(server.fetch.mock.calls.every(([url]) => String(url).startsWith(
+      `${refs.serverUrl}/api/v1/instances/${encodeURIComponent(refs.instanceId)}/`,
+    ))).toBe(true);
+  }
+  vi.useRealTimers();
+});
 
-describe('DrasiClient', () => {
-  it('does not restart queries or reactions that are already starting', async () => {
-    const factory = fakeEventSourceFactory();
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'Starting', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({
-          status: 'Starting',
-          config: { properties: { port: 8281, ssePath: '/events' } },
-        });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    const client = new DrasiClient({
-      queries: [
-        {
-          id: 'stocks',
-          query: 'MATCH (n) RETURN n',
-          sources: [],
-        },
-      ],
-      reaction: { id: 'stream', port: 8281 },
-      fetch: fetcher as typeof fetch,
-      eventSourceFactory: factory.create,
-    });
-
-    const initialized = client.initialize();
-    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
-    factory.instances[0].open();
-    await initialized;
-
-    expect(
-      fetcher.mock.calls.some(([input]) => String(input).endsWith('/start')),
-    ).toBe(false);
-    await client.disconnect();
+describe('connect-only DrasiClient', () => {
+  it('invokes an injected native fetch with the global receiver', async () => {
+    const server = new ReadServer();
+    const fetcher: typeof fetch = function (this: unknown, input, init) {
+      expect(this).toBe(globalThis);
+      return server.fetch(input, init);
+    };
+    const { open } = setup({ fetch: fetcher });
+    await open();
+    expect(server.fetch).toHaveBeenCalled();
   });
 
-  it('subscribes before snapshot fetch and replays queued deltas afterward', async () => {
-    const snapshot = deferred<Response>();
-    const factory = fakeEventSourceFactory();
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({
-          status: 'running',
-          config: {
-            properties: {
-              host: 'localhost',
-              port: 8281,
-              ssePath: '/events',
-            },
-          },
-        });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        return snapshot.promise;
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    const client = new DrasiClient({
-      queries: [
-        {
-          id: 'stocks',
-          query: 'MATCH (n) RETURN n',
-          sources: [],
-        },
-      ],
-      reaction: { id: 'stream', port: 8281 },
-      fetch: fetcher as typeof fetch,
-      eventSourceFactory: factory.create,
-    });
-
-    const initialized = client.initialize();
-    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
-    factory.instances[0].open();
-    await initialized;
-
-    const batches: unknown[] = [];
-    client.subscribe('stocks', (result) => batches.push(result));
-    factory.instances[0].message({
-      queryId: 'stocks',
-      data: { id: 'A', price: 11 },
-    });
-    expect(batches).toEqual([]);
-
-    snapshot.resolve(jsonResponse([{ id: 'A', price: 10 }]));
-    await vi.waitFor(() => expect(batches).toHaveLength(2));
-
-    expect(batches).toEqual([
-      expect.objectContaining({
-        snapshot: true,
-        data: [{ id: 'A', price: 10 }],
-      }),
-      expect.objectContaining({
-        data: [{ id: 'A', price: 11 }],
-      }),
-    ]);
+  it('connects with references, scoped DTO reads and an explicit proxy SSE URL', async () => {
+    const { client, server, factory, open } = setup();
+    await open();
+    await client.initialize();
+    expect(factory.instances).toHaveLength(1);
+    expect(factory.instances[0].url).toBe(refs.reaction.endpoint);
+    expect(client.isInitialized()).toBe(true);
+    expect(await client.getQueryConfig('stocks')).toMatchObject({ queryLanguage: 'Cypher', sources: [] });
+    expect(await client.getQueryResults('stocks')).toEqual([{ id: 'A', value: '10', price: 10 }]);
+    expect(client.getServerUiUrl()).toBe(`${refs.serverUrl}/ui?instance=${encodeURIComponent(refs.instanceId)}`);
+    expect(server.fetch.mock.calls.length).toBeGreaterThan(3);
   });
 
-  it('reports snapshot HTTP failures to the subscriber', async () => {
-    vi.useFakeTimers();
-    const factory = fakeEventSourceFactory();
-    const failedSnapshot = deferred<Response>();
-    const recoveredSnapshot = deferred<Response>();
-    let snapshotRequests = 0;
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        snapshotRequests += 1;
-        return snapshotRequests === 1
-          ? failedSnapshot.promise
-          : recoveredSnapshot.promise;
-      }
-      throw new Error(`Unexpected request: ${url}`);
+  it('overlaps independent validation reads but waits for every query before opening SSE', async () => {
+    const { client, server, factory } = setup({ queryIds: ['stocks', 'other'] });
+    server.reaction.queries = ['stocks', 'other'];
+    const first = deferred<Response>(), second = deferred<Response>();
+    const read = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation((input, init) => {
+      if (String(input).includes('/queries/stocks?')) return first.promise;
+      if (String(input).includes('/queries/other?')) return second.promise;
+      return read(input, init);
     });
-    const client = new DrasiClient({
-      queries: [
-        {
-          id: 'stocks',
-          query: 'MATCH (n) RETURN n',
-          sources: [],
-        },
-      ],
-      reaction: {
-        id: 'stream',
-        port: 8281,
-        endpoint: 'http://localhost:8281/events',
-      },
-      fetch: fetcher as typeof fetch,
-      eventSourceFactory: factory.create,
-    });
-
-    const initialized = client.initialize();
+    const connected = client.initialize();
+    expect(server.fetch).toHaveBeenCalledTimes(2);
+    expect(factory.instances).toHaveLength(0);
+    second.resolve(json({ id: 'other', status: 'Running',
+      config: { id: 'other', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
+    await Promise.resolve();
+    expect(factory.instances).toHaveLength(0);
+    first.resolve(json({ id: 'stocks', status: 'Running',
+      config: { id: 'stocks', query: 'MATCH (n) RETURN n', queryLanguage: 'Cypher', sources: [] } }));
     await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
     factory.instances[0].open();
-    await initialized;
+    await connected;
+  });
+
+  it('drains failed parallel validation before handing off to an app retry', async () => {
+    const { client, server } = setup({ queryIds: ['stocks', 'other'] });
+    const other = deferred<Response>();
+    const read = server.fetch.getMockImplementation()!;
+    let otherSignal: AbortSignal | null | undefined;
+    server.fetch.mockImplementation((input, init) => {
+      if (String(input).includes('/queries/stocks?')) return Promise.resolve(failure(404, 'QUERY_NOT_FOUND'));
+      if (String(input).includes('/queries/other?')) {
+        otherSignal = init?.signal;
+        return other.promise;
+      }
+      return read(input, init);
+    });
+    const settled = vi.fn();
+    const result = client.initialize().catch((error: unknown) => { settled(); return error; });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(settled).not.toHaveBeenCalled();
+    expect(otherSignal?.aborted).toBe(false);
+    other.resolve(failure(404, 'QUERY_NOT_FOUND'));
+    expect(await result).toMatchObject({ code: 'QUERY_NOT_FOUND', resourceId: 'stocks' });
+    expect(otherSignal?.aborted).toBe(false);
+  });
+
+  it.each([
+    ['query', 'QUERY_NOT_FOUND', 'stocks'],
+    ['reaction', 'REACTION_NOT_FOUND', 'stream'],
+    ['instance', 'INSTANCE_NOT_FOUND', refs.instanceId],
+  ] as const)('surfaces missing %s without provisioning or retrying', async (kind, code, resourceId) => {
+    const { client, server, factory } = setup();
+    server.missing = kind;
+    const error = await client.initialize().catch(error => error);
+    expect(error).toBeInstanceOf(DrasiError);
+    expect(error).toMatchObject({ code, instanceId: refs.instanceId, resourceKind: kind, resourceId, retryable: false });
+    expect(error.message).not.toContain('Sensitive');
+    expect(client.getConnectionStatus().error).toBe(error);
+    expect(factory.instances).toHaveLength(0);
+    server.missing = null;
+    const retry = client.initialize();
+    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
+    factory.instances[0].open();
+    await retry;
+  });
+
+  it.each([
+    ['Stopped', 'RESOURCE_STOPPED', false],
+    ['Added', 'RESOURCE_STOPPED', false],
+    ['Starting', 'RESOURCE_STARTING', true],
+    ['Reconfiguring', 'RESOURCE_STARTING', true],
+    ['Error', 'RESOURCE_UNAVAILABLE', false],
+    ['Stopping', 'RESOURCE_UNAVAILABLE', false],
+    ['Removed', 'RESOURCE_UNAVAILABLE', false],
+  ] as const)('classifies %s without a start request', async (status, code, retryable) => {
+    const { client, server } = setup();
+    server.queryStatus = status;
+    await expect(client.initialize()).rejects.toMatchObject({ code, resourceStatus: status, retryable });
+    server.queryStatus = 'Running';
+    server.reactionStatus = status;
+    await expect(client.initialize()).rejects.toMatchObject({ code, resourceKind: 'reaction' });
+  });
+
+  it.each([401, 403, 400, 500, 503, 408, 429])('classifies HTTP %s and hides raw server errors', async status => {
+    const { client, server } = setup();
+    server.fetch.mockImplementation(async () => failure(status));
+    const error = await client.initialize().catch(error => error);
+    expect(error).toBeInstanceOf(DrasiError);
+    expect(error.code).toBe(status === 401 ? 'UNAUTHENTICATED' : status === 403 ? 'FORBIDDEN'
+      : status === 400 ? 'INCOMPATIBLE_RESOURCE' : 'SERVER_UNAVAILABLE');
+    expect(error.status).toBe(status);
+    expect(error.message).not.toContain('Sensitive');
+  });
+
+  it('classifies network errors without interpreting their text as absence', async () => {
+    const { client, server } = setup();
+    server.fetch.mockRejectedValue(new TypeError('404 QUERY_NOT_FOUND network secret'));
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'SERVER_UNAVAILABLE', retryable: true });
+  });
+
+  it.each([
+    new Response('<html>Not found</html>', { status: 404 }),
+    failure(404),
+    new Response('bad json'),
+    json({ status: 'Running', config: {} }),
+    json({ id: 'stocks', status: 'Mystery', config: {} }),
+    json({ id: 'stocks', status: 'Running', config: { id: 'stocks', query: 7, queryLanguage: 'Cypher', sources: [] } }),
+    new Response(JSON.stringify({ success: false, data: [] })),
+  ])('rejects unsupported DTOs/opaque 404s rather than inventing absence', async response => {
+    const { client, server } = setup();
+    server.fetch.mockResolvedValue(response);
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', retryable: false });
+  });
+
+  it.each(['wrong-kind', 'missing-membership'])('rejects incompatible reaction %s', async mode => {
+    const { client, server } = setup();
+    if (mode === 'wrong-kind') server.reaction.kind = 'log';
+    else server.reaction.queries = [];
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INCOMPATIBLE_RESOURCE', resourceId: 'stream' });
+  });
+
+  it('rejects malformed reaction membership before opening a stream', async () => {
+    const { client, server, factory } = setup();
+    const read = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation((input, init) => String(input).includes('/reactions/')
+      ? Promise.resolve(json({ id: 'stream', status: 'Running', config: { ...server.reaction, queries: [7] } }))
+      : read(input, init));
+    await expect(client.initialize()).rejects.toMatchObject({ code: 'INVALID_PAYLOAD', resourceId: 'stream' });
+    expect(factory.instances).toHaveLength(0);
+  });
+
+  it('validates config at construction and never guesses deployment defaults', () => {
+    for (const overrides of [
+      { serverUrl: 'file:///private' }, { serverUrl: 'https://name:secret@host' },
+      { serverUrl: 'https://host?secret=1' }, { serverUrl: 'http://0.0.0.0' },
+      { instanceId: '' }, { instanceId: '..' }, { instanceId: '\uD800' },
+      { queryIds: ['stocks', 'stocks'] }, { queryIds: [''] }, { queryIds: ['.'] },
+      { reaction: { id: 'stream', endpoint: '/relative' } }, { requestTimeoutMs: 0 },
+      { reconnect: { maxReconnectAttempts: Infinity } },
+    ]) expect(() => new DrasiClient({ ...refs, ...overrides })).toThrow(DrasiError);
+  });
+
+  it('rejects traversal-like optional read IDs instead of escaping the selected instance', async () => {
+    const { client, server } = setup();
+    await expect(client.getQueryConfig('..')).rejects.toMatchObject({ code: 'INVALID_CONFIGURATION' });
+    expect(server.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rechecks REST after an opaque stream error and stops on confirmed absence', async () => {
+    const { client, server, factory, open } = setup({ reconnect: { maxReconnectAttempts: 3 } });
+    await open();
     const onError = vi.fn();
-    const onResult = vi.fn();
-    const unsubscribe = client.subscribe('stocks', onResult, onError);
-    factory.instances[0].message({
-      queryId: 'stocks',
-      data: { id: 'A', price: 11 },
+    client.subscribe('stocks', vi.fn(), onError);
+    server.missing = 'reaction';
+    factory.instances[0].fail();
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    const error = client.getConnectionStatus().error;
+    expect(error).toMatchObject({ code: 'REACTION_NOT_FOUND', retryable: false });
+    expect(onError.mock.calls[onError.mock.calls.length - 1][0]).toBe(error);
+    expect(client.getConnectionStatus().reconnecting).toBe(false);
+    expect(factory.instances).toHaveLength(1);
+  });
+
+  it('bounds unreachable and never-opening streams without inferring missing resources', async () => {
+    vi.useFakeTimers();
+    const { client, factory } = setup({
+      reconnect: { maxReconnectAttempts: 2, initialReconnectDelayMs: 10, maxReconnectDelayMs: 20, connectionTimeoutMs: 50 },
     });
-    failedSnapshot.resolve(jsonResponse({ message: 'broken' }, 500));
+    const connected = client.initialize();
+    const rejected = expect(connected).rejects.toMatchObject({ code: 'STREAM_UNAVAILABLE', retryable: true });
+    await vi.runAllTimersAsync();
+    await rejected;
+    expect(factory.instances).toHaveLength(3);
+    expect(factory.instances.every(source => source.closed)).toBe(true);
+    expect(client.getConnectionStatus().reconnecting).toBe(false);
+  });
 
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
-    expect(onError.mock.calls[0][0].message).toContain(
-      'Failed to get results for query stocks (500)',
-    );
-    expect(onResult).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1000);
-    factory.instances[0].message({
-      queryId: 'stocks',
-      data: { id: 'A', price: 13 },
-    });
-    recoveredSnapshot.resolve(jsonResponse([{ id: 'A', price: 12 }]));
-    await vi.waitFor(() => expect(onResult).toHaveBeenCalledTimes(2));
-
-    expect(onResult.mock.calls.map(([result]) => result)).toEqual([
-      expect.objectContaining({
-        snapshot: true,
-        data: [{ id: 'A', price: 12 }],
-      }),
-      expect.objectContaining({
-        data: [{ id: 'A', price: 13 }],
-      }),
-    ]);
-    unsubscribe();
+  it('stops in-flight validation on disconnect and ignores stale success', async () => {
+    const { client, server, factory } = setup();
+    const pending = deferred<Response>();
+    server.fetch.mockImplementationOnce(() => pending.promise);
+    const connected = client.initialize();
+    const rejected = expect(connected).rejects.toMatchObject({ name: 'AbortError' });
     await client.disconnect();
+    pending.resolve(json({ id: 'stocks', status: 'Running', config: {} }));
+    await rejected;
+    expect(factory.instances).toHaveLength(0);
+    expect(client.isInitialized()).toBe(false);
+  });
+
+  it('bounds hung REST requests and preserves explicit abort identity', async () => {
+    vi.useFakeTimers();
+    const { client, server } = setup({ requestTimeoutMs: 20 });
+    server.fetch.mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    }));
+    const request = client.getQueryConfig('stocks');
+    const rejected = expect(request).rejects.toMatchObject({ code: 'SERVER_UNAVAILABLE' });
+    await vi.advanceTimersByTimeAsync(20);
+    await rejected;
+    const controller = new AbortController();
+    const aborted = client.getQueryConfig('stocks', controller.signal);
+    controller.abort();
+    await expect(aborted).rejects.toBe(controller.signal.reason);
+  });
+
+  it.each(['network', 'timeout'] as const)(
+    'classifies a %s failure while reading the response body as unavailable, not malformed', async mode => {
+      vi.useFakeTimers();
+      const { client, server } = setup({ requestTimeoutMs: 20 });
+      server.fetch.mockImplementation(async (_input, init) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (mode === 'network') controller.error(new TypeError('Connection reset'));
+          else init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason), { once: true });
+        },
+      })));
+      const pending = client.getQueryConfig('stocks').catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(20);
+      const error = await pending;
+      expect(error).toBeInstanceOf(DrasiError);
+      expect(error).toMatchObject({
+        code: 'SERVER_UNAVAILABLE', retryable: true, instanceId: refs.instanceId, resourceId: 'stocks',
+      });
+    },
+  );
+});
+
+describe('snapshot/live lifecycle', () => {
+  it('subscribes before snapshot fetch and replays queued deltas afterward', async () => {
+    const { client, server, factory, open } = setup();
+    const snapshot = deferred<Response>();
+    server.snapshot = () => snapshot.promise;
+    await open();
+    const batches = vi.fn();
+    client.subscribe('stocks', batches);
+    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A', price: 11 } });
+    expect(batches).not.toHaveBeenCalled();
+    snapshot.resolve(json([{ id: 'A', price: 10 }]));
+    await vi.waitFor(() => expect(batches).toHaveBeenCalledTimes(2));
+    expect(batches.mock.calls.map(([batch]) => batch)).toEqual([
+      expect.objectContaining({ snapshot: true, data: [{ id: 'A', price: 10 }] }),
+      expect.objectContaining({ data: [{ id: 'A', price: 11 }] }),
+    ]);
+  });
+
+  it('reports transient snapshot errors and recovers within capped retries', async () => {
+    vi.useFakeTimers();
+    const { client, server, factory, open } = setup({ reconnect: { maxReconnectAttempts: 2 } });
+    server.snapshot = vi.fn().mockResolvedValueOnce(failure(503)).mockResolvedValue(json([{ id: 'A', price: 12 }]));
+    await open();
+    const onResult = vi.fn(), onError = vi.fn();
+    client.subscribe('stocks', onResult, onError);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(DrasiError);
+    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A', price: 11 } });
+    expect(onResult).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onResult.mock.calls[0][0]).toMatchObject({ snapshot: true, data: [{ id: 'A', price: 12 }] });
   });
 
   it('fetches a fresh snapshot and buffers live deltas after reconnecting', async () => {
     vi.useFakeTimers();
-    const factory = fakeEventSourceFactory();
-    const reconnectedSnapshot = deferred<Response>();
-    let snapshotRequests = 0;
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        snapshotRequests += 1;
-        return snapshotRequests === 1
-          ? jsonResponse([{ id: 'A', price: 10 }])
-          : reconnectedSnapshot.promise;
-      }
-      throw new Error(`Unexpected request: ${url}`);
+    const { client, server, factory, open } = setup({
+      reconnect: { maxReconnectAttempts: 2, initialReconnectDelayMs: 10 },
     });
-    const client = new DrasiClient({
-      queries: [
-        {
-          id: 'stocks',
-          query: 'MATCH (n) RETURN n',
-          sources: [],
-        },
-      ],
-      reaction: {
-        id: 'stream',
-        port: 8281,
-        endpoint: 'http://localhost:8281/events',
-      },
-      reconnect: { initialReconnectDelayMs: 10 },
-      fetch: fetcher as typeof fetch,
-      eventSourceFactory: factory.create,
-    });
-
-    const initialized = client.initialize();
-    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
-    factory.instances[0].open();
-    await initialized;
-
+    await open();
     const onResult = vi.fn();
-    const unsubscribe = client.subscribe('stocks', onResult);
+    const stop = client.subscribe('stocks', onResult);
     await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
-
+    const snapshot = deferred<Response>();
+    server.snapshot = () => snapshot.promise;
     factory.instances[0].fail();
     await vi.advanceTimersByTimeAsync(10);
     expect(factory.instances).toHaveLength(2);
     factory.instances[1].open();
-    factory.instances[1].message({
-      queryId: 'stocks',
-      data: { id: 'A', price: 13 },
-    });
+    factory.instances[1].message({ queryId: 'stocks', data: { id: 'A', price: 13 } });
     expect(onResult).toHaveBeenCalledOnce();
-
-    reconnectedSnapshot.resolve(jsonResponse([{ id: 'A', price: 12 }]));
+    snapshot.resolve(json([{ id: 'A', price: 12 }]));
     await vi.waitFor(() => expect(onResult).toHaveBeenCalledTimes(3));
-    expect(onResult.mock.calls.slice(1).map(([result]) => result)).toEqual([
-      expect.objectContaining({
-        snapshot: true,
-        data: [{ id: 'A', price: 12 }],
-      }),
-      expect.objectContaining({
-        data: [{ id: 'A', price: 13 }],
-      }),
+    expect(onResult.mock.calls.slice(1).map(([batch]) => batch)).toEqual([
+      expect.objectContaining({ snapshot: true, data: [{ id: 'A', price: 12 }] }),
+      expect.objectContaining({ data: [{ id: 'A', price: 13 }] }),
     ]);
-
-    unsubscribe();
-    await client.disconnect();
+    stop();
   });
 
-  it('keeps retrying snapshots at capped backoff until REST recovers', async () => {
+  it('terminates snapshots after the finite retry budget rather than loading forever', async () => {
     vi.useFakeTimers();
-    const factory = fakeEventSourceFactory();
-    let snapshotRequests = 0;
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        snapshotRequests += 1;
-        return snapshotRequests <= 11
-          ? jsonResponse({ message: 'temporarily unavailable' }, 503)
-          : jsonResponse([{ id: 'A', price: 10 }]);
-      }
-      throw new Error(`Unexpected request: ${url}`);
+    const { client, server, factory, open } = setup({
+      reconnect: { maxReconnectAttempts: 2, initialReconnectDelayMs: 10, maxReconnectDelayMs: 15 },
     });
-    const client = new DrasiClient({
-      queries: [
-        {
-          id: 'stocks',
-          query: 'MATCH (n) RETURN n',
-          sources: [],
-        },
-      ],
-      reaction: {
-        id: 'stream',
-        port: 8281,
-        endpoint: 'http://localhost:8281/events',
-      },
-      fetch: fetcher as typeof fetch,
-      eventSourceFactory: factory.create,
-    });
+    server.snapshot = vi.fn(async () => failure(503));
+    await open();
+    const onError = vi.fn(), onResult = vi.fn();
+    client.subscribe('stocks', onResult, onError);
+    await vi.runAllTimersAsync();
+    expect(server.snapshot).toHaveBeenCalledTimes(3);
+    expect(onError).toHaveBeenCalledTimes(3);
+    factory.instances[0].message({ queryId: 'stocks', data: { id: 'A' } });
+    expect(onResult).not.toHaveBeenCalled();
+  });
 
-    const initialized = client.initialize();
-    await vi.waitFor(() => expect(factory.instances).toHaveLength(1));
-    factory.instances[0].open();
-    await initialized;
+  it.each(['missing', 'stopped', 'malformed', 'forbidden'] as const)(
+    'does not retry a permanent %s snapshot failure', async mode => {
+      vi.useFakeTimers();
+      const { client, server, open } = setup({ reconnect: { maxReconnectAttempts: 3 } });
+      await open();
+      if (mode === 'missing') server.missing = 'query';
+      if (mode === 'stopped') server.queryStatus = 'Stopped';
+      if (mode === 'malformed') server.snapshot = async () => json({ not: 'an array' });
+      if (mode === 'forbidden') server.snapshot = async () => failure(403);
+      const onError = vi.fn();
+      client.subscribe('stocks', vi.fn(), onError);
+      await vi.runAllTimersAsync();
+      expect(onError).toHaveBeenCalledOnce();
+      expect(onError.mock.calls[0][0]).toMatchObject({ retryable: false });
+    },
+  );
 
-    const onResult = vi.fn();
-    const onError = vi.fn();
-    const unsubscribe = client.subscribe('stocks', onResult, onError);
-    for (let failure = 1; failure <= 11; failure += 1) {
-      await vi.waitFor(() =>
-        expect(onError).toHaveBeenCalledTimes(failure),
-      );
-      await vi.advanceTimersToNextTimerAsync();
-    }
-
-    await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
-    expect(snapshotRequests).toBe(12);
-    expect(onResult.mock.calls[0][0]).toEqual(
-      expect.objectContaining({
-        snapshot: true,
-        data: [{ id: 'A', price: 10 }],
-      }),
-    );
-
-    unsubscribe();
-    await client.disconnect();
+  it('rejects an unconfigured subscription and cancels pending snapshots on unsubscribe', async () => {
+    const { client, server, open } = setup();
+    expect(() => client.subscribe('not-configured', vi.fn())).toThrow(DrasiError);
+    const invalid = vi.fn();
+    client.subscribe('not-configured', vi.fn(), invalid)();
+    expect(invalid.mock.calls[0][0].code).toBe('INVALID_CONFIGURATION');
+    await open();
+    const snapshot = deferred<Response>();
+    server.snapshot = () => snapshot.promise;
+    const result = vi.fn();
+    const stop = client.subscribe('stocks', result);
+    stop();
+    snapshot.resolve(json([{ id: 'A' }]));
+    await Promise.resolve();
+    expect(result).not.toHaveBeenCalled();
   });
 });
