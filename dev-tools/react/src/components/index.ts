@@ -13,13 +13,16 @@
 // limitations under the License.
 
 /**
- * Ready-made UI: a batteries-included table bound to a query, its code-viewer
- * dialog, and the icons they use.
+ * Provider-free presentation and a convenient live-query composition.
+ * Styling is an explicit import; tutorial and overlay ownership belong to apps.
  */
 
-export { QueryTable } from './QueryTable';
-export type { QueryTableProps } from './QueryTable';
+export { DataTable } from './DataTable';
+export type {
+  DataTableProps, DataTableState, DataTableRenderContext,
+  DataTableErrorContext, DataTableHeaderContext,
+} from './DataTable';
+export { QueryTable, queryTableState } from './QueryTable';
+export type { QueryTableProps, QueryTableRenderContext, QueryTableErrorContext } from './QueryTable';
 export type { ColumnDef, RowAction, SortConfig } from './types';
-export { CodeViewerDialog } from './CodeViewerDialog';
-export type { CodeViewerDialogProps } from './CodeViewerDialog';
 export { CodeIcon, ExpandIcon, CollapseIcon } from './icons';

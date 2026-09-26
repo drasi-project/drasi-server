@@ -23,13 +23,15 @@ export interface UseRowAnimationOptions<T> {
   getValue: (row: T) => number | string | undefined;
   /** Duration of the animation in milliseconds (default: 500). */
   animationDuration?: number;
+  /** Optionally track supplied rows automatically; null/undefined retains the previous baseline. */
+  data?: readonly T[] | null;
 }
 
 export interface UseRowAnimationResult<T> {
   /** Map of row keys to their current animation state. */
   animations: Map<string, AnimationDirection>;
   /** Update tracked data (call when the data changes). */
-  updateData: (data: T[]) => void;
+  updateData: (data: readonly T[]) => void;
 }
 
 /**
@@ -43,7 +45,7 @@ export interface UseRowAnimationResult<T> {
 export function useRowAnimation<T>(
   options: UseRowAnimationOptions<T>,
 ): UseRowAnimationResult<T> {
-  const { rowKey, getValue, animationDuration = 500 } = options;
+  const { rowKey, getValue, animationDuration = 500, data } = options;
 
   const [animations, setAnimations] = useState<Map<string, AnimationDirection>>(
     new Map(),
@@ -59,7 +61,7 @@ export function useRowAnimation<T>(
   }, []);
 
   const updateData = useCallback(
-    (data: T[]) => {
+    (data: readonly T[]) => {
       const newAnimations = new Map<string, AnimationDirection>();
       const prevValues = prevValuesRef.current;
       const nextValues = new Map<string, number | string>();
@@ -143,6 +145,10 @@ export function useRowAnimation<T>(
     },
     [rowKey, getValue, animationDuration],
   );
+
+  useEffect(() => {
+    if (data != null) updateData(data);
+  }, [data, updateData]);
 
   return { animations, updateData };
 }

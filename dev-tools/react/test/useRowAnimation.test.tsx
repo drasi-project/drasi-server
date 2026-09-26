@@ -105,4 +105,19 @@ describe('useRowAnimation', () => {
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('automatically tracks readonly data, retains its baseline during loading and removes deleted keys', () => {
+    vi.useFakeTimers();
+    const initialProps: { data: readonly Row[] | null } = {
+      data: Object.freeze([{ id: 'A', value: 10 }, { id: 'B', value: 5 }]),
+    };
+    const hook = renderHook(({ data }) => useRowAnimation({ rowKey, getValue, data }), { initialProps });
+    hook.rerender({ data: null });
+    hook.rerender({ data: Object.freeze([{ id: 'B', value: 5 }, { id: 'A', value: 11 }]) });
+    expect(hook.result.current.animations.get('A')).toBe('up');
+    expect(vi.getTimerCount()).toBe(1);
+    hook.rerender({ data: Object.freeze([{ id: 'B', value: 5 }]) });
+    expect(hook.result.current.animations.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

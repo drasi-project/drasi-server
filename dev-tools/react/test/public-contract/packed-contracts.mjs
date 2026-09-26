@@ -22,8 +22,15 @@ const entrypoints = {
 };
 const forbiddenPeers = ['react', 'react-dom', '@types/react', '@types/react-dom'];
 const componentNames = new Set([
-  'QueryTable', 'QueryTableProps', 'ColumnDef', 'RowAction', 'SortConfig',
+  'DataTable', 'DataTableProps', 'DataTableState', 'DataTableRenderContext',
+  'DataTableErrorContext', 'DataTableHeaderContext', 'queryTableState',
+  'QueryTable', 'QueryTableProps', 'QueryTableRenderContext', 'QueryTableErrorContext',
+  'ColumnDef', 'RowAction',
   'CodeViewerDialog', 'CodeViewerDialogProps', 'CodeIcon', 'ExpandIcon', 'CollapseIcon',
+]);
+const tutorialNames = new Set([
+  'CodeViewerDialog', 'CodeViewerDialogProps', 'QueryInspector', 'formatQueryConfig',
+  'codeSnippet', 'reactCode', 'cypherQuery', 'drasiUiUrl',
 ]);
 
 function inside(root, file) {
@@ -89,8 +96,17 @@ function moduleReferences(ts, source) {
 
 function checkBoundary(ts, source, kind) {
   function visit(node) {
+    if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) {
+      assert(!tutorialNames.has(node.text),
+        `Published ${kind} graph contains app-owned tutorial code ${node.text}: ${source.fileName}`);
+    }
     if (kind !== 'root' && kind !== 'components' && ts.isIdentifier(node)) {
       assert(!componentNames.has(node.text), `${kind} graph contains component ${node.text}: ${source.fileName}`);
+    }
+    if (kind === 'components' && ts.isStringLiteralLike(node)) {
+      assert(!/drasi-code-dialog(?:__|--|\b)/.test(node.text) &&
+        !['React Code', 'Query Definition', 'View code'].includes(node.text),
+      `Components graph contains tutorial presentation: ${source.fileName}`);
     }
     if (kind === 'client' && ts.isIdentifier(node)) {
       assert(!/^(React|ReactDOM|jsxRuntime|jsx_runtime|createPortal)$/.test(node.text),
@@ -103,6 +119,8 @@ function checkBoundary(ts, source, kind) {
     assert(!/\.(?:css|scss|sass)(?:$|\?)/i.test(specifier), `Styles must be explicitly imported: ${source.fileName}`);
     assert(!/(?:^|[/\\])(?:src|examples|tutorials?|trading)(?:[/\\]|$)/i.test(specifier),
       `Published graph imports source/example code: ${specifier}`);
+    assert(!/(?:CodeViewerDialog|QueryInspector|formatQueryConfig)/.test(specifier),
+      `Published graph imports app-owned tutorial code: ${specifier}`);
     if (kind === 'client') {
       assert(!/^(?:@types\/)?react(?:-dom)?(?:\/|$)/.test(specifier),
         `Client graph reaches a React peer: ${specifier}`);
@@ -318,7 +336,7 @@ async function compileFixture(directory, output, fixture, mode, manifest) {
   await copyFile(join(fixtures, `${fixture}.fixture.txt`), file);
   const text = await readFile(file, 'utf8');
   assert(text.includes('@ts-expect-error'), `Missing negative assertions in ${fixture}`);
-  const expectedKinds = fixture === 'client' ? ['client'] : fixture === 'hooks' ? ['react', 'client'] : ['root', 'components'];
+  const expectedKinds = fixture === 'client' ? ['client'] : fixture === 'hooks' ? ['react', 'client'] : ['root', 'components', 'react', 'client'];
   const proof = await compileSources({
     directory, output, label: fixture, files: [file], mode, manifest, expectedKinds,
     boundary: fixture === 'hooks' ? 'react' : fixture,
@@ -398,7 +416,7 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
     await copyFile(join(fixtures, 'runtime.mjs'), runner);
     for (const kind of kinds) {
       for (const format of ['esm', 'cjs']) {
-        run(process.execPath, [runner, kind, format], directory, 30_000);
+        run(process.execPath, ['--enable-source-maps', runner, kind, format], directory, 30_000);
       }
     }
     const fixtureNames = directory === clientOnly ? ['client'] : ['hooks', 'components'];
@@ -409,6 +427,10 @@ export async function checkPackedPublicContract({ artifact, destination, app, lo
       }
     }
   }
+  const dceRunner = join(app, 'contract-dce.mjs');
+  await copyFile(join(fixtures, 'dce.mjs'), dceRunner);
+  run(process.execPath, [dceRunner], app, 30_000);
+  proof.unusedComponentsEliminated = true;
   // The installed README is the sole source of runnable documentation. These
   // programs are checked with noEmit, never imported/executed or networked.
   const readme = await readFile(join(packageRoot, 'README.md'), 'utf8');

@@ -125,21 +125,13 @@ describe('QueryTable', () => {
     expect(table.factory.instances).toHaveLength(0);
   });
 
-  it('restores page scrolling when an expanded table enters an error state', async () => {
-    const requestFrame = vi
-      .spyOn(window, 'requestAnimationFrame')
-      .mockReturnValue(1);
-    const cancelFrame = vi
-      .spyOn(window, 'cancelAnimationFrame')
-      .mockImplementation(() => {});
-
+  it('retains rows on a shared failure and routes recovery to the connection owner', async () => {
     const table = renderTable<Stock>({
       queryId: 'stocks', title: 'Stocks', columns,
       rowKey: row => row.symbol, queryOptions: stockOptions,
     }, [{ symbol: 'AAPL', price: 10 }]);
     await table.connect();
-    fireEvent.click(screen.getByRole('button', { name: 'Expand table' }));
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(screen.queryByRole('button', { name: 'Expand table' })).toBeNull();
 
     act(() => table.factory.instances[0].onmessage?.(
       new MessageEvent('message', { data: 'broken JSON' }),
@@ -148,10 +140,11 @@ describe('QueryTable', () => {
     await screen.findByText(/Error: .*malformed/);
     expect(screen.getByRole('table')).not.toBeNull();
     expect(screen.getByText('10')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Retry connection' })).not.toBeNull();
-    await waitFor(() => expect(document.body.style.overflow).toBe(''));
-    requestFrame.mockRestore();
-    cancelFrame.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
+    await waitFor(() => expect(table.factory.instances).toHaveLength(2));
+    expect(table.factory.instances[0].closed).toBe(true);
+    act(() => table.factory.instances[1].open());
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
   it('retains useful rows on a query-only fault and retries without opening another stream', async () => {
@@ -184,7 +177,7 @@ describe('QueryTable', () => {
     expectTypeOf<Parameters<Exclude<ColumnDef<Device>['className'], string | undefined>>>()
       .toEqualTypeOf<[unknown, Device]>();
     const onInspect = vi.fn<(row: Device) => void>();
-    const onSort = vi.fn<(sort: SortConfig) => void>();
+    const onSort = vi.fn<(sort: SortConfig | null) => void>();
     const format = vi.fn((value: unknown, row: Device) => {
       expect(value).toBeUndefined();
       return `${row.identity.code}: ${row.units} units`;
@@ -222,7 +215,7 @@ describe('QueryTable', () => {
       onSortChange: onSort,
       renderRow: (row, renderedColumns, animation, defaultRender) => {
         expectTypeOf(row).toEqualTypeOf<Device>();
-        expectTypeOf(renderedColumns).toEqualTypeOf<ColumnDef<Device>[]>();
+        expectTypeOf(renderedColumns).toEqualTypeOf<readonly ColumnDef<Device>[]>();
         expectTypeOf(animation).toEqualTypeOf<AnimationDirection>();
         return defaultRender();
       },
@@ -252,7 +245,7 @@ describe('QueryTable', () => {
     expect(format).toHaveBeenCalled();
   });
 
-  it('retains string, mixed-value and null ordering without coercing raw cells', async () => {
+  it('orders numbers before text and preserves null ordering without coercing raw cells', async () => {
     interface Row { code: string; value: unknown }
     const table = renderTable<Row>({
       queryId: 'stocks',
@@ -270,9 +263,9 @@ describe('QueryTable', () => {
     await table.connect();
     const codes = () => screen.getAllByRole('row').slice(1)
       .map(row => within(row).getAllByRole('cell')[0].textContent);
-    expect(codes()).toEqual(['ten', 'two', 'numeric', 'null', 'missing']);
+    expect(codes()).toEqual(['numeric', 'ten', 'two', 'null', 'missing']);
     expect(screen.getAllByText('-')).toHaveLength(2);
     fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
-    expect(codes()).toEqual(['null', 'missing', 'numeric', 'two', 'ten']);
+    expect(codes()).toEqual(['null', 'missing', 'two', 'ten', 'numeric']);
   });
 });

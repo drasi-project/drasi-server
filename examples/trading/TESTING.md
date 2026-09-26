@@ -51,6 +51,13 @@ reactive-projection and bounded-recovery contract stays intact. Current
 proved on this owning branch; earlier `1284e9f` / ABI 0.11 and 0.13 captures
 and measurements remain historical. No P5-P7 product code is imported.
 
+P5 normally integrates exact P4 `6bb523b65ed8ca6a090dcc92d4ff79eb7c12731d`
+above its completed table/SSR/alignment and DCE head
+`79748574285ab4f6cb1738f1c8a0b585bd8ab53c`. Its implementation, regressions,
+budgets and historical records remain intact; only the approved parent runtime,
+setup/provenance and current-versus-historical documentation are integrated.
+P6/P7 features are not downported, and no later human acceptance is implied.
+
 ## Behavior inventory, version 1
 
 Paths in the assertion column are relative to `app/test`. A synthetic test
@@ -158,6 +165,285 @@ query definitions and financial rows are untouched; raw diagnostic REST reads
 still record the actual isolated bind values.
 
 ## Fast checks
+
+### P5 composition separation
+
+P5 ([#164 Part A](https://github.com/drasi-project/drasi-server/issues/164))
+starts at the exact P4 head `20561c13dd74929855dfbe605bb1fac23e5a49f4`
+in predecessor #207. It separates provider-free `DataTable`, headless query
+state and the small composed `QueryTable`. Trading's `TradingQueryTable`
+owns the existing fullscreen transition and shares sorting/animation across
+two instances of the same presentation. `QueryInspector` and
+`CodeViewerDialog` are app-owned; the package no longer ships tutorial code.
+The package stylesheet and all original visual PNG images remain unchanged.
+
+`DataTable.test.tsx` uses frozen, non-Trading rows with no provider. It covers
+typed computed cells, actions, headers/custom rows, stable row state,
+animation, null/number/string/hidden-field ordering, controlled precedence,
+uncontrolled defaults/clearing and one notification per action in StrictMode.
+`QueryTableComposition.test.tsx` uses the real provider/client rather than
+mocking hooks. Loading/empty/retained/error slots expose full query state;
+query-local retry preserves another table's subscription and shared retry
+returns to the provider. No protocol, raw-key/projection or financial behavior
+is reimplemented in the presentation layer.
+
+The portable `composition-regressions.test.tsx` was first run against the
+exact P4 checkout, before implementation. All three assertions failed:
+there was no provider-free `DataTable` export, a plain table made three
+non-cancelled definition/full-view reads rather than the two required
+resource-validation reads, and three sort actions notified six times under
+StrictMode. The identical checks pass on P5. Required initialization and
+subscription resource validation remains intact; removing those GETs would
+not be an acceptable way to make the inspector assertion pass.
+
+Trading's `integration/tableComposition.test.tsx` tests the built package.
+It covers closed-inspector read isolation, delayed success updating an open
+viewer and its actual copied text, safe failure/retry, close cancellation and
+fresh reopen, instance-scoped server-UI links, fullscreen shared sorting,
+live animations/actions, collapse buttons/backdrop/Escape and unmount cleanup.
+Definition-read retry does not bounce a healthy stream; a shared error uses
+the connection owner's retry. Existing CRUD/provisioning/result tests remain.
+
+The original three-browser behavior scenarios and five visual comparisons
+remain the gate. The tutorial screenshot now waits for its actual lazily
+loaded `OWNS_STOCK` query text before comparing the same image; it does not
+capture a loading placeholder or refresh a baseline. The existing lifecycle
+versus frozen visual-clock policy, five-second readiness assertions, forced
+503, concurrent/partial setup, financial values and no-navigation assertions
+are unchanged.
+
+P6 still owns focus containment/restoration, topmost/nested overlay ownership,
+shared scroll locking, complete keyboard/tab semantics, local/portal theme
+tokens, reduced motion and the height API. Single-overlay compatibility tests
+are not evidence that those unfinished contracts are complete. No standalone
+example or Storybook site is added in P5.
+
+#### Historical P5 measured artifact change
+
+This records the original P5 head
+`569b1d26e558b838d3a572bf7e2e5fbd6280eeaf`, its prior runtime, and schema-2
+single-format declaration measurement. The exact original record is preserved
+in `baseline-metrics-p5-v2.json`; current accounting and runtime integration are
+described below. These original backend/skip counts are historical, not a
+substitute for rebuilding and validating the current owning checkout.
+
+The clean Linux/amd64 Node 22.20.0 run passes **354 package tests, 95 Trading
+tests, 6 metric-policy tests and 26 browser scenarios**, including all five
+original exact-zero-diff visual PNG images. Installed React 18.3.1 contracts
+pass on actual Node 22.20.0 and 24.19.0: **9 public type programs with 528
+negative assertions, 8 import/SSR modes, 8 README parser guards and 10 literal
+README snippets** in ESM/CJS/bundler modes. Client/auth programs remain
+React-free. The five predecessor README snippets are preserved.
+
+Coverage is measured without excluding moved code:
+
+| Scope | Statements | Lines | Functions | Branches |
+| --- | ---: | ---: | ---: | ---: |
+| Package, all files | 97.85% | 99.05% | 98.29% | 95.08% |
+| Client, unchanged | 97.73% | 99.10% | 99.34% | 95.27% |
+| React hooks | 98.79% | 100% | 100% | 94.08% |
+| `DataTable` | 100% | 100% | 100% | 96.85% |
+| `QueryTable` and state adapter | 100% | 100% | 100% | 100% |
+| `useTableSort` | 100% | 100% | 100% | 100% |
+| Trading, all files | 89.28% | 90.14% | 87.93% | 81.84% |
+| App-owned table wrapper | 92.40% | 94.11% | 100% | 88.09% |
+| App-owned code viewer | 97.87% | 97.72% | 91.66% | 96.66% |
+| App-owned inspector | 96.15% | 97.72% | 100% | 82.92% |
+
+The enforced critical client/react floors remain 90% statements/lines/functions
+and 85% branches. Existing client normalization, reducer, subscription,
+configuration and provider evidence is retained; this layer does not rewrite
+their protocol or lifecycles.
+
+| Measured bytes | P4 | P5 |
+| --- | ---: | ---: |
+| Package tarball, including docs/maps | 187699 | 169457 |
+| Package ESM, all entries/chunks | 98585 | 78523 |
+| Package CJS, all entries/chunks | 106000 | 85845 |
+| Package declarations, `.d.ts` family | 34875 | 37834 |
+| Package CSS | 10043 | 10043 |
+| Trading JavaScript | 250892 | 251684 |
+| Trading JavaScript gzip | 73795 | 74133 |
+| Trading generated CSS | 21034 | 21639 |
+| Trading generated CSS gzip | 5163 | 5212 |
+
+The first full browser run passed all behavior/visual checks and correctly
+rejected the declaration-growth budget. The measured advance retains P1-P4
+history and the same **2% future-growth policy**. The new provider-free/state
+slot/error/sort/animation declarations add 2959 bytes; moving tutorial and
+fullscreen code out of the package reduces every complete runtime-format
+total, not just its entry stubs. The app still owns that functionality, plus
+composition plumbing and lazy retry (792 more JavaScript bytes). Its unchanged
+Tailwind content scan now also sees the moved modules, including `.table` and
+`.transition` utility discovery; generated CSS grows by 605 bytes. Neither
+package CSS nor any original image was edited, and all five comparisons remain
+exact. No size threshold, coverage floor or assertion was disabled to pass.
+
+Unchanged-backend checks pass: exact engine verification, registry plugin
+origin, 42 tooling tests, real UI/server builds, 779 Rust tests (32 ignored),
+`make fmt-check` and strict locked all-target Clippy. The locked-server audit
+reports zero vulnerabilities and 15 existing warnings, not clearance of the
+separate unused legacy core workspace.
+
+The supported native plugin invocation is `make download-test-plugins`
+followed by `./tests/plugin_smoke_test.sh --skip-build`: **8 pass / 28 configured
+skips**, with the pinned registry artifacts verified. This is not all-plugin
+coverage. The additional legacy `make test-smoke` convenience target still
+exits 2 because its `build-dynamic` target is absent; that pre-existing blocker
+was not reported as a passing gate or repaired by original P5. The approved
+incoming parent later repaired that convenience path; the paragraph above is
+historical evidence, not a current-runtime blocker.
+
+#### Historical P5 ABI 0.13 parent integration and accounting
+
+This section records the earlier `1284e9f` / library 0.9.1 / ABI 0.13
+integration. Its runtime, counts and captured measurements are historical;
+the current `211d0f2a` / ABI 0.14 propagation below needs its own proof.
+
+P5 normally merges exact updated P4
+`2ccf8624533193861e6518cb0c39785f561fa270` into original P5
+`569b1d26e558b838d3a572bf7e2e5fbd6280eeaf`. Both histories and the existing PR
+base ref are retained. No P6/P7 product code, query/financial changes, source
+aliases, image refresh or scope-expanding dependency updates are introduced.
+The same provider-free table, small live composition, scoped retries,
+controlled/uncontrolled sort and Trading-owned lazy inspector/fullscreen
+composition remain the contract.
+
+The original P1/P2/P3/P4 schema-2 files remain byte-identical to the incoming
+parent, and `baseline-metrics-p5-v2.json` adds the byte-identical original P5
+record. Policy tests protect those bytes and retain every earlier budget case.
+The original P5 tarball SHA-256 is
+`3cb4774d8c34e5aee2464b66026210a37ef83abd2f65f84ff82c09dfb59f8aca`.
+Remeasuring that same artifact with the incoming `measurePackageModules`
+convention counts **37,834 ESM + 37,851 CommonJS = 75,685 declaration bytes**.
+That is an accounting correction, not new runtime bytes or a budget relaxation.
+The corrected P1-P4 totals remain **37,492 / 42,280 / 56,256 / 69,767**.
+P5's actual declaration feature cost relative to P4 is **5,918 bytes** when
+both formats are counted; the original 2,959-byte single-format difference
+remains in its historical record.
+
+The current metric scope includes every package JS/CJS/declaration entry and
+shared/nested chunk, every shipped stylesheet, and recursive Trading JS/CSS
+assets. Source maps remain part of tarball size, not executable-byte totals.
+P5 retains its feature/runtime budget and all coverage floors, with the same
+**2% future-growth rule**; it does not replace the incoming accounting with
+the old single-declaration convention.
+
+Current-runtime gates must build this checkout's default server and real UI
+before Rust or live tests. The approved runtime is server 0.2.3, library 0.9.1,
+host/plugin/FFI crates 0.11.0, index 0.6.1 and GQL 0.3.6, with the same reviewed
+core 0.5.8 / AST 0.3.5 / Cypher 0.3.6 source correction. All six signed locks
+come from official merged-main
+`3f043cd9e30072c1b47a29f9c5d3b11b1a356c9a`: plugin SDK crate 0.11.1 and host
+0.11.0 have actual native ABI 0.13. Historical ABI 0.11 captures stay separate;
+reproducing them requires their old whole harness/policy, not a pin override
+that bypasses the current guards.
+
+The current DTO and seventeen raw SSE records inherited from P4 remain under
+`dev-tools/react/test/fixtures/server-v1-0.2.3`, separate from old recordings.
+P5's own-source and independent packed-frontend live runs use only its rebuilt
+default binary and actual backend source via `P1_SOURCE_ROOT`. Required
+2000/cost1800/count2, 2050 live/reload, 2150 offline/reconnect, CRUD/live/delete
+and no-navigation assertions remain unchanged. There is no new authoritative
+cursor, timestamp ordering, replay rollback or atomicity claim.
+
+The integrated clean Linux/amd64 gate passes **357 package tests, 102 Trading
+tests, 15 metric-policy tests and 26 browser scenarios**, including all five
+unchanged exact-zero-diff visual PNG images. The existing public-contract and
+literal README checks also pass in independent Node 22.20.0 and 24.19.0
+consumers with React 18.3.1: 9 type programs / 528 negative assertions,
+10 README snippets in all three TypeScript modes, 8 import/SSR modes and
+8 parser guards. Client/auth remain React-free; hook imports remain UI-free.
+
+Measured integrated bytes are **171,115 tarball / 78,523 ESM / 85,845 CJS /
+75,685 dual declarations / 10,043 package CSS / 251,684 Trading JS
+(74,133 gzip) / 21,639 Trading CSS (5,212 gzip)**. Runtime, declaration and CSS
+bytes match the remeasured original P5 artifact. Only the tarball grows:
+**1,658 bytes (0.98%)** for current-runtime and integration documentation.
+The original P5 byte budget is not raised; the same 2% policy passes.
+Coverage percentages and critical client/react floors remain unchanged.
+
+The owning checkout's updated default binary and real UI were built before
+Rust validation. All **38** Cargo summaries total **809 passed / 32 ignored /
+0 failed**; 53 tooling tests, strict locked all-target Clippy, fmt and the
+locked-host audit also pass. The audit retains 15 existing warnings. These
+results do not clear unused legacy-core, embedded-plugin, npm or publisher-
+visibility advisories, and they make no P6 human accessibility claim.
+Final committed-head own-source/packed live and CI evidence is recorded on
+the owning #208 and #164 Part A without rewriting later-layer evidence.
+
+#### P5 newer-main development-source propagation
+
+The current parent is `6bb523b65ed8ca6a090dcc92d4ff79eb7c12731d`, with exact
+source and registry requirements in [the runtime matrix](../../docs/main-runtime-integration.md).
+Only engine 0.5.9 / AST 0.3.5 / Cypher 0.3.6 use clean temporary source
+`211d0f2a79aa2ad0f7cb841937f52013fe95ded6`; library 0.9.2, SDK/host/FFI 0.11.2,
+index 0.6.3, functions 0.5.9, middleware 0.5.10 and GQL 0.3.6 remain registry
+dependencies. All six `70ca432c` main-signed locks use native ABI 0.14.
+Equal-version sibling SDKs do not authorize local plugin builds.
+
+Build the owning checkout's real UI/default binary before Rust tests or live
+runs, and record the binary actually used after any relink. Native work runs
+before browser timing gates. Independent packed consumers use only
+`P1_SOURCE_ROOT` for this own backend, never a frontend alias or lower binary.
+The original singleton/CRUD/no-write-reload/2050-live/2150-reconnect assertions,
+35 browser cases, five exact images, names/maps/DCE and quantitative gates
+remain unchanged. Current evidence belongs to #208/#164 Part A; parent or
+historical runs are not relabeled as this branch's validation.
+
+The narrow historical 110-byte P5 Trading gzip approval is retained exactly,
+not borrowed for package size, other metrics or later baselines. The package
+tarball ceiling remains 172846.14 bytes. `211d0f2a` is not a published fix,
+library-codec adoption, legacy-record repair or license to broaden recovery.
+Earlier core/backport records, audit warnings and human AT/contrast limits
+remain explicit.
+
+#### P5 table quality corrections and approved gzip allowance
+
+The quality pass preserves the exact parent endpoint-identity and committed-
+query-key fixes from `2b9890b1adb056bdb419cf94fdd6a701cef53479`. It corrects
+mixed-value sort cycles, ambient-locale hydration differences and explicit
+left body alignment. Numbers (including infinities and explicitly ordered NaN)
+precede nonnumeric text representations; text uses fixed en-US variant
+collation with `numeric: false`, followed by nullish values. Descending reverses
+that ordering while ties stay stable. Omitted body alignment still inherits.
+This is not a universal cross-ICU Unicode-ordering or P6 accessibility claim.
+
+`tableOrdering.test.tsx` covers permutations, transitivity, non-finite numbers,
+signed zero, stable ties and actual Trading name ordering. The test-only
+`table-presentation.spec.ts` bundles installed public entrypoints in memory,
+renders on a real en-US Node server, and hydrates in sv-SE Chromium, Firefox
+and WebKit. It rejects recoverable errors, console warnings/errors and root
+replacement; it also checks inherited host alignment and row identity.
+All three browser regressions failed before the fix, then passed in all three
+engines. The resulting 35 browser cases include the original 26 and all five
+unchanged zero-diff visual PNG images.
+
+Ordinary package experiments and their failures were retained rather than
+discarded: the unoptimized consolidated artifact was 180932 bytes, the bounded
+whitespace/syntax experiment was 175542, and the chosen whitespace-only
+artifact was 168385 before this approval note. All retained the complete
+56-file/18-map inventory, original map source content, notices and public/debug
+names. A single alignment-code consolidation failed both package and app gzip
+limits and was reverted. No archive ordering, hidden exclusions, identifier
+mangling, removed documentation or historical baseline reset was used.
+
+The chosen output passed functional/public/type/SSR/browser/image and own-
+source/independent-packed live checks, but **failed the original Trading gzip
+cap**: 75725 bytes exceeded `74133 * 1.02 = 75615.66` by 109.34 bytes.
+On 2026-09-21 the actual user approved exactly **one fixed 110-byte allowance**
+for this recorded P5 metric. The cap is now **`74133 * 1.02 + 110 = 75725.66`**:
+**75725 passes; 75726 fails**. The original 74133-byte baseline and 2% rule are
+not reset, and the allowance is never multiplied or added to later observations.
+
+`approvedP5TradingJsGzipAllowance` records this approval separately. Policy
+guards bind it to P5 Part A, original P5 head and the fingerprint of all
+original P5 size counters. A different size baseline, layer, metric or amount
+cannot inherit it. A later layer using its own distinct baseline must remove
+this P5-only approval record rather than applying or compounding it.
+Boundary tests retain every other 2% limit, coverage floor and byte-identical
+historical record. This approval is not a blanket budget, behavior, image,
+color/contrast or human assistive-technology waiver.
 
 ### Part B Trading result consumers
 

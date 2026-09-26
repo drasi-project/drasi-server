@@ -3,16 +3,25 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import { createElement, type ReactNode } from 'react';
+import { createElement, createRef, type ReactNode } from 'react';
 import {
+  DataTable,
   QueryTable,
+  queryTableState,
   type ColumnDef,
   type RowAction,
   type SortConfig,
+  type DataTableProps,
+  type DataTableState,
+  type DataTableRenderContext,
+  type DataTableErrorContext,
+  type DataTableHeaderContext,
   type QueryTableProps,
+  type QueryTableRenderContext,
+  type QueryTableErrorContext,
 } from '@drasi/react/components';
 import type {
-  DrasiClientOptions, ConnectionStatus, DrasiErrorCode, DrasiErrorDetails,
+  DrasiClientOptions, ConnectionStatus, DrasiError, DrasiErrorCode, DrasiErrorDetails,
   ReactionReference, QueryConfig, ReactionConfig, Component, ResultRow, QueryResult,
   ResultChange, QuerySnapshot, QueryDelta, ResultAdapter, ResultAdapterContext,
   LegacyResultAdapterOptions, ResultReconciliationOptions, RowKey, QuerySubscription,
@@ -21,8 +30,10 @@ import type {
 import { accumulateResult, createLegacyResultAdapter, sse034ResultAdapter } from '@drasi/react/client';
 import type {
   UseDrasiQueryOptions, UseDrasiQueryResult, UseDrasiQueryDefinitionResult,
-  DrasiProviderProps, DrasiContextValue,
+  DrasiProviderProps, DrasiContextValue, AnimationDirection,
+  SortConfig as HeadlessSortConfig, UseTableSortOptions, UseTableSortResult,
 } from '@drasi/react/react';
+import { useTableSort } from '@drasi/react/react';
 import * as Root from '@drasi/react';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
@@ -64,6 +75,25 @@ export type RootColumn = Assert<Equal<Root.ColumnDef<Temperature>, ColumnDef<Tem
 export type RootAction = Assert<Equal<Root.RowAction<Temperature>, RowAction<Temperature>>>;
 export type RootSort = Assert<Equal<Root.SortConfig, SortConfig>>;
 export type RootTable = Assert<Equal<Root.QueryTableProps<Temperature>, QueryTableProps<Temperature>>>;
+export type HeadlessSortIsShared = Assert<Equal<HeadlessSortConfig, SortConfig>>;
+export type RootSortHook = Assert<Equal<typeof Root.useTableSort, typeof useTableSort>>;
+export type RootSortOptions = Assert<Equal<Root.UseTableSortOptions, UseTableSortOptions>>;
+export type RootSortResult = Assert<Equal<Root.UseTableSortResult, UseTableSortResult>>;
+export type RootDataTable = Assert<Equal<typeof Root.DataTable, typeof DataTable>>;
+export type RootDataTableProps = Assert<Equal<Root.DataTableProps<Temperature, SensorError>, DataTableProps<Temperature, SensorError>>>;
+export type RootDataState = Assert<Equal<Root.DataTableState<SensorError>, DataTableState<SensorError>>>;
+export type RootDataContext = Assert<Equal<Root.DataTableRenderContext<Temperature, SensorError>, DataTableRenderContext<Temperature, SensorError>>>;
+export type RootDataError = Assert<Equal<Root.DataTableErrorContext<Temperature, SensorError>, DataTableErrorContext<Temperature, SensorError>>>;
+export type RootDataHeader = Assert<Equal<Root.DataTableHeaderContext<Temperature, SensorError>, DataTableHeaderContext<Temperature, SensorError>>>;
+export type RootQueryContext = Assert<Equal<Root.QueryTableRenderContext<Temperature>, QueryTableRenderContext<Temperature>>>;
+export type RootQueryError = Assert<Equal<Root.QueryTableErrorContext<Temperature>, QueryTableErrorContext<Temperature>>>;
+export type RootStateAdapter = Assert<Equal<typeof Root.queryTableState, typeof queryTableState>>;
+export type SuppliedRowsAreReadonly = Assert<Equal<DataTableProps<Temperature>['rows'], readonly Temperature[] | null>>;
+export type SuppliedColumnsAreReadonly = Assert<Equal<DataTableProps<Temperature>['columns'], readonly ColumnDef<Temperature>[]>>;
+export type SuppliedActionsAreReadonly = Assert<Equal<DataTableProps<Temperature>['actions'], readonly RowAction<Temperature>[] | undefined>>;
+export type CustomRowColumnsAreReadonly = Assert<Equal<Parameters<NonNullable<DataTableProps<Temperature>['renderRow']>>[1], readonly ColumnDef<Temperature>[]>>;
+export type AnimationMapsAreReadonly = Assert<Equal<DataTableProps<Temperature>['rowAnimations'], ReadonlyMap<string, AnimationDirection> | undefined>>;
+export type DefaultStateUsesError = Assert<Equal<DataTableState['error'], Error | null | undefined>>;
 
 interface Temperature {
   stationId: string;
@@ -74,6 +104,11 @@ interface Delivery {
   routeId: string;
   parcels: number;
 }
+
+export const explicitLeft: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'left' };
+export const inheritedAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station' };
+// @ts-expect-error Alignment remains the existing physical left/center/right contract.
+export const unsupportedLogicalAlignment: ColumnDef<Temperature> = { key: 'stationId', label: 'Station', align: 'start' };
 
 export const columns: ColumnDef<Temperature>[] = [{
   key: 'celsius', label: 'Temperature', align: 'right', sortable: true,
@@ -141,17 +176,60 @@ export const table: QueryTableProps<Temperature> = {
     return degrees > 30 && position === 0 ? 'first-hot' : '';
   },
   onSortChange(next) {
-    const value: SortConfig = next;
+    const value: SortConfig | null = next;
+    // @ts-expect-error A sort request can explicitly clear sorting.
+    const required: SortConfig = next;
     // @ts-expect-error Sort callbacks retain their direction union.
-    const impossible: 'down' = next.direction;
-    void [value, impossible];
+    const impossible: 'down' = next?.direction;
+    void [value, required, impossible];
   },
   renderRow(row, definitions, animation, defaultRender) {
     const station: string = row.stationId;
-    const ownColumns: ColumnDef<Temperature>[] = definitions;
+    const ownColumns: readonly ColumnDef<Temperature>[] = definitions;
     const rendered: ReactNode = defaultRender();
     void [station, ownColumns, animation];
     return rendered;
+  },
+  renderLoading(context) {
+    const ownContext: QueryTableRenderContext<Temperature> = context;
+    const query: UseDrasiQueryResult<Temperature> = context.query;
+    const rows: readonly Temperature[] | null = context.rows;
+    const retry: () => void = context.retryConnection;
+    // @ts-expect-error The full query result keeps the table's row model.
+    const other: UseDrasiQueryResult<Delivery> = context.query;
+    void [ownContext, query, rows, retry, other];
+    return null;
+  },
+  renderEmpty({ query, rows }) {
+    const status: QueryStatus = query.status;
+    return createElement('span', null, `${status}: ${rows?.length ?? 0} readings`);
+  },
+  renderError(context) {
+    const ownContext: QueryTableErrorContext<Temperature> = context;
+    const error: DrasiError = context.error;
+    const code: DrasiErrorCode = error.code;
+    const scope: QueryErrorScope | null = context.query.errorScope;
+    const lastUpdate: Date | null = context.query.lastUpdate;
+    const queryRetry: () => void = context.query.retry;
+    const connectionRetry: () => void = context.retryConnection;
+    // @ts-expect-error Query error slots preserve DrasiError, not an arbitrary application error subtype.
+    const applicationError: SensorError = context.error;
+    void [ownContext, code, scope, lastUpdate, applicationError];
+    return createElement('button', {
+      onClick: scope === 'connection' ? connectionRetry : queryRetry,
+    }, error.message);
+  },
+  renderStale(context) {
+    const stale: boolean = context.query.stale;
+    const retry: (() => void) | undefined = context.state.retry;
+    void [stale, retry];
+    return context.state.staleMessage;
+  },
+  renderHeader(context) {
+    const header: DataTableHeaderContext<Temperature, DrasiError> = context;
+    // @ts-expect-error QueryTable's header remains a presentation slot, not an enriched query-state slot.
+    context.query;
+    return header.defaultRender();
   },
 };
 export const deliveryTable: QueryTableProps<Delivery> = {
@@ -195,3 +273,187 @@ export const crossedOptions: QueryTableProps<Delivery> = { ...deliveryTable, que
 
 export const rendered = createElement(QueryTable<Temperature>, table);
 export const rootRendered = createElement(Root.QueryTable<Delivery>, deliveryTable);
+
+export class SensorError extends Error {
+  readonly stationId = 'cold-room';
+}
+
+export const suppliedRows: readonly Temperature[] = Object.freeze([
+  { stationId: 'cold-room', celsius: 3 },
+  { stationId: 'warm-room', celsius: 24 },
+]);
+export const suppliedColumns: readonly ColumnDef<Temperature>[] = Object.freeze([...columns, computed]);
+export const suppliedActions: readonly RowAction<Temperature>[] = Object.freeze([...actions]);
+export const suppliedAnimations: ReadonlyMap<string, AnimationDirection> = new Map([['cold-room', 'up']]);
+export const sensorState: DataTableState<SensorError> = {
+  loading: false, error: new SensorError('Calibration unavailable'), stale: true,
+  retry() {}, retryLabel: 'Recalibrate', staleMessage: 'Last calibrated readings.',
+};
+export const ordinaryState: DataTableState = { error: new Error('Refresh failed') };
+
+export const standalone: DataTableProps<Temperature, SensorError> = {
+  rows: suppliedRows, columns: suppliedColumns, rowKey: row => row.stationId,
+  state: sensorState, sort: null, defaultSort: sort,
+  title: 'Warehouse temperatures', actions: suppliedActions, actionsWidth: '6rem',
+  animateOnChange: 'celsius', rowAnimations: suppliedAnimations,
+  className: 'warehouse-card', style: { maxWidth: '50rem' },
+  containerRef: createRef<HTMLDivElement>(),
+  tableClassName: 'warehouse-scroll', headerClassName: 'warehouse-head',
+  titleClassName: 'warehouse-title', rowClassName: row => row.celsius > 30 ? 'hot' : '',
+  height: 'warehouse-height', emptyMessage: 'No readings.',
+  headerActions: createElement('span', null, 'Calibrated'),
+  headerControls: createElement('button', { type: 'button' }, 'Inspect'),
+  headerSlot: createElement('p', null, 'Application-owned data'),
+  headerSlotClassName: 'warehouse-summary',
+  onSortChange(next) {
+    const requested: SortConfig | null = next;
+    void requested;
+  },
+  renderHeader(context) {
+    const header: DataTableHeaderContext<Temperature, SensorError> = context;
+    const rows: readonly Temperature[] | null = context.rows;
+    const current: SortConfig | null = context.sort;
+    // @ts-expect-error Presentation contexts do not require or expose a query/provider.
+    context.query;
+    void [rows, current];
+    return createElement('header', null, header.defaultRender(),
+      createElement('button', { onClick: () => context.setSort(null) }, 'Input order'));
+  },
+  renderRow(row, definitions, animation, defaultRender) {
+    const station: string = row.stationId;
+    const direction: AnimationDirection = animation;
+    const renderDefault: () => ReactNode = defaultRender;
+    // @ts-expect-error Custom-row callbacks cannot mutate supplied column arrays.
+    definitions.push(computed);
+    // @ts-expect-error Custom-row callbacks preserve the supplied domain model.
+    row.parcels;
+    void [station, direction];
+    return renderDefault();
+  },
+  renderLoading(context) {
+    const ownContext: DataTableRenderContext<Temperature, SensorError> = context;
+    const optionalError: SensorError | null | undefined = context.state.error;
+    // @ts-expect-error Loading/empty/stale contexts do not guarantee an error.
+    context.error;
+    void [ownContext, optionalError];
+    return null;
+  },
+  renderEmpty(context) {
+    // @ts-expect-error Slot rows are readonly even after sorting.
+    context.rows?.push({ stationId: 'replacement', celsius: 0 });
+    return createElement('span', null, `${context.rows?.length ?? 0} readings`);
+  },
+  renderError(context) {
+    const ownContext: DataTableErrorContext<Temperature, SensorError> = context;
+    const guaranteed: SensorError = context.error;
+    const optionalError: SensorError | null | undefined = context.state.error;
+    // @ts-expect-error A guaranteed application error is not assumed to be a Drasi transport error.
+    const transportError: DrasiError = context.error;
+    void [ownContext, optionalError, transportError];
+    return createElement('span', null, `${guaranteed.stationId}: ${guaranteed.message}`);
+  },
+  renderStale({ state }) {
+    const stale: boolean | undefined = state.stale;
+    void stale;
+    return state.staleMessage;
+  },
+};
+export const emptyStandalone: DataTableProps<Temperature> = {
+  rows: [], columns, rowKey: row => row.stationId, sort: null,
+  renderEmpty: () => null,
+};
+export const waitingStandalone: DataTableProps<Temperature> = {
+  ...emptyStandalone, rows: null, state: { loading: true }, sort: undefined, defaultSort: null,
+  renderLoading: () => null,
+};
+export const genericStandalone: DataTableProps = {
+  rows: [{ stationId: 'cold-room' }], columns: [{ key: 'stationId', label: 'Station' }],
+  rowKey(row) {
+    // @ts-expect-error The default row model exposes unknown fields, not implicit typed values.
+    const unchecked: string = row.stationId;
+    void unchecked;
+    if (typeof row.stationId !== 'string') throw new Error('Expected a station ID');
+    return row.stationId;
+  },
+  state: ordinaryState,
+  renderError({ error }) {
+    const ordinary: Error = error;
+    // @ts-expect-error The default presentation error has no Drasi-specific error code.
+    error.code;
+    return ordinary.message;
+  },
+};
+
+export const queryState: UseDrasiQueryResult<Temperature> = {
+  data: [...suppliedRows], status: 'resynchronizing', stale: true, loading: true,
+  error: null, errorScope: null, lastUpdate: new Date(), retry() {},
+};
+export const adaptedState: DataTableState<DrasiError> = queryTableState(queryState, () => {});
+// @ts-expect-error The adapter requires a complete query result, not only presentation state.
+queryTableState(sensorState, () => {});
+// @ts-expect-error The adapter requires an explicit shared retry owner.
+queryTableState(queryState);
+// @ts-expect-error Supplied table rows must be object models, not primitives.
+export type PrimitiveDataTable = DataTableProps<number>;
+// @ts-expect-error Presentation errors must extend Error.
+export type StringDataState = DataTableState<string>;
+// @ts-expect-error Both table generic constraints remain enforced.
+export type StringDataError = DataTableProps<Temperature, string>;
+// @ts-expect-error Supplied rows are required even for an empty table.
+export const noRows: DataTableProps<Temperature> = { columns, rowKey: row => row.stationId };
+// @ts-expect-error Column definitions are required for supplied rows.
+export const noColumns: DataTableProps<Temperature> = { rows: suppliedRows, rowKey: row => row.stationId };
+// @ts-expect-error Row identity is required independently of columns and state.
+export const noRenderKey: DataTableProps<Temperature> = { rows: suppliedRows, columns };
+// @ts-expect-error Supplied-row identity must be a string.
+export const numericDataKey: DataTableProps<Temperature> = { ...emptyStandalone, rowKey: row => row.celsius };
+// @ts-expect-error Supplied rows cannot cross application domain models.
+export const crossedData: DataTableProps<Delivery> = emptyStandalone;
+// @ts-expect-error A provider-free table does not accept a query identity.
+export const suppliedQueryId: DataTableProps<Temperature> = { ...emptyStandalone, queryId: 'temperatures' };
+// @ts-expect-error A provider-free table does not own raw query accumulation.
+export const suppliedQueryOptions: DataTableProps<Temperature> = { ...emptyStandalone, queryOptions: table.queryOptions };
+// @ts-expect-error Error messages do not replace error objects.
+export const stringError: DataTableState = { error: 'offline' };
+// @ts-expect-error A custom error context requires its declared error subtype.
+export const wrongApplicationError: DataTableState<SensorError> = { error: new Error('offline') };
+// @ts-expect-error A state flag is a boolean, not a truthy string.
+export const invalidLoading: DataTableState = { loading: 'true' };
+// @ts-expect-error Retry is an owner callback, not a label.
+export const invalidRetry: DataTableState = { retry: 'Refresh' };
+// @ts-expect-error A controlled callback must accept clearing to null.
+export const nonNullableSortCallback: DataTableProps<Temperature> = { ...emptyStandalone, onSortChange: (next: SortConfig) => { void next; } };
+// @ts-expect-error Sort configuration is not a bare column string.
+export const invalidControlledSort: DataTableProps<Temperature> = { ...emptyStandalone, sort: 'celsius' };
+// @ts-expect-error Animation maps use the published direction union.
+export const invalidAnimationMap: DataTableProps<Temperature> = { ...emptyStandalone, rowAnimations: new Map([['cold-room', 'flash']]) };
+// @ts-expect-error Container refs identify the card element, not an action button.
+export const wrongContainerRef: DataTableProps<Temperature> = { ...emptyStandalone, containerRef: createRef<HTMLButtonElement>() };
+// @ts-expect-error A header replacement must return renderable content.
+export const invalidHeader: DataTableProps<Temperature> = { ...emptyStandalone, renderHeader: () => ({ invalid: true }) };
+// @ts-expect-error A custom row replacement must return renderable content.
+export const invalidRow: DataTableProps<Temperature> = { ...emptyStandalone, renderRow: () => ({ invalid: true }) };
+// @ts-expect-error A live composition owns its rows.
+export const suppliedLiveRows: QueryTableProps<Temperature> = { ...table, rows: suppliedRows };
+// @ts-expect-error A live composition derives its presentation state from the query.
+export const suppliedLiveState: QueryTableProps<Temperature> = { ...table, state: ordinaryState };
+// @ts-expect-error Tutorial snippets are now application-owned, not a QueryTable prop.
+export const tutorialTable: QueryTableProps<Temperature> = { ...table, codeSnippet: '<TradingQueryTable />' };
+// @ts-expect-error Fullscreen is application composition, not a built-in table option.
+export const fullscreenTable: QueryTableProps<Temperature> = { ...table, fullscreen: true };
+// @ts-expect-error Tutorial dialogs are no longer part of the component entrypoint.
+import { CodeViewerDialog } from '@drasi/react/components';
+// @ts-expect-error The retired dialog props are not part of the component entrypoint.
+import type { CodeViewerDialogProps } from '@drasi/react/components';
+// @ts-expect-error The root convenience export does not retain removed tutorial APIs.
+import { CodeViewerDialog as RootCodeViewerDialog } from '@drasi/react';
+// @ts-expect-error Tutorial definition formatting is not a package component API.
+import { formatQueryConfig } from '@drasi/react/components';
+
+export const suppliedRendered = createElement(DataTable<Temperature, SensorError>, standalone);
+export const noProviderRendered = createElement(DataTable<Temperature>, emptyStandalone);
+export const rootSuppliedRendered = createElement(Root.DataTable<Delivery>, {
+  rows: [{ routeId: 'north', parcels: 4 }],
+  columns: deliveryTable.columns,
+  rowKey: deliveryTable.rowKey,
+});
