@@ -1383,6 +1383,8 @@ The registry runtime uses `drasi-core` 0.5.10 and `drasi-lib` 0.9.3, including
 the aggregate-grouping corrections and named MessagePack output writer. When
 upgrading from older versions, plan a controlled reconstruction of affected
 persisted queries from authoritative bootstrap or retained replay data.
+Affected numeric groups include ordinary integer keys and numeric values nested
+in compound keys, not only floating-point keys.
 Grouping keys, lazy aggregate state, indexes, and query results must be rebuilt
 together; clearing only output rows is not a migration. Back up existing state
 and confirm the required source data is available before rebuilding.
