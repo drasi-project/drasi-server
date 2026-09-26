@@ -450,12 +450,21 @@ with these native graphs in the same instance.
 Host resources are explicit entries in `definition.resources`, paired by resource
 ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
 values are `memoryIndexes`, `rocksdbIndexes` (requires `path` and graph ownership),
-`middleware`, `queryMiddleware`, `transactionalTransformers`, and `configuration`.
+`middleware`, `queryMiddleware`, `transactionalTransformers`, `configuration`,
+and `qos`.
 Native transaction participants are included in `transactionalTransformers`; durable
 transactions require persistent atomic indexes, not `memoryIndexes`. Configuration
 references use `env:NAME`, `env-json:NAME`, `secret:NAME`, or `secret-json:NAME`;
 only the `-json` forms parse a reference as JSON. The `configuration` resource
 uses the instance's secret provider. Secrets are not copied into saved recipes.
+
+A `qos` recipe contains a `QosChannelDefinition` under `definition` and, for a
+durable channel, a RocksDB `path`. Volatile channels omit `path`. All server-created
+QoS channels require graph ownership. `DesiredPipe::Qos` edges sharing that
+resource append once and have independent subscriber cursors. Subscriber removal,
+not a temporary disconnect, retires its retention obligation. See the core
+[QoS guide](../drasi-core/lib/docs/computation-graph-qos.md) for backpressure,
+explicit lossy retention and durable handoff semantics.
 
 Persistence reads actual graph snapshots, including resource recipes, rather than
 keeping a second component registry. Removing the last graph saves an empty native

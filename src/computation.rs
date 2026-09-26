@@ -15,6 +15,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
+use drasi_core::computation::ComputationIndexProvider;
 use drasi_host_sdk::management::HostConfigurationResolver;
 use drasi_lib::{computation::v1::*, DrasiLib};
 use serde::{Deserialize, Serialize};
@@ -38,11 +39,18 @@ pub struct ComputationGraphConfig {
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ComputationResourceConfig {
     MemoryIndexes,
-    RocksdbIndexes { path: PathBuf },
+    RocksdbIndexes {
+        path: PathBuf,
+    },
     Middleware,
     QueryMiddleware,
     TransactionalTransformers,
     Configuration,
+    Qos {
+        #[schema(value_type = serde_json::Value)]
+        definition: QosChannelDefinition,
+        path: Option<PathBuf>,
+    },
 }
 
 impl ComputationResourceConfig {
@@ -52,6 +60,7 @@ impl ComputationResourceConfig {
             Self::Middleware | Self::QueryMiddleware => ResourceRole::Middleware,
             Self::TransactionalTransformers => ResourceRole::Component,
             Self::Configuration => ResourceRole::SecretStore,
+            Self::Qos { .. } => ResourceRole::StateStore,
         }
     }
 }
@@ -104,6 +113,20 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
             "resource {} role differs from its recipe",
             resource.id
         );
+        if let ComputationResourceConfig::Qos { definition, path } = &recipe {
+            definition.validate()?;
+            anyhow::ensure!(
+                definition.durable == path.is_some()
+                    && path
+                        .as_ref()
+                        .is_none_or(|path| !path.as_os_str().is_empty()),
+                "durable QoS requires a nonempty storage path; volatile QoS must omit it"
+            );
+            anyhow::ensure!(
+                resource.ownership == ResourceOwnership::Graph,
+                "server QoS requires graph ownership"
+            );
+        }
         if let ComputationResourceConfig::RocksdbIndexes { path } = recipe {
             anyhow::ensure!(
                 !path.as_os_str().is_empty(),
@@ -138,6 +161,7 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
     for relationship in &definition.relationships {
         let requirements = match &relationship.pipe {
             DesiredPipe::Retained(pipe) => PipeProvider::resource_dependencies(pipe),
+            DesiredPipe::Qos(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Ranked(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Bounded { .. } | DesiredPipe::Broadcast { .. } => continue,
             DesiredPipe::External { .. } => {
@@ -225,6 +249,31 @@ pub async fn build_graph(
                     HostConfigurationResolver::new(services.secrets.clone()),
                 ))),
             ),
+            ComputationResourceConfig::Qos { definition, path } => {
+                let channel = if let Some(path) = path {
+                    let provider = LegacyIndexProviderAdapter::scoped(
+                        Arc::new(drasi_index_rocksdb::RocksDbIndexProvider::new(
+                            path, false, false,
+                        )),
+                        services.scope.clone(),
+                    )?;
+                    let indexes = provider
+                        .create_indexes(&config.definition.graph_id, resource.id.as_str())
+                        .await?;
+                    QosChannel::persistent(
+                        definition,
+                        indexes,
+                        bindings.factories.envelope_codec(
+                            std::num::NonZeroUsize::new(64 * 1024 * 1024).expect("constant size"),
+                        )?,
+                        resource.id.as_str(),
+                    )
+                    .await?
+                } else {
+                    QosChannel::volatile(definition)?
+                };
+                channel.resource()
+            }
         };
         bindings.resources.insert(resource.id.clone(), handle);
     }
@@ -382,16 +431,17 @@ mod tests {
 
     #[test]
     fn references_are_explicit_and_do_not_silently_coerce_values() {
+        let resolver = HostConfigurationResolver::new(None);
         for key in [
             "env:COUNT",
             "env-json:COUNT",
             "secret:password",
             "secret-json:options",
         ] {
-            assert!(reference(key).is_ok());
+            assert!(resolver.validate_reference(key).is_ok());
         }
         for key in ["COUNT", "unknown:COUNT", "secret:", "env:bad\nname"] {
-            assert!(reference(key).is_err(), "{key}");
+            assert!(resolver.validate_reference(key).is_err(), "{key}");
         }
     }
 
@@ -400,9 +450,7 @@ mod tests {
         let secrets = drasi_lib::secret_store::MemorySecretStoreProvider::new()
             .with_secret("number", "42")
             .with_secret("invalid-json", "not json");
-        let resolver = InstanceConfigurationResolver {
-            secrets: Some(Arc::new(secrets)),
-        };
+        let resolver = HostConfigurationResolver::new(Some(Arc::new(secrets)));
         assert_eq!(
             resolver.resolve("secret:number").await.unwrap(),
             serde_json::json!("42")
