@@ -17,15 +17,14 @@ This directory contains integration tests for Drasi Server that can be run both 
 3. Python 3.11 or newer for the locked plugin installer
 4. Network access to the public OCI registry and Sigstore/Rekor for signature verification
 
-The runner installs the reviewed `source/postgres:0.2.11`,
-`bootstrap/postgres:0.2.14`, and `reaction/log:0.2.8` artifacts before starting
+The runner installs the reviewed `source/postgres:0.2.12`,
+`bootstrap/postgres:0.2.15`, and `reaction/log:0.2.9` artifacts before starting
 the server. Their immutable digests, binary hashes, and trusted publisher
 identity come from the [shared plugin pins](../../plugin-pins/README.md).
 Signature verification stays enabled; automatic latest-version installation
 is disabled. A missing, conflicting, or unverified artifact stops the runner
-before any server is launched. This engine-prerequisite checkout also requires
-the exact pinned sibling engine before Cargo runs. Make build/test entry points
-prepare it automatically; run `make prepare-core` before direct Cargo commands.
+before any server is launched. All default dependencies are released registry
+packages; no sibling core checkout or source preparation is required.
 
 ### Quick Start with Docker
 
@@ -44,7 +43,6 @@ docker run -d \
 ./tests/integration/getting-started/setup-postgres.sh
 
 # Build Drasi Server (from project root)
-make prepare-core
 cargo build --locked --release
 
 # Run tests
@@ -100,9 +98,7 @@ The GitHub Actions workflow uses these scripts:
     ./tests/integration/getting-started/setup-postgres.sh
 
 - name: Build server
-  run: |
-    bash scripts/prepare-core.sh
-    cargo build --locked --release
+  run: cargo build --locked --release
 
 - name: Run integration tests
   run: ./tests/integration/getting-started/run-integration-test.sh

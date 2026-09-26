@@ -82,7 +82,7 @@ if ! command_exists python3; then
     exit 1
 fi
 
-# An engine-only path patch does not change the SDK or authorize local plugin builds.
+# Only Cargo-resolved matching local SDKs authorize local plugin builds.
 PLUGIN_MODE="$(bash "$DRASI_SERVER_ROOT/scripts/prepare-trading.sh")"
 PLUGIN_VERIFICATION_ARGS=()
 case "$PLUGIN_MODE" in

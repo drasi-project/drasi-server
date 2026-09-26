@@ -58,9 +58,7 @@ jobs:
           ./tests/integration/getting-started/setup-postgres.sh
 
       - name: Build Drasi Server
-        run: |
-          bash scripts/prepare-core.sh
-          cargo build --locked --release
+        run: cargo build --locked --release
 
       - name: Run integration tests
         run: ./tests/integration/getting-started/run-integration-test.sh

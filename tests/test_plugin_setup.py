@@ -185,8 +185,10 @@ class LockedTradingPluginsTests(unittest.TestCase):
         original = tomllib.loads(path.read_text())["plugins"]
         for field, value in (
             ("sdk_version", "0.10.0"), ("sdk_version", "0.11.0"),
-            ("sdk_version", "0.11.1"), ("lib_version", "0.9.1"),
-            ("core_version", "0.5.8"), ("platform", "linux/arm64"),
+            ("sdk_version", "0.11.1"), ("sdk_version", "0.11.2"),
+            ("lib_version", "0.9.1"), ("lib_version", "0.9.2"),
+            ("core_version", "0.5.8"), ("core_version", "0.5.9"),
+            ("platform", "linux/arm64"),
             ("signature", {
                 "verified": True, "issuer": installer.ISSUER,
                 "subject": installer.SUBJECT.replace("@refs/heads/main", "@refs/heads/experimental"),
@@ -258,15 +260,13 @@ class PluginEntryPointTests(unittest.TestCase):
         (self.root / "scripts").mkdir(exist_ok=True)
         shutil.copyfile(ROOT / "scripts/prepare-trading.sh", self.root / "scripts/prepare-trading.sh")
         shutil.copyfile(ROOT / "scripts/prepare-build.sh", self.root / "scripts/prepare-build.sh")
-        (self.root / "scripts/prepare-core.sh").write_text(
-            '#!/bin/bash\nprintf \'["prepare-core","%s"]\\n\' "$*" >> "$POLICY_LOG"\n'
-            'if [[ "${FAIL_CORE:-0}" == 1 ]]; then exit 17; fi\n'
-        )
         executable(self.bin / "python3", """
 import json, os, sys
 with open(os.environ["POLICY_LOG"], "a") as log:
     log.write(json.dumps(["python3", *sys.argv[1:]]) + "\\n")
 if sys.argv[1].endswith("plugin_origin.py"):
+    if os.environ.get("FAIL_ORIGIN") == "1":
+        sys.exit(17)
     print(os.environ["POLICY_MODE"])
 """)
         executable(self.bin / "make", """
@@ -292,6 +292,7 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
     def test_make_test_all_uses_resolved_origin_not_sibling_existence(self):
         checkout = self.root / "server"
         checkout.mkdir()
+        shutil.copyfile(ROOT / "Cargo.lock", checkout / "Cargo.lock")
         (self.root / "drasi-core").mkdir()
         for mode in ("registry", "local"):
             with self.subTest(mode=mode):
@@ -299,7 +300,7 @@ if sys.argv[-2:] == ["run", "build"] and os.environ.get("FAIL_PACKAGE_BUILD") ==
                 if mode == "local":
                     for name in (*plugin_origin.SDK_PACKAGES, "drasi-lib"):
                         replace_package(
-                            metadata, package(name, "0.9.2" if name == "drasi-lib" else "0.11.2", None),
+                            metadata, package(name, "0.9.3" if name == "drasi-lib" else "0.11.3", None),
                         )
                 _, selected = plugin_origin.classify(metadata)
                 core = {
@@ -417,7 +418,8 @@ with open(os.environ["POLICY_LOG"], "a") as log:
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         events = self.commands()
-        self.assertTrue(any(event[0] == "prepare-core" for event in events))
+        self.assertTrue(any("plugin_origin.py" in event[1] for event in events if event[0] == "python3"))
+        self.assertFalse((self.root.parent / "drasi-core").exists())
         self.assertTrue(any(event[0] == "make" and event[-1] == "build-release" for event in events))
         self.assertFalse(any(event[0] == "curl" for event in events))
         self.assertFalse(any("--skip-verification" in event for event in events))
@@ -430,7 +432,7 @@ with open(os.environ["POLICY_LOG"], "a") as log:
             [("react", ["ci"]), ("react", ["run", "build"]), ("app", ["ci"])],
         )
 
-        for failure in ("FAIL_CORE", "FAIL_BUILD"):
+        for failure in ("FAIL_ORIGIN", "FAIL_BUILD"):
             with self.subTest(failure=failure):
                 self.log.write_text("")
                 result = subprocess.run(
@@ -469,6 +471,49 @@ with open(os.environ["POLICY_LOG"], "a") as log:
                     [(Path(event[2]).name, event[3:]) for event in npm_calls],
                     expected,
                 )
+
+    def test_getting_started_local_plugins_require_selected_sdk_not_a_sibling(self):
+        self.source_stubs()
+        selected = self.root / "selected-sdk"
+        selected_plugins = selected / "target/release/plugins"
+        selected_plugins.mkdir(parents=True)
+        unrelated = self.root.parent / "drasi-core/target/release/plugins"
+        unrelated.mkdir(parents=True)
+        for directory in (selected_plugins, unrelated):
+            for name in ("source_postgres", "bootstrap_postgres", "reaction_log", "reaction_sse"):
+                (directory / f"libdrasi_{name}.dylib").touch()
+        executable(self.bin / "uname", "print('Darwin')\n")
+        executable(self.bin / "python3", """
+import os, sys
+print(os.environ["SELECTED_SDK"] if sys.argv[-1] == "local-workspace" else os.environ["POLICY_MODE"])
+""")
+        source = (ROOT / "examples/getting-started/scripts/run-end-to-end.sh").read_text()
+        selection = source.split('PLUGIN_MODE="$(bash ', 1)[1].split('\n"$SERVER_BIN" ', 1)[0]
+        selection = 'PLUGIN_MODE="$(bash ' + selection
+        config = self.root / "server.yaml"
+        config.write_text("apiVersion: drasi.io/v1\n")
+        for mode, explicit, success, local in (
+            ("registry", "", True, False),
+            ("registry", str(unrelated), False, False),
+            ("local", "", True, True),
+            ("local", str(self.root / "missing"), False, False),
+        ):
+            with self.subTest(mode=mode, explicit=explicit):
+                result = subprocess.run(
+                    ["bash", "-c", "set -eu\nlog_info() { :; }\nlog_error() { echo \"$*\" >&2; }\n"
+                     + selection + '\nprintf "%s\\n" ${SERVER_EXTRA_ARGS[@]+"${SERVER_EXTRA_ARGS[@]}"}\n'],
+                    cwd=self.root, env={
+                        **self.environment, "POLICY_MODE": mode, "SELECTED_SDK": str(selected),
+                        "SERVER_ROOT": str(self.root), "EXAMPLE_DIR": str(self.root),
+                        "CONFIG_FILE": str(config), "LOCAL_PLUGINS_DIR": explicit,
+                        "BUILD_LOCAL_PLUGINS": "",
+                    }, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                )
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+                self.assertEqual("--skip-verification" in result.stdout, local)
+                if local:
+                    self.assertIn(str(selected_plugins), result.stdout)
+                self.assertNotIn(str(unrelated), result.stdout)
 
     def test_release_build_requires_real_ui_build_and_locked_cargo(self):
         (self.root / "ui").mkdir()
@@ -524,7 +569,7 @@ with open(os.environ["POLICY_LOG"], "a") as log:
         self.assertEqual(events[2][:4], ["python3", "scripts/install_plugins.py", "--group", "test"])
         self.assertFalse(any("latest" in argument for event in events for argument in event))
 
-    def test_public_cargo_targets_prepare_sources_and_fail_before_cargo(self):
+    def test_public_cargo_targets_check_origin_and_fail_before_cargo(self):
         self.prepare_stub()
         (self.root / "ui").mkdir()
         (self.root / "config").mkdir()

@@ -9,6 +9,6 @@ jobs:
     with:
       install-jq: true
       install-protobuf: true
-      clippy-command: "bash scripts/prepare-core.sh && cargo clippy --locked --all-targets -- -D warnings"
+      clippy-command: "cargo clippy --locked --all-targets -- -D warnings"
       clippy-args: ""
-      fmt-command: "bash scripts/prepare-core.sh && make fmt-check"
+      fmt-command: "make fmt-check"
