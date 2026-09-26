@@ -22,19 +22,19 @@ from plugin_origin import PLUGIN_ABI_VERSION, PluginOriginError, ROOT, resolve_o
 
 
 VERSIONS = {
-    "source/http": "0.2.12",
-    "source/postgres": "0.2.11",
-    "bootstrap/postgres": "0.2.14",
-    "bootstrap/scriptfile": "0.2.14",
-    "reaction/sse": "0.3.7",
+    "source/http": "0.2.13",
+    "source/postgres": "0.2.12",
+    "bootstrap/postgres": "0.2.15",
+    "bootstrap/scriptfile": "0.2.15",
+    "reaction/sse": "0.3.8",
 }
 TEST_VERSIONS = {
-    "source/mock": "0.2.11",
-    "reaction/log": "0.2.8",
-    "reaction/http": "0.3.4",
+    "source/mock": "0.2.12",
+    "reaction/log": "0.2.9",
+    "reaction/http": "0.3.5",
 }
 # SDK crate and native ABI versions are independent.
-PLUGIN_SDK_VERSION = "0.11.2"
+PLUGIN_SDK_VERSION = "0.11.3"
 ISSUER = "https://token.actions.githubusercontent.com"
 SUBJECT = (
     "https://github.com/drasi-project/drasi-core/"
@@ -72,8 +72,8 @@ def read_pins(path, target, versions=VERSIONS):
             kind not in versions
             or pin["version"] != versions[kind]
             or pin["sdk_version"] != PLUGIN_SDK_VERSION
-            or pin["lib_version"] != "0.9.2"
-            or pin["core_version"] != "0.5.9"
+            or pin["lib_version"] != "0.9.3"
+            or pin["core_version"] != "0.5.10"
             or pin["platform"] != target
             or pin["reference"] != expected_reference
             or re.fullmatch(r"sha256:[a-f0-9]{64}", pin["digest"]) is None

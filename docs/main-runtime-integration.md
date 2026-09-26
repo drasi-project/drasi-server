@@ -1,6 +1,89 @@
 # Main runtime integration for the engine prerequisite
 
-## Current newer-main development source selection
+## Current released runtime
+
+Default builds now use the published September 25 release from
+[`22125bf1d66062533b832a166fe4a51079a23d6e`](https://github.com/drasi-project/drasi-core/commit/22125bf1d66062533b832a166fe4a51079a23d6e).
+The temporary engine/AST/Cypher path overrides, revision file and mandatory
+source fetching are removed. A clean server checkout builds without any sibling
+repository, including in Docker, CI, devcontainers and default cross-builds.
+Existing unrelated or dirty sibling directories are not selected or modified.
+
+| Component | Released selection |
+| --- | --- |
+| Core / Cypher and GQL functions | 0.5.10 |
+| Library | 0.9.3 |
+| Host SDK / plugin SDK / FFI primitives | 0.11.3 |
+| RocksDB index / middleware | 0.6.4 / 0.5.11 |
+| AST / Cypher and GQL parsers | 0.3.5 / 0.3.6 |
+| Noop and application bootstrap / application reaction | 0.2.15 / 0.3.13 |
+| State store / WAL | 0.2.8 / 0.2.10 |
+
+All these packages resolve from crates.io. The unchanged parser archives identify
+source `8f0ed49802ab0f2d62ce834aafe7fe7e5861ee76`; the new family identifies
+the release above. `scripts/plugin_origin.py` binds the actual locked graph to
+the 17 reviewed name/version/source/checksum identities. It rejects partial
+source overrides, duplicate identities, older releases, altered checksums and
+unused patches rather than accepting arbitrary registry versions. This is
+independent of the plugin binaries' own SDK version fields.
+
+The published core includes the final reviewed aggregate grouping, sign/magnitude
+numeric equality and hashing, compound keys, default/current fingerprints,
+precision-safe Noop, lazy min/max and terminal suppression fixes. Library 0.9.3
+contains the named MessagePack output writer. These claims are backed by
+checksum-verified published archives and focused registry-only behavior tests,
+not merely release tags or version strings.
+
+### Build and plugin boundaries
+
+`make prepare-build` remains a locked origin check, not a source downloader.
+Trading still builds this server and real UI, prepares its npm file dependency
+in order, and installs its five signed plugins before the app creates queries
+and the SSE reaction. Explicit local SDK development is still available:
+host/SDK/FFI/library manifest paths and versions must match the actual selected
+local plugin-build workspace. Only that mode builds local unsigned plugins or
+mounts a local workspace for Cross. Directory presence is not authorization.
+
+The six platform lockfiles are inherited from the verified root release update.
+They pin HTTP source 0.2.13, PostgreSQL/mock 0.2.12, PostgreSQL/scriptfile
+bootstrap 0.2.15, SSE 0.3.8, log 0.2.9 and HTTP reaction 0.3.5. All use SDK crate
+0.11.3 and native ABI 0.14.0. There is no older or unsigned fallback. The Darwin
+SSE artifact's missing signature was repaired by the official publisher at
+`32fc9052f917666af14663b6c21f6e44d32778ae` without changing its release binary
+or manifest digest. The signing revision and binary source revision are distinct.
+The exact issuer and `publish-plugins.yml@refs/heads/main` trust policy remain.
+ABI compatibility alone does not prove arbitrary old source-event wire
+compatibility; the new coherent plugin family supplies required sequence values.
+
+The isolated YAML validation job runs its original three config-test commands
+without a source-preparation step. Its reporting, failure aggregation, read-only
+job boundary, action pins and stack-top gate are unchanged. Compilation uses the
+same strict gh-aw 0.88.8 compiler; an ancestor's skipped job is not an executed
+top-of-stack validation.
+
+### Persistent-state upgrade: reconstruct all affected state
+
+All affected numeric groups require reconstruction, **including ordinary integer
+keys and numbers nested in lists or objects**, not only floating-point keys.
+Grouping/default/current fingerprints, lazy min/max sets, query indexes and
+output must be reconstructed together from available authoritative bootstrap or
+retained replay. Back up state and verify the required source history first.
+Clearing only output rows or hot-reusing old lazy/index state is not a migration.
+
+Source ranks now participate in the query configuration hash, causing a one-time
+old-hash mismatch and rebootstrap. That mechanism and the new named output writer
+do **not** repair malformed old positional MessagePack records: Strict failures
+remain visible. No real user-data deletion, automatic repair or expanded recovery
+guarantee is part of this server update.
+
+Current build/runtime evidence is recorded on #204/#202 against actual released
+inputs. Earlier source-pin, ABI and raw financial/browser recordings below remain
+historical; they are not relabeled as new execution. The protected `211d` source
+snapshot is retained for still-unmigrated consumers and requires separate cleanup
+approval. Host audit warnings, embedded-plugin audit coverage, publisher and human
+assistive-technology limitations remain explicit.
+
+## Historical September 22 temporary source selection (superseded)
 
 The approved normal merge of #119
 `739613b927b4c00e92444bebf52c9bd71a90f547` brings main

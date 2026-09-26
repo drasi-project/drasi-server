@@ -4,13 +4,14 @@ This is the P1 foundation for [#200](https://github.com/drasi-project/drasi-serv
 Its original behavior baseline is [#119](https://github.com/drasi-project/drasi-server/pull/119)
 at `a2b648062a4c55e036d68b6f26bf73b4e773bcf1`; its current predecessor is the
 separately approved [B1 prerequisite #204](https://github.com/drasi-project/drasi-server/pull/204)
-at `650ae978b2d23832c2370f172d4a530bc76e4e0f`. It protects the existing Trading
+at `e07cc709658617d741881a0568ab3a6b5e9ff846`. It protects the existing Trading
 application, not a second demo. P1 does not redesign its query, package API,
 CSS or components. The reviewed engine/security/source-backed setup changes
 come from B1, whose history and policies are retained.
 
-**Default source integration is now required, not a diagnostic overlay.**
-The gate uses the pinned compatible source described below; the original #119
+**Default builds now use verified published registry dependencies, without a
+sibling repository or source overlay.** The gate uses the released graph
+described below; the original #119
 failure recordings remain [historical defect evidence](#historical-119-reproduction),
 never new golden expectations. Readiness for another development layer requires
 the actual current-branch product gates. It is not a claim that all external
@@ -171,7 +172,7 @@ entrypoints and unused components.
 | Package (18 tests) | 62.52% | 64.93% | 47.47% | 64.84% |
 | Trading (22 tests) | 83.79% | 84.83% | 74.52% | 82.01% |
 
-The app runner also includes nine native-version setup guards. These are
+The app runner also includes ten native-version setup guards. These are
 additional checks, not new Trading behavior coverage or changed product floors.
 
 Schema version 2 remeasures the same source and unchanged test scenarios using
@@ -214,32 +215,46 @@ Flask on a dedicated loopback port. The actual built Trading app creates its
 queries/reaction and consumes real REST/SSE data. No synthetic endpoints are
 enabled in this browser run.
 
-### Integrated source and shared setup
+### Published registry provenance and shared setup
 
-Prepare/verify the exact `.drasi-core-revision` **before** any locked Rust build:
-`211d0f2a79aa2ad0f7cb841937f52013fe95ded6`, the user-approved existing source
-from drasi-project/drasi-core#810. This is a **temporary development source
-pin**, not a released fix or permission to merge/publish it. The default
-manifest selects only sibling engine 0.5.9 / AST 0.3.5 / Cypher 0.3.6.
-Library 0.9.2, SDK/host/FFI 0.11.2, index 0.6.3, functions 0.5.9, middleware
-0.5.10 and GQL 0.3.6 remain registry-sourced with server 0.2.3. Equal-version
-SDKs in the sibling workspace are not selected or permission to build plugins
-there. The older `1284e9f` / core 0.5.8 / ABI 0.13 reports are historical.
-See
-[B1's full provenance and consumption boundary](../../docs/engine-prerequisite.md)
-and [the approved main-runtime matrix](../../docs/main-runtime-integration.md).
+The default has no `.drasi-core-revision`, `prepare-core.sh`, source patches
+or mandatory sibling fetch. Server 0.2.3 uses published core/functions 0.5.10,
+library 0.9.3, host/plugin/FFI SDK 0.11.3, index 0.6.4, middleware 0.5.11,
+noop/application bootstrap 0.2.15, application reaction 0.3.13, state store
+0.2.8 and WAL 0.2.10. AST 0.3.5 and Cypher/GQL 0.3.6 remain the published
+parser versions. An absent, unrelated or dirty sibling is not selected or
+modified. Deliberately selected matching local-SDK development remains a
+separate mode; it cannot pass this published-runtime gate.
 
-Relative to released core 0.5.9, the selected source includes three aggregate
-production paths and two additive merged-main outbox paths, not only a
-three-file overlay. Registry library 0.9.2 calls `append`, not the new trim
-methods. Engine-only selection does not consume drasi-project/drasi-core#909's
-library codec change: compact MessagePack remains selected. These tests use
-fresh owned state and make no old-record repair, record-dropping, output-only
-clearing, persistence migration or general recovery claim.
+`source_provenance.py` reuses `scripts/plugin_origin.py`'s central
+`REGISTRY_PACKAGES` policy for all 17 exact name/version/source/checksum
+identities. It checks the caller's server commit and lock, rejects partial,
+duplicate, old, local/Git or patched-default identities, and verifies each
+official `.crate` archive's SHA256 against that policy. Resolved package source
+contents are checked against the archive, not assumed to match from a version
+number. Provenance records archive URLs, hashes, `.cargo_vcs_info.json`,
+verified file counts and Rust source hashes. The released family identifies
+`22125bf1d66062533b832a166fe4a51079a23d6e`; the unchanged parser archives
+retain their actual older VCS identity
+`8f0ed49802ab0f2d62ce834aafe7fe7e5861ee76`. No sibling `engineGit` or
+`engineSourceVerifiedClean` claim is emitted for registry builds.
 
-`source_provenance.py` invokes the shared source verifier and resolved-SDK
-policy, checks the caller's commit/lock and exact engine/parser origins, and
-rejects a different caller plugin lock. Native installation reuses
+The official middleware archive includes distinct `README.md` and `readme.md`
+entries. On filesystems where those exact paths demonstrably alias the same
+file, Cargo retains the later entry. Verification records both archive hashes
+and checks the retained bytes; on case-sensitive filesystems it checks both
+files separately. Symlinks, hard-link ambiguity, changed Rust source and
+unrelated path aliases are not exemptions.
+
+The checksum-verified core archive contains the final drasi-project/drasi-core#810
+aggregate/numeric grouping, compound-key, precision/default/lazy-state and
+terminal corrections. Library 0.9.3 includes the named MessagePack writer.
+See [the reviewed release and persistent-state boundary](../../docs/main-runtime-integration.md);
+older `211d`/`1284`, ABI and raw snapshot reports remain historical and are not
+relabeled as released execution.
+
+The caller's plugin lock must still match the exact reviewed platform lock.
+Native installation reuses
 `scripts/install_plugins.py`, rather than a second installer. Actual loaded
 plugin status/hash/version/ABI metadata is validated by that same shared
 policy and retained in `loaded-plugins.json`. The native CLI's reported server
@@ -250,13 +265,15 @@ banner uses that verified binary version, not the historical image version.
 For a source-free packed Trading consumer, set `P1_SOURCE_ROOT` to the original
 server checkout. It supplies **backend build provenance and setup helpers
 only**; no package source alias or Tailwind scan is introduced. The frontend
-still consumes the tarball. CI prepares the pinned sibling before its build,
-passes that checkout explicitly, and triggers on Cargo, Make, core pin, shared
+still consumes the tarball. CI verifies the locked registry origin before its
+build, passes that checkout explicitly, and triggers on Cargo, Make, shared
 helper/pins, server/UI, package and Trading changes for dependent PR bases.
 
 Prerequisites: a POSIX host, Docker, the repository's Rust toolchain, Node 22,
-Python 3.13, and access to GHCR/Sigstore for signed plugin
-verification.
+Python 3.13, and access to crates.io archives and GHCR/Sigstore for source and
+signed-plugin verification. A cached archive is still hashed; a missing one
+is fetched only from its exact official crates.io URL, never from a source
+checkout. Missing or mismatched source evidence fails before services start.
 
 Linux checkout builds also require the system libjq and Oniguruma development
 libraries. The Ubuntu CI job installs `libjq-dev` and `libonig-dev` and exports
@@ -288,14 +305,18 @@ Rebuild the default server binary before Rust integration tests as well: some
 tests invoke `target/debug/drasi-server` directly. A build in another target
 directory or a handed-off B1 binary does not update that executable.
 
-The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.12**,
-PostgreSQL source **0.2.11**, SSE reaction **0.3.7**, and PostgreSQL/scriptfile
-bootstrappers **0.2.14** by immutable OCI manifest digest and binary SHA256.
+The Linux amd64/arm64 and macOS arm64 lockfiles pin HTTP source **0.2.13**,
+PostgreSQL source **0.2.12**, SSE reaction **0.3.8**, and PostgreSQL/scriptfile
+bootstrappers **0.2.15** by immutable OCI manifest digest and binary SHA256.
 They come from the merged official main release
-`70ca432c0f12623ab9b371b2d515180ccc80c2dd`, publication run
-[35281678998](https://github.com/drasi-project/drasi-core/actions/runs/35281678998).
-Both plugin and host SDK crates are **0.11.2**, with independently versioned
-C ABI **0.14.0**. ABI 0.11/0.13 caches are incompatible, not fallbacks.
+`22125bf1d66062533b832a166fe4a51079a23d6e`.
+Both plugin and host SDK crates are **0.11.3**, with independently versioned
+C ABI **0.14.0**. The Darwin SSE signature was repaired at
+`32fc9052f917666af14663b6c21f6e44d32778ae` under the unchanged trusted publisher;
+its binary source and signing revision are distinct. Older versions do not
+become valid just because they report ABI 0.14: the coherent released source
+family supplies required event sequence values. There is no old SSE/source
+or ABI 0.11/0.13 fallback.
 The shared installer runs the existing
 `plugin install --from-config --locked` with `verifyPlugins: true` and
 independently checks every downloaded binary hash. Missing tools, wrong
@@ -330,7 +351,7 @@ uses SIGINT. Completed `.test-runtime/live-*` directories intentionally retain
 diagnostics; remove a specific finished directory when no longer needed.
 
 Failure artifacts include service/install logs, runtime/lock/binary provenance,
-`source-provenance.json` with engine Git revision and resolved dependency sources,
+`source-provenance.json` with verified registry archive/VCS/content identities,
 `loaded-plugins.json` with actual ABI/hash/status,
 raw `server-rest.json`, unmodified SSE `data` strings in `server-sse.ndjson`,
 the application's mutation transcript and Playwright traces/screenshots/video.
@@ -348,7 +369,7 @@ Historical SSE 0.3.6 observations include `message` events with
 `queryId`/`results`/`timestamp`, `ADD`, `DELETE`, `UPDATE` and lowercase
 `aggregation` results. Aggregation carries `before`/`after` without `data`;
 update also carries `data`. ABI compatibility alone does not establish wire
-compatibility; current SSE 0.3.7 must pass the actual gate independently.
+compatibility; current SSE 0.3.8 must pass the actual gate independently.
 Retain each run's raw observations separately; do not normalize them into
 synthetic fixtures or infer guarantees for unexercised protocol paths.
 
@@ -439,19 +460,35 @@ expected results. They are never substituted for live responses.
 
 This historical defect is tracked by the existing
 [drasi-project/drasi-core#680](https://github.com/drasi-project/drasi-core/issues/680).
-The earlier compatible prerequisite used
-[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934);
-its reports remain historical. The current #204 development prerequisite uses
-the exact `211d0f2a` source from drasi-project/drasi-core#810 with the newer
-registry graph. No released fix or data migration is claimed. The current gate must prove the
+The earlier compatible and temporary prerequisites used
+[drasi-project/drasi-core#934](https://github.com/drasi-project/drasi-core/pull/934)
+and `211d0f2a` from drasi-project/drasi-core#810; their reports remain historical.
+The current #204 prerequisite selects the checksum-verified published release.
+The current gate must independently prove the
 correct singleton 2000 -> live/reload 2050 -> offline/reconnect 2150 result on
 this branch's own rebuilt server; earlier handed-off binary results are not a
 substitute.
 
+### Persistent-state upgrade is not automatic repair
+
+This test uses only fresh owned data. Upgrading existing affected numeric
+groups requires complete reconstruction from authoritative bootstrap or
+retained replay, including ordinary integer keys and numbers nested in lists
+or objects. Grouping/default/current state, lazy min/max sets, query indexes
+and outputs must be reconstructed together. Back up state and verify source
+history first; clearing output alone or retaining old lazy/index state is not
+a migration.
+
+Source ranks now participate in the query configuration hash, which causes a
+one-time old-hash mismatch and rebootstrap. That mechanism and the named
+MessagePack writer do not repair malformed old positional records. Strict
+errors remain visible. No user-data deletion, automatic repair or expanded
+recovery guarantee is part of this P1 change.
+
 ### Product gates versus retained caveats
 
 Current-head evidence is recorded on #200/#201, including the normal merge
-predecessor, server/core/manifest/lock/binary/plugin provenance, actual live
+predecessor, server/archive/manifest/lock/binary/plugin provenance, actual live
 results and cleanup. `make test-all` retains the original smoke script: its
 8 passes / 28 configuration-dependent skips are reported separately, not
 presented as coverage of every plugin. No new skips or expected failures are

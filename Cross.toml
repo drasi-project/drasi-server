@@ -1,7 +1,3 @@
-[build.env]
-# Set by the server cross-build commands, not the independent SSE CLI builds.
-volumes = ["DRASI_CORE_WORKSPACE"]
-
 [target.x86_64-unknown-linux-musl]
 dockerfile = "Dockerfile.cross-musl"
 

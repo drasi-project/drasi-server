@@ -1,51 +1,51 @@
-# Published main release: drasi-project/drasi-core@70ca432c0f12623ab9b371b2d515180ccc80c2dd
-# Plugin SDK and host SDK crate 0.11.2 both use native ABI 0.14.0.
+# Published main release: drasi-project/drasi-core@22125bf1d66062533b832a166fe4a51079a23d6e
+# Plugin SDK and host SDK crate 0.11.3 both use native ABI 0.14.0.
 version = 1
 
-[plugins."source/mock:0.2.11"]
-reference = "ghcr.io/drasi-project/source/mock@sha256:cb6b4fd7597b4bacf69404d196b5cce62a6160788752ddae8c790335624b90ec"
-version = "0.2.11"
-digest = "sha256:cb6b4fd7597b4bacf69404d196b5cce62a6160788752ddae8c790335624b90ec"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+[plugins."source/mock:0.2.12"]
+reference = "ghcr.io/drasi-project/source/mock@sha256:d2e11ab2bf13911f35e8aa6362b8d4b78fdedececd048354286a2417cd51010f"
+version = "0.2.12"
+digest = "sha256:d2e11ab2bf13911f35e8aa6362b8d4b78fdedececd048354286a2417cd51010f"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "darwin/arm64"
 filename = "libdrasi_source_mock.dylib"
-file_hash = "da957e0843376314fefdbf6054784511819b4cf84b237c1f7b43ef1df9ca7501"
+file_hash = "73e9436dc0955255660adae2686829cb59e585efa189a36136c0aa9f8513980a"
 
-[plugins."source/mock:0.2.11".signature]
+[plugins."source/mock:0.2.12".signature]
 verified = true
 issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
-[plugins."reaction/log:0.2.8"]
-reference = "ghcr.io/drasi-project/reaction/log@sha256:d6309d31b804b5622b0b4e1ef8b9251d5ea290b7a8ad23714d63ececb267b1ee"
-version = "0.2.8"
-digest = "sha256:d6309d31b804b5622b0b4e1ef8b9251d5ea290b7a8ad23714d63ececb267b1ee"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+[plugins."reaction/log:0.2.9"]
+reference = "ghcr.io/drasi-project/reaction/log@sha256:6a59681291929a91433261df9d26d70c3d5a043db061b3bb0f82eaadd57c7466"
+version = "0.2.9"
+digest = "sha256:6a59681291929a91433261df9d26d70c3d5a043db061b3bb0f82eaadd57c7466"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "darwin/arm64"
 filename = "libdrasi_reaction_log.dylib"
-file_hash = "332b30476e039f3a793d943f3976456a64428d251b78078147a7ae2f40116ac9"
+file_hash = "e586eac17ea3c3b810de9fa070bc5cc1f5a1cebd305ac5eda7812f47e024528a"
 
-[plugins."reaction/log:0.2.8".signature]
+[plugins."reaction/log:0.2.9".signature]
 verified = true
 issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
-[plugins."reaction/http:0.3.4"]
-reference = "ghcr.io/drasi-project/reaction/http@sha256:576dc14a09b67f03145e26bd8d07b9c45bf7b53a7c910629fa394f14387a2130"
-version = "0.3.4"
-digest = "sha256:576dc14a09b67f03145e26bd8d07b9c45bf7b53a7c910629fa394f14387a2130"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+[plugins."reaction/http:0.3.5"]
+reference = "ghcr.io/drasi-project/reaction/http@sha256:1452fd9e8f75af565a017dd006538b033bf9402e845f4f4be89ccdea9eee4ff7"
+version = "0.3.5"
+digest = "sha256:1452fd9e8f75af565a017dd006538b033bf9402e845f4f4be89ccdea9eee4ff7"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "darwin/arm64"
 filename = "libdrasi_reaction_http.dylib"
-file_hash = "6148bc91f1a0cd439a29c9d55c929af31f3ac397f84198bd68695651fc4b5523"
+file_hash = "6ba718a5b3751ed4403ca68af68a8640cc782955d0dcfd8f71610cf66d8eaa50"
 
-[plugins."reaction/http:0.3.4".signature]
+[plugins."reaction/http:0.3.5".signature]
 verified = true
 issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"

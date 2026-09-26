@@ -3,7 +3,7 @@
 #
 # Responsibilities:
 #   1. Install OS-level build and runtime dependencies.
-#   2. Prepare the exact sibling engine revision and build this checkout and UI.
+#   2. Build this checkout and UI with its locked released dependencies.
 #   3. Make demo scripts executable.
 #   4. Pre-install the preserved compatible plugins, including SSE.
 #   5. Delegate remaining startup to start-demo.sh (services).
@@ -24,7 +24,7 @@ echo "   Repo root: $REPO_ROOT"
 echo "🌐 Ensuring shared Docker network exists..."
 docker network inspect drasi-network >/dev/null 2>&1 || docker network create drasi-network
 
-# The unpublished source correction is not present in an arbitrary release binary.
+# Build the checked-out server rather than downloading an arbitrary binary.
 echo "📦 Installing build and runtime dependencies..."
 sudo apt-get update && sudo apt-get install -y \
     build-essential \
@@ -46,7 +46,7 @@ export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
 # Shared with start-demo.sh: no latest release, empty UI placeholder, or
 # unversioned plugin install can stand in for the reviewed checkout and pins.
-bash scripts/prepare-trading.sh --allow-sudo
+bash scripts/prepare-trading.sh
 
 # Make demo scripts executable.
 chmod +x examples/trading/start-demo.sh examples/trading/stop-demo.sh

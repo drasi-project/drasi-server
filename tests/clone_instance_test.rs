@@ -66,9 +66,9 @@ impl SourcePluginDescriptor for MockSourceDescriptor {
         &self,
         id: &str,
         _config_json: &serde_json::Value,
-        _auto_start: bool,
+        auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::sources::Source>> {
-        Ok(Box::new(create_mock_source(id)))
+        Ok(Box::new(create_mock_source(id).with_auto_start(auto_start)))
     }
 }
 
@@ -94,9 +94,11 @@ impl ReactionPluginDescriptor for MockReactionDescriptor {
         id: &str,
         query_ids: Vec<String>,
         _config_json: &serde_json::Value,
-        _auto_start: bool,
+        auto_start: bool,
     ) -> anyhow::Result<Box<dyn drasi_lib::reactions::Reaction>> {
-        Ok(Box::new(create_mock_reaction(id, query_ids)))
+        Ok(Box::new(
+            create_mock_reaction(id, query_ids).with_auto_start(auto_start),
+        ))
     }
 }
 
@@ -109,7 +111,7 @@ async fn create_clone_test_router() -> Router {
     let clone_query = Query::cypher("clone-query")
         .query(QUERY_TEXT)
         .from_source("clone-src")
-        .auto_start(false)
+        .auto_start(true)
         .build();
 
     let source_core = DrasiLib::builder()
@@ -282,6 +284,19 @@ async fn test_clone_creates_all_components() {
         reaction_ids.contains(&"clone-rx"),
         "Target reactions should contain clone-rx: {reaction_ids:?}"
     );
+    for (components, id) in [
+        (&sources, "clone-src"),
+        (&queries, "clone-query"),
+        (&reactions, "clone-rx"),
+    ] {
+        let component = components["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|component| component["id"] == id)
+            .unwrap();
+        assert_eq!(component["status"], "Added");
+    }
 }
 
 /// Clone from a nonexistent source instance returns an error response.

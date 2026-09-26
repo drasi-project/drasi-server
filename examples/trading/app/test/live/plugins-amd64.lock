@@ -1,17 +1,17 @@
-# Published main release: drasi-project/drasi-core@70ca432c0f12623ab9b371b2d515180ccc80c2dd
-# Plugin SDK and host SDK crate 0.11.2 both use native ABI 0.14.0.
+# Published main release: drasi-project/drasi-core@22125bf1d66062533b832a166fe4a51079a23d6e
+# Plugin SDK and host SDK crate 0.11.3 both use native ABI 0.14.0.
 version = 1
 
 [plugins."source/http"]
-reference = "ghcr.io/drasi-project/source/http@sha256:e33a81753d8acae4f4c9d08fa81485fb5fda03517947c878375e333dfab61987"
-version = "0.2.12"
-digest = "sha256:e33a81753d8acae4f4c9d08fa81485fb5fda03517947c878375e333dfab61987"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+reference = "ghcr.io/drasi-project/source/http@sha256:0db10212ba6012a4af13898db766fee0a3d32d95b38cb393401a9282cea6a519"
+version = "0.2.13"
+digest = "sha256:0db10212ba6012a4af13898db766fee0a3d32d95b38cb393401a9282cea6a519"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "linux/amd64"
 filename = "libdrasi_source_http.so"
-file_hash = "b337418ef9bf7873fb7e8ebc2600a26106db1c8de99936b46b224f07f53d5354"
+file_hash = "914cafaca21d8650fe825df7b115e143805d7efb9525a0a24586dc11360777e5"
 
 [plugins."source/http".signature]
 verified = true
@@ -19,15 +19,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."source/postgres"]
-reference = "ghcr.io/drasi-project/source/postgres@sha256:f82c9119c34beaa232f5063f13ecabd1aee0210eb17e9117350dbcc5ed60d073"
-version = "0.2.11"
-digest = "sha256:f82c9119c34beaa232f5063f13ecabd1aee0210eb17e9117350dbcc5ed60d073"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+reference = "ghcr.io/drasi-project/source/postgres@sha256:867995d3afb7357b0818db8dd75c2c986d404c3dcf1619ca6c187b27a7064330"
+version = "0.2.12"
+digest = "sha256:867995d3afb7357b0818db8dd75c2c986d404c3dcf1619ca6c187b27a7064330"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "linux/amd64"
 filename = "libdrasi_source_postgres.so"
-file_hash = "25245d3605e91ab1d42dc7934a669bba5c639bcfb97e9a6eb1baa9a260e4f549"
+file_hash = "884e4a0ac6d8a9abdc669ce0d6edb5e1049b224e189d83b3c48fbc5cdbca5479"
 
 [plugins."source/postgres".signature]
 verified = true
@@ -35,15 +35,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."bootstrap/postgres"]
-reference = "ghcr.io/drasi-project/bootstrap/postgres@sha256:19cab88b545b2d2652a6fb90e40023e201f35a5a4612a1a86405c0e55cf201fa"
-version = "0.2.14"
-digest = "sha256:19cab88b545b2d2652a6fb90e40023e201f35a5a4612a1a86405c0e55cf201fa"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+reference = "ghcr.io/drasi-project/bootstrap/postgres@sha256:ee8b61998adee855135a847d2e5b742534ac3bed15924001afc216cd42dfb983"
+version = "0.2.15"
+digest = "sha256:ee8b61998adee855135a847d2e5b742534ac3bed15924001afc216cd42dfb983"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "linux/amd64"
 filename = "libdrasi_bootstrap_postgres.so"
-file_hash = "db3e723cf024781ad58c8ba848ed631806b6cb4ed7fd94b2092ddb8e21aff03b"
+file_hash = "3cb9f26fd09f25dd86343878d86df369700e96121365baef27664d751b3f7f99"
 
 [plugins."bootstrap/postgres".signature]
 verified = true
@@ -51,15 +51,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."bootstrap/scriptfile"]
-reference = "ghcr.io/drasi-project/bootstrap/scriptfile@sha256:25c8131a9e5d67627f30ba235f2b9af1a9a62efd1117865561025261c105888e"
-version = "0.2.14"
-digest = "sha256:25c8131a9e5d67627f30ba235f2b9af1a9a62efd1117865561025261c105888e"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+reference = "ghcr.io/drasi-project/bootstrap/scriptfile@sha256:72035602c4e4ce928955ed2c425e7e62480938bbf2ac16e61d5da4236926458e"
+version = "0.2.15"
+digest = "sha256:72035602c4e4ce928955ed2c425e7e62480938bbf2ac16e61d5da4236926458e"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "linux/amd64"
 filename = "libdrasi_bootstrap_scriptfile.so"
-file_hash = "d86f8bae3193355b557873e85a4b476b66b27b495d5442ef709e2057d598ca54"
+file_hash = "9b97b1dd74ba18ba2193c58ff12b44ac580ddf789c5b97fd8bd9140e9323b397"
 
 [plugins."bootstrap/scriptfile".signature]
 verified = true
@@ -67,15 +67,15 @@ issuer = "https://token.actions.githubusercontent.com"
 subject = "https://github.com/drasi-project/drasi-core/.github/workflows/publish-plugins.yml@refs/heads/main"
 
 [plugins."reaction/sse"]
-reference = "ghcr.io/drasi-project/reaction/sse@sha256:3785295b3ea991a7d75bda28cd147ce007a505983823c12ab5ad4ac301d45b5c"
-version = "0.3.7"
-digest = "sha256:3785295b3ea991a7d75bda28cd147ce007a505983823c12ab5ad4ac301d45b5c"
-sdk_version = "0.11.2"
-core_version = "0.5.9"
-lib_version = "0.9.2"
+reference = "ghcr.io/drasi-project/reaction/sse@sha256:2c32d2f97ba3ec6b60c53be0b36fa6880343a1e8771aa13260bbbab5188fb6b2"
+version = "0.3.8"
+digest = "sha256:2c32d2f97ba3ec6b60c53be0b36fa6880343a1e8771aa13260bbbab5188fb6b2"
+sdk_version = "0.11.3"
+core_version = "0.5.10"
+lib_version = "0.9.3"
 platform = "linux/amd64"
 filename = "libdrasi_reaction_sse.so"
-file_hash = "00ac1456ea3a177b6a8f16aa9eb6fc7ebc0ab2420f18be3c24b5714dbac4c4e8"
+file_hash = "e833339a20feddbba5eeef3b346ad59ca5bb2f5b30328bae081164158f434a79"
 
 [plugins."reaction/sse".signature]
 verified = true

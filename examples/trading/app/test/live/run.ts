@@ -358,7 +358,7 @@ try {
   ]);
   console.log(await readFile(join(runDir, 'playwright.log'), 'utf8'));
   assert.equal(result, 0, 'Real-server smoke failed (never a passing skip)');
-  if (native) command('bash', [join(sourceRoot, 'scripts/prepare-core.sh'), '--check']);
+  if (native) command('bash', [join(sourceRoot, 'scripts/prepare-build.sh')]);
   console.log(`Real-server smoke passed with ${runtimeVersion} / ${native ? 'checkout' : platform}.`);
 } catch (error) {
   failure = error;

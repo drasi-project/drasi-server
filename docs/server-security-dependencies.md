@@ -3,7 +3,9 @@
 > The original #203 evidence below is historical and remains unchanged. The
 > [approved main runtime integration](main-runtime-integration.md) retains its
 > patched h2/rustls requirements while accepting incoming Wiremock 0.6.5 and
-> main's newer Drasi runtime; it documents the current 621-package graph.
+> the released Drasi runtime. The current graph has no temporary engine source
+> overrides; removal of that prerequisite does not waive retained audit warnings
+> or extend the host audit to dependencies embedded in signed plugin binaries.
 
 [#203](https://github.com/drasi-project/drasi-server/issues/203) authorizes this
 focused exception to the otherwise source-only lockfile change in
