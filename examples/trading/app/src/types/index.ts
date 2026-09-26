@@ -26,6 +26,11 @@ export interface Stock {
   low?: number;
 }
 
+/** The high-volume query projects volume, but not previousClose. */
+export interface HighVolumeStock extends Omit<Stock, 'previousClose'> {
+  volume: number;
+}
+
 export interface PortfolioPosition {
   id: number;
   symbol: string;
@@ -42,7 +47,7 @@ export interface PortfolioPosition {
 /** Portfolio normalization retains missing fields, nulls, and empty strings. */
 export type PortfolioNumber = number | null | '';
 
-/** Also accepts the id-only delete rows delivered by the portfolio query. */
+/** Portfolio projections retain sparse fields; deletes are keyed before projection. */
 export interface PortfolioRow {
   id?: number | string | null;
   symbol?: string;
@@ -90,8 +95,8 @@ export interface LimitOrderResult {
   quantity: number;
   status: string;
   createdAt: string;
-  triggeredAt?: string;
-  expiresAt?: string;
+  triggeredAt?: string | null;
+  expiresAt?: string | null;
   distancePercent: number;
 }
 
@@ -101,8 +106,9 @@ export interface OrderAlert {
   orderType: string;
   targetPrice: number;
   quantity: number;
-  triggeredAt?: string;
-  expiresAt?: string;
+  createdAt?: string | null;
+  triggeredAt?: string | null;
+  expiresAt?: string | null;
   alertType: 'STALE' | 'EXPIRED';
   alertMessage: string;
 }
@@ -113,7 +119,7 @@ export interface TradingQueryRows {
   'portfolio-query': PortfolioRow;
   'top-gainers-query': Stock;
   'top-losers-query': Stock;
-  'high-volume-query': Stock;
+  'high-volume-query': HighVolumeStock;
   'price-ticker-query': PriceTickerRow;
   'sector-performance-query': SectorPerformance;
   'portfolio-summary-query': PortfolioSummary;
@@ -124,6 +130,7 @@ export interface TradingQueryRows {
 
 export type TradingQueryId = keyof TradingQueryRows;
 export type MarketMoverQueryId = 'top-gainers-query' | 'top-losers-query' | 'high-volume-query';
+export type MarketMoverRow = TradingQueryRows[MarketMoverQueryId];
 
 export interface QueryResult<T = ResultRow> {
   queryId: string;

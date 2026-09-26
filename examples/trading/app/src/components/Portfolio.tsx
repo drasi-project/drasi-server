@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
-import { tradingQueryOptions } from '@/drasi/queryOptions';
+import { portfolioRowKey, tradingQueryOptions } from '@/drasi/queryOptions';
 import { PortfolioSummary } from './PortfolioSummary';
 import { ChangeIndicator, EditIcon, DeleteIcon, AddIcon, ConfirmDialog } from './shared';
 import type { PortfolioRow } from '@/types';
@@ -26,6 +26,7 @@ import clsx from 'clsx';
 // Code snippet for presentation display
 const CODE_SNIPPET = `<QueryTable<PortfolioRow>
   queryId="portfolio-query"
+  queryOptions={tradingQueryOptions('portfolio-query')}
   title="Portfolio"
   columns={[
     { key: 'symbol', label: 'Symbol' },
@@ -42,7 +43,7 @@ const CODE_SNIPPET = `<QueryTable<PortfolioRow>
     { key: 'profitLossPercent', label: 'P/L %', align: 'right',
       format: (_, row) => row.profitLossPercent != null ? <ChangeIndicator value={Number(row.profitLossPercent)} /> : '-' },
   ]}
-  rowKey={(row) => row.symbol ?? ''}
+  rowKey={portfolioRowKey}
   animateOnChange="currentPrice"
   headerSlot={<PortfolioSummary />}
 />`;
@@ -253,7 +254,7 @@ export const Portfolio: React.FC = () => {
         queryOptions={tradingQueryOptions('portfolio-query')}
         title="Portfolio"
         columns={columns}
-        rowKey={(row) => row.symbol ?? ''}
+        rowKey={portfolioRowKey}
         animateOnChange="currentPrice"
         defaultSort={{ column: 'symbol', direction: 'asc' }}
         actions={actions}

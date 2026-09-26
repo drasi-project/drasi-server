@@ -14,12 +14,14 @@
 
 import { DrasiSSEClient, type EventSourceFactory } from './DrasiSSEClient';
 import type {
-  Component, ConnectionStatus, DrasiHeaders, QueryConfig, QueryResult, ReactionConfig,
-  ReactionReference, ReconnectOptions, ResultRow, RouteUnidentified,
+  Component, ConnectionStatus, DrasiHeaders, QueryConfig, QueryResult, QuerySubscription,
+  QuerySubscriptionState, ReactionConfig, ReactionReference, ReconnectOptions, ResultAdapter,
+  ResultReconciliationOptions, ResultRow,
 } from './types';
-import { DrasiError, asDrasiError, isAbortError, type DrasiErrorDetails } from './errors';
+import { DrasiError, asDrasiError, type DrasiErrorDetails } from './errors';
 import { instancePath, isIdentifier, normalizeServerUrl, readQuery, readReaction, readResponse, readRows, requireRunning, validateHttpUrl } from './resources';
 import { abortable, requestHeaders, resolveHeaders, validateCredentials } from './transport';
+import { subscribeToQuery } from './subscription';
 
 /** References to pre-existing resources. No option enables resource management. */
 export interface DrasiClientOptions {
@@ -28,7 +30,9 @@ export interface DrasiClientOptions {
   instanceId: string;
   queryIds: readonly string[];
   reaction: ReactionReference;
-  routeUnidentified?: RouteUnidentified;
+  /** Strict SSE 0.3.4 by default; use a named adapter for legacy/custom formats. */
+  resultAdapter?: ResultAdapter;
+  reconciliation?: ResultReconciliationOptions;
   /** Invoked with the global receiver; must honor RequestInit.signal. GETs only. */
   fetch?: typeof globalThis.fetch;
   /** REST and custom SSE credentials; default same-origin. Native SSE cannot honor omit. */
@@ -44,8 +48,8 @@ export interface DrasiClientOptions {
 
 /**
  * Read-only resource validation, snapshots and one multiplexed SSE connection.
- * It never creates, starts, stops, updates or deletes resources. Buffered deltas
- * are replayed after snapshots; this is not an atomic/exactly-once handoff.
+ * It never creates, starts, stops, updates or deletes resources. Known overlap
+ * triggers a bounded refresh, not guessed replay order or an atomic handoff.
  */
 export class DrasiClient {
   private readonly baseUrl: string;
@@ -59,6 +63,7 @@ export class DrasiClient {
   private readonly maxRetries: number;
   private readonly retryDelay: number;
   private readonly maxRetryDelay: number;
+  private readonly maxPendingChanges: number;
   private readonly subscriptions = new Set<() => void>();
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -89,12 +94,14 @@ export class DrasiClient {
     this.maxRetries = options.reconnect?.maxReconnectAttempts ?? 10;
     this.retryDelay = options.reconnect?.initialReconnectDelayMs ?? 1000;
     this.maxRetryDelay = options.reconnect?.maxReconnectDelayMs ?? 30000;
-    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+    this.maxPendingChanges = options.reconciliation?.maxPendingChanges ?? 10000;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0 ||
+        !Number.isSafeInteger(this.maxPendingChanges) || this.maxPendingChanges < 1) {
       throw new DrasiError('INVALID_CONFIGURATION', details);
     }
     this.sseClient = new DrasiSSEClient({
       ...options.reconnect,
-      routeUnidentified: options.routeUnidentified,
+      resultAdapter: options.resultAdapter,
       eventSourceFactory: options.eventSourceFactory,
       headers: this.headers,
       credentials: this.credentials,
@@ -215,106 +222,38 @@ export class DrasiClient {
   }
 
   /**
-   * Listen before fetching a snapshot; replay buffered deltas afterward. On
-   * reconnect, discard stale rows with a fresh snapshot. Permanent failures
-   * terminate this subscription; transient snapshot failures have bounded retries.
-   * Supply onError to handle failures; otherwise only the safe error code is logged.
+   * Each subscription has independent REST reconciliation/retry work on the
+   * same socket. A snapshot overlapping any delta is not replayed: it triggers
+   * a bounded refresh with visible resynchronizing state. A no-known-overlap
+   * snapshot establishes a best-effort baseline, not gap-free synchronization.
+   * The returned callable unsubscribes; its retry() never restarts the socket.
    */
   subscribe(
     queryId: string,
     callback: (result: QueryResult) => void,
     onError?: (error: DrasiError) => void,
-  ): () => void {
+    onStateChange?: (state: QuerySubscriptionState) => void,
+  ): QuerySubscription {
     if (!this.queryIds.has(queryId)) {
       const error = new DrasiError('INVALID_CONFIGURATION', this.details('query', queryId));
       if (!onError) throw error;
+      const state: QuerySubscriptionState = {
+        status: 'terminal-error', stale: false, error, errorScope: 'query',
+      };
       onError(error);
-      return () => {};
+      onStateChange?.(state);
+      return Object.assign(() => {}, { retry: () => onError(error), getState: () => ({ ...state }) });
     }
-    const reportError = onError ?? ((error: DrasiError) => {
-      console.error('Drasi query subscription failed:', error.code);
-    });
-    const queuedResults: QueryResult[] = [];
-    let active = true;
-    let snapshotReady = false;
-    let snapshotGeneration = 0;
-    let snapshotController: AbortController | null = null;
-    let snapshotRetryAttempts = 0;
-    let snapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
-    let connectionWasInterrupted = !this.sseClient.isConnected();
-    let unsubscribeStatus = () => {};
-
-    const unsubscribe = this.sseClient.subscribe(queryId, result => {
-      if (!active) return;
-      if (!snapshotReady) queuedResults.push(result);
-      else callback(result);
-    });
-    const clearSnapshotRetry = () => {
-      if (snapshotRetryTimer !== null) clearTimeout(snapshotRetryTimer);
-      snapshotRetryTimer = null;
-    };
-    const suspendSnapshot = () => {
-      snapshotReady = false;
-      queuedResults.length = 0;
-      clearSnapshotRetry();
-      snapshotController?.abort();
-      snapshotController = null;
-      snapshotGeneration += 1;
-    };
-    const stop = () => {
-      active = false;
-      suspendSnapshot();
-      unsubscribeStatus();
-      unsubscribe();
-      this.subscriptions.delete(stop);
-    };
-    const fetchSnapshot = () => {
-      if (!active || !this.sseClient.isConnected()) return;
-      suspendSnapshot();
-      const controller = new AbortController();
-      snapshotController = controller;
-      const generation = ++snapshotGeneration;
-      void this.getQueryResults(queryId, controller.signal).then(rows => {
-        if (!active || generation !== snapshotGeneration) return;
-        snapshotController = null;
-        snapshotRetryAttempts = 0;
-        callback({ queryId, data: rows, timestamp: Date.now(), snapshot: true });
-        snapshotReady = true;
-        queuedResults.splice(0).forEach(callback);
-      }).catch(error => {
-        if (!active || generation !== snapshotGeneration || isAbortError(error)) return;
-        const failure = asDrasiError(error, this.details('query', queryId));
-        snapshotController = null;
-        reportError(failure);
-        if (!failure.retryable || snapshotRetryAttempts >= this.maxRetries) {
-          stop();
-          return;
-        }
-        const delay = Math.min(this.retryDelay * 2 ** snapshotRetryAttempts++, this.maxRetryDelay);
-        snapshotRetryTimer = setTimeout(fetchSnapshot, delay);
-      });
-    };
-    this.subscriptions.add(stop);
-    unsubscribeStatus = this.sseClient.onConnectionStatusChange(status => {
-      if (!active) return;
-      if (!status.connected) {
-        connectionWasInterrupted = true;
-        suspendSnapshot();
-        if (status.error && !status.reconnecting) {
-          reportError(status.error);
-          stop();
-        }
-        return;
-      }
-      if (connectionWasInterrupted) {
-        connectionWasInterrupted = false;
-        snapshotRetryAttempts = 0;
-        fetchSnapshot();
-      }
-    });
-    if (!active) unsubscribeStatus();
-    if (this.sseClient.isConnected() && snapshotGeneration === 0) fetchSnapshot();
-    return stop;
+    const subscription = subscribeToQuery({
+      queryId, source: this.sseClient,
+      snapshot: signal => this.getQueryResults(queryId, signal),
+      details: this.details('query', queryId),
+      maxRetries: this.maxRetries, retryDelay: this.retryDelay, maxRetryDelay: this.maxRetryDelay,
+      maxPendingChanges: this.maxPendingChanges,
+      onStop: () => { this.subscriptions.delete(subscription); },
+    }, callback, onError, onStateChange);
+    this.subscriptions.add(subscription);
+    return subscription;
   }
 
   getConnectionStatus(): ConnectionStatus {

@@ -37,9 +37,19 @@ endpoint-identity fix `5a198eb3d6b50ce61cdd306173698faa12e6682b`, and incorporat
 exact updated P2 `d784446d7e2ca369c2ae0a3e3c560455d54369a6`.
 No P4-P7 product code is imported.
 It completes the public client/transport/type/entrypoint and material
-configuration contract. Part B identity, canonical deltas and complete
-snapshot/reconnect/stale state remain pending; no acceptance of those later
-contracts is implied by P3's passes.
+configuration contract. P3's historical passes do not imply acceptance of the
+later Part B identity, canonical-delta or snapshot/reconnect/stale contracts.
+The Part B consumer changes and focused proof obligations are described below;
+the measured historical evidence remains unchanged.
+
+P4 normally integrates exact updated P3
+`887ff332df02b6d42a56a97a853a3522ec7e42db`, retaining original P4 ancestry and
+the commit-phase query-key correction at
+`2b9890b1adb056bdb419cf94fdd6a701cef53479`. The complete identity, adapter,
+reactive-projection and bounded-recovery contract stays intact. Current
+`211d0f2a` / registry library 0.9.2 / SDK 0.11.2 / ABI 0.14 evidence must be
+proved on this owning branch; earlier `1284e9f` / ABI 0.11 and 0.13 captures
+and measurements remain historical. No P5-P7 product code is imported.
 
 ## Behavior inventory, version 1
 
@@ -73,16 +83,20 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
   manual sorting separately. Visual baselines record that unchanged appearance,
   not approval of the business discrepancy. Do not “fix” the defaults in this
   refactor without separate approval.
-- **KB-02 — duplicate-symbol identity:** the portfolio displays rows by symbol,
-  and edit/delete look up the first API position with that symbol. Order query
-  options also prefer symbol to order ID. Fixtures intentionally use unique
-  symbols; these tests do not establish duplicate-symbol correctness. Stable
-  identity work in #163 must explicitly address this instead of copying the
-  limitation into a new contract.
+- **KB-02 — duplicate-symbol identity:** the original portfolio displayed rows
+  by symbol. Part B aligns its render/animation identity with the existing raw
+  position ID (symbol fallback) and adds a duplicate-symbol render/delete test.
+  Edit/delete actions still look up the first API position with that symbol;
+  order query options also still prefer symbol to order ID. The original
+  fixtures intentionally use unique symbols. Neither the original gates nor
+  the focused identity test establishes duplicate-symbol action correctness.
 - **KB-03 — legacy unidentified routing:** the app's adapter recognizes some
   snake_case shapes while current queries return camelCase, and can fan price
-  rows out to several queries. Synthetic keyed batches do not validate that
-  heuristic against a real SSE plugin. Recorded/live results must stay separate.
+  rows out to several queries. Part B opts into a named legacy adapter once;
+  identified official events bypass these heuristics. Unidentified before/after
+  changes are delete-plus-upsert, and unknown rows now fail safely without
+  console payloads. Synthetic batches do not validate the heuristic against a
+  real SSE plugin. Recorded/live results must stay separate.
 - **KB-04 — existing accessibility:** Trading dialogs lack dialog roles and
   associated field labels; Chromium's existing table header semantics differ
   from jsdom's. The browser suite locates existing headings/`th` elements where
@@ -144,6 +158,50 @@ query definitions and financial rows are untouched; raw diagnostic REST reads
 still record the actual isolated bind values.
 
 ## Fast checks
+
+### Part B Trading result consumers
+
+Trading now supplies required raw keys and validating projections for all 11
+queries. `integration/tradingOptions.test.ts` retains the financial expression,
+sign/cap/order and deployment assertions, and adds raw identity, projection
+shape, portfolio conversion, pure sorting and explicit legacy routing checks.
+The previous warning-on-unroutable assertion is strengthened to require a safe
+`UNROUTABLE_RESULT` and no row logging. No query text, source/join ordering,
+creation order or provisioning code changes are part of this migration.
+
+`integration/resultConsumers.test.tsx` uses the compiled package and real
+Trading provider/components, not mocked hooks. It exercises a portfolio
+id-only delete with a transform that rejects incomplete projected rows, a
+symbol-only stock delete, and separate render identities for same-symbol
+positions. Market-mover initial sorting, dialogs/actions, fullscreen/tutorial
+behavior and all existing business expectations remain in their original
+integration/browser gates; no golden images or metrics baselines are updated.
+
+The synthetic transport now emits the actual untemplated SSE envelope names
+`queryId/results/timestamp` and `ADD/UPDATE/DELETE`, retaining before/after and
+all expected business values. It remains synthetic evidence, not a recording
+or substitute for the mandatory actual-server singleton aggregate, reload,
+offline/reconnect and CRUD checks. The original recorded #119 defects and
+measured tables below are historical evidence, not new Part B pass claims.
+
+Known result consistency limits: REST and SSE expose no shared cursor.
+Overlapping nonempty deltas reject a pending snapshot and trigger bounded read
+reconciliation; successful no-known-overlap reads are best effort, not atomic,
+gap-free or exactly-once. Raw keys precede transforms, deletes never project,
+and query-local retry is distinct from shared connection retry. Package tests
+own the exhaustive reconciliation/state-machine proof; Trading's focused
+tests prove its application options and consumer behavior.
+
+The package's portable `test/ResultRegression.test.jsx` also runs unchanged
+against exact archived P3 `a0569c2` and current Part B. All three checks fail on
+P3 with observed wrong results: a projection that omits its raw key yields
+`null`; a key-changing official update leaves old and new rows; and a snapshot
+at value 2 followed by an older buffered value 1 rolls back to 1 without a
+refresh. The same checks pass on Part B: projected value 1 then a sparse delete,
+only the new key 2, and bounded reconciliation to value 3. These checks use
+real providers and clients, without a framework/provider/transport-mock bypass.
+They are focused predecessor regression evidence, not a substitute for the
+packed-consumer, browser or real Trading-server gates.
 
 ### P3 contract additions
 
@@ -391,9 +449,9 @@ visual baseline was reduced/changed to achieve a pass.
 | Trading JS / gzip | 233,695 / 69,038 | 240,826 / 70,541 | New client contract and typed app-boundary handling; not a new dependency or React copy |
 | Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
 
-Current-run exact measurements remain in `test-results/measured-baseline.json`;
-small subsequent documentation/guard refinements are still subject to the same
-2% cap above this recorded measurement, not an unbounded budget increase.
+P3's exact run measurements remain in its retained artifacts;
+subsequent P3 documentation/guard refinements remained subject to the same
+2% cap above that recorded measurement, not an unbounded budget increase.
 The root barrel alone is only hundreds of bytes after splitting, so measuring
 only it would be misleading; all shipped modules are counted.
 
@@ -530,6 +588,170 @@ full 26-scenario rerun passed all five original images. No product, screenshot,
 timeout, readiness or clock assertion was changed to obtain those passes.
 Those packed/CI results remain in #206's historical evidence and do not
 validate the newer `211d0f2a` / ABI 0.14 selection.
+
+### Historical P4 result/state contract cost
+
+P4 starts at exact P3 `a0569c2ae7b17f51996f431cf2264c636a19f3d1`.
+This section preserves the original `20561c1` evidence on server 0.2.1 /
+SSE 0.3.4 / ABI 0.11. The table's declaration column uses its original
+single-format accounting; it is not the current schema-3 declaration total.
+The first frozen Linux/amd64 Node 22.20.0 run passed **329 package tests,
+82 Trading tests, six unchanged metric-policy tests, all 26 browser scenarios
+and all five original zero-differing-pixel PNG comparisons**. The old size
+gate then correctly rejected the feature cost. Only the measured artifact
+baseline advances here: P1/P2/P3 committed measurements and P3's final exact-head
+CI observations remain in `artifactChange`; the **2% future-growth policy**
+and original whole-package/application coverage floors are unchanged.
+Vitest now additionally enforces the client and React subtrees at
+90% statements/lines/functions and 85% branches. No product exclusions,
+denominator changes, dependency upgrades or visual relaxations are used.
+
+| Artifact | P3 final CI bytes | P4 measured bytes | Feature cost |
+| --- | ---: | ---: | --- |
+| Packed tarball | 155,715 | 187,699 | +31,984: normalized runtime, declarations/maps, wire/identity/state/migration documentation |
+| All package ESM / CJS | 84,877 / 91,352 | 98,585 / 106,000 | +13,708 / +14,648: strict normalizer, named compatibility adapter, raw reducer and bounded subscription reconciliation |
+| All `.d.ts` declarations | 28,121 | 34,875 | +6,754: snapshot/delta/change, adapters/context, raw-key/projected-row options, states and scoped retry |
+| Trading JS / gzip | 240,901 / 70,550 | 250,892 / 73,795 | +9,991 / +3,245: result contract plus app-owned row guards and legacy selection; no additional React copy/socket |
+| Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged; Trading CSS gzip remains 5,163 |
+
+Metrics sum every entrypoint and shared chunk, not just the root barrel.
+Node 24.19.0's separate clean tarball consumer measured the same byte counts.
+Normal Trading presentation is unchanged, including desktop/mobile dashboards,
+mobile position dialog, fullscreen watchlist and portfolio query-code images.
+Recovery-only messages preserve last-good rows and name the correct retry scope.
+All 11 Cypher definitions, creation/source/join order, app provisioner, financial
+transforms/filters/default sorting and backend/plugin pins remain unchanged.
+
+| P4 Vitest/V8 scope | Statements | Lines | Branches | Functions |
+| --- | ---: | ---: | ---: | ---: |
+| Whole package | 89.54% | 90.37% | 86.69% | 90.90% |
+| Client modules | 97.73% | 99.10% | 95.27% | 99.34% |
+| Result normalizer/adapters | 99.34% | 100% | 99.48% | 100% |
+| Raw identity reducer | 100% | 100% | 100% | 100% |
+| Subscription reconciliation | 96.74% | 100% | 88.29% | 93.75% |
+| Hook context/state | 98.83% | 100% | 93.10% | 100% |
+| Trading app | 88.21% | 89.06% | 80.48% | 86.66% |
+| Unchanged Trading provisioner | 98.81% | 99.28% | 92.98% | 100% |
+
+These scopes do not claim completion of #164's UI/accessibility work or
+#165's independent examples. Named cases, not coverage alone, establish
+query-ID isolation, key-changing updates, sparse deletes, reactive filtering,
+late/cancelled work, StrictMode, bounded overflow and terminal/transient retry.
+The portable P3-fail/P4-pass cases above preserve their actual wrong-result
+evidence. Tests also deliberately show the protocol limit: an undetectably
+delayed older event can temporarily replace a newer no-known-overlap snapshot
+until refresh. No clock/signature ordering or exactly-once guarantee is claimed.
+
+Clean Node 22.20.0 and 24.19.0 consumers pass nine public-contract programs
+with **363 consumed negative assertions**, all five literal installed README
+examples in ESM/CommonJS/bundler modes (client/auth additionally without React
+or its types), eight extraction guards and eight runtime/import/SSR runs.
+The package remains private and unpublished.
+
+Both checkout and source-free packed frontend runs pass the unchanged actual
+server test: authoritative singleton **2000 / cost 1800 / count 2**, live **2050**,
+reload **2050**, offline/reconnect **2150**, with CRUD/live/deletes, no recovery
+navigation and no historical candidate rows. The real UI and locked server were
+built; native locked Rust tests passed **779 / 32 ignored**, strict clippy/fmt
+and 42 tooling tests passed, and the selected-server audit reported **0
+vulnerabilities / 15 retained warnings**. The unused legacy core-workspace
+advisories remain separate. Owned live services/ports were stopped; shared
+services were not touched. These are development proofs, not automatic
+merge/release authorization; the unchanged external YAML-agent model/HTTP-400
+blocker and configured skips must still be reported against the final PR head.
+
+### Historical P4 ABI 0.13 integration and accounting
+
+The normal merge retains P4's raw-key-before-projection semantics, sparse
+deletes, before/after identity changes, explicit adapters and query-scoped
+recovery. It does not replay ambiguous snapshot cuts, infer ordering from
+clocks/signatures, cap result sets, or promise an authoritative cursor.
+The unchanged predecessor red/green tests remain part of the package gate.
+
+`baseline-metrics-p4-v2.json` is the byte-identical original P4 record, alongside
+the incoming original P1/P2/P3 schema-2 files. The retained original P4 tarball
+has SHA-256
+`de1d883e324f9b0597b3e1620df43fa9bb49efd998a24f50b9b4ad1beb075c9a`.
+It contains 34,875 `.d.ts` bytes and 34,892 `.d.cts` bytes: **69,767 total**.
+Current accounting includes both graphs, all entry/shared/nested runtime
+chunks, all packaged CSS and recursive Trading assets. The P4 runtime/artifact
+budget is retained rather than replaced with the smaller P3 feature budget.
+Corrected P1/P2/P3 declaration totals remain 37,492 / 42,280 / 56,256.
+This changes neither product bytes nor the 2% policy or coverage floors.
+
+At that ABI 0.13 integration, rebuilt-source and packed/browser/live results
+belonged to #207. Those measurements and old runtime recordings are not
+relabeled as current evidence. Its ABI 0.13 guards were not weakened to run an
+old ABI 0.11 cache or historical image. Reproduce old results only with the
+complete matching historical harness/policy described below.
+
+The own default `target/debug/drasi-server` was rebuilt before Rust integration
+tests. Normal merge `3b39126ae36c9a0da96a4c0e29ad812b181636f6` has exact
+parents original P4 `20561c13` and approved P3 `39f82c9`. That
+server 0.2.3 / library 0.9.1 / host SDK 0.11.0 / index 0.6.1 binary has SHA-256
+`eec11ff22242d354b05ef5fb65f1f5240c235a9906298c342d77276ab8feef2d`,
+with lock SHA-256
+`63565b6a959f0c51a0cec916381866511be8da75f81d21dccc31ba7b2748b414`.
+The unchanged own-source live scenario passed with fresh signed SSE 0.3.6 /
+plugin SDK 0.11.1 / ABI 0.13 plugins: singleton 2000/cost 1800/count 2,
+live/reload 2050 and offline/reconnect 2150, CRUD/deletes and no recovery
+navigation or historical candidate rows. This is not a borrowed lower binary.
+
+All 17 raw CDP records from that run remain separate in
+`dev-tools/react/test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson`, with adjacent
+source/manifest/lock/binary/plugin provenance. Tests retain all old recording
+assertions and exercise those records through the unchanged normalizer
+and default SSE transport. In particular, recorded lowercase aggregation carries
+before/after without `data`; numeric signatures still exceed JavaScript's safe
+integer range and are never row identity. No authoritative snapshot cursor,
+clock-based ordering or broader plugin compatibility is inferred.
+
+The integrated local gates pass 332 package tests, 89 Trading tests, all
+13 artifact-policy tests (all originals retained), and 53 tooling tests.
+Own rebuilt locked Rust passes 809 tests with 32 existing ignores; fmt,
+strict Clippy, typo validation and the selected audit pass (zero vulnerabilities,
+15 retained warnings). Clean installed Node 22.20.0 and 24.19.0 consumers retain
+nine public programs / 363 negative assertions, five literal README examples,
+eight extraction guards and eight import/SSR checks, including React-free
+client/auth and hook presentation isolation. The full packed Linux run passes
+all 26 scenarios and all five unchanged exact images on its first run.
+The independent source-free frontend also passes the current own-source live
+scenario; it points `P1_SOURCE_ROOT` only at this backend checkout.
+
+Integrated measurements are **189,130 tarball / 98,585 all ESM / 106,000 all
+CJS / 69,767 all declarations / 10,043 package CSS** bytes. Packed Trading
+remains **250,892 JS / 73,795 JS gzip / 21,034 CSS / 5,163 CSS gzip** bytes.
+Only the tarball changes from original P4: **+1,431 bytes (0.76%)** for current
+runtime/compatibility documentation. Executable, CSS and already-shipped
+declaration bytes are unchanged; the declaration metric now counts both graphs.
+The existing P4 byte budget is not raised, and the same 2% policy passes.
+Current-head CI and final provenance remain on #207; external workflow/model,
+configured-skip, embedded-plugin/legacy-workspace, npm/publication and human
+assistive-technology caveats are not converted into passed product claims.
+
+### P4 current development-source integration
+
+P4's normal merge of exact P3 `887ff332df02b6d42a56a97a853a3522ec7e42db`
+retains its original work and `2b9890b` concurrent-render correction. The
+captured raw `getKey` is still published only at commit before layout
+notifications. All four concurrent/StrictMode/committed-projection/no-churn
+regressions, 17 endpoint tests and packed SSR console/browser-global traps
+remain authoritative. No new shared cache, protocol, UI, query, recovery
+promise or historical-data filtering is introduced.
+
+The current source/runtime/pin policy below applies: clean temporary `211d0f2a`
+engine/parser source, registry SDK even when equal-version sibling SDKs exist,
+and the six official signed ABI 0.14 locks. Own embedded UI/default-server
+build precedes serial Rust tests; record the actual used binary hash after
+any test relink. Browser/visual work runs only after heavy native builds.
+Both installed Node versions and the source-free Trading frontend need fresh
+proof against this own runtime, not a lower owner's binary or old ABI cache.
+
+P3/P4 historical fixtures, all artifact histories, coverage floors, complete
+declaration/asset accounting and the existing 2% budget stay intact. Current
+head/source/binary/live/CI results belong to #207. The temporary source is not
+a released fix, library-codec adoption, legacy-data repair, broader recovery
+guarantee, publication or completed human assistive-technology acceptance.
 
 ## Mandatory real-server gate
 

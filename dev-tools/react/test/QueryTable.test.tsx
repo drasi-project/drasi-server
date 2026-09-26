@@ -46,6 +46,7 @@ const columns: ColumnDef<Stock>[] = [
 ];
 
 const stockOptions: UseDrasiQueryOptions<Stock> = {
+  getKey: row => String(row.symbol),
   transform: row => {
     if (typeof row.symbol !== 'string' || typeof row.price !== 'number') {
       throw new TypeError('Invalid synthetic stock row');
@@ -78,7 +79,7 @@ function renderTable<T extends object>(
 }
 
 describe('QueryTable', () => {
-  it('uses the typed rowKey after transformation for accumulation and accessible sorting', async () => {
+  it('uses explicit raw identity independently of transformed render keys and sorting', async () => {
     const table = renderTable<Stock>({
       queryId: 'stocks',
       columns,
@@ -92,7 +93,7 @@ describe('QueryTable', () => {
     await table.connect();
 
     act(() => table.factory.instances[0].message({
-      queryId: 'stocks', data: { symbol: 'AAPL', price: 11 },
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { symbol: 'AAPL', price: 11 } }],
     }));
     expect(screen.getAllByRole('row')).toHaveLength(3);
     expect(screen.queryByText('10')).toBeNull();
@@ -145,9 +146,28 @@ describe('QueryTable', () => {
     ));
 
     await screen.findByText(/Error: .*malformed/);
+    expect(screen.getByRole('table')).not.toBeNull();
+    expect(screen.getByText('10')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry connection' })).not.toBeNull();
     await waitFor(() => expect(document.body.style.overflow).toBe(''));
     requestFrame.mockRestore();
     cancelFrame.mockRestore();
+  });
+
+  it('retains useful rows on a query-only fault and retries without opening another stream', async () => {
+    const table = renderTable<Stock>({
+      queryId: 'stocks', columns, rowKey: row => row.symbol, queryOptions: stockOptions,
+    }, [{ symbol: 'AAPL', price: 10 }]);
+    await table.connect();
+    act(() => table.factory.instances[0].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: false }],
+    }));
+    expect(screen.getByRole('alert').textContent).toContain('Showing last known data');
+    expect(screen.getByText('10')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry query' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(table.factory.instances).toHaveLength(1);
+    expect(table.factory.instances[0].closed).toBe(false);
   });
 
   it('supports computed columns, typed actions and non-visible default sorts for non-indexed row interfaces', async () => {
@@ -189,6 +209,7 @@ describe('QueryTable', () => {
       actions,
       rowKey: row => row.identity.code,
       queryOptions: {
+        getKey: row => String(row.code),
         transform: row => ({
           identity: { code: String(row.code) },
           rank: Number(row.rank),
@@ -237,7 +258,7 @@ describe('QueryTable', () => {
       queryId: 'stocks',
       columns: [{ key: 'code', label: 'Code' }, { key: 'value', label: 'Value' }],
       rowKey: row => row.code,
-      queryOptions: { transform: row => ({ code: String(row.code), value: row.value }) },
+      queryOptions: { getKey: row => String(row.code), transform: row => ({ code: String(row.code), value: row.value }) },
       defaultSort: { column: 'value', direction: 'asc' },
     }, [
       { code: 'two', value: '2' },

@@ -24,6 +24,7 @@ import clsx from 'clsx';
 // Code snippet for presentation display
 const CODE_SNIPPET = `<QueryTable<Stock>
   queryId="watchlist-query"
+  queryOptions={tradingQueryOptions('watchlist-query')}
   title="Watchlist"
   columns={[
     { key: 'symbol', label: 'Symbol' },

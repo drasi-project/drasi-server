@@ -42,8 +42,12 @@ export const QUERY_IDS = [
 
 export type FixtureRow = Record<string, unknown>;
 export interface SyntheticBatch {
-  query_id: string;
-  results: Array<{ op: 'c' | 'u' | 'd'; before?: FixtureRow; after?: FixtureRow }>;
+  queryId: string;
+  timestamp: number;
+  results: Array<
+    | { type: 'ADD' | 'DELETE'; data: FixtureRow }
+    | { type: 'UPDATE'; data: FixtureRow; before: FixtureRow; after: FixtureRow }
+  >;
 }
 
 export interface FixtureRequest {
@@ -161,15 +165,16 @@ export class SyntheticTrading {
       const after = new Map(this.snapshot(id).map(row => [key(row), row]));
       const results: SyntheticBatch['results'] = [];
       for (const [rowKey, row] of after) {
-        if (!before.has(rowKey)) results.push({ op: 'c', after: row });
-        else if (JSON.stringify(before.get(rowKey)) !== JSON.stringify(row)) {
-          results.push({ op: 'u', before: before.get(rowKey), after: row });
+        const previousRow = before.get(rowKey);
+        if (!previousRow) results.push({ type: 'ADD', data: row });
+        else if (JSON.stringify(previousRow) !== JSON.stringify(row)) {
+          results.push({ type: 'UPDATE', data: row, before: previousRow, after: row });
         }
       }
       for (const [rowKey, row] of before) {
-        if (!after.has(rowKey)) results.push({ op: 'd', before: row });
+        if (!after.has(rowKey)) results.push({ type: 'DELETE', data: row });
       }
-      if (results.length) this.onBatch({ query_id: id, results });
+      if (results.length) this.onBatch({ queryId: id, timestamp: Date.now(), results });
     }
   }
 

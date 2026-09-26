@@ -26,7 +26,7 @@ Tailwind source scanning or install-time rebuilding are needed to consume it.
 
 | Import | Contents and dependencies |
 | --- | --- |
-| `@drasi/react/client` | `DrasiClient`, `DrasiSSEClient`, `DrasiError` and connection/transport/read DTO types. **No React/React DOM runtime or type imports.** |
+| `@drasi/react/client` | `DrasiClient`, `DrasiSSEClient`, `DrasiError`, result adapters, `accumulateResult` and connection/transport/read/result types. **No React/React DOM runtime or type imports.** |
 | `@drasi/react/react` | Providers, query/status/definition hooks, animation hook and named result/options types. React, but no composed components, tutorial code or CSS. |
 | `@drasi/react/components` | `QueryTable`, `CodeViewerDialog`, icons and column/action/sort/props types. React/React DOM, `clsx` and the headless hooks. |
 | `@drasi/react` | Deliberate convenience re-exports of all three groups. This is **not** a React-free import. |
@@ -73,7 +73,10 @@ function Readings() {
     queryId="readings"
     rowKey={row => row.id}
     queryOptions={{
-      getKey: row => row.id,
+      getKey: row => {
+        if (typeof row.id !== 'string' || !row.id) throw new Error('Expected a stable reading ID');
+        return row.id;
+      },
       transform: row => {
         if (typeof row.id !== 'string' || typeof row.value !== 'number') {
           throw new Error('Expected a Reading');
@@ -91,7 +94,7 @@ function Readings() {
 
 function ConnectionBadge() {
   const status = useDrasiConnectionStatus();
-  return <span>{status.error?.message ?? (status.connected ? 'Live' : 'Connecting')}</span>;
+  return <span>{status.error?.message ?? (status.connected ? 'Stream open' : 'Connecting')}</span>;
 }
 
 export default function App() {
@@ -255,22 +258,24 @@ path/query differences, including the slash examples above, remain material:
 changing one closes the old stream and initializes the replacement.
 
 Material server, instance, reaction ID, endpoint, query-set, credential/header,
-timeout or retry-policy changes replace the lifecycle. Old requests are aborted,
+timeout, retry-policy or reconciliation-limit changes replace the lifecycle. Old requests are aborted,
 the old stream closes, and late events/snapshots/definition reads cannot update
 the new scope. Rows/config from another scope are hidden while replacement
-work starts. This is not Part B's complete stale/reconnect state model.
+work starts; last-good data is retained only within its own scope.
 
 **Callable options compare by identity:** `fetch`, `eventSourceFactory`,
-`routeUnidentified` and a header-provider function. Memoize them when their
+`resultAdapter` and a header-provider function. Memoize them when their
 meaning is unchanged. Replacing a function replaces the lifecycle; a stable
 auth function may return a fresh token on the next request. Query-hook
-`getKey`/`transform`/`postProcess` option changes apply to subsequent batches
-without reopening the stream; they do not reprocess stored rows retroactively.
+`getKey`/`transform`/`postProcess` changes instead reproject retained raw rows
+immediately, without resubscribing or reopening the stream.
 
 `useDrasiClient().retry()` restarts that provider's **shared**, read-only
 connection/snapshot lifecycle. A retained retry from an obsolete configuration
-does not restart its replacement. Automatic transient snapshot retries stay
-local to their subscription and do not disconnect other queries.
+does not restart its replacement. `useDrasiQuery(...).retry()` and a direct
+subscription's `.retry()` refresh only that subscription's REST baseline.
+Automatic transient snapshot retries are also query-local and do not disconnect
+other queries. A query-local retry cannot repair a failed shared connection.
 A direct `DrasiClient` has immutable configuration: construct/disconnect a new
 client for material changes. `initialize()` shares in-flight work and reuses a
 connected client. Its owner must dispose subscriptions and call `disconnect()`.
@@ -314,7 +319,8 @@ wildcard bind hosts, empty/dot identifiers and duplicate query IDs are rejected.
 | `instanceId: string` | Required explicit instance, never discovered. |
 | `queryIds: readonly string[]` | Required existing query references; no definitions. |
 | `reaction: ReactionReference` | Required existing SSE reaction and browser URL. |
-| `routeUnidentified?: RouteUnidentified` | Application adapter for legacy batches without a query ID. Receives `ResultRow[]` and a delivery callback. |
+| `resultAdapter?: ResultAdapter` | Defaults to strict `sse034ResultAdapter`. Select `createLegacyResultAdapter(...)` or supply a validating custom adapter explicitly. |
+| `reconciliation?: ResultReconciliationOptions` | `maxPendingChanges: 10000`; a positive safe integer bounding changes observed during a pending snapshot, **not** result-set size. |
 | `fetch?: typeof fetch` | Defaults to global native fetch; GETs only. |
 | `headers?: DrasiHeaders` | No custom headers by default; static input or per-request provider. |
 | `credentials?: RequestCredentials` | `same-origin`; native SSE cannot implement `omit`. |
@@ -331,64 +337,217 @@ immediately; exhaustion retains the last typed error and stops timers/work.
 Concurrent resource validation drains its bounded batch before failure handoff
 so app recovery does not race an abort storm. Explicit cancellation aborts all.
 
-### Hooks and result boundary
+### Normalized results and explicit wire adapters
+
+`/client` and the root export one normalized result contract:
+
+| Type | Shape |
+| --- | --- |
+| `ResultChange<T = ResultRow>` | `{ kind: 'upsert', after: T }`, `{ kind: 'update', before: T, after: T }` or `{ kind: 'delete', before: T }`. |
+| `QuerySnapshot<T = ResultRow>` | `{ kind: 'snapshot', queryId, rows: readonly T[], receivedAt: number }`. |
+| `QueryDelta<T = ResultRow>` | `{ kind: 'delta', queryId, changes: readonly ResultChange<T>[], receivedAt: number, sourceTimestamp?: number }`. |
+| `QueryResult<T = ResultRow>` | `QuerySnapshot<T> \| QueryDelta<T>`. Narrow `kind` before reading `rows` or `changes`. |
+| `ResultAdapter` | `(payload: unknown, context: ResultAdapterContext) => readonly QueryDelta[]`. |
+| `ResultAdapterContext` | Extends `Readonly<DrasiErrorDetails>` with required read-only `receivedAt: number`; all error-detail fields remain optional. |
+
+Rows crossing the wire boundary must be JSON objects; their fields remain
+`unknown`. Adapters are synchronous, and even a custom adapter's normalized
+output is validated at runtime. An adapter does not establish an application's
+row schema. `receivedAt` and `sourceTimestamp` are display metadata only,
+**never** ordering, identity, deduplication or synchronization cursors.
+The stream supplies configured reaction and instance metadata in the context.
+New malformed/unroutable unidentified failures retain those reaction details;
+identified query failures use query details instead. Existing `DrasiError`
+objects retain their identity rather than being rewrapped.
+
+The default **`sse034ResultAdapter`** accepts the recorded **untemplated SSE**
+envelope `{ queryId, results, timestamp }`. Its name identifies the original
+0.3.4 contract. Historical 0.3.6 captures exercise the same observed
+ADD/DELETE/UPDATE/aggregation shapes without changing this API. This is not a
+claim about every plugin version, custom template or unobserved variant:
+
+- `ADD` with object `data` becomes an upsert; `DELETE` with object `data`
+  becomes a delete.
+- `UPDATE` requires object `before`, `after` and `data`, with optional string
+  array `grouping_keys`. Normalized updates retain both `before` and `after`.
+- `aggregation` requires `before` (an object or `null`) and object `after`.
+  A null `before` becomes an upsert; otherwise it becomes an update.
+- `noop` contributes no normalized changes. Noop-only and empty result batches
+  have empty `changes` and are ignored by the transport; they do not trigger
+  snapshot-overlap recovery. `{ type: 'heartbeat', ts }` produces no deltas.
+  Valid batches for queries with no subscribers are also ignored, not
+  classified as corruption.
+
+There is no field-shape guessing, lowercase-operation fallback, implicit
+`query_id` alias or custom-template interpretation in this default adapter.
+Official `row_signature` values are JSON numbers representing upstream `u64`s:
+unsafe integers can already have lost precision in `JSON.parse`. They are
+ignored, not exposed as stable row identities or used to deduplicate results.
+
+For explicit compatibility, use
+`resultAdapter: createLegacyResultAdapter({ routeUnidentified })`.
+`LegacyResultAdapterOptions` accepts the app-owned `RouteUnidentified`
+callback. This adapter accepts `query_id`, `results` entries with `op`
+`c`/`r`/`u`/`d` or lowercase operation `type`, keyed `data`/`_deleted` rows,
+and `addedResults`/`updatedResults`/`deletedResults` arrays with before/after
+wrappers or direct rows. It is a migration adapter, not another claim about
+the official plugin protocol. An explicit query ID is always honored before
+content routing; the callback cannot override it.
+
+Unidentified routing receives rows and `deliver(queryId, rows)`. It must
+**synchronously deliver every original row reference supplied to that callback**
+at least once, to a valid query ID. Fan-out is supported. Do not clone, replace,
+silently drop or asynchronously deliver those rows. Missing/failed routing
+raises `UNROUTABLE_RESULT`; an empty/no-op batch needs no route.
+The legacy row callback cannot retain a before/after update as one operation:
+an unidentified update is flattened into **delete-before, then upsert-after**.
+Route both halves correctly, or implement a `ResultAdapter` that preserves the
+normalized update. This compatibility path does not promise atomic routing of
+a key-changing update.
+
+Raw `_deleted` has deletion semantics **only inside the selected legacy
+adapter**. In a normalized result or REST row it is an ordinary application
+field. `accumulateResult(rows, result, getKey, details?)` is the exported,
+framework-independent raw reducer: snapshots replace raw state, same-key
+upserts replace idempotently, deletes remove their `before` key, and updates
+remove a changed `before` key before storing `after`. Equal-valued rows with
+different domain keys remain distinct. There is no serialized-value deduplication.
+
+### Hooks, raw identity and derived views
 
 | Hook | Named result |
 | --- | --- |
 | `useDrasiClient()` | `DrasiContextValue`: `{ client, initialized, error, retry }`. |
-| `useDrasiQuery<T = ResultRow>(queryId, options?)` | `UseDrasiQueryResult<T>`: `{ data: T[] \| null, loading, error, lastUpdate: Date \| null }`. |
+| `useDrasiQuery<T extends object = ResultRow>(queryId, options)` | `UseDrasiQueryResult<T>`: `{ data: T[] \| null, status, stale, loading, error, errorScope, lastUpdate: Date \| null, retry }`. **Options are required.** |
 | `useDrasiConnectionStatus()` | `ConnectionStatus`: `connected`, optional `reconnecting`, `DrasiError`, `lastConnected`. A socket opening does not prove query synchronization. |
 | `useDrasiQueryDefinition(queryId)` | `UseDrasiQueryDefinitionResult`: `{ config: QueryConfig \| null, loading, error }`. |
 | `useDrasiServerUiUrl()` | Instance-scoped UI URL when initialized, otherwise `null`. |
 | `useRowAnimation(options)` | `UseRowAnimationResult`; exported `AnimationDirection` and `UseRowAnimationOptions`. |
 
 All provider/hooks preserve `DrasiError` objects, not just messages.
-`UseDrasiQueryOptions<T>` supplies `getKey(row: T)`, optional
-`transform(row: ResultRow): T`, and `postProcess(rows: T[]): T[]`.
-Key extraction is **after** transformation; returning `null` skips a row.
+`UseDrasiQueryOptions<T extends object = ResultRow>` requires both:
+
+- `getKey: RowKey`, where `RowKey = (raw: Readonly<ResultRow>) => string`.
+  Return a **nonempty stable domain identity** from the raw row, including
+  sparse deletes and both sides of updates. Identity is extracted **before**
+  transformation. There is no `id`, `symbol`, serialization or table-key fallback.
+  Invalid/throwing key extraction is visible as `INVALID_ROW_KEY`, not a skip.
+- `transform: (raw: Readonly<ResultRow>) => T | null`. Validate unknown fields
+  to produce a typed object; use `row => row` for raw reads. **Deletes never run
+  through this transform.** Returning `null` hides an identity from the derived
+  view but retains its raw row for later updates and option changes.
+
+Optional `postProcess: (rows: T[]) => T[]` is a pure derived sort/filter; it
+does not remove or mutate the accumulated raw state. All three options reproject
+retained rows reactively without a new socket or subscription. Keep callbacks
+pure and do not mutate their read-only raw input.
+
+Active stream batches use the **latest committed `getKey`**, never a callback
+from a suspended or abandoned render. During a `startTransition` that suspends,
+the current view and its subscription keep their committed identity policy.
+A successful option commit publishes that key before consumer layout effects
+can deliver events; committed transforms and post-processing still reproject
+retained rows without reconnecting. This commit-only publication performs no
+browser-global detection or server-rendering layout effect.
 
 ```ts
 // @drasi-docs: query-options.ts
-import type { UseDrasiQueryOptions } from '@drasi/react/react';
+import { useDrasiQuery, type UseDrasiQueryOptions } from '@drasi/react/react';
+import type { RowKey } from '@drasi/react/client';
 
 interface Reading { device: string; value: number }
+const readingKey: RowKey = raw => {
+  if (typeof raw.device !== 'string' || !raw.device) throw new Error('Expected a stable device ID');
+  return raw.device;
+};
+
 export const readingOptions: UseDrasiQueryOptions<Reading> = {
-  getKey: row => row.device,
+  getKey: readingKey,
   transform: row => {
     if (typeof row.device !== 'string' || typeof row.value !== 'number') {
       throw new Error('Expected a Reading');
     }
     return { device: row.device, value: row.value };
   },
-  postProcess: rows => rows.sort((a, b) => b.value - a.value),
+  postProcess: rows => [...rows].sort((a, b) => b.value - a.value),
 };
+
+export const rawReadingOptions: UseDrasiQueryOptions = {
+  getKey: readingKey,
+  transform: row => row,
+};
+
+export function useReadings() {
+  return useDrasiQuery<Reading>('readings', readingOptions);
+}
 ```
 
-Raw rows are `Record<string, unknown>`. A generic alone does not validate fields:
-without `transform`, choosing `T` is the caller's schema assertion. Prefer a
-validating transform for external data; failures become typed hook errors.
+A generic alone is not validation and cannot replace `transform`. Transform
+or post-processing failures become `RESULT_PROCESSING_FAILED`; existing
+`DrasiError` instances retain their identity. Invalid keys are not hidden by
+a transform returning `null`.
 
-**Deliberately unchanged until Part B (#163):** the legacy key fallback remains
-`id`, then `symbol`, then serialized row. `_deleted` is retained through
-transforms, but minimal delete payloads still pass through the transform/key
-path. Existing keyed `queryId`/`query_id` result/data shapes and the legacy
-unidentified added/updated/deleted routing alternatives remain compatibility
-behavior, not a new official normalized result contract. Stable identity,
-key-changing updates and named adapters are not completed here.
+`QueryStatus` describes the query, not merely the shared socket:
 
-Subscribers listen before their REST snapshot, buffer deltas while it loads,
-then replay them; reconnect requests a fresh snapshot. This does **not**
-establish an atomic, ordered or exactly-once handoff without a server
-sequence/cursor, and arrival timestamps do not solve that problem. Full
-snapshot/live reconciliation and initial/live/reconnecting/stale/error states
-remain Part B. Current `loading`/transport flags must not be interpreted as
-stronger consistency guarantees.
+| `status` | Meaning |
+| --- | --- |
+| `initial-loading` | No accepted baseline yet. |
+| `live` | A best-effort baseline was accepted and subsequent changes are being applied; **not** proof of gap-free synchronization. |
+| `empty` | That baseline's current projected view is empty, possibly because transforms/filters hide rows. |
+| `reconnecting` | Waiting on the shared stream; any last-good rows are stale. |
+| `resynchronizing` | Reading/retrying a fresh REST baseline, including known-overlap recovery. |
+| `stale-last-good-data` | A transient query refresh failure left useful last-good rows while recovery continues. |
+| `terminal-error` | A permanent fault or exhausted retry budget; correction and explicit retry are needed. Last-good rows may still be available. |
+
+`errorScope: QueryErrorScope | null` is `'query'`, `'connection'` or `null`.
+`stale`, `data` and `lastUpdate` let a UI retain and label useful last-good data
+during recovery or failure. `lastUpdate` is display metadata, not a server
+watermark. `loading` is not a complete synchronization state: inspect `status`
+and `stale`. Per-query processing and subscription REST failures are isolated
+while the shared transport remains healthy. This is **not whole-connection
+fault isolation**: initial validation and shared reconnection revalidate
+**all configured query references** and the reaction, as in Part A. A reference
+failure during that shared validation can block the shared connection and
+affect every subscription. Malformed unidentifiable/protocol failures can also
+terminate the shared stream.
+
+### Snapshot/stream consistency and limits
+
+Subscriptions attach to the stream **before** starting REST validation/fetch.
+Without a cursor shared by REST and SSE, an overlapping delta cannot be safely
+ordered relative to that snapshot. If any changes arrive during the pending
+read, the client **rejects the ambiguous snapshot and does not replay those
+changes**, reports retryable `SNAPSHOT_OVERLAP` and visibly resynchronizes through
+a bounded refresh. It never silently labels that overlapping candidate live.
+
+Pending changes are **counted, not stored as row bodies**. Exceeding
+`reconciliation.maxPendingChanges` (default **10000**) aborts the pending work
+and reports retryable `RESULT_BUFFER_OVERFLOW` with resynchronizing state.
+The limit bounds the overlap window, **not** the size of the query result set.
+Refresh/reconnect replaces the baseline; it does not merge old results with a
+guessed replay. Retries use the existing bounded policy above (ten retries
+after the initial attempt by default). Continuous overlap can exhaust it and
+leave `terminal-error` with stale last-good rows until explicit retry.
+
+A read with **no known overlap** is only a **best-effort baseline**.
+Undetectably delayed events and causality across the two transports remain
+limits: there is no atomic, gap-free or exactly-once snapshot/live handoff.
+For example, an older SSE change can arrive only after a newer REST baseline
+was accepted, temporarily replacing a row with older state despite no observed
+overlap. The client cannot detect that delay or automatically label it stale;
+explicit query refresh reads a new baseline. This is a tested limitation, not
+an out-of-order-event suppression guarantee.
+Never order client/server clocks or row signatures to manufacture one.
+Stronger semantics require a future **shared snapshot cursor and stream
+resume/replay protocol**; this client does not invent backend support.
 
 ### Components
 
 `QueryTable<T>` binds `useDrasiQuery` to the existing sortable, animated table.
-Required props are `queryId`, `columns: ColumnDef<T>[]` and `rowKey(row: T)`.
-`queryOptions` forwards the typed hook options. `ColumnDef`, `RowAction`,
+Required props are `queryId`, `columns: ColumnDef<T>[]`, `rowKey(row: T)` and
+`queryOptions: UseDrasiQueryOptions<T>`. `rowKey` is only the **transformed**
+render/animation identity, separate from the raw accumulation `getKey` inside
+`queryOptions`; one never substitutes for the other. `ColumnDef`, `RowAction`,
 `SortConfig`, `QueryTableProps` and `CodeViewerDialogProps` are
 exported by the component entrypoint.
 
@@ -402,6 +561,11 @@ Computed column strings remain supported, so `format`/`className` receive
 `(value: unknown, row: T)`. Use the typed row (as in the quickstart) or narrow
 the raw value; no unsafe cast is needed. `SortConfig` retains a string column
 and `asc | desc` direction, including sorting by non-visible row fields.
+On failure the table preserves available last-good rows alongside its existing
+error styling. It offers **Retry query** for query-scoped failures and **Retry
+connection** for shared failures. Reconnecting/resynchronizing stale-data
+messages appear only on the exceptional recovery path; healthy table
+presentation and package CSS are unchanged.
 Pure presentation/composition, controlled sort, slots, dialog accessibility
 and theming redesign are separate #164 work, not claims of this release.
 
@@ -413,22 +577,36 @@ been redesigned. Consumers do not need Tailwind.
 
 `DrasiClient` exposes `initialize()`, `validateResources(signal?)`,
 `getQuery(id, signal?)`, `getReaction(signal?)`, `getQueryConfig(id, signal?)`,
-`getQueryResults(id, signal?)`, `subscribe(id, onResult, onError?)`,
+`getQueryResults(id, signal?)`, `subscribe(id, onResult, onError?, onStateChange?)`,
 `getConnectionStatus()`, `onConnectionStatusChange(callback)`,
 `getServerUiUrl()`, `isInitialized()` and `disconnect()`.
 Direct reads perform one attempt; initialization and subscriptions own the
-documented retry policy. Each subscription returns an unsubscribe function.
+documented retry policy. Each subscription returns a named `QuerySubscription`:
+call it to unsubscribe, call `.retry()` for a query-local REST refresh, or
+`.getState()` for its `QuerySubscriptionState`. The optional fourth callback
+receives that same state: `{ status, stale, error, errorScope }`. Its status
+excludes `'empty'` because only the accumulated/projected hook view knows whether
+it has rows.
 Provide `onError` to handle subscription failures; if omitted, the library logs
 only the safe error code rather than silently swallowing a malformed snapshot.
 
 ```ts
 // @drasi-docs: client.ts
-import { DrasiClient, type DrasiError, type ResultRow } from '@drasi/react/client';
+import {
+  DrasiClient, accumulateResult,
+  type DrasiError, type QuerySubscriptionState, type ResultRow, type RowKey,
+} from '@drasi/react/client';
+
+const readingKey: RowKey = raw => {
+  if (typeof raw.id !== 'string' || !raw.id) throw new Error('Expected a stable reading ID');
+  return raw.id;
+};
 
 // Execute in a browser, not while importing or server rendering.
 export async function monitorReadings(
   onRows: (rows: ResultRow[]) => void,
   onError: (error: DrasiError) => void,
+  onStateChange?: (state: QuerySubscriptionState) => void,
 ) {
   const client = new DrasiClient({
     serverUrl: 'https://drasi.example', instanceId: 'analytics',
@@ -441,8 +619,18 @@ export async function monitorReadings(
     await client.disconnect();
     throw error;
   }
-  const unsubscribe = client.subscribe('readings', result => onRows(result.data), onError);
-  return async () => { unsubscribe(); await client.disconnect(); };
+  let rows: ResultRow[] = [];
+  const subscription = client.subscribe('readings', result => {
+    rows = accumulateResult(rows, result, readingKey, {
+      instanceId: 'analytics', resourceKind: 'query', resourceId: 'readings',
+    });
+    onRows(rows);
+  }, onError, onStateChange);
+  return {
+    retry: subscription.retry,
+    getState: subscription.getState,
+    dispose: async () => { subscription(); await client.disconnect(); },
+  };
 }
 ```
 
@@ -450,8 +638,12 @@ export async function monitorReadings(
 adds an optional read-only `validate(signal)` callback and `errorDetails` to
 the stream/auth/reconnect options. Direct use does not validate REST resources
 unless that callback is supplied and cannot infer their absence. It exposes
-`connect(queryIds, endpoint, signal?)`, `subscribe`, `getConnectionStatus`,
-`onConnectionStatusChange`, `isConnected` and `disconnect`.
+`connect(queryIds, endpoint, signal?)`, `subscribe`, `getQueryError(queryId)`,
+`getConnectionStatus`, `onConnectionStatusChange`, `isConnected` and `disconnect`.
+Its `subscribe` callback receives only normalized `QueryDelta`s and returns a
+plain cleanup function; it does not fetch snapshots or offer query-local REST
+retry. `getQueryError` exposes a query-scoped fault without conflating it with
+the shared connection status.
 
 ## Errors and recovery
 
@@ -472,6 +664,11 @@ original abort reason rather than a `DrasiError`.
 | `SERVER_UNAVAILABLE`, `STREAM_UNAVAILABLE` | Retryable service/transport failure, **never permission to create**. |
 | `UNAUTHENTICATED`, `FORBIDDEN` | Fix credentials/authorization. No automatic auth/provisioning loop. |
 | `INVALID_CONFIGURATION`, `INCOMPATIBLE_RESOURCE`, `INVALID_PAYLOAD` | Invalid references/options, wrong reaction contract, redirect or unsupported data. Permanent until corrected. |
+| `SNAPSHOT_OVERLAP` | Retryable known snapshot/delta overlap. The ambiguous candidate is discarded; a bounded query-local baseline refresh follows. |
+| `RESULT_BUFFER_OVERFLOW` | Retryable pending-change limit exceeded. Abort the pending read and resynchronize; never truncate to a live result. |
+| `INVALID_ROW_KEY` | Terminal raw identity failure, including sparse deletes. Fix `getKey`/the query projection; there is no silent fallback. |
+| `RESULT_PROCESSING_FAILED` | Terminal transform, post-processing or subscriber failure. Correct the callback and retry as needed. |
+| `UNROUTABLE_RESULT` | Terminal missing/failed explicit legacy routing. Fix the adapter/routing policy; do not guess a query by shape. |
 
 `retryable` means another attempt may be useful, not that retry continues
 forever. REST 408/429/5xx and network/body timeouts are retryable; 401/403 and
@@ -519,14 +716,35 @@ the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
-The current `211d0f2a` engine is an unreleased development pin, not a released
-fix or a claim to repair stored records. Its three aggregate and two additive
-outbox production paths do not select drasi-project/drasi-core#909's library
-codec change: registry library 0.9.2 still uses compact records and `append`,
-not the newer trim methods. No migration, record dropping, broader recovery
-guarantee, core modification or publication is implied.
+`211d0f2a` is unreleased development source: three aggregate and two additive
+outbox paths, not stored-data repair. Registry library 0.9.2 still uses compact
+records and `append`, not the new trim methods or drasi-project/drasi-core#909's
+codec fix. No migration, dropping, broader recovery or publication is implied.
 
-## P3 migration
+Historical `test/fixtures/server-v1/sse-0.3.4.ndjson` copies all **20 raw lines**
+verbatim from Trading's `test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson`.
+Adjacent `contract.json` retains actual REST bodies and separate capture,
+source-tag and serializer provenance. The tag
+[`drasi-reaction-sse-v0.3.4`](https://github.com/drasi-project/drasi-core/tree/drasi-reaction-sse-v0.3.4)
+resolves to **`ff2fde26d0f33adcec17b19db7d2533f80b0baab`**:
+`lib/src/channels/events.rs::ResultDiff` defines noop, nullable aggregation-before
+and before/after updates; `components/reactions/sse/src/sse.rs` emits
+`queryId`/`results`/`timestamp`, **not internal `QueryResult.sequence`**.
+The capture does not exercise every source-defined variant; an unused local
+SSE 0.3.5 checkout is not evidence for this protocol.
+
+Historical ABI 0.13 evidence remains separate:
+`test/fixtures/server-v1-0.2.3/sse-0.3.6.ndjson` preserves all **17 raw CDP
+records**; adjacent `sse-0.3.6.provenance.json` retains the own merge revision
+and source/manifest/lock/binary/signature hashes.
+Both recordings still exercise the adapter; 0.3.6 also tests default transport
+and query-ID routing: `ADD`/`DELETE` data, `UPDATE` before/after/data, lowercase
+aggregation before/after **without data**, and unsafe numeric signatures.
+Neither captures a shared cursor. These records and Part A's DTO fixture are
+unchanged, not relabeled as ABI 0.14 proof. Current SSE 0.3.7 needs its own live
+gate; native ABI compatibility alone does not establish wire semantics.
+
+## P4 / #163 Part B migration
 
 Use `/client`, `/react` or `/components` for the dependency boundary you need;
 root imports remain supported. Import `/styles.css` explicitly for components.
@@ -538,18 +756,33 @@ reaction endpoint. Keep creation definitions in your app; a complete
 `QueryConfig` read now includes real server fields and is not a convenient
 creation-body type. Trading uses its own `TradingQueryDefinition`.
 
-Raw result/transform/route fields are now `unknown`, not ambient `any`.
-Narrow them or use a validating transform. Get-key/action callbacks receive
-the typed row; adapt formatters to the typed column API rather than casting
-rows to `any`. Hook results/options and error/connection/sort types have public
-names. Equivalent inline data configuration is safe; callable identities remain
-material. Custom stream factories may accept the new auth/credentials/signal
-argument; one-argument factories remain assignable but must not ignore
-authentication when configured.
+Part A's guarded `unknown` rows, named types, auth, explicit resource references
+and physical import boundaries remain. Equivalent inline data configuration is
+safe; callable connection options remain material. Custom stream factories must
+honor auth/credentials/cancellation when configured.
 
-Legacy `_deleted`, content routing, key fallback and snapshot buffering are
-explicitly retained for the next Part B PR. This migration does not claim
-stable-key, key-changing-update, exactly-once or complete stale-state behavior.
+For Part B, migrate these breaking result contracts:
+
+1. Supply **both** raw `getKey` and validating `transform` on every hook call.
+   For raw reads, still supply the key and `transform: row => row`. Keys receive
+   unknown raw fields, not typed transform output; sparse deletes need only
+   identity. Action/render callbacks still receive the typed output.
+2. Supply required `QueryTable.queryOptions`; `rowKey` remains only its
+   transformed render/animation key. Do not move accumulation identity there.
+3. Narrow normalized `QueryResult.kind`. Replace `result.data`,
+   `result.snapshot` and `result.timestamp` with snapshot `rows` or delta
+   `changes` and display-only `receivedAt`/optional `sourceTimestamp`. Preserve
+   `before` and `after` on updates, especially key changes.
+4. Remove top-level `routeUnidentified`. The default is the strict recorded
+   SSE format above (`sse034ResultAdapter`, also exercised with recorded 0.3.6);
+   explicitly choose `createLegacyResultAdapter({ routeUnidentified })` for
+   legacy formats. `_deleted` is not a normalized-state tombstone.
+5. Distinguish query `status`/`stale`/`errorScope` from socket status. Keep useful
+   last-good data visible when appropriate. Use the hook/subscription retry for
+   a query REST refresh and `useDrasiClient().retry()` for shared recovery.
+6. Do not replay overlapping snapshot/delta batches yourself. Respect bounded
+   overlap recovery and its terminal exhaustion; stronger handoff guarantees
+   depend on a shared backend cursor/resume contract.
 
 ## Development and Trading verification
 
@@ -559,6 +792,26 @@ barrel, not an import used by the client. `npm run build` emits ESM, CJS and
 both declaration formats. `npm run typecheck`, `npm test`,
 `npm run test:coverage` and `npm run dev` use the existing tooling.
 The tarball includes README, CHANGELOG, LICENSE, NOTICE, dist and CSS only.
+
+`test/ResultRegression.test.jsx` is a portable behavioral proof run unchanged
+on archived P3 **`a0569c2`** and current P4. All three cases fail on P3 with
+observed wrong results and pass on P4:
+
+| Regression | Observed P3 result | P4 result |
+| --- | --- | --- |
+| Projection omits the raw identity field | `null` instead of the projected row. | Projected value `1`, then removal by a sparse identity-only delete. |
+| Official before/after update changes the key | Both old and new identities remain. | Only the new identity with value `2`. |
+| Snapshot value `2` overlaps an older pending delta value `1` | Replay rolls the result back to `1`, without refreshing. | Reject the ambiguous candidate and accept value `3` through a bounded REST refresh. |
+
+These tests use the real provider, hooks, client and transport pipeline with
+injected REST/EventSource endpoints, not mocks that bypass those product
+implementations. They prove these targeted regressions, not stronger handoff
+semantics; the undetectable delayed-event limit above still applies.
+
+Vitest coverage includes all `src/**/*.{ts,tsx}` product code. It enforces
+**90% statements, lines and functions and 85% branches**, separately for
+`src/client/**` and `src/react/**`. These subtree floors do not replace the
+existing package/consumer gates or change artifact-size baselines.
 
 Trading continues to consume built local exports. Its unchanged query
 definitions, financial transforms, provisioning and tutorial snippets stay
@@ -572,8 +825,9 @@ preserved separately. The 2% future-growth policy and coverage floors do not
 change with this accounting correction.
 
 Keep `"private": true`. Publishing, repository transfer, credentials/workflows,
-new examples/Storybook, composition/accessibility and Part B result redesign are
-separately authorized work, not a next step implied by this package.
+new examples/Storybook and the pure UI/composition/accessibility work in #164
+remain separately authorized. These API/documentation contracts do not
+constitute an all-checks-passed or merge-readiness claim.
 
 ## License
 

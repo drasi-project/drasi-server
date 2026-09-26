@@ -16,13 +16,14 @@ import React from 'react';
 import { QueryTable, type ColumnDef } from '@drasi/react/components';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
-import type { MarketMoverQueryId, Stock } from '@/types';
+import type { MarketMoverQueryId, MarketMoverRow } from '@/types';
 import { formatCurrency, formatVolume } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippets for presentation display
 const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
   queryId="top-gainers-query"
+  queryOptions={tradingQueryOptions('top-gainers-query')}
   title="Top Gainers"
   columns={[
     { key: 'symbol', label: 'Symbol' },
@@ -38,6 +39,7 @@ const GAINERS_CODE_SNIPPET = `<QueryTable<Stock>
 
 const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
   queryId="top-losers-query"
+  queryOptions={tradingQueryOptions('top-losers-query')}
   title="Top Losers"
   columns={[
     { key: 'symbol', label: 'Symbol' },
@@ -51,8 +53,9 @@ const LOSERS_CODE_SNIPPET = `<QueryTable<Stock>
   animateOnChange="price"
 />`;
 
-const VOLUME_CODE_SNIPPET = `<QueryTable<Stock>
+const VOLUME_CODE_SNIPPET = `<QueryTable<HighVolumeStock>
   queryId="high-volume-query"
+  queryOptions={tradingQueryOptions('high-volume-query')}
   title="High Volume"
   columns={[
     { key: 'symbol', label: 'Symbol' },
@@ -75,7 +78,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
   // Different columns for high-volume query (shows volume instead of change)
   const isVolumeQuery = queryId === 'high-volume-query';
 
-  const columns: ColumnDef<Stock>[] = [
+  const columns: ColumnDef<MarketMoverRow>[] = [
     {
       key: 'symbol',
       label: 'Symbol',
@@ -121,7 +124,7 @@ export const StockList: React.FC<StockListProps> = ({ title, queryId }) => {
     : GAINERS_CODE_SNIPPET;
 
   return (
-    <QueryTable<Stock>
+    <QueryTable<MarketMoverRow>
       queryId={queryId}
       queryOptions={tradingQueryOptions(queryId)}
       title={title}

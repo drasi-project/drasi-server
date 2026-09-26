@@ -26,6 +26,10 @@ export default defineConfig({
       experimentalAstAwareRemapping: true,
       include: ['src/**/*.{ts,tsx}'],
       reporter: ['text', 'json-summary', 'html'],
+      thresholds: {
+        'src/client/**': { statements: 90, lines: 90, functions: 90, branches: 85 },
+        'src/react/**': { statements: 90, lines: 90, functions: 90, branches: 85 },
+      },
     },
   },
 });

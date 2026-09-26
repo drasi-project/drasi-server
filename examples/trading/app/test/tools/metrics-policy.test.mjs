@@ -135,6 +135,24 @@ test('retains the P3 schema-2 record while counting its separately shipped Commo
   assert.deepEqual(current.coverage, historical.coverage);
 });
 
+test('retains the P4 feature budget and schema-2 history while counting both actual declaration graphs', async () => {
+  const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p4-v2.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(historical.schemaVersion, 2);
+  assert.equal(historical.sizes.packageTypes, 34875);
+  assert.equal(current.p4MeasurementChange.esmDeclarations, historical.sizes.packageTypes);
+  assert.equal(current.p4MeasurementChange.commonJsDeclarations, 34892);
+  const sizes = measurePackageFiles([
+    ...packageFiles.filter(file => !file.path.endsWith('.d.ts')),
+    { path: 'dist/types.d.ts', bytes: current.p4MeasurementChange.esmDeclarations },
+    { path: 'dist/types.d.cts', bytes: current.p4MeasurementChange.commonJsDeclarations },
+  ]);
+  assert.equal(sizes.packageTypes, 69767);
+  assert.equal(current.sizes.packageTypes, sizes.packageTypes);
+  assert.deepEqual(current.coverage, historical.coverage);
+  assert.deepEqual(current.sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
+});
+
 test('rejects missing formats, duplicate files and invalid packed measurements', () => {
   assert.throws(() => measurePackageFiles(packageFiles.filter(file => !file.path.endsWith('.cjs'))), /Missing packed packageCjs/);
   assert.throws(() => measurePackageFiles([...packageFiles, packageFiles[0]]), /duplicate package path/);
