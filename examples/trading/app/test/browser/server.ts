@@ -100,6 +100,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       case '/__fixture/reconnect':
         online = true;
         break;
+      case '/__fixture/partial':
+        backend.queries.delete('portfolio-query');
+        backend.queryStatuses.set('watchlist-query', 'Stopped');
+        backend.reactionStatus = 'Stopped';
+        break;
       default: throw new Error(`Unknown fixture control ${url.pathname}`);
     }
     json(response, 200, { success: true });

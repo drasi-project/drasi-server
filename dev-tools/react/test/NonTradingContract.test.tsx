@@ -20,7 +20,7 @@ function Readings({ queryId }: { queryId: string }) {
     getKey: row => `${row.device}/${row.metric}`,
     transform: row => ({ device: row.device, metric: row.metric, value: Number(row.value) }),
   });
-  return <output aria-label={queryId}>{error ?? JSON.stringify(data)}</output>;
+  return <output aria-label={queryId}>{error?.message ?? JSON.stringify(data)}</output>;
 }
 
 describe('non-Trading synthetic contracts', () => {
@@ -28,10 +28,13 @@ describe('non-Trading synthetic contracts', () => {
     const factory = fakeEventSourceFactory();
     const fetcher: typeof fetch = async input => {
       const url = String(input);
-      const json = (body: unknown) => new Response(JSON.stringify({ data: body }));
-      if (url.endsWith('/health')) return json({});
-      if (url.endsWith('/api/v1/instances')) return json([{ id: 'building-a' }]);
-      if (url.includes('?view=full')) return json({ status: 'Running', config: {} });
+      const json = (body: unknown) => new Response(JSON.stringify({ success: true, data: body }));
+      if (url.includes('?view=full')) {
+        const id = new URL(url).pathname.split('/').pop()!;
+        return json({ id, status: 'Running', config: id === 'building-events'
+          ? { id, kind: 'sse', queries: ['building-readings', 'archive-readings'] }
+          : { id, query: 'MATCH (r:Reading) RETURN r', queryLanguage: 'Cypher', sources: [] } });
+      }
       if (url.endsWith('/building-readings/results')) return json(readings);
       if (url.endsWith('/archive-readings/results')) return json(readings);
       throw new Error(`Unexpected non-Trading fixture request ${url}`);
@@ -39,10 +42,9 @@ describe('non-Trading synthetic contracts', () => {
     render(
       <DrasiProvider
         serverUrl="http://building.invalid:8080"
-        queries={['building-readings', 'archive-readings'].map(id => ({
-          id, query: 'MATCH (r:Reading) RETURN r', sources: [],
-        }))}
-        reaction={{ id: 'building-events', port: 8081 }}
+        instanceId="building-a"
+        queryIds={['building-readings', 'archive-readings']}
+        reaction={{ id: 'building-events', endpoint: 'https://building.invalid/events' }}
         fetch={fetcher}
         eventSourceFactory={factory.create}
       >

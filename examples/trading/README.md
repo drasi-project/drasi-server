@@ -187,9 +187,15 @@ npm run dev
 ```
 
 At startup the app automatically:
-1. Creates all 11 continuous queries via the REST API
-2. Creates an SSE reaction to receive live updates
-3. Connects to the SSE stream for real-time data
+1. Resolves the demo's single instance and attempts a read-only connection
+2. On typed missing/stopped-resource errors, creates/starts only the 11 known
+   Trading queries and SSE reaction, waits for readiness, and retries once
+3. Reuses existing running resources without redundant writes
+
+No manual query/reaction setup is needed. `TradingProvider` owns this behavior;
+the reusable package is connect-only. On a multi-instance server configure
+`<TradingProvider instanceId="your-instance">` explicitly instead of guessing
+the first instance. The normal REST/SSE URLs remain 8280/8281.
 
 #### Step 4: Start the Price Generator
 
@@ -274,25 +280,20 @@ const { data, loading, lastUpdate } = useDrasiQuery<Stock>('watchlist-query');
 ```
 
 The shared connection is established once near the root of the app by wrapping it
-in `<DrasiProvider>` (see `app/src/main.tsx`):
+in the app-owned `<TradingProvider>` (see `app/src/main.tsx`):
 
 ```tsx
-import { DrasiProvider } from '@drasi/react';
-import { TRADING_QUERIES, TRADING_REACTION, routeTradingData } from '@/drasi/config';
+import { TradingProvider } from '@/drasi/TradingProvider';
 
-<DrasiProvider
-  serverUrl="http://localhost:8280"
-  queries={TRADING_QUERIES}
-  reaction={TRADING_REACTION}
-  routeUnidentified={routeTradingData}
->
+<TradingProvider>
   <App />
-</DrasiProvider>
+</TradingProvider>
 ```
 
 Under the hood:
-1. `DrasiProvider` (via the package's `DrasiClient`) creates the queries and the
-   SSE reaction through the REST API
+1. `TradingProvider` attempts `DrasiClient.initialize()` with explicit instance,
+   query IDs and `{ id, endpoint }` reaction references. The package only reads.
+   `ensureTradingResources.ts` catches eligible typed failures and owns setup.
 2. The package's `DrasiSSEClient` maintains a **single** EventSource connection
    and multiplexes every query over it
 3. Query results flow as Server-Sent Events and are fanned out to subscribers by
@@ -305,6 +306,34 @@ key/transform/sort rules — lives in the app under `app/src/drasi/`, so the pac
 itself stays generic and reusable. See [Reusable React components](#reusable-react-components)
 for details.
 
+Setup is shared across concurrent consumers, with Web Locks for tabs where
+available and 409/read validation otherwise. It has a 60-second deadline,
+10-second request timeouts, readiness polling and cancellation when the last
+consumer unmounts. Starting/bootstrapping resources are waited on, never started
+again. Partial success is retained and reused on a later explicit retry.
+
+Before writing, Trading checks existing known definitions: exact query text
+(ignoring outer whitespace), explicit **Cypher**, ordered source subscriptions
+and joins, plus reaction kind/membership/host/port/path/heartbeat settings.
+Conflict, malformed data, auth, unknown instance and network failures stop setup;
+it never overwrites resources or manages sources/plugins. Query POST bodies are
+projected explicitly from the app definitions, omitting the app-only `description`.
+All writes use the resolved instance. Successful initial read-only connections
+do not run this desired-definition preflight or reconcile deployment settings.
+
+The app uses the package's controlled `DrasiClientProvider` to bind hooks to the
+same single client during resolution/setup and streaming. Terminal errors keep
+their `DrasiError` identity and show a **Retry connection** control; stream/network
+errors alone never authorize creation. Package reconnect/snapshot attempts are
+bounded as described in its [error/retry contract](../../dev-tools/react/README.md#errors-retries-and-provisioning-ownership).
+Business actions, financial transforms, query/source/join ordering, routing,
+sorting defaults and successful dashboard appearance are unchanged.
+
+For non-local hosting, use TLS and configure the reverse proxy's
+`Content-Security-Policy`, `Strict-Transport-Security`,
+`X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` headers, together
+with explicit allowed origins and appropriate authentication.
+
 ### Reusable React components
 
 The [`@drasi/react`](../../dev-tools/react) package (in the repo's
@@ -313,7 +342,9 @@ from this example so it can be reused in any Drasi application:
 
 | Export | Purpose |
 |--------|---------|
-| `DrasiProvider` | Opens one shared SSE connection and multiplexes all queries over it |
+| `DrasiProvider` | Connects to existing running resources using explicit references |
+| `DrasiClientProvider` | Binds hooks to an app-owned lifecycle without another connection |
+| `DrasiError` | Stable typed error codes, resource/instance identity and retryability |
 | `useDrasiQuery` | Subscribe to a query; returns its accumulated, live result set |
 | `useDrasiConnectionStatus` | Track connection/reconnection state |
 | `QueryTable` | Sortable, animated table bound to a query, with a code viewer |

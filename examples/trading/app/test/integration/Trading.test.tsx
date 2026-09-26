@@ -180,7 +180,7 @@ describe('Trading with the built @drasi/react dependency and synthetic transport
     await screen.findByText('Connected');
     await waitFor(() => expect(symbols('Watchlist')).toEqual(['AAPL']));
     expect(row('Watchlist', 'AAPL').textContent).toContain('$125.00');
-    expect(backend.requests.filter(request => request.path === '/api/v1/queries/watchlist-query/results')).toHaveLength(2);
+    expect(backend.requests.filter(request => request.path === '/api/v1/instances/trading-server/queries/watchlist-query/results')).toHaveLength(2);
   });
 
   it('characterizes the known pre-extraction default-sort discrepancy, then honors explicit user sorting', async () => {

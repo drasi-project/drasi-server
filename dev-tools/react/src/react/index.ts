@@ -19,6 +19,7 @@
 
 export {
   DrasiProvider,
+  DrasiClientProvider,
   useDrasiClient,
   useDrasiQuery,
   useDrasiConnectionStatus,
