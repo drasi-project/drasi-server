@@ -62,7 +62,6 @@ jobs:
           echo "# Runtime validation results" >> "$RESULTS"
           echo >> "$RESULTS"
           run_step "install build dependencies" sudo apt-get install -y libjq-dev libonig-dev protobuf-compiler
-          run_step "prepare pinned core source" bash scripts/prepare-core.sh
           export JQ_LIB_DIR=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)
           run_step "cargo test --test readme_examples_validation_test" cargo test --test readme_examples_validation_test
           run_step "cargo test --test example_configs_validation_test" cargo test --test example_configs_validation_test

@@ -14,7 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stable, while meaningful endpoint changes replace the connection. Existing
   URL safety validation, authentication and read-only ownership are unchanged.
 
-### Current development-source integration
+### Current published-runtime integration
+- Normally integrate the published core/functions 0.5.10, library 0.9.3,
+  SDK 0.11.3, index 0.6.4, middleware 0.5.11 and signed SSE 0.3.8 family.
+  Default source patches/pins/fetching are retired; the existing shared policy
+  verifies exact registry archives and effective source contents. All P3
+  endpoint, transport, type and provider contracts remain unchanged.
+- Preserve prior source-pin and ABI records as history. Released numeric,
+  default/lazy/index and output changes require complete authoritative
+  reconstruction, including integer and nested numeric keys. Source-rank
+  rebootstrap and the named codec do not repair malformed old records; no
+  automatic user-data migration or output-only clearing is performed.
+
+### Historical development-source integration
 - Normally integrate the approved exact `211d0f2a` engine 0.5.9 / registry
   library 0.9.2 / SDK 0.11.2 / index 0.6.3 / signed SSE 0.3.7 / native ABI
   0.14 selection while retaining all P3 contracts and endpoint-identity fixes.

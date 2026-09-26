@@ -506,9 +506,9 @@ Claims are intentionally narrow, not open-ended minimum versions:
 | React / React DOM | **18.3.1**, including real providers, StrictMode, unmount, equivalent/material rerenders and SSR. React 19 is not yet claimed. |
 | Node / tooling | **22.20.0** pinned Linux gate; **24.19.0** native development gates. TypeScript **5.9.3** (package) / **5.9.2** (Trading), tsup **8.5.1**, Vite **5.4.19**, Vitest **3.2.7**, committed lockfiles. |
 | Browsers | Playwright **1.56.1** Chromium, Firefox and WebKit in the pinned Linux/amd64 image from [Trading TESTING.md](../../examples/trading/TESTING.md). This is not an all-browser/all-version claim. |
-| Server | Current development runtime: **0.2.3**, registry library **0.9.2**, index **0.6.3**, engine **0.5.9** from the user-approved temporary source `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` (drasi-project/drasi-core#810), AST **0.3.5**, Cypher/GQL **0.3.6**. Only engine/AST/Cypher are path-selected; equal-version sibling SDKs are not consumed. |
-| Plugin / ABI | Current signed SSE **0.3.7**, host/plugin/FFI crates **0.11.2**, native ABI **0.14.0**, from official merged release `70ca432c0f12623ab9b371b2d515180ccc80c2dd`. All six immutable platform/digest/hash/signature locks are inherited from the approved parent. No prior ABI cache fallback or trust relaxation. |
-| Historical runtime evidence | Original server **0.2.1** / library **0.8.9** / SSE **0.3.4** / ABI **0.11.0**, and server **0.2.3** / library **0.9.1** / SSE **0.3.6** / ABI **0.13.0** records remain separately versioned. They are not current ABI 0.14 validation or a fallback for it. |
+| Server | Server **0.2.3** with published registry core/functions **0.5.10**, library **0.9.3**, index **0.6.4**, middleware **0.5.11**, AST **0.3.5**, Cypher/GQL **0.3.6**. Default builds have no path overrides, revision pin or sibling-source prerequisite; the shared policy verifies 17 exact published archive identities and effective source contents. |
+| Plugin / ABI | Signed SSE **0.3.8**, host/plugin/FFI SDK crates **0.11.3**, independently versioned native ABI **0.14.0**. The coherent release family and all six immutable platform/digest/hash/signature locks are inherited from the approved parent. The repaired Darwin SSE signature keeps its original release binary and manifest, with the same trusted publisher. No older/unsigned fallback. |
+| Historical runtime evidence | Earlier `211d`/`1284` source-pin executions, library **0.9.2** / SDK **0.11.2** / SSE **0.3.7**, and the older **0.2.1**/ABI **0.11.0** and **0.2.3**/ABI **0.13.0** records remain separately versioned. They are not proof of execution against the current released graph. |
 
 Protocol capabilities, not a guessed version string, determine acceptance.
 Missing full-view fields, unsupported language/status/shape, wrong resource
@@ -519,12 +519,20 @@ the [approved main-runtime integration](../../docs/main-runtime-integration.md).
 The client does not attest engine/plugin versions; a semantically wrong result
 with a valid shape cannot be detected by DTO validation. Operator setup and
 real-server provenance/gates supply the version evidence.
-The current `211d0f2a` engine is an unreleased development pin, not a released
-fix or a claim to repair stored records. Its three aggregate and two additive
-outbox production paths do not select drasi-project/drasi-core#909's library
-codec change: registry library 0.9.2 still uses compact records and `append`,
-not the newer trim methods. No migration, record dropping, broader recovery
-guarantee, core modification or publication is implied.
+The published core contains the final numeric sign/equality, compound-key,
+grouping/default, lazy-state and terminal corrections. Library 0.9.3 contains
+the named MessagePack writer. **All affected state needs authoritative
+reconstruction together:** numeric grouping/default/current fingerprints
+(including ordinary integer and nested list/object keys), lazy min/max sets,
+query indexes and output. Back up state and verify available bootstrap/replay
+history first; clearing only output is not a migration. Source-rank
+configuration-hash rebootstrap and the named writer do **not** repair malformed
+old positional records. Strict failures remain visible; no user-data deletion,
+automatic migration or expanded recovery guarantee is supplied by this package.
+
+Earlier `211d0f2a` source-pin/library 0.9.2 compact-writer evidence remains
+historical. Registry builds do not select or modify that protected companion
+source, and do not emit misleading sibling-clean or engine-Git provenance.
 
 ## P3 migration
 

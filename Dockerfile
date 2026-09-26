@@ -56,9 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files first for dependency caching
-COPY Cargo.toml Cargo.lock build.rs .drasi-core-revision ./
-COPY scripts/prepare-core.sh ./scripts/prepare-core.sh
-RUN bash scripts/prepare-core.sh
+COPY Cargo.toml Cargo.lock build.rs ./
 
 # Copy source code
 COPY src ./src

@@ -1,16 +1,12 @@
 # Compatible engine source prerequisite
 
-> **Current runtime:** the user-approved newer-main integration uses the exact
-> temporary `211d0f2a79aa2ad0f7cb841937f52013fe95ded6` engine 0.5.9 source
-> from drasi-project/drasi-core#810 with registry library 0.9.2, SDK/FFI 0.11.2,
-> index 0.6.3 and official main-signed ABI 0.14 plugins.
-> See [Main runtime integration](main-runtime-integration.md) for the current
-> matrix, pins and checks. The frozen-version matrix and successful runs below
-> are the **historical September 18 delivery**, not claims about today's pins.
-> Backport `1284e9f6` and drasi-project/drasi-core#933/#934 remain unchanged
-> historical work. That core 0.5.8 cannot satisfy the current callers' core
-> ^0.5.9/API requirements. The earlier rejection of `211d0f2a` below concerned
-> library 0.8.9, not today's explicitly approved source consumption.
+> **The temporary source prerequisite is retired.** Default builds now use
+> published core 0.5.10, library 0.9.3, SDK/FFI 0.11.3 and index 0.6.4.
+> No sibling checkout, source pin file or preparation fetch is required.
+> See [the released runtime and reconstruction warning](main-runtime-integration.md).
+> The `1284e9f6` backport, later `211d0f2a` pin and all results below remain
+> historical evidence, not new release execution. The protected `211d` snapshot
+> must remain until every consumer migrates and separate cleanup is approved.
 
 ## Historical September 18 backport delivery (superseded)
 

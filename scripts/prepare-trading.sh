@@ -8,10 +8,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 mode="$(bash "$root/scripts/prepare-build.sh" "$@")"
 
-# Always build this checkout; an existing published executable is not pin evidence.
+# Always build this checkout, not an arbitrary pre-existing executable.
 make -C "$root" build-release >&2
 if [[ "$mode" == registry ]]; then
-    bash "$root/scripts/prepare-core.sh" --check >&2
     python3 "$root/scripts/install_plugins.py" \
         --server-bin "$root/target/release/drasi-server" \
         --plugins-dir "$root/target/release/plugins" >&2

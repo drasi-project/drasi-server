@@ -13,9 +13,9 @@ verifyPlugins: true
 id: integration-test-server
 
 plugins:
-  - ref: source/postgres:0.2.11
-  - ref: bootstrap/postgres:0.2.14
-  - ref: reaction/log:0.2.8
+  - ref: source/postgres:0.2.12
+  - ref: bootstrap/postgres:0.2.15
+  - ref: reaction/log:0.2.9
 
 sources:
   - kind: postgres

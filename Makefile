@@ -20,7 +20,7 @@
         fmt fmt-check help docker-build \
         submodule-update vscode-test dev-build clean-dev-build \
         build-ui clean-ui build-local-test-plugins download-test-plugins \
-        build-local-plugins build-local-plugins-debug test-tooling prepare-core prepare-build
+        build-local-plugins build-local-plugins-debug test-tooling prepare-build
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -43,10 +43,6 @@ else
     SERVER_BIN := drasi-server
 endif
 
-# Cross mounts path crates automatically, but their inherited workspace manifest
-# also needs the complete sibling root. Preserve the logical path for symlinks.
-CROSS_CORE_WORKSPACE = $(abspath ../drasi-core)
-
 # Default target
 help:
 	@echo "Drasi Server Development Commands"
@@ -58,7 +54,7 @@ help:
 	@echo "  make demo               - Run the getting-started example"
 	@echo ""
 	@echo "Build:"
-	@echo "  make prepare-core       - Obtain or verify the exact sibling engine revision"
+	@echo "  make prepare-build      - Verify the locked dependency origin"
 	@echo "  make build              - Build debug binary and UI"
 	@echo "  make build-release      - Build release binary and UI"
 	@echo "  make build-ui           - Build only the web UI"
@@ -79,7 +75,7 @@ help:
 	@echo "  make build-local-plugins       - Build all plugins (release) from local drasi-core"
 	@echo "  make build-local-plugins-debug - Build all plugins (debug) from local drasi-core"
 	@echo "  make build-local-test-plugins   - Build test-only plugins (mock, log, scriptfile)"
-	@echo "  make download-test-plugins      - Prepare engine and download signed registry test plugins"
+	@echo "  make download-test-plugins      - Download signed registry test plugins"
 	@echo "  make test-tooling               - Test plugin dependency-origin and setup policy"
 	@echo ""
 	@echo "Code Quality:"
@@ -135,9 +131,6 @@ run-release: prepare-build build-ui
 
 # === Build ===
 
-prepare-core:
-	bash scripts/prepare-core.sh
-
 prepare-build:
 	@bash scripts/prepare-build.sh
 
@@ -158,8 +151,13 @@ build-cross:
 		echo "Usage: make build-cross TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	@bash scripts/prepare-build.sh
-	DRASI_CORE_WORKSPACE="$(CROSS_CORE_WORKSPACE)" cross build --locked --target-dir target/cross --target "$(TARGET)"
+	@set -eu; \
+	mode="$$(bash scripts/prepare-build.sh)"; \
+	if [ "$$mode" = local ]; then \
+		export DRASI_CORE_WORKSPACE="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+		export CROSS_BUILD_ENV_VOLUMES=DRASI_CORE_WORKSPACE; \
+	fi; \
+	cross build --locked --target-dir target/cross --target "$(TARGET)"
 
 build-cross-release:
 	@if [ -z "$(TARGET)" ]; then \
@@ -167,8 +165,13 @@ build-cross-release:
 		echo "Usage: make build-cross-release TARGET=x86_64-pc-windows-gnu"; \
 		exit 1; \
 	fi
-	@bash scripts/prepare-build.sh
-	DRASI_CORE_WORKSPACE="$(CROSS_CORE_WORKSPACE)" cross build --locked --target-dir target/cross --release --target "$(TARGET)"
+	@set -eu; \
+	mode="$$(bash scripts/prepare-build.sh)"; \
+	if [ "$$mode" = local ]; then \
+		export DRASI_CORE_WORKSPACE="$$(python3 scripts/plugin_origin.py local-workspace)"; \
+		export CROSS_BUILD_ENV_VOLUMES=DRASI_CORE_WORKSPACE; \
+	fi; \
+	cross build --locked --target-dir target/cross --release --target "$(TARGET)"
 
 clippy: prepare-build
 	cargo clippy --locked --all-targets -- -D warnings
@@ -188,7 +191,7 @@ test-tooling:
 # Run ALL tests: build/download test plugins, run cargo tests (including #[ignore]),
 # plugin smoke tests, and VSCode extension tests.
 # Build local plugins only when Cargo resolves matching local SDK/host/FFI code.
-# An engine-only path patch must retain the compatible registry SDK plugins.
+# Registry mode uses the reviewed released graph and signed plugins.
 test-all: prepare-build
 	@mode="$$(python3 scripts/plugin_origin.py mode)" && \
 	case "$$mode" in \
@@ -211,11 +214,8 @@ test-smoke: prepare-build
 	@echo "=== Plugin smoke test ==="
 	./tests/plugin_smoke_test.sh
 
-# Build cdylib test plugins (mock source, log reaction, http reaction, scriptfile bootstrap)
-# needed by solution deployment and E2E tests.
-# Plugins are built from ../drasi-core and copied to target/debug/plugins/.
-# Obtain the pinned engine if absent, then download signed test plugins instead
-# of building the sibling workspace's unused SDK/library plugins.
+# Download signed test plugins needed by solution deployment and E2E tests.
+# No sibling checkout is required for the released registry graph.
 # Uses the server's built-in `plugin install` CLI to fetch mock source, log reaction,
 # http reaction, and scriptfile bootstrap plugins.
 download-test-plugins: prepare-build
