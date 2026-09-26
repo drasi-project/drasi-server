@@ -17,8 +17,8 @@ This directory contains integration tests for Drasi Server that can be run both 
 3. Python 3.11 or newer for the locked plugin installer
 4. Network access to the public OCI registry and Sigstore/Rekor for signature verification
 
-The runner installs the reviewed `source/postgres:0.2.11`,
-`bootstrap/postgres:0.2.14`, and `reaction/log:0.2.8` artifacts before starting
+The runner installs the reviewed `source/postgres:0.2.12`,
+`bootstrap/postgres:0.2.15`, and `reaction/log:0.2.9` artifacts before starting
 the server. Their immutable digests, binary hashes, and trusted publisher
 identity come from the [shared plugin pins](../../plugin-pins/README.md).
 Signature verification stays enabled; automatic latest-version installation

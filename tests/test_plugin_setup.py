@@ -185,8 +185,10 @@ class LockedTradingPluginsTests(unittest.TestCase):
         original = tomllib.loads(path.read_text())["plugins"]
         for field, value in (
             ("sdk_version", "0.10.0"), ("sdk_version", "0.11.0"),
-            ("sdk_version", "0.11.1"), ("lib_version", "0.9.1"),
-            ("core_version", "0.5.8"), ("platform", "linux/arm64"),
+            ("sdk_version", "0.11.1"), ("sdk_version", "0.11.2"),
+            ("lib_version", "0.9.1"), ("lib_version", "0.9.2"),
+            ("core_version", "0.5.8"), ("core_version", "0.5.9"),
+            ("platform", "linux/arm64"),
             ("signature", {
                 "verified": True, "issuer": installer.ISSUER,
                 "subject": installer.SUBJECT.replace("@refs/heads/main", "@refs/heads/experimental"),

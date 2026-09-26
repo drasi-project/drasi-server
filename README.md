@@ -1377,6 +1377,25 @@ queries:
 
 > **Note**: `rocksdb` is the only persistent provider compiled into drasi-server, and it is only registered when `persistIndex: true`. Referencing a named backend that has not been registered will fail query startup.
 
+#### Upgrading Persistent Query State
+
+The registry runtime uses `drasi-core` 0.5.10 and `drasi-lib` 0.9.3, including
+the aggregate-grouping corrections and named MessagePack output writer. When
+upgrading from older versions, plan a controlled reconstruction of affected
+persisted queries from authoritative bootstrap or retained replay data.
+Grouping keys, lazy aggregate state, indexes, and query results must be rebuilt
+together; clearing only output rows is not a migration. Back up existing state
+and confirm the required source data is available before rebuilding.
+
+Source-order ranks are now included in query configuration hashes, which causes
+a one-time hash mismatch and full re-bootstrap for older persisted queries.
+The named output codec writes correct new records but does not repair malformed
+old positional records; strict decoding can still reject those records.
+
+Reactions require running queries before subscribing. For automatic startup,
+enable `autoStart` on the prerequisite queries; for manual startup, start those
+queries before their reactions.
+
 #### Source Subscriptions
 
 ```yaml
