@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { verifyRuntimeVersion } from '../live/runtimeVersion';
 
-const expected = { server: '0.2.3', sdk: '0.11.2' };
-const banner = 'drasi-server 0.2.3\nrustc: rustc 1.95.0\nplugin-sdk: 0.11.2';
+const expected = { server: '0.2.3', sdk: '0.11.3' };
+const banner = 'drasi-server 0.2.3\nrustc: rustc 1.95.0\nplugin-sdk: 0.11.3';
 
 describe('actual native runtime diagnostics', () => {
   it('reports the verified binary version rather than the historical image version', () => {
@@ -26,11 +26,12 @@ describe('actual native runtime diagnostics', () => {
   });
 
   it.each([
-    banner.replace('plugin-sdk: 0.11.2', 'plugin-sdk: 0.10.0'),
-    banner.replace('plugin-sdk: 0.11.2', 'plugin-sdk: 0.11.0'),
-    banner.replace('plugin-sdk: 0.11.2', 'plugin-sdk: 0.11.1'),
-    banner.replace('\nplugin-sdk: 0.11.2', ''),
-    `${banner}\nplugin-sdk: 0.11.2`,
+    banner.replace('plugin-sdk: 0.11.3', 'plugin-sdk: 0.10.0'),
+    banner.replace('plugin-sdk: 0.11.3', 'plugin-sdk: 0.11.0'),
+    banner.replace('plugin-sdk: 0.11.3', 'plugin-sdk: 0.11.1'),
+    banner.replace('plugin-sdk: 0.11.3', 'plugin-sdk: 0.11.2'),
+    banner.replace('\nplugin-sdk: 0.11.3', ''),
+    `${banner}\nplugin-sdk: 0.11.3`,
   ])('rejects stale, missing or ambiguous SDK metadata', output => {
     expect(() => verifyRuntimeVersion(output, expected)).toThrow('resolved plugin SDK version');
   });

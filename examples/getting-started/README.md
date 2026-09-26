@@ -92,8 +92,8 @@ Useful overrides:
 | `RESULT_TIMEOUT`  | `30`        | Seconds to wait for the inserted row  |
 | `SKIP_BUILD`      | unset       | Skip `cargo build --release`          |
 | `CLEANUP`         | unset       | Run `cleanup.sh` on exit              |
-| `LOCAL_PLUGINS_DIR` | auto-detect | Path to a local plugins directory to use instead of the OCI registry. By default the script auto-detects a sibling `../drasi-core/target/release/plugins`. Set to `skip` to force the OCI registry path. |
-| `BUILD_LOCAL_PLUGINS` | unset   | If set to `1` and a sibling `../drasi-core` exists without built plugins, run `make build-local-plugins` first |
+| `LOCAL_PLUGINS_DIR` | unset | Plugin directory for explicitly selected matching local SDK development. In local mode only, defaults to that Cargo-selected workspace's `target/release/plugins`. Set to `skip` to leave the registry config unchanged. |
+| `BUILD_LOCAL_PLUGINS` | unset | If set to `1`, build plugins from the actual matching local SDK workspace. Registry builds reject this option rather than using an unrelated sibling. |
 
 Examples:
 
@@ -104,22 +104,18 @@ SKIP_BUILD=1 CLEANUP=1 ./run-end-to-end.sh
 # Use a non-default port
 SERVER_PORT=18080 ./run-end-to-end.sh
 
-# Force use of the OCI registry even if a local drasi-core build is present
+# Leave the OCI registry configuration unchanged
 LOCAL_PLUGINS_DIR=skip ./run-end-to-end.sh
 
-# Build local plugins from sibling drasi-core source first, then run
+# After explicitly selecting matching local SDK dependencies, build their plugins
 BUILD_LOCAL_PLUGINS=1 ./run-end-to-end.sh
 ```
 
-> **Plugin source order:**
-> 1. If `LOCAL_PLUGINS_DIR` is set explicitly, the script uses it (and
->    fails fast if it's missing the required plugin binaries).
-> 2. Otherwise, if `../drasi-core/target/release/plugins` exists with all
->    required plugins, the script uses it automatically. This is the
->    recommended path on platforms like darwin-arm64 where the OCI
->    registry may not yet publish builds for the SDK version this PR
->    requires.
-> 3. Otherwise, the script falls back to the OCI registry
+> **Plugin source selection:** default registry builds never inspect or select
+> a sibling checkout. Unsigned local plugins require matching SDK/host/FFI/library
+> identities in Cargo's selected local workspace. Only that mode accepts
+> `LOCAL_PLUGINS_DIR` or builds local plugins; missing required binaries fail.
+> Registry mode retains the configured OCI registry
 >    (`ghcr.io/drasi-project`). This is what CI uses on linux-amd64.
 >
 > When a local plugins directory is used, the script generates a temp

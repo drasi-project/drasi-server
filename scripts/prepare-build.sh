@@ -6,18 +6,10 @@
 
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-if [[ $# -gt 0 ]]; then
-    [[ $# -eq 1 && "$1" == "--allow-sudo" ]] \
-        || { echo "Usage: $0 [--allow-sudo]" >&2; exit 1; }
-fi
-
-if [[ ! -e "$root/../drasi-core" && ! -L "$root/../drasi-core" ]]; then
-    bash "$root/scripts/prepare-core.sh" "$@" >&2
-fi
+[[ $# -eq 0 ]] || { echo "Usage: $0" >&2; exit 1; }
 mode="$(python3 "$root/scripts/plugin_origin.py" mode)"
 case "$mode" in
-    registry) bash "$root/scripts/prepare-core.sh" --check >&2 ;;
-    local) ;; # Matching local SDK development intentionally has a different source revision.
+    registry|local) ;;
     *) echo "Unsupported plugin dependency origin: $mode" >&2; exit 1 ;;
 esac
 printf '%s\n' "$mode"
