@@ -8,6 +8,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
+/** Count every shipped entrypoint/shared chunk and both declaration formats. */
 export function measurePackageModules(paths, readBytes) {
   const sizes = { packageEsm: 0, packageCjs: 0, packageTypes: 0, packageCss: 0 };
   const names = new Set();

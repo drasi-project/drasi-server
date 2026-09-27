@@ -13,9 +13,10 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction, useDrasiQuery } from '@drasi/react';
+import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
+import { useDrasiQuery } from '@drasi/react/react';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
-import { DeleteIcon, AddIcon, ConfirmDialog, DetailItem } from './shared';
+import { DeleteIcon, AddIcon, ConfirmDialog } from './shared';
 import { LimitOrderResult, OrderAlert } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
 import { OrderDialog, OrderFormData } from './OrderDialog';
@@ -30,9 +31,9 @@ const CODE_SNIPPET = `<QueryTable<LimitOrderResult>
     { key: 'symbol', label: 'Symbol' },
     { key: 'orderType', label: 'Type' },
     { key: 'targetPrice', label: 'Target', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.targetPrice) },
     { key: 'currentPrice', label: 'Current', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(row.currentPrice) },
     { key: 'distancePercent', label: 'Distance', align: 'right' },
     { key: 'status', label: 'Status' },
   ]}
@@ -60,11 +61,11 @@ interface DeletingOrder {
 const useOrderStatusUpdates = () => {
   const { data: staleAlerts } = useDrasiQuery<OrderAlert>(
     'stale-orders-query',
-    tradingQueryOptions<OrderAlert>('stale-orders-query'),
+    tradingQueryOptions('stale-orders-query'),
   );
   const { data: expiredAlerts } = useDrasiQuery<OrderAlert>(
     'expiring-orders-query',
-    tradingQueryOptions<OrderAlert>('expiring-orders-query'),
+    tradingQueryOptions('expiring-orders-query'),
   );
   
   // Track which orders we've already updated to avoid duplicate API calls
@@ -184,12 +185,12 @@ export const Orders: React.FC = () => {
     {
       key: 'orderType',
       label: 'Type',
-      format: (value) => (
+      format: (_value, row) => (
         <span className={clsx(
           'px-2 py-0.5 rounded text-xs font-medium uppercase',
-          value === 'buy' ? 'bg-trading-green/20 text-trading-green' : 'bg-trading-red/20 text-trading-red'
+          row.orderType === 'buy' ? 'bg-trading-green/20 text-trading-green' : 'bg-trading-red/20 text-trading-red'
         )}>
-          {value}
+          {row.orderType}
         </span>
       ),
     },
@@ -197,21 +198,22 @@ export const Orders: React.FC = () => {
       key: 'targetPrice',
       label: 'Target',
       align: 'right',
-      format: (value) => formatCurrency(value || 0),
+      format: (_value, row) => formatCurrency(row.targetPrice || 0),
       className: 'font-mono text-sm',
     },
     {
       key: 'currentPrice',
       label: 'Current',
       align: 'right',
-      format: (value) => value ? formatCurrency(value) : '-',
+      format: (_value, row) => row.currentPrice ? formatCurrency(row.currentPrice) : '-',
       className: 'font-mono text-sm',
     },
     {
       key: 'distancePercent',
       label: 'Distance',
       align: 'right',
-      format: (value) => {
+      format: (_value, row) => {
+        const value = row.distancePercent;
         if (value == null) return '-';
         const formatted = `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
         return (
@@ -232,7 +234,8 @@ export const Orders: React.FC = () => {
     {
       key: 'status',
       label: 'Status',
-      format: (value) => {
+      format: (_value, row) => {
+        const value = row.status;
         const statusConfig: Record<string, string> = {
           pending: 'text-gray-400',
           stale: 'text-yellow-400',
@@ -275,7 +278,7 @@ export const Orders: React.FC = () => {
     <>
       <QueryTable<LimitOrderResult>
         queryId="active-orders-query"
-        queryOptions={tradingQueryOptions<LimitOrderResult>('active-orders-query')}
+        queryOptions={tradingQueryOptions('active-orders-query')}
         title="Limit Orders"
         columns={columns}
         rowKey={(row) => String(row.id)}
@@ -308,7 +311,7 @@ export const Orders: React.FC = () => {
           { label: 'Target Price', value: formatCurrency(deletingOrder.targetPrice) },
           { label: 'Quantity', value: `${deletingOrder.quantity} shares` },
           { label: 'Status', value: deletingOrder.status },
-        ] as DetailItem[] : []}
+        ] : []}
         message="This will cancel the order. This action cannot be undone."
         confirmText="Cancel Order"
         isLoading={isDeleting !== null}

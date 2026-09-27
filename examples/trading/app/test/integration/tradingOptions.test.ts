@@ -49,10 +49,11 @@ describe('Trading query and deployment contract', () => {
   it('filters signs, caps movers at ten and applies the intended data-level ordering', () => {
     const rows = Array.from({ length: 25 }, (_, index) => ({
       symbol: `S${index}`, changePercent: index - 12, volume: index * 1_000_000,
+      name: `Stock ${index}`, price: 100, previousClose: 100,
     }));
-    const gainers = tradingQueryOptions<(typeof rows)[number]>('top-gainers-query').postProcess!([...rows]);
-    const losers = tradingQueryOptions<(typeof rows)[number]>('top-losers-query').postProcess!([...rows]);
-    const volume = tradingQueryOptions<(typeof rows)[number]>('high-volume-query').postProcess!([...rows]);
+    const gainers = tradingQueryOptions('top-gainers-query').postProcess!([...rows]);
+    const losers = tradingQueryOptions('top-losers-query').postProcess!([...rows]);
+    const volume = tradingQueryOptions('high-volume-query').postProcess!([...rows]);
     expect(gainers.map(row => row.changePercent)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
     expect(losers.map(row => row.changePercent)).toEqual([-12, -11, -10, -9, -8, -7, -6, -5, -4, -3]);
     expect(volume.map(row => row.volume)).toEqual([24, 23, 22, 21, 20, 19, 18, 17, 16, 15].map(value => value * 1_000_000));

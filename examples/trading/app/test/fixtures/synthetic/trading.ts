@@ -219,9 +219,22 @@ export class SyntheticTrading {
     }
     if (query && method === 'GET') {
       if (!this.queries.has(query[1])) return { status: 404, body: { code: 'QUERY_NOT_FOUND', message: 'Not found' } };
+      const definition = this.queries.get(query[1])!;
+      const self = `/api/v1/instances/${this.instanceId}/queries/${query[1]}`;
       return query[2]
         ? ok(this.snapshot(query[1]))
-        : ok({ id: query[1], status: this.queryStatuses.get(query[1]) ?? 'Running', config: this.queries.get(query[1]) });
+        : ok({
+          id: query[1], status: this.queryStatuses.get(query[1]) ?? 'Running',
+          links: { self, full: `${self}?view=full` },
+          config: {
+            autoStart: false, middleware: [], enableBootstrap: true,
+            bootstrapBufferSize: 10000, outboxCapacity: 1000, bootstrapTimeoutSecs: 300,
+            ...definition,
+            sources: Array.isArray(definition.sources) ? definition.sources.map(source => ({
+              pipeline: [], nodes: [], relations: [], ...source,
+            })) : definition.sources,
+          },
+        });
     }
     if (path === '/api/v1/reactions' && method === 'POST') {
       if (this.reaction) return { status: 409, body: { code: 'DUPLICATE_RESOURCE' } };
@@ -233,8 +246,12 @@ export class SyntheticTrading {
       return ok({ message: 'Started' });
     }
     if (path === '/api/v1/reactions/sse-stream' && method === 'GET') {
+      const self = `/api/v1/instances/${this.instanceId}/reactions/sse-stream`;
       return this.reaction
-        ? ok({ id: 'sse-stream', status: this.reactionStatus, config: this.reaction })
+        ? ok({
+          id: 'sse-stream', status: this.reactionStatus, config: this.reaction,
+          links: { self, full: `${self}?view=full` },
+        })
         : { status: 404, body: { code: 'REACTION_NOT_FOUND', message: 'Not found' } };
     }
     if (path === '/api/stocks' && method === 'GET') return ok(this.stocks);

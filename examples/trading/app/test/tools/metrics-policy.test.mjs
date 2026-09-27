@@ -4,6 +4,7 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,6 +39,26 @@ test('rejects missing mandatory metrics rather than passing a partial measuremen
   delete observed.coverage.trading.functions;
   assert.throws(() => assertBaseline(observed, baseline), /Missing trading functions/);
   assert.throws(() => assertBaseline({ ...baseline, sizes: {} }, baseline), /Artifact metric set changed/);
+});
+
+test('measures all P3 entrypoints and shared chunks including both declaration formats, but not maps', () => {
+  const files = {
+    'package/dist/index.js': 2, 'package/dist/client/index.js': 3, 'package/dist/chunk-client.js': 500,
+    'package/dist/index.cjs': 4, 'package/dist/react/index.cjs': 5, 'package/dist/chunk-react.cjs': 600,
+    'package/dist/index.d.ts': 6, 'package/dist/client/index.d.ts': 7, 'package/dist/types-shared.d.ts': 700,
+    'package/dist/index.d.cts': 1000, 'package/dist/index.js.map': 1000, 'package/README.md': 1000,
+    'package/styles.css': 13,
+  };
+  assert.deepEqual(measurePackageModules(Object.keys(files), path => files[path]), {
+    packageEsm: 505, packageCjs: 609, packageTypes: 1713, packageCss: 13,
+  });
+});
+
+test('does not accept an artifact missing any mandatory runtime or declaration format', () => {
+  for (const missing of ['.js', '.cjs', '.d.ts', '.css']) {
+    const files = ['.js', '.cjs', '.d.ts', '.css'].filter(suffix => suffix !== missing).map(suffix => `package/dist/index${suffix}`);
+    assert.throws(() => measurePackageModules(files, () => 1), /Missing packed/);
+  }
 });
 
 const packageFiles = [
@@ -99,6 +120,22 @@ test('rejects a secondary chunk exceeding the same 2% budget even when index is 
   assert.throws(() => assertBaseline(observed, expected), /packageEsm grew more than 2%/);
 });
 
+test('retains the P3 schema-2 record while counting its separately shipped CommonJS declarations', async () => {
+  const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p3-v2.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(historical.schemaVersion, 2);
+  assert.equal(historical.sizes.packageTypes, 28121);
+  assert.equal(current.p3MeasurementChange.esmDeclarations, historical.sizes.packageTypes);
+  assert.equal(current.p3MeasurementChange.commonJsDeclarations, 28135);
+  const sizes = measurePackageFiles([
+    ...packageFiles.filter(file => !file.path.endsWith('.d.ts')),
+    { path: 'dist/types.d.ts', bytes: current.p3MeasurementChange.esmDeclarations },
+    { path: 'dist/types.d.cts', bytes: current.p3MeasurementChange.commonJsDeclarations },
+  ]);
+  assert.equal(sizes.packageTypes, 56256);
+  assert.deepEqual(current.coverage, historical.coverage);
+});
+
 test('rejects missing formats, duplicate files and invalid packed measurements', () => {
   assert.throws(() => measurePackageFiles(packageFiles.filter(file => !file.path.endsWith('.cjs'))), /Missing packed packageCjs/);
   assert.throws(() => measurePackageFiles([...packageFiles, packageFiles[0]]), /duplicate package path/);
@@ -126,4 +163,34 @@ test('counts nested Trading chunks and CSS without counting source maps as execu
     tradingCss: 9,
     tradingCssGzip: ['main', 'theme'].reduce((bytes, content) => bytes + gzipSync(content).length, 0),
   });
+});
+
+test('applies the approved P3 archive baseline only and preserves the complete prior record', async () => {
+  const originalBytes = await readFile(new URL('../fixtures/baseline-metrics-p3-pre-review.json', import.meta.url));
+  const historical = JSON.parse(originalBytes);
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(createHash('sha256').update(originalBytes).digest('hex'),
+    '95147dcfd0205cbf92a13ffdb23507aa68a2b2a65463e9267594be0719091bb9');
+  assert.equal(current.reviewBudgetChange.previousBaselineSha256,
+    createHash('sha256').update(originalBytes).digest('hex'));
+  assert.deepEqual(current.sizes, { ...historical.sizes, packageTarball: 159591 });
+  assert.equal(current.sizes.packageTypes, 56256);
+  assert.equal(current.reviewBudgetChange.approvedDeclarationBaselineNotUsed, 57550);
+  const { reviewBudgetChange: _receipt, ...withoutReceipt } = current;
+  assert.deepEqual({ ...withoutReceipt, sizes: historical.sizes }, historical);
+  assert.deepEqual(current.reviewBudgetChange.firstFailedMeasurement,
+    { packageTarball: 159591, packageTypes: 57550 });
+  assert.deepEqual(current.reviewBudgetChange.afterClarityMeasurement,
+    { packageTarball: 159912, packageTypes: 57290 });
+});
+
+test('keeps the same 2% rule on the approved archive and the original declaration baseline', async () => {
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assertBaseline({ ...current, sizes: { ...current.sizes, packageTarball: 162782, packageTypes: 57381 } }, current);
+  assert.throws(() => assertBaseline({
+    ...current, sizes: { ...current.sizes, packageTarball: 162783 },
+  }, current), /packageTarball grew more than 2%/);
+  assert.throws(() => assertBaseline({
+    ...current, sizes: { ...current.sizes, packageTypes: 57382 },
+  }, current), /packageTypes grew more than 2%/);
 });

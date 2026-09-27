@@ -18,7 +18,7 @@ import { Watchlist } from '@/components/Watchlist';
 import { SectorPerformance } from '@/components/SectorPerformance';
 import { Orders } from '@/components/Orders';
 import StockTicker from '@/components/StockTicker';
-import { useDrasiConnectionStatus } from '@drasi/react';
+import { useDrasiConnectionStatus } from '@drasi/react/react';
 import clsx from 'clsx';
 
 function App() {

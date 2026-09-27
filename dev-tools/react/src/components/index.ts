@@ -19,6 +19,7 @@
 
 export { QueryTable } from './QueryTable';
 export type { QueryTableProps } from './QueryTable';
+export type { ColumnDef, RowAction, SortConfig } from './types';
 export { CodeViewerDialog } from './CodeViewerDialog';
 export type { CodeViewerDialogProps } from './CodeViewerDialog';
 export { CodeIcon, ExpandIcon, CollapseIcon } from './icons';
