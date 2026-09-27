@@ -9,9 +9,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use anyhow::{Context, Result};
 use drasi_host_sdk::computation::{NativeFactory, NativePlugin};
 use drasi_lib::computation::v1::*;
-use drasi_server::{
-    api::mappings::DtoMapper, computation::ComputationGraphConfig, DrasiServerConfig,
-};
+use drasi_server::{api::mappings::DtoMapper, computation::ComputationConfig, DrasiServerConfig};
 use serde_json::{json, Value};
 
 fn factory(plugin: &NativePlugin, name: &str) -> Result<Arc<NativeFactory>> {
@@ -84,7 +82,7 @@ fn main() -> Result<()> {
     config.validate()?;
     anyhow::ensure!(
         config.instances.is_empty()
-            && config.computation_graphs.is_empty()
+            && config.computation.is_none()
             && config.sources.len() == 1
             && !config.queries.is_empty()
             && !config.persist_index
@@ -119,7 +117,7 @@ fn main() -> Result<()> {
         source_factory.specification(ComponentId::try_new(source_id)?, source_config)?;
     let indexes = ResourceId::try_new("indexes")?;
     let query_factory = Arc::new(ContinuousQueryFactory::default());
-    let mut builder = ComputationGraph::builder("performance")
+    let mut builder = ComponentBatch::builder()
         .declare_resource(ResourceSpecification {
             id: indexes.clone(),
             role: ResourceRole::IndexBackend,
@@ -149,7 +147,9 @@ fn main() -> Result<()> {
             drasi_lib::QueryLanguage::GQL => ComputationQueryLanguage::Gql,
         };
         let definition = ContinuousQueryDefinition {
-            graph_id: "performance".into(),
+            graph_id: drasi_lib::management::DesiredInstance::default()
+                .topology
+                .graph_id,
             id: ComponentId::try_new(query.id.as_str())?,
             query: query.query.clone(),
             language,
@@ -252,10 +252,9 @@ fn main() -> Result<()> {
     config.sources.clear();
     config.queries.clear();
     config.reactions.clear();
-    config.computation_graphs = vec![ComputationGraphConfig {
-        auto_start: true,
-        definition: graph.configuration_snapshot()?.topology,
-    }];
+    config.computation = Some(ComputationConfig {
+        definition: graph.definition,
+    });
     config.validate()?;
     println!("{}", serde_json::to_string_pretty(&config)?);
     Ok(())

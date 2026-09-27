@@ -192,7 +192,7 @@ pub async fn create_instance(
             queries: Vec::new(),
             identity_providers: Vec::new(),
             bootstrap_providers: Vec::new(),
-            computation_graphs: Vec::new(),
+            computation: None,
         };
         persistence.register_instance(instance_config).await;
         persist_after_operation(&Some(persistence.clone()), "creating instance").await?;
@@ -229,8 +229,8 @@ pub struct CloneInstanceResponse {
     pub queries_created: Vec<String>,
     /// IDs of reactions created in the target instance
     pub reactions_created: Vec<String>,
-    /// IDs of native graphs created in the target instance (auto-start disabled).
-    pub computation_graphs_created: Vec<String>,
+    /// IDs of native components created in the target instance.
+    pub components_created: Vec<String>,
     /// Any errors encountered during the clone
     pub errors: Vec<String>,
 }
@@ -279,8 +279,8 @@ pub async fn clone_instance(
             })
         })?;
     // Reject unsupported bindings before adding any ordinary or native nodes.
-    let mut computation_graphs = crate::computation::configurations_from_snapshot(&snapshot)
-        .map_err(|error| {
+    let mut computation =
+        crate::computation::configuration_from_snapshot(&snapshot).map_err(|error| {
             ErrorResponse::new(
                 error_codes::INVALID_REQUEST,
                 "Source instance contains native bindings that cannot be cloned",
@@ -291,8 +291,10 @@ pub async fn clone_instance(
                 technical_details: Some(format!("{error:#}")),
             })
         })?;
-    for graph in &mut computation_graphs {
-        graph.auto_start = false;
+    if let Some(computation) = &mut computation {
+        for component in &mut computation.definition.components {
+            component.lifecycle.auto_start = false;
+        }
     }
     let snapshot = snapshot.instance;
 
@@ -307,7 +309,7 @@ pub async fn clone_instance(
     let mut sources_created: Vec<String> = Vec::new();
     let mut queries_created: Vec<String> = Vec::new();
     let mut reactions_created: Vec<String> = Vec::new();
-    let mut computation_graphs_created = Vec::new();
+    let mut components_created = Vec::new();
     let mut errors = Vec::new();
 
     // Phase 1: Create sources
@@ -461,21 +463,26 @@ pub async fn clone_instance(
         }
     }
 
-    for config in computation_graphs {
-        let id = &config.definition.graph_id;
+    if let Some(config) = computation {
         let registry = plugin_registry.read().await;
-        match crate::computation::register_graph(&config, &target_core, &registry).await {
-            Ok(handle) => {
-                computation_graphs_created.push(id.clone());
-                match handle.deployment().await {
-                    Ok(report) if report.summary == drasi_lib::computation::v1::OperationSummary::Completed => {}
-                    Ok(_) => errors.push(format!("Computation graph '{id}' was added but creation failed; inspect graph observations")),
-                    Err(error) => errors.push(format!("Computation graph '{id}' was added but deployment failed: {error}")),
+        match crate::computation::register_components(&config, &target_core, &registry).await {
+            Ok(report) => {
+                if report.committed {
+                    components_created.extend(
+                        config
+                            .definition
+                            .components
+                            .iter()
+                            .map(|component| component.descriptor.id().to_string()),
+                    );
+                }
+                if report.summary != drasi_lib::computation::v1::OperationSummary::Completed {
+                    errors.push("Native component construction is incomplete; inspect component observations".into());
                 }
             }
             Err(error) => {
-                log::error!("Clone: failed to add computation graph '{id}': {error:#}");
-                errors.push(format!("Failed to add computation graph '{id}': {error:#}"));
+                log::error!("Clone: failed to add native components: {error:#}");
+                errors.push(format!("Failed to add native components: {error:#}"));
             }
         }
     }
@@ -495,7 +502,7 @@ pub async fn clone_instance(
         sources_created,
         queries_created,
         reactions_created,
-        computation_graphs_created,
+        components_created,
         errors,
     })))
 }

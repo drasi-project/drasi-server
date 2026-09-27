@@ -413,14 +413,15 @@ This reads the live instance, not just its configuration. `running` describes th
 instance; it does not mean every source, query, and reaction is ready.
 `runtime` is a fixed informational name, not a selector.
 
-#### Native computation graphs
+#### Native computation components
 
-Declare `computationGraphs` at the root for a single instance, or on each
-entry in `instances`. Each item has `autoStart` (default `true`) and `definition`,
-the Core version-1 `DesiredTopology` configuration. The inner definition retains
-Core's field names (for example `graph_id` and `resource_configurations`); it is
-not a second engine selector. Root graphs cannot be mixed with explicit instances.
-Graph definitions must contain version-qualified factory specifications and
+Declare an optional `computation` section at the root for a single instance, or
+on each entry in `instances`. Its `definition` is a Core version-1 `DesiredTopology`
+containing native components for that instance's ComputationGraph. Each component
+has a `lifecycle.auto_start` policy. The definition retains Core's field names,
+including `resource_configurations`; its graph identity defaults to the instance
+graph identity. Root computation configuration cannot be mixed with explicit
+instances. Definitions must contain version-qualified factory specifications and
 reconstructible pipes, not preconstructed Rust objects or external pipe bindings.
 
 For a runnable native counter -> middleware -> arithmetic -> capture pipeline,
@@ -445,7 +446,7 @@ and the `Projected` label. Its counter and standalone arithmetic are volatile
 demonstrations, not durable replay sources. Capture acknowledges write and flush,
 not fsync durability or exactly-once external effects. The example disables config
 persistence and UI assets explicitly. Existing source/query/reaction declarations can coexist
-with these native graphs in the same instance.
+with native components in the same ComputationGraph.
 
 Host resources are explicit entries in `definition.resources`, paired by resource
 ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
@@ -467,13 +468,13 @@ not a temporary disconnect, retires its retention obligation. See the core
 explicit lossy retention and durable handoff semantics.
 
 Persistence reads actual graph snapshots, including resource recipes, rather than
-keeping a second component registry. Removing the last graph saves an empty native
-list; multi-instance save, restart, and clone preserve graph declarations. Clone
-disables graph auto-start. External root components, external pipes, or resources
+keeping a second component registry. Removing all native declarations leaves no
+`computation` section; save, restart, and clone preserve each instance's component
+definitions. Clone disables component auto-start. Opaque components, external pipes, or resources
 without recipes are rejected before a partial clone or config-file overwrite.
 This includes every resource referenced by factory dependencies, configuration
 references, component attachments, or retained/ranked pipes. A live resource
-rebind that clears its recipe makes the graph unexportable; Server never restores
+rebind that clears its recipe makes the definition unexportable; Server never restores
 that recipe from an older configuration or infers it from the live handle.
 Clone does not copy external files or plugin-specific state. Solution templates
 remain explicit selections of ordinary source/query/reaction components.
@@ -482,17 +483,16 @@ Administrative endpoints under `/api/v1/instances/{instanceId}/computation`:
 
 | Endpoint | Behavior |
 |----------|----------|
-| `GET /graphs` | Registered graph lifecycle summaries |
-| `POST /graphs` | Register a `ComputationGraphConfig` (JSON or YAML) |
-| `GET /graphs/{id}` | Components, pipes, resource roles and observed status, without configuration values |
-| `POST /graphs/{id}/start` or `/stop` | Await lifecycle outcome; failures are errors, not successful acknowledgements |
-| `DELETE /graphs/{id}` | Remove the graph and await owned-resource cleanup |
+| `GET /` | The instance's components, connections, resources and observed status, without configuration values |
+| `POST /components` | Add a `ComputationConfig` component batch (JSON or YAML) |
+| `POST /start` or `/stop` | Start or stop the native IDs in `{"components":["counter","capture"]}` and await the outcome |
+| `DELETE /components` | Remove selected native component IDs and explicitly listed resource IDs in `{"components":[...],"resources":[...]}` |
 | `GET /configuration` | Full versioned ordinary/native configuration snapshot (`Cache-Control: no-store`) |
 
-Graph registration acknowledges the declaration, not successful creation or
-activation of every node. Inspect realization and lifecycle state after adding a
-graph. Mutations honor read-only mode and persistence errors. The old `/snapshot`
-response is unchanged. **Full configuration exports may contain secrets** and belong
+Registration acknowledges the declarations, not successful creation or activation
+of every node. Inspect realization and lifecycle state after adding components.
+Mutations honor read-only mode and persistence errors. `/snapshot` provides the
+ordinary component configuration. **Full configuration exports may contain secrets** and belong
 behind the same trusted administrative access boundary as configuration mutation;
 Server does not add authentication here. They are never published by topology-as-data.
 

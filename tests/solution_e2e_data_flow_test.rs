@@ -61,6 +61,25 @@ fn sensor_bootstrap_entries() -> Vec<&'static str> {
     ]
 }
 
+fn added_row<'a>(payload: &'a serde_json::Value, query_id: &str) -> &'a serde_json::Value {
+    assert_eq!(payload["operation"], "ADD");
+    assert_eq!(payload["queryId"], query_id);
+    assert!(payload["sequenceId"]
+        .as_u64()
+        .is_some_and(|sequence| sequence > 0));
+    chrono::DateTime::parse_from_rfc3339(payload["timestamp"].as_str().expect("result timestamp"))
+        .expect("RFC 3339 result timestamp");
+    assert!(
+        payload.get("before").is_none(),
+        "an ADD must not contain a before image"
+    );
+    let row = payload
+        .get("after")
+        .expect("an ADD must contain its result row");
+    assert!(row.is_object(), "expected an object-valued result row");
+    row
+}
+
 /// Create a solution template with scriptfile bootstrap and HTTP reaction
 fn scriptfile_http_reaction_template(data_file: &str, webhook_url: &str) -> String {
     format!(
@@ -243,8 +262,9 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
 
     // Validate that sensor data fields are present (from the query RETURN clause)
     // Query returns: s.sensor_id AS sensorId, s.temperature AS temp
-    let has_sensor_id = payload.get("sensorId").is_some();
-    let has_temp = payload.get("temp").is_some();
+    let row = added_row(&payload, "high-temp-query");
+    let has_sensor_id = row.get("sensorId").is_some();
+    let has_temp = row.get("temp").is_some();
 
     assert!(
         has_sensor_id,
@@ -256,14 +276,14 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
     );
 
     // Validate sensorId format
-    let sensor_id = payload.get("sensorId").and_then(|v| v.as_str()).unwrap();
+    let sensor_id = row.get("sensorId").and_then(|v| v.as_str()).unwrap();
     assert!(
         sensor_id.starts_with("sensor_"),
         "Expected sensorId to start with 'sensor_'. Got: {sensor_id}"
     );
 
     // Validate temp is a number
-    let temp = payload.get("temp");
+    let temp = row.get("temp");
     assert!(
         temp.map(|v| v.is_number()).unwrap_or(false),
         "Expected 'temp' to be a number. Got: {temp:?}"
@@ -468,7 +488,7 @@ reactions:
     // Validate the counter value field is present and is a number
     assert!(payload.is_object(), "Expected JSON object from reaction");
 
-    let counter_value = payload.get("counterValue");
+    let counter_value = added_row(&payload, "counter-query").get("counterValue");
     assert!(
         counter_value.is_some(),
         "Expected 'counterValue' field in payload. Got: {payload:?}"

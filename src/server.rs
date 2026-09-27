@@ -596,16 +596,11 @@ impl DrasiServer {
                     core: core.clone(),
                     bootstrap_providers,
                 });
-                for graph in &instance.computation_graphs {
+                if let Some(computation) = &instance.computation {
                     let registry = plugin_registry.read().await;
-                    crate::computation::register_graph(graph, &core, &registry)
+                    crate::computation::register_components(computation, &core, &registry)
                         .await
-                        .with_context(|| {
-                            format!(
-                                "Failed to configure computation graph '{}'",
-                                graph.definition.graph_id
-                            )
-                        })?;
+                        .with_context(|| "Failed to configure instance computation components")?;
                 }
             }
             Ok::<_, anyhow::Error>(())
@@ -848,7 +843,7 @@ impl DrasiServer {
                                 reactions: config.reactions.clone(),
                                 identity_providers: config.identity_providers.clone(),
                                 bootstrap_providers: config.bootstrap_providers.clone(),
-                                computation_graphs: config.computation_graphs.clone(),
+                                computation: config.computation.clone(),
                             }]
                         } else {
                             config.instances.clone()
@@ -1080,7 +1075,7 @@ mod single_runtime_tests {
     use super::*;
 
     #[tokio::test]
-    async fn native_graph_configuration_is_registered_before_instance_start() {
+    async fn native_components_are_registered_before_instance_start() {
         use drasi_lib::computation::v1::*;
         let resource = ResourceId::try_new("middleware").unwrap();
         let definition = MiddlewareTransformerDefinition {
@@ -1091,10 +1086,10 @@ mod single_runtime_tests {
         };
         let specification = definition.specification(resource.clone()).unwrap();
         let topology: DesiredTopology = serde_json::from_value(serde_json::json!({
-            "version":1, "graph_id":"configured-native", "revision":1, "allow_incomplete":true,
+            "version":1, "revision":0, "allow_incomplete":true,
             "components":[{
                 "descriptor":specification.descriptor, "role":specification.role, "completion":null,
-                "streams":{}, "lifecycle":LifecyclePolicy::default(), "input_merge":InputMergePolicy::default(),
+                "streams":{}, "lifecycle":LifecyclePolicy { auto_start: false }, "input_merge":InputMergePolicy::default(),
                 "construction":ComponentConstruction::Factory(specification),
             }],
             "resources":[{
@@ -1104,13 +1099,12 @@ mod single_runtime_tests {
             "resource_configurations":{"middleware":{"kind":"middleware"}},
             "relationships":[], "boundary_relationships":[], "requirements":PipeRequirements::default(),
         })).unwrap();
-        let graph_config = crate::computation::ComputationGraphConfig {
-            auto_start: false,
+        let graph_config = crate::computation::ComputationConfig {
             definition: topology,
         };
         let config = crate::config::DrasiServerConfig {
             id: crate::api::models::ConfigValue::Static("native-startup".into()),
-            computation_graphs: vec![graph_config.clone()],
+            computation: Some(graph_config.clone()),
             ..Default::default()
         };
         let directory = tempfile::tempdir().unwrap();
@@ -1127,30 +1121,29 @@ mod single_runtime_tests {
         .unwrap();
         let core = &server.instances[0].core;
         assert!(!core.is_running().await);
-        let handle = core
-            .get_computation_graph("configured-native")
-            .await
-            .unwrap();
+        let handle = core.computation_control().unwrap();
         assert_eq!(
-            handle.deployment().await.unwrap().summary,
-            OperationSummary::Completed
+            handle.observed().components[&definition.id].realization,
+            RealizationState::Created
         );
         assert!(!handle.observed().components[&definition.id].started);
         let snapshot = core.snapshot_computation_configuration().await.unwrap();
         assert_eq!(
             serde_json::to_value(
-                crate::computation::configurations_from_snapshot(&snapshot).unwrap()
+                crate::computation::configuration_from_snapshot(&snapshot).unwrap()
             )
             .unwrap(),
-            serde_json::to_value(vec![graph_config]).unwrap()
+            serde_json::to_value(Some(graph_config)).unwrap()
         );
         core.start().await.unwrap();
         assert!(core.is_running().await);
-        assert!(!handle.info().auto_start);
+        assert!(!handle.desired_snapshot().lifecycle_policies[&definition.id].auto_start);
         core.shutdown().await.unwrap();
 
         let mut config = config;
-        config.computation_graphs[0].auto_start = true;
+        config.computation.as_mut().unwrap().definition.components[0]
+            .lifecycle
+            .auto_start = true;
         config.save_to_file(&path).unwrap();
         let failed = DrasiServer::new(path, 8080, directory.path().join("plugins"), false, false)
             .await

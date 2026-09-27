@@ -20,16 +20,10 @@ use drasi_host_sdk::management::HostConfigurationResolver;
 use drasi_lib::{computation::v1::*, DrasiLib};
 use serde::{Deserialize, Serialize};
 
-fn default_auto_start() -> bool {
-    true
-}
-
-/// A user-defined graph on the sole runtime, not an execution-engine selector.
+/// Native components, connections and resource recipes for a DrasiLib instance.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ComputationGraphConfig {
-    #[serde(default = "default_auto_start")]
-    pub auto_start: bool,
+pub struct ComputationConfig {
     #[schema(value_type = serde_json::Value)]
     pub definition: DesiredTopology,
 }
@@ -66,7 +60,7 @@ impl ComputationResourceConfig {
 }
 
 /// Reject host bindings that cannot be reconstructed before changing an instance.
-pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
+pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
     let definition = &config.definition;
     anyhow::ensure!(
         definition.version == 1,
@@ -74,11 +68,18 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
     );
     ComponentId::try_new(definition.graph_id.as_str())?;
     anyhow::ensure!(
+        definition.graph_id
+            == drasi_lib::management::DesiredInstance::default()
+                .topology
+                .graph_id,
+        "component definition must use the instance graph identity"
+    );
+    anyhow::ensure!(
         definition
             .components
             .iter()
             .all(|component| matches!(component.construction, ComponentConstruction::Factory(_))),
-        "server computation graphs require factory specifications, not external component bindings"
+        "server computation components require factory specifications, not external component bindings"
     );
     anyhow::ensure!(
         definition.boundary_relationships.is_empty()
@@ -86,7 +87,7 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
                 .relationships
                 .iter()
                 .all(|edge| !matches!(edge.pipe, DesiredPipe::External { .. })),
-        "server computation graphs cannot reconstruct external pipe or boundary bindings"
+        "server computation cannot reconstruct external pipe or boundary bindings"
     );
     let declarations: BTreeMap<_, _> = definition
         .resources
@@ -175,19 +176,36 @@ pub fn validate_definition(config: &ComputationGraphConfig) -> Result<()> {
             );
         }
     }
+    definition.validate_structure()?;
     Ok(())
 }
 
 /// Bind only explicitly declared host resources. Their recipes stay in the
 /// graph's desired configuration and are not recovered from live object pointers.
-pub async fn build_graph(
-    config: &ComputationGraphConfig,
+pub async fn build_components(
+    config: &ComputationConfig,
     core: &DrasiLib,
     factories: FactoryRegistry,
     transactional: Arc<TransactionalTransformerRegistry>,
-) -> Result<ComputationGraph> {
+) -> Result<ComponentBatch> {
     validate_definition(config)?;
-    let services = core.computation_plugin_services(&config.definition.graph_id)?;
+    for component in &config.definition.components {
+        if let ComponentConstruction::Factory(specification) = &component.construction {
+            factories
+                .get(&specification.implementation)
+                .with_context(|| {
+                    format!(
+                        "component factory '{}' is not registered",
+                        specification.implementation.name
+                    )
+                })?
+                .validate(specification)
+                .with_context(|| {
+                    format!("invalid component '{}'", specification.descriptor.id())
+                })?;
+        }
+    }
+    let services = core.computation_plugin_services()?;
     let mut bindings = TopologyBindings {
         factories,
         ..Default::default()
@@ -277,62 +295,40 @@ pub async fn build_graph(
         };
         bindings.resources.insert(resource.id.clone(), handle);
     }
-    config
-        .definition
-        .build(bindings)
-        .map_err(anyhow::Error::from)
+    Ok(config.definition.build_components(bindings)?)
 }
 
-pub fn configurations_from_snapshot(
+pub fn configuration_from_snapshot(
     snapshot: &InstanceConfigurationSnapshot,
-) -> Result<Vec<ComputationGraphConfig>> {
+) -> Result<Option<ComputationConfig>> {
     anyhow::ensure!(
         snapshot.version == 1,
         "unsupported instance configuration snapshot version"
     );
-    anyhow::ensure!(
-        snapshot.native_components.is_none(),
-        "native root components cannot be saved as separate server graphs; supply named graph definitions"
-    );
-    snapshot
-        .graphs
-        .iter()
-        .map(|graph| {
-            let config = ComputationGraphConfig {
-                auto_start: graph.options.auto_start,
-                definition: graph.graph.topology.clone(),
-            };
-            validate_definition(&config).with_context(|| {
-                format!(
-                    "computation graph '{}' cannot be persisted or cloned",
-                    config.definition.graph_id
-                )
-            })?;
-            Ok(config)
-        })
-        .collect()
+    let Some(native) = &snapshot.native_components else {
+        return Ok(None);
+    };
+    let mut config = ComputationConfig {
+        definition: native.topology.clone(),
+    };
+    config.definition.revision = GraphRevision(0);
+    validate_definition(&config).context("native components cannot be persisted or cloned")?;
+    Ok(Some(config))
 }
 
-pub async fn register_graph(
-    config: &ComputationGraphConfig,
+pub async fn register_components(
+    config: &ComputationConfig,
     core: &DrasiLib,
     registry: &crate::plugin_registry::PluginRegistry,
-) -> Result<ComputationHandle> {
-    let graph = build_graph(
+) -> Result<ReconciliationReport> {
+    let components = build_components(
         config,
         core,
         registry.computation_factory_registry()?,
         registry.transactional_transformer_registry(core.middleware_registry())?,
     )
     .await?;
-    Ok(core
-        .add_computation_graph(
-            graph,
-            ComputationOptions {
-                auto_start: config.auto_start,
-            },
-        )
-        .await?)
+    Ok(core.add_components(components).await?)
 }
 
 /// Retains instances if asynchronous rollback fails, so callers can retry cleanup.

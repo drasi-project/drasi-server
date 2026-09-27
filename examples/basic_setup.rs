@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cors_allowed_origins: vec![],
         identity_providers: vec![],
         bootstrap_providers: vec![],
-        computation_graphs: vec![],
+        computation: None,
     };
 
     // Save configuration to file

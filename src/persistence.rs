@@ -436,7 +436,7 @@ impl ConfigPersistence {
         // Only config-only instance settings belong here. Native declarations
         // are always read from the authoritative graph snapshot during save().
         let mut config = config;
-        config.computation_graphs.clear();
+        config.computation = None;
         instance_configs.insert(id, config);
     }
 
@@ -466,7 +466,7 @@ impl ConfigPersistence {
                 .snapshot_computation_configuration()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to snapshot instance '{id}': {e}"))?;
-            let computation_graphs = crate::computation::configurations_from_snapshot(&snapshot)?;
+            let computation = crate::computation::configuration_from_snapshot(&snapshot)?;
             let snapshot = snapshot.instance;
 
             let persist_index = *self.persist_settings.get(&id).unwrap_or(&false);
@@ -567,7 +567,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
-                    computation_graphs,
+                    computation,
                     // Identity providers are config-only and never appear in
                     // `snapshot_configuration()`. Prefer the dynamic config's
                     // list (set when the instance was registered via the API),
@@ -610,7 +610,7 @@ impl ConfigPersistence {
                     sources,
                     reactions,
                     queries,
-                    computation_graphs,
+                    computation,
                     identity_providers: self
                         .preserved
                         .identity_providers_by_instance
@@ -675,7 +675,7 @@ impl ConfigPersistence {
                 reactions: instance.reactions,
                 identity_providers,
                 bootstrap_providers,
-                computation_graphs: instance.computation_graphs,
+                computation: instance.computation,
                 instances: Vec::new(), // Empty = single-instance format
             }
         } else {
@@ -724,7 +724,7 @@ impl ConfigPersistence {
                 // Same as identityProviders: bootstrapProviders live per-instance
                 // in multi-instance format.
                 bootstrap_providers: Vec::new(),
-                computation_graphs: Vec::new(),
+                computation: None,
                 instances: instance_configs,
             }
         };

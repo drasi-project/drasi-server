@@ -33,7 +33,7 @@ Missing libraries fail with the build prerequisite,
 never a successful skip. The wrong-ABI fixture is built by `rustc` during the test.
 Coverage includes mixed ABI discovery, pre-`dlopen` verification, native factory
 metadata/events, exact output, resource recipes and transaction providers, privileged
-snapshots, persistence/restart/clone, empty graph lists, and read-only/error responses.
+snapshots, persistence/restart/clone, empty native configuration, and read-only/error responses.
 The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, and
 batch counters. Counter reconstruction deliberately starts a new volatile run;
 these roundtrips do not claim durable source recovery or capture-file fsync.

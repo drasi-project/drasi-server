@@ -34,7 +34,7 @@ use drasi_server::{
         v1::{build_plugin_router, routes::build_v1_router},
     },
     computation::{
-        build_graph, configurations_from_snapshot, register_graph, ComputationGraphConfig,
+        build_components, configuration_from_snapshot, register_components, ComputationConfig,
     },
     config::DrasiServerConfig,
     dynamic_loading::load_plugins,
@@ -144,7 +144,7 @@ impl PipeProvider for ExternalPipe {
     }
 }
 
-fn definition(output: &Path) -> Result<ComputationGraphConfig> {
+fn definition(output: &Path) -> Result<ComputationConfig> {
     let source = factory(COUNTER);
     let middleware = factory(MIDDLEWARE);
     let transform = factory(ARITHMETIC);
@@ -161,7 +161,7 @@ fn definition(output: &Path) -> Result<ComputationGraphConfig> {
             secret: true,
         },
     );
-    let graph = ComputationGraph::builder("native")
+    let graph = ComponentBatch::builder()
         .declare_resource(ResourceSpecification {
             id: resource("configuration"),
             role: ResourceRole::SecretStore,
@@ -220,10 +220,53 @@ fn definition(output: &Path) -> Result<ComputationGraphConfig> {
             StreamId::try_new("arithmetic/out")?,
         )
         .build()?;
-    Ok(ComputationGraphConfig {
-        auto_start: false,
-        definition: graph.configuration_snapshot()?.topology,
+    let mut definition = graph.auto_start(false).definition;
+    definition.revision = GraphRevision(0);
+    Ok(ComputationConfig { definition })
+}
+
+fn selected_components(config: &ComputationConfig) -> Value {
+    json!({"components":config.definition.components.iter()
+        .map(|component| component.descriptor.id().as_str()).collect::<Vec<_>>()})
+}
+
+fn selected_removal(config: &ComputationConfig) -> Value {
+    json!({
+        "components":config.definition.components.iter().map(|component| component.descriptor.id().as_str()).collect::<Vec<_>>(),
+        "resources":config.definition.resources.iter().map(|resource| resource.id.as_str()).collect::<Vec<_>>(),
     })
+}
+
+async fn remove_components(core: &DrasiLib, config: &ComputationConfig) -> Result<()> {
+    let control = core.computation_control()?;
+    let mut changes = vec![DesiredMutation::RemoveComponents {
+        selection: GraphSelection::Exact(
+            config
+                .definition
+                .components
+                .iter()
+                .map(|node| node.descriptor.id().clone())
+                .collect(),
+        ),
+        policy: RemovalPolicy::Reject,
+    }];
+    changes.extend(config.definition.resources.iter().map(|resource| {
+        DesiredMutation::RemoveResource {
+            resource: resource.id.clone(),
+            policy: RemovalPolicy::Reject,
+        }
+    }));
+    let preview = control
+        .preview(control.desired_snapshot().revision, changes)
+        .await?;
+    let report = control
+        .reconcile(preview, TopologyBindings::default())
+        .await?;
+    anyhow::ensure!(
+        report.committed && report.summary == OperationSummary::Completed,
+        "{report:?}"
+    );
+    Ok(())
 }
 
 async fn core(name: &str) -> Result<Arc<DrasiLib>> {
@@ -253,7 +296,7 @@ async fn assert_clone_and_save_rejected(
         )
         .await?;
     let snapshot = source.snapshot_computation_configuration().await?;
-    let error = configurations_from_snapshot(&snapshot).unwrap_err();
+    let error = configuration_from_snapshot(&snapshot).unwrap_err();
     assert!(format!("{error:#}").contains(reason), "{error:#}");
     let target = core("clone-target").await?;
     let instances = InstanceRegistry::new();
@@ -285,8 +328,7 @@ async fn assert_clone_and_save_rejected(
         .contains(reason));
     assert!(target.snapshot_configuration().await?.queries.is_empty());
     assert!(
-        configurations_from_snapshot(&target.snapshot_computation_configuration().await?)?
-            .is_empty()
+        configuration_from_snapshot(&target.snapshot_computation_configuration().await?)?.is_none()
     );
     let path = directory.join("server.yaml");
     std::fs::write(&path, "id: original\n")?;
@@ -462,6 +504,79 @@ async fn shared_discovery_loads_both_abis_and_runtime_inventory() -> Result<()> 
 }
 
 #[tokio::test]
+async fn native_resource_only_configuration_can_be_inspected_and_removed() -> Result<()> {
+    let core = core("resources").await?;
+    let registry = InstanceRegistry::new();
+    registry
+        .add("resources".into(), core.clone())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let app = build_v1_router(
+        registry,
+        Arc::new(false),
+        None,
+        Arc::new(RwLock::new(factories())),
+        None,
+    );
+    let batch = ComponentBatch::builder()
+        .declare_resource(ResourceSpecification {
+            id: resource("indexes"),
+            role: ResourceRole::IndexBackend,
+            ownership: ResourceOwnership::Graph,
+            binding: "indexes".into(),
+        })?
+        .resource_configuration(resource("indexes"), json!({"kind":"memoryIndexes"}))?
+        .build()?;
+    let config = ComputationConfig {
+        definition: batch.definition,
+    };
+    let (status, body) = request(
+        &app,
+        "POST",
+        "/instances/resources/computation/components",
+        &serde_json::to_string(&config)?,
+        "application/json",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let snapshot = core.snapshot_computation_configuration().await?;
+    let native = snapshot
+        .native_components
+        .as_ref()
+        .context("native resource declaration")?;
+    assert!(native.topology.components.is_empty());
+    assert_eq!(
+        native.topology.resource_configurations[&resource("indexes")],
+        json!({"kind":"memoryIndexes"})
+    );
+    let (status, body) = request(
+        &app,
+        "DELETE",
+        "/instances/resources/computation/components",
+        &json!({"components":[],"resources":["indexes"]}).to_string(),
+        "application/json",
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(core
+        .snapshot_computation_configuration()
+        .await?
+        .native_components
+        .is_none());
+    assert_eq!(
+        core.inspect_computation_inventory()
+            .await?
+            .scopes
+            .values()
+            .filter(|scope| scope.owner.is_none())
+            .count(),
+        1
+    );
+    core.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let output = directory.path().join("private-capture-path.jsonl");
@@ -503,26 +618,25 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     let (status, body) = request(
         &app,
         "POST",
-        "/instances/first/computation/graphs",
+        "/instances/first/computation/components",
         &serde_yaml::to_string(&config)?,
         "application/yaml",
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let handle = source.get_computation_graph("native").await?;
-    assert_eq!(
-        handle.deployment().await?.summary,
-        OperationSummary::Completed
-    );
-    assert!(
-        !output.exists(),
-        "graph registration must not start components"
-    );
+    let handle = source.computation_control()?;
+    for component in &config.definition.components {
+        assert_eq!(
+            handle.observed().components[component.descriptor.id()].realization,
+            RealizationState::Created
+        );
+    }
+    assert!(!output.exists(), "registration must not start components");
     let (status, body) = request(
         &app,
         "POST",
-        "/instances/first/computation/graphs/native/start",
-        "",
+        "/instances/first/computation/start",
+        &selected_components(&config).to_string(),
         "application/json",
     )
     .await?;
@@ -531,7 +645,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     let (status, inspection) = request(
         &app,
         "GET",
-        "/instances/first/computation/graphs/native",
+        "/instances/first/computation",
         "",
         "application/json",
     )
@@ -539,7 +653,7 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         inspection["data"]["components"].as_array().unwrap().len(),
-        4
+        5
     );
     let public = serde_json::to_string(&inspection)?;
     assert!(!public.contains("private-capture-path"));
@@ -556,11 +670,11 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     assert_eq!(status, StatusCode::OK);
     assert_eq!(full["data"]["version"], 1);
     assert_eq!(
-        full["data"]["graphs"][0]["graph"]["configurations"]["counter"]["values"]["count"],
+        full["data"]["native_components"]["configurations"]["counter"]["values"]["count"],
         4
     );
     assert_eq!(
-        full["data"]["graphs"][0]["graph"]["topology"]["resource_configurations"]["configuration"],
+        full["data"]["native_components"]["topology"]["resource_configurations"]["configuration"],
         json!({"kind":"configuration"})
     );
     let native_id = drasi_host_sdk::plugin_registry::computation_plugin_id(plugin().metadata());
@@ -602,55 +716,77 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     .data
     .context("clone response")?;
     assert!(clone.success, "{:?}", clone.errors);
-    assert_eq!(clone.computation_graphs_created, ["native"]);
-    assert!(
-        !target
-            .get_computation_graph("native")
-            .await?
-            .info()
-            .auto_start
+    assert_eq!(
+        clone
+            .components_created
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>(),
+        HashSet::from(["counter", "middleware", "arithmetic", "capture"])
     );
+    for component in &config.definition.components {
+        assert!(
+            !target
+                .computation_control()?
+                .desired_snapshot()
+                .lifecycle_policies[component.descriptor.id()]
+            .auto_start
+        );
+    }
     let saved = drasi_server::load_config_file(&path)?;
-    assert!(saved.computation_graphs.is_empty());
+    assert!(saved.computation.is_none());
     assert_eq!(saved.instances.len(), 2);
     for instance in &saved.instances {
         assert_eq!(
-            serde_json::to_value(&instance.computation_graphs)?,
-            serde_json::to_value(vec![&config])?
+            serde_json::to_value(&instance.computation)?,
+            serde_json::to_value(Some(&config))?
         );
     }
     source.shutdown().await?;
     target.shutdown().await?;
 
     let restored = core("first").await?;
-    register_graph(
-        &saved.instances[0].computation_graphs[0],
+    register_components(
+        saved.instances[0].computation.as_ref().unwrap(),
         &restored,
         &factories(),
     )
     .await?;
     std::fs::remove_file(&output)?;
     assert_eq!(
-        restored.start_computation_graph("native").await?.summary,
+        restored
+            .computation_control()?
+            .start_requested(
+                restored.computation_control()?.desired_snapshot().revision,
+                GraphSelection::Exact(
+                    config
+                        .definition
+                        .components
+                        .iter()
+                        .map(|node| node.descriptor.id().clone())
+                        .collect()
+                ),
+            )
+            .await?
+            .summary,
         OperationSummary::Completed
     );
     exact_output(&output).await?;
     assert_eq!(
-        serde_json::to_value(configurations_from_snapshot(
+        serde_json::to_value(configuration_from_snapshot(
             &restored.snapshot_computation_configuration().await?
         )?)?,
-        serde_json::to_value(vec![&config])?
+        serde_json::to_value(Some(&config))?
     );
     restored.shutdown().await?;
 
-    // Removing the last graph must not resurrect a preserved configuration list.
     let first = core("first").await?;
     let single = InstanceRegistry::new();
     single
         .add("first".into(), first.clone())
         .await
         .map_err(anyhow::Error::msg)?;
-    register_graph(&config, &first, &factories()).await?;
+    register_components(&config, &first, &factories()).await?;
     let persistence = ConfigPersistence::new(
         path.clone(),
         single,
@@ -666,17 +802,15 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
     persistence
         .register_instance(saved.instances[0].clone())
         .await;
-    first.remove_computation_graph("native").await?;
+    remove_components(&first, &config).await?;
     persistence.save().await?;
-    assert!(drasi_server::load_config_file(&path)?
-        .computation_graphs
-        .is_empty());
+    assert!(drasi_server::load_config_file(&path)?.computation.is_none());
     first.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn graph_api_rejects_missing_factories_resources_and_read_only_mutations() -> Result<()> {
+async fn component_api_rejects_missing_factories_resources_and_read_only_mutations() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("test").await?;
@@ -705,31 +839,43 @@ async fn graph_api_rejects_missing_factories_resources_and_read_only_mutations()
         let (status, body) = request(
             &writable,
             "POST",
-            "/instances/test/computation/graphs",
+            "/instances/test/computation/components",
             &serde_json::to_string(&invalid)?,
             "application/json",
         )
         .await?;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert_eq!(body["code"], "INVALID_REQUEST");
-        assert!(!core
-            .list_computation_graphs()
-            .await?
-            .iter()
-            .any(|graph| graph.id == "native"));
+        assert!(core.computation_component("counter").is_err());
     }
     let read_only = build_v1_router(instances, Arc::new(true), None, plugins, None);
-    for (method, path) in [
-        ("POST", "/instances/test/computation/graphs"),
-        ("POST", "/instances/test/computation/graphs/native/start"),
-        ("POST", "/instances/test/computation/graphs/native/stop"),
-        ("DELETE", "/instances/test/computation/graphs/native"),
+    for (method, path, payload) in [
+        (
+            "POST",
+            "/instances/test/computation/components",
+            serde_json::to_value(&config)?,
+        ),
+        (
+            "POST",
+            "/instances/test/computation/start",
+            selected_components(&config),
+        ),
+        (
+            "POST",
+            "/instances/test/computation/stop",
+            selected_components(&config),
+        ),
+        (
+            "DELETE",
+            "/instances/test/computation/components",
+            selected_removal(&config),
+        ),
     ] {
         let (status, body) = request(
             &read_only,
             method,
             path,
-            &serde_json::to_string(&config)?,
+            &payload.to_string(),
             "application/json",
         )
         .await?;
@@ -748,7 +894,7 @@ async fn graph_api_rejects_missing_factories_resources_and_read_only_mutations()
     let (status, body) = request(
         &writable,
         "GET",
-        "/instances/test/computation/graphs/missing",
+        "/instances/missing/computation",
         "",
         "application/json",
     )
@@ -783,21 +929,23 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     let (status, body) = request(
         &app,
         "POST",
-        "/instances/failed-native/computation/graphs",
+        "/instances/failed-native/computation/components",
         &serde_json::to_string(&config)?,
         "application/json",
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{body}");
-    core.get_computation_graph("native")
-        .await?
-        .deployment()
-        .await?;
+    assert_eq!(
+        core.computation_component("counter")?
+            .observed()?
+            .realization,
+        RealizationState::CreationFailed
+    );
     let (status, body) = request(
         &app,
         "POST",
-        "/instances/failed-native/computation/graphs/native/start",
-        "",
+        "/instances/failed-native/computation/start",
+        &selected_components(&config).to_string(),
         "application/json",
     )
     .await?;
@@ -806,7 +954,7 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     let (status, body) = request(
         &app,
         "GET",
-        "/instances/failed-native/computation/graphs/native",
+        "/instances/failed-native/computation",
         "",
         "application/json",
     )
@@ -822,8 +970,8 @@ async fn failed_native_creation_remains_inspectable_and_start_returns_an_error()
     let (status, body) = request(
         &app,
         "DELETE",
-        "/instances/failed-native/computation/graphs/native",
-        "",
+        "/instances/failed-native/computation/components",
+        &selected_removal(&config).to_string(),
         "application/json",
     )
     .await?;
@@ -838,9 +986,8 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("rebind").await?;
     let plugins = factories();
-    let handle = register_graph(&config, &core, &plugins).await?;
-    handle.deployment().await?;
-    let control = handle.control();
+    register_components(&config, &core, &plugins).await?;
+    let control = core.computation_control()?;
     let preview = control
         .preview(
             control.desired_snapshot().revision,
@@ -868,14 +1015,16 @@ async fn rebind_does_not_recreate_a_stale_resource_recipe_on_save() -> Result<()
         .await?;
     assert_eq!(rebound.summary, OperationSummary::Completed);
     let snapshot = core.snapshot_computation_configuration().await?;
-    assert!(!snapshot.graphs[0]
-        .graph
+    assert!(!snapshot
+        .native_components
+        .as_ref()
+        .unwrap()
         .topology
         .resource_configurations
         .contains_key(&resource("configuration")));
-    assert!(configurations_from_snapshot(&snapshot).is_err());
+    assert!(configuration_from_snapshot(&snapshot).is_err());
     let original = DrasiServerConfig {
-        computation_graphs: vec![config],
+        computation: Some(config),
         ..Default::default()
     };
     assert_clone_and_save_rejected(
@@ -892,10 +1041,7 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
     let directory = tempfile::tempdir()?;
     let config = definition(&directory.path().join("capture.jsonl"))?;
     let core = core("required-resources").await?;
-    register_graph(&config, &core, &factories())
-        .await?
-        .deployment()
-        .await?;
+    register_components(&config, &core, &factories()).await?;
     let snapshot = core.snapshot_computation_configuration().await?;
     for kind in [
         "configuration",
@@ -905,7 +1051,7 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
         "ranked",
     ] {
         let mut incomplete = snapshot.clone();
-        let topology = &mut incomplete.graphs[0].graph.topology;
+        let topology = &mut incomplete.native_components.as_mut().unwrap().topology;
         match kind {
             "configuration" => {
                 topology.resources.clear();
@@ -946,7 +1092,7 @@ async fn snapshot_conversion_rejects_every_undeclared_resource_reference() -> Re
             }
             _ => unreachable!(),
         }
-        let error = configurations_from_snapshot(&incomplete).unwrap_err();
+        let error = configuration_from_snapshot(&incomplete).unwrap_err();
         assert!(
             format!("{error:#}").contains("has no declaration or construction recipe"),
             "{kind}: {error:#}"
@@ -962,7 +1108,7 @@ async fn external_pipe_bindings_reject_clone_and_save_before_any_mutation() -> R
     let source = core("external-pipe").await?;
     let counter = factory(COUNTER);
     let capture = factory(CAPTURE);
-    let graph = ComputationGraph::builder("external-pipe")
+    let graph = ComponentBatch::builder()
         .component(
             counter.specification(id("counter"), json!({"stream":"counter/out","count":0}))?,
             counter,
@@ -983,11 +1129,7 @@ async fn external_pipe_bindings_reject_clone_and_save_before_any_mutation() -> R
             StreamId::try_new("counter/out")?,
         )
         .build()?;
-    source
-        .add_computation_graph(graph, ComputationOptions { auto_start: false })
-        .await?
-        .deployment()
-        .await?;
+    source.add_components(graph.auto_start(false)).await?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),
@@ -1028,7 +1170,7 @@ async fn openapi_refreshes_native_factory_schemas_after_runtime_registration() -
         4
     );
     for name in [
-        "ComputationGraphConfig",
+        "ComputationConfig",
         "ComputationResourceConfig",
         "ComputationGraphInfo",
         "ComputationGraphInspection",
@@ -1039,10 +1181,10 @@ async fn openapi_refreshes_native_factory_schemas_after_runtime_registration() -
     for path in [
         "/api/v1/plugins/computation",
         "/api/v1/instances/{instanceId}/computation/configuration",
-        "/api/v1/instances/{instanceId}/computation/graphs",
-        "/api/v1/instances/{instanceId}/computation/graphs/{id}",
-        "/api/v1/instances/{instanceId}/computation/graphs/{id}/start",
-        "/api/v1/instances/{instanceId}/computation/graphs/{id}/stop",
+        "/api/v1/instances/{instanceId}/computation",
+        "/api/v1/instances/{instanceId}/computation/components",
+        "/api/v1/instances/{instanceId}/computation/start",
+        "/api/v1/instances/{instanceId}/computation/stop",
     ] {
         assert!(after.paths.paths.contains_key(path), "{path}");
     }
@@ -1064,7 +1206,7 @@ async fn unsupported_external_bindings_fail_before_partial_clone_or_persistence(
     )?;
     let counter = factory(COUNTER);
     let capture = factory(CAPTURE);
-    let graph = ComputationGraph::builder("external")
+    let graph = ComponentBatch::builder()
         .component(
             counter.specification(id("counter"), json!({"stream":"counter/out","count":0}))?,
             counter,
@@ -1094,11 +1236,7 @@ async fn unsupported_external_bindings_fail_before_partial_clone_or_persistence(
             StreamId::try_new("external/out")?,
         )
         .build()?;
-    source
-        .add_computation_graph(graph, ComputationOptions { auto_start: false })
-        .await?
-        .deployment()
-        .await?;
+    source.add_components(graph.auto_start(false)).await?;
     assert_clone_and_save_rejected(
         source,
         &DrasiServerConfig::default(),
@@ -1119,7 +1257,7 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         let plugins = factories();
         let registry = plugins.transactional_transformer_registry(core.middleware_registry())?;
         let transaction = TransactionTransformerDefinition {
-            graph_id: "transaction".into(),
+            graph_id: core.computation_info().await?.id,
             id: id("transaction"),
             output_stream: StreamId::try_new("transaction/out")?,
             steps: vec![TransactionStepDefinition {
@@ -1133,7 +1271,6 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
         let specification =
             transaction.specification(&registry, resource("transformers"), resource("indexes"))?;
         let mut config = definition(&directory.path().join("unused.jsonl"))?;
-        config.definition.graph_id = "transaction".into();
         config.definition.allow_incomplete = true;
         config.definition.relationships.clear();
         config.definition.components = vec![DesiredComponent {
@@ -1167,7 +1304,7 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
             ),
         ]
         .into();
-        let result = build_graph(
+        let result = build_components(
             &config,
             &core,
             plugins.computation_factory_registry()?,
@@ -1186,20 +1323,19 @@ async fn native_transaction_factories_bind_explicit_index_provider_recipes() -> 
             continue;
         }
         let graph = result?;
-        let handle = core
-            .add_computation_graph(graph, ComputationOptions { auto_start: false })
-            .await?;
-        assert_eq!(
-            handle.deployment().await?.summary,
-            OperationSummary::Completed
-        );
+        let report = core.add_components(graph.auto_start(false)).await?;
+        assert_eq!(report.summary, OperationSummary::Completed);
         let exported =
-            configurations_from_snapshot(&core.snapshot_computation_configuration().await?)?;
+            configuration_from_snapshot(&core.snapshot_computation_configuration().await?)?;
         assert_eq!(
-            exported[0].definition.resource_configurations[&resource("indexes")],
+            exported
+                .as_ref()
+                .unwrap()
+                .definition
+                .resource_configurations[&resource("indexes")],
             recipe
         );
-        core.remove_computation_graph("transaction").await?;
+        remove_components(&core, &config).await?;
         core.shutdown().await?;
     }
     Ok(())
@@ -1431,31 +1567,31 @@ fn allowlist_precedes_dlopen_and_wrong_native_abi_never_falls_back() -> Result<(
 }
 
 #[test]
-fn native_config_preserves_selectors_and_rejects_unknown_fields() -> Result<()> {
+fn native_config_preserves_component_definitions_and_rejects_unknown_fields() -> Result<()> {
     let config = definition(Path::new("capture.jsonl"))?;
-    let server: DrasiServerConfig = serde_json::from_value(json!({"computationGraphs":[config]}))?;
+    let server: DrasiServerConfig = serde_json::from_value(json!({"computation":config}))?;
     server.validate()?;
     let yaml = serde_yaml::to_string(&server)?;
     let restored: DrasiServerConfig = serde_yaml::from_str(&yaml)?;
     assert_eq!(
-        serde_json::to_value(&restored.computation_graphs)?,
-        serde_json::to_value(&server.computation_graphs)?
+        serde_json::to_value(&restored.computation)?,
+        serde_json::to_value(&server.computation)?
     );
     for invalid in [
         json!({"executionMode":"computationGraph"}),
         json!({"instances":[{"id":"test","executionMode":"computationGraph"}]}),
         json!({"computationGraph":[]}),
-        json!({"computationGraphs":[{"autoStart":false,"definition":config.definition,"typo":true}]}),
+        json!({"computation":{"definition":config.definition,"typo":true}}),
     ] {
         assert!(serde_json::from_value::<DrasiServerConfig>(invalid).is_err());
     }
     let invalid: DrasiServerConfig =
-        serde_json::from_value(json!({"computationGraphs":[config], "instances":[{"id":"test"}]}))?;
+        serde_json::from_value(json!({"computation":config, "instances":[{"id":"test"}]}))?;
     assert!(invalid.validate().is_err());
     let ordinary: DrasiServerConfig =
         serde_json::from_value(json!({"sources":[{"kind":"mock","id":"legacy"}]}))?;
     assert_eq!(ordinary.sources[0].kind, "mock");
-    assert!(ordinary.computation_graphs.is_empty());
+    assert!(ordinary.computation.is_none());
     Ok(())
 }
 
@@ -1469,14 +1605,14 @@ fn plugin_aware_validation_checks_native_factory_availability() -> Result<()> {
     )?;
     let graph = definition(Path::new("capture.jsonl"))?;
     let mut config = DrasiServerConfig {
-        computation_graphs: vec![graph],
+        computation: Some(graph),
         ..Default::default()
     };
     let valid = drasi_server::config::validate_with_plugins(&config, Some(directory.path()));
     assert_eq!(valid.plugins_loaded, 1);
     assert!(valid.config_errors.is_empty(), "{:?}", valid.config_errors);
     if let ComponentConstruction::Factory(spec) =
-        &mut config.computation_graphs[0].definition.components[0].construction
+        &mut config.computation.as_mut().unwrap().definition.components[0].construction
     {
         spec.implementation.name = "missing-native-factory".into();
     }

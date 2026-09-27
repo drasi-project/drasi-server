@@ -9,10 +9,10 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::{Context, Result};
 use drasi_host_sdk::computation::{NativeFactory, NativePlugin};
 use drasi_lib::computation::v1::{
-    BoundedPipeConfig, ComponentId, ComputationGraph, EdgeDefinition, Endpoint, PortId, StreamId,
+    BoundedPipeConfig, ComponentBatch, ComponentId, EdgeDefinition, Endpoint, PortId, StreamId,
 };
 use drasi_server::{
-    api::models::ConfigValue, computation::ComputationGraphConfig, config::DrasiServerConfig,
+    api::models::ConfigValue, computation::ComputationConfig, config::DrasiServerConfig,
 };
 use serde_json::json;
 
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     let middleware = factory(&plugin, "drasi.standard/middleware")?;
     let arithmetic = factory(&plugin, "drasi.standard/arithmetic")?;
     let capture = factory(&plugin, "drasi.standard/capture")?;
-    let mut builder = ComputationGraph::builder("native-pipeline")
+    let mut builder = ComponentBatch::builder()
         .component(counter.specification(ComponentId::try_new("counter")?,
             json!({"stream":"counter/out","count":4,"start":2,"step":3}))?, counter)
         .component(middleware.specification(ComponentId::try_new("middleware")?, json!({
@@ -81,10 +81,9 @@ fn main() -> Result<()> {
         verify_plugins: false,
         enable_ui: false,
         persist_config: false,
-        computation_graphs: vec![ComputationGraphConfig {
-            auto_start: true,
-            definition: graph.configuration_snapshot()?.topology,
-        }],
+        computation: Some(ComputationConfig {
+            definition: graph.definition,
+        }),
         ..Default::default()
     };
     config.validate()?;

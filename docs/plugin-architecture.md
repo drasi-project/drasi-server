@@ -102,8 +102,9 @@ Provide initial data snapshots to populate queries when sources are connected.
 Native factories declare typed ports, schemas, roles, configuration versions and
 explicit capabilities. Host `NativeFactory` implements Core's `ComponentFactory`;
 transactional participants also register with the instance's transaction factory
-registry. Server config uses `computationGraphs` with factory-only desired
-topologies and explicit resource construction recipes.
+registry. Each instance's optional `computation` configuration supplies
+factory-only component declarations and explicit resource construction recipes
+for its ComputationGraph.
 
 `GET /api/v1/plugins/computation` exposes native manifests without instance secrets.
 Native runtime IDs are family/version-qualified: `computation:<id>@<version>`.

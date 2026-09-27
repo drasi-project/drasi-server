@@ -426,11 +426,11 @@ pub fn validate_with_plugins(
 
     // 4. Validate component configs against schemas
     let mut config_errors = validate_component_configs(config, &registry);
-    for graph in config.computation_graphs.iter().chain(
+    for graph in config.computation.iter().chain(
         config
             .instances
             .iter()
-            .flat_map(|instance| &instance.computation_graphs),
+            .flat_map(|instance| &instance.computation),
     ) {
         let validation = crate::computation::validate_definition(graph).and_then(|()| {
             graph
