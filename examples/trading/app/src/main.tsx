@@ -14,26 +14,15 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { DrasiProvider } from '@drasi/react';
+import { TradingProvider } from '@/drasi/TradingProvider';
 import App from './App';
-import {
-  DRASI_SERVER_URL,
-  TRADING_QUERIES,
-  TRADING_REACTION,
-  routeTradingData,
-} from '@/drasi/config';
 import '@drasi/react/styles.css';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <DrasiProvider
-      serverUrl={DRASI_SERVER_URL}
-      queries={TRADING_QUERIES}
-      reaction={TRADING_REACTION}
-      routeUnidentified={routeTradingData}
-    >
+    <TradingProvider>
       <App />
-    </DrasiProvider>
+    </TradingProvider>
   </React.StrictMode>,
 );

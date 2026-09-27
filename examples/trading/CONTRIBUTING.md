@@ -55,8 +55,13 @@ These exercises are designed to help you understand Drasi by making small, focus
 Create a query that shows only Technology stocks:
 
 Add a new query definition to `app/src/services/queries.ts` and include it in
-the exported `ALL_QUERIES` array (it is passed to `<DrasiProvider queries={...}>`
-in `app/src/main.tsx`):
+the exported `ALL_QUERIES` array. `app/src/drasi/config.ts` projects the app-owned
+deployment bodies and query IDs; `TradingProvider` passes only references to the
+connect-only package and delegates eligible setup to `ensureTradingResources`.
+Use a fresh disposable instance for query-definition exercises, or explicitly
+apply the intended changes with server tooling. Restarting the app never
+overwrites existing definitions or rewrites reaction membership; conflicts are
+surfaced rather than silently reconciled.
 
 ```typescript
 export const TECH_STOCKS_QUERY: QueryDefinition = {

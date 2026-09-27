@@ -392,7 +392,7 @@ export function QueryTable<T extends Record<string, any>>({
   } = useDrasiQueryDefinition(queryId);
   const displayConfig = useMemo(() => {
     if (configLoading) return 'Loading query definition...';
-    if (configError) return `Unable to load query definition: ${configError}`;
+    if (configError) return `Unable to load query definition: ${configError.message}`;
     if (!queryConfig) return 'Query not found';
     return formatQueryConfig(queryConfig);
   }, [queryConfig, configLoading, configError]);
@@ -623,7 +623,7 @@ export function QueryTable<T extends Record<string, any>>({
         )}
       >
         {title && <h2 className="drasi-query-table__state-title">{title}</h2>}
-        <div className="drasi-query-table__error">Error: {error}</div>
+        <div className="drasi-query-table__error">Error: {error.message}</div>
       </div>
     );
   }

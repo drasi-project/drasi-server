@@ -4,7 +4,7 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -66,6 +66,28 @@ test('counts every package entrypoint, nested chunk, declaration format and styl
     { path: 'dist/index.js.map', bytes: 10000 },
     { path: 'README.md', bytes: 10000 },
   ]), { packageEsm: 1500, packageCjs: 1900, packageTypes: 2600, packageCss: 300 });
+});
+
+test('remeasures both historical P1 and P2 declarations without changing product bytes', async () => {
+  for (const [name, correctedTypes] of [
+    ['baseline-metrics-v2.json', 37492],
+    ['baseline-metrics-p2-v2.json', 42280],
+  ]) {
+    const historical = JSON.parse(await readFile(new URL(`../fixtures/${name}`, import.meta.url), 'utf8'));
+    const sizes = historical.sizes;
+    const measured = measurePackageFiles([
+      { path: 'dist/index.js', bytes: sizes.packageEsm },
+      { path: 'dist/index.cjs', bytes: sizes.packageCjs },
+      { path: 'dist/index.d.ts', bytes: sizes.packageTypes },
+      { path: 'dist/index.d.cts', bytes: sizes.packageTypes },
+      { path: 'styles.css', bytes: sizes.packageCss },
+    ]);
+    assert.deepEqual(measured, {
+      packageEsm: sizes.packageEsm, packageCjs: sizes.packageCjs,
+      packageTypes: correctedTypes, packageCss: sizes.packageCss,
+    });
+    assert.equal(historical.schemaVersion, 2);
+  }
 });
 
 test('rejects a secondary chunk exceeding the same 2% budget even when index is unchanged', () => {

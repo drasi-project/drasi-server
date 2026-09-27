@@ -4,10 +4,10 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { render, screen, within } from '@testing-library/react';
-import { DrasiProvider, type EventSourceLike } from '@drasi/react';
+import { type EventSourceLike } from '@drasi/react';
 import { vi } from 'vitest';
 import App from '../../src/App';
-import { DRASI_SERVER_URL, TRADING_QUERIES, TRADING_REACTION, routeTradingData } from '../../src/drasi/config';
+import { TradingProvider } from '../../src/drasi/TradingProvider';
 import { SyntheticTrading } from '../fixtures/synthetic/trading';
 
 class SyntheticEventSource extends EventTarget implements EventSourceLike {
@@ -44,11 +44,7 @@ export async function renderTrading(backend = new SyntheticTrading()) {
     }
   };
   const rendered = render(
-    <DrasiProvider
-      serverUrl={DRASI_SERVER_URL}
-      queries={TRADING_QUERIES}
-      reaction={TRADING_REACTION}
-      routeUnidentified={routeTradingData}
+    <TradingProvider
       fetch={fetcher}
       eventSourceFactory={() => {
         const source = new SyntheticEventSource();
@@ -61,7 +57,7 @@ export async function renderTrading(backend = new SyntheticTrading()) {
       reconnect={reconnect}
     >
       <App />
-    </DrasiProvider>,
+    </TradingProvider>,
   );
   await screen.findByText('Connected');
   await screen.findByRole('button', { name: 'Add to watchlist' });
