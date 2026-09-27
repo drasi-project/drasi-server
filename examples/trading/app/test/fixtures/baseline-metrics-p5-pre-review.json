@@ -121,18 +121,11 @@
     "esmDeclarations": 37834,
     "commonJsDeclarations": 37851
   },
-  "reviewBudgetChange": {
-    "scope": "#208 / #164 Part A published-runtime and inherited review propagation, archive only",
-    "approvedAt": "2026-09-27",
-    "previousBaseline": "baseline-metrics-p5-pre-review.json",
-    "previousCommit": "786b122491db25ea5b1756c9538e85b29e780723",
-    "previousBaselineSha256": "5f87e41b72410779d0af2ef7564af95108ee1e0b90972d63b9425ebaa472102d",
-    "approvedArchiveBaseline": 175111,
-    "firstFailedMeasurement": { "packageTarball": 175111 },
-    "firstArtifactSha256": "1b82158387e6f197e489d7e4c22edcde838a0fc1df158812678d9880e8263794",
-    "previousArchiveCap": 172846.14,
-    "previousArchiveOverrun": 2264.86,
-    "reason": "The actual user approved only the first frozen ordinary P5 archive measurement for the published-runtime and inherited review contracts. All other size counters, coverage floors and the normal 2% future-growth policy remain unchanged; no P3/P4 approval transfers to P5. The original complete baseline and its unused historical 110-byte gzip approval remain in the previousBaseline fixture under their original fingerprint guards. That approval is not rebound to this changed size vector: the active Trading gzip cap is the original 74133 * 1.02."
+  "approvedP5TradingJsGzipAllowance": {
+    "bytes": 110,
+    "baselineSizesSha256": "5e8ad7efb5c8f9dc59ad0308844c5643bdaf2e5d81d7f5fd24fdefaee249ba15",
+    "approval": "Actual user approved the documented one-time allowance on 2026-09-21 for P5 quality fixes in #208 / #164 Part A.",
+    "reason": "Only tradingJsGzip may use 74133 * 1.02 + 110 = 75725.66. The observed 75725 bytes failed the original cap by 109.34 bytes; 75726 must still fail. Original sizes, historical records, every other metric, coverage, behavior, images and human accessibility policy are unchanged. This fixed allowance must not compound or carry to a distinct later-layer baseline."
   },
   "coverage": {
     "package": {
@@ -149,7 +142,7 @@
     }
   },
   "sizes": {
-    "packageTarball": 175111,
+    "packageTarball": 169457,
     "packageEsm": 78523,
     "packageCjs": 85845,
     "packageTypes": 75685,

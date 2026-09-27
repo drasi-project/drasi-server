@@ -15,7 +15,9 @@ test('fixed desktop dashboard, fullscreen and tutorial appearance', async ({ pag
   await page.getByRole('button', { name: 'Collapse table' }).click();
   await page.clock.runFor(400);
   await panel(page, 'Portfolio').getByRole('button', { name: 'View code' }).click();
-  await expect(page.getByRole('dialog', { name: 'Portfolio', exact: true })).toHaveScreenshot('portfolio-query-code.png');
+  const inspector = page.getByRole('dialog', { name: 'Portfolio', exact: true });
+  await expect(inspector.locator('code')).toContainText('OWNS_STOCK');
+  await expect(inspector).toHaveScreenshot('portfolio-query-code.png');
 });
 
 test('fixed narrow viewport preserves stacked cards and existing dialog layout', async ({ page }) => {

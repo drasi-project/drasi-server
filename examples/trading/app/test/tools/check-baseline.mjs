@@ -44,5 +44,8 @@ console.log(JSON.stringify(observed, null, 2));
 if (mode !== '--measure-only') {
   const baseline = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
   assertBaseline(observed, baseline);
+  if (baseline.approvedP5TradingJsGzipAllowance) {
+    console.log('Includes the user-approved P5-only Trading JS gzip allowance: 74133 * 1.02 + 110 = 75725.66 bytes; all other limits are unchanged.');
+  }
   console.log('Measured coverage and artifact sizes satisfy the P1 regression baseline (not final coverage targets).');
 }

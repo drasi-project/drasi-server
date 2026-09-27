@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React from 'react';
-import { QueryTable, type ColumnDef } from '@drasi/react/components';
+import type { ColumnDef } from '@drasi/react/components';
+import { TradingQueryTable } from './TradingQueryTable';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { ChangeIndicator } from './shared';
 import { SectorPerformance as SectorPerformanceType } from '@/types';
@@ -21,7 +22,7 @@ import { formatCompactNumber, formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display
-const CODE_SNIPPET = `<QueryTable<SectorPerformance>
+const CODE_SNIPPET = `<TradingQueryTable<SectorPerformanceType>
   queryId="sector-performance-query"
   queryOptions={tradingQueryOptions('sector-performance-query')}
   title="Sector Performance"
@@ -86,7 +87,7 @@ const columns: ColumnDef<SectorPerformanceType>[] = [
 
 export const SectorPerformance: React.FC = () => {
   return (
-    <QueryTable<SectorPerformanceType>
+    <TradingQueryTable<SectorPerformanceType>
       queryId="sector-performance-query"
       queryOptions={tradingQueryOptions('sector-performance-query')}
       title="Sector Performance"

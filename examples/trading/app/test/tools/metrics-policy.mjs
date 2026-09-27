@@ -4,6 +4,7 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -46,6 +47,21 @@ export async function measureTradingAssets(directory) {
   return sizes;
 }
 
+function approvedP5TradingGzipAllowance(baseline) {
+  const approval = baseline.approvedP5TradingJsGzipAllowance;
+  if (approval === undefined) return 0;
+  const recordedSizes = '5e8ad7efb5c8f9dc59ad0308844c5643bdaf2e5d81d7f5fd24fdefaee249ba15';
+  const sizes = Object.entries(baseline.sizes).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  const fingerprint = createHash('sha256').update(JSON.stringify(sizes)).digest('hex');
+  assert(approval !== null && typeof approval === 'object' &&
+    approval.bytes === 110 && approval.baselineSizesSha256 === recordedSizes &&
+    fingerprint === recordedSizes && baseline.sizes.tradingJsGzip === 74133 &&
+    baseline.artifactChange?.issue === 164 && baseline.artifactChange?.part === 'A / P5' &&
+    baseline.p5MeasurementChange?.originalP5Head === '569b1d26e558b838d3a572bf7e2e5fbd6280eeaf',
+  'The approved P5 Trading gzip allowance applies only to its original recorded baseline; remove it for a distinct baseline.');
+  return 110;
+}
+
 export function assertBaseline(observed, baseline) {
   for (const project of ['package', 'trading']) {
     for (const counter of ['statements', 'branches', 'functions', 'lines']) {
@@ -57,9 +73,12 @@ export function assertBaseline(observed, baseline) {
     }
   }
   assert.deepEqual(Object.keys(observed.sizes).sort(), Object.keys(baseline.sizes).sort(), 'Artifact metric set changed');
+  const p5Allowance = approvedP5TradingGzipAllowance(baseline);
   for (const [asset, size] of Object.entries(observed.sizes)) {
     assert(Number.isInteger(size) && size >= 0 && Number.isInteger(baseline.sizes[asset]), `Invalid ${asset} byte count`);
-    assert(size <= baseline.sizes[asset] * 1.02,
-      `${asset} grew more than 2%. Explain the change and review the artifact baseline.`);
+    const extra = asset === 'tradingJsGzip' ? p5Allowance : 0;
+    assert(size <= baseline.sizes[asset] * 1.02 + extra,
+      extra ? `${asset} exceeds the approved P5 cap: 74133 * 1.02 + 110 = 75725.66.`
+        : `${asset} grew more than 2%. Explain the change and review the artifact baseline.`);
   }
 }
