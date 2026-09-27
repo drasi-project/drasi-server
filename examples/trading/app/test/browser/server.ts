@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { SyntheticTrading, type FixtureRow } from '../fixtures/synthetic/trading.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../dist/', import.meta.url)));
+const consumerDist = resolve(fileURLToPath(new URL('../../.test-runtime/consumer-dist/', import.meta.url)));
 const port = Number(process.env.P1_WEB_PORT ?? 15273);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid P1_WEB_PORT');
 
@@ -65,6 +66,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   if (url.pathname === '/__fixture/health') {
     await readFile(resolve(dist, 'index.html'));
     json(response, 200, { ready: true });
+    return;
+  }
+  if (process.env.P6_COMPONENTS_ONLY === '1' &&
+      url.pathname !== '/__components' && !url.pathname.startsWith('/__components/')) {
+    json(response, 403, { error: 'Component-only preview: open /__components/; Trading and API routes are disabled' });
     return;
   }
   if (process.env.P1_REAL_SERVER_ONLY === '1' &&
@@ -129,8 +135,22 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     json(response, result.status, result.body);
     return;
   }
-  const path = resolve(dist, `.${url.pathname === '/' ? '/index.html' : url.pathname}`);
-  if (!path.startsWith(`${dist}${sep}`)) {
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    json(response, 400, { error: 'Invalid static asset path' });
+    return;
+  }
+  if (pathname.includes('\0') || pathname.includes('\\')) {
+    json(response, 400, { error: 'Invalid static asset path' });
+    return;
+  }
+  const isConsumer = pathname === '/__components' || pathname.startsWith('/__components/');
+  const root = isConsumer ? consumerDist : dist;
+  const relative = isConsumer ? pathname.slice('/__components'.length) : pathname;
+  const path = resolve(root, `.${relative === '/' || relative === '' ? '/index.html' : relative}`);
+  if (!path.startsWith(`${root}${sep}`)) {
     json(response, 400, { error: 'Invalid static asset path' });
     return;
   }

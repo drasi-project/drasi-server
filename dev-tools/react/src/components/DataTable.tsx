@@ -3,11 +3,13 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useTableSort, type UseTableSortOptions, type SortConfig } from '../react/useTableSort';
 import { useRowAnimation, type AnimationDirection } from '../react/useRowAnimation';
+import { useReducedMotion } from '../react/useReducedMotion';
 import type { ColumnDef, RowAction } from './types';
+import { tableHeight, type TableHeight } from './sizing';
 
 const textOrder = new Intl.Collator('en-US', { sensitivity: 'variant', numeric: false });
 
@@ -66,6 +68,8 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
   rowKey: (row: T) => string;
   state?: DataTableState<E>;
   title?: string;
+  /** Names the table and its keyboard-scrollable viewport; defaults to title. Supply when no visible title exists. */
+  ariaLabel?: string;
   className?: string;
   style?: React.CSSProperties;
   /** The card element, for app-owned layout/overlay composition. */
@@ -76,8 +80,8 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
   headerClassName?: string;
   titleClassName?: string;
   rowClassName?: string | ((row: T, index: number) => string);
-  /** Legacy additional height class; default CSS height is 400px. */
-  height?: string;
+  /** Pixels, an explicit CSS length, or var(--token). Overrides style.height; default token is 400px. */
+  height?: TableHeight;
   actions?: readonly RowAction<T>[];
   actionsWidth?: string;
   /** Alongside the title. */
@@ -91,6 +95,8 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
   animateOnChange?: keyof T;
   /** Optional shared animation state; takes precedence over animateOnChange. */
   rowAnimations?: ReadonlyMap<string, AnimationDirection>;
+  /** Changed tokens restart controlled decoration without changing row identity. Share useRowAnimation.revisions. */
+  rowAnimationRevisions?: ReadonlyMap<string, number>;
   renderRow?: (
     row: T,
     columns: readonly ColumnDef<T>[],
@@ -109,17 +115,34 @@ export interface DataTableProps<T extends object = Record<string, unknown>, E ex
 const SortIndicator = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
   if (!direction) {
     return (
-      <svg className="drasi-sort-indicator drasi-sort-indicator--inactive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" focusable="false" className="drasi-sort-indicator drasi-sort-indicator--inactive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
       </svg>
     );
   }
   return (
-    <svg className="drasi-sort-indicator drasi-sort-indicator--active" fill="currentColor" viewBox="0 0 20 20">
+    <svg aria-hidden="true" focusable="false" className="drasi-sort-indicator drasi-sort-indicator--active" fill="currentColor" viewBox="0 0 20 20">
       <path d={direction === 'asc' ? 'M10 5l5 7H5l5-7z' : 'M10 15l-5-7h10l-5 7z'} />
     </svg>
   );
 };
+
+function AnimatedRow({ animation, revision, className, children }: {
+  animation: AnimationDirection;
+  revision?: number;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const [cycle, setCycle] = useState({ animation, revision, alternate: animation === null ? null : false });
+  // Compare rendered tokens rather than their parity: batched updates may skip revisions.
+  if (cycle.animation !== animation || !Object.is(cycle.revision, revision)) {
+    // An inactive commit may never be painted; retain the last active phase.
+    const alternate = animation === null ? cycle.alternate
+      : cycle.alternate === null ? false : !cycle.alternate;
+    setCycle({ animation, revision, alternate });
+  }
+  return <tr className={clsx(className, animation && cycle.alternate && 'drasi-row--repeat')}>{children}</tr>;
+}
 
 /**
  * Provider-free presentation with local or controlled sorting and optional
@@ -133,6 +156,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
   rowKey,
   state = {},
   title,
+  ariaLabel,
   className,
   style,
   containerRef,
@@ -153,6 +177,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
   renderHeader,
   animateOnChange,
   rowAnimations,
+  rowAnimationRevisions,
   renderRow,
   emptyMessage = 'No data available',
   renderLoading,
@@ -160,6 +185,8 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
   renderError,
   renderStale,
 }: DataTableProps<T, E>): React.ReactElement {
+  const reducedMotion = useReducedMotion();
+  const cardStyle = height === undefined ? style : { ...style, height: tableHeight(height) };
   const { sort, setSort, toggleSort } = useTableSort({ sort: controlledSort, defaultSort, onSortChange });
   const sortedRows = useMemo(() => {
     if (rows === null || !sort) return rows;
@@ -179,6 +206,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     data: rowAnimations === undefined && animateOnChange !== undefined ? rows : undefined,
   });
   const animations = rowAnimations ?? tracked.animations;
+  const revisions = rowAnimations === undefined ? tracked.revisions : rowAnimationRevisions;
   const context: DataTableRenderContext<T, E> = { rows: sortedRows, state, sort, setSort };
   let notice: React.ReactNode = null;
   if (state.error) {
@@ -203,7 +231,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
 
   if (rows === null && (state.error || state.loading)) {
     return (
-      <div ref={containerRef} style={style} className={clsx('drasi-query-table drasi-query-table--state', height, className)}>
+      <div ref={containerRef} style={cardStyle} className={clsx('drasi-query-table drasi-query-table--state', className)}>
         {title && <h2 className="drasi-query-table__state-title">{title}</h2>}
         {notice}
       </div>
@@ -220,8 +248,8 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
     </div>
   ) : null;
 
-  const defaultRow = (row: T, index: number, animation: AnimationDirection) => (
-    <tr className={clsx(
+  const defaultRow = (row: T, index: number, animation: AnimationDirection, revision: number | undefined) => (
+    <AnimatedRow animation={animation} revision={revision} className={clsx(
       'drasi-query-table__row',
       animation === 'up' && 'drasi-row--up',
       animation === 'down' && 'drasi-row--down',
@@ -261,6 +289,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
                   )}
                   title={action.label}
                   aria-label={action.label}
+                  aria-busy={loading || undefined}
                 >
                   {loading ? <div className="drasi-spinner drasi-spinner--small" /> : action.icon}
                 </button>
@@ -269,16 +298,21 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
           </div>
         </td>
       )}
-    </tr>
+    </AnimatedRow>
   );
 
   return (
-    <div ref={containerRef} style={style} className={clsx('drasi-query-table', height, className)}>
+    <div ref={containerRef} style={cardStyle} className={clsx('drasi-query-table', className)}>
       {notice}
       {renderHeader ? renderHeader({ ...context, defaultRender: defaultHeader }) : defaultHeader()}
       {headerSlot && <div className={clsx('drasi-query-table__header-slot', headerSlotClassName)}>{headerSlot}</div>}
-      <div className={clsx('drasi-query-table__scroll', tableClassName)}>
-        <table className="drasi-query-table__table">
+      <div
+        className={clsx('drasi-query-table__scroll', tableClassName)}
+        role="region"
+        aria-label={`${ariaLabel ?? title ?? 'Data'} table viewport`}
+        tabIndex={0}
+      >
+        <table className="drasi-query-table__table" aria-label={ariaLabel ?? title}>
           <thead className={clsx('drasi-query-table__thead', headerClassName)}>
             <tr className="drasi-query-table__header-row">
               {columns.map(column => {
@@ -287,6 +321,7 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
                 return (
                   <th
                     key={String(column.key)}
+                    scope="col"
                     style={column.width ? { width: column.width } : undefined}
                     className={clsx(
                       'drasi-query-table__heading',
@@ -296,37 +331,39 @@ export function DataTable<T extends object = Record<string, unknown>, E extends 
                       column.headerClassName,
                       sortable && 'drasi-query-table__heading--sortable',
                     )}
-                    onClick={() => sortable && toggleSort(String(column.key))}
-                    onKeyDown={event => {
-                      if (sortable && (event.key === 'Enter' || event.key === ' ')) {
-                        event.preventDefault();
-                        toggleSort(String(column.key));
-                      }
-                    }}
-                    tabIndex={sortable ? 0 : undefined}
                     aria-sort={direction === null ? undefined : direction === 'asc' ? 'ascending' : 'descending'}
                   >
-                    <span className={clsx(
+                    {sortable ? (
+                      <button type="button" className="drasi-query-table__sort-button" onClick={() => toggleSort(String(column.key))}>
+                        <span className={clsx(
+                          'drasi-query-table__heading-content',
+                          column.align === 'right' && 'drasi-query-table__heading-content--right',
+                        )}>
+                          {column.label}
+                          <SortIndicator direction={direction} />
+                        </span>
+                      </button>
+                    ) : <span className={clsx(
                       'drasi-query-table__heading-content',
                       column.align === 'right' && 'drasi-query-table__heading-content--right',
-                    )}>
-                      {column.label}
-                      {sortable && <SortIndicator direction={direction} />}
-                    </span>
+                    )}>{column.label}</span>}
                   </th>
                 );
               })}
-              {!!actions?.length && <th className="drasi-query-table__actions-heading" style={actionsWidth ? { width: actionsWidth } : undefined} />}
+              {!!actions?.length && <th scope="col" className="drasi-query-table__actions-heading" style={actionsWidth ? { width: actionsWidth } : undefined}>
+                <span className="drasi-visually-hidden">Actions</span>
+              </th>}
             </tr>
           </thead>
           <tbody>
             {sortedRows?.map((row, index) => {
               const key = rowKey(row);
-              const animation = animations.get(key) ?? null;
+              const animation = reducedMotion ? null : animations.get(key) ?? null;
+              const revision = revisions?.get(key);
               return (
                 <React.Fragment key={key}>
-                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation))
-                    : defaultRow(row, index, animation)}
+                  {renderRow ? renderRow(row, columns, animation, () => defaultRow(row, index, animation, revision))
+                    : defaultRow(row, index, animation, revision)}
                 </React.Fragment>
               );
             })}

@@ -29,6 +29,7 @@ const CODE_SNIPPET = `<TradingQueryTable<LimitOrderResult>
   queryId="active-orders-query"
   queryOptions={tradingQueryOptions('active-orders-query')}
   title="Limit Orders"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'orderType', label: 'Type' },
@@ -271,6 +272,7 @@ export const Orders: React.FC = () => {
       onClick={() => setDialogOpen(true)}
       className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
       title="New limit order"
+      aria-label="New limit order"
     >
       <AddIcon />
     </button>
@@ -282,6 +284,7 @@ export const Orders: React.FC = () => {
         queryId="active-orders-query"
         queryOptions={tradingQueryOptions('active-orders-query')}
         title="Limit Orders"
+        height={400}
         columns={columns}
         rowKey={(row) => String(row.id)}
         animateOnChange="status"

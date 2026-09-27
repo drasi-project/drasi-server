@@ -27,6 +27,7 @@ const CODE_SNIPPET = `<TradingQueryTable<Stock>
   queryId="watchlist-query"
   queryOptions={tradingQueryOptions('watchlist-query')}
   title="Watchlist"
+  height={400}
   columns={[
     { key: 'symbol', label: 'Symbol' },
     { key: 'name', label: 'Name' },
@@ -140,6 +141,7 @@ export const Watchlist: React.FC = () => {
       onClick={() => setShowAddModal(true)}
       className="p-1 rounded hover:bg-trading-border/50 transition-colors text-trading-blue"
       title="Add to watchlist"
+      aria-label="Add to watchlist"
     >
       <AddIcon />
     </button>
@@ -157,6 +159,7 @@ export const Watchlist: React.FC = () => {
         queryId="watchlist-query"
         queryOptions={tradingQueryOptions('watchlist-query')}
         title="Watchlist"
+        height={400}
         columns={columns}
         rowKey={(row) => row.symbol}
         animateOnChange="price"

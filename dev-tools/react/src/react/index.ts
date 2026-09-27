@@ -37,3 +37,4 @@ export type {
 } from './useRowAnimation';
 export { useTableSort } from './useTableSort';
 export type { SortConfig, UseTableSortOptions, UseTableSortResult } from './useTableSort';
+export { useReducedMotion } from './useReducedMotion';

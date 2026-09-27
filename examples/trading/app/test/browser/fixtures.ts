@@ -5,6 +5,7 @@
 
 import { test as base, expect, type Page } from '@playwright/test';
 import { FIXED_TIME } from '../fixtures/synthetic/trading';
+import { installPausedClock } from './clock';
 
 export { expect };
 export { panel, row, tradingDialog, openTrading, expectSymbols } from './locators';
@@ -21,8 +22,7 @@ export async function prepareTradingPage(page: Page, baseURL: string, errors: st
     errors.push(`Blocked unexpected outbound request: ${url.origin}${url.pathname}`);
     return route.abort('blockedbyclient');
   });
-  await page.clock.install({ time: new Date(FIXED_TIME) });
-  await page.clock.pauseAt(new Date(FIXED_TIME));
+  await installPausedClock(page, new Date(FIXED_TIME));
 }
 
 export const test = base.extend({

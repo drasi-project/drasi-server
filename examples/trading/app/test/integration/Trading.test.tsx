@@ -66,13 +66,15 @@ describe('Trading with the built @drasi/react dependency and synthetic transport
 
   it('reports duplicate-watchlist errors without hiding the dialog or changing rows', async () => {
     await renderTrading();
+    const watchlist = panel('Watchlist');
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Add to watchlist' }));
     await screen.findByRole('combobox');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(await screen.findByText('Failed to add to watchlist: AAPL already in watchlist')).not.toBeNull();
     expect(screen.getByRole('heading', { name: 'Add to Watchlist' })).not.toBeNull();
-    expect(symbols('Watchlist')).toEqual(['AAPL', 'MSFT']);
+    expect(Array.from(watchlist.querySelectorAll('tbody tr td:first-child'), cell => cell.textContent))
+      .toEqual(['AAPL', 'MSFT']);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 
@@ -190,12 +192,13 @@ describe('Trading with the built @drasi/react dependency and synthetic transport
     expect(symbols('Top Losers')).toEqual(['AMD', 'MSFT']);
     expect(symbols('High Volume')).toEqual(['AAPL', 'AMZN', 'MSFT']);
     const losers = within(panel('Top Losers')).getByRole('columnheader', { name: 'Change' });
-    fireEvent.click(losers);
+    fireEvent.click(within(losers).getByRole('button'));
     expect(symbols('Top Losers')).toEqual(['MSFT', 'AMD']);
     expect(losers.getAttribute('aria-sort')).toBe('ascending');
     const volume = within(panel('High Volume')).getByRole('columnheader', { name: 'Volume' });
-    fireEvent.click(volume);
-    fireEvent.keyDown(volume, { key: 'Enter' });
+    const user = userEvent.setup();
+    await user.click(within(volume).getByRole('button'));
+    await user.keyboard('{Enter}');
     expect(symbols('High Volume')).toEqual(['MSFT', 'AMZN', 'AAPL']);
     expect(volume.getAttribute('aria-sort')).toBe('descending');
     expect(symbols('High Volume')).not.toContain('AMD');

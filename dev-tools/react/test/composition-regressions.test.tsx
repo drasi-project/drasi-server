@@ -4,7 +4,8 @@
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import { StrictMode } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import * as components from '../src/components';
 import { DrasiProvider } from '../src/react';
@@ -50,10 +51,9 @@ it('performs only required resource validation reads, never an eager inspector r
 
 it('notifies once per sorting action under StrictMode, not inside an updater', async () => {
   const { onSortChange } = await liveTable();
-  const header = screen.getByRole('columnheader', { name: 'Units' });
-  fireEvent.click(header);
-  fireEvent.keyDown(header, { key: 'Enter' });
-  fireEvent.keyDown(header, { key: ' ' });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'Units' }));
+  await user.keyboard('{Enter} ');
   expect(onSortChange.mock.calls).toEqual([
     [{ column: 'value', direction: 'asc' }],
     [{ column: 'value', direction: 'desc' }],

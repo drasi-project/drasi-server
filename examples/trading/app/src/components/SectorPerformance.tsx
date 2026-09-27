@@ -26,6 +26,7 @@ const CODE_SNIPPET = `<TradingQueryTable<SectorPerformanceType>
   queryId="sector-performance-query"
   queryOptions={tradingQueryOptions('sector-performance-query')}
   title="Sector Performance"
+  height={400}
   columns={[
     { key: 'sector', label: 'Sector' },
     { key: 'stockCount', label: 'Stocks', align: 'right' },
@@ -91,6 +92,7 @@ export const SectorPerformance: React.FC = () => {
       queryId="sector-performance-query"
       queryOptions={tradingQueryOptions('sector-performance-query')}
       title="Sector Performance"
+      height={400}
       columns={columns}
       rowKey={(row) => row.sector || 'unknown'}
       animateOnChange="avgChangePercent"

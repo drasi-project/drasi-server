@@ -20,6 +20,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   QueryTable,
@@ -106,7 +107,9 @@ describe('QueryTable', () => {
       within(screen.getAllByRole('row')[1]).getByText('AAPL'),
     ).not.toBeNull();
 
-    fireEvent.keyDown(symbolHeader, { key: 'Enter' });
+    const user = userEvent.setup();
+    within(symbolHeader).getByRole('button').focus();
+    await user.keyboard('{Enter}');
     expect(symbolHeader.getAttribute('aria-sort')).toBe('descending');
     expect(
       within(screen.getAllByRole('row')[1]).getByText('MSFT'),
@@ -240,7 +243,7 @@ describe('QueryTable', () => {
 
     fireEvent.click(screen.getByRole('columnheader', { name: 'Device' }));
     expect(onSort).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('columnheader', { name: 'Units' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Units' }));
     expect(onSort).toHaveBeenLastCalledWith({ column: 'units', direction: 'asc' });
     expect(format).toHaveBeenCalled();
   });
@@ -265,7 +268,7 @@ describe('QueryTable', () => {
       .map(row => within(row).getAllByRole('cell')[0].textContent);
     expect(codes()).toEqual(['numeric', 'ten', 'two', 'null', 'missing']);
     expect(screen.getAllByText('-')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('columnheader', { name: 'Value' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Value' }));
     expect(codes()).toEqual(['null', 'missing', 'two', 'ten', 'numeric']);
   });
 });
