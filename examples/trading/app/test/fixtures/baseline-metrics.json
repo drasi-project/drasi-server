@@ -6,14 +6,25 @@
   "previousP4Measurement": "baseline-metrics-p4-v2.json",
   "previousP5Measurement": "baseline-metrics-p5-v2.json",
   "previousP6Measurement": "baseline-metrics-p6-v2.json",
+  "previousP7Measurement": "baseline-metrics-p7-v2.json",
+  "consumerDocumentationChange": {
+    "approval": "p7-consumer-baseline-approval.json",
+    "previousBaseline": "baseline-metrics-p7-pre-guides-v3.json"
+  },
   "artifactScope": "All package dist JS/CJS/declaration entries and chunks, all packaged CSS, and all recursive Trading JS/CSS assets; maps remain included in the tarball total",
   "predecessor": "a2b648062a4c55e036d68b6f26bf73b4e773bcf1",
   "environment": "Linux amd64, Node 22.20.0, React 18.3.1, Vitest 3.2.7 V8 with AST-aware remapping, Playwright 1.56.1",
   "artifactChange": {
-    "issue": 164,
-    "part": "B / P6",
-    "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
-    "reason": "P6 retains its original feature budget for the client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal, portal themes, validated sizing, native keyboard semantics and reduced motion. The incoming measurement policy counts all entry/shared/nested/lazy JS/CJS, both declaration formats, all packaged CSS and recursive app assets. Already-shipped P6 declarations total 82505 bytes, 6820 above the corrected P5 declaration total; this is an accounting correction, not new product growth. Original P1-P6 schema-2 records remain byte-identical. Original Trading colors, all five exact PNG images, financial behavior, coverage floors and the same 2% future-growth rule remain unchanged. The approved current backend/plugin graph is inherited from the parent rather than upgraded by P6. Full-rule Trading axe still uses exact predecessor non-regression fingerprints, not a blanket contrast exclusion or zero-violation claim; human AT and retained findings remain open. See examples/trading/TESTING.md.",
+    "issue": 165,
+    "part": "P7",
+    "predecessor": "959594b1ad1d8b0a891b9526d2376f30fe66182f",
+    "reason": "Retain the original P7 documentation/examples feature budget while normally integrating the approved runtime through P6. Complete accounting includes all entry/shared/nested/lazy JS/CJS, both declaration formats, every packaged stylesheet and recursive Trading assets. P7 already shipped 82505 declaration bytes; counting both formats is not product growth. Original P1-P7 schema-2 records remain byte-identical, including P7's measured documentation-only tarball advance from 204840 to 217782. Example closures/assets are measured separately and recursively. No package runtime/API/CSS, Trading query/design, critical coverage floor or 2% future-growth rule is changed. Human AT remains open and the original strict Trading contrast boundaries remain unwaived.",
+    "p6Change": {
+      "issue": 164,
+      "part": "B / P6",
+      "predecessor": "569b1d26e558b838d3a572bf7e2e5fbd6280eeaf",
+      "reason": "P6 retains its original feature budget for the client-only Radix Dialog 1.1.15 layer, app-owned Radix Tabs 1.1.13, bounded focus reveal, portal themes, validated sizing, native keyboard semantics and reduced motion. The incoming measurement policy counts all entry/shared/nested/lazy JS/CJS, both declaration formats, all packaged CSS and recursive app assets. Already-shipped P6 declarations total 82505 bytes, 6820 above the corrected P5 declaration total; this is an accounting correction, not new product growth. Original P1-P6 schema-2 records remain byte-identical. Original Trading colors, all five exact PNG images, financial behavior, coverage floors and the same 2% future-growth rule remain unchanged. The approved current backend/plugin graph is inherited from the parent rather than upgraded by P6. Full-rule Trading axe still uses exact predecessor non-regression fingerprints, not a blanket contrast exclusion or zero-violation claim; human AT and retained findings remain open. See examples/trading/TESTING.md."
+    },
     "p5Change": {
       "issue": 164,
       "part": "A / P5",
@@ -92,6 +103,28 @@
       "tradingCss": 21639,
       "tradingCssGzip": 5212
     },
+    "p6Sizes": {
+      "packageTarball": 204840,
+      "packageEsm": 89246,
+      "packageCjs": 98118,
+      "packageTypes": 82505,
+      "packageCss": 8616,
+      "tradingJs": 304459,
+      "tradingJsGzip": 92744,
+      "tradingCss": 25266,
+      "tradingCssGzip": 5900
+    },
+    "p7Sizes": {
+      "packageTarball": 217782,
+      "packageEsm": 89246,
+      "packageCjs": 98118,
+      "packageTypes": 82505,
+      "packageCss": 8616,
+      "tradingJs": 304459,
+      "tradingJsGzip": 92744,
+      "tradingCss": 25266,
+      "tradingCssGzip": 5900
+    },
     "p3FinalCi": {
       "revision": "a0569c2ae7b17f51996f431cf2264c636a19f3d1",
       "run": "https://github.com/drasi-project/drasi-server/actions/runs/35436454291",
@@ -147,19 +180,13 @@
     "esmDeclarations": 41244,
     "commonJsDeclarations": 41261
   },
-  "reviewBudgetChange": {
-    "scope": "#209 / #164 Part B published-runtime and inherited review propagation, archive and dual declarations only",
-    "approvedAt": "2026-09-27",
-    "previousBaseline": "baseline-metrics-p6-pre-review.json",
-    "previousCommit": "1a8d1f504f86dd469643c0c4f471beca2de0513b",
-    "previousBaselineSha256": "58fa504b7e24cdf40fa39e5e09573146aed4756f715d63e5cefaf38e9f01f45e",
-    "approvedArchiveBaseline": 208944,
-    "approvedDeclarationBaseline": 84985,
-    "firstFailedMeasurement": { "packageTarball": 208944, "packageTypes": 84985 },
-    "firstArtifactSha256": "f9e310996d069657b5c458a9c6e004571d669974f55abc12680ad4eb588ab5b9",
-    "previousCaps": { "packageTarball": 208936.8, "packageTypes": 84155.1 },
-    "previousOverages": { "packageTarball": 7.2, "packageTypes": 829.9 },
-    "reason": "The actual user approved only these two P6 baselines from the first preserved ordinary package measurement. The inherited initialization API adds 1066 declaration bytes over the prior P6 output; the package retains its complete published-runtime and review documentation, maps and notices. Every other size counter, coverage floor and the normal 2% rule are unchanged. Earlier P3/P4/P5 approvals remain scoped historical records, not transferred or compounded into P6; this approval does not apply to P7."
+  "p7MeasurementChange": {
+    "parent": "12402050d8ee490abc5eedbf6aa606c55638d4d0",
+    "originalP7Head": "cd474f83df7eb15a909b87134ff9822ba45b8116",
+    "p7TarballSha256": "664ae1da684690b2cf87dcdf777a765ca3f4a6151a7fffd70ee958d9cd876261",
+    "reason": "Retain P7's exact original schema-2 record separately and apply the incoming complete artifact collector to the original tarball. Both declaration formats were already shipped; the corrected 82505-byte total adds no product bytes. Preserve all earlier historical records, P7's feature budget, every coverage floor and the same 2% future-growth rule.",
+    "esmDeclarations": 41244,
+    "commonJsDeclarations": 41261
   },
   "coverage": {
     "package": {
@@ -176,7 +203,7 @@
     }
   },
   "sizes": {
-    "packageTarball": 208944,
+    "packageTarball": 225320,
     "packageEsm": 89246,
     "packageCjs": 98118,
     "packageTypes": 84985,

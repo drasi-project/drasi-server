@@ -1,0 +1,22 @@
+{
+  "issue": 165,
+  "scope": "#210 / P7 released-runtime review propagation, dual declarations only",
+  "approvedAt": "2026-09-27",
+  "actualUserDecision": "Approve only #210’s declaration baseline and continue (Recommended)",
+  "previousCommit": "2a36f857526baa08304a698131854f222b40b108",
+  "previousBaseline": "baseline-metrics-p7-pre-release-review.json",
+  "previousBaselineSha256": "47e8dd79d8d00636a6aaad72038bd0933d75d1fe3ec568d0fd36441744829a7e",
+  "firstArtifactSha256": "897c1853d22bda0a56578be3bdf0acb5681b956068c1c51ee6f8d0124338f39c",
+  "firstArtifactBytes": 229361,
+  "firstArtifactEntries": 65,
+  "firstDeclarationMeasurement": { "esm": 42484, "commonJs": 42501, "total": 84985 },
+  "previousDeclarationBaseline": 82505,
+  "previousDeclarationCap": 84155.1,
+  "firstDeclarationOverage": 829.9,
+  "approvedDeclarationBaseline": 84985,
+  "futureGrowthPercent": 2,
+  "declarationCap": 86684.7,
+  "unchangedArchiveBaseline": 225320,
+  "unchangedArchiveCap": 229826.4,
+  "reason": "The inherited DrasiInitializeOptions and pending-only connection retry argument add 1066 public declaration bytes over the prior P7 output of 83919. The actual user approved only this first measured declaration baseline. Every other package, Trading and example entry/total baseline, coverage floor and the normal 2% rule remains unchanged. Earlier-layer approvals are historical, not transferred or compounded; neither a later build nor the archive baseline defines this approval."
+}

@@ -10,10 +10,11 @@ export const requiredReadmeExamples = [
   'data-table.tsx', 'sort-uncontrolled.tsx', 'sort-controlled.tsx',
   'query-states.tsx', 'composed-table.tsx',
   'table-sizing.tsx', 'scoped-modal.tsx', 'reduced-motion.tsx',
+  'hooks-only.tsx', 'actions-slots.tsx', 'raw-identity.ts',
 ];
 
 /** Only an explicit first-line marker opts a README fence into compilation. */
-export function extractReadmeExamples(markdown) {
+export function extractReadmeExamples(markdown, required = requiredReadmeExamples) {
   const examples = new Map();
   const lines = markdown.split(/\r?\n/);
   let fence = null;
@@ -52,7 +53,20 @@ export function extractReadmeExamples(markdown) {
     }
   }
   if (fence) collect(false);
-  const missing = requiredReadmeExamples.filter(name => !examples.has(name));
+  const missing = required.filter(name => !examples.has(name));
   assert.equal(missing.length, 0, `Missing marked README examples: ${missing.join(', ')}`);
+  return [...examples.values()];
+}
+
+export function extractDocumentationExamples(documents) {
+  const examples = new Map();
+  for (const [file, markdown] of Object.entries(documents)) {
+    for (const example of extractReadmeExamples(markdown, [])) {
+      assert(!examples.has(example.name), `Duplicate documented example across files: ${example.name}`);
+      examples.set(example.name, { ...example, source: file });
+    }
+  }
+  const missing = requiredReadmeExamples.filter(name => !examples.has(name));
+  assert.equal(missing.length, 0, `Missing marked documentation examples: ${missing.join(', ')}`);
   return [...examples.values()];
 }
