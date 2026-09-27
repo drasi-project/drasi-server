@@ -95,17 +95,6 @@
     "esmDeclarations": 34875,
     "commonJsDeclarations": 34892
   },
-  "reviewBudgetChange": {
-    "scope": "#207 / #163 Part B inherited review contracts and query-error isolation only",
-    "approvedAt": "2026-09-27",
-    "previousBaseline": "baseline-metrics-p4-pre-review.json",
-    "previousCommit": "d131b561e852bd6593925872f123cf21300df3bb",
-    "previousBaselineSha256": "46d8db7eb3ab6af2b6fba1e951abc362696f666514e766a1e9115c0065874d5f",
-    "approvedArchiveBaseline": 192535,
-    "approvedDeclarationBaseline": 71207,
-    "firstFailedMeasurement": { "packageTarball": 192535, "packageTypes": 71207 },
-    "reason": "The user approved only these first measured P4 archive and declaration baselines for the inherited initialization public contract, HTTP-status and middleware fixes plus query-error isolation. This is a separate P4 approval, not a transferred P3 allowance. No content, maps, declarations or tests are excluded. All other metrics, coverage floors and the normal 2% future-growth policy remain unchanged."
-  },
   "coverage": {
     "package": {
       "statements": 62.52,
@@ -121,10 +110,10 @@
     }
   },
   "sizes": {
-    "packageTarball": 192535,
+    "packageTarball": 187699,
     "packageEsm": 98585,
     "packageCjs": 106000,
-    "packageTypes": 71207,
+    "packageTypes": 69767,
     "packageCss": 10043,
     "tradingJs": 250892,
     "tradingJsGzip": 73795,

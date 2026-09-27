@@ -22,7 +22,10 @@
  * — the package receives only references; setup stays in this application.
  */
 
-import type { QueryConfig, QuerySource, RouteUnidentified } from '@drasi/react/client';
+import {
+  createLegacyResultAdapter, DrasiError,
+  type QueryConfig, type QuerySource, type ResultRow, type RouteUnidentified,
+} from '@drasi/react/client';
 import { ALL_QUERIES } from '@/services/queries';
 
 /** Base URL of the Drasi Server REST API used by the Trading example. */
@@ -64,49 +67,60 @@ export const TRADING_STREAM = {
  * the original behavior the Trading example relied on; the reusable library is
  * intentionally agnostic to these application-specific shapes.
  */
-export const routeTradingData: RouteUnidentified = (rows, deliver) => {
-  const first = rows[0];
-  if (!first) {
-    return;
-  }
-
+function legacyQueryIds(row: ResultRow): string[] {
   // Portfolio summary (single aggregation row).
-  if (first.total_value !== undefined && first.total_cost !== undefined) {
-    deliver('portfolio-summary-query', rows);
+  if (row.total_value !== undefined && row.total_cost !== undefined) {
+    return ['portfolio-summary-query'];
   }
   // Limit-order data.
-  else if (first.order_type !== undefined && first.target_price !== undefined) {
-    deliver('active-orders-query', rows);
+  else if (row.order_type !== undefined && row.target_price !== undefined) {
+    return ['active-orders-query'];
   }
   // Full portfolio rows, or portfolio delete events that only carry an id.
   else if (
-    first.id !== undefined ||
-    (first.quantity !== undefined && first.purchase_price !== undefined)
+    row.id !== undefined ||
+    (row.quantity !== undefined && row.purchase_price !== undefined)
   ) {
-    deliver('portfolio-query', rows);
+    return ['portfolio-query'];
   }
   // Sector performance aggregation.
   else if (
-    first.sector !== undefined &&
-    (first.stockCount !== undefined || first.avgChangePercent !== undefined)
+    row.sector !== undefined &&
+    (row.stockCount !== undefined || row.avgChangePercent !== undefined)
   ) {
-    deliver('sector-performance-query', rows);
+    return ['sector-performance-query'];
   }
   // Watchlist rows.
-  else if (first.watchlist_id !== undefined) {
-    deliver('watchlist-query', rows);
+  else if (row.watchlist_id !== undefined) {
+    return ['watchlist-query'];
   }
   // Generic stock price rows feed every price-driven query.
-  else if (first.symbol !== undefined && first.price !== undefined) {
-    [
+  else if (row.symbol !== undefined && row.price !== undefined) {
+    return [
       'watchlist-query',
       'top-gainers-query',
       'top-losers-query',
       'high-volume-query',
       'price-ticker-query',
       'price-screener-query',
-    ].forEach((queryId) => deliver(queryId, rows));
-  } else {
-    console.warn('Unable to route data to specific query, data structure:', first);
+    ];
   }
+  throw new DrasiError('UNROUTABLE_RESULT');
+}
+
+export const routeTradingData: RouteUnidentified = (rows, deliver) => {
+  const routed = new Map<string, ResultRow[]>();
+  // Classify every row before delivery so a mixed batch cannot silently route
+  // an unknown row using its neighbour's identity. Never log arbitrary payloads.
+  for (const row of rows) {
+    for (const queryId of legacyQueryIds(row)) {
+      const selected = routed.get(queryId) ?? [];
+      selected.push(row);
+      routed.set(queryId, selected);
+    }
+  }
+  for (const [queryId, selected] of routed) deliver(queryId, selected);
 };
+
+/** Stable callable identity; explicit wire query IDs always bypass app routing. */
+export const tradingResultAdapter = createLegacyResultAdapter({ routeUnidentified: routeTradingData });

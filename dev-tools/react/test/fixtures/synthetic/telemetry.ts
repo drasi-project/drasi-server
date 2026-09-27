@@ -10,11 +10,14 @@ export const readings = [
 ];
 
 export const temperatureUpdate = {
-  query_id: 'building-readings',
-  results: [{ op: 'u', before: readings[0], after: { ...readings[0], value: '22.0' } }],
+  queryId: 'building-readings',
+  timestamp: 1,
+  results: [{ type: 'UPDATE', before: readings[0], after: { ...readings[0], value: '22.0' },
+    data: { ...readings[0], value: '22.0' } }],
 };
 
 export const pressureDelete = {
-  query_id: 'building-readings',
-  results: [{ op: 'd', before: readings[1] }],
+  queryId: 'building-readings',
+  timestamp: 2,
+  results: [{ type: 'DELETE', data: { device: readings[1].device, metric: readings[1].metric } }],
 };

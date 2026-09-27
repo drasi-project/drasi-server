@@ -7,6 +7,7 @@ import React from 'react';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient, type DrasiClientOptions } from '../src/client/DrasiClient';
+import { createLegacyResultAdapter } from '../src/client/results';
 import {
   DrasiClientProvider, DrasiProvider, useDrasiClient, useDrasiConnectionStatus,
   useDrasiQuery, useDrasiQueryDefinition, type DrasiContextValue,
@@ -35,7 +36,9 @@ function fixture() {
 function Probe({ observe, queryId = 'stocks' }: {
   queryId?: string; observe?: (value: DrasiContextValue) => void;
 }) {
-  const context = useDrasiClient(), query = useDrasiQuery(queryId), definition = useDrasiQueryDefinition(queryId);
+  const context = useDrasiClient(), query = useDrasiQuery(queryId, {
+    getKey: row => String(row.device), transform: row => row,
+  }), definition = useDrasiQueryDefinition(queryId);
   const status = useDrasiConnectionStatus();
   observe?.(context);
   return <div>
@@ -99,7 +102,8 @@ describe('real provider configuration and ownership', () => {
     ['headers', { headers: { Authorization: 'fixture-only' } }],
     ['timeout', { requestTimeoutMs: 20000 }],
     ['retry policy', { reconnect: { maxReconnectAttempts: 1 } }],
-    ['router identity', { routeUnidentified: () => {} }],
+    ['adapter identity', { resultAdapter: createLegacyResultAdapter() }],
+    ['reconciliation policy', { reconciliation: { maxPendingChanges: 50 } }],
     ['auth identity', { headers: () => ({}) }],
   ])(
     'disposes old work for a material %s change and ignores its retry/events', async (_label, change) => {
@@ -237,7 +241,7 @@ describe('real provider configuration and ownership', () => {
     const { factory, fetcher } = fixture();
     function Transform({ reject = false, scale = 1 }: { reject?: boolean; scale?: number }) {
       const query = useDrasiQuery<{ device: string; value: number }>('stocks', {
-        getKey: row => row.device,
+        getKey: row => String(row.device),
         transform: row => {
           if (reject || typeof row.device !== 'string' || typeof row.value !== 'number') {
             throw new Error('private user payload details');
@@ -253,11 +257,15 @@ describe('real provider configuration and ownership', () => {
     const view = render(tree(true, 1));
     await waitFor(() => expect(factory.instances).toHaveLength(1));
     act(() => factory.instances[0].open());
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('INVALID_PAYLOAD'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('RESULT_PROCESSING_FAILED'));
     const reads = fetcher.mock.calls.length;
     view.rerender(tree(false, 10));
-    act(() => factory.instances[0].message({ queryId: 'stocks', data: [{ device: 'valid', value: 2 }] }));
-    expect(screen.getByRole('status').textContent).toBe('[{"device":"valid","value":20}]');
+    expect(screen.getByRole('status').textContent).toBe(`[{"device":"${refs.instanceId}","value":10}]`);
+    act(() => factory.instances[0].message({
+      queryId: 'stocks', timestamp: 1, results: [{ type: 'ADD', data: { device: 'valid', value: 2 } }],
+    }));
+    expect(screen.getByRole('status').textContent)
+      .toBe(`[{"device":"${refs.instanceId}","value":10},{"device":"valid","value":20}]`);
     expect(fetcher).toHaveBeenCalledTimes(reads);
     expect(factory.instances).toHaveLength(1);
     view.unmount();

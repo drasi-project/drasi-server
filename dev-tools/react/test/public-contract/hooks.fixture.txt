@@ -6,11 +6,14 @@
 import { createElement, type ReactNode } from 'react';
 import {
   DrasiClient,
+  sse034ResultAdapter,
   type DrasiClientOptions,
   type ConnectionStatus,
   type DrasiError,
   type QueryConfig,
   type ResultRow,
+  type QueryStatus,
+  type QueryErrorScope,
 } from '@drasi/react/client';
 import {
   DrasiProvider,
@@ -46,6 +49,7 @@ const clientOptions: DrasiClientOptions = {
   serverUrl: 'https://drasi.example', instanceId: 'warehouse-west', queryIds: ['temperatures'],
   reaction: { id: 'warehouse-events', endpoint: 'https://events.example/warehouse' },
   credentials: 'same-origin', headers: { 'X-Consumer': 'packed-hooks' },
+  resultAdapter: sse034ResultAdapter, reconciliation: { maxPendingChanges: 10000 },
 };
 
 export const temperatureOptions: UseDrasiQueryOptions<Temperature> = {
@@ -60,10 +64,14 @@ export const temperatureOptions: UseDrasiQueryOptions<Temperature> = {
     return { stationId: wire.stationId, celsius: wire.millicelsius / 1000 };
   },
   getKey(row) {
+    const input: Readonly<ResultRow> = row;
+    // @ts-expect-error Raw keys cannot assume the transformed celsius field is numeric.
     const degrees: number = row.celsius;
-    // @ts-expect-error Keys receive transformed output, not raw input.
-    row.millicelsius;
-    return degrees < -273 ? null : row.stationId;
+    // @ts-expect-error Raw identity fields also require validation before use.
+    const unchecked: number = row.millicelsius;
+    if (typeof input.stationId !== 'string' || !input.stationId) throw new Error('Missing station identity');
+    void [degrees, unchecked];
+    return input.stationId;
   },
   postProcess(rows) {
     const output: Temperature[] = rows;
@@ -79,9 +87,15 @@ export const defaultInput: UseDrasiQueryOptions<Delivery> = {
     const input: ResultRow = raw;
     // @ts-expect-error Unspecified wire input properties require narrowing.
     raw.routeId.toUpperCase();
-    return { routeId: String(input.routeId), parcels: Number(input.parcels) };
+    if (typeof input.routeId !== 'string' || typeof input.parcels !== 'number') {
+      throw new TypeError('Expected a delivery');
+    }
+    return { routeId: input.routeId, parcels: input.parcels };
   },
-  getKey: row => row.routeId,
+  getKey: row => {
+    if (typeof row.routeId !== 'string' || !row.routeId) throw new Error('Missing route identity');
+    return row.routeId;
+  },
   postProcess: rows => rows.filter(row => row.parcels > 0),
 };
 
@@ -91,16 +105,51 @@ export const defaultOptions: UseDrasiQueryOptions = {
     // @ts-expect-error Default row values are unknown, never implicit any.
     const numeric: number = row.parcels;
     void numeric;
-    return typeof input.id === 'string' ? input.id : null;
+    if (typeof input.id !== 'string' || !input.id) throw new Error('Missing identity');
+    return input.id;
   },
+  transform: row => row,
 };
 
 // @ts-expect-error Transform callbacks must produce the chosen output model.
-export const invalidTransform: UseDrasiQueryOptions<Temperature> = { transform: row => ({ stationId: String(row.stationId), celsius: 'hot' }) };
-// @ts-expect-error getKey must return string or null.
-export const invalidKey: UseDrasiQueryOptions<Temperature> = { getKey: row => row.celsius };
+export const invalidTransform: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, transform: row => ({ stationId: String(row.stationId), celsius: 'hot' }) };
+// @ts-expect-error getKey must validate raw unknown fields and return a string.
+export const invalidKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: row => row.celsius };
 // @ts-expect-error React options do not accept deployment definitions.
-export const hookDeployment: UseDrasiQueryOptions<Temperature> = { queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n' }] };
+export const hookDeployment: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, queries: [{ id: 'temperatures', query: 'MATCH (n) RETURN n' }] };
+// @ts-expect-error Transforming a model never supplies its raw accumulation identity.
+export const missingKey: UseDrasiQueryOptions<Temperature> = { transform: temperatureOptions.transform };
+// @ts-expect-error A generic alone cannot assert a wire schema; transform is required.
+export const missingTransform: UseDrasiQueryOptions<Temperature> = { getKey: temperatureOptions.getKey };
+// @ts-expect-error Raw reads also require an explicit identity function.
+export const rawMissingKey: UseDrasiQueryOptions = { transform: row => row };
+// @ts-expect-error Raw reads also explicitly select row => row rather than omitting transform.
+export const rawMissingTransform: UseDrasiQueryOptions = { getKey: defaultOptions.getKey };
+// @ts-expect-error Null keys must not silently hide a raw identity.
+export const nullKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => null };
+// @ts-expect-error Numeric keys are not accepted.
+export const numericKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => 42 };
+// @ts-expect-error Undefined is not a valid raw key.
+export const undefinedKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: () => undefined };
+// @ts-expect-error A transformed-row key cannot be used as the raw identity callback.
+export const transformedKey: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, getKey: (row: Temperature) => row.stationId };
+// @ts-expect-error View generics must be object models, not primitives.
+export type PrimitiveView = UseDrasiQueryOptions<string>;
+// @ts-expect-error Post-processing preserves the selected output model.
+export const invalidPostProcess: UseDrasiQueryOptions<Temperature> = { ...temperatureOptions, postProcess: () => [{ routeId: 'north', parcels: 1 }] };
+
+export const nullableOptions: UseDrasiQueryOptions<Temperature> = {
+  ...temperatureOptions,
+  transform: raw => raw.hidden === true ? null : temperatureOptions.transform(raw),
+};
+export const readOnlyOptions: UseDrasiQueryOptions = {
+  ...defaultOptions,
+  transform(raw) {
+    // @ts-expect-error Projection must not mutate retained raw state.
+    raw.id = 'replacement';
+    return raw;
+  },
+};
 
 export const providerProps: DrasiProviderProps = { ...clientOptions, children: null };
 // @ts-expect-error Providers must not discover an implicit default instance.
@@ -111,6 +160,8 @@ export const providerDeployment: DrasiProviderProps = { ...providerProps, querie
 export const providerCredentials: DrasiProviderProps = { ...providerProps, credentials: true };
 // @ts-expect-error Headers cannot accept arbitrary object values through provider props.
 export const providerHeaders: DrasiProviderProps = { ...providerProps, headers: { Authorization: 7 } };
+// @ts-expect-error Providers do not restore implicit legacy routing.
+export const providerRouting: DrasiProviderProps = { ...providerProps, routeUnidentified() {} };
 
 const client = new DrasiClient(clientOptions);
 export const context: DrasiContextValue = { client, initialized: false, error: null, retry() {} };
@@ -121,7 +172,12 @@ export function Consumer(): ReactNode {
   const temperatures: UseDrasiQueryResult<Temperature> =
     useDrasiQuery<Temperature>('temperatures', temperatureOptions);
   const deliveries: UseDrasiQueryResult<Delivery> = useDrasiQuery<Delivery>('deliveries', defaultInput);
-  const defaultResult: UseDrasiQueryResult = useDrasiQuery('other');
+  const defaultResult: UseDrasiQueryResult = useDrasiQuery('other', defaultOptions);
+  const filtered: UseDrasiQueryResult<Temperature> = useDrasiQuery('temperatures', nullableOptions);
+  // @ts-expect-error Every hook call requires options, even a raw read.
+  useDrasiQuery('other');
+  // @ts-expect-error A typed generic does not waive the required raw key and validating transform.
+  useDrasiQuery<Temperature>('temperatures');
   const rows: ResultRow[] | null = defaultResult.data;
   // @ts-expect-error Default hook rows are not a typed domain model.
   const unknownRows: Temperature[] | null = defaultResult.data;
@@ -129,6 +185,10 @@ export function Consumer(): ReactNode {
   const wrongRows: Delivery[] | null = temperatures.data;
   const resultError: DrasiError | null = temperatures.error;
   const lastUpdate: Date | null = deliveries.lastUpdate;
+  const queryStatus: QueryStatus = temperatures.status;
+  const stale: boolean = temperatures.stale;
+  const scope: QueryErrorScope | null = temperatures.errorScope;
+  const retryQuery: () => void = temperatures.retry;
   const definition: UseDrasiQueryDefinitionResult = useDrasiQueryDefinition('temperatures');
   const config: QueryConfig | null = definition.config;
   const definitionError: DrasiError | null = definition.error;
@@ -136,11 +196,25 @@ export function Consumer(): ReactNode {
   const status: ConnectionStatus = useDrasiConnectionStatus();
   const url: string | null = useDrasiServerUiUrl();
   const owner: DrasiContextValue = useDrasiClient();
-  void [rows, unknownRows, wrongRows, resultError, lastUpdate, config, definitionError, loading, status, url, owner];
+  const retryConnection: () => void = owner.retry;
+  void [rows, unknownRows, wrongRows, resultError, lastUpdate, config, definitionError, loading, status, url, owner,
+    filtered, queryStatus, stale, scope, retryQuery, retryConnection];
   return createElement('p', null, temperatures.data?.[0]?.celsius ?? 'waiting');
 }
 
 export const owned = createElement(DrasiProvider, providerProps, createElement(Consumer));
 export const supplied = createElement(DrasiClientProvider, { value: context }, createElement(Consumer));
+export const initial: UseDrasiQueryResult<Temperature> = {
+  data: null, status: 'initial-loading', stale: false, loading: true,
+  error: null, errorScope: null, lastUpdate: null, retry() {},
+};
+// @ts-expect-error A socket's connected flag is not a query synchronization status.
+export const invalidQueryStatus: UseDrasiQueryResult<Temperature> = { ...initial, status: 'connected' };
+// @ts-expect-error Query staleness is a boolean, not an inferred truthy value.
+export const invalidStaleness: UseDrasiQueryResult<Temperature> = { ...initial, stale: 'yes' };
+// @ts-expect-error Hook error scope distinguishes query and connection, not arbitrary transport names.
+export const invalidScope: UseDrasiQueryResult<Temperature> = { ...initial, errorScope: 'stream' };
+// @ts-expect-error Hook failures preserve structured error identity.
+export const invalidError: UseDrasiQueryResult<Temperature> = { ...initial, error: 'offline' };
 // @ts-expect-error Hook-only entrypoints must not export the component layer.
 import { QueryTable } from '@drasi/react/react';
