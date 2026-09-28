@@ -100,6 +100,13 @@ pub(crate) fn component_links(
     kind: &str,
     id: &str,
 ) -> ComponentLinks {
+    const SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'.')
+        .remove(b'_')
+        .remove(b'~');
+    let instance_id = percent_encoding::utf8_percent_encode(instance_id, SEGMENT);
+    let id = percent_encoding::utf8_percent_encode(id, SEGMENT);
     let self_link = format!("{api_prefix}/instances/{instance_id}/{kind}/{id}");
     ComponentLinks {
         self_link: self_link.clone(),

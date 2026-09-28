@@ -38,6 +38,41 @@ The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, an
 batch counters. Counter reconstruction deliberately starts a new volatile run;
 these roundtrips do not claim durable source recovery or capture-file fsync.
 
+## Runtime and creation-path coverage
+
+All Server suites use ComputationGraph through the current `drasi-lib`; there
+is no alternative runtime to select. Existing ordinary API fixtures primarily
+use `with_source`, `with_query`, `with_reaction` and the corresponding add
+methods. Passing those fixtures does not establish that components added
+through native graph APIs work through the same management endpoints.
+
+`query_creation_path_test.rs` runs the same real Router scenario with ordinary
+and pipeline-created queries. It checks default/explicit instance addressing,
+configuration, diagnostics, results, SSE, start/stop, source and reaction PUT,
+dependent-consumer protection and query DELETE after data has been processed.
+Source and reaction factories in this fixture produce real application
+components, with handles used to verify the resulting dataflow. Core's
+`computation_api_mutations` integration suite additionally covers query
+replacement, shared-source rebinding, strict recovery, timer delivery and
+persistent-state deletion before same-ID recreation.
+
+The same suite also checks declared native Source/Reaction roles, failed
+construction, opaque configuration, diagnostics, lifecycle and removal.
+Namespaced component IDs are exercised by following the returned percent-encoded
+links through the mounted router. A graph role does not imply support for the
+legacy plugin interface; unsupported plugin operations must be explicit errors,
+not false resource-not-found responses or fabricated component instances.
+
+The complete functional gate includes existing ignored/E2E tests:
+
+```bash
+cargo test --locked --tests -- --include-ignored
+```
+
+Run it with the required local plugin fixtures available. Plain `cargo test`
+does not include ignored cases. A smoke script reporting skipped cases is not
+evidence that those plugin scenarios executed.
+
 ```bash
 # Run all automated tests (recommended)
 cargo test

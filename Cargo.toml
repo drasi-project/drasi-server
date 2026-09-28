@@ -108,6 +108,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 toml = "0.8"
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
+percent-encoding = "2"
 
 [dev-dependencies]
 # Testing utilities

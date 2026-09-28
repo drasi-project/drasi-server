@@ -491,6 +491,18 @@ Administrative endpoints under `/api/v1/instances/{instanceId}/computation`:
 
 Registration acknowledges the declarations, not successful creation or activation
 of every node. Inspect realization and lifecycle state after adding components.
+Built-in native queries also appear under the ordinary `/queries` routes.
+Configuration and status are available while stopped; results require the query
+to be running. A connected query-results outlet enables ordinary reactions and
+`/queries/{id}/attach` streaming. Pipeline queries support the ordinary query
+DELETE route, including dependent-consumer protection and owned-state cleanup.
+Source and reaction PUT routes retain their behavior when those components
+feed or consume pipeline queries. Arbitrary native topology changes use
+computation component operations.
+Declared native Source/Reaction roles also appear in their ordinary management
+routes. Opaque configuration does not hide a component or its diagnostics.
+Native components without the legacy plugin interface still require computation
+operations for factory or connection changes.
 Mutations honor read-only mode and persistence errors. `/snapshot` provides the
 ordinary component configuration. **Full configuration exports may contain secrets** and belong
 behind the same trusted administrative access boundary as configuration mutation;

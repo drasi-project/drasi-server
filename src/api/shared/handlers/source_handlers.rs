@@ -380,7 +380,7 @@ pub async fn get_source_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    core.get_source_info(&id)
+    core.get_source_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let events = core
@@ -400,7 +400,7 @@ pub async fn stream_source_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_source_info(&id)
+    core.get_source_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
@@ -429,7 +429,7 @@ pub async fn get_source_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_source_info(&id)
+    core.get_source_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
@@ -448,7 +448,7 @@ pub async fn stream_source_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_source_info(&id)
+    core.get_source_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core

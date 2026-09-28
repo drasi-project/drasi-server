@@ -220,7 +220,7 @@ pub async fn get_query_events(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<ComponentEventDto>>>, ErrorResponse> {
-    core.get_query_info(&id)
+    core.get_query_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let events = core
@@ -240,7 +240,7 @@ pub async fn stream_query_events(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_query_info(&id)
+    core.get_query_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core
@@ -269,7 +269,7 @@ pub async fn get_query_logs(
     Path(id): Path<String>,
     Query(query): Query<ObservabilityQuery>,
 ) -> Result<Json<ApiResponse<Vec<LogMessageDto>>>, ErrorResponse> {
-    core.get_query_info(&id)
+    core.get_query_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, _) = core
@@ -288,7 +288,7 @@ pub async fn stream_query_logs(
     Extension(core): Extension<Arc<drasi_lib::DrasiLib>>,
     Path(id): Path<String>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ErrorResponse> {
-    core.get_query_info(&id)
+    core.get_query_status(&id)
         .await
         .map_err(ErrorResponse::from)?;
     let (history, receiver) = core

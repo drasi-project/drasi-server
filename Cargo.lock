@@ -1426,6 +1426,7 @@ dependencies = [
  "mockall",
  "oci-client",
  "openssl",
+ "percent-encoding",
  "pretty_assertions",
  "regex",
  "reqwest 0.12.28",
