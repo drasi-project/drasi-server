@@ -130,6 +130,34 @@ enum Commands {
         #[command(subcommand)]
         action: plugin::PluginAction,
     },
+
+    /// Generate a standalone Cargo project containing only the configured components
+    Forge {
+        /// Output directory (must be empty or not yet exist)
+        #[arg(short, long, default_value = "forged")]
+        out: PathBuf,
+        /// Crate/binary name (default: derived from the instance id)
+        #[arg(long)]
+        name: Option<String>,
+        /// Omit runtime CLI/file overrides (components can still use env vars and secrets)
+        #[arg(long)]
+        sealed: bool,
+        /// Also generate a Dockerfile
+        #[arg(long)]
+        docker: bool,
+        /// Also generate a GitHub Actions release workflow
+        #[arg(long)]
+        ci: bool,
+        /// Run cargo build --release after generating
+        #[arg(long)]
+        build: bool,
+        /// Local drasi-core checkout (otherwise auto-detect a sibling checkout)
+        #[arg(long, conflicts_with = "crates")]
+        local: Option<PathBuf>,
+        /// Use compatible published crates instead of local path dependencies
+        #[arg(long)]
+        crates: bool,
+    },
 }
 
 #[tokio::main]
@@ -167,6 +195,26 @@ async fn main() -> Result<()> {
         Some(Commands::Plugin { action }) => {
             plugin::run_plugin_command(action, cli.config, cli.plugins_dir).await
         }
+        Some(Commands::Forge {
+            out,
+            name,
+            sealed,
+            docker,
+            ci,
+            build,
+            local,
+            crates,
+        }) => drasi_server::forge::run_forge(drasi_server::forge::ForgeArgs {
+            config: cli.config,
+            out,
+            name,
+            sealed,
+            docker,
+            ci,
+            build,
+            local,
+            crates,
+        }),
         None => {
             // Default behavior: run the server (backward compatible)
             let ui_override = if cli.enable_ui {

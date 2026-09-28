@@ -18,6 +18,7 @@ Drasi Server is a standalone server for real-time data change processing. It mon
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Running Drasi Server](#running-drasi-server)
+- [Generating a standalone project](#generating-a-standalone-project)
 - [Web UI Guide](#web-ui-guide)
 - [Instances](#instances)
 - [Solution Templates](#solution-templates)
@@ -33,6 +34,65 @@ Drasi Server is a standalone server for real-time data change processing. It mon
 - [Related Projects](#related-projects)
 
 ---
+
+## Generating a standalone project
+
+`drasi-server forge` generates a standalone Cargo source project from a Server
+YAML configuration. The generated program uses `drasi-lib` and only the selected
+component crates. It does not include Server's REST/application API, Web UI, or
+dynamic plugin loader. Component-provided endpoints (for example HTTP sources)
+remain available.
+
+```sh
+# Generate only; the output directory must be empty or not yet exist.
+drasi-server forge --config config/server.yaml --out ./standalone --crates
+cd standalone
+cargo build --release
+
+# Or use a local drasi-core checkout and optionally build in the same command.
+drasi-server forge --config config/server.yaml --out ./standalone-local \
+  --local ../drasi-core --name my-pipeline --build
+```
+
+Generation and compilation are separate unless `--build` is supplied. Use Rust
+1.95 or newer and the native prerequisites of the selected components (for
+example Clang/CMake for RocksDB, libjq for jq middleware, and protoc for gRPC).
+Without `--local` or `--crates`, a sibling Core checkout is preferred when found;
+otherwise the catalog's published versions are used. Local paths are absolute,
+so use `--crates` for portable projects. The catalog targets `drasi-lib 0.9.3` and
+`drasi-plugin-sdk 0.11.3`; here-traffic and open511 sources/bootstrap providers,
+the aws-sqs reaction, and the snapshot-test reaction currently require `--local`
+because compatible releases are unavailable. Unknown kinds fail generation.
+
+The program contains one instance, including its sources, queries, reactions,
+inline or referenced `bootstrapProviders`, identities (including `password`),
+secret store, state store, and source WAL. Query options, middleware, joins,
+subscriptions, capacity settings, and bootstrap timeouts are retained. With
+`persistIndex: true`, RocksDB is the default index provider and is also available
+as `storageBackend: rocksdb`; `enableArchive` and `memoryBudgetMiB` are preserved.
+Inline memory backends work; inline plugin backends, other named providers, and
+multiple instances are rejected rather than silently dropped.
+
+By default, generated programs accept `--id`, `--log-level`, and `--config`.
+Precedence is **CLI > environment > override file > embedded defaults**.
+Environment variables are `DRASI_INSTANCE_ID`, `DRASI_LOG_LEVEL` (then `RUST_LOG`),
+and `DRASI_CONFIG`. `config.sample.yaml` shows how to replace source/reaction
+config objects by id; it cannot change component kinds, topology, or query text.
+Unknown flags, fields, and component ids are errors. The optional `--sealed`
+mode omits this override layer and sample file. Component environment/secret
+references and external resources still work in sealed mode.
+
+WAL and indexes live in `./data/id-<hex-encoded-instance-id>/wal` and `/index`.
+The state store uses its configured path. Changing the instance id selects a
+different WAL/index directory. **Literal configuration values are embedded in
+the source and executable**: use environment/secret references for credentials
+and keep sensitive generated files private.
+
+`--docker` adds a Dockerfile; `--ci` adds a GitHub Actions artifact build workflow.
+Both require portable dependencies (or explicit vendoring of local dependencies).
+Native packages and mounted external files may need adjustment for the selected
+components. Keep the Cargo lockfile created by the first build. See the generated
+README and [reuse gaps](src/forge/reuse_gaps.md) for compatibility details.
 
 ## What is Drasi?
 

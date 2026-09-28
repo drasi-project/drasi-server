@@ -18,6 +18,7 @@ pub mod builder_result;
 pub mod config;
 pub mod dynamic_loading;
 pub mod factories;
+pub mod forge;
 pub mod index_provider;
 mod instance_paths;
 pub mod instance_registry;

@@ -1,0 +1,86 @@
+{
+  "comment": "Static component catalog for drasi-lib 0.9.3 / SDK 0.11.3, verified against drasi-core 32fc9052 and crates.io. local_only entries have no compatible published release; use --local. dir is relative to drasi-core. See REUSE_GAPS.md.",
+  "sources": [
+    {"kind": "otel", "crate": "drasi-source-otel", "version": "0.1.3", "descriptor": "OtelSourceDescriptor", "dir": "components/sources/otel"},
+    {"kind": "websocket", "crate": "drasi-source-websocket", "version": "0.1.1", "descriptor": "WebSocketSourceDescriptor", "dir": "components/sources/websocket"},
+    {"kind": "cloudflare-radar", "crate": "drasi-source-cloudflare-radar", "version": "0.1.10", "descriptor": "CloudflareRadarSourceDescriptor", "dir": "components/sources/cloudflare-radar"},
+    {"kind": "dataverse", "crate": "drasi-source-dataverse", "version": "0.2.12", "descriptor": "DataverseSourceDescriptor", "dir": "components/sources/dataverse"},
+    {"kind": "grpc", "crate": "drasi-source-grpc", "version": "0.2.12", "descriptor": "GrpcSourceDescriptor", "dir": "components/sources/grpc"},
+    {"kind": "gtfs-rt", "crate": "drasi-source-gtfs-rt", "version": "0.1.10", "descriptor": "GtfsRtSourceDescriptor", "dir": "components/sources/gtfs-rt"},
+    {"kind": "here-traffic", "crate": "drasi-source-here-traffic", "version": "0.1.0", "descriptor": "HereTrafficSourceDescriptor", "dir": "components/sources/here-traffic", "local_only": true},
+    {"kind": "http", "crate": "drasi-source-http", "version": "0.2.13", "descriptor": "HttpSourceDescriptor", "dir": "components/sources/http"},
+    {"kind": "hyperliquid", "crate": "drasi-source-hyperliquid", "version": "0.1.11", "descriptor": "HyperliquidSourceDescriptor", "dir": "components/sources/hyperliquid"},
+    {"kind": "kafka", "crate": "drasi-source-kafka", "version": "0.1.9", "descriptor": "KafkaSourceDescriptor", "dir": "components/sources/kafka"},
+    {"kind": "kubernetes", "crate": "drasi-source-kubernetes", "version": "0.1.10", "descriptor": "KubernetesSourceDescriptor", "dir": "components/sources/kubernetes"},
+    {"kind": "mock", "crate": "drasi-source-mock", "version": "0.2.12", "descriptor": "MockSourceDescriptor", "dir": "components/sources/mock"},
+    {"kind": "mssql", "crate": "drasi-source-mssql", "version": "0.2.12", "descriptor": "MsSqlSourceDescriptor", "dir": "components/sources/mssql"},
+    {"kind": "mysql", "crate": "drasi-source-mysql", "version": "0.2.10", "descriptor": "MySqlSourceDescriptor", "dir": "components/sources/mysql"},
+    {"kind": "neo4j", "crate": "drasi-source-neo4j", "version": "0.1.8", "descriptor": "Neo4jSourceDescriptor", "dir": "components/sources/neo4j"},
+    {"kind": "open511", "crate": "drasi-source-open511", "version": "0.1.1", "descriptor": "Open511SourceDescriptor", "dir": "components/sources/open511", "local_only": true},
+    {"kind": "oracle", "crate": "drasi-source-oracle", "version": "0.1.10", "descriptor": "OracleSourceDescriptor", "dir": "components/sources/oracle"},
+    {"kind": "platform", "crate": "drasi-source-platform", "version": "0.2.12", "descriptor": "PlatformSourceDescriptor", "dir": "components/sources/platform"},
+    {"kind": "postgres", "crate": "drasi-source-postgres", "version": "0.2.12", "descriptor": "PostgresSourceDescriptor", "dir": "components/sources/postgres"},
+    {"kind": "ris-live", "crate": "drasi-source-ris-live", "version": "0.1.11", "descriptor": "RisLiveSourceDescriptor", "dir": "components/sources/ris-live"},
+    {"kind": "sqlite", "crate": "drasi-source-sqlite", "version": "0.1.10", "descriptor": "SqliteSourceDescriptor", "dir": "components/sources/sqlite"},
+    {"kind": "sui-deepbook", "crate": "drasi-source-sui-deepbook", "version": "0.1.10", "descriptor": "SuiDeepBookSourceDescriptor", "dir": "components/sources/sui-deepbook"}
+  ],
+  "reactions": [
+    {"kind": "eventgrid", "crate": "drasi-reaction-eventgrid", "version": "0.1.3", "descriptor": "EventGridReactionDescriptor", "dir": "components/reactions/eventgrid"},
+    {"kind": "snapshot-test", "crate": "drasi-reaction-snapshot-test", "version": "0.11.3", "descriptor": "SnapshotTestReactionDescriptor", "dir": "components/reactions/snapshot-test", "local_only": true},
+    {"kind": "application", "crate": "drasi-reaction-application", "version": "0.3.13", "descriptor": "ApplicationReactionDescriptor", "dir": "components/reactions/application"},
+    {"kind": "aws-sqs", "crate": "drasi-reaction-aws-sqs", "version": "0.1.3", "descriptor": "SqsReactionDescriptor", "dir": "components/reactions/aws-sqs", "local_only": true},
+    {"kind": "azure-storage", "crate": "drasi-reaction-azure-storage", "version": "0.1.6", "descriptor": "AzureStorageReactionDescriptor", "dir": "components/reactions/azure-storage"},
+    {"kind": "dashboard", "crate": "drasi-reaction-dashboard", "version": "0.1.7", "descriptor": "DashboardReactionDescriptor", "dir": "components/reactions/dashboard"},
+    {"kind": "file", "crate": "drasi-reaction-file", "version": "0.1.6", "descriptor": "FileReactionDescriptor", "dir": "components/reactions/file"},
+    {"kind": "grpc", "crate": "drasi-reaction-grpc", "version": "0.4.5", "descriptor": "GrpcReactionDescriptor", "dir": "components/reactions/grpc"},
+    {"kind": "http", "crate": "drasi-reaction-http", "version": "0.3.5", "descriptor": "HttpReactionDescriptor", "dir": "components/reactions/http"},
+    {"kind": "log", "crate": "drasi-reaction-log", "version": "0.2.9", "descriptor": "LogReactionDescriptor", "dir": "components/reactions/log"},
+    {"kind": "loki", "crate": "drasi-reaction-loki", "version": "0.1.6", "descriptor": "LokiReactionDescriptor", "dir": "components/reactions/loki"},
+    {"kind": "mcp", "crate": "drasi-reaction-mcp", "version": "0.1.6", "descriptor": "McpReactionDescriptor", "dir": "components/reactions/mcp"},
+    {"kind": "platform", "crate": "drasi-reaction-platform", "version": "0.3.8", "descriptor": "PlatformReactionDescriptor", "dir": "components/reactions/platform"},
+    {"kind": "profiler", "crate": "drasi-reaction-profiler", "version": "0.3.8", "descriptor": "ProfilerReactionDescriptor", "dir": "components/reactions/profiler"},
+    {"kind": "rabbitmq", "crate": "drasi-reaction-rabbitmq", "version": "0.1.6", "descriptor": "RabbitMQReactionDescriptor", "dir": "components/reactions/rabbitmq"},
+    {"kind": "sse", "crate": "drasi-reaction-sse", "version": "0.3.8", "descriptor": "SseReactionDescriptor", "dir": "components/reactions/sse"},
+    {"kind": "storedproc-mssql", "crate": "drasi-reaction-storedproc-mssql", "version": "0.3.8", "descriptor": "MsSqlStoredProcReactionDescriptor", "dir": "components/reactions/storedproc-mssql"},
+    {"kind": "storedproc-mysql", "crate": "drasi-reaction-storedproc-mysql", "version": "0.3.8", "descriptor": "MySqlStoredProcReactionDescriptor", "dir": "components/reactions/storedproc-mysql"},
+    {"kind": "storedproc-postgres", "crate": "drasi-reaction-storedproc-postgres", "version": "0.3.8", "descriptor": "PostgresStoredProcReactionDescriptor", "dir": "components/reactions/storedproc-postgres"}
+  ],
+  "indexes": [
+    {"kind": "rocksdb", "crate": "drasi-index-rocksdb", "version": "0.6.4", "provider": "RocksDbIndexProvider", "dir": "components/indexes/rocksdb"},
+    {"kind": "redis", "crate": "drasi-index-garnet", "version": "0.3.7", "provider": "GarnetIndexProvider", "dir": "components/indexes/garnet"}
+  ],
+  "bootstrappers": [
+    {"kind": "application", "crate": "drasi-bootstrap-application", "version": "0.2.15", "descriptor": "ApplicationBootstrapDescriptor", "dir": "components/bootstrappers/application"},
+    {"kind": "cloudflare-radar", "crate": "drasi-bootstrap-cloudflare-radar", "version": "0.1.10", "descriptor": "CloudflareRadarBootstrapDescriptor", "dir": "components/bootstrappers/cloudflare-radar"},
+    {"kind": "dataverse", "crate": "drasi-bootstrap-dataverse", "version": "0.2.15", "descriptor": "DataverseBootstrapDescriptor", "dir": "components/bootstrappers/dataverse"},
+    {"kind": "gtfs-rt", "crate": "drasi-bootstrap-gtfs-rt", "version": "0.1.10", "descriptor": "GtfsRtBootstrapDescriptor", "dir": "components/bootstrappers/gtfs-rt"},
+    {"kind": "here-traffic", "crate": "drasi-bootstrap-here-traffic", "version": "0.1.0", "descriptor": "HereTrafficBootstrapDescriptor", "dir": "components/bootstrappers/here-traffic", "local_only": true},
+    {"kind": "http", "crate": "drasi-bootstrap-http", "version": "0.1.14", "descriptor": "HttpBootstrapDescriptor", "dir": "components/bootstrappers/http"},
+    {"kind": "kafka", "crate": "drasi-bootstrap-kafka", "version": "0.1.9", "descriptor": "KafkaBootstrapDescriptor", "dir": "components/bootstrappers/kafka"},
+    {"kind": "kubernetes", "crate": "drasi-bootstrap-kubernetes", "version": "0.1.10", "descriptor": "KubernetesBootstrapDescriptor", "dir": "components/bootstrappers/kubernetes"},
+    {"kind": "mssql", "crate": "drasi-bootstrap-mssql", "version": "0.2.15", "descriptor": "MsSqlBootstrapDescriptor", "dir": "components/bootstrappers/mssql"},
+    {"kind": "mysql", "crate": "drasi-bootstrap-mysql", "version": "0.2.13", "descriptor": "MySqlBootstrapDescriptor", "dir": "components/bootstrappers/mysql"},
+    {"kind": "neo4j", "crate": "drasi-bootstrap-neo4j", "version": "0.1.8", "descriptor": "Neo4jBootstrapDescriptor", "dir": "components/bootstrappers/neo4j"},
+    {"kind": "noop", "crate": "drasi-bootstrap-noop", "version": "0.2.15", "descriptor": "NoOpBootstrapDescriptor", "dir": "components/bootstrappers/noop"},
+    {"kind": "open511", "crate": "drasi-bootstrap-open511", "version": "0.1.0", "descriptor": "Open511BootstrapDescriptor", "dir": "components/bootstrappers/open511", "local_only": true},
+    {"kind": "oracle", "crate": "drasi-bootstrap-oracle", "version": "0.1.10", "descriptor": "OracleBootstrapDescriptor", "dir": "components/bootstrappers/oracle"},
+    {"kind": "platform", "crate": "drasi-bootstrap-platform", "version": "0.2.15", "descriptor": "PlatformBootstrapDescriptor", "dir": "components/bootstrappers/platform"},
+    {"kind": "postgres", "crate": "drasi-bootstrap-postgres", "version": "0.2.15", "descriptor": "PostgresBootstrapDescriptor", "dir": "components/bootstrappers/postgres"},
+    {"kind": "scriptfile", "crate": "drasi-bootstrap-scriptfile", "version": "0.2.15", "descriptor": "ScriptFileBootstrapDescriptor", "dir": "components/bootstrappers/scriptfile"},
+    {"kind": "sqlite", "crate": "drasi-bootstrap-sqlite", "version": "0.1.13", "descriptor": "SqliteBootstrapDescriptor", "dir": "components/bootstrappers/sqlite"},
+    {"kind": "sui-deepbook", "crate": "drasi-bootstrap-sui-deepbook", "version": "0.1.10", "descriptor": "SuiDeepBookBootstrapDescriptor", "dir": "components/bootstrappers/sui-deepbook"}
+  ],
+  "secretStores": [
+    {"kind": "azure-keyvault", "crate": "drasi-secret-store-azure-keyvault", "version": "0.1.6", "descriptor": "AzureKeyVaultSecretStoreDescriptor", "dir": "components/secret_stores/azure-keyvault"},
+    {"kind": "file", "crate": "drasi-secret-store-file", "version": "0.1.7", "descriptor": "FileSecretStoreDescriptor", "dir": "components/secret_stores/file"},
+    {"kind": "keyring", "crate": "drasi-secret-store-keyring", "version": "0.1.6", "descriptor": "KeyringSecretStoreDescriptor", "dir": "components/secret_stores/keyring"}
+  ],
+  "identityProviders": [
+    {"kind": "aws", "crate": "drasi-identity-aws", "version": "0.2.8", "descriptor": "AwsIdentityProviderDescriptor", "dir": "components/identity/aws"},
+    {"kind": "azure", "crate": "drasi-identity-azure", "version": "0.2.15", "descriptor": "AzureIdentityProviderDescriptor", "dir": "components/identity/azure"}
+  ],
+  "stateStores": [
+    {"kind": "redb", "crate": "drasi-state-store-redb", "version": "0.2.8", "provider": "RedbStateStoreProvider", "dir": "components/state_stores/redb"}
+  ],
+  "wal": {"kind": "redb", "crate": "drasi-wal-redb", "version": "0.2.10", "provider": "RedbWalProvider", "dir": "components/wals/redb"}
+}
