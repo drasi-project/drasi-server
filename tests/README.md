@@ -73,6 +73,12 @@ Run it with the required local plugin fixtures available. Plain `cargo test`
 does not include ignored cases. A smoke script reporting skipped cases is not
 evidence that those plugin scenarios executed.
 
+The live-generator HTTP data-flow fixture accepts a valid ADD or UPDATE as its
+first received event because the source starts before the reaction subscribes.
+It validates both envelope shapes, including the UPDATE before image; fixed
+bootstrap fixtures still require ADD. Source timing is not changed to force a
+particular first notification.
+
 ```bash
 # Run all automated tests (recommended)
 cargo test

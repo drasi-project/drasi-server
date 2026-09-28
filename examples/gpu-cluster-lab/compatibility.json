@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "operational-published-row-stream",
+  "drasi_core_reviewed_base_commit": "61d89d95",
+  "drasi_server_reviewed_base_commit": "e53a14a",
+  "qualified_source_manifest_sha256": "22f9f9821291a79ea666f4ac8115098f0e29206c93dcfefd657d8cff6505c472",
+  "qualified_runtime_plugin_image": "sha256:287153b35e58a824bdff74c89f2fc1312701097a61eae0f0071eab4b80017243",
+  "qualified_control_ui_image": "sha256:4621babd6e39c1632891e7654aef51c4da6dec1a870b67ef58e279291b3c6678",
+  "react_source_commit": "2a36f857526baa08304a698131854f222b40b108",
+  "react_package": "@drasi/react@0.1.0",
+  "react_peer_version": "18.3.1",
+  "regorus_version": "0.12.0",
+  "good_lp_version": "1.15.0",
+  "solver": "microlp",
+  "live_compatibility_verified": true,
+  "ordinary_live_acceptance_verified": true,
+  "complete_transaction_policy_context_verified": false,
+  "strict_acceptance_verified": false,
+  "postgres_transaction_completion": "not-supported",
+  "native_cq_timer_slice_verified": true,
+  "native_http_receipt_status_slice_verified": true,
+  "native_public_abi_load_macos_verified": true,
+  "native_invalidation_recovery_slice_verified": true,
+  "native_read_only_capacity_diagnostic_verified": true,
+  "docker_control_ui_arm64_verified": true,
+  "docker_partial_restart_persistence_verified": true,
+  "confirmed_missing_contracts": [
+    "Complete-transaction policy-context guarantee remains deferred for user design review"
+  ],
+  "notes": [
+    "The qualified release images include the tested local changes based on the recorded commits; the source manifest identifies the exact source files.",
+    "The demo uses one ComputationGraph with direct in-memory query indexes and real PostgreSQL, native transformers, Server APIs and SSE.",
+    "PostgreSQL retains published committed row-by-row delivery. Strict acceptance still fails only its final complete-transaction capability assertion; that assertion is not bypassed.",
+    "React is consumed as a built tarball, never a source alias.",
+    "Rust and UI transitive versions are recorded in their example-owned lockfiles."
+  ]
+}

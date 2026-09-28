@@ -1,0 +1,11 @@
+.env
+.env.new
+.build/
+target/
+ui/node_modules/
+ui/dist/
+ui/vendor/
+test-results/
+playwright-report/
+__pycache__/
+*.py[cod]

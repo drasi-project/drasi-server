@@ -1,0 +1,29 @@
+{
+  "name": "gpu-cluster-lab-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "dev": "vite --host 127.0.0.1",
+    "dev:mock": "vite --mode mock --host 127.0.0.1 --port 5173 --strictPort"
+  },
+  "dependencies": {
+    "@drasi/react": "file:vendor/drasi-react.tgz",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "jsdom": "^26.1.0",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": "22.x || 24.x"
+  }
+}

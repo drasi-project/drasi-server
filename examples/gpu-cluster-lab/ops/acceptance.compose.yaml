@@ -1,0 +1,24 @@
+services:
+  migrate:
+    image: ${GPU_LAB_TEST_CONTROL_IMAGE:?Build the control image first}
+    pull_policy: never
+  drasi:
+    image: ${GPU_LAB_TEST_RUNTIME_IMAGE:?Build the runtime image first}
+    pull_policy: never
+    environment:
+      PLAN_ENDPOINT: ${GPU_LAB_TEST_PLAN_ENDPOINT:-http://control:5400/internal/placement-plans}
+      GPU_LAB_DIAGNOSTICS: ${GPU_LAB_DIAGNOSTICS:-0}
+  control:
+    image: ${GPU_LAB_TEST_CONTROL_IMAGE:?Build the control image first}
+    pull_policy: never
+    ports: !reset []
+  writer-faults:
+    image: node:24-bookworm-slim
+    profiles: ["writer-recovery"]
+    working_dir: /app
+    entrypoint: ["node", "--experimental-strip-types", "ops/check-writer-recovery.mjs", "serve"]
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    volumes:
+      - ./ops:/app/ops:ro
+      - ./ui/src/rows.ts:/app/ui/src/rows.ts:ro

@@ -1,0 +1,14 @@
+.env*
+target
+ui/node_modules
+ui/dist
+ui/vendor
+.build/*
+!.build/react-source
+!.build/runtime-src
+!.build/npm-cache
+.build/react-source/**/node_modules
+.build/react-source/**/dist
+.git
+**/__pycache__
+**/*.py[cod]

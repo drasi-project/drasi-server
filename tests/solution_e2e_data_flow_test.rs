@@ -63,21 +63,62 @@ fn sensor_bootstrap_entries() -> Vec<&'static str> {
 
 fn added_row<'a>(payload: &'a serde_json::Value, query_id: &str) -> &'a serde_json::Value {
     assert_eq!(payload["operation"], "ADD");
+    changed_row(payload, query_id)
+}
+
+fn changed_row<'a>(payload: &'a serde_json::Value, query_id: &str) -> &'a serde_json::Value {
     assert_eq!(payload["queryId"], query_id);
     assert!(payload["sequenceId"]
         .as_u64()
         .is_some_and(|sequence| sequence > 0));
     chrono::DateTime::parse_from_rfc3339(payload["timestamp"].as_str().expect("result timestamp"))
         .expect("RFC 3339 result timestamp");
-    assert!(
-        payload.get("before").is_none(),
-        "an ADD must not contain a before image"
-    );
+    match payload["operation"].as_str() {
+        Some("ADD") => assert!(
+            payload.get("before").is_none(),
+            "an ADD must not contain a before image"
+        ),
+        Some("UPDATE") => assert!(
+            payload
+                .get("before")
+                .is_some_and(serde_json::Value::is_object),
+            "an UPDATE must contain an object-valued before image"
+        ),
+        operation => panic!("expected ADD or UPDATE, got {operation:?}"),
+    }
     let row = payload
         .get("after")
-        .expect("an ADD must contain its result row");
+        .expect("a change must contain its result row");
     assert!(row.is_object(), "expected an object-valued result row");
     row
+}
+
+#[test]
+fn live_result_envelopes_validate_both_add_and_update_images() {
+    let add = json!({
+        "operation":"ADD", "queryId":"q", "sequenceId":1,
+        "timestamp":"2026-01-01T00:00:00Z", "after":{"sensorId":"sensor_1","temp":20.0}
+    });
+    assert_eq!(added_row(&add, "q"), &add["after"]);
+    let update = json!({
+        "operation":"UPDATE", "queryId":"q", "sequenceId":2,
+        "timestamp":"2026-01-01T00:00:01Z",
+        "before":{"sensorId":"sensor_1","temp":20.0},
+        "after":{"sensorId":"sensor_1","temp":25.0}
+    });
+    assert_eq!(changed_row(&update, "q"), &update["after"]);
+}
+
+#[test]
+#[should_panic(expected = "an UPDATE must contain an object-valued before image")]
+fn live_update_without_a_before_image_is_rejected() {
+    changed_row(
+        &json!({
+            "operation":"UPDATE", "queryId":"q", "sequenceId":2,
+            "timestamp":"2026-01-01T00:00:01Z", "after":{"sensorId":"sensor_1","temp":25.0}
+        }),
+        "q",
+    );
 }
 
 /// Create a solution template with scriptfile bootstrap and HTTP reaction
@@ -262,7 +303,9 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
 
     // Validate that sensor data fields are present (from the query RETURN clause)
     // Query returns: s.sensor_id AS sensorId, s.temperature AS temp
-    let row = added_row(&payload, "high-temp-query");
+    // The source starts before the reaction subscribes, so its first received
+    // live event can already be an update of an existing sensor.
+    let row = changed_row(&payload, "high-temp-query");
     let has_sensor_id = row.get("sensorId").is_some();
     let has_temp = row.get("temp").is_some();
 
@@ -281,6 +324,10 @@ async fn test_e2e_scriptfile_to_http_reaction_with_filter() {
         sensor_id.starts_with("sensor_"),
         "Expected sensorId to start with 'sensor_'. Got: {sensor_id}"
     );
+    if payload["operation"] == "UPDATE" {
+        assert_eq!(payload["before"]["sensorId"], row["sensorId"]);
+        assert!(payload["before"]["temp"].is_number());
+    }
 
     // Validate temp is a number
     let temp = row.get("temp");
