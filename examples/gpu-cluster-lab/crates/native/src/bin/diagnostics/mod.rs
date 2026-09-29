@@ -3,7 +3,11 @@ use async_trait::async_trait;
 use drasi_lib::computation::v1::*;
 use gpu_native::projections;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, num::NonZeroUsize, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroUsize,
+    path::PathBuf,
+};
 use tokio::{fs, io::AsyncWriteExt};
 
 pub const SINK: &str = "diagnostic-envelopes";
@@ -14,6 +18,55 @@ pub const QUERIES: [&str; 3] = [
     "diagnostic-placement-predicates",
 ];
 const MAX_BYTES: u64 = 256 * 1024 * 1024;
+
+fn log_queries(value: Option<&str>) -> Result<Vec<String>> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let all = gpu_native::inputs::DATABASE_QUERIES
+        .into_iter()
+        .chain(
+            gpu_native::inputs::processing_queries()
+                .into_iter()
+                .map(|q| q.0),
+        )
+        .chain(gpu_contracts::UI_QUERIES)
+        .collect::<BTreeSet<_>>();
+    let queries = if value == "*" {
+        all.iter().copied().collect::<Vec<_>>()
+    } else {
+        value.split(',').map(str::trim).collect()
+    };
+    let mut seen = BTreeSet::new();
+    for query in &queries {
+        ensure!(
+            all.contains(query),
+            "unknown GPU_LAB_LOG_QUERIES query: {query:?}"
+        );
+        ensure!(
+            seen.insert(*query),
+            "duplicate GPU_LAB_LOG_QUERIES query: {query}"
+        );
+    }
+    Ok(queries.into_iter().map(str::to_owned).collect())
+}
+
+pub fn log_reaction() -> Result<Option<drasi_reaction_log::LogReaction>> {
+    let value = match std::env::var("GPU_LAB_LOG_QUERIES") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error).context("invalid GPU_LAB_LOG_QUERIES"),
+    };
+    let queries = log_queries(value.as_deref())?;
+    if queries.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(
+        drasi_reaction_log::LogReaction::builder("gpu-query-log")
+            .with_queries(queries)
+            .build()?,
+    ))
+}
 
 pub fn enabled() -> Result<bool> {
     match std::env::var("GPU_LAB_DIAGNOSTICS") {
@@ -193,6 +246,20 @@ impl EnvelopeSink for Recorder {
 mod tests {
     use super::*;
     use drasi_core::models::{ElementMetadata, ElementReference, SourceChange};
+
+    #[test]
+    fn query_logging_is_opt_in_and_uses_the_real_query_inventory() -> Result<()> {
+        assert!(log_queries(None)?.is_empty());
+        assert_eq!(log_queries(Some("*"))?.len(), 20);
+        assert_eq!(
+            log_queries(Some("input-settings, ui-gpus"))?,
+            ["input-settings", "ui-gpus"]
+        );
+        for invalid in ["", "missing", "ui-gpus,", "ui-gpus,ui-gpus", "*,ui-gpus"] {
+            assert!(log_queries(Some(invalid)).is_err(), "{invalid:?}");
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn recorder_preserves_envelopes_and_rejects_repeated_sequences() -> Result<()> {

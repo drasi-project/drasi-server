@@ -44,6 +44,7 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN}
       PLAN_ENDPOINT: http://control:5400/internal/placement-plans
       RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_reaction_sse=warn
+      GPU_LAB_LOG_QUERIES:
     depends_on:
       migrate:
         condition: service_completed_successfully

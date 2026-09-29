@@ -1,8 +1,12 @@
 import { useId, useState, type ReactNode } from 'react';
 import type { ResultRow } from '@drasi/react/client';
-import { AllocationTiles, count, gib } from './Evidence';
+import { count, gib } from './Evidence';
 import { boolean, nullableNumber, number, text } from './rows';
 import { label } from './labels';
+import { HierarchyIcon } from './Hierarchy';
+import { ReplicaPlacements } from './ReplicaPlacements';
+import type { ReplicaView } from './replicas';
+import type { ReplicaCue } from './replicaMotion';
 
 const icons = {
   expand: <path d="m6 9 6 6 6-6"/>,
@@ -28,8 +32,8 @@ function IconButton({ icon, title, onClick, disabled = false, attention = false,
   </button>;
 }
 
-export function GpuCard({ gpu: g, placement, workloads, stale, allocationStale, permission, disabled, actions, selectedWorkload, onToggleWorkload }: {
-  gpu: ResultRow; placement: ResultRow | undefined; workloads: ResultRow[]; stale: boolean; allocationStale: boolean;
+export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled, actions, selectedWorkload, onToggleWorkload }: {
+  gpu: ResultRow; replicaView: ReplicaView; cues: readonly ReplicaCue[]; stale: boolean;
   permission?: { workloadName: string; authorization: string; inspect: () => void };
   disabled: boolean;
   selectedWorkload: string | null; onToggleWorkload: (id: string) => void;
@@ -40,9 +44,14 @@ export function GpuCard({ gpu: g, placement, workloads, stale, allocationStale, 
   const reporting = boolean(g, 'reporting_enabled'), powered = boolean(g, 'powered_on'), scheduling = boolean(g, 'scheduling_enabled');
   const memory = nullableNumber(g, 'modeled_memory_used_mib');
   const policyTitle = permission ? `${permission.workloadName} · policy: ${label('authorization', permission.authorization)}` : undefined;
-  return <article aria-labelledby={headingId} className={`gpu gpu-card ${expanded ? 'gpu-expanded' : 'gpu-condensed'}${permission ? ` destination-${permission.authorization}` : ''}`}>
+  const reportAge = g.sample_age_ms === null ? 'No report available' : `${number(g, 'sample_age_ms') / 1000}s ago`;
+  const reportPlan = g.sample_plan_version === null ? 'No plan applied' : `Reported plan v${g.sample_plan_version}`;
+  const reportSummary = g.sample_age_ms === null ? 'Awaiting first report' : `${reportAge} · ${reportPlan}`;
+  return <article aria-labelledby={headingId} className={`gpu gpu-card ${expanded ? 'gpu-expanded' : 'gpu-condensed'}${permission ? ` destination-${permission.authorization}` : ''}`}
+    data-hierarchy-kind="gpu" data-hierarchy-id={text(g, 'gpu_id')}>
     <div className="gpu-title">
-      <strong id={headingId}>{text(g, 'name')}</strong>
+      <HierarchyIcon kind="gpu"/>
+      <strong id={headingId}><span className="hierarchy-type">GPU {number(g, 'slot')}</span>{' '}<span className="gpu-name">{text(g, 'name')}</span></strong>
       <button type="button" className={`policy-indicator${permission ? ` policy-${permission.authorization}` : ''}`}
         disabled={!permission} aria-hidden={!permission} aria-haspopup="dialog"
         aria-label={policyTitle ? `Policy details: ${policyTitle}` : undefined} title={policyTitle} onClick={permission?.inspect}>
@@ -58,10 +67,7 @@ export function GpuCard({ gpu: g, placement, workloads, stale, allocationStale, 
     </div>
     <div className="gpu-status-line">
       <span className={`badge ${!stale && g.health === 'healthy' ? 'good' : 'warning'}`}>{stale && 'Previously: '}{label('health', text(g, 'health'))}</span>
-      <span className="muted" title="Age and plan version of the latest GPU report">
-        {g.sample_age_ms === null ? 'No report available' : `${number(g, 'sample_age_ms') / 1000}s ago`}
-        {' · '}{g.sample_plan_version === null ? 'Plan unknown' : `Plan v${g.sample_plan_version}`}
-      </span>
+      <span className="muted gpu-report-summary" title={`Latest GPU report: ${reportSummary}`}>{reportSummary}</span>
     </div>
     {(!powered || !reporting || !scheduling) && <p className="gpu-setting-state">
       {[!powered && 'Power setting: off', !reporting && 'Reports paused', !scheduling && 'Excluded from plans'].filter(Boolean).join(' · ')}
@@ -72,7 +78,7 @@ export function GpuCard({ gpu: g, placement, workloads, stale, allocationStale, 
       <Gauge label="Compute demand" value={nullableNumber(g, 'total_compute_units')} max={85} unit="units"
         description="Last reported compute demand / planning limit, in illustrative demand units, not percent"/>
     </div>
-    <AllocationTiles gpu={g} placement={placement} workloads={workloads} stale={allocationStale} compact={!expanded}
+    <ReplicaPlacements gpuId={text(g, 'gpu_id')} view={replicaView} compact={!expanded} cues={cues}
       selectedWorkload={selectedWorkload} onToggleWorkload={onToggleWorkload}/>
     <div id={detailsId} hidden={!expanded} className="gpu-details">
       {expanded && <>
@@ -83,7 +89,7 @@ export function GpuCard({ gpu: g, placement, workloads, stale, allocationStale, 
         <p>Background activity requests {number(g, 'background_compute_units')} demand units and {gib(number(g, 'background_memory_mib'))}.
           {' '}That leaves {gib(number(g, 'memory_mib') - number(g, 'background_memory_mib'))} for all workload reservations on this GPU.</p>
         <p>Report interval: {number(g, 'interval_ms')} ms · inventory revision {text(g, 'inventory_revision')} / report-settings revision {text(g, 'telemetry_revision')}.</p>
-        <p>Latest report: sequence {count(g.report_sequence)}, inventory revision {count(g.sample_inventory_revision)}, report-settings revision {count(g.sample_telemetry_revision)};
+        <p>Latest report: {reportPlan}; sequence {count(g.report_sequence)}, inventory revision {count(g.sample_inventory_revision)}, report-settings revision {count(g.sample_telemetry_revision)};
           {' '}background memory requested {gib(nullableNumber(g, 'reported_background_memory_requested_mib'))}.
           {' '}Timestamp: {g.report_time_ms === null ? 'none' : new Date(number(g, 'report_time_ms')).toISOString()}.</p>
         <p>Reports become overdue at five seconds. Settings changes and action confirmations do not count as new reports.

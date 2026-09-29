@@ -11,7 +11,8 @@ const sdk = vi.hoisted(() => ({
 }));
 let rows: MockRows;
 let root: Root;
-vi.mock('@drasi/react/react', () => ({
+vi.mock('@drasi/react/react', async importOriginal => ({
+  ...await importOriginal<typeof import('@drasi/react/react')>(),
   useDrasiClient: () => ({ ...sdk, error: null }),
   useDrasiConnectionStatus: () => ({ connected: sdk.connected, error: sdk.transportError ?? undefined }),
   useDrasiQuery: (id: QueryId) => ({

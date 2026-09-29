@@ -93,6 +93,7 @@ pub struct Processor {
     decisions: VecDeque<String>,
     diagnostic_pending: bool,
     published_plan: Option<String>,
+    published_locations: BTreeMap<String, (Uuid, String)>,
 }
 impl Processor {
     pub fn new(
@@ -140,6 +141,7 @@ impl Processor {
             decisions: VecDeque::new(),
             diagnostic_pending: false,
             published_plan: None,
+            published_locations: BTreeMap::new(),
         })
     }
     fn now(&self) -> Result<u64> {
@@ -612,7 +614,11 @@ impl Processor {
                             self.initialized = self.simulation.is_initialized();
                             self.status(
                                 changes,
-                                "initialization-error",
+                                if self.initialized {
+                                    "application-rejected"
+                                } else {
+                                    "initialization-error"
+                                },
                                 Some(format!("{error:#}")),
                             )?;
                             return Ok(());
@@ -647,6 +653,7 @@ impl Processor {
                 .map(|e| e.id.clone())
                 .collect::<BTreeSet<_>>();
             changes.extend(self.emitter.retain("PolicyEnforcement", &keys)?);
+            self.published_locations.retain(|id, _| keys.contains(id));
             let mut actual = Vec::new();
             for execution in executions {
                 let mut value = serde_json::to_value(&execution.assignment)?;
@@ -673,17 +680,63 @@ impl Processor {
                         .record("PolicyEnforcement", &execution.id, &value)?
                 {
                     changes.push(change);
-                    let kind = match execution.state {
-                        gpu_simulator::Execution::Running => "execution-running",
-                        gpu_simulator::Execution::Suspended => "suspended",
-                        gpu_simulator::Execution::Fenced => "fenced",
+                    let config = &self
+                        .simulation_inputs
+                        .as_ref()
+                        .context("execution inputs missing")?
+                        .configuration;
+                    let assignment = &execution.assignment;
+                    let name = config
+                        .workloads
+                        .get(&assignment.workload_id)
+                        .map(|workload| workload.name.clone())
+                        .unwrap_or_else(|| assignment.workload_id.to_string());
+                    let destination = config
+                        .gpus
+                        .get(&assignment.gpu_id)
+                        .map(|gpu| format!("{} / GPU {}", gpu.host_id, gpu.gpu_index))
+                        .unwrap_or_else(|| assignment.gpu_id.to_string());
+                    let previous = self.published_locations.insert(
+                        execution.id.clone(),
+                        (assignment.gpu_id, destination.clone()),
+                    );
+                    let replica = format!("{name} replica {}", assignment.replica_index + 1);
+                    let (kind, message) = match execution.state {
+                        gpu_simulator::Execution::Running => match previous {
+                            Some((gpu, origin)) if gpu != assignment.gpu_id => (
+                                "replica-moved",
+                                format!("{replica} moved from {origin} to {destination}."),
+                            ),
+                            _ => (
+                                "execution-running",
+                                format!("{replica} is running on {destination}."),
+                            ),
+                        },
+                        gpu_simulator::Execution::Suspended => (
+                            "suspended",
+                            format!("{replica} paused on {destination}; memory retained."),
+                        ),
+                        gpu_simulator::Execution::Fenced => (
+                            "fenced",
+                            format!(
+                                "{replica} stopped by policy on {destination}; resources released."
+                            ),
+                        ),
                     };
+                    let decision = self
+                        .simulation_inputs
+                        .as_ref()
+                        .filter(|input| {
+                            self.simulation.application.applied_plan_version.as_deref()
+                                == Some(input.plan.plan_version.to_string().as_str())
+                        })
+                        .map(|input| input.plan.decision_id);
                     self.workers.hub.event(
                         epoch,
                         self.descriptor.id().as_str(),
                         kind,
-                        format!("Replica {}: {}", execution.id, execution.reason),
-                        None,
+                        message,
+                        decision,
                         self.simulation.application.applied_plan_version.clone(),
                     )?;
                 }

@@ -1460,6 +1460,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "drasi-reaction-log"
+version = "0.2.8"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "drasi-core",
+ "drasi-lib",
+ "drasi-plugin-sdk",
+ "futures",
+ "handlebars 5.1.2",
+ "log",
+ "ordered-float",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "drasi-reaction-sse"
 version = "0.3.7"
 dependencies = [
@@ -2147,6 +2170,7 @@ dependencies = [
  "drasi-host-sdk",
  "drasi-lib",
  "drasi-middleware",
+ "drasi-reaction-log",
  "drasi-reaction-sse",
  "drasi-server",
  "drasi-source-application",

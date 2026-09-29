@@ -1,5 +1,6 @@
 use super::*;
 use crate::projections as views;
+use drasi_lib::channels::ResultDiff;
 use serde_json::{json, Value};
 
 #[tokio::test]
@@ -425,6 +426,148 @@ async fn deliver(
     Ok(output)
 }
 
+#[tokio::test]
+async fn simulator_activity_names_actual_moves_without_inventing_moves_on_bootstrap_or_rejection(
+) -> Result<()> {
+    let fixture = fixtures::load("baseline")?;
+    let epoch = Uuid::new_v4();
+    let workers = Arc::new(Workers::default());
+    let mut simulator = processor(Kind::Simulator, workers.clone())?;
+    let factory = AuxiliaryFactory {
+        reaction: false,
+        hub: workers.hub.clone(),
+    };
+    let mut runtime = crate::status::Producer::new(
+        factory
+            .metadata()
+            .descriptor(ComponentId::try_new("move-status")?)?,
+        json!({"stream":"move-status"}),
+        workers.hub.clone(),
+    )?;
+    runtime.start().await?;
+    simulator.start().await?;
+    let mut input = query("move-input", "MATCH (i:Input) RETURN i.payload AS payload").await?;
+    let mut timeline = query("move-timeline", views::TIMELINE).await?;
+    let mut source = Emitter::new(StreamId::try_new("move-source")?);
+    let boot = bootstrap(&fixture, epoch)?;
+    let Message::Bootstrap { mut plan, .. } = boot.clone() else {
+        unreachable!()
+    };
+    deliver(&mut simulator, &mut input, &mut source, "bootstrap", &boot).await?;
+    deliver(
+        &mut simulator,
+        &mut input,
+        &mut source,
+        "policy",
+        &Message::Policy {
+            epoch,
+            config_fingerprint: fixture.configuration.fingerprint()?,
+            assessment: Evaluator::new()?.evaluate(&fixture.configuration)?,
+        },
+    )
+    .await?;
+    let output = runtime.next().await?.context("initial status missing")?;
+    let rows = project(&mut timeline, &[output]).await?;
+    assert!(!rows.iter().any(|row| row["kind"] == "replica-moved"));
+    let workload = fixture
+        .configuration
+        .workloads
+        .values()
+        .find(|w| w.name == "chat")
+        .unwrap();
+    let gpu = |host: &str, slot| {
+        fixture
+            .configuration
+            .gpus
+            .values()
+            .find(|g| g.host_id == host && g.gpu_index == slot)
+            .unwrap()
+            .gpu_id
+    };
+    let assignment = plan
+        .assignments
+        .iter_mut()
+        .find(|a| a.workload_id == workload.workload_id && a.replica_index == 0)
+        .unwrap();
+    assignment.gpu_id = gpu("inference-b", 1);
+    plan.plan_version += 1;
+    plan.decision_id = Uuid::new_v4();
+    validate_assignments(
+        &fixture.configuration,
+        &fixtures::baseline_capacities(&fixture.configuration),
+        &plan.assignments,
+    )?;
+    let changed = deliver(
+        &mut simulator,
+        &mut input,
+        &mut source,
+        "allocation",
+        &Message::Allocation {
+            epoch,
+            plan: plan.clone(),
+        },
+    )
+    .await?;
+    assert_eq!(
+        payloads(&changed, "AppliedPlan")?[0]["application"]["applied_plan_version"],
+        "2"
+    );
+    let output = runtime.next().await?.context("move status missing")?;
+    let rows = project(&mut timeline, &[output]).await?;
+    let moves = rows
+        .iter()
+        .filter(|row| row["kind"] == "replica-moved")
+        .collect::<Vec<_>>();
+    assert_eq!(moves.len(), 1);
+    assert_eq!(
+        moves[0]["message"],
+        "chat replica 1 moved from inference-a / GPU 1 to inference-b / GPU 1."
+    );
+    assert_eq!(moves[0]["decision_id"], plan.decision_id.to_string());
+    assert_eq!(moves[0]["plan_version"], "2");
+    deliver(
+        &mut simulator,
+        &mut input,
+        &mut source,
+        "same-allocation",
+        &Message::Allocation {
+            epoch,
+            plan: plan.clone(),
+        },
+    )
+    .await?;
+    plan.plan_version += 1;
+    plan.assignments
+        .iter_mut()
+        .find(|a| a.workload_id == workload.workload_id && a.replica_index == 0)
+        .unwrap()
+        .gpu_id = gpu("inference-c", 0);
+    let rejected = deliver(
+        &mut simulator,
+        &mut input,
+        &mut source,
+        "rejected-allocation",
+        &Message::Allocation { epoch, plan },
+    )
+    .await?;
+    let applied = payloads(&rejected, "AppliedPlan")?;
+    assert!(applied[0]["application"]["error"].is_string());
+    assert_eq!(applied[0]["application"]["applied_plan_version"], "2");
+    let output = runtime.next().await?.context("rejection status missing")?;
+    let rows = project(&mut timeline, &[output]).await?;
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["kind"] == "replica-moved")
+            .count(),
+        1
+    );
+    simulator.stop().await?;
+    input.stop().await?;
+    timeline.stop().await?;
+    runtime.stop().await?;
+    Ok(())
+}
+
 fn row<'a>(rows: &'a [Value], key: &str, id: &str) -> Result<&'a Value> {
     let matches: Vec<_> = rows.iter().filter(|row| row[key] == id).collect();
     anyhow::ensure!(
@@ -457,6 +600,341 @@ fn database_configuration(
         )?);
     }
     source.emit(changes, None)
+}
+
+async fn project_workload_updates(
+    query: &mut ContinuousQueryTransformer,
+    outputs: &[OutputEnvelope],
+    live: &mut BTreeMap<String, Value>,
+) -> Result<BTreeMap<String, u64>> {
+    let key = |value: &Value| {
+        value["workload_id"]
+            .as_str()
+            .map(str::to_owned)
+            .context("missing workload result key")
+    };
+    for output in outputs {
+        let projected = query
+            .transform(InputEnvelope {
+                port: PortId::try_new("in")?,
+                envelope: output.envelope.clone(),
+            })
+            .await?;
+        for output in &projected {
+            for change in QueryChangeCodec::to_legacy_result(&output.envelope)?.results {
+                match change {
+                    ResultDiff::Add { data, .. } => {
+                        live.insert(key(&data)?, data);
+                    }
+                    ResultDiff::Update { before, after, .. } => {
+                        if key(&before)? != key(&after)? {
+                            live.remove(&key(&before)?);
+                        }
+                        live.insert(key(&after)?, after);
+                    }
+                    ResultDiff::Delete { data, .. } => {
+                        live.remove(&key(&data)?);
+                    }
+                    ResultDiff::Aggregation { before, after, .. } => {
+                        if let Some(before) = before {
+                            if key(&before)? != key(&after)? {
+                                live.remove(&key(&before)?);
+                            }
+                        }
+                        live.insert(key(&after)?, after);
+                    }
+                    ResultDiff::Noop => {}
+                }
+            }
+        }
+        query.delivery_completed(&projected).await?;
+    }
+    let mut snapshot = BTreeMap::new();
+    let mut identities = BTreeMap::new();
+    for record in query.results().snapshot()?.rows.values() {
+        let row = QueryChangeCodec::decode_row(record)?;
+        let value = QueryChangeCodec::row_values_to_json(&row.values);
+        let id = key(&value)?;
+        assert!(
+            snapshot.insert(id.clone(), value).is_none(),
+            "duplicate workload row"
+        );
+        identities.insert(id, row.signature);
+    }
+    assert_eq!(
+        live, &snapshot,
+        "SSE updates keyed by workload_id must agree with the query snapshot"
+    );
+    Ok(identities)
+}
+
+#[tokio::test]
+async fn workload_identity_survives_readiness_and_execution_transitions() -> Result<()> {
+    let mut query = configured_query(
+        "ui-workloads",
+        views::WORKLOADS,
+        views::execution_settings(),
+    )
+    .await?;
+    let mut source = Emitter::new(StreamId::try_new("workload-identity")?);
+    let fixture = fixtures::load("baseline")?;
+    let mut live = BTreeMap::new();
+    project_workload_updates(
+        &mut query,
+        &database_configuration(&mut source, &fixture)?,
+        &mut live,
+    )
+    .await?;
+    assert_eq!(live.len(), 4);
+    assert!(live.values().all(|row| row["running_replicas"].is_null()));
+
+    let mut changes = Vec::new();
+    changes.extend(source.record("AppliedPlan", "demo", &json!({"source_ready":true}))?);
+    changes.extend(source.record("DemoReadiness", "demo", &json!({"inputs_ready":true}))?);
+    for assignment in &fixture.assignments {
+        let mut value = serde_json::to_value(assignment)?;
+        value["state"] = json!("running");
+        changes.extend(source.record(
+            "PolicyEnforcement",
+            &format!("{}/{}", assignment.workload_id, assignment.replica_index),
+            &value,
+        )?);
+    }
+    let identities =
+        project_workload_updates(&mut query, &source.emit(changes, None)?, &mut live).await?;
+    assert!(
+        live.values()
+            .all(|row| row["running_replicas"].as_f64() == Some(2.0)),
+        "expected two running replicas per workload: {live:?}"
+    );
+
+    for ready in [false, true, false, true] {
+        let changes = source
+            .record("DemoReadiness", "demo", &json!({"inputs_ready":ready}))?
+            .into_iter()
+            .collect();
+        let current =
+            project_workload_updates(&mut query, &source.emit(changes, None)?, &mut live).await?;
+        assert_eq!(
+            current, identities,
+            "readiness must not change workload row identities"
+        );
+        assert_eq!(live.len(), fixture.configuration.workloads.len());
+        for row in live.values() {
+            assert_eq!(row["running_replicas"].as_f64(), Some(2.0));
+            if ready {
+                assert_eq!(row["ready_replicas"].as_f64(), Some(0.0));
+            } else {
+                assert!(row["ready_replicas"].is_null());
+            }
+        }
+    }
+
+    for state in ["suspended", "fenced", "running"] {
+        let mut changes = Vec::new();
+        for assignment in &fixture.assignments {
+            let mut value = serde_json::to_value(assignment)?;
+            value["state"] = json!(state);
+            changes.extend(source.record(
+                "PolicyEnforcement",
+                &format!("{}/{}", assignment.workload_id, assignment.replica_index),
+                &value,
+            )?);
+        }
+        let current =
+            project_workload_updates(&mut query, &source.emit(changes, None)?, &mut live).await?;
+        assert_eq!(current, identities);
+        for row in live.values() {
+            assert_eq!(
+                row["running_replicas"].as_f64(),
+                Some(if state == "running" { 2.0 } else { 0.0 })
+            );
+            assert_eq!(
+                row["suspended_replicas"].as_f64(),
+                Some(if state == "suspended" { 2.0 } else { 0.0 })
+            );
+            assert_eq!(
+                row["fenced_replicas"].as_f64(),
+                Some(if state == "fenced" { 2.0 } else { 0.0 })
+            );
+        }
+    }
+    let removed = source.remove("AppliedPlan", "demo")?.unwrap();
+    let current =
+        project_workload_updates(&mut query, &source.emit(vec![removed], None)?, &mut live).await?;
+    assert_eq!(current, identities);
+    assert!(live.values().all(|row| row["running_replicas"].is_null()));
+    let restored = source
+        .record("AppliedPlan", "demo", &json!({"source_ready":true}))?
+        .unwrap();
+    let current =
+        project_workload_updates(&mut query, &source.emit(vec![restored], None)?, &mut live)
+            .await?;
+    assert_eq!(current, identities);
+
+    let mut renamed = fixture
+        .configuration
+        .workloads
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    renamed.name = "renamed-service".into();
+    renamed.revision += 1;
+    let changes = source
+        .record(
+            "workload_requirements",
+            &renamed.workload_id.to_string(),
+            &renamed,
+        )?
+        .into_iter()
+        .collect();
+    let current =
+        project_workload_updates(&mut query, &source.emit(changes, None)?, &mut live).await?;
+    assert_eq!(current, identities);
+    assert_eq!(
+        live[&renamed.workload_id.to_string()]["name"],
+        "renamed-service"
+    );
+    let removed = source
+        .remove("workload_requirements", &renamed.workload_id.to_string())?
+        .unwrap();
+    let current =
+        project_workload_updates(&mut query, &source.emit(vec![removed], None)?, &mut live).await?;
+    assert_eq!(live.len(), 3);
+    assert!(!live.contains_key(&renamed.workload_id.to_string()));
+    assert_eq!(current.len(), 3);
+    query.stop().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejected_startup_plan_preserves_observed_input_readiness() -> Result<()> {
+    for denied in [false, true] {
+        let mut fixture = fixtures::load("baseline")?;
+        if denied {
+            let policy = fixture
+                .configuration
+                .policies
+                .get_mut("demo-permissive")
+                .unwrap();
+            policy.allowed_regions.clear();
+            policy.revision += 1;
+        } else {
+            for settings in fixture.settings.values_mut() {
+                settings.powered_on = false;
+                settings.revision += 1;
+            }
+        }
+        let epoch = Uuid::new_v4();
+        let workers = Arc::new(Workers::default());
+        let mut simulator = processor(Kind::Simulator, workers.clone())?;
+        let factory = AuxiliaryFactory {
+            reaction: false,
+            hub: workers.hub.clone(),
+        };
+        let mut runtime = crate::status::Producer::new(
+            factory
+                .metadata()
+                .descriptor(ComponentId::try_new("runtime-status")?)?,
+            json!({"stream":"rejected-plan-status"}),
+            workers.hub.clone(),
+        )?;
+        runtime.start().await?;
+        simulator.start().await?;
+        let mut input_query = query(
+            "startup-inputs",
+            "MATCH (i:Input) RETURN i.payload AS payload",
+        )
+        .await?;
+        let mut status_query = query("startup-status", views::STATUS).await?;
+        let mut source = Emitter::new(StreamId::try_new("rejected-plan-source")?);
+        deliver(
+            &mut simulator,
+            &mut input_query,
+            &mut source,
+            "bootstrap",
+            &bootstrap(&fixture, epoch)?,
+        )
+        .await?;
+        let assessment = Evaluator::new()?.evaluate(&fixture.configuration)?;
+        deliver(
+            &mut simulator,
+            &mut input_query,
+            &mut source,
+            "policy",
+            &Message::Policy {
+                epoch,
+                config_fingerprint: fixture.configuration.fingerprint()?,
+                assessment: assessment.clone(),
+            },
+        )
+        .await?;
+        let output = simulator.on_wakeup().await?;
+        let applied = payloads(&output, "AppliedPlan")?;
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0]["source_ready"], true);
+        assert!(applied[0]["application"]["applied_plan_version"].is_null());
+        assert!(applied[0]["application"]["error"].is_string());
+        assert_eq!(applied[0]["execution"], json!([]));
+        let mut observation = RuntimeObservation {
+            sequence: 1,
+            observation_epoch: epoch,
+            scenario: "baseline".into(),
+            scheduling_signature: "observed-scheduling-input".into(),
+            policy_signature: assessment.policy_signature,
+            source_bootstrap_complete: true,
+            query_bootstrap_complete: true,
+            query_results_current: false,
+            reset_in_progress: false,
+            detail: "Bootstrapped inputs with a rejected saved plan".into(),
+            required_components: [simulator.descriptor().id().to_string()]
+                .into_iter()
+                .collect(),
+            components: vec![RuntimeComponent {
+                component_id: simulator.descriptor().id().to_string(),
+                status: "running".into(),
+                error: None,
+            }],
+        };
+        workers.observe_runtime(observation.clone())?;
+        let update = runtime.next().await?.context("runtime status missing")?;
+        let rows = project(&mut status_query, &[update]).await?;
+        assert_eq!(
+            rows[0]["inputs_ready"], true,
+            "valid inputs must allow corrective edits"
+        );
+        assert_eq!(
+            rows[0]["scenario_ready"], false,
+            "rejected application is not convergence"
+        );
+        assert!(rows[0]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|component| {
+                component["component_id"] == "Simulator"
+                    && component["status"] == "application-rejected"
+                    && component["error"].is_string()
+            }));
+        observation.sequence += 1;
+        observation.source_bootstrap_complete = false;
+        workers.observe_runtime(observation)?;
+        let update = runtime
+            .next()
+            .await?
+            .context("source loss status missing")?;
+        assert_eq!(
+            project(&mut status_query, &[update]).await?[0]["inputs_ready"],
+            false,
+            "source failure must still close the input gate"
+        );
+        simulator.stop().await?;
+        input_query.stop().await?;
+        status_query.stop().await?;
+        runtime.stop().await?;
+    }
+    Ok(())
 }
 
 #[tokio::test]

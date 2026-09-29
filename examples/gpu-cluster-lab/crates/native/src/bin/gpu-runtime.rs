@@ -201,15 +201,15 @@ impl Runtime {
             .with_port(8081)
             .with_sse_path("/events")
             .build()?;
-        let core = Arc::new(
-            DrasiLib::builder()
-                .with_id(INSTANCE)
-                .with_component_factories(self.plugins.read().await.computation_factory_registry()?)
-                .with_source(source)
-                .with_reaction(reaction)
-                .build()
-                .await?,
-        );
+        let mut builder = DrasiLib::builder()
+            .with_id(INSTANCE)
+            .with_component_factories(self.plugins.read().await.computation_factory_registry()?)
+            .with_source(source)
+            .with_reaction(reaction);
+        if let Some(reaction) = diagnostics::log_reaction()? {
+            builder = builder.with_reaction(reaction);
+        }
+        let core = Arc::new(builder.build().await?);
         if let Err(error) = self.wire(&core).await {
             core.shutdown()
                 .await
@@ -740,6 +740,9 @@ async fn main() -> Result<()> {
     ));
     plugins.register_reaction(Arc::new(
         drasi_reaction_sse::descriptor::SseReactionDescriptor,
+    ));
+    plugins.register_reaction(Arc::new(
+        drasi_reaction_log::descriptor::LogReactionDescriptor,
     ));
     let runtime = Arc::new(Runtime {
         registry: InstanceRegistry::new(),

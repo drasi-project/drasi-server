@@ -21,7 +21,7 @@ type ReplicaInputs = {
   placement: ResultRow | undefined; status: ResultRow | undefined;
   workloads: ResultRow[]; gpus: ResultRow[]; policies: ResultRow[];
 };
-function replicaInputs(views: Views): ReplicaInputs {
+export function replicaInputs(views: Views): ReplicaInputs {
   return { placement: views['ui-placements'].data?.[0], status: views['ui-status'].data?.[0],
     workloads: views['ui-workloads'].data ?? [], gpus: views['ui-gpus'].data ?? [], policies: views['ui-policy'].data ?? [] };
 }
@@ -46,6 +46,11 @@ export function replicaReady(a: ResultRow, { placement: p, status, workloads, gp
     && typeof a.acknowledged_at_ms === 'number' && typeof g.report_time_ms === 'number' && g.report_time_ms >= a.acknowledged_at_ms;
 }
 
+export function executionObserved(placement: ResultRow): boolean {
+  // These query statuses require a current AppliedPlan observation, even if application failed.
+  return placement.applied_plan_version !== null || placement.status === 'blocked' || placement.status === 'awaiting-application';
+}
+
 export function clusterReplicaCounts(views: Views, clusterId: string): { planned: number | null; running: number | null; ready: number | null } {
   const p = views['ui-placements'].data?.[0], status = views['ui-status'].data?.[0];
   const unknown = { planned: null, running: null, ready: null };
@@ -59,7 +64,7 @@ export function clusterReplicaCounts(views: Views, clusterId: string): { planned
   const inCluster = (a: ResultRow) => gpus.some(g => g.gpu_id === a.gpu_id && g.cluster_id === clusterId);
   const desired = records(p, 'desired'), actual = records(p, 'actual');
   const planned = p.desired_plan_version !== null && desired.every(located) ? desired.filter(inCluster).length : null;
-  if (p.applied_plan_version === null || !actual.every(located)) return { ...unknown, planned };
+  if (!executionObserved(p) || !actual.every(located)) return { ...unknown, planned };
   const local = actual.filter(inCluster);
   return {
     planned,
@@ -195,34 +200,4 @@ function replicaName(id: string, views: Views): string {
   const w = views['ui-workloads'].data?.find(w => w.workload_id === id.slice(0, separator));
   return w && /^\d+$/.test(index) && Number.isSafeInteger(Number(index))
     ? `${w.name} · replica ${Number(index) + 1}` : id;
-}
-export function AllocationTiles({ gpu, placement, workloads, stale, compact = false, selectedWorkload, onToggleWorkload }: {
-  gpu: ResultRow; placement: ResultRow | undefined; workloads: ResultRow[]; stale: boolean; compact?: boolean;
-  selectedWorkload: string | null; onToggleWorkload: (id: string) => void;
-}) {
-  if (!placement) return <p className="muted">Replica placement data is unavailable.</p>;
-  const desired = records(placement, 'desired').filter(a => a.gpu_id === gpu.gpu_id);
-  const actual = records(placement, 'actual').filter(a => a.gpu_id === gpu.gpu_id);
-  const identity = (a: ResultRow) => {
-    const workload = workloads.find(w => w.workload_id === a.workload_id);
-    const name = String(workload?.name ?? a.workload_id);
-    const caption = `${name} · replica ${number(a, 'replica_index') + 1}`;
-    return <strong>{workload ? <button type="button" className="replica-link" aria-pressed={selectedWorkload === a.workload_id}
-      title={`Highlight ${name} and its replicas`} onClick={() => onToggleWorkload(text(a, 'workload_id'))}>{caption}</button> : caption}</strong>;
-  };
-  return <div className={`allocations ${stale ? 'stale-evidence' : ''} ${compact ? 'compact-allocations' : ''}`} aria-label="Replica activity">
-    {(!compact || stale) && <p className="muted">Replica activity{stale ? ' (last received data)' : ''}</p>}
-    {!actual.length && <p className="muted">{placement.status === 'unknown' || placement.applied_plan_version === null ? 'Replica activity unknown' : 'No active replicas'}</p>}
-    {actual.map(a => <div className={`allocation ${text(a, 'state')}${a.workload_id === selectedWorkload ? ' selected-replica' : ''}`} key={text(a, 'id')}
-      title={`${label('execution', text(a, 'state'))} · ${gib(number(a, 'memory_mib'))} · ${number(a, 'compute_units')} demand units`}>
-      {identity(a)}
-      <span>{label('execution', text(a, 'state'))}{a.state === 'fencing-pending' ? ' · not yet confirmed' : ''}</span>
-      {!compact && a.acknowledged_at_ms !== null && <span>Simulator confirmed this action at {new Date(number(a, 'acknowledged_at_ms')).toISOString().slice(11, 19)} UTC</span>}
-      {!compact && <small>Requirements: {gib(number(a, 'memory_mib'))} · {number(a, 'compute_units')} demand units{a.state === 'suspended' ? ' (memory reserved; no processing)' : a.state === 'fenced' ? ' (resources released)' : ''}</small>}
-    </div>)}
-    {desired.filter(a => !actual.some(b => b.id === a.id && b.state === 'running')).map(a => <div className={`allocation desired${a.workload_id === selectedWorkload ? ' selected-replica' : ''}`} key={`desired-${a.id}`}>
-      {identity(a)}
-      <span>{compact ? 'Planned here · not confirmed running' : 'In saved plan · not confirmed running here'}</span>
-    </div>)}
-  </div>;
 }

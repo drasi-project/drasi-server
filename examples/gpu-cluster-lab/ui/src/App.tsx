@@ -7,6 +7,9 @@ import { DecisionEvidence, PlacementEvidence, PolicyEvidence, ResilienceEvidence
 import { label } from './labels';
 import { GpuCard } from './GpuCard';
 import { WorkloadsPanel } from './WorkloadsPanel';
+import { HierarchyIcon, PresenterControls, usePresenterHighlight } from './Hierarchy';
+import { buildReplicaView } from './replicas';
+import { useReplicaMotion } from './replicaMotion';
 
 function useView(id: QueryId) {
   return useDrasiQuery(id, { getKey: row => rowKey(id, row), transform: row => validateRow(id, row) });
@@ -106,6 +109,8 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [decisionRequest, setDecisionRequest] = useState<{ id: string } | null>(null);
   const [systemOpen, setSystemOpen] = useState(false);
+  const appRoot = useRef<HTMLElement>(null);
+  const presenter = usePresenterHighlight(appRoot);
   const analysisButton = useRef<HTMLButtonElement>(null);
   const openDecision = (id: string) => { setAnalysisOpen(true); setDecisionRequest({ id }); };
   const toggleWorkload = (id: string) => selectWorkload(current => current === id ? null : id);
@@ -119,6 +124,9 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
   }, [observedScenario]);
   const inputsReady = status.data?.some(row => row.fleet_id === 'demo' && row.inputs_ready === true) === true;
   const connectionUnavailable = !!connection.error || !connection.initialized;
+  const replicaView = buildReplicaView(feeds, connectionUnavailable);
+  const [motionEnabled, setMotionEnabled] = useState(true);
+  const replicaCues = useReplicaMotion(appRoot, replicaView, motionEnabled);
   const stale = !currentFeeds(feeds) || connectionUnavailable;
   const systemView = { ...status, stale: status.stale || connectionUnavailable };
   const system = systemSummary(systemView);
@@ -132,7 +140,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
   const setRegionPower = (region: string, members: ResultRow[], powered_on: boolean) => run(command.send(
     `/api/regions/${encodeURIComponent(region)}/telemetry`, 'PATCH',
     { gpu_revisions: Object.fromEntries(members.map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on } }));
-  return <main className="lab-app">
+  return <main className="lab-app" ref={appRoot} data-presenter-highlight={presenter.target ?? undefined}>
     <header className="lab-header">
       <h1>GPU Cluster Lab</h1>
       <div className="scenario-controls" role="group" aria-label="Scenario setup">
@@ -156,10 +164,13 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
       </button>
       <button type="button" ref={analysisButton} className="analysis-toggle" aria-controls="global-analysis" aria-expanded={analysisOpen}
         title="View fleet-wide placement progress and recovery assessment" onClick={() => { setDecisionRequest(null); setAnalysisOpen(open => !open); }}>Global analysis</button>
-      <details className="reading-guide"><summary>Help</summary><div>
-      <h3>How to read this demo</h3>
+      <details className="reading-guide" onToggle={event => { if (!event.currentTarget.open) presenter.clear(); }}><summary>Help</summary><div>
+      <PresenterControls presenter={presenter}/>
+      <label className="replica-motion-setting"><input type="checkbox" checked={motionEnabled} onChange={event => setMotionEnabled(event.target.checked)}/>
+        Animate observed replica changes</label>
+      <details className="domain-guide"><summary>How to read this demo</summary><div>
       <p><strong>Fleet → region → VM → GPU.</strong> The fleet is the whole demo. Each regional cluster groups VMs in one region.
-        A VM (virtual machine) models Standard_NC80adis_H100_v5 with two H100 NVL GPUs. Losing a VM loses both GPUs. Different VMs do not imply different physical hosts or availability zones.</p>
+        A GPU VM (virtual machine) models Standard_NC80adis_H100_v5 with two H100 NVL GPUs. Losing a VM loses both GPUs. Different VMs do not imply different physical hosts or availability zones.</p>
       <p><strong>Workload and replica.</strong> A workload is an AI service, such as chat or document search. A replica is one copy of that service.
         Each replica must fit on one GPU; free memory on different GPUs cannot be combined. A replica move is a simulated restart on another GPU, not live memory migration.</p>
       <p><strong>Required / running / confirmed.</strong> Required is the configured number of replicas. Running means processing is active.
@@ -175,6 +186,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
         This local simulation does not keep real data in the named regions.</p>
       <p>After a connection interruption, displayed information may remain out of date until a fresh snapshot arrives.</p>
       </div></details>
+      </div></details>
       </div>
     </header>
     {demoPanel}
@@ -188,7 +200,8 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
     {command.error && <div className="error" role="alert">{command.error}</div>}
     {command.notice && <div className="notice" role="status">{command.notice}</div>}
     <div className={`lab-layout${analysisOpen ? ' analysis-open' : ''}${analysisOpen && decisionRequest ? ' decision-navigation' : ''}`}>
-    <WorkloadsPanel query={workloads} stale={stale} disabled={disabled} selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null}
+    <div className="lab-content">
+    <WorkloadsPanel query={workloads} replicaView={replicaView} stale={stale} disabled={disabled} selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null}
       onToggleWorkload={toggleWorkload} onAdd={() => setDialog('workload')} onEditPolicy={() => setDialog('policy')}
       onEdit={w => { setSelectedRow(w); setDialog('workload-edit'); }}
       onDelete={w => {
@@ -196,7 +209,6 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
           run(command.send(`/api/workloads/${encodeURIComponent(text(w, 'workload_id'))}`, 'DELETE', undefined, undefined, text(w, 'revision')));
         }
       }}/>
-    <div className="lab-content">
     <section className="fleet" aria-label="Regions">
       {!clusters.data?.length && <Empty loading={clusters.loading}/>}
       {(clusters.data ?? []).map(cluster => {
@@ -204,8 +216,9 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
         const regionRows = gpuRows.filter(g => clusters.data?.some(c => c.cluster_id === g.cluster_id && c.region === cluster.region));
         const hosts = [...new Set(rows.map(g => text(g, 'host_id')))];
         const replicas = stale ? { planned: null, running: null, ready: null } : clusterReplicaCounts(feeds, text(cluster, 'cluster_id'));
-        return <article className="cluster" key={text(cluster, 'cluster_id')}>
-          <div className="cluster-title"><div className="region-heading"><span className="region-label">REGION</span>
+        return <article className="cluster" key={text(cluster, 'cluster_id')}
+          data-hierarchy-kind="region" data-hierarchy-id={text(cluster, 'cluster_id')}>
+          <div className="cluster-title"><div className="region-heading"><span className="region-label"><HierarchyIcon kind="region"/>REGION</span>
             <h3>{text(cluster, 'name')} <small>· {label('region', text(cluster, 'region'))}</small></h3></div>
             <button disabled={disabled} aria-label={`Add ready VM to ${text(cluster, 'name')}`}
               onClick={() => { setSelectedRow(cluster); setDialog('host'); }}>Add ready VM</button>
@@ -213,7 +226,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
               if (window.confirm('Simulate every VM in this region losing power? Processing stops. Placement decisions detect the loss after GPU reports have been missing for five seconds.')) setRegionPower(text(cluster, 'region'), regionRows, false);
             }}>Simulate region failure</button>
             <button disabled={disabled || !regionRows.length} onClick={() => setRegionPower(text(cluster, 'region'), regionRows, true)}>Restore region</button></div>
-          <details className="cluster-body"><summary><span className="cluster-summary">
+          <details className="cluster-body" data-hierarchy-container="region"><summary><span className="cluster-summary">
             <span>{hosts.length} VMs in inventory · {count(cluster.healthy_gpus)} GPUs with recent reports{stale && ' (last received data)'}</span>
             <span className="regional-replicas" aria-label={`Replica activity in ${text(cluster, 'name')}`}
               title="Confirmed replicas are running, allowed by current policy and verified by recent GPU reports.">
@@ -226,7 +239,8 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
             </span>
             <span className="region-preview" aria-label={`VM and GPU summary in ${text(cluster, 'name')}`}>
               {hosts.length ? <><span className="region-preview-label" title="Colours describe report freshness, not execution or placement eligibility.">GPU reports</span>
-                {hosts.map(host => <span className="vm-preview" key={host}><strong>{host}</strong><span className="vm-preview-gpus">
+                {hosts.map(host => <span className="vm-preview" key={host} data-hierarchy-kind="vm" data-hierarchy-id={host}>
+                  <span className="vm-preview-title"><HierarchyIcon kind="vm"/><span className="hierarchy-type">VM</span><strong>{host}</strong></span><span className="vm-preview-gpus">
                   {rows.filter(g => g.host_id === host).map(g => {
                     const health = stale ? 'unknown' : text(g, 'health');
                     const settings = stale ? [] : [
@@ -235,25 +249,28 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
                       ...(!boolean(g, 'scheduling_enabled') ? ['Excluded from plans'] : []),
                     ];
                     const description = `${text(g, 'name')}: ${label('health', health)}${settings.length ? ` · ${settings.join(' · ')}` : ''}${stale ? ' · last received inventory' : ''}`;
-                    return <span key={text(g, 'gpu_id')} className={`mini-gpu report-${health}`} role="img" aria-label={description} title={description}>
-                      GPU {number(g, 'slot')}{settings.length > 0 && <span className="mini-gpu-setting"> · {settings[0]}</span>}
+                    return <span key={text(g, 'gpu_id')} className={`mini-gpu report-${health}`} role="img" aria-label={description} title={description}
+                      data-hierarchy-kind="gpu" data-hierarchy-id={text(g, 'gpu_id')}>
+                      <HierarchyIcon kind="gpu"/>GPU {number(g, 'slot')}{settings.length > 0 && <span className="mini-gpu-setting"> · {settings[0]}</span>}
                     </span>;
                   })}
                 </span></span>)}</> : <span className="muted">No VMs registered</span>}
             </span>
           </span></summary>
-          {hosts.map(host => <section className="worker" key={host}><div className="section-title"><h4><span className="dot"/> {host}<small> · GPU VM · {rows.filter(g => g.host_id === host).length} GPU{rows.filter(g => g.host_id === host).length === 1 ? '' : 's'}</small></h4>
-            <div><button disabled={disabled} onClick={() => run(command.send(`/api/hosts/${encodeURIComponent(host)}/telemetry`, 'PATCH',
+          <div className="vm-grid">{hosts.map(host => <details className="worker" key={host} open data-hierarchy-kind="vm" data-hierarchy-id={host} data-hierarchy-container="vm">
+            <summary className="section-title vm-heading"><h4><HierarchyIcon kind="vm"/><span className="hierarchy-type">VM</span> {host}
+              <small> · {rows.filter(g => g.host_id === host).length} GPU{rows.filter(g => g.host_id === host).length === 1 ? '' : 's'}</small></h4><HierarchyIcon kind="chevron"/></summary>
+            <div className="vm-controls"><button disabled={disabled} onClick={() => run(command.send(`/api/hosts/${encodeURIComponent(host)}/telemetry`, 'PATCH',
               { gpu_revisions: Object.fromEntries(rows.filter(g => g.host_id === host).map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on: false } }))}>Power off VM</button>
             <button disabled={disabled} onClick={() => run(command.send(`/api/hosts/${encodeURIComponent(host)}/telemetry`, 'PATCH',
-              { gpu_revisions: Object.fromEntries(rows.filter(g => g.host_id === host).map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on: true } }))}>Restore VM</button></div></div>
+              { gpu_revisions: Object.fromEntries(rows.filter(g => g.host_id === host).map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on: true } }))}>Restore VM</button></div>
             <div className="gpu-grid">{rows.filter(g => g.host_id === host).map(g => {
               const pair = policy.data?.find(p => p.workload_id === activeWorkload?.workload_id && p.cluster_id === g.cluster_id);
               const authorization = !stale && pair?.current && pair.policy_signature === status.data?.[0]?.policy_signature
                 && pair.observation_epoch === status.data?.[0]?.observation_epoch ? pair.authorization : 'unknown';
-              return <GpuCard key={text(g, 'gpu_id')} gpu={g} placement={placements.data?.[0]} workloads={workloads.data ?? []}
+              return <GpuCard key={text(g, 'gpu_id')} gpu={g} replicaView={replicaView} cues={replicaCues}
                 selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null} onToggleWorkload={toggleWorkload}
-                stale={stale} allocationStale={stale || !correlated(placements.data?.[0], status.data?.[0])}
+                stale={stale}
                 permission={activeWorkload ? {
                   workloadName: text(activeWorkload, 'name'), authorization: String(authorization),
                   inspect: () => setPolicyDetails({ workloadId: text(activeWorkload, 'workload_id'), clusterId: text(g, 'cluster_id') }),
@@ -270,7 +287,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
                     }
                   },
                 }}/>;
-            })}</div></section>)}
+            })}</div></details>)}</div>
           {!hosts.length && <p className="muted">No VMs in this regional cluster.</p>}
           </details>
         </article>;

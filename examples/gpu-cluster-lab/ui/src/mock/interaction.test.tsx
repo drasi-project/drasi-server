@@ -22,6 +22,12 @@ function button(label: string, within: ParentNode = document): HTMLButtonElement
 }
 async function click(label: string) { await act(async () => button(label).click()); }
 async function toggleWorkloads() { await act(async () => element<HTMLElement>('.workload-body > summary').click()); }
+async function toggleHelp() {
+  await act(async () => {
+    element<HTMLElement>('.reading-guide > summary').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+}
 function loadStyles() {
   const stylesheet = document.createElement('style');
   stylesheet.textContent = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../style.css'), 'utf8');
@@ -72,12 +78,13 @@ afterEach(async () => {
 });
 
 describe('mock controls and evidence interactions', () => {
-  it('shares panel typography, gutters, borders and corners across the main view and analysis', async () => {
+  it('keeps peer panels consistent while distinguishing the containment layers', async () => {
     loadStyles();
     await act(async () => root.render(<MockApp initialSnapshot="regional"/>));
     await click('Global analysis');
-    const panels = [...document.querySelectorAll('.cluster, .workload-panel, .activity, .analysis-drawer, .analysis-content > .panel')];
-    for (const property of ['border-top-color', 'border-radius', 'background-color']) {
+    await act(async () => element<HTMLElement>('.activity > summary').click());
+    const panels = [...document.querySelectorAll('.cluster, .workload-panel, .activity, .analysis-drawer')];
+    for (const property of ['border-top-width', 'border-top-color', 'border-radius', 'background-color']) {
       const values = panels.map(panel => visualStyle(panel, property));
       expect(values[0]).not.toBe('');
       expect(new Set(values).size).toBe(1);
@@ -85,13 +92,28 @@ describe('mock controls and evidence interactions', () => {
     for (const panel of document.querySelectorAll('.cluster, .workload-panel, .activity')) expect(visualStyle(panel, 'margin-bottom')).toBe('12px');
     expect(visualStyle(element('.analysis-content > .panel:last-child'), 'margin-bottom')).toBe('0px');
     for (const property of ['padding', 'background-color', 'border-bottom-color']) {
-      expect(visualStyle(element('.workload-heading'), property)).toBe(visualStyle(element('.cluster-title'), property));
-      expect(visualStyle(element('.analysis-heading'), property)).toBe(visualStyle(element('.cluster-title'), property));
+      const values = ['.cluster-title', '.workload-heading', '.analysis-heading', '.activity > summary']
+        .map(selector => visualStyle(element(selector), property));
+      expect(new Set(values).size).toBe(1);
     }
-    for (const heading of document.querySelectorAll('.workload-heading h3, .cluster-title h3, .analysis-heading h2, .analysis-content h3')) {
-      expect(visualStyle(heading, 'font-size')).toBe('15px');
+    expect(visualStyle(element('.cluster'), 'border-top-width')).toBe('2px');
+    expect(visualStyle(element('.activity'), 'padding')).toBe('0px');
+    expect(visualStyle(element('.activity > .inset-panel'), 'padding')).toBe('12px');
+    expect(visualStyle(element('.activity'), 'overflow')).toBe('hidden');
+    expect(visualStyle(element('.worker'), 'border-left-width')).toBe('5px');
+    expect(['.cluster', '.worker', '.gpu-card', '.allocation'].map(selector =>
+      visualStyle(element(selector), 'border-radius'))).toEqual(['14px', '6px', '8px', '4px']);
+    expect(new Set(['.cluster', '.worker', '.gpu-card'].map(selector =>
+      visualStyle(element(selector), 'background-color'))).size).toBe(3);
+    for (const heading of document.querySelectorAll('.cluster-title h3, .workload-heading h3, .analysis-heading h2, .activity > summary > strong')) {
+      expect(visualStyle(heading, 'font-size')).toBe('16px');
       expect(visualStyle(heading, 'font-weight')).toBe('600');
+      expect(visualStyle(heading, 'color')).toBe(visualStyle(element('.cluster-title h3'), 'color'));
     }
+    for (const heading of document.querySelectorAll('.analysis-content h3')) expect(visualStyle(heading, 'font-size')).toBe('15px');
+    for (const panel of document.querySelectorAll('.analysis-content > .panel')) expect(visualStyle(panel, 'border-radius')).toBe('10px');
+    await act(async () => element<HTMLElement>('.activity > summary').click());
+    expect(visualStyle(element('.activity > summary'), 'background-color')).toBe(visualStyle(element('.cluster-title'), 'background-color'));
   });
   it('shares text-control styling while keeping compact header and GPU icon controls distinct', async () => {
     loadStyles();
@@ -108,9 +130,11 @@ describe('mock controls and evidence interactions', () => {
       expect(values[0]).not.toBe('');
       expect(new Set(values).size).toBe(1);
     }
-    for (const property of ['font-size', 'line-height', 'padding', 'border-radius', 'border-top-color']) {
+    for (const property of ['font-size', 'line-height', 'padding', 'border-top-color']) {
       expect(visualStyle(element('.workload-chip'), property)).toBe(visualStyle(element('.vm-preview'), property));
     }
+    expect(visualStyle(element('.workload-chip'), 'border-radius')).toBe('18px');
+    expect(visualStyle(element('.vm-preview'), 'border-radius')).toBe('5px');
     expect(visualStyle(button('Pause reports'), 'width')).toBe('32px');
     expect(visualStyle(element('.policy-indicator'), 'width')).toBe('20px');
     expect(visualStyle(element('.policy-indicator'), 'min-height')).toBe('20px');
@@ -134,7 +158,7 @@ describe('mock controls and evidence interactions', () => {
     await act(async () => root.render(<MockApp initialSnapshot="regional"/>));
     await act(async () => button('assistant', element('.workload-summary')).click());
     const denied = element<HTMLElement>('.destination-deny');
-    await act(async () => denied.closest('details')!.querySelector('summary')!.click());
+    await act(async () => denied.closest('.cluster-body')!.querySelector('summary')!.click());
     await act(async () => button('Policy details: assistant · policy: Not allowed', denied).click());
     expect(element('.eligibility .badge.danger').textContent).toBe('Not allowed');
     expect(visualStyle(element('.eligibility .badge.danger'), 'color')).toBe(visualStyle(element('.policy-indicator.policy-deny'), 'color'));
@@ -147,7 +171,7 @@ describe('mock controls and evidence interactions', () => {
       command={{ send, pending: false, notice: null, error: null }} connection={{ initialized: true, error: null, retry: () => {} }}/>));
     await click('Global analysis');
     await click('Add workload');
-    expect(visualStyle(element('#dialog-title'), 'font-size')).toBe(visualStyle(element('.analysis-heading h2'), 'font-size'));
+    expect(visualStyle(element('#dialog-title'), 'font-size')).toBe(visualStyle(element('.analysis-content h3'), 'font-size'));
     for (const property of ['width', 'height', 'padding', 'font-size']) {
       expect(visualStyle(button('Close dialog'), property)).toBe(visualStyle(button('Close global analysis'), property));
     }
@@ -164,18 +188,27 @@ describe('mock controls and evidence interactions', () => {
       ['positive', 'positive-surface'], ['caution', 'caution-surface'], ['negative', 'negative-surface'],
       ['primary-text', 'primary-fill'], ['primary-text', 'primary-hover'],
       ['demo-text', 'demo-surface'],
+      ['hierarchy-label', 'region-heading'], ['hierarchy-label', 'vm-heading'],
+      ['text-muted', 'gpu-surface'], ['text-secondary', 'vm-surface'],
     ]) expect(contrast(token(foreground), token(background))).toBeGreaterThanOrEqual(4.5);
+    for (const background of ['region-surface', 'vm-surface', 'gpu-surface']) {
+      expect(contrast(token('presenter-outline'), token(background))).toBeGreaterThanOrEqual(3);
+    }
     const hover = [...document.styleSheets].flatMap(sheet => [...sheet.cssRules])
       .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.lab-app button.primary:hover:not(:disabled)');
     expect(hover).toBeDefined();
     expect(resolveStyle(hover!.style.getPropertyValue('color'))).toBe(token('primary-text'));
     expect(resolveStyle(hover!.style.getPropertyValue('background'))).toBe(token('primary-hover'));
   });
-  it.each(['healthy', 'regional', 'bootstrap'])('starts every panel collapsed in %s', async scene => {
+  it.each(['healthy', 'regional', 'bootstrap'])('starts region and workload panels collapsed with VM interiors ready to inspect in %s', async scene => {
     loadStyles();
     await act(async () => root.render(<MockApp initialSnapshot={scene}/>));
     expect(document.querySelectorAll('details').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('details[open], .gpu-expanded')).toHaveLength(0);
+    expect(document.querySelectorAll('details[open]:not(.worker), .gpu-expanded')).toHaveLength(0);
+    for (const vm of document.querySelectorAll<HTMLDetailsElement>('.worker')) {
+      expect(vm.open).toBe(true);
+      expect(vm.closest<HTMLDetailsElement>('.cluster-body')?.open).toBe(false);
+    }
     expect(element<HTMLElement>('#global-analysis').hidden).toBe(true);
     expect(getComputedStyle(element('.workload-summary')).display).toBe('flex');
     for (const preview of document.querySelectorAll('.region-preview')) expect(getComputedStyle(preview).display).toBe('flex');
@@ -186,6 +219,185 @@ describe('mock controls and evidence interactions', () => {
     for (const property of ['display', 'font-size', 'color', 'padding']) {
       expect(getComputedStyle(summary).getPropertyValue(property)).toBe(getComputedStyle(regionSummary).getPropertyValue(property));
     }
+  });
+  it('identifies every containment level, including collapsed previews and replica placements', async () => {
+    await act(async () => root.render(<MockApp/>));
+    const unique = (kind: string) => new Set([...document.querySelectorAll(`[data-hierarchy-kind="${kind}"]`)]
+      .map(node => node.getAttribute('data-hierarchy-id')));
+    expect(unique('region').size).toBe(1);
+    expect(unique('vm').size).toBe(3);
+    expect(unique('gpu').size).toBe(6);
+    expect(unique('workload').size).toBe(4);
+    expect(unique('replica').size).toBe(8);
+    for (const kind of ['region', 'vm', 'gpu', 'workload', 'replica']) expect(unique(kind).has(null)).toBe(false);
+    expect(document.querySelectorAll('.region-label .hierarchy-icon-region')).toHaveLength(1);
+    expect(document.querySelectorAll('.vm-heading .hierarchy-icon-vm')).toHaveLength(3);
+    expect(document.querySelectorAll('.gpu-title > .hierarchy-icon-gpu')).toHaveLength(6);
+    expect(document.querySelectorAll('.allocation .hierarchy-icon-replica')).toHaveLength(8);
+    expect([...document.querySelectorAll('.gpu-title .hierarchy-type')].map(node => node.textContent))
+      .toEqual(['GPU 0', 'GPU 1', 'GPU 0', 'GPU 1', 'GPU 0', 'GPU 1']);
+  });
+  it.each([
+    ['Region', 'region', '.cluster'],
+    ['VM', 'vm', '.worker'],
+    ['GPU', 'gpu', '.gpu-card'],
+    ['Workloads', 'workload', '.workload-chip'],
+  ])('highlights %s without changing data, status colours or workload selection', async (name, kind, selector) => {
+    loadStyles();
+    const feeds = mockViews(snapshot('healthy'), 'healthy', () => {}), original = JSON.stringify(feeds);
+    const send = vi.fn(async () => {}), retry = vi.fn();
+    await act(async () => root.render(<Lab views={feeds} command={{ send, pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry }}/>));
+    await act(async () => button('assistant', element('.workload-summary')).click());
+    const badges = [...document.querySelectorAll('.gpu .badge')];
+    const colours = badges.map(badge => ['color', 'background-color', 'border-top-color'].map(property => visualStyle(badge, property)));
+    await toggleHelp();
+    await click(name);
+    expect(element('.lab-app').getAttribute('data-presenter-highlight')).toBe(kind);
+    expect(button(name).getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelectorAll('[data-presenter-target][aria-pressed="true"]')).toHaveLength(1);
+    expect(visualStyle(element(selector), 'outline-width')).toBe('3px');
+    if (kind === 'workload') {
+      expect(visualStyle(element('.allocation'), 'outline-width')).toBe('3px');
+      expect(element<HTMLDetailsElement>('.workload-body').open).toBe(false);
+    }
+    expect(badges.map(badge => ['color', 'background-color', 'border-top-color'].map(property => visualStyle(badge, property)))).toEqual(colours);
+    expect(button('assistant', element('.workload-summary')).getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelectorAll('.selected-replica')).toHaveLength(2);
+    await click(name);
+    expect(element('.lab-app').hasAttribute('data-presenter-highlight')).toBe(false);
+    expect(button(name).getAttribute('aria-pressed')).toBe('false');
+    expect(JSON.stringify(feeds)).toBe(original);
+    expect(send).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+  });
+  it('temporarily reveals hierarchy parents and restores their prior states without collapsing GPU details', async () => {
+    const feeds = mockViews(snapshot('healthy'), 'healthy', () => {}), send = vi.fn(async () => {});
+    const render = () => <Lab views={feeds} command={{ send, pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry: () => {} }}/>;
+    await act(async () => root.render(render()));
+    const region = element<HTMLDetailsElement>('.cluster-body'), vm = element<HTMLDetailsElement>('.worker');
+    await act(async () => region.querySelector<HTMLElement>('summary')!.click());
+    await click('Expand GPU details');
+    await act(async () => vm.querySelector<HTMLElement>('summary')!.click());
+    await act(async () => region.querySelector<HTMLElement>('summary')!.click());
+    expect(region.open).toBe(false);
+    expect(vm.open).toBe(false);
+    const states = () => [...document.querySelectorAll<HTMLDetailsElement>('[data-hierarchy-container]')].map(node => node.open);
+    const before = states();
+    await toggleHelp();
+    await click('GPU');
+    expect(region.open).toBe(true);
+    expect(vm.open).toBe(true);
+    await click('Region');
+    expect(states()).toEqual(before);
+    await click('GPU');
+    expect(region.open).toBe(true);
+    await act(async () => region.querySelector<HTMLElement>('summary')!.click());
+    await act(async () => root.render(render()));
+    expect(region.open).toBe(false);
+    await click('Clear highlight');
+    expect(states()).toEqual(before);
+    expect(document.querySelectorAll('.gpu-expanded')).toHaveLength(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('can highlight collapsed summaries without revealing their containers', async () => {
+    loadStyles();
+    await act(async () => root.render(<MockApp/>));
+    await toggleHelp();
+    const reveal = element<HTMLInputElement>('.presenter-options input');
+    await act(async () => reveal.click());
+    await click('GPU');
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(false);
+    expect(visualStyle(element('.mini-gpu'), 'outline-width')).toBe('3px');
+    await act(async () => reveal.click());
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(true);
+    await act(async () => reveal.click());
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(false);
+    expect(button('GPU').getAttribute('aria-pressed')).toBe('true');
+    await click('Clear highlight');
+    expect(element('.lab-app').hasAttribute('data-presenter-highlight')).toBe(false);
+  });
+  it('reveals newly observed hierarchy containers and restores them on clear', async () => {
+    const send = vi.fn(async () => {}), retry = vi.fn();
+    const render = (scene: string) => <Lab views={mockViews(snapshot(scene), scene, retry)}
+      command={{ send, pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry }}/>;
+    await act(async () => root.render(render('healthy')));
+    await toggleHelp();
+    await click('GPU');
+    await act(async () => root.render(render('regional')));
+    expect(document.querySelectorAll('.cluster-body')).toHaveLength(3);
+    for (const region of document.querySelectorAll<HTMLDetailsElement>('.cluster-body')) expect(region.open).toBe(true);
+    await click('Clear highlight');
+    for (const region of document.querySelectorAll<HTMLDetailsElement>('.cluster-body')) expect(region.open).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+  });
+  it('gives modal dialogs priority, then clears presenter highlighting before closing analysis with Escape', async () => {
+    await act(async () => root.render(<MockApp/>));
+    await click('Global analysis');
+    await toggleHelp();
+    await click('VM');
+    await click('Edit policy');
+    const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await act(async () => { escape(); });
+    expect(element('.lab-app').getAttribute('data-presenter-highlight')).toBe('vm');
+    expect(element<HTMLElement>('#global-analysis').hidden).toBe(false);
+    await act(async () => element('dialog').dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true })));
+    await act(async () => { escape(); });
+    expect(element('.lab-app').hasAttribute('data-presenter-highlight')).toBe(false);
+    expect(element<HTMLElement>('#global-analysis').hidden).toBe(false);
+    await act(async () => { escape(); });
+    expect(element<HTMLElement>('#global-analysis').hidden).toBe(true);
+  });
+  it('clears highlighting and restores hierarchy disclosures when Help closes', async () => {
+    await act(async () => root.render(<MockApp/>));
+    await toggleHelp();
+    await click('GPU');
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(true);
+    await toggleHelp();
+    expect(element('.lab-app').hasAttribute('data-presenter-highlight')).toBe(false);
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(false);
+  });
+  it('returns focus to the presenter control when clearing hides the focused replica', async () => {
+    await act(async () => root.render(<MockApp/>));
+    await toggleHelp();
+    await click('GPU');
+    const replica = element<HTMLButtonElement>('.replica-link');
+    replica.focus();
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true, cancelable: true,
+    })));
+    expect(element<HTMLDetailsElement>('.cluster-body').open).toBe(false);
+    expect(document.activeElement).toBe(button('GPU'));
+  });
+  it('highlights stopped replicas with their planned-location annotation instead of duplicate tiles', async () => {
+    loadStyles();
+    await act(async () => root.render(<MockApp initialSnapshot="policy-fenced"/>));
+    const before = [...document.querySelectorAll('.allocation')].map(node => ({
+      state: node.className, text: node.textContent, colour: visualStyle(node, 'color'),
+    }));
+    await toggleHelp();
+    await click('Workloads');
+    expect(document.querySelectorAll('.allocation.fenced[data-hierarchy-kind="replica"]')).toHaveLength(8);
+    expect(document.querySelectorAll('.allocation.desired[data-hierarchy-kind="replica"]')).toHaveLength(0);
+    expect(document.querySelectorAll('.allocation.fenced .planned-reference')).toHaveLength(8);
+    for (const tile of document.querySelectorAll('.allocation')) expect(visualStyle(tile, 'outline-width')).toBe('3px');
+    expect([...document.querySelectorAll('.allocation')].map(node => ({
+      state: node.className, text: node.textContent, colour: visualStyle(node, 'color'),
+    }))).toEqual(before);
+  });
+  it.each(['feed-stale', 'query-error', 'bootstrap'])('keeps presenter controls view-only and usable in %s', async scene => {
+    await act(async () => root.render(<MockApp initialSnapshot={scene}/>));
+    expect(button('Add workload').disabled).toBe(true);
+    await toggleHelp();
+    await click('GPU');
+    expect(button('GPU').disabled).toBe(false);
+    expect(element('.lab-app').getAttribute('data-presenter-highlight')).toBe('gpu');
+    expect(button('Add workload').disabled).toBe(true);
+    expect(document.querySelector('#global-analysis .badge.good')).toBeNull();
+    await click('Clear highlight');
   });
   it('keeps the ordered page header free of demo controls and warnings', async () => {
     loadStyles();
@@ -242,12 +454,17 @@ describe('mock controls and evidence interactions', () => {
     expect(help.open).toBe(false);
     await act(async () => element<HTMLElement>('.reading-guide > summary').click());
     expect(help.open).toBe(true);
+    expect(getComputedStyle(element('.reading-guide > summary')).whiteSpace).toBe('nowrap');
+    expect(getComputedStyle(element('.reading-guide > div')).top).toBe('calc(100% + 4px)');
+    expect(element<HTMLDetailsElement>('.domain-guide').open).toBe(false);
+    await act(async () => element<HTMLElement>('.domain-guide > summary').click());
+    expect(element<HTMLDetailsElement>('.domain-guide').open).toBe(true);
     expect(help.textContent).toContain('How to read this demo');
     expect(help.textContent).toContain('example customer agreement, not a general GDPR requirement');
     await act(async () => element<HTMLElement>('.reading-guide > summary').click());
     expect(help.open).toBe(false);
   });
-  it('opens a default-hidden right column alongside the region and workload panels without requesting analysis', async () => {
+  it('opens analysis at the top of the Workloads and regions column without requesting analysis', async () => {
     loadStyles();
     const send = vi.fn(async () => {}), retry = vi.fn();
     await act(async () => root.render(<Lab views={mockViews(snapshot('healthy'), 'healthy', retry)}
@@ -260,18 +477,18 @@ describe('mock controls and evidence interactions', () => {
     expect(drawer.hidden).toBe(true);
     expect(getComputedStyle(drawer).display).toBe('none');
     expect(fleet.parentElement).toBe(content);
-    expect(content.firstElementChild).toBe(fleet);
     const workloads = element('.workload-panel');
+    expect(workloads.parentElement).toBe(content);
+    expect(content.firstElementChild).toBe(workloads);
+    expect(workloads.nextElementSibling).toBe(fleet);
     expect(element('table').closest('.workload-panel')).toBe(workloads);
     expect(element('.activity').parentElement).toBe(content);
     expect(element('.activity').previousElementSibling).toBe(fleet);
-    expect([...layout.children]).toEqual([workloads, content, drawer]);
-    expect(getComputedStyle(workloads).gridColumn).toBe('1');
-    expect(getComputedStyle(workloads).gridRow).toBe('1');
+    expect([...layout.children]).toEqual([content, drawer]);
     expect(getComputedStyle(content).gridColumn).toBe('1');
-    expect(getComputedStyle(content).gridRow).toBe('2');
+    expect(getComputedStyle(content).gridRow).toBe('1');
     expect(getComputedStyle(drawer).gridColumn).toBe('2');
-    expect(getComputedStyle(drawer).gridRow).toBe('2');
+    expect(getComputedStyle(drawer).gridRow).toBe(getComputedStyle(content).gridRow);
     expect(layout.previousElementSibling).toBe(element('.lab-header'));
     expect(getComputedStyle(layout).marginTop).toBe('10px');
     expect(getComputedStyle(toggle).padding).toBe('3px 6px');
@@ -287,6 +504,8 @@ describe('mock controls and evidence interactions', () => {
     expect(getComputedStyle(layout).columnGap).toBe('16px');
     expect(getComputedStyle(drawer).position).toBe('static');
     expect(getComputedStyle(drawer).display).toBe('flex');
+    expect(content.firstElementChild).toBe(workloads);
+    expect(workloads.nextElementSibling).toBe(fleet);
     expect(document.activeElement).toBe(button('Close global analysis'));
     expect(fleet.textContent).toBe(before);
     expect(document.body.style.overflow).toBe('');
@@ -680,7 +899,8 @@ describe('mock controls and evidence interactions', () => {
       command={{ send, pending: false, notice: null, error: null }} connection={{ initialized: true, error: null, retry: () => {} }}/>));
     expect(document.querySelectorAll('.workload-panel')).toHaveLength(1);
     expect(document.querySelectorAll('.cluster')).toHaveLength(3);
-    expect(element('.lab-layout').firstElementChild).toBe(element('.workload-panel'));
+    expect(element('.lab-layout').firstElementChild).toBe(element('.lab-content'));
+    expect(element('.lab-content').firstElementChild).toBe(element('.workload-panel'));
     const disclosure = element<HTMLDetailsElement>('.workload-body'), summary = element<HTMLElement>('.workload-body > summary');
     expect(disclosure.open).toBe(false);
     expect(summary.getAttribute('aria-controls')).toBe('workload-details');
@@ -690,7 +910,7 @@ describe('mock controls and evidence interactions', () => {
     expect(element('.workload-summary').closest('.workload-heading')).toBeNull();
     expect(header.nextElementSibling).toBe(element('.workload-overview'));
     expect(getComputedStyle(header).padding).toBe(getComputedStyle(element('.cluster-title')).padding);
-    expect(getComputedStyle(header).backgroundColor).toBe(getComputedStyle(element('.cluster-title')).backgroundColor);
+    expect(visualStyle(header, 'background-color')).toBe(visualStyle(element('.analysis-heading'), 'background-color'));
     expect(getComputedStyle(element('.workload-summary')).overflowX).toBe('auto');
     expect(document.querySelectorAll('.workload-summary .workload-chip')).toHaveLength(4);
     expect([...document.querySelectorAll('.workload-chip > span[id]')].map(node => node.textContent)).toEqual(Array(4).fill('2 / 2 confirmed'));
@@ -715,6 +935,49 @@ describe('mock controls and evidence interactions', () => {
     expect(button('assistant', element('.workload-summary')).getAttribute('aria-pressed')).toBe('true');
     expect(document.querySelectorAll('.selected-replica')).toHaveLength(2);
     expect(send).not.toHaveBeenCalled();
+  });
+  it('expands replica details per workload without selecting, commanding, or expanding other workloads', async () => {
+    const send = vi.fn(async () => {}), retry = vi.fn();
+    const render = (scene: string) => <Lab views={mockViews(snapshot(scene), scene, retry)}
+      command={{ send, pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry }}/>;
+    await act(async () => root.render(render('plan-committed')));
+    await toggleWorkloads();
+    expect(document.querySelectorAll('.replica-detail-row')).toHaveLength(0);
+    await click('Show replicas for chat-alpha');
+    const expanded = button('Hide replicas for chat-alpha');
+    expect(expanded.getAttribute('aria-expanded')).toBe('true');
+    const detail = document.getElementById(expanded.getAttribute('aria-controls')!)!;
+    expect(detail.querySelectorAll('li')).toHaveLength(2);
+    expect(detail.textContent).toContain('Awaiting move');
+    expect(detail.textContent).toContain('inference-a / GPU 0');
+    expect(detail.textContent).toContain('inference-c / GPU 1');
+    expect(document.querySelectorAll('.replica-expander[aria-expanded=true]')).toHaveLength(1);
+    expect(document.querySelectorAll('.selected-replica')).toHaveLength(0);
+    await act(async () => root.render(render('plan-applied')));
+    expect(document.getElementById(expanded.getAttribute('aria-controls')!)?.textContent).toContain('Running');
+    expect(detail.textContent).toContain('not yet confirmed');
+    await act(async () => root.render(render('plan-confirmed')));
+    expect(detail.textContent).toContain('Yes · fresh GPU report');
+    await click('Hide replicas for chat-alpha');
+    expect(document.querySelectorAll('.replica-detail-row')).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['policy-fenced', 'Stopped by policy', 'Stopped on'],
+    ['policy-unknown', 'Paused by policy', 'Paused on'],
+    ['fencing-pending', 'Stop requested', 'Stop requested on'],
+    ['bootstrap', 'Unknown', 'Running on'],
+  ])('shows %s honestly in expanded per-replica details', async (scene, state, location) => {
+    await act(async () => root.render(<MockApp initialSnapshot={scene}/>));
+    await toggleWorkloads();
+    await click('Show replicas for assistant');
+    const detail = element('.replica-detail-row');
+    expect(detail.textContent).toContain(state);
+    expect(detail.textContent).toContain(location);
+    expect(detail.querySelectorAll('[data-replica-detail]')).toHaveLength(2);
+    expect(detail.textContent).not.toContain('Yes · fresh GPU report');
   });
   it.each([
     ['healthy', 'healthy', ''], ['reports-paused', 'healthy', 'Reports paused'],
@@ -884,6 +1147,49 @@ describe('mock controls and evidence interactions', () => {
       connection={{ initialized: true, error: new Error('Connection interrupted'), retry: () => {} }}/>));
     expect(element('.regional-replicas').textContent).toContain('Unknown planned · Unknown running · Unknown confirmed');
   });
+  it('shows zero regional execution when a bootstrapped simulator has rejected the saved plan', async () => {
+    const rows = snapshot('policy-fenced'), plan = rows['ui-placements'][0];
+    Object.assign(plan, { actual: [], applied_plan_version: null, confirmed_plan_version: null,
+      status: 'blocked', reason: 'Saved plan rejected after simulator initialization.' });
+    for (const workload of rows['ui-workloads']) Object.assign(workload, {
+      running_replicas: 0, ready_replicas: 0, fenced_replicas: 0,
+      suspended_replicas: 0, fencing_pending_replicas: 0,
+    });
+    const render = () => <Lab views={mockViews(rows, 'policy-fenced', () => {})}
+      command={{ send: vi.fn(async () => {}), pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry: () => {} }}/>;
+    await act(async () => root.render(render()));
+    expect(element('.regional-replicas').textContent).toContain('8 planned · 0 running · 0 confirmed');
+    expect(element('.gpu-card').textContent).toContain('No running replicas');
+    expect(document.querySelector('#global-analysis .badge.good')).toBeNull();
+    plan.status = 'unknown';
+    await act(async () => root.render(render()));
+    expect(element('.regional-replicas').textContent).toContain('8 planned · Unknown running · Unknown confirmed');
+    expect(element('.gpu-card').textContent).toContain('Replica activity unknown');
+  });
+  it('keeps changing GPU report metadata on one line with the full value available', async () => {
+    loadStyles();
+    const rows = snapshot('healthy'), gpu = rows['ui-gpus'][0];
+    const render = () => <Lab views={mockViews(rows, 'healthy', () => {})}
+      command={{ send: vi.fn(async () => {}), pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry: () => {} }}/>;
+    for (const [age, version] of [[0, '1'], [1, '153'], [4999, '18446744073709551615']] as const) {
+      gpu.sample_age_ms = age;
+      gpu.sample_plan_version = version;
+      await act(async () => root.render(render()));
+      const summary = element<HTMLElement>('.gpu-report-summary');
+      const expected = `${age / 1000}s ago · Reported plan v${version}`;
+      expect(summary.textContent).toBe(expected);
+      expect(summary.title).toContain(expected);
+      expect(getComputedStyle(summary).whiteSpace).toBe('nowrap');
+      expect(getComputedStyle(summary).overflow).toBe('hidden');
+      expect(getComputedStyle(summary).textOverflow).toBe('ellipsis');
+      expect(getComputedStyle(summary).fontVariantNumeric).toBe('tabular-nums');
+      expect(getComputedStyle(element('.gpu-status-line')).flexWrap).toBe('nowrap');
+    }
+    await click('Expand GPU details');
+    expect(element('.gpu-details').textContent).toContain('Reported plan v18446744073709551615');
+  });
   it('distinguishes configured demand from the saved regional target until a new plan is saved', async () => {
     await act(async () => root.render(<MockApp initialSnapshot="fragmentation-candidate"/>));
     const required = () => [...document.querySelectorAll('tbody tr')].reduce((sum, row) => sum + Number(row.children[2].textContent), 0);
@@ -930,7 +1236,7 @@ describe('mock controls and evidence interactions', () => {
     await click('assistant · replica 1');
     const tile = element('.selected-replica');
     expect(tile.classList.contains('desired')).toBe(true);
-    expect(tile.textContent).toContain('Planned here · not confirmed running');
+    expect(tile.textContent).toContain('Planned here · not running');
     const row = element('.selected-workload');
     expect([row.children[2].textContent, row.children[3].textContent, row.children[4].textContent]).toEqual(['1', '0', '0']);
     expect(element('.regional-replicas').textContent).toContain('7 planned · 6 running · 0 confirmed');
@@ -1065,10 +1371,10 @@ describe('mock controls and evidence interactions', () => {
   it('labels GPU VMs plainly and keeps their GPU counts accurate', async () => {
     await act(async () => root.render(<MockApp/>));
     const headings = [...document.querySelectorAll('.worker h4')].map(h => h.textContent?.trim());
-    expect(headings).toEqual(['inference-a', 'inference-b', 'inference-c'].map(host => `${host} · GPU VM · 2 GPUs`));
+    expect(headings).toEqual(['inference-a', 'inference-b', 'inference-c'].map(host => `VM ${host} · 2 GPUs`));
     expect(document.body.textContent).not.toContain('worker failure domain');
     await click('Remove GPU');
-    expect(element('.worker h4').textContent?.trim()).toBe('inference-a · GPU VM · 1 GPU');
+    expect(element('.worker h4').textContent?.trim()).toBe('VM inference-a · 1 GPU');
   });
   it('starts with condensed GPU cards and expands only the selected GPU', async () => {
     await act(async () => root.render(<MockApp/>));
@@ -1182,7 +1488,7 @@ describe('mock controls and evidence interactions', () => {
     ['policy-unknown', 'Paused by policy'],
     ['fencing-pending', 'Stop requested · not yet confirmed'],
     ['policy-fenced', 'Stopped by policy'],
-    ['plan-committed', 'Planned here · not confirmed running'],
+    ['plan-committed', 'Planned here · not running'],
     ['feed-stale', 'Replica activity (last received data)'],
   ] as const)('keeps %s evidence visible without expanding a GPU', async (scene, expected) => {
     await act(async () => root.render(<MockApp initialSnapshot={scene}/>));

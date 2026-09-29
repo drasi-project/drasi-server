@@ -17,6 +17,7 @@ query-isolation = ["dep:drasi-source-application"]
 runtime = [
     "dep:axum", "dep:drasi-server", "dep:drasi-host-sdk",
     "dep:drasi-source-postgres", "dep:drasi-bootstrap-postgres", "dep:drasi-reaction-sse",
+    "dep:drasi-reaction-log",
     "dep:sqlx", "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
 ]
 
@@ -53,6 +54,7 @@ drasi-host-sdk = { path = "../../../../../drasi-core/components/host-sdk", defau
 drasi-source-postgres = { path = "../../../../../drasi-core/components/sources/postgres", optional = true }
 drasi-bootstrap-postgres = { path = "../../../../../drasi-core/components/bootstrappers/postgres", optional = true }
 drasi-reaction-sse = { path = "../../../../../drasi-core/components/reactions/sse", optional = true }
+drasi-reaction-log = { path = "../../../../../drasi-core/components/reactions/log", optional = true }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }

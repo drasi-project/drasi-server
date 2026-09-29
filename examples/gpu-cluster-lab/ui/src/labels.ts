@@ -24,6 +24,7 @@ const labels = {
     'fencing-requested': 'Policy stop requested', fenced: 'Processing stopped by policy', 'solver-timeout': 'Optimizer time limit reached',
     'preview-edit': 'Preview settings changed',
     'execution-running': 'Replica running', 'write-receipt': 'Plan write receipt received',
+    'replica-moved': 'Replica moved',
     'write-unknown': 'Plan write outcome unknown', 'solver-unknown': 'Optimizer result unknown',
     'component-status': 'Component status changed',
   },

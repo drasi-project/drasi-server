@@ -1,960 +1,1305 @@
 # GPU Cluster Lab
 
-A local simulation of a GPU fleet: PostgreSQL commands, Regorus processing policy,
-minimum-movement placement with `good_lp`/`microlp`, and measured feedback through Drasi.
-No GPU, model download, Azure subscription, or live model migration is required.
+## The scenario
 
-**Operational under PostgreSQL's existing committed row-by-row delivery contract.**
-The real command/database/query/policy/solver/plan-writer/simulator/SSE/UI loop
-passes the complete ordinary scenario sequence, including regional recovery,
-fragmentation, resilience, five-second report expiry, resets, writer failures,
-concurrency, source loss and genuine graceful restart. The matching release
-runtime and plugin use Core's shared direct-memory default and qualified
-functional/temporal repairs, without an example-only provider override.
+GPU Cluster Lab demonstrates how to keep a fleet of AI services placed on suitable
+GPUs as demand, capacity, failures, and processing policies change. Imagine a team
+running an assistant, chat, embedding, and reranking service. Each service needs a
+configured number of replicas, each replica consumes memory and compute capacity,
+and some customer data may only be processed in particular regions.
 
-**The stronger complete-transaction policy-context guarantee is deferred.**
-Committed rows may be observed individually; the demo does not guarantee that
-every policy decision sees an entire multi-row database transaction together.
-`/health/ready` continues to report `transaction_completion: "not-supported"`.
-`./demo check --acceptance` still exits nonzero at its final `supported` assertion,
-after the ordinary scenarios pass. This is not an all-tests-green or stronger
-transaction-consistency claim. That design remains reserved for user review;
-no inferred boundaries, connector redesign or relaxed assertions were introduced.
+A placement that works now may stop working when background GPU load increases,
+a VM fails, or a customer changes its policy. Even a healthy current placement
+may lack enough spare capacity to recover from the *next* failure. The demo keeps
+those questions continuously answered and shows the difference between a proposed
+solution and one that is actually running.
 
-The browser-facing release is running with preserved business configuration,
-saved plan and receipts, and fresh volatile query state. Live mode never
-substitutes fake data. The development-only mock preview remains separate.
+The baseline fleet has three simulated VMs in West Europe, two GPUs per VM, and
+four workloads with two replicas each. You can change workload requirements, edit
+background load, pause reports, fail or restore devices, add ready VMs, and change
+regional policy. The system then:
 
-## UI preview with mock data
+1. Observes the configuration change and new GPU reports.
+2. Evaluates where each workload is permitted to run.
+3. Finds a complete valid placement, moving as few existing replicas as possible.
+4. Saves the plan, applies it in the simulator, and waits for fresh reports to
+   confirm the result.
+5. Separately assesses whether the fleet could recover from additional VM or
+   region failures.
 
-With the existing UI dependencies installed, run from this example:
+This is a real PostgreSQL/Drasi/Rust/React application with **simulated GPU
+execution and telemetry**. It does not require GPUs, download or run the named
+models, provision Azure resources, or perform live GPU-memory migration. A
+replica move represents a simulated restart on another GPU. Resource profiles
+are illustrative, not model-performance benchmarks.
 
-```sh
-cd ui
-npm run dev:mock
+### Domain concepts and example scenarios
+
+| Concept | Meaning in this example |
+|---|---|
+| Fleet | The whole demo, identified as `demo`. |
+| Regional cluster | A group of VMs in one named region. |
+| VM | The modeled failure domain. Losing a VM loses its GPUs; different VMs do not imply different physical hosts or availability zones. Backend fields retain the name `host_id`. |
+| GPU | A device with its own memory and compute budget. Free memory on different GPUs cannot be pooled for one replica. |
+| Workload | An AI service with a serving profile, desired replica count, data profile, and processing purpose. |
+| Replica | One copy of a workload, identified by workload ID and replica index. A spread-enabled workload may have at most one replica on each VM. |
+| Policy | Rules authorizing a workload's processing context in a destination region. Permission is separate from capacity and report freshness. |
+| Saved / applied / confirmed | Database intent / simulator acknowledgement / matching fresh GPU-report evidence. These are deliberately different stages. |
+
+Three starting fixtures make the behavior easy to explore:
+
+| Starting scenario | Initial state | What it demonstrates |
+|---|---|---|
+| **Baseline fleet** (`baseline`) | Three VMs, six GPUs, four workloads, eight replicas in `westeurope`. | Load-driven replanning, minimal movement, report expiry, and failure recovery. |
+| **Memory fragmentation** (`fragmentation`) | Three VMs and six GPUs, each initially holding one 24-GiB chat replica. | The fleet has 336 GiB free in total, but only 56 GiB free on any one GPU. Adding a 76-GiB assistant requires rearrangement, not necessarily another VM. |
+| **Regional policy** (`regional-boundary`) | The baseline workloads plus two spare VMs in `northeurope` and two in `eastus`: seven VMs and fourteen GPUs. | Recovery must respect a fictional customer's EU processing policy even when healthy US capacity is available. |
+
+The regional rule models a specific example customer agreement. It is not a
+blanket statement about GDPR and does not enforce the physical location of real
+data, logs, caches, or backups.
+
+## Quickstart
+
+### Prerequisites
+
+- Docker with Docker Compose v2. The isolated diagnostic commands also use
+  Compose's `!reset` and `!override` support.
+- Git, Python 3, and a POSIX shell, as provided on macOS or Linux.
+- Matching `drasi-server` and `drasi-core` checkouts beside each other:
+
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+    examples/
+      gpu-cluster-lab/
 ```
 
-Open **http://127.0.0.1:5173**. The same React views display the baseline,
-memory-fragmentation, and regional-policy scenarios. A purple **Demo preview**
-panel above Workloads contains the **MOCK DATA** label, preview warnings,
-example-state controls and preview-only notices.
-GPU/VM controls and workload/policy forms edit only this tab's in-memory
-preview. Edits invalidate displayed measurements, execution counts, placement,
-policy and resilience evidence rather than pretending to run the backend.
-Use **Example state** in that panel to select a prepared stage, or **Reload**
-to discard local edits. The baseline, fragmentation and regional-boundary fixtures
-share the same views and projection validators. The snapshots include:
+The runtime builds against that sibling Core checkout, including its local
+changes. This example is not self-contained in a Server-only checkout, and
+arbitrary released Core/plugin versions are not interchangeable with it.
+This development workspace uses `agentofreality-parallel-computation-graph` in
+both repositories; keep the two source trees aligned.
+Host Rust, Node.js, npm, and PostgreSQL installations are **not required** for
+the Docker quickstart. The first build needs access to the dependency registries.
 
-- Reporting paused before/after the five-second deadline, power-off before expiry,
-  and complete recovery on surviving VMs.
-- A one-move fragmentation candidate, stale-candidate rejection, database commit,
-  application acknowledgement, and fresh measurement confirmation.
-- Tenant demand that fits now but exhausts one-VM recovery capacity; adding an
-  already-ready VM restores the margin.
-- Regional recovery into North Europe, policy-constrained infeasibility despite
-  healthy US capacity, and restoration by adding ready permitted capacity.
-- Unknown policy with suspended execution, requested stops awaiting acknowledgement,
-  acknowledged fencing, solver timeout, startup, stale assessments and failed feeds.
+### Start the complete live demo
 
-These are **hand-authored expected outcomes**, not captured live output or a
-JavaScript optimizer/policy implementation. Sample ages are frozen; time does not
-advance automatically. Sample demand/memory is explicitly last-reported, so a
-new stop acknowledgement does not rewrite the last sample. A suspended replica
-retains memory; a fenced replica releases it; a pending stop is not an
-acknowledged fence. Click a workload to inspect its destinations independently
-of GPU report status. Policy forms prefill the current parameters, including `*`
-(shown as **Allow all regions**).
-
-### UI terminology
-
-Use **VM** for the modeled Azure infrastructure unit and **GPU** for a device
-within it. A VM starts with two GPUs; separate VMs do not imply separate physical
-hosts or availability zones. Do not use "worker" as a second name for a VM in
-presenter-facing text. A **workload** is an AI service; a **replica** is one copy,
-which must fit on one GPU. **Help** in the compact header opens **How to read this
-demo**, which explains
-these terms, memory units, demand units, report freshness and policy actions.
-The page header is identical in preview and live mode: **Starting scenario** and
-**Reset scenario**, plus **System status**, **Global analysis**, then **Help**.
-The starting-scenario group is centered between balanced header columns, with
-an intrinsically sized, compact dropdown; narrow screens place it on its own row.
-The starting scenario selects Baseline fleet, Memory fragmentation, or Regional
-policy. Selecting an option does not change settings; resetting requires
-confirmation. In mock preview, reset loads the corresponding local fixture.
-In the live demo, it sends `POST /api/demo/presets/{name}` through the control
-service. The live endpoint gates and drains writes, awaits graph shutdown,
-transactionally seeds the selected fixture, recreates the runtime, and reopens
-writes only after observed bootstrap/readiness. Failures leave writes gated.
-Reset intent is persisted before stopping the graph and cleared only after observed
-readiness, so a control-process crash cannot reopen an incomplete reset. Restarted
-control services retain the gate until an explicit reset retry succeeds. This
-lifecycle record is not a query input or a PostgreSQL transaction-completion marker.
-Reset retains durable command and plan receipts. Retrying an old successful
-creation acknowledges its original identity without recreating deleted work in
-the new fixture; reusing its key for different content remains a conflict.
-Reset closes prior proxy-stream generations and temporarily rejects query/SSE
-opens with 503 so an old connection cannot remain falsely live across graph
-replacement. The recovery reset remains available when feeds are unavailable;
-it still requires confirmation and reinitializes the existing SDK subscriptions
-after a successful reset.
-Canonical scenario IDs are `baseline`, `fragmentation`, and `regional-boundary`;
-the CLI also accepts `regional`. The selector adopts the asynchronously reported
-starting scenario without overwriting a pending choice on subsequent status updates.
-Mock-only UI is supplied as a single optional
-demo panel; live mode omits that panel rather than substituting header controls,
-warnings or form button labels. Ignoring the demo panel shows the same shared
-interface, including **Save change** in dialogs. In preview, that button still
-changes only local state, as the panel explains.
-Readiness failures and command errors remain in the shared interface and are
-not hidden with the demo panel. The purple **Demo preview** panel is never
-shown in the live demo; only its mock snapshot controls and warnings disappear.
-The live view observes the SDK's connection-status hook as well as initialization,
-so backend errors appear during automatic retries, including before the first
-query snapshot. Retained rows cannot enable edits while transport is disconnected.
-When the browser reports it is offline, live edits are disabled immediately even
-if an existing stream has not yet failed. Returning online reinitializes the
-existing SDK connection and query subscriptions before edits can resume; retained
-rows alone do not establish freshness.
-There is no separate toolbar or workload/policy inspection dropdown:
-**Edit policy** sits beside **Add workload** in the Workloads header.
-Add workload uses the same neutral styling as other panel actions, and action
-buttons do not use leading plus signs.
-Each region panel has a small **REGION**
-label beside its name instead of a separate fleet section heading.
-There is no global totals strip, introductory hero, duplicate scenario picker or
-persistent footer. Regional-policy and connection-freshness caveats live in Help.
-
-Shared visual styles in `ui/src/style.css` define panel, group, body, label and
-dense-summary typography, consistent panel gutters/corners, and control styling.
-Green identifies positive evidence, amber identifies caution or unknown state,
-and red identifies explicit errors or policy denial; text and icons retain the
-meaning without relying on colour alone. Cyan identifies selection, links and
-keyboard focus. Report freshness and policy permission remain separate signals,
-so a denied destination can still have a recent-report badge.
-
-There is one **Workloads** panel at the top of the left-hand stack, collapsed by
-default. It uses the same native disclosure expander as the region panels.
-Its title and action buttons remain in a fixed header; the disclosure,
-summary and expanded table sit below it, like the region panels. Its thin summary
-strip shows selectable workload cards with
-**confirmed / required** replica counts and a small confirmation bar; hover text
-also identifies running counts. Unknown or stale counts never produce a green
-confirmation bar. The strip scrolls horizontally when necessary rather than
-growing into a tall dashboard. Expand Workloads for the full table, including
-model requirements, execution/policy counts and edit/delete actions.
-**Add workload** and **Edit policy** stay in this panel's header and work without
-expanding it.
-Selecting a GPU replica highlights its workload in either view without expanding
-the panel or changing the layout.
-
-Each region owns an **Add ready VM** button. The form displays and uses that
-region; it does not silently fall back to the first region or offer a separate
-region picker. Empty regions can receive VMs. If the selected region disappears
-while the form is open, saving is blocked with an explicit message.
-All panel disclosures start collapsed on initial load, including regions and
-GPU details; Global analysis also starts closed. Expanding panels is a local
-view preference that is retained across feed updates, not a new computation.
-Collapsed regions retain their replica counts and show a compact strip of VM
-cards with a badge for each registered GPU. Badge colours describe **report
-freshness**, not execution or permission to run workloads. Power-off, paused
-reporting and exclusion settings are identified separately; stale feeds show
-unknown report status. Expanding the region replaces this strip with its full
-VM/GPU cards without changing the region header.
-
-**Global analysis**, in the page header, opens a right-side drawer
-containing **Placement plan** and **Recovery after failures**. It starts closed,
-leaving the fleet full-width. The drawer opens in its own right-hand column,
-aligned with the first region. Regions, workloads and the
-other left-side panels narrow to make room; nothing is overlaid. The analysis
-column grows to fit its content, including expanded assessments and technical
-details, and scrolls with the page rather than inside a height-capped panel. Closing it
-returns that space to the left column. Close it with its close button,
-Escape, or the header toggle. Escape dismisses an open command/policy dialog
-before the drawer. Reduced-motion preferences disable the slide animation.
-Opening the drawer only reveals already-subscribed results: it does not invoke
-the optimizer, start a new assessment, or create additional query subscriptions.
-
-Supporting evidence is contextual rather than three permanent bottom panels:
-**Decision details** is a closed disclosure inside **Placement plan**, separating
-the saved plan's evidence from unsaved attempts and diagnostic assessments.
-**Activity**, beneath the regions, starts collapsed with the latest event and
-expands to show history, newest first. Events are ordered by sequence within a
-run, with the current run ahead of older runs. Decision links open Global analysis,
-expand Decision details and focus the matching record; missing history is explicit.
-These reference jumps skip the width animation so the destination can be read
-immediately, while the header toggle still opens and closes the column normally.
-
-**System status** in the header opens read-only reported component statuses.
-Actual component problems are highlighted; absent, stale or unrecognized status
-is unknown, never assumed healthy. Runtime status is separate from connection
-status, GPU health and replica confirmation. Activity and System status remain
-inspectable when mutation controls are disabled. None of these controls adds
-subscriptions or invokes backend processing; the live feed gaps below still apply.
-
-Each regional cluster's collapsible summary shows **planned / running /
-confirmed** replica counts alongside its local inventory/report counts.
-**Replicas required** remains on each workload: a workload can move between
-permitted regions, so it has no fixed per-region requirement. **Planned**
-counts assignments in the saved plan, not a proposed plan; its tooltip identifies
-the saved version and explains that it can lag configuration changes. Saving a
-new destination updates this target without moving running counts. A saved
-target can be shown before execution is known; a missing plan or unresolvable
-destination is **Unknown**, not zero.
-
-Running counts follow actual execution, and confirmed counts are the subset
-with current policy permission and matching fresh GPU reports. All three counts
-remain visible when a cluster is collapsed. Confirmation checks each replica
-against current requirements, saved/applied plan versions,
-policy permission and matching fresh GPU reports after application; these checks do not
-require the entire fleet to have converged. Unavailable or mismatched evidence
-shows **Unknown**, not zero; an unconfirmed stop makes the affected region's
-running count unknown. A fully observed empty region shows zero. Selecting a
-workload highlights replicas and permitted destinations without changing these
-regional totals.
-The display label **Confirmed** replaces replica **Ready**; the underlying
-`ready_replicas` projection field is unchanged. **Add ready VM** still means
-capacity that is prepared for use, not a replica confirmation.
-
-The **Replicas required** column states how many copies each workload needs.
-Select a workload in the summary strip or expanded table to highlight its named replica tiles
-on GPUs. Selecting a replica's name highlights its parent workload and its
-other replica tiles; select the same name again to clear the selection.
-This link also works for planned, paused, stopped and
-historical replicas without changing their state or issuing a command.
-Policy permission for the selected workload appears in a reserved GPU-header
-slot: a green check for allowed, a cross for denied, or a question mark for
-unknown. Hover text and accessible labels identify the workload and permission.
-The slot stays the same size with no selection, so highlighting never inserts
-a policy text row into the GPU card. Click the indicator to open read-only
-**Policy details** for that workload and region: reasons, policy settings,
-authority and technical evidence. The details follow current query data and
-remain inspectable when results are unknown or stale; they never issue a
-mutation command. There is no duplicate policy panel in the sidebar.
-
-GPU cards start condensed, showing report freshness, last-reported memory and
-compute demand, and the replicas running or planned there. Power-off, paused
-reports, exclusion from plans and policy stop/pause states remain visible without
-expansion. The chevron expands one GPU to show resource breakdowns, replica
-requirements, action confirmations and report/settings details. The action icons
-pause/resume reports, fail/restore the GPU, edit background load, exclude/include
-it in plans, and remove it. Each has hover text and an accessible action name;
-removal still requires confirmation. Stale data and pending commands disable
-these actions, but do not prevent expanding a card to inspect its evidence.
-
-The UI uses **proposed, saved, applied, confirmed by GPU reports** for plan stages.
-It uses **Paused by policy**, **Stop requested**, and **Stopped by policy** rather
-than exposing enforcement codes without explanation. GPU badges say **Recent
-report**, **Report overdue**, or **Report status unknown**: they describe
-observability, not a claim that the device is still powered on. Demand units are
-illustrative, not utilization percentages or measured model performance.
-
-Readable names and code labels are centralized in `ui/src/labels.ts`. Technical
-IDs, signatures, raw query rows and exact state codes remain in **Technical
-details**. This is a presentation change only: fields such as `host_id`,
-`registered_workers`, `workers`, and `fenced`, as well as `/api/hosts` routes,
-retain their existing contracts. New or unknown identifiers remain visible
-rather than being translated into an invented success state.
-
-### Demo-owned UI projections
-
-`ui/src/rows.ts` validates the after-images consumed by the shared views. These
-are CQ **projections for this demo**, not new Drasi Server management API
-DTOs. All nine are wired into the live instance graph. Raw-key extraction
-still accepts sparse deletes. Revisions and versions are decimal strings; absent
-measurements and execution counts are `null`, not zero. Mock identifiers,
-fingerprints and signatures are visibly synthetic, not cryptographic evidence.
-
-| Query | Key | Displayed evidence |
-|---|---|---|
-| `ui-clusters` | `cluster_id` | Region, VMs in inventory, GPUs with recent reports; empty clusters retained |
-| `ui-gpus` | `gpu_id` | Settings/revisions, independent heartbeat health, sample age/time/sequence/input revisions/plan version, reported background and managed demand/memory, busy percent |
-| `ui-workloads` | `workload_id` | Profile, context, revision, requirements, running/ready/suspended/fenced/stop-pending counts |
-| `ui-placements` | `fleet_id=demo` | Complete committed desired assignments, execution/enforcement acknowledgements, desired/applied/confirmed versions, decision and signatures |
-| `ui-policy` | `id=<workload_id>/<cluster_id>` | Workload/cluster allow/deny/unknown, reasons/errors, authority, parameters, policy revision and input fingerprint |
-| `ui-resilience` | `fleet_id=demo` | Separate per-VM/per-region additional-loss outcomes, analyzed signatures and read-only capacity-only diagnostic |
-| `ui-decisions` | `decision_id` | Candidate/committed/rejected/diagnostic evidence, feasible/infeasible/unknown outcome, moves vs new replicas, pre-plan memory gaps |
-| `ui-status` | `fleet_id=demo` | Fleet readiness, scenario, current observation epoch/signatures and nested component status |
-| `ui-timeline` | `event_id=<epoch>/<sequence>` | Semantic transitions with timestamps and decision/plan links, not every telemetry tick |
-
-Fleet confirmation checks matching versions, epoch, scheduling/policy signatures,
-current workload requirements, applied assignments, authorization fingerprints
-and fresh per-GPU samples. Query failure/staleness blocks current-success badges
-and commands. An assessment with no scenarios is not a pass. Capacity-only
-diagnostics never contain a replacement desired plan. Historical complete plans
-and decisions remain distinguishable from current evidence after edits/failures.
-
-No API/SSE connection, PostgreSQL, Rust build, solver, or policy evaluator is used
-in this mode. Stop it with Ctrl+C in the terminal running Vite. The port is strict
-so an existing service is never silently replaced. Mock loading is gated by both
-Vite development mode and `--mode mock`; production builds and ordinary live
-startup retain the real Drasi path. This preview does not establish integration
-readiness.
-
-## Run and stop
-
-From this directory, with Docker and Docker Compose installed:
+From the directory containing the two checkouts:
 
 ```sh
+cd drasi-server/examples/gpu-cluster-lab
 ./demo up
-./demo down
 ```
 
-`up` generates local credentials, exports the pinned React package source without
-switching branches, exports the current sibling Core/Server source, builds the
-matching Linux runtime/native plugin and package tarball/UI/control image, runs
-migrations, and starts the services. The launcher needs Python 3 for source
-export; compilation runs in Docker. The export includes current untracked source
-files and named license notices such as `LICENSE-MIT`, with content hashes in
-the image's source manifest. When using Core's shared quiet SpookyHash module,
-both runtime and diagnostic images retain its MIT notice under `/app/licenses/`.
-An available host npm cache can supply
-integrity-verified pinned archives, and the configured HTTPS npm registry is
-forwarded without npm credentials. The UI is at **http://localhost:5400**.
-Use that exact hostname: it matches the configured command origin. A
-`127.0.0.1` alias can serve read-only views but is not an authorized browser command
-origin; navigate existing alias tabs to `localhost` rather than weakening CSRF.
-`up` waits for actual query-backed readiness and fails with the observed error
-if that is not reached, then prints the published UI URL and owned Compose
-project name. Operational readiness does not assert the deferred complete-
-transaction policy-context guarantee described above.
+Open **http://localhost:5400**.
 
-`down` targets only this checkout's Compose project, works repeatedly, and
-preserves its database. It does not require a responsive application API. It does
-not stop other Drasi environments or delete their containers. Docker itself must
-be available to stop containers.
-Both binaries handle Docker's SIGTERM. The control service closes active SSE
-responses before draining HTTP requests; the runtime awaits graph cleanup.
-Independent control restart preserves the simulator epoch, while runtime restart
-bootstraps a new epoch without replacing the saved plan or fixture.
+That is the complete normal startup procedure. The helper generates local
+credentials, builds the React package and UI, builds matching release-profile
+Rust runtime/plugin/control binaries, initializes PostgreSQL, and waits for
+query-backed readiness. It seeds the baseline only when initializing an empty
+database. There is no separate configuration, migration, plugin-install, or npm
+step to perform first.
 
-Manual configuration, build, wait, or smoke commands are not prerequisites for
-normal startup.
+The first Rust/image build is the expensive part; later builds reuse Docker and
+Cargo caches. If this checkout's demo is already running, simply open the URL.
+Use `localhost`, not `127.0.0.1`: the configured browser-command origin is
+`http://localhost:5400`, so the IP alias can display reads but its writes are
+rejected.
 
-## What exists
+In a fresh baseline, look for eight confirmed replicas and a confirmed placement
+under **Global analysis**. A successful HTTP command only acknowledges its
+database change; it is not the final confirmation.
 
-| Component | Implementation |
+```sh
+./demo status       # Service state and actual query-backed readiness
+./demo logs drasi   # Follow runtime logs; Ctrl+C stops log following
+./demo down         # Stop this demo, retaining its database
+```
+
+`./demo up` preserves existing configuration and saved plans. If it cannot reach
+readiness, it exits with the observed failure rather than substituting preview
+data. See [known limitations and troubleshooting](#known-limitations-and-troubleshooting),
+including the distinction between a rejected saved plan and unavailable inputs.
+
+To intentionally replace the current fleet with a starting fixture, use
+**Starting scenario** and **Reset scenario** in the UI, or:
+
+```sh
+./demo reset baseline
+# Alternatives: ./demo reset fragmentation
+#               ./demo reset regional
+```
+
+**Reset replaces the current fleet/workload/policy settings and restarts the
+simulation.** Merely selecting a scenario does not apply it. A normal stop does
+not reset anything. Deleting the database requires the separate explicit command
+`./demo destroy --confirm gpu-demo`.
+
+For implementation details, continue with [architecture](#how-drasi-implements-the-demo),
+[domain configuration](#data-model-and-domain-configuration),
+[the simulator](#transformer-the-simulator), [optimizer](#transformer-the-optimizer),
+[policy engine](#transformer-the-policy-engine), [queries](#sources-and-continuous-queries),
+and [UI](#the-react-ui). The later sections cover
+[operations and development](#operations-diagnostics-and-development) and
+[known limitations](#known-limitations-and-troubleshooting).
+
+## How Drasi implements the demo
+
+Drasi maintains continuous queries over database rows and native component
+output. A query emits changes when its result changes, including changes caused
+by scheduled time conditions. Transformers consume those result changes, perform
+domain work, and emit graph-shaped evidence that other queries can use.
+
+The feedback loop is:
+
+**configuration -> policy -> simulated observations -> placement -> saved plan
+-> simulated execution -> fresh observations -> confirmed UI state**.
+
+This is one `DrasiLib` instance, `gpu-demo`, with one application
+`ComputationGraph`. Individual continuous queries use Drasi's query machinery;
+there is no second application graph, browser optimizer, or independently
+maintained HTTP business-state model.
+
+### Running services
+
+| Compose service | Responsibility |
 |---|---|
-| Shared contracts and fixtures | `crates/contracts`: hardware/serving catalogs, baseline, fragmentation, regional-boundary, bounded fleet, canonical fingerprints and complete-plan validation |
-| Policy | `crates/policy`, `policies/placement.rego`: real Regorus, complete pair assessments, explicit unknown/deny, shared write guard |
-| Placement and resilience | `crates/placement`: real MILP, minimum existing moves then peak demand, VM/region loss, read-only capacity-only evidence |
-| Simulation | `crates/simulator`: reporting versus power semantics, monotonic deadlines, execution gates, policy suspension/fencing, atomic application |
-| Native transformers | `crates/native`: reconstructible SDK factories, query-row/graph codecs, managed wakeups, bounded owned policy/solver jobs, placement priority between resilience scenarios, stale-result rejection |
-| Persistence | `migrations`: seven published tables, unpublished durable receipts/reset recovery, revisions, fleet locking, database constraints, separate roles |
-| Commands and plan commits | `crates/control`: revision-checked edits, grouped device commands, durable create/plan idempotency, complete plan validation |
-| Plan-write transport | `gpu_control::writer` plus the native `gpu.lab/plan-writer` reaction: response validation, terminal 409, bounded same-decision retries, supersession, owned/awaited worker |
-| Status and timeline | `gpu.lab/runtime-status`: lifecycle-owned producer, latest component status, typed plan receipts, bounded 128-event timeline |
-| Browser | `ui`: React 18.3.1 and the pinned `@drasi/react` tarball, nine hoisted query hooks, raw identity validation, GPU load/reporting/power/scheduling controls, VM/region power commands, workload editing/scaling, explicit stale/errors |
-| Runtime | `crates/native/src/bin/gpu-runtime.rs`: actual Server v1 router, PostgreSQL source/bootstrap, six loaded native factories, one instance graph, SSE reaction and lifecycle observer |
-| Packaging | `demo`, `compose.yaml`, `ops`: matching working-tree source export, architecture-specific Linux build caches, scoped cleanup and persistent database |
+| `postgres` | PostgreSQL 16 with logical replication. Stores authoritative configuration, the saved plan, durable command receipts, and reset state. |
+| `drasi` | Runs `gpu-runtime`, the instance graph, PostgreSQL source/bootstrapper, native plugin, Server v1 query APIs, and SSE reaction. Internal ports are 8080 for APIs and 8081 for SSE. |
+| `control` | Runs `gpu-control`, serves the built React UI on port 5400, implements validated commands/plan commits/reset, and proxies the selected query APIs and SSE to the browser. |
+| `migrate` | A one-shot initialization job, not a fourth continuously running service. Runs schema migrations, initializes the first fixture, and configures the reset role. |
+| `checks` | An on-demand Node container for live checks; not required to serve the demo. |
 
-Placement uses equivalent GiB-scaled memory constraints to avoid numerical
-conditioning failures in the second MILP pass; final plan validation remains in
-exact MiB. A second-pass solver failure is unknown, not proof of infeasibility.
-Current explicit policy permission can resume a still-matching existing desired
-assignment after checking target availability, current requirements, actual
-resident memory (including suspended peers), running demand and VM separation.
-This execution-only recovery never writes a partial plan or changes its applied
-version. A changed data profile/purpose still requires a new committed assignment.
+Only the control service is normally published to the host, on loopback.
+PostgreSQL and Drasi communicate on the project's private Compose network.
 
-The domain libraries are wrapped by actual native Drasi `Transformer`
-implementations in the separate `crates/native` workspace. Its public input
-contract requires explicit coherent bootstrap/configuration messages; it does
-not manufacture transaction boundaries from row offsets.
-Open command dialogs also disable submission if query-backed readiness is lost;
-closing a dialog remains possible without changing the fleet.
-The evidence views now render allocation tiles, policy pairs, per-loss resilience,
-decision moves and semantic timelines, with optional raw-row inspectors. Their
-mock snapshots are exercised independently of Drasi. Seven initial processing
-queries and all nine UI query definitions are checked in. All nine construct
-with their declared join settings. Seven database CQs assemble authoritative
-configuration/settings/plan inputs; simulation and scheduling CQs join those
-inputs to native policy and actual timed measurements.
+```mermaid
+flowchart LR
+    Browser["Browser: React UI"]
+    Control["control: HTTP commands, UI files, query/SSE proxy"]
+    Database[("postgres: configuration, saved plan, receipts")]
+    Runtime["drasi: one instance graph, queries, native plugin"]
 
-PostgreSQL currently represents JSON/JSONB columns as strings. A table-scoped
-adapter reuses the existing strict `parse_json` middleware for policy sets,
-workload GPU-model sets, and saved-plan assignments/decision details before query evaluation. Other properties,
-including full-width integer versions, and all record identities are preserved.
-No source transaction-completion behavior is changed.
+    Browser -->|"configuration commands"| Control
+    Control -->|"validated SQL writes"| Database
+    Database -->|"bootstrap and committed CDC rows"| Runtime
+    Runtime -->|"candidate plan: internal HTTP POST"| Control
+    Runtime -->|"query results and SSE changes"| Control
+    Control -->|"snapshots, updates, command acknowledgements"| Browser
+```
 
-### Native evidence projections
+### Components in the graph
 
-Native graph properties now preserve nested lists/objects as well as the lossless
-JSON payload. Large counters remain decimal strings; an out-of-range graph
-integer is rejected rather than converted to an imprecise floating-point value.
+The normal application-level topology contains **two explicit sources, twenty
+continuous queries, four transformer nodes, and two reactions**. Drasi also
+creates internal source adapters, query-result outlets, scheduled-work nodes,
+and its built-in `__component_graph__` observability source.
 
-The simulator uses its explicit input observation epoch for reports and execution.
-Execution records include flattened assignment fields and `acknowledged_at_ms`,
-converted from monotonic time using the component's conservatively ordered UTC
-clock anchor. Reports use actual UTC at generation rather than extrapolating the
-anchor, avoiding future-dated samples when startup is descheduled between clock reads.
-Re-observing an unchanged applied plan does not manufacture a new
-acknowledgement, and configuration/application acknowledgements never refresh a
-GPU report. Paused/stopped actions are real synchronous simulator acknowledgements;
-this implementation does not insert an artificial pending-stop delay.
+There are **three primary domain engines**: the simulator, optimizer, and policy
+engine. The optimizer is used by two independently scheduled transformers:
+`placement` makes executable plans; `resilience` performs read-only what-if
+analysis. This is why the graph has four transformer nodes rather than three.
 
-`PlacementEligibility` includes the authoritative policy context, metadata and
-assessment signature needed by `ui-policy`. Pending or invalid contexts remain
-explicit unknown rows; an absent policy revision is null, not an invented version.
-The UI checks policy epochs and uses the same replica-confirmation predicate for
-prepared workload counts and regional/whole-plan evidence, including exclusion
-from scheduling.
-
-`ui-gpus` joins the database inventory/settings/region records to actual
-`GpuSample` events. Changing reporting/power settings never refreshes the sample
-or directly declares its heartbeat expired. `ui-clusters` counts distinct VM
-identities and healthy reports, including empty regions; missing initial reports
-are unknown rather than a measured zero. Both queries schedule the actual
-five-second deadline. A native timed regression proves reporting/power changes
-preserve measurements until expiry and that the regional count then reaches zero.
-
-`ui-workloads` and `ui-placements` combine saved database intent, actual simulator
-execution, current policy, placement input context and fresh reports. Their
-confirmation conditions check epoch/signature, exact assignments/resources,
-acknowledgement ordering and current scheduling permission. `AppliedPlan` records
-source availability and observed configuration; `PolicyEnforcement` records the
-actually applied version; the placement transformer emits `SchedulingContext`
-on accepted input and invalidation. Unknown execution is not zero. The synchronous
-simulator has no pending-stop interval, so its observed pending-stop count is zero.
-The pre-bootstrap workload and assignment-list lifecycle cases pass with the
-current upstream repairs. All nine live read models now pass the complete
-ordinary scenario sequence, including simultaneous expiry and regional recovery.
-
-`DecisionExplanation` contains deterministic movement counts, the actual
-source/destination move list, pre-plan memory facts and input correlation.
-Complete committed allocation inputs promote the matching decision to committed;
-an HTTP receipt alone does not. Infeasible/unknown solves publish diagnostic
-decisions with null movement counts and no executable candidate. Original accepted
-evidence survives in `gpu_placements.decision_details`; older plans without detailed
-evidence are explicitly identified as such.
-
-The lifecycle-owned producer emits bounded, typed semantic events with explicit
-observation epochs, decimal sequence IDs, UTC times and decision/plan links.
-Before an input epoch is known, component status is observable without inventing
-a scenario epoch for its timeline. `PlanWriteOutcome` distinguishes a terminal
-409 rejection from an unknown transport outcome or a superseded request.
-
-`ui-status` reads the lifecycle producer's `DemoReadiness`. The in-process
-`Workers::observe_runtime(RuntimeObservation)` hook accepts explicitly observed
-source/query bootstrap completion, scenario/epoch/signatures and the topology's
-required component statuses. `inputs_ready` preserves that input/lifecycle gate.
-Final `scenario_ready` additionally requires correlated current policy and
-resilience, settled enforcement, and either freshly confirmed placement or an
-explicit current infeasible result. Confirmation queries use `inputs_ready`,
-not final readiness, avoiding a circular readiness dependency. Ordinary edits
-also use the input gate so pending or failed analysis does not prevent corrective
-commands. This correlation does not establish PostgreSQL transaction completion.
-Increasing observation sequences reject late updates;
-reset, missing required components and current stopped/unavailable components
-cannot report ready. Old-epoch component state cannot override current host
-evidence. Without a lifecycle observation, the producer explicitly reports
-**not ready**, unknown scenario/epoch and the statuses it actually knows.
-The runtime now delivers observations through generation-bound native control
-notifications to the loaded plugin's actual `Workers` instance. It reads real
-query snapshots, including explicit empty results. Nonempty sequence-zero
-snapshots must actually reach the input assembler before bootstrap can complete.
-Runtime observations allow up to 128 components, including per-query source,
-middleware and scheduled-work adapters. No browser action, HTTP receipt, quiet
-interval or synthetic timer can promote this gate.
-
-`crates/native/src/projections.rs` supplies the checked-in Cypher and its required
-synthetic-join settings. `ui-decisions` joins writer outcomes by decision ID and
-checks the epoch; `ui-resilience` joins read-only diagnostics by scheduling
-signature and checks policy/epoch. These are real CQ projections, not a browser
-optimizer or a competing HTTP read model.
-
-**Native projection gate passed:** connected/disconnected matching, nullable
-lists, exact maps and mixed numeric equality now pass with the owner's
-uncommitted Core fixes. The native scenario produces freshly confirmed replicas
-and fleet plans using the original query conditions. All 31 native tests pass;
-the chained TypeScript validator accepts 58 actual source/native/CQ rows across
-22 snapshots and all nine UI contracts. There are no substituted rows, casts
-to force confirmation, browser deduplication, or weakened count assertions.
-While awaiting measurements, the placement query's reason distinguishes a stale
-simulator configuration from mismatched confirmed/active/saved/required counts.
-These are the same predicates and aggregates used by confirmation, not browser
-estimates or another query engine.
-The current live qualification below separately exercises PostgreSQL, SSE and
-the presenter runbook.
-
-## Integration qualification
-
-The qualified combined-source run on 2026-09-28 passes all ordinary live gates.
-Its full acceptance command remains nonzero **only** at the unchanged final
-PostgreSQL complete-transaction assertion. Evidence is retained under
-`.build/gpu-cluster-lab-539223269-acceptance-7f82c9819513/` and
-`target/combined-live-acceptance.log`. Control, Drasi and PostgreSQL each exited
-zero before the persistence restart. The separate writer-fault project also
-passed lost acknowledgement, retry, exhaustion and new-input recovery.
-
-Current-source lifecycle probes additionally pass source loss, failed reset,
-persisted reset-gate recovery after an intentional control crash, and restart
-with an open SSE client. Control exited zero in 222 ms and Drasi in 328 ms;
-all three services also passed the final clean-stop check. Evidence is retained
-under `.build/gpu-cluster-lab-539223269-acceptance-c49edac12e01/`.
-The presenter deployment preserved exact database configuration, its complete
-saved plan and all receipts. Its real browser, nine query feeds, actual SSE,
-command controls, CLI status/wait and smoke check pass with eight freshly
-confirmed replicas. No fixture reset was used to make deployment ready.
-
-All 20 exact queries pass separately and combined in the 42-case current-source
-isolation matrix, including full due-timer draining and production UI validators.
-For the actual native memory default, combined replay fell from 21.64 to 2.39
-seconds wall time; paced maximum input lateness fell from 1.92 seconds to 48 ms.
-These are recorded-corpus measurements, not universal performance guarantees.
-The current logs contain no hot-path `m_data` diagnostic output.
-
-The sole instance graph, actual PostgreSQL bootstrap (including empty workloads
-and inventory), all nine query feeds, normal SSE, and all three fixture startups
-pass live checks. API and direct-SQL background-load changes produce a measured,
-saved/applied/freshly confirmed one-move plan. Workload CRUD, current denial with
-authorized survivors, empty-fleet recovery, fragmentation, single-GPU report
-expiry and added-VM resilience are also exercised through the actual graph.
-
-Browser scenario resets and offline/reconnect with a missed workload rename and
-measured-load change pass through the existing SDK. Failed resets, SIGKILL during
-pending shutdown, control restart and concurrent resets preserve the durable
-gate and generation/plan-version distinctions. A graph-shutdown timeout observed
-during a native build correctly returned 503 and remained gated; it is not
-counted as a successful reset. Explicit recovery after runtime restart passed.
-Twelve subsequent complete resets across all three fixtures preserve fresh
-epochs, monotonic versions and nine valid query feeds.
-
-A real plan writer blocked on the fleet advisory lock rejects its candidate
-after a concurrent SQL configuration change; a different current complete plan
-then confirms. Actual PostgreSQL loss invalidates runtime readiness and puts
-dependent queries into Error with explicit not-running responses, rather than
-returning retained results as current. After the database restarts, explicit
-reset rebuilds bootstrap/authorization and fresh confirmation while preserving
-the prior saved plan until that reset. Query unavailability is not evidence of
-a delivered per-replica stop acknowledgement.
-Removing a generation-settings row through SQL is separately qualified: the
-invalid input is rejected, all eight executions report suspension, and the saved
-plan remains unchanged. Restoring the valid row recovers authorization and fresh
-confirmation through normal query feedback without a reset.
-
-Actual SSE backpressure qualification also passes: one paused browser stream fell
-behind while a healthy subscriber received over 24 MiB of real query events.
-The native reaction logged and closed the lagged subscription; the existing SDK
-reconnected, fetched all nine snapshots and recovered a missed workload rename
-without interrupting the healthy subscriber.
-
-### Earlier failures and retained evidence
-
-The earlier qualified temporal repair passed the example's 31 native tests and 58-row
-projection validator. Matching-image isolated acceptance also passes real writer
-faults, complete-stack restart, CRUD/empty states, policy reauthorization and
-fragmentation. A later capacity-addition run stalled whole-plan confirmation;
-further isolated runs reproduce stale plan/readiness/deletion projections after
-creating then deleting one workload. Diagnostic predicates retain saved v2 with
-application/execution/sample v3 and stale false readiness, while a sibling query
-has v3 with all predicates true. Recorded parent/output pairs and bounded drain diagnostics identify substantial
-processing backlog rather than proven permanent lost updates. Raw envelope
-evidence remains preserved for the upstream evaluator trace; neither slower
-reports nor a longer confirmation deadline is a fix.
-In a bounded isolated diagnostic, the ordinary 30-second delete deadline expired
-with v2 and the deleted workload still visible. Ten seconds after pausing report
-generation, the original queries caught up to v3 and removed the workload.
-Public native metrics recorded maximum query transactions of 2.43 seconds for
-workloads and 1.92 seconds for placements. This is diagnostic evidence for the
-upstream optimization, not a passing runbook or a change to reporting cadence.
-Two recorder regressions and strict runtime/all-target lint pass.
-The first isolated-context optimization was then rebuilt into matching runtime
-and plugin binaries. All 31 native tests, both recorder tests, the 58 real rows
-across 22 snapshots/all nine UI validators, and strict runtime lint pass.
-The unchanged diagnostics-off full run passes writer faults, full-stack restart,
-commands and empty-state recovery, then times out after revoking all regional
-permission and allowing North Europe. The current policy allows North Europe
-and `ui-gpus` shows all 14 fresh reports, but the current scheduling aggregate
-marks every capacity stale and placement remains infeasible.
-The equivalent six-GPU pause diagnostic also misses the ordinary deadline and
-does not catch up within its bounded 20-second pause. Exact stream/sequence
-matches show workload parent/output differences up to 41.93 seconds and
-placement differences up to 40.63 seconds, while status remains within 188 ms.
-Maximum outer transactions are 3.58 seconds for workloads and 2.88 seconds for
-placements. These are observations under their respective host loads, not a
-controlled claim that the optimization regressed performance.
-Immutable image IDs, source manifests, query snapshots and raw diagnostic
-envelopes are captured; the recorder is a sibling observer, not a record of each
-consumer's exact cross-stream processing order.
-Those processing-lag, simultaneous-expiry, regional-recovery, runbook and
-matching-image deployment gates now pass on the combined qualified source above.
-Keep exact query assertions and strict duplicate/count rejection; do not dedup,
-clamp or substitute timer-driven snapshots.
-
-PostgreSQL committed policy-context completion is a separate final gate. Existing
-COMMIT delivery dispatches individual rows; explicit bootstrap completion does
-not establish transaction completion. All other integration gates above have
-passed; its stronger design/implementation remains deferred for user review. Do not
-infer boundaries from LSN groups, quiet periods or a debounce.
-
-The retained failures were investigated rather than assumed to be upstream bugs.
-The core owner reports passing targeted coverage for native root queries
-through ordinary listing/configuration/info/status/results APIs, QueryManager
-snapshots/outbox, metrics/logs/events and stop/start. Server default and
-instance-scoped GET/results and `/attach` SSE routes also pass with a native batch
-query, and an ordinary ApplicationReaction consumes its real output.
-The supported tranche is now published in core `61d89d95` and Server `e53a14a`.
-The core owner also reports ordinary update/remove support for pipeline-created
-queries, native-query rebinding after source updates, and native Source/Reaction
-inventory, diagnostics, lifecycle and removal. Opaque implementations and custom
-input layouts still require explicit computation operations; native roles do not
-fabricate legacy plugin interfaces, and strict consumer recovery policies remain
-enforced. The additive permanent-removal `deprovision` hook is not a requirement
-to implement a fake-success cleanup method. These capabilities do **not** establish
-full managed REST/creation-path parity or the demo's end-to-end acceptance: H03
-remains partial. PostgreSQL still has no public complete-transaction event usable
-by the policy context adapter, and its boundary design has not been changed.
-
-The native probe `native_root_query_is_exposed_through_ordinary_read_apis`
-uses the current singleton APIs:
-`computation_pipeline()` builds a `ComponentBatch`, `batch.auto_start(false)`
-disables activation, and `add_components(batch).await?` returns a
-`ReconciliationReport`. Inspection/control use synchronous
-`inspect_computation_graph()?` / `computation_control()?`; query construction
-is awaited through `computation_component("ui-gpus")?.wait_created().await?`.
-The probe verifies unchanged root identity, exactly one root scope, and that
-`ui-gpus` itself is a declared `Query` node before checking positive ordinary
-listing, exact configuration, info and status. A nonempty root alone is
-insufficient. With activation disabled, the query has status `Added`, not
-`Running`: ordinary results must return `DrasiError::InvalidState` with the
-not-running message, and the QueryManager snapshot must return typed
-`FetchError::NotRunning { status: Added }`, not an unknown-query error.
-
-The positive probe was compiled and executed after the core owner released the
-wider recovery/lint gate. The upstream results above remain owner-reported;
-the historical table below records the separate example rerun on 2026-09-27, against core
-HEAD `5b2fc6f4` plus its local read-access changes and Server HEAD `02761e6`.
-
-The authorized native validation used only
-`/Users/alljones/dev/drasi-computation-graph/drasi-server/examples/gpu-cluster-lab/target/native`,
-with `CARGO_BUILD_JOBS=1` and locked dependencies:
-
-| Check | Observed outcome |
-|---|---|
-| Positive native root query read-access probe | 1 passed, 0 failed, 0 ignored, 5 filtered out in 0.02 seconds; exact listing/configuration/info/status and precise not-running errors |
-| `cargo build --locked --features dynamic-plugin` | Succeeded |
-| `check-plugin` with `dynamic-plugin` enabled | Public host ABI loaded the library and verified all six expected factory names |
-| Complete native suite: `cargo test --locked` | 6 passed, 0 failed, 0 ignored, 0 filtered out in 5.05 seconds; no doc tests |
-| Strict all-target Clippy: `cargo clippy --locked --all-targets -- -D warnings` | Passed with no warnings |
-
-The previous negative H03 probe is superseded by this positive result.
-The probe deliberately leaves the query unstarted; it does not verify live
-GPU rows. The ABI check verifies loading/catalog compatibility; these checks
-do not establish the full PostgreSQL/query/SSE/UI loop.
-That early probe alone did not establish demo readiness. The current full live
-results above qualify the ordinary loop, while the stronger PostgreSQL
-transaction-completion limitation remains unchanged. No production files or
-core target were modified by this example validation.
-
-| Surface | Current evidence | Verification still needed |
+| Instance ID | Kind / implementation | Purpose |
 |---|---|---|
-| PostgreSQL transaction context | `drasi-core/components/sources/postgres/src/stream.rs`, `process_wal_message`: COMMIT dispatches rows individually with LSN/offset | An exposed complete-transaction boundary usable by the policy context adapter |
-| Native query read access | Positive listing/config/info/status, exact not-running errors, nine live feeds, full timed/context and runbook qualification | No claim of complete managed creation-path parity |
-| Bootstrap | Actual keyed/empty snapshots and explicit completion; current-source interruption and explicit reset recovery pass | Bootstrap completion is not transaction completion |
-| HTTP effects | Live exactly-once plan effects, lost acknowledgement, retries/exhaustion, stale-write and reset recovery checks pass | No cross-database distributed-transaction claim |
-| SSE lag | Matching runtime logs/closes lagged subscribers; actual paused-browser test resnapshots all nine queries through the SDK while a healthy subscriber continues | No exactly-once replay or atomic snapshot/stream-cut claim |
+| `postgres` | Source: `PostgresReplicationSource` with PostgreSQL bootstrap provider | Turns the seven published tables into graph changes. |
+| `runtime-status` | Native source: `gpu.lab/runtime-status` | Publishes observed readiness, component status, write outcomes, and semantic timeline events. |
+| `policy` | Transformer: `gpu.lab/regorus-policy` | Assembles database inputs and evaluates workload/cluster authorization with Regorus. |
+| `simulator` | Transformer: `gpu.lab/telemetry-simulator` | Applies saved plans, enforces policy, and produces actual simulated GPU reports and execution acknowledgements. |
+| `placement` | Transformer: `gpu.lab/placement-solver` | Computes a complete minimum-movement placement and explains the decision. |
+| `resilience` | Transformer: `gpu.lab/resilience-assessor` | Uses the same placement library to assess additional VM/region losses without changing the plan. |
+| `plan-writer` | Native reaction/sink: `gpu.lab/plan-writer` | Submits candidate plans to the control service and reports their write outcome. |
+| `gpu-demo-ui` | Standard SSE reaction | Subscribes to the nine UI queries and streams their result changes. |
+| `gpu-query-log` | Optional standard `LogReaction` | Logs selected existing queries when explicitly enabled; absent from the normal topology. |
 
-No production server/core changes are included. If an integration probe confirms
-an upstream defect, report its exact revisions, reproduction, expected/actual
-behavior, and demo impact before requesting an upstream repair.
+The twenty queries are listed individually in
+[sources and continuous queries](#sources-and-continuous-queries).
+This diagram groups the seven database-input queries and nine UI queries for
+readability. Solid arrows show the main data dependencies; dotted arrows show
+host observation/control or in-process status reporting.
 
-## Development and validation
+```mermaid
+flowchart TD
+    DB[("PostgreSQL")]
+    PG["source: postgres"]
+    Inputs["7 input-* queries"]
+    Policy["transformer: policy"]
+    SimulationQuery["query: simulation-inputs"]
+    Simulator["transformer: simulator"]
+    SchedulingQuery["query: scheduling-inputs"]
+    Placement["transformer: placement"]
+    Resilience["transformer: resilience"]
+    PlanQuery["query: plan-output"]
+    Writer["reaction: plan-writer"]
+    Control["control: guarded plan commit"]
+    ContextQuery["query: runtime-context"]
+    Observer["runtime host observer"]
+    Status["source: runtime-status"]
+    Views["9 ui-* queries"]
+    SSE["reaction: gpu-demo-ui"]
+    Browser["control proxy and React UI"]
 
-### Query isolation
-
-`ops/query-isolation.Dockerfile` builds a bounded, release-profile diagnostic
-against the existing `.build/runtime-src` export. It does not refresh Core or
-register a competing application graph. Its optional Cargo feature uses the
-already-locked application source solely to extract the actual pipeline memory
-provider. Production registration and the diagnostic share processing-query
-definitions and joins.
-
-```sh
-docker build -f ops/query-isolation.Dockerfile -t gpu-lab-query-isolation .
-docker build --target validate -f ops/query-isolation.Dockerfile .
-image=$(docker image inspect gpu-lab-query-isolation --format '{{.Id}}')
-node --experimental-strip-types ops/check-query-isolation.mjs "$image" \
-  .build/<recording-project>/envelopes/<recording>.ndjson .build/query-isolation
+    DB --> PG
+    PG --> Inputs
+    Inputs --> Policy
+    Policy --> SimulationQuery
+    SimulationQuery --> Simulator
+    Policy --> SchedulingQuery
+    Simulator --> SchedulingQuery
+    PG --> SchedulingQuery
+    SchedulingQuery --> Placement
+    SchedulingQuery --> Resilience
+    Placement --> PlanQuery
+    PlanQuery --> Writer
+    Writer --> Control
+    Control --> DB
+    Placement --> ContextQuery
+    ContextQuery -.-> Observer
+    Inputs -.-> Observer
+    Views -.-> Observer
+    Observer -.->|"bootstrap completion"| Policy
+    Observer -.->|"runtime observations"| Status
+    Writer -.->|"write outcome"| Status
+    PG --> Views
+    Policy --> Views
+    Simulator --> Views
+    Placement --> Views
+    Resilience --> Views
+    Status --> Views
+    Views --> SSE
+    SSE --> Browser
+    Views -->|"ordinary result snapshots"| Browser
 ```
 
-Use a complete existing bounded native recording containing workload creation
-and deletion, plan changes and report batches. The runner invokes all nine UI
-queries, the four downstream processing CQs and seven database-input CQs
-separately, then interleaved over the same corpus. It compares bare
-`InMemoryComputationProvider` with the actual default pipeline provider,
-asserting volatility and using the same non-atomic publication mode for both.
-No disk query backend or WAL is added.
-The `validate` target additionally checks the current runtime's shared query
-registration with strict Clippy and native tests against the same frozen export.
+The runtime attaches the PostgreSQL source to every registered query. Each query
+matches the labels it needs; the diagram omits source connections that do not
+contribute matching rows to that query. All five native graph producers
+(`policy`, `simulator`, `placement`, `resilience`, and `runtime-status`) also feed
+the UI query group.
 
-Reports separate construction, native transform calls, due-timer calls, output
-counts, process CPU ticks and wall-time percentiles, and record Linux load.
-Run only after compilation finishes. CPU counters have the reported OS tick
-resolution; wall time is not pure evaluator CPU. Neither mode includes live
-graph input queue latency.
+### Where construction and configuration happen
 
-The native recorded envelopes are unchanged. Database fixture rows are
-materialized from their authoritative complete `FleetConfiguration` snapshots
-because a sibling recorder may miss original database bootstrap. Observer order
-is not a consumer's exact cross-stream merge order. Historical input clocks
-remain intact and real due timers are explicitly drained after inputs: this
-unpaced diagnostic is **not** a sustained-rate or end-to-end acceptance result.
-The drain sends the public futures-due envelope, acknowledges every returned
-batch (including empty batches), and continues while the transformer reports
-pending emissions. An obsolete timer can legitimately emit nothing before a
-later due timer changes rows; empty output alone does not end the drain.
-Semantic identity/count/plan checks, production TypeScript row validators and
-isolated/combined/provider snapshot comparisons must pass; timings alone are
-not correctness evidence. Image and corpus hashes identify each result, while
-the image includes both the frozen source manifest and diagnostic overlay hashes.
+[gpu-runtime.rs](crates/native/src/bin/gpu-runtime.rs) is the composition root.
+There is no demo-specific `server.yaml` containing this topology. Startup:
 
-Append `--paced` to the runner for a separate combined-query run in both provider
-modes. It preserves recorded arrival intervals and reports input lateness instead
-of sending the whole corpus as fast as possible. This mode reencodes the graph
-changes with one recorded UTC shift, including node effective times, report and
-acknowledgement times, timeline times and their payload copies. Identities,
-monotonic times, intervals and other values are unchanged. Provider comparisons
-undo only that UTC shift. After the input sequence, it waits 5.1 seconds without
-reports and drains scheduled work with the same strict expiry assertions.
-Timers are not driven concurrently during replay; this verifies paced input
-processing and final expiry, not the complete graph scheduler or live feedback.
+1. Loads the matching `libgpu_native` plugin and registers its six factories,
+   along with the existing PostgreSQL, bootstrap, SSE, and log descriptors.
+2. Builds `DrasiLib` with instance ID `gpu-demo`, the PostgreSQL source, and the
+   SSE reaction.
+3. Builds the twenty-query pipeline with its middleware and synthetic joins,
+   admitting its component batch with automatic activation disabled.
+4. Adds the native components and bounded relationships, then starts the selected
+   graph components through ComputationGraph control.
+5. Observes query bootstrap snapshots and starts publishing lifecycle/readiness
+   observations. The listener exposes the normal Server v1 router for the instance.
 
-The Rust workspace is standalone; its target and lockfile do not modify the
-parent server or sibling core workspace:
+[The plugin definition](crates/native/src/lib.rs) wraps the domain libraries in
+native SDK factories. Each transformer has a query-change input port, `in`, and
+a graph-change output port, `out`. It consumes `QueryChangeCodec` envelopes and
+emits `GraphChangeCodec` envelopes with stable identities, nested properties,
+sequences, and provenance.
+
+Factory configuration is intentionally small. For example, the simulator's
+factory configuration is:
+
+```json
+{"stream": "simulator/out"}
+```
+
+The other transformer streams are `policy/out`, `placement/out`, and
+`resilience/out`; the status source uses `runtime-status/out`. These objects are
+passed by the runtime, not loaded from additional JSON files. They configure
+stream identity, **not** GPU behavior, workload demand, or policy parameters.
+Those come from PostgreSQL.
+
+The plan writer instead receives an `endpoint` and a secret `token` reference.
+The runtime resolves `internal-token` through its `gpu-runtime-secrets` resource
+from `INTERNAL_TOKEN`; it does not hard-code the credential into the graph.
+Most processing pipes hold 32 envelopes; UI fan-out pipes hold 64.
+
+## Data model and domain configuration
+
+[The SQL schema](migrations/0001_fleet.sql) and
+[Rust contracts](crates/contracts/src/lib.rs) define the same domain. The database
+stores intent and generation settings, while reports, execution evidence,
+candidate plans, and analysis results live in the volatile graph.
+
+### Persistent tables
+
+| Table | Key | Configuration or state it contains |
+|---|---|---|
+| `regional_clusters` | `cluster_id` | Display name and `region`. The cluster identity and region are immutable after creation. |
+| `placement_policies` | `policy_id` | Customer, allowed regions/purposes/classifications, name, and `authority_ref`. |
+| `data_profiles` | `data_profile_id` | Customer, classification, linked `policy_id`, and authority metadata. |
+| `gpu_inventory` | `gpu_id` | VM/cluster membership, GPU slot/model, VM size, memory/compute budgets, failure domain, display name, and `scheduling_enabled`. Hardware and membership are immutable; name and scheduling permission can change. |
+| `gpu_telemetry` | `gpu_id` | Simulator settings: power, reporting, interval, background compute, and background memory. **These are not measured GPU samples.** Every inventory GPU must have one settings row. |
+| `workload_requirements` | `workload_id` | Serving/model profile, replicas, memory/compute per replica, permitted GPU models, VM-spread rule, data profile, and purpose. |
+| `gpu_placements` | `fleet_id`, always `demo` | The complete saved assignments, monotonic plan version, decision ID, configuration/policy fingerprints, policy-bundle hash, and decision details. |
+| `command_receipts` | Operation kind and request key | Durable idempotency receipts, including plan-write receipts. Not a query input. |
+| `demo_reset_state` | `fleet_id` | Whether reset is pending. Preserves the closed access gate across a control-process crash. Not a query input. |
+
+Only the first seven tables are in the PostgreSQL publication. SQLX migration
+bookkeeping, command receipts, and reset state are not fed into the policy graph.
+Configuration tables have server-maintained `revision` and `updated_at` fields.
+A real edit increments the revision; a no-op preserves both fields. Deletes
+use replica identity sufficient to retract the old query input.
+
+The bounded example permits at most eight regional clusters, eight VMs, sixteen
+GPUs, thirty-two workloads, and thirty-two requested replicas in total. Policies
+and data profiles are also bounded to thirty-two each. Names and IDs, hardware
+profiles, model sets, and policy parameter sets are validated in both the
+database and domain code.
+
+### Hardware and serving profiles
+
+The fixed hardware profile, `h100-nvl-pair-v1`, models an Azure
+`Standard_NC80adis_H100_v5` VM with two NVIDIA H100 NVL GPUs. Each GPU advertises
+94 GB nominal VRAM, but this demo deliberately budgets **80 GiB / 81,920 MiB** for
+workloads and background reservations. Compute uses **100 illustrative units**,
+with a planning ceiling of **85 units including background activity**.
+
+These constants are `MEMORY_MIB` and `PLANNING_UNITS` in the contracts crate,
+not tunable environment variables. At the baseline background demand of 10,
+75 compute units per GPU are available for managed replicas.
+
+| Serving profile | Model reference | Memory per replica | Compute units | Illustrative serving bounds |
+|---|---|---:|---:|---|
+| `assistant-v1` | `Qwen/Qwen2.5-32B-Instruct` | 76 GiB / 77,824 MiB | 55 | BF16, 8 sequences, 4,096 total tokens each |
+| `chat-v1` | `meta-llama/Llama-3.1-8B-Instruct` | 24 GiB / 24,576 MiB | 30 | BF16, 4 sequences, 8,192 total tokens each |
+| `embeddings-v1` | `BAAI/bge-m3` | 4 GiB / 4,096 MiB | 20 | FP16, 512 tokens, batch 16 |
+| `reranker-v1` | `BAAI/bge-reranker-v2-m3` | 4 GiB / 4,096 MiB | 25 | FP16, 512 tokens per pair, batch 8 |
+
+The baseline's eight replicas reserve 216 GiB and 260 managed compute units.
+The fixture begins with this valid saved layout:
+
+| VM | GPU 0 | GPU 1 |
+|---|---|---|
+| `inference-a` | Assistant replica 0 | Chat replica 0 |
+| `inference-b` | Assistant replica 1 | Embeddings replica 0 and reranker replica 0 |
+| `inference-c` | Chat replica 1 and reranker replica 1 | Embeddings replica 1 |
+
+Fixture setup is labeled as such; it is not presented as a solver-generated
+optimum. Subsequent placement changes use the real optimizer. Reset creates
+fresh workload/GPU identities from [shared fixtures](crates/contracts/src/fixtures.rs).
+
+The UI/API selects named serving profiles and expands their resource values
+server-side. Changing `profile_id` updates the model, memory, and compute fields
+together. SQL supports a `custom` profile subject to the schema's bounds;
+changing only one resource field of a named profile is rejected.
+
+### Changing configuration
+
+The easiest path is the UI. Its commands carry the current row revision and,
+for creation, an idempotency key. It never directly edits query result rows.
+For example, a GPU settings patch has this shape, using the actual current
+revision and GPU ID:
+
+```http
+PATCH /api/gpus/<gpu-id>/telemetry
+Content-Type: application/json
+
+{"expected_revision":"7","changes":{"background_compute_units":35}}
+```
+
+Browser requests also need the CSRF token and canonical origin; the UI handles
+those. This example is a request shape, not an unauthenticated curl command.
+
+Direct SQL exercises the same CDC path:
 
 ```sh
+./demo sql
+```
+
+In the resulting `psql` session, this changes the selected running demo:
+
+```sql
+UPDATE gpu_telemetry
+SET background_compute_units = 35
+WHERE gpu_id = (
+    SELECT gpu_id FROM gpu_inventory WHERE name = 'inference-a/0'
+);
+```
+
+Use 10 to restore that baseline background setting. The update first changes
+configured state, then the next simulator report changes observed demand.
+For repeatable experiments that leave the presenter untouched, use the
+[isolated SQL checker](#query-logging-and-reproducible-sql-checks) instead.
+
+## Transformer: the simulator
+
+**Node:** `simulator` (`gpu.lab/telemetry-simulator`).
+
+The [domain library](crates/simulator/src/lib.rs) implements the simulation;
+the [native wrapper](crates/native/src/processor.rs) connects it to the graph.
+
+The simulator supplies the part that would normally be a real GPU/serving
+platform: execution state, resource measurements, application acknowledgements,
+and periodic heartbeats. It is a transformer rather than a disconnected mock
+source because it consumes the current configuration, policy, and saved plan
+through `simulation-inputs`.
+
+### Inputs and configurable behavior
+
+`simulation-inputs` joins `FleetConfiguration` with its matching
+`PolicyAssessment`. Its output includes the observation epoch, inventory,
+workloads, generation settings, saved plan, and policy batch. An optional policy
+match allows the simulator to distinguish "configuration observed, policy still
+pending" from an absent configuration.
+
+| `gpu_telemetry` field | Default | Effect |
+|---|---|---|
+| `powered_on` | `true` | When false, removes execution on the device and stops its reports. Restoring power makes reports due again. |
+| `reporting_enabled` | `true` | Controls report generation without itself stopping execution. The scheduler may subsequently move work when reports expire. |
+| `interval_ms` | `1000` | Report interval per GPU; allowed range is 250-2,000 ms. |
+| `background_compute_units` | `10` | Synthetic demand outside the managed replicas; allowed range is 0-200. It can deliberately make a GPU unsuitable for a plan. |
+| `background_memory_mib` | `0` | Requested background reservation; allowed range is 0-81,920 MiB. |
+
+The native wrapper checks scheduled work every 25 ms. **That is not a 25-ms
+telemetry interval:** the default six-GPU fixture produces approximately six
+samples per second, with simultaneously due samples emitted together.
+Monotonic deadlines schedule reports; samples carry actual UTC report timestamps.
+
+`gpu_inventory.scheduling_enabled` is a separate control. It prevents a GPU from
+being a valid planned destination; it is not a power-off command.
+
+### Applying plans and enforcing policy
+
+The simulator validates the complete saved plan against current requirements,
+policy, power state, resource availability, and VM separation before applying
+it. A newer database version is not automatically an applied version. A rejected
+application leaves an explicit attempted version and error.
+
+Policy is continuously enforced against existing execution as well as new plans:
+
+| Authorization / condition | Execution behavior |
+|---|---|
+| Current allow with a valid assignment | Processing can run. |
+| Unknown, missing, or stale policy | Processing is suspended; memory remains reserved. |
+| Current deny | Execution is fenced: processing stops and its memory reservation is released. |
+| Source invalidation | Authorization is invalidated; a fresh source/bootstrap and policy observation are needed for recovery. |
+| Power off or removed workload replica | The affected execution is retired. |
+
+A still-matching desired assignment can resume after authorization returns,
+provided current resources and separation still permit it. Changing the data
+profile or purpose requires a matching newly committed assignment. Execution
+recovery does not manufacture a partial saved plan.
+
+The simulator emits:
+
+- `GpuSample`: GPU ID, epoch, report sequence/time, inventory/settings revisions,
+  applied plan version, background/managed demand, and memory use.
+- `AppliedPlan`: attempted/applied version, application error, source state,
+  observed configuration, and actual execution.
+- `PolicyEnforcement`: per-replica running/suspended/fenced state, assignment,
+  policy context, applied version, and acknowledgement time.
+
+Running replicas contribute managed compute and resident memory. Suspended
+replicas contribute memory but not managed compute. Fenced replicas contribute
+neither. Requested background memory and actually allocatable background memory
+are reported separately, so the UI does not hide pressure by changing the request.
+
+Changing a setting or acknowledging a plan does **not** refresh a GPU sample.
+The five-second freshness condition is evaluated by Drasi queries, not by the
+browser. A powered-off GPU may therefore still have a recent *last report*
+until that deadline; power state and report health are different facts.
+
+## Transformer: the optimizer
+
+**Nodes:** `placement` (`gpu.lab/placement-solver`) and read-only `resilience`
+(`gpu.lab/resilience-assessor`), using the
+[shared optimizer library](crates/placement/src/lib.rs).
+
+Both nodes consume `scheduling-inputs`. That query combines configuration,
+matching policy, the previous saved plan, and capacities derived from current
+GPU reports. Missing, old-epoch, or five-second-expired reports do not supply
+eligible capacity.
+
+### Placement constraints and objectives
+
+The optimizer uses `good_lp` with the `microlp` mixed-integer solver. Candidate
+replica-to-GPU assignments must satisfy all of the following:
+
+- Every requested replica is assigned exactly once.
+- Each replica fits entirely on one GPU.
+- Total managed memory fits after the reported background memory request.
+- Total managed compute fits within 85 minus reported background demand.
+- The GPU model is allowed and scheduling is enabled.
+- Current policy explicitly permits that workload in the GPU's cluster.
+- A spread-enabled workload has at most one replica per VM/failure domain.
+
+The previous complete placement is retained immediately if it is still valid.
+Otherwise, optimization first minimizes **moves of existing replicas**, then
+minimizes **peak demand relative to available compute capacity** while preserving
+that minimum move count. Newly requested replicas are counted separately from
+moves. Healthy work is not shuffled merely to return to a fixture layout or fill
+newly added spare capacity.
+
+The MILP scales memory constraints to GiB for numerical conditioning; final
+assignment validation still uses exact integer MiB. A timeout or solver error is
+`unknown`, not proof of infeasibility. An infeasible result publishes an
+explanation, not a partial replacement plan.
+
+The native scheduler uses one shared solver worker for placement and resilience,
+with placement taking priority between resilience scenarios. Each solve gets a
+two-second budget. Input changes are coalesced with a 100-ms scheduling delay;
+completed work is checked against its input signature/generation before
+publication. These are implementation constants, not exposed factory settings.
+
+### Configuration that drives optimization
+
+| Input | How it changes the problem |
+|---|---|
+| Workload replicas/profile/resources | Adds or removes required assignment variables and changes per-replica costs. |
+| `allowed_gpu_models` | Removes incompatible destinations. |
+| `spread_across_domains` | Enables or disables per-workload VM separation. |
+| Inventory and `scheduling_enabled` | Adds/removes destinations or excludes a device from plans. |
+| Fresh reports and background settings | Determine currently observed memory/compute headroom and eligibility. |
+| Data profile, purpose, policy parameters | Determine the allowed workload/cluster pairs. |
+| Current saved assignments | Define which placements would count as moves. |
+
+For example, changing background demand on `inference-a/0` from 10 to 35 leaves
+only 50 assignable compute units there. Its 55-unit assistant must move. After
+background demand returns to 10, the new valid placement can stay where it is.
+
+In the fragmentation fixture, adding one assistant needs a 76-GiB gap. Moving
+one 24-GiB chat replica beside another chat frees a whole 80-GiB GPU. Multiple
+equally good destinations can exist; the demo reports the actual solution rather
+than expecting one hard-coded destination.
+
+`placement` emits `SchedulingContext`, `CandidatePlan`, and `DecisionExplanation`.
+Explanations include existing/new/retained counts, actual moves, reason codes,
+input fingerprints, and pre-plan free-memory/largest-gap facts.
+`plan-output` extracts the candidate payload for the writer.
+
+### Read-only resilience analysis
+
+`resilience` asks whether the **same complete requirements** could be placed after
+losing each currently eligible VM or region. Each scenario removes those
+destinations from a copy of the capacity input and runs the same constraints,
+including policy. It emits a correlated `ResilienceAssessment`; it never sends
+an executable plan to the writer.
+
+Current success and resilience are independent. Adding two chat replicas to
+baseline yields ten replicas consuming 320 managed units, which fit now. Losing
+one VM leaves four GPUs with only 300 baseline assignable units, so recovery is
+infeasible. Adding another ready VM can restore recovery capacity without
+moving existing healthy work.
+
+When permitted placement is infeasible, the optimizer can also emit a separate
+`CapacityDiagnostic` asking whether capacity alone would suffice without the
+policy restriction. This is explanatory evidence only, never permission to
+execute a policy-bypassing plan. Unknown or empty analysis is not displayed as a
+passing resilience result.
+
+## Transformer: the policy engine
+
+**Node:** `policy` (`gpu.lab/regorus-policy`), implemented by
+[the policy library](crates/policy/src/lib.rs) and
+[the Rego module](policies/placement.rego).
+
+The policy node has two related jobs. First, it reconstructs the current domain
+input from the seven `input-*` query streams and explicit bootstrap snapshots.
+It publishes `FleetConfiguration`, including generation settings and the saved
+plan. Second, it evaluates processing authorization with the actual Regorus Rego
+engine and publishes `PolicyAssessment` plus per-pair `PlacementEligibility`.
+
+The input to a policy decision follows this chain:
+
+```text
+workload_requirements.data_profile_id
+  -> data_profiles.policy_id
+  -> placement_policies
+  + workload purpose
+  + destination regional_clusters row
+```
+
+### Rules and policy parameters
+
+The Rego module is compiled into the policy crate using `include_str!`; changing
+the rule text requires rebuilding the code. Its **parameters are database rows**
+and can change at runtime without rebuilding the plugin.
+
+The rule allows a workload/cluster pair only when the region, processing purpose,
+classification, and customer relationship are all permitted. It returns explicit
+reasons such as `region-not-permitted`, `purpose-not-permitted`,
+`classification-not-permitted`, and `customer-mismatch`.
+
+| Parameter | Baseline / fragmentation | Regional-policy fixture |
+|---|---|---|
+| Policy ID | `demo-permissive` | `customer-eu-processing` |
+| Customer | `demo` | `customer-eu` |
+| Data profile | `demo-open` | `customer-eu-documents` |
+| Classification | `synthetic` | `restricted` |
+| Workload purpose / allowed purposes | `demo` / `["demo"]` | `customer-support` / `["customer-support"]` |
+| Allowed regions | `["*"]` | `["westeurope","northeurope"]` |
+| Allowed classifications | `["synthetic"]` | `["restricted"]` |
+| Authority metadata | `demo-fixture` | `customer-eu-contract-v1` |
+
+Wildcard regions are restricted by the contracts/schema to the synthetic demo
+policy; they are not a general way to bypass the customer policy. Clearing
+allowed regions denies processing everywhere. A policy can deny a destination
+even if its GPU has a fresh report and ample capacity.
+
+The UI's **Edit policy** dialog edits allowed regions. Other permitted policy
+fields can be changed through the configuration API or SQL. A workload's
+`data_profile_id` and `purpose` select the context to evaluate; `authority_ref`
+is included as explanation/fingerprint metadata, not interpreted as a legal
+authority by the program.
+
+### Evaluation and failure semantics
+
+Each batch covers every workload/cluster pair, not just the currently selected
+destinations. It carries a policy-bundle hash, assessment signature, and
+per-pair input fingerprints. Queries join the result back to its matching
+configuration, and consumers reject stale or incomplete batches.
+
+One policy worker runs bounded background jobs. Regorus has a 50-ms execution
+limit per pair evaluation. Missing or
+invalid context, evaluation failure, or stale authorization is **unknown**, never
+an implicit allow. Unknown policy suspends simulator processing; a current deny
+fences it.
+
+Authorization is checked at three boundaries: the optimizer filters candidate
+destinations, the control service re-evaluates policy before committing a plan,
+and the simulator enforces it during application and continued execution.
+The shared policy library and Rego bundle keep those checks consistent.
+
+## Sources and continuous queries
+
+### PostgreSQL source and bootstrap
+
+The runtime constructs the existing PostgreSQL replication source and bootstrap
+provider with:
+
+| Setting | Value |
+|---|---|
+| Source ID | `postgres` |
+| Database / host | `gpu_demo` / Compose service `postgres` |
+| Reader | `gpu_reader`, using `REPLICATION_PASSWORD` |
+| Publication | `gpu_demo_publication` |
+| Replication slot | `gpu_demo_runtime` |
+| Tables | The seven published domain tables listed above, with explicit primary-key mappings |
+| Connection mode | SSL disabled inside this local demo network |
+
+The bootstrap loads existing rows before live CDC supplies changes. The runtime
+owns the example's replication slot and refuses concurrent ownership of an
+active slot. This is a dedicated local-demo configuration, not a production
+PostgreSQL security/deployment recipe.
+
+The connector represents JSON/JSONB columns as strings. Before query evaluation,
+[postgres.rs](crates/native/src/postgres.rs) applies table-specific strict JSON
+parsing using the existing `parse_json` middleware. It decodes policy sets,
+workload GPU-model sets, and saved-plan assignments/decision details, preserving
+other values and record identities.
+
+The host observes keyed QueryManager snapshots and their output-sequence
+watermarks for all seven input queries, including explicitly empty results.
+That lets the assembler distinguish "an empty table was observed" from "its
+bootstrap has not arrived." It is not inferred from a quiet interval.
+
+**Bootstrap completion is not transaction completion.** The source waits for
+PostgreSQL commit, then delivers committed rows individually. It does not promise
+that every derived policy context sees all rows of a multi-row SQL transaction
+at once; the stronger guarantee remains deferred.
+
+### Runtime-status source
+
+`runtime-status` uses the native plugin's shared, in-process status hub to emit:
+
+| Graph label | Meaning |
+|---|---|
+| `RuntimeStatus` | Latest actual component status and error. |
+| `DemoReadiness` | Source/query bootstrap, observation epoch, current signatures, `inputs_ready`, and final scenario readiness. |
+| `PlanWriteOutcome` | Typed committed/rejected/failed/superseded writer outcome, correlated to its decision. |
+| `DemoEvent` | Semantic lifecycle/decision events with epoch, sequence, UTC time, and decision/plan links. |
+
+The host observer reads actual component status and query snapshots and sends
+generation-bound control notifications into the loaded plugin. The hub is not
+another query engine. Its timeline is bounded to 128 semantic events rather
+than retaining every telemetry tick.
+
+`inputs_ready` is the source/input lifecycle gate; `scenario_ready` additionally
+requires correlated current analysis and execution evidence. Confirmation
+queries depend on the input gate, not final readiness, avoiding a circular
+dependency. If simulator initialization succeeds but its saved plan cannot be
+applied, the status is `application-rejected` with the error retained; that does
+not itself close the corrective-input gate. Actual source/bootstrap failures
+still do.
+
+### All twenty registered queries
+
+The registration sources are
+[inputs.rs](crates/native/src/inputs.rs) and
+[projections.rs](crates/native/src/projections.rs). Query IDs below are the actual
+IDs in instance `gpu-demo`.
+
+#### Seven database-input queries
+
+These are generated from the table contracts rather than read from seven
+separate Cypher files. Each maintains at most one aggregate result row with a
+`records` list. The policy node consumes their deltas and bootstrap watermarks to
+assemble the current input.
+
+| Query | Reads | Downstream use |
+|---|---|---|
+| `input-clusters` | `regional_clusters` | Destination membership, names, and policy regions. |
+| `input-policies` | `placement_policies` | Runtime policy parameters and revisions. |
+| `input-data` | `data_profiles` | Customer/classification/policy relationships. |
+| `input-gpus` | `gpu_inventory` | Hardware, membership, capacity limits, and scheduling permission. |
+| `input-settings` | `gpu_telemetry` | Simulator power/reporting/background-generation settings. |
+| `input-workloads` | `workload_requirements` | Desired replicas and their complete requirements. |
+| `input-plan` | `gpu_placements` | The complete saved plan, version, and decision evidence; closes the plan-write feedback loop. |
+
+#### Four processing queries
+
+| Query | Inputs and result | Consumer |
+|---|---|---|
+| [`simulation-inputs`](queries/simulation-inputs.cypher) | `FleetConfiguration` with optional matching `PolicyAssessment`; returns the configuration/settings/plan snapshot plus policy and epoch. | `simulator` |
+| [`scheduling-inputs`](queries/scheduling-inputs.cypher) | Matching fleet/policy context plus inventory and fresh `GpuSample` evidence; collects per-GPU observed capacity inputs. | `placement` and `resilience` |
+| `plan-output` | `MATCH (p:CandidatePlan) RETURN p.payload AS payload` | `plan-writer` |
+| `runtime-context` | `SchedulingContext` projected to scheduling/policy signatures, required replicas, and currentness. | Host readiness observer |
+
+`plan-output` and `runtime-context` are defined inline in `inputs.rs`.
+The other `.cypher` files in `queries/` include reference/test queries;
+placing a file there does not register another running query.
+
+#### Nine UI queries
+
+| Query | Stable row key | How its inputs become UI evidence |
+|---|---|---|
+| [`ui-clusters`](queries/ui-clusters.cypher) | `cluster_id` | Joins clusters, inventory, and samples; reports distinct VM count and recent-report GPU count, retaining empty clusters. |
+| [`ui-gpus`](queries/ui-gpus.cypher) | `gpu_id` | Joins inventory, cluster, settings, and optional sample; distinguishes configured values from measured load, power from report health, and absent samples from zero load. |
+| [`ui-workloads`](queries/ui-workloads.cypher) | `workload_id` | Combines requirements, saved/applied plans, scheduling/readiness context, execution, policy, and samples into running/confirmed/suspended/fenced counts. |
+| [`ui-placements`](queries/ui-placements.cypher) | `fleet_id` | Correlates the saved plan with actual execution and confirmation evidence; reports desired/applied/confirmed versions, assignments, status, and reason. |
+| [`ui-policy`](queries/ui-policy.cypher) | `id`, a workload/cluster pair | Projects `PlacementEligibility`: allow/deny/unknown, reasons, revisions, authority, regions, fingerprints, and errors. |
+| [`ui-resilience`](queries/ui-resilience.cypher) | `fleet_id` | Joins `ResilienceAssessment` to any matching `CapacityDiagnostic`; separates permitted recovery from capacity-only analysis. |
+| [`ui-decisions`](queries/ui-decisions.cypher) | `decision_id` | Joins `DecisionExplanation` to writer outcomes; exposes proposed/committed/rejected/diagnostic stages, moves, and pre-plan memory evidence. |
+| [`ui-status`](queries/ui-status.cypher) | `fleet_id` | Projects `DemoReadiness`, including scenario, epoch, signatures, input readiness, and nested component status. |
+| [`ui-timeline`](queries/ui-timeline.cypher) | `event_id` | Projects semantic `DemoEvent` records with decision/plan links; identity includes epoch and event sequence. |
+
+#### Relationships and time-aware behavior
+
+The source tables do not contain graph edges. Registration supplies synthetic
+joins that relate records by their keys:
+
+| Relationship | Labels and matching property |
+|---|---|
+| `POLICY_CONFIG` | `FleetConfiguration` and `PolicyAssessment` by `config_fingerprint` |
+| `GPU_CLUSTER` | `gpu_inventory` and `regional_clusters` by `cluster_id` |
+| `GPU_SETTINGS` | `gpu_inventory` and `gpu_telemetry` by `gpu_id` |
+| `GPU_SAMPLE` | `gpu_inventory` and `GpuSample` by `gpu_id` |
+| `EXECUTION_WORKLOAD` | `PolicyEnforcement` and `workload_requirements` by `workload_id` |
+| `EXECUTION_GPU` | `PolicyEnforcement` and `gpu_inventory` by `gpu_id` |
+| `EXECUTION_SAMPLE` | `PolicyEnforcement` and `GpuSample` by `gpu_id` |
+| `EXECUTION_POLICY` | `PolicyEnforcement` and `PlacementEligibility` by `input_fingerprint` |
+| `DECISION_WRITE` | `DecisionExplanation` and `PlanWriteOutcome` by `decision_id` |
+| `RESILIENCE_DIAGNOSTIC` | `ResilienceAssessment` and `CapacityDiagnostic` by `scheduling_signature` |
+
+These join settings are part of a query's configuration; copying only its Cypher
+text is not enough to reconstruct it. Optional/disconnected matches let queries
+retain a workload or cluster before its corresponding execution/report/context
+exists.
+
+The scheduling, GPU, cluster, workload, and placement queries use
+`drasi.trueNowOrLater` with a deadline at `report_time_ms + 5000`. Drasi schedules
+the future reevaluation, so a result can change because a report is *absent*,
+without another database update or GPU event. Transport SSE keepalives do not
+count as GPU heartbeats.
+
+## Reactions, commands, and the saved-plan loop
+
+### Plan writer
+
+The native `plan-writer` sink consumes `plan-output` and posts its complete
+candidate to `POST /internal/placement-plans` on the control service. Accepting
+the query input into this asynchronous sink is explicitly not a database commit.
+Its owned worker publishes a separate write outcome through `runtime-status`.
+
+Inside the commit transaction, the control service:
+
+1. Takes the shared fleet advisory lock, `778807123`.
+2. Checks any existing receipt for the decision ID and identical payload.
+3. Checks the expected saved-plan version and current configuration fingerprint.
+4. Re-evaluates the current policy and checks its signature/bundle hash.
+5. Validates complete assignments against current static inventory, resource
+   limits, compatibility, and spread rules.
+6. Increments the saved version and commits both plan and receipt together.
+
+The writer uses a five-second HTTP timeout and at most five attempts for
+transport/server failures, retrying the same decision identity with backoff.
+HTTP 409 is terminal, not blindly retried. Superseding input stops retries for
+an obsolete candidate; it cannot undo an HTTP request that already committed.
+Durable receipts make retrying a committed decision acknowledge that commit
+rather than write another version.
+
+Commit-time checks are not claims of current GPU execution or fresh telemetry.
+The simulator separately checks current power/settings and applies the observed
+saved plan; only subsequent reports can confirm it.
+
+### A complete change, step by step
+
+Consider increasing background demand on the GPU hosting an assistant:
+
+1. The UI issues a revision-checked settings command; control commits
+   `gpu_telemetry` and acknowledges the write.
+2. PostgreSQL CDC updates the relevant queries. `input-settings` reaches the
+   policy/input assembler, whose `FleetConfiguration` updates
+   `simulation-inputs`.
+3. The simulator produces its next real report with the new background demand.
+   `scheduling-inputs` derives reduced observed headroom.
+4. The optimizer emits a candidate and explanation. `plan-output` delivers the
+   candidate to the plan writer.
+5. Control validates and commits the plan. CDC carries the saved row back through
+   `input-plan` and the input assembly path; an HTTP receipt alone does not do this.
+6. The simulator observes that saved plan, applies valid assignments, and emits
+   application/execution acknowledgements.
+7. Fresh GPU samples reflect the applied version. `ui-workloads` and
+   `ui-placements` then promote matching replicas/the whole plan to confirmed.
+8. The SSE reaction delivers these query changes to React; the resilience node
+   publishes its separate analysis for the new scheduling signature.
+
+Whole-plan confirmation requires matching versions, observation epochs,
+configuration/policy/scheduling context, exact assignments and resource
+requirements, current authorization, and fresh samples no older than the relevant
+application acknowledgement. Null/unknown evidence cannot satisfy that predicate.
+
+### Commands, permissions, and reset
+
+| Interface | Purpose |
+|---|---|
+| `POST /api/workloads`, `/api/hosts`, `/api/gpus`, `/api/clusters` | Create configured entities; creation uses an idempotency key. Adding a VM registers already-ready simulated capacity, not real cloud provisioning. |
+| `PATCH /api/<kind>/<id>` | Edit `gpus`, `workloads`, `policies`, or `telemetry` with `expected_revision`; workload profile changes expand the corresponding resource fields. |
+| `DELETE /api/gpus/<id>`, `/api/workloads/<id>` | Delete a GPU or workload with an `If-Match` revision header. |
+| `PATCH /api/gpus/<id>/telemetry` | Edit one GPU's generation settings. |
+| `PATCH /api/hosts/<id>/telemetry`, `/api/regions/<id>/telemetry` | Apply a grouped settings command with the expected GPU membership/revision set. |
+| `POST /api/demo/presets/<name>` | Explicitly replace the fixture and reconstruct the runtime. |
+| `GET /health/ready` | Observe actual query-backed readiness, not merely container liveness. |
+
+The browser obtains a CSRF token from `/api/csrf` and sends it with the exact
+configured origin. Internal commands use `INTERNAL_TOKEN` and are not browser
+credentials. Database roles separate configuration writes (`gpu_config`), plan
+writes (`gpu_plan`), replication reads (`gpu_reader`), reset (`gpu_reset`), and
+migration ownership (`gpu_owner`). Normal control processes do not use the
+migration owner's credentials.
+
+Reset persists its pending intent before stopping the graph, gates/drains access,
+seeds the selected fixture in a transaction, reconstructs a new runtime epoch,
+and reopens access only after observed readiness. A failed reset remains gated
+across control-process restart until an explicit retry succeeds. Prior SSE
+generations are closed, and the UI reconnects its existing subscriptions.
+
+Reset retains command/plan receipts. Retrying an old successful creation returns
+its historical receipt without resurrecting deleted work in the new fixture.
+Stopping and starting normally preserves the full database; it does not seed a
+new fixture. Query indexes and native computation state are in memory, with no
+RocksDB query store or query WAL configured. A runtime restart rebuilds them and
+requires fresh confirmation under a new epoch.
+
+## The React UI
+
+The UI is a React 18/Vite application using the pinned `@drasi/react` SDK. Its
+entry point is [main.tsx](ui/src/main.tsx); [App.tsx](ui/src/App.tsx) hoists exactly
+one subscription to each of the nine UI queries above the display components.
+
+The provider uses the current page origin, instance `gpu-demo`, reaction
+`gpu-demo-ui`, the proxied `/events/gpu-demo` endpoint, and the SDK's
+`sse034ResultAdapter`. The control proxy exposes only the named UI query
+configuration/results routes and SSE reaction, not arbitrary Server management
+writes.
+
+Initial result snapshots and subsequent SSE changes come from the same actual
+queries. The SDK maintains rows by the stable keys above and handles reconnects.
+If an SSE subscriber falls behind, the reaction logs and closes that subscription
+so the SDK can reconnect and fetch fresh snapshots.
+
+[rows.ts](ui/src/rows.ts) validates the real row contracts. Revisions and plan
+versions are decimal strings; missing counts/measurements are null, not zero.
+Duplicate identities, unknown values, or stale data are not converted into
+successful evidence.
+
+The workload aggregate groups only by the stable workload entity. Execution
+availability and readiness are aggregated values, not additional grouping keys.
+Otherwise, a readiness transition can emit a new group and delete the old group
+under the same UI `workload_id`, losing the live row even when a fresh snapshot
+still contains it. The native regression replays public result deltas by that
+key and compares them with snapshots across readiness, policy-state, and rename
+transitions.
+
+### What to inspect
+
+| UI area | What it shows or controls |
+|---|---|
+| Header | Starting scenario, explicit Reset, System status, Global analysis, and a domain Help guide. |
+| Workloads | Required, running, and confirmed replicas; profile/context; create, edit, scale, delete, and Edit policy. Each row has a default-closed expander for individual replica status and locations. Selecting a workload highlights its replicas and permitted destinations. |
+| Regional panels | Registered VMs, GPU report status, and planned/running/confirmed regional counts. Add ready VM and region failure/restore controls belong to the region. |
+| VM/GPU cards | Device power, reporting and scheduling state, configured versus measured load, memory reservations, and separate Planned/Running sections with Stopped, Paused, or Stopping when applicable. Expand for settings and technical evidence. |
+| Global analysis | Saved/applied/confirmed placement progress, actual optimizer decisions and moves, and separate recovery-after-failure assessments. |
+| Policy details | Per-workload/destination permission, reasons, authority, parameters, revisions, and fingerprints. |
+| Activity | Bounded semantic timeline, including actual replica moves naming their source/destination GPUs, with links to the corresponding decision or plan. |
+| System status | Actual component failures and readiness state, available even when editing is disabled. |
+
+Global analysis slides into a right-hand column aligned with the top of
+Workloads. Workloads, regions, and Activity remain together in the left column,
+without an empty row above the analysis or an artificial gap above the regions.
+Closing analysis restores the main column's width.
+Workloads, Activity, and Global analysis share the Region panels' outer frame,
+surface, and header styling. Nested VM/GPU cards and the inner analysis cards
+remain visually distinct from these top-level sections.
+
+### Replica placement and movement
+
+Every GPU uses the same sectioned layout; there is no layout selector or separate
+move ledger:
+
+| Section | Meaning |
+|---|---|
+| **Planned** | A pending destination in the saved plan, not a claim that execution has started there. The current location is stated if the replica still runs elsewhere. |
+| **Running** | Observed execution on this GPU. Confirmation is a separate indicator requiring current plan/policy and fresh reports. |
+| **Stopped** | An observed policy stop on this GPU; reservations have been released. |
+| **Paused** | Observed suspension with memory still reserved, not running execution. |
+| **Stopping** | A requested stop whose completion is not yet confirmed. |
+
+A replica already observed on its planned GPU has one pill, with **Also planned
+here** recording the saved intent. It is not duplicated in Planned and Stopped
+or Planned and Running on that same device. A different planned destination can
+still appear on another GPU, but it is explicitly separated from the running
+copy. Never-started replicas denied by policy remain blocked Planned entries;
+the UI does not invent a past stop. Unknown or stale execution is labeled as
+unknown/last observed rather than counted as current running work.
+
+Within one GPU, observed section changes can animate the pill between its old
+and new positions. A cross-GPU move does not fly across the page: the destination
+fades/pulses and the source/destination show a short explanatory note. These
+four-second decorations never delay query updates, counts, or execution.
+Initial loading, reconnect snapshots, replacement epochs, and heartbeat-only
+updates do not replay moves. Disable cues with **Help → Animate observed replica
+changes**; the OS reduced-motion preference replaces motion with static cues.
+
+The existing **Activity** log records actual moves such as
+`chat replica 1 moved from inference-a / GPU 1 to inference-b / GPU 1`.
+These messages are emitted by the simulator after application, not generated
+from a saved candidate or from animation timers, and remain in the bounded
+timeline after the visual cue ends.
+
+Expand **Workloads**, then use the chevron on a workload row to inspect each
+replica's Planned location, Running/Paused/Stopped location, status, and
+confirmation. Requested replicas without an allocation and old replicas still
+awaiting retirement are explicit. Each workload's expansion is independent and
+does not change its selection or send a command.
+
+### Containment and presenter highlighting
+
+The view distinguishes regions with a strong outer frame, VMs with a chassis
+boundary and left rail, GPUs with device cards and explicit slot labels, and
+replicas with smaller tiles and their own icon. The collapsed region preview
+also labels VMs and GPUs. Workload definitions remain in the fleet-level
+Workloads panel; their replicas are the objects placed inside GPUs.
+
+Regions and Workloads start collapsed. VM interiors start open inside their
+region, retaining one-click access to GPU cards when the region is expanded;
+each VM can also be collapsed independently.
+
+Open **Help** and use **Region**, **VM**, **GPU**, or **Workloads** under
+**Explain the hierarchy**. The selected type gets a visible outline without
+changing health/policy colors. Workloads highlights both the definition chips
+or table rows and the corresponding actual/saved replica tiles.
+The longer domain glossary is available under **How to read this demo**, keeping
+the presenter controls compact.
+
+**Temporarily reveal collapsed regions and VMs** opens the parents needed to
+show the selected type. Press the same button again, **Clear highlight**, or
+**Escape** to restore their previous expansion state. Closing Help also clears
+the mode. Existing workload selection and expanded GPU details are preserved.
+An open modal handles Escape first; otherwise highlighting clears before
+Global analysis closes. Controls support keyboard activation and reduced motion.
+If restoring a collapsed container hides the focused item, focus returns to the
+presenter control.
+
+This is view-only behavior implemented in [Hierarchy.tsx](ui/src/Hierarchy.tsx).
+It does not issue commands, change query rows, or create query/SSE subscriptions.
+It remains usable for inspection when feeds are stale without enabling ordinary
+mutations or turning stale evidence into a current result.
+
+The UI uses **VM** where some contracts still say `host` or `worker`, and
+**Confirmed** where the workload projection's field is `ready_replicas`.
+Regional counts combine the existing query evidence; a workload's required
+replicas do not belong to one fixed region.
+Regional execution counts do not require a successfully applied plan: the
+query's `blocked` and `awaiting-application` states already establish that the
+simulator's execution was observed. A known empty execution list therefore shows
+zero running and confirmed replicas. Missing/stale observations, unresolved
+destinations, and pending stop acknowledgements retain their uncertainty.
+GPU cards use the same distinction for their empty-execution message.
+
+GPU report age/version metadata uses a non-wrapping, ellipsized line beside the
+report badge so changing values cannot move the card contents up and down.
+The full text remains available on hover and in the expanded GPU details.
+An observed report without an applied version says **No plan applied**, not
+**Plan unknown**; an absent report says **Awaiting first report**.
+
+**Recent report** is not synonymous with **powered on**, **allowed by policy**,
+or **confirmed replica**. Likewise, **Saved** does not mean **Applied**, and
+current success does not mean the next failure is survivable.
+The UI distinguishes these states rather than reducing them to one green badge.
+
+When transport is disconnected or input evidence is stale, retained rows cannot
+enable mutations or claim current success. The supported SDK connection-status
+hook surfaces ongoing reconnect errors, including before the first snapshot.
+Browser offline/online changes trigger the same supported reconnection path.
+Dialogs and acknowledgements do not optimistically replace CQ results.
+
+### A short walkthrough
+
+Start each experiment from the named fixture if you need its exact layout;
+resets replace previous edits.
+
+1. **Baseline:** raise background compute on `inference-a/0` to 35. Follow the
+   assistant move through saved, applied, and freshly confirmed stages.
+2. **Fragmentation:** add one `assistant-v1` replica. Inspect the one existing
+   chat move and one new placement; total free memory alone was insufficient.
+3. **Baseline resilience:** add a two-replica chat workload. Compare ten
+   confirmed replicas with insufficient one-VM recovery capacity, then add a
+   ready VM and observe the reassessment.
+4. **Missing reports:** pause one GPU's reporting without powering it off.
+   Wait for the actual five-second deadline, inspect the resulting decision,
+   and resume reports.
+5. **Regional policy:** fail the primary region and observe permitted recovery
+   into North Europe. Healthy US GPUs are not authorized substitutes. Revoke
+   permission and inspect execution fencing separately from GPU health.
+
+The longer [presenter runbook](docs/gpu-cluster-demo-runbook.md) includes
+preconditions, recovery steps, and expected outcomes for each scenario.
+
+## Build layout and process configuration
+
+### Source map
+
+| Location | What to read or change |
+|---|---|
+| [compose.yaml](compose.yaml), [demo](demo) | Service wiring, environment, startup/reset/cleanup commands. |
+| [ops/runtime.Dockerfile](ops/runtime.Dockerfile), [ops/control.Dockerfile](ops/control.Dockerfile) | Release builds and runtime packaging. |
+| [ops/export-runtime.py](ops/export-runtime.py) | Exports current Core/Server/example sources and content hashes without switching branches. |
+| [crates/contracts](crates/contracts) | Domain types, hardware/serving catalogs, validation, fingerprints, and shared fixtures. |
+| [crates/policy](crates/policy), [policies/placement.rego](policies/placement.rego) | Regorus evaluation and policy rules. |
+| [crates/simulator](crates/simulator) | Execution/application/report-generation model. |
+| [crates/placement](crates/placement) | Placement optimization, resilience, and capacity-only analysis. |
+| [crates/native](crates/native) | SDK factories, envelopes, input assembly, lifecycle, scheduled work, evidence, and the composition-root binary. |
+| [crates/control](crates/control), [migrations](migrations) | HTTP commands/proxies, SQL validation/receipts/reset, roles, and publication. |
+| [queries](queries) | Checked-in processing/UI Cypher and supporting query examples/tests. |
+| [ui/src](ui/src) | Provider/hooks, row validation, display components, command dialogs, labels, and styles. |
+
+The example's root Cargo workspace contains the five domain/control crates.
+`crates/native` is a separate workspace because it also depends on the sibling
+Core and parent Server source trees. Its lockfile is separate.
+
+The launcher stages matching current source in `.build/runtime-src`, including
+uncommitted source changes, and records file hashes in `/app/source-manifest.json`
+inside the runtime image. Runtime and native plugin are built from that same
+export. The image retains required license notices under `/app/licenses/`.
+Rust builds use one-job, architecture-specific Linux caches; use a separate host
+target directory for host native development.
+
+The React SDK source is exported from Server commit
+`2a36f857526baa08304a698131854f222b40b108`, built, and packed as the local
+`drasi-react` tarball used by the UI. This does not switch the checkout's branch.
+`demo up` performs the packaging inside Docker.
+
+### Environment and endpoints
+
+`./demo configure` creates the ignored `.env` when needed. `./demo up` invokes it
+automatically. Do not commit `.env`, publish expanded Compose configuration, or
+discard the credential file while retaining a database whose roles use it.
+
+| Setting | Owner and default purpose |
+|---|---|
+| `DEMO_PORT` | `.env`; defaults to 5400. Drives the loopback mapping and `PUBLIC_ORIGIN`. Change it there for a different local port. |
+| `OWNER_PASSWORD`, `CONFIG_PASSWORD`, `PLAN_PASSWORD`, `REPLICATION_PASSWORD`, `RESET_PASSWORD` | Generated database-role credentials. |
+| `INTERNAL_TOKEN` | Generated service-to-service authorization secret; resolved into the plan writer and used for internal lifecycle commands. |
+| `PGHOST` | Runtime, `postgres` in Compose. |
+| `PLAN_ENDPOINT` | Runtime, `http://control:5400/internal/placement-plans`. |
+| `GPU_NATIVE_PLUGIN` | Runtime image, `/app/libgpu_native.so`; standalone runs must load a matching native library. |
+| `DATABASE_URL`, `PLAN_DATABASE_URL`, `RESET_DATABASE_URL` | Control's role-specific PostgreSQL connections, assembled by Compose. |
+| `DEMO_OWNER_URL` | Migration job's owner connection only. |
+| `DRASI_API_URL`, `DRASI_SSE_URL` | Control proxy destinations, `http://drasi:8080` and `http://drasi:8081/events`. |
+| `PUBLIC_ORIGIN`, `LISTEN_ADDRESS` | Control browser origin and bind address. Compose supplies `http://localhost:<DEMO_PORT>` and `0.0.0.0:5400`. |
+| `RUST_LOG` | Service logging filters in Compose. |
+| `GPU_LAB_LOG_QUERIES` | Optional runtime/Compose query logging selection; absent means off. |
+| `GPU_LAB_DIAGNOSTICS` | Optional native diagnostic recorder/predicate queries; the isolated acceptance override forwards this setting. |
+| `NPM_REGISTRY` | Optional build registry setting. An available host npm cache can supply integrity-checked archives; npm credentials are not exported. |
+
+## Operations, diagnostics, and development
+
+All helper commands below run from this example directory. They target a
+checkout-specific Compose project, not every Drasi environment on the machine.
+
+| Command | Scope and effect |
+|---|---|
+| `./demo up` | Build/start the live demo and wait for observed readiness. Preserves existing database state. |
+| `./demo down` | Stop/remove this project's containers/network, retaining its database volume and build caches. |
+| `./demo status` / `./demo wait --timeout 120` | Inspect or await actual readiness; nonzero means not ready/unavailable. |
+| `./demo logs [service]` | Follow service logs. |
+| `./demo sql` | Open `psql` with the configuration role against the **current** demo database. |
+| `./demo build control drasi` | Build images without deploying them. |
+| `./demo check` | Run the root Rust workspace tests in Docker; does not include the separate native workspace or live integration. |
+| `./demo check --smoke` / `--errors` | Read the current query/SSE path or check rejected commands without successful data mutation. |
+| `./demo check --commands` / `--concurrency` / `--runbook` | **Mutate and reset the current demo.** Use only when its current edits may be replaced. |
+| `./demo check --restart` | Isolated database-preserving stack restart and fresh-confirmation checks, including clean service exit codes. |
+| `./demo check --writer-recovery` | Isolated real plan-writer fault/retry/idempotency checks. |
+| `./demo check --acceptance` | Isolated writer faults, restart, commands, and scenarios; retains the final unsupported transaction-completion assertion. |
+| `./demo check --postgres-mutations` | Isolated copy of current PostgreSQL data, real query logging, SQL mutations, snapshots, and recovery findings. |
+| `./demo check --query-drain` | Isolated diagnostic report pause/drain; convergence after pausing is not an acceptance or performance pass. |
+| `./demo destroy --confirm gpu-demo` | **Delete this demo's database volume.** Distinct from an ordinary stop or reset. |
+
+Isolated checks reuse already-built image IDs, create unique temporary projects,
+and remove their own services/volumes afterward. They preserve failure evidence
+under `.build/`. Build images with `./demo up` or `./demo build control drasi`
+before using them.
+
+### Query logging and reproducible SQL checks
+
+To log two queries in the live runtime, explicitly opt in when starting it:
+
+```sh
+GPU_LAB_LOG_QUERIES=input-settings,ui-gpus ./demo up
+./demo logs drasi
+```
+
+Use `GPU_LAB_LOG_QUERIES='*'` for all twenty, or unset the variable and run
+`./demo up` to remove the optional reaction. Unknown/duplicate IDs fail startup.
+The standard log reaction prints actual ADD/UPDATE/DELETE values, including
+before/after images; it does not run another evaluator. Full-result logging adds
+overhead and can produce large files.
+
+For experiments that preserve the running presenter:
+
+```sh
+./demo check --postgres-mutations
+```
+
+The checker copies the database, logs all twenty queries, compares all seven
+database-input results with actual PostgreSQL rows, and exercises nine groups:
+current-state power recovery, no-op/rollback, workload lifecycle, metadata edits,
+report expiry, background load, power cycles, infeasible-plan restart, and policy
+reauthorization. It checks identities, multiplicities, revisions, exact replica
+counts, and saved/applied/freshly confirmed versions.
+
+The printed evidence directory contains `events.ndjson` with SQL and parameters,
+query/database snapshots, `services.log`, image IDs, source hashes, `results.json`,
+`findings.json`, and presenter before/after comparisons. Failed assertions or
+detected recovery findings produce a nonzero exit even if other cases pass.
+
+An existing capture and separately built runtime can be selected without
+redeploying the presenter:
+
+```sh
+./demo check --postgres-mutations \
+  --snapshot .build/<capture>/presenter.dump \
+  --runtime-image <local-runtime-image>
+```
+
+These are correctness diagnostics, not throughput measurements or proof of the
+deferred whole-transaction policy guarantee. Dumps and logs can contain
+configuration data; keep `.build/` private and untracked.
+
+### Deeper query diagnostics
+
+`GPU_LAB_DIAGNOSTICS=1 ./demo check --acceptance` adds an envelope recorder and
+three read-only diagnostic queries: `diagnostic-contexts`,
+`diagnostic-workload-predicates`, and `diagnostic-placement-predicates`.
+They do not drive the UI or readiness. The recorder preserves stream identities,
+sequences, and lineage and fails explicitly at 256 MiB or 32 run files.
+
+Its sibling subscriptions preserve per-stream FIFO, **not** the precise order
+in which another consumer merged different streams. The diagnostic metrics
+endpoint reports native query output metrics; outbox occupancy is not an input
+queue-depth measurement.
+
+[check-query-isolation.mjs](ops/check-query-isolation.mjs) and
+[query-isolation.Dockerfile](ops/query-isolation.Dockerfile) replay the exact
+twenty-query corpus individually and together against a captured recording,
+comparing bare memory with the real pipeline default. An optional paced mode
+preserves input intervals and checks final timer expiry. Run performance
+diagnostics after compilation has finished; a replay is not the live feedback
+loop or a cross-platform throughput guarantee.
+
+### Host-side development
+
+Use Rust 1.95.0 for host Rust work and Node 22 or 24 for UI work. Normal Docker
+startup does not require those host toolchains.
+
+```sh
+# Domain/control workspace
 cargo test --locked --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cd ui
-npm ci
-npm run build
-npm test
-```
+cargo clippy --locked --workspace --all-targets -- -D warnings
 
-The UI's local `npm ci` requires the ignored `ui/vendor/drasi-react.tgz`, built from
-the source exported by `./demo configure`. The Docker image performs that build
-and packing automatically. Host development requires Rust 1.95.0 and Node 22/24;
-normal Docker startup does not.
-
-The ignored PostgreSQL integration test
-`postgres_commands_revisions_roles_and_plan_receipts` requires a **dedicated**
-database named `gpu_demo_test`, the four roles from `ops/roles.sql`, and
-`DEMO_TEST_OWNER_URL`, `DEMO_TEST_CONFIG_URL`, `DEMO_TEST_PLAN_URL`. It refuses another
-database name, applies migrations, and replaces only that test fixture. Run:
-
-```sh
-cargo test -p gpu-control -- --ignored
-```
-
-It covers real PostgreSQL no-op revisions, immutable hardware, role separation,
-concurrent idempotent registration, stale revisions/member sets, complete-plan
-rejection, and durable plan receipts across fixture replacement. This is not a
-live Drasi integration or a measured heartbeat/fencing latency test.
-
-After that integration test and `cargo build -p gpu-control`, the lightweight
-`node ops/check-api.mjs` smoke check uses the same dedicated configuration/plan
-URLs. It starts and stops its own localhost control process, checks real HTTP
-commands/CSRF/idempotency, and verifies that missing Drasi APIs/SSE fail visibly.
-It does not create a substitute graph or feed browser fixture data.
-
-The Docker UI/control image and source-matched Drasi runtime/native
-plugin use release builds. The runtime and plugin previously used unoptimized
-development builds, so the recorded throughput failures above need requalification
-with the release packaging; stripping debug symbols alone does not optimize code.
-The images build and start on this arm64 host. The actual PostgreSQL query bootstrap
-is being exercised; current failures are surfaced through readiness instead of
-being replaced with mock state. This does not establish complete live acceptance
-or amd64 support. Builds use one-job, architecture-specific Docker caches;
-stopping the demo does not discard those caches or database data.
-
-Native integration checks use the sibling core checkout without changing it:
-
-```sh
-cd crates/native
-export CARGO_BUILD_JOBS=1
-export CARGO_TARGET_DIR="$(cd ../.. && pwd)/target/native"
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-# macOS public host-ABI check:
-cargo build --locked --features dynamic-plugin
-cargo run --locked --features dynamic-plugin --example check-plugin -- "$CARGO_TARGET_DIR/debug/libgpu_native.dylib"
-```
-
-Keep the same `dynamic-plugin` feature enabled for the build and ABI runner.
-To rerun only the singleton registration/H03 probe, use
-`cargo test --locked --lib tests::native_root_query_is_exposed_through_ordinary_read_apis -- --exact --nocapture`.
-The core owner released the source-adaptation build gate before the recorded rerun.
-
-The broader native tests pass real CQ payloads through the Regorus/simulator adapters, expire all six
-stopped reporters through the actual five-second time-aware CQ within its
-500-ms allowance, and verify a native fragmentation solve moves exactly one
-existing replica while resilience produces no executable plan. The executed
-read-access probe checks positive query discovery and stopped-query error
-semantics. These tests do not replace the
-remaining real PostgreSQL/bootstrap/SSE acceptance.
-
-To exercise native evidence through the actual CQs and then the production React
-row validators (not mock fixtures), run from the example directory:
-
-```sh
+# Native components, using an example-owned host target
 export CARGO_BUILD_JOBS=1
 export CARGO_TARGET_DIR="$(pwd)/target/native"
-export GPU_LAB_NATIVE_ROWS="$CARGO_TARGET_DIR/ui-projection-rows.json"
-cargo test --locked --manifest-path crates/native/Cargo.toml \
-  --lib tests::projections::native_evidence_projects_into_real_ui_queries -- --exact &&
-node --experimental-strip-types ops/check-native-ui.mjs "$GPU_LAB_NATIVE_ROWS"
+cargo test --locked --manifest-path crates/native/Cargo.toml --features runtime
+cargo clippy --locked --manifest-path crates/native/Cargo.toml \
+  --features runtime --all-targets -- -D warnings
+
+# Launcher/evidence-check helpers
+python3 -m unittest discover -s ops -p 'test_*.py'
 ```
 
-The input fixtures explicitly supply coherent bootstrap/configuration messages;
-this does not claim PostgreSQL transaction integration. The native projection
-test now passes the complete nine-query scenario. Run the commands
-together so an older output file cannot be mistaken for a successful current run.
-The validator requires all nine feeds and unique stable identities in every
-snapshot.
-Bootstrap regressions additionally cover explicit empty results, undelivered
-sequence-zero snapshots, missing plans, duplicate identities, stale sequences,
-epoch fencing and actual seven-query fixture reconstruction. The UI build and
-284 UI tests, placement permutation regressions, 12 simulator tests, nine-query construction,
-explicit readiness/sequence checks, timed inventory projections and bounded
-timeline are separate evidence, not substitutes for the failing contract.
+To prepare the UI's local SDK dependency using the same pinned source as Docker:
 
-The native checks also cover source interruption before first authorization
-and repeated interruption during recovery. A delayed policy batch cannot reopen
-the execution gate: recovery requires a fresh bootstrap after the latest
-invalidation. Observed source failure emits suspension acknowledgements without
-refreshing GPU heartbeats; inventory removal deletes the old sample. A stopped
-transformer refuses same-object restart and requires fresh factory construction
-and bootstrap, rather than reusing an old clock, authorization, or solver state.
-An infeasible permitted placement automatically produces separate read-only
-capacity evidence, never an executable policy-bypassing candidate.
+```sh
+./demo configure
+mkdir -p ui/vendor
+(
+  cd .build/react-source/dev-tools/react
+  npm ci --ignore-scripts --no-audit --no-fund
+  npm run build
+  npm pack --ignore-scripts --pack-destination ../../../../ui/vendor
+)
+mv ui/vendor/drasi-react-0.1.0.tgz ui/vendor/drasi-react.tgz
+cd ui
+npm ci
+npm test
+npm run build
+```
 
-The native HTTP reaction/status test also verifies that a real HTTP receipt
-reaches the lifecycle-owned status producer. `SinkCompletion::Accepted` remains
-explicit: accepting the query input is not a database commit. A successful
-public-ABI load check finds all six native factories (four transformers,
-one reaction, one status source); no production plugin registry was modified.
+The optional `npm run dev:mock` starts a **UI-only** preview at
+`http://127.0.0.1:5173`. Its purple preview panel and synthetic fixtures are for
+layout/interaction development; it does not use PostgreSQL, Drasi, the optimizer,
+or real report timing. Mock loading is limited to Vite development/mock mode and
+is not a fallback in a production/live build.
 
-## Data and operations
+The control crate also has ignored PostgreSQL integration tests. Those require
+a dedicated database named `gpu_demo_test`, separately configured roles, and
+`DEMO_TEST_OWNER_URL`, `DEMO_TEST_CONFIG_URL`, and `DEMO_TEST_PLAN_URL`.
+Do not point them at the presenter database. Native projection tests and
+[check-native-ui.mjs](ops/check-native-ui.mjs) exercise the real query outputs
+against the production UI row validators; they are separate from live acceptance.
 
-`gpu_telemetry` contains generation settings, **not measurements**. Only actual
-simulator reports may refresh heartbeat observations. Reporting off retains
-execution and the last sample. Power off removes execution but still reaches
-the scheduler through report expiry. Unknown authorization suspends; known deny
-fences and releases reservations.
+## Known limitations and troubleshooting
 
-All command/configuration/placement transactions take advisory lock `778807123`.
-API writers take it before reading state; database statement triggers also
-participate. No-op updates preserve revision and `updated_at`. The normal
-control process has configuration/placement roles, not the migration owner's
-credentials. SQLX migration bookkeeping and command receipts are unpublished.
+This README describes the current implementation, not a promise that every
+failure/recovery combination is solved.
 
-`/health/ready` now proxies the actual graph/query readiness observation.
-No `/api/state` or custom business-event stream is used.
-The proxy allows only the named query full views/results and the named SSE
-reaction, never arbitrary management writes.
+| Symptom or boundary | Meaning and action |
+|---|---|
+| `transaction_completion: "not-supported"` | PostgreSQL emits committed rows individually. Complete multi-row policy-context publication remains deferred. `--acceptance` retains its final `supported` assertion and therefore remains nonzero under this contract even when preceding scenarios pass. Do not infer completion from LSN grouping, delays, or quiet periods. |
+| A saved plan is rejected during startup | A valid source/bootstrap with an invalid saved plan reports `application-rejected`, preserving the error while allowing corrective edits. Older runtime images incorrectly reported `initialization-error` and closed this gate. Rebuild the matching runtime/plugin if an older image still exhibits that lockout; do not bypass a genuine source/bootstrap failure. |
+| Containers are running but `./demo status` fails | Container liveness is not scenario readiness. Inspect **System status**, `./demo logs drasi`, and `./demo logs control` for bootstrap, policy, placement, application, or reset failures. |
+| Browser reads work but a command returns 403 | Use `http://localhost:<DEMO_PORT>`, matching `PUBLIC_ORIGIN`, rather than the `127.0.0.1` alias. Do not weaken origin checks to conceal the mismatch. |
+| A command returns 409 | Its row revision, member set, plan version, or policy/configuration basis is stale. Refresh current query evidence before submitting a new command; do not silently overwrite concurrent changes. |
+| Placement is infeasible while GPUs look healthy | Check per-GPU memory, the 85-unit background-adjusted ceiling, model compatibility, VM separation, and policy permission. Aggregate free capacity is not sufficient proof. |
+| A plan is saved but not confirmed | Inspect application errors, matching epochs/versions, current policy/context, and fresh post-application reports. A receipt or old sample does not prove execution. |
+| Reports are paused or a GPU is powered off | Settings update separately from observed health. The last sample expires after five seconds; it is not replaced by a synthetic failure heartbeat. |
+| Source loss or a failed reset leaves access unavailable | Errors and persisted reset gates are intentional. Inspect the failure and use an explicit recovery/reset when appropriate; do not reinterpret retained data as current. |
 
-Useful development commands: `./demo status`, `./demo logs`, `./demo sql`,
-`./demo build`, `./demo check`, `./demo wait --timeout 120`, and `./demo reset baseline`.
-`status` lists the owned containers, including stopped ones, and the control
-service's actual query-backed readiness response with the scenario/component
-failure details. It returns nonzero when unconfigured, unreachable, gated or not
-ready; running containers alone are not a successful status.
+The demo intentionally uses volatile query/native state and rebuilds from
+PostgreSQL on runtime restart. It does not provide a migration for already
+corrupted historical query indexes, a production GPU scheduler, real geographic
+enforcement, or a distributed exactly-once/atomic multi-service transaction.
 
-All CQ indexes and native computational state are volatile memory. The native
-pipeline's default memory provider includes resource-ownership/I/O wrappers;
-those wrappers do not imply disk indexes, a query WAL or RocksDB. PostgreSQL
-persists the authoritative business configuration, saved plans and receipts.
-Restart reconstructs computation state and requires new observed confirmation.
-`./demo check --smoke` reads actual query results and SSE. `--errors` also checks
-authorization, revisions, input rejection and route isolation without changing
-state. `--concurrency` exercises competing revision-checked edits, concurrent
-idempotent creation, conflicting retry rejection, complete cleanup and historical
-receipt replay across reset without reexecuting the old mutation.
-`--commands` exercises workload creation/scaling/profile changes, policy
-denial, deletion, empty requirements, empty inventory and recovery, followed by
-regional policy revocation/recovery/reauthorization.
-`--runbook` exercises
-load redistribution, fragmentation, resilience, missing reports, VM failure,
-regional recovery and policy fencing with actual commands and query assertions.
-It retains every failure/confirmation gate, not a simulated successful result.
-`--commands`, `--concurrency` and `--runbook` deliberately reset
-and mutate the current demo.
-
-Full `--acceptance` first runs the isolated writer-recovery checks described below,
-then creates a fresh uniquely named temporary Compose project
-and database using the already-built control/runtime image IDs, without publishing
-another UI port. It removes only that test project's services and volume on exit,
-including failed checks; the presenter's running project and database are untouched.
-Before the scenario sequence, it stops and recreates that entire test stack without
-rebuilding images or deleting its database. The restart must preserve non-default
-settings, identities, the complete saved plan and every durable receipt, then
-freshly confirm execution under a new observation epoch. Retrying a deleted
-workload's creation must return its historical receipt without recreating it.
-`./demo check --restart` runs this isolated restart regression on its own.
-Before removing containers, the restart check stops services using their existing
-Compose grace periods and requires control, Drasi and PostgreSQL to have exited
-with code zero, without an OOM, runtime error or abnormal state. It preserves each
-Docker state under `.build/<acceptance-project>/restart-stop-<service>.json`.
-Successful `compose down` alone is not graceful-shutdown evidence: Docker can
-return success after a forced kill. Earlier restart passes establish persistence,
-not this stronger exit-code assertion. The retained old presenter timed out during
-graph shutdown and exited 137; that failure is preserved rather than relabeled a
-pass. The updated release passes the strict exit-code checks and separate
-SSE-connected service restarts. The validator's regression checks run with
-`python3 -m unittest discover -s ops -p 'test_*.py'`.
-Failed runs retain immutable image IDs, the runtime's source-file hash manifest,
-service logs and actual query snapshots under
-`.build/<acceptance-project>/` before removing the temporary resources.
-For a reproducible projection failure, `GPU_LAB_DIAGNOSTICS=1 ./demo check --acceptance`
-also enables a bounded envelope recorder and three read-only predicate/context
-queries in the same instance graph. They are absent from the ordinary demo and
-do not drive readiness, writes, or UI feeds. The recorder uses the public envelope
-codec for actual native producer and query output, preserving identities,
-sequences, and lineage. It fails explicitly at 256 MiB or 32 run files rather than
-silently dropping evidence. Failed runs capture the final predicate queries and
-stop the recorder before copying its files. These sibling subscriptions preserve
-each stream's FIFO, not the precise cross-stream order selected at another query's
-merge; they must not be presented as an exact recording of that query's inputs.
-An authenticated, diagnostic-only endpoint captures public native query output
-metrics (sequence counts and last/maximum transaction duration); outbox occupancy
-is not an input queue depth. `./demo check --query-drain` uses a fresh isolated
-project to create/delete a workload, retain the unchanged 30-second confirmation
-window, then pause real reports for a bounded diagnostic drain and request their
-restoration. It always preserves diagnostic snapshots/envelopes before cleanup.
-Convergence after a pause is never counted as an acceptance pass.
-For offline inspection without replay or another evaluator, run
-`cargo run --locked --manifest-path crates/native/Cargo.toml --bin inspect-trace -- <recording.ndjson>`
-with the example-owned native target. It decodes the recorded envelopes through
-the public codecs and rejects non-advancing per-stream sequences.
-Build images with `./demo up` or `./demo build control drasi` first. This uses
-Docker Compose 2.24 or newer for the isolated port override.
-Acceptance additionally retains the unapproved transaction-consistency gate.
-`./demo check --writer-recovery` uses the same isolation with a test-only HTTP
-forwarder on its private network. It drops a real successful commit response and
-separately returns one transient 503 before forwarding. The actual native writer,
-database receipts and query feedback must recover with one saved version and
-fresh confirmation; a late replay must acknowledge the original commit without
-another write. No query rows or database outcomes are manufactured by the test.
-It also rejects all five attempts for one candidate, requires a visible writer
-error without a saved mutation or retry loop, and verifies that the input gate
-stays open for corrective edits. A genuinely new measured input must then produce a new decision
-that commits and freshly confirms.
-`./demo destroy --confirm gpu-demo` irreversibly
-removes only this checkout's demo data volume.
-
-Credentials live in ignored `.env`. Do not commit it, paste Compose's expanded
-configuration into reports, or remove it while preserving a database whose
-roles still use those passwords.
-
-## Design and presentation
-
-The complete behavioral specification is in
-[docs/gpu-cluster-demo.md](docs/gpu-cluster-demo.md); the ordered scenarios are in
-[docs/gpu-cluster-demo-runbook.md](docs/gpu-cluster-demo-runbook.md). These copies
-belong to this example; the originals in `drasi-core` are unchanged.
-
-The original eight replicas reserve 216 GiB and 260 synthetic demand units.
-Every GPU has an 80-GiB workload budget and 75 managed units with baseline
-background load. Profiles are illustrative, not benchmark claims. The regional
-fixture models a fictional customer's processing-locality requirement, not a
-universal GDPR prohibition or production geographical enforcement.
+[compatibility.json](compatibility.json) records a qualification snapshot, not
+the health of whatever configuration is currently running. The
+[design guide](docs/gpu-cluster-demo.md) and
+[presenter runbook](docs/gpu-cluster-demo-runbook.md) provide additional rationale
+and scenarios; some design requirements are stronger than the implemented
+guarantees explicitly called out here.

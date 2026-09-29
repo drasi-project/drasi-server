@@ -107,10 +107,30 @@ describe('regional replica summaries', () => {
   });
   it('shows a saved target before execution is known, but not when the saved plan is missing', () => {
     const rows = snapshot('healthy'), p = placement(rows);
-    Object.assign(p, { actual: [], applied_plan_version: null, confirmed_plan_version: null, status: 'awaiting-application' });
+    Object.assign(p, { actual: [], applied_plan_version: null, confirmed_plan_version: null, status: 'unknown' });
     expect(clusterReplicaCounts(views(rows), 'eu-primary')).toEqual({ planned: 8, running: null, ready: null });
     p.desired_plan_version = null;
     expect(clusterReplicaCounts(views(rows), 'eu-primary')).toEqual({ planned: null, running: null, ready: null });
+  });
+  it.each(['blocked', 'awaiting-application'])('%s can report known empty execution before any plan has been applied', status => {
+    const rows = snapshot('regional'), p = placement(rows);
+    Object.assign(p, { actual: [], applied_plan_version: null, confirmed_plan_version: null, status });
+    for (const c of rows['ui-clusters']) {
+      expect(clusterReplicaCounts(views(rows), text(c, 'cluster_id'))).toEqual({
+        planned: c.cluster_id === 'eu-primary' ? 8 : 0, running: 0, ready: 0,
+      });
+    }
+    expect(confirmed(views(rows))).toBe(false);
+    rows['ui-status'][0].inputs_ready = false;
+    expect(clusterReplicaCounts(views(rows), 'eu-primary')).toEqual({ planned: null, running: null, ready: null });
+  });
+  it('retains uncertainty for an unobserved empty execution list or an unlocated replica', () => {
+    const rows = snapshot('healthy'), p = placement(rows), actual = records(p, 'actual');
+    Object.assign(p, { actual: [], applied_plan_version: null, confirmed_plan_version: null, status: 'unknown' });
+    expect(clusterReplicaCounts(views(rows), 'eu-primary')).toEqual({ planned: 8, running: null, ready: null });
+    p.status = 'blocked';
+    p.actual = [{ ...actual[0], gpu_id: 'unobserved-gpu' }];
+    expect(clusterReplicaCounts(views(rows), 'eu-primary')).toEqual({ planned: 8, running: null, ready: null });
   });
   it('does not turn an unresolvable saved destination into zero planned replicas', () => {
     const rows = snapshot('healthy'), p = placement(rows);

@@ -1,0 +1,9 @@
+services:
+  drasi:
+    environment:
+      GPU_LAB_LOG_QUERIES: "*"
+    ports:
+      - "127.0.0.1::8080"
+  control:
+    ports: !override
+      - "127.0.0.1::5400"

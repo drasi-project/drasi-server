@@ -32,7 +32,9 @@ WITH w, a, r, e,
      size([d IN p.assignments WHERE d = e.assignment]) = 1 AS assignment_matches
 WITH w, a, r, e, epoch_current AND inputs_current AND plan_applied AND workload_matches
      AND policy_current AND report_current AND assignment_matches AS confirmed
-WITH w, a IS NOT NULL AS execution_known, r IS NOT NULL AND r.inputs_ready = true AS readiness_known,
+WITH w,
+     max(CASE WHEN a IS NOT NULL THEN 1 ELSE 0 END) = 1 AS execution_known,
+     max(CASE WHEN r IS NOT NULL AND r.inputs_ready = true THEN 1 ELSE 0 END) = 1 AS readiness_known,
      sum(CASE WHEN e.state = 'running' THEN 1 ELSE 0 END) AS running_count,
      sum(CASE WHEN confirmed THEN 1 ELSE 0 END) AS confirmed_count,
      sum(CASE WHEN e.state = 'suspended' THEN 1 ELSE 0 END) AS suspended_count,
