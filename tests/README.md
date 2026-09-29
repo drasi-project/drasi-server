@@ -56,6 +56,24 @@ components, with handles used to verify the resulting dataflow. Core's
 replacement, shared-source rebinding, strict recovery, timer delivery and
 persistent-state deletion before same-ID recreation.
 
+`native_query_catalog_test.rs` covers the Server's declarative `queryCatalog`
+recipe without using the pipeline builder to supply its resources. It validates
+missing, duplicate, wrong-role and mismatched query/outlet catalog bindings,
+roundtrips the resource recipe, and feeds two raw native queries through one
+shared result outlet into the existing reaction interface. ADD/UPDATE/DELETE
+images and query snapshots must agree, and a second instance with identical
+query/resource IDs must remain isolated. Native-only query dataflow without an
+ordinary subscription outlet remains permitted.
+
+```bash
+cargo test --locked --test native_query_catalog_test --test query_creation_path_test
+```
+
+These focused construction/contract regressions supplement, rather than replace,
+a stock-binary integration run with real native and SSE plugins. For that run,
+verify the running query snapshots and actual SSE ADD/UPDATE/DELETE frames;
+successful `validate` output alone is not data-delivery evidence.
+
 The same suite also checks declared native Source/Reaction roles, failed
 construction, opaque configuration, diagnostics, lifecycle and removal.
 Namespaced component IDs are exercised by following the returned percent-encoded

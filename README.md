@@ -451,13 +451,56 @@ with native components in the same ComputationGraph.
 Host resources are explicit entries in `definition.resources`, paired by resource
 ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
 values are `memoryIndexes`, `rocksdbIndexes` (requires `path` and graph ownership),
-`middleware`, `queryMiddleware`, `transactionalTransformers`, `configuration`,
+`queryCatalog`, `middleware`, `queryMiddleware`, `transactionalTransformers`, `configuration`,
 and `qos`.
 Native transaction participants are included in `transactionalTransformers`; durable
 transactions require persistent atomic indexes, not `memoryIndexes`. Configuration
 references use `env:NAME`, `env-json:NAME`, `secret:NAME`, or `secret-json:NAME`;
 only the `-json` forms parse a reference as JSON. The `configuration` resource
 uses the instance's secret provider. Secrets are not copied into saved recipes.
+
+For native continuous queries consumed by ordinary reactions (including the
+stock SSE reaction), explicitly declare a query catalog and a result outlet.
+Inside `computation.definition`, the resource portion is:
+
+```yaml
+resources:
+  - id: results
+    role: QueryCatalog
+    ownership: Graph
+    binding: instance-query-results
+resource_configurations:
+  results:
+    kind: queryCatalog
+```
+
+The Server constructs one `QueryResultsCatalog` per resource, scoped to the
+definition's instance graph. It does not create another evaluator or another
+application graph. Separate instances and clones get separate catalog objects,
+even when resource and query IDs are identical.
+
+The remaining wiring uses the existing standard factories:
+
+| Declaration | Required configuration |
+|---|---|
+| Each `drasi/continuous-query` version `1` component | Add `catalog: [results]` to its factory `dependencies`, alongside its existing `indexes` dependency. |
+| One `drasi/query-results-outlet` version `1` component | Role `Sink`, completion `Handled`, configuration version `1`, empty configuration, and `catalog: [results]` in its factory `dependencies`. Generate its typed input descriptor with `QueryResultsOutlet::new(...).descriptor()`. |
+| Query-to-outlet relationships | Connect every exposed query's `out` port to the outlet's `in` port with an ordinary bounded pipe. One shared outlet can receive all query outputs. |
+| Ordinary reaction declaration | Continue referring to the query IDs in `queries`, not the outlet's component ID. Configure the SSE reaction's host, port, path and heartbeat as usual. |
+
+Use actual factory/codec descriptors when generating the full topology rather
+than copying opaque serialized port-schema bytes. A query connected to the stock
+result outlet must have exactly one catalog dependency, and both ends must name
+the **same** declared `QueryCatalog` resource. Invalid or mismatched bindings
+are rejected before component construction. Direct native query dataflow that
+does not use a stock result outlet remains valid without a catalog; it does not
+thereby gain ordinary reaction/SSE delivery.
+
+Registering a query makes its configuration/status inspectable; it does not make
+it running. A running query supplies the usual result snapshots. The connected
+outlet publishes its changes into the same catalog used by ordinary reactions
+and `/queries/{id}/attach`. This configuration does not claim a transactional
+REST-snapshot/SSE handoff or persistent replay.
 
 A `qos` recipe contains a `QosChannelDefinition` under `definition` and, for a
 durable channel, a RocksDB `path`. Volatile channels omit `path`. All server-created

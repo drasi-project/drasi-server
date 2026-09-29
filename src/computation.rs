@@ -33,6 +33,7 @@ pub struct ComputationConfig {
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ComputationResourceConfig {
     MemoryIndexes,
+    QueryCatalog {},
     RocksdbIndexes {
         path: PathBuf,
     },
@@ -51,6 +52,7 @@ impl ComputationResourceConfig {
     fn role(&self) -> ResourceRole {
         match self {
             Self::MemoryIndexes | Self::RocksdbIndexes { .. } => ResourceRole::IndexBackend,
+            Self::QueryCatalog {} => ResourceRole::QueryCatalog,
             Self::Middleware | Self::QueryMiddleware => ResourceRole::Middleware,
             Self::TransactionalTransformers => ResourceRole::Component,
             Self::Configuration => ResourceRole::SecretStore,
@@ -154,6 +156,43 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
                     require_resource(resource)?;
                 }
             }
+            let specifications: BTreeMap<_, _> = definition
+                .components
+                .iter()
+                .filter_map(|component| match &component.construction {
+                    ComponentConstruction::Factory(spec) => Some((spec.descriptor.id(), spec)),
+                    _ => None,
+                })
+                .collect();
+            let query_factory = ContinuousQueryFactory::default();
+            let outlet_factory = QueryResultsOutletFactory::default();
+            for relationship in &definition.relationships {
+                let edge = &relationship.definition;
+                let (Some(query), Some(outlet)) = (
+                    specifications.get(&edge.from.component),
+                    specifications.get(&edge.to.component),
+                ) else {
+                    continue;
+                };
+                if query.implementation != query_factory.descriptor().implementation
+                    || outlet.implementation != outlet_factory.descriptor().implementation
+                {
+                    continue;
+                }
+                let query_catalog = result_catalog_dependency(query)?;
+                let outlet_catalog = result_catalog_dependency(outlet)?;
+                anyhow::ensure!(
+                    require_resource(query_catalog)?.role == ResourceRole::QueryCatalog,
+                    "query '{}' catalog dependency must reference a queryCatalog resource",
+                    query.descriptor.id()
+                );
+                anyhow::ensure!(
+                    query_catalog == outlet_catalog,
+                    "query '{}' and result outlet '{}' must reference the same queryCatalog resource",
+                    query.descriptor.id(),
+                    outlet.descriptor.id()
+                );
+            }
         }
     }
     for id in definition.component_resources.values().flatten() {
@@ -178,6 +217,20 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
     }
     definition.validate_structure()?;
     Ok(())
+}
+
+fn result_catalog_dependency(specification: &ComponentSpecification) -> Result<&ResourceId> {
+    specification
+        .dependencies
+        .get("catalog")
+        .filter(|resources| resources.len() == 1)
+        .and_then(|resources| resources.first())
+        .with_context(|| {
+            format!(
+                "component '{}' connected to a query result outlet requires exactly one catalog dependency",
+                specification.descriptor.id()
+            )
+        })
 }
 
 /// Bind only explicitly declared host resources. Their recipes stay in the
@@ -229,6 +282,12 @@ pub async fn build_components(
                 Arc::new(QueryIndexProviderResource(Arc::new(
                     drasi_core::computation::InMemoryComputationProvider,
                 ))),
+            ),
+            ComputationResourceConfig::QueryCatalog {} => ResourceHandle::new(
+                ResourceRole::QueryCatalog,
+                Arc::new(QueryResultsCatalog::new(
+                    config.definition.graph_id.as_str(),
+                )?),
             ),
             ComputationResourceConfig::RocksdbIndexes { path } => {
                 anyhow::ensure!(
