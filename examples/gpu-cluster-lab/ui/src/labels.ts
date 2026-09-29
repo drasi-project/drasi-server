@@ -55,6 +55,24 @@ export function label(category: keyof typeof labels, value: string): string {
   return values[value] ?? value;
 }
 
+export type StatusTone = 'good' | 'warning' | 'danger';
+
+export function reportTone(health: string, stale = false): StatusTone {
+  if (stale || health === 'unknown') return 'warning';
+  return health === 'healthy' ? 'good' : health === 'unreachable' ? 'danger' : 'warning';
+}
+
+export function componentTone(status: string, hasError: boolean, stale = false): StatusTone {
+  if (stale) return 'warning';
+  if (hasError || ['failed', 'stopped', 'unavailable', 'infeasible', 'application-rejected', 'initialization-error', 'error', 'rejected'].includes(status)) return 'danger';
+  if (['ready', 'running', 'current', 'policy-current', 'plan-current', 'resilience-current', 'candidate-produced', 'committed', 'applied'].includes(status)) return 'good';
+  return 'warning';
+}
+
+export function queryRetrying(status: string): boolean {
+  return ['initial-loading', 'resynchronizing', 'reconnecting', 'stale-last-good-data'].includes(status);
+}
+
 const reasons: Readonly<Record<string, string>> = {
   'fixture-setup': 'Starting scenario',
   'workload-added': 'New workload requested',

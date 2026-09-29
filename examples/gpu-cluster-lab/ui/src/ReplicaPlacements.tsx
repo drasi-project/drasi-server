@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { count, gib } from './Evidence';
 import { HierarchyIcon } from './Hierarchy';
-import { gpuLocation, replicaCaption, replicaTiles, sectionNames, type ReplicaSection, type ReplicaView } from './replicas';
+import { gpuLocation, replicaCaption, replicaTiles, replicaTone, sectionNames, type ReplicaSection, type ReplicaView } from './replicas';
 import { number, text } from './rows';
 import type { ReplicaCue } from './replicaMotion';
 
@@ -37,7 +37,7 @@ export function ReplicaPlacements({ gpuId, view, compact, selectedWorkload, onTo
                   : 'Planned here · execution unknown'
               : replica.detail;
             const cue = cues.find(cue => cue.id === replica.id && cue.toGpu === gpuId);
-            return <div key={replica.id} className={`allocation ${section === 'planned' ? 'desired' : text(assignment, 'state')}${replica.workloadId === selectedWorkload ? ' selected-replica' : ''}${cue ? ' replica-cued' : ''}`}
+            return <div key={replica.id} className={`allocation ${section === 'planned' ? 'desired' : text(assignment, 'state')} status-${replicaTone(replica, current)}${replica.workloadId === selectedWorkload ? ' selected-replica' : ''}${cue ? ' replica-cued' : ''}`}
               data-hierarchy-kind="replica" data-hierarchy-id={replica.id}
               data-allocation-gpu={gpuId} data-allocation-section={section}
               title={`${description} · ${gib(number(assignment, 'memory_mib'))} · ${number(assignment, 'compute_units')} demand units`}>
@@ -70,7 +70,7 @@ export function WorkloadReplicas({ workloadId, view }: { workloadId: string; vie
     {replicas.length ? <ul className="workload-replica-tree">{replicas.map(replica =>
       <li key={replica.id} data-replica-detail={replica.id}>
         <div className="replica-tree-title"><HierarchyIcon kind="replica"/><strong>Replica {replica.index + 1}</strong>
-          <span>{replica.status}</span>{!replica.requested && <span>No longer requested</span>}</div>
+          <span className={`status-text ${replicaTone(replica, view.executionKnown)}`}>{replica.status}</span>{!replica.requested && <span>No longer requested</span>}</div>
         <dl className="replica-locations">
           <dt>Planned</dt><dd>{gpuLocation(view.gpus, replica.planned && text(replica.planned, 'gpu_id'))}</dd>
           <dt>{!view.executionKnown ? 'Running on' : replica.actual?.state === 'fenced' ? 'Stopped on'

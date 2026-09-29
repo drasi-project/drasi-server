@@ -41,13 +41,18 @@ export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWo
           const id = text(w, 'workload_id'), required = number(w, 'replicas');
           const confirmed = stale ? null : nullableNumber(w, 'ready_replicas');
           const running = stale ? null : nullableNumber(w, 'running_replicas');
-          const state = confirmed === null ? 'unknown' : required === 0 ? 'idle' : confirmed === required ? 'confirmed' : 'unconfirmed';
+          const replicas = replicaView.replicas.filter(replica => replica.workloadId === id && replica.requested);
+          const blocked = replicaView.executionKnown && required > 0 && replicas.length === required
+            && replicas.every(replica => replica.actual?.state === 'fenced' || replica.status === 'Blocked by policy');
+          const stopped = blocked && replicas.every(replica => replica.actual?.state === 'fenced');
+          const state = blocked ? 'blocked' : confirmed === null ? 'unknown' : required === 0 ? 'idle' : confirmed === required ? 'confirmed' : 'unconfirmed';
           return <button type="button" key={id} className={`workload-chip workload-${state}`} aria-label={text(w, 'name')}
             data-hierarchy-kind="workload" data-hierarchy-id={id}
             aria-describedby={`workload-counts-${id}`} aria-pressed={selectedWorkload === id}
-            title={`${text(w, 'name')}: ${required} required, ${count(running)} running, ${count(confirmed)} confirmed.${stale ? ' Last received settings; current execution is unknown.' : ''} Select to highlight GPU replicas.`}
+            title={`${text(w, 'name')}: ${required} required, ${count(running)} running, ${count(confirmed)} confirmed.${blocked ? stopped ? ' Stopped by policy.' : ' Blocked by policy.' : ''}${stale ? ' Last received settings; current execution is unknown.' : ''} Select to highlight GPU replicas.`}
             onClick={() => onToggleWorkload(id)}>
             <strong><HierarchyIcon kind="workload"/>{text(w, 'name')}</strong><span id={`workload-counts-${id}`}>{count(confirmed)} / {required} confirmed</span>
+            {blocked && <span className="workload-policy-state">{stopped ? 'Stopped by policy' : 'Blocked by policy'}</span>}
             <span className="workload-progress" aria-hidden="true"><span style={{ width: `${confirmed === null || required === 0 ? 0 : Math.min(100, confirmed / required * 100)}%` }}/></span>
           </button>;
         }) : <span className="muted">{empty}</span>}

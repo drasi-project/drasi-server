@@ -142,7 +142,7 @@ describe('mock controls and evidence interactions', () => {
   it('keeps badge geometry identical for healthy, overdue and unknown report states', async () => {
     loadStyles();
     await act(async () => root.render(<MockApp initialSnapshot="reports-expired"/>));
-    const healthy = element('.gpu .badge.good'), overdue = element('.gpu .badge.warning');
+    const healthy = element('.gpu .badge.good'), overdue = element('.gpu .badge.danger');
     for (const property of ['font-size', 'line-height', 'padding', 'border-radius', 'border-top-width']) {
       expect(visualStyle(healthy, property)).not.toBe('');
       expect(visualStyle(overdue, property)).toBe(visualStyle(healthy, property));
@@ -163,6 +163,99 @@ describe('mock controls and evidence interactions', () => {
     expect(element('.eligibility .badge.danger').textContent).toBe('Not allowed');
     expect(visualStyle(element('.eligibility .badge.danger'), 'color')).toBe(visualStyle(element('.policy-indicator.policy-deny'), 'color'));
     expect(denied.querySelector('.badge.good')?.textContent).toBe('Recent report');
+  });
+  it('marks known power-off states red without replacing a still-recent report with invented failure data', async () => {
+    loadStyles();
+    await act(async () => root.render(<MockApp initialSnapshot="power-off"/>));
+    const off = element('.gpu.power-off');
+    expect(off.querySelector('.badge.good')?.textContent).toBe('Recent report');
+    expect(visualStyle(off.querySelector('.gpu-setting-state .danger')!, 'color'))
+      .toBe(visualStyle(element('.mini-gpu.danger'), 'color'));
+    expect(visualStyle(button('Restore GPU', off), 'color'))
+      .toBe(visualStyle(element('.mini-gpu.danger'), 'color'));
+    expect(element('.mini-gpu.danger').textContent).toContain('Power off');
+    expect(element('.mini-gpu.danger').getAttribute('aria-label')).toContain('Recent report');
+    expect(visualStyle(off, 'border-color')).toBe(visualStyle(element('.mini-gpu.danger'), 'border-color'));
+    await select('#snapshot', 'reports-paused');
+    expect(document.querySelector('.gpu.power-off')).toBeNull();
+    expect(element('.gpu .badge.good').textContent).toBe('Recent report');
+    expect(element('.mini-gpu.warning').textContent).toContain('Reports paused');
+    expect(visualStyle(element('.gpu-setting-state .warning'), 'color'))
+      .toBe(visualStyle(element('.mini-gpu.warning'), 'color'));
+  });
+  it('shows an overdue report in red even when power is still on, and unknown reports in amber', async () => {
+    loadStyles();
+    await act(async () => root.render(<MockApp initialSnapshot="reports-expired"/>));
+    expect(element('.gpu .badge.danger').textContent).toBe('Report overdue');
+    expect(document.querySelector('.gpu.power-off')).toBeNull();
+    expect(element('.mini-gpu.danger').getAttribute('aria-label')).toContain('Report overdue');
+    const failed = visualStyle(element('.gpu .badge.danger'), 'color');
+    await select('#snapshot', 'bootstrap');
+    expect(element('.gpu .badge.warning').textContent).toContain('Report status unknown');
+    expect(visualStyle(element('.gpu .badge.warning'), 'color')).not.toBe(failed);
+    expect(document.querySelector('.mini-gpu.danger')).toBeNull();
+  });
+  it.each([
+    ['policy-fenced', 'fenced', 'status-danger'],
+    ['policy-unknown', 'suspended', 'status-warning'],
+    ['fencing-pending', 'fencing-pending', 'status-warning'],
+    ['plan-applied', 'running', 'status-warning'],
+    ['healthy', 'running', 'status-good'],
+  ])('uses the correct red/amber/green replica evidence in %s', async (scene, state, tone) => {
+    loadStyles();
+    await act(async () => root.render(<MockApp initialSnapshot={scene}/>));
+    expect(element(`.allocation.${state}`).classList.contains(tone)).toBe(true);
+    if (scene === 'policy-fenced') {
+      expect(document.querySelectorAll('.workload-chip.workload-blocked')).toHaveLength(4);
+      expect(element('.workload-chip').textContent).toContain('Stopped by policy');
+      expect(visualStyle(element('.workload-policy-state'), 'color'))
+        .toBe(visualStyle(element('.allocation.status-danger'), 'color'));
+    } else expect(document.querySelector('.workload-chip.workload-blocked')).toBeNull();
+  });
+  it('keeps partially confirmed workloads amber rather than treating the whole workload as stopped', async () => {
+    await act(async () => root.render(<MockApp initialSnapshot="reports-expired"/>));
+    expect(document.querySelector('.workload-chip.workload-unconfirmed')).not.toBeNull();
+    expect(document.querySelector('.workload-chip.workload-blocked')).toBeNull();
+    expect(element('.workload-unconfirmed').textContent).toContain('1 / 2 confirmed');
+  });
+  it('marks current impossible recovery checks red but pending or old assessments amber', async () => {
+    loadStyles();
+    await act(async () => root.render(<MockApp initialSnapshot="tenant-demand"/>));
+    expect(element('.assessment .badge.danger').textContent).toBe('Some cases cannot recover');
+    expect(element('.assessment summary.danger').textContent).toContain('Cannot recover');
+    await select('#snapshot', 'assessment-stale');
+    expect(document.querySelector('.assessment .badge.danger')).toBeNull();
+    expect(element('.assessment .badge.warning').textContent).toBe('Not current');
+    expect(document.querySelector('.assessment summary.danger')).toBeNull();
+    await select('#snapshot', 'plan-committed');
+    expect(document.querySelector('.assessment .badge.danger')).toBeNull();
+    expect(element('.analysis-content > .panel .badge.warning').textContent).toBe('Saved; waiting to apply');
+  });
+  it('colors explicit component failures red and working or unknown component states amber', async () => {
+    loadStyles();
+    const rows = snapshot('healthy');
+    rows['ui-status'][0].components = ['failed', 'stopped', 'unavailable', 'pending', 'starting', 'future-status']
+      .map((status, index) => ({ component_id: `test-${index}`, status, error: null }));
+    await act(async () => root.render(<Lab views={mockViews(rows, 'healthy', () => {})}
+      command={{ send: vi.fn(), pending: false, notice: null, error: null }}
+      connection={{ initialized: true, error: null, retry: vi.fn() }}/>));
+    await click('System status');
+    const states = [...document.querySelectorAll('.component b')];
+    expect(states.slice(0, 3).every(node => node.classList.contains('danger'))).toBe(true);
+    expect(states.slice(3).every(node => node.classList.contains('warning'))).toBe(true);
+    expect(visualStyle(states[0], 'color')).not.toBe(visualStyle(states[3], 'color'));
+  });
+  it('uses amber for an explicit reconnection attempt and red after that connection fails', async () => {
+    loadStyles();
+    const render = (reconnecting: boolean) => <Lab views={mockViews(snapshot('healthy'), 'healthy', vi.fn())}
+      command={{ send: vi.fn(), pending: false, notice: null, error: null }}
+      connection={{ initialized: false, reconnecting, error: new Error('Connection unavailable'), retry: vi.fn() }}/>;
+    await act(async () => root.render(render(true)));
+    expect(element('.status-alert').classList.contains('warning')).toBe(true);
+    expect(button('Add workload').disabled).toBe(true);
+    await act(async () => root.render(render(false)));
+    expect(element('.status-alert').classList.contains('error')).toBe(true);
+    expect(button('Add workload').disabled).toBe(true);
   });
   it('keeps dialog errors distinct from explanatory text and aligns dialog titles and close controls', async () => {
     loadStyles();

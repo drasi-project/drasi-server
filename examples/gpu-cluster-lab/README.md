@@ -1043,6 +1043,23 @@ or **confirmed replica**. Likewise, **Saved** does not mean **Applied**, and
 current success does not mean the next failure is survivable.
 The UI distinguishes these states rather than reducing them to one green badge.
 
+Status colors are consistent across expanded cards, collapsed GPU previews,
+replica/workload states, analysis, and component status:
+
+| Color | Meaning |
+|---|---|
+| **Red** | A definite negative result: powered off, report overdue, stopped by policy, explicitly denied, failed/unavailable component, rejected decision, or a current recovery check that cannot succeed. |
+| **Amber** | Incomplete, transient, or uncertain evidence: starting, reconnecting, awaiting application/reports, partially confirmed, paused, stop requested, or unknown/stale state. |
+| **Green** | Current successful evidence, such as a recent report, an allowed policy decision, or a confirmed replica. |
+
+These colors do not merge independent facts. A GPU configured off has a red
+frame and power indication even while its last report remains recent; the
+report badge turns red only when that report actually expires. A powered-on GPU
+with overdue reports is a reporting failure, not proof of a power failure.
+The same explicit off/overdue states are red in collapsed previews. A fully
+policy-stopped workload is red; partial confirmation or a pending stop remains
+amber. Presenter and selection highlights keep their separate blue outline.
+
 When transport is disconnected or input evidence is stale, retained rows cannot
 enable mutations or claim current success. The supported SDK connection-status
 hook surfaces ongoing reconnect errors, including before the first snapshot.

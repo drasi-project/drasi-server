@@ -4,7 +4,7 @@ import type { ResultRow } from '@drasi/react/client';
 import { rowKey, validateRow, text, number, boolean, strings, records, type QueryId } from './rows';
 import { DecisionEvidence, PlacementEvidence, PolicyEvidence, ResilienceEvidence, StatusEvidence,
   TimelineEvidence, timelineMessage, clusterReplicaCounts, correlated, count, currentFeeds } from './Evidence';
-import { label } from './labels';
+import { componentTone, label, queryRetrying, reportTone } from './labels';
 import { GpuCard } from './GpuCard';
 import { WorkloadsPanel } from './WorkloadsPanel';
 import { HierarchyIcon, PresenterControls, usePresenterHighlight } from './Hierarchy';
@@ -89,13 +89,14 @@ export function LiveApp() {
   }} connection={{
     ...connection,
     initialized: connection.initialized && transport.connected,
+    reconnecting: online && transport.reconnecting,
     error: !online ? new Error('Browser is offline') : connection.error ?? transport.error ?? null,
   }} command={command}/>;
 }
 
 export function Lab({ views: feeds, connection, command, demoPanel }: {
   views: Views;
-  connection: { initialized: boolean; error: Error | null; retry: () => void };
+  connection: { initialized: boolean; error: Error | null; reconnecting?: boolean; retry: () => void };
   command: Commands;
   demoPanel?: React.ReactNode;
 }) {
@@ -128,6 +129,8 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
   const [motionEnabled, setMotionEnabled] = useState(true);
   const replicaCues = useReplicaMotion(appRoot, replicaView, motionEnabled);
   const stale = !currentFeeds(feeds) || connectionUnavailable;
+  const failedUpdates = (!!connection.error && !connection.reconnecting)
+    || views.some(view => view.error && !queryRetrying(view.status));
   const systemView = { ...status, stale: status.stale || connectionUnavailable };
   const system = systemSummary(systemView);
   const disabled = command.pending || stale || !inputsReady;
@@ -182,6 +185,9 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
         Compute demand uses illustrative units: 100 is the reference capacity, and plans stay within 85, including background activity. Demand units are not utilization percentages or model benchmarks.</p>
       <p><strong>GPU reports and policy.</strong> A report becomes overdue after five seconds. Missing reports do not prove a GPU has stopped.
         Unknown policy pauses processing but keeps memory reserved. A policy denial stops processing and releases memory once the stop is confirmed.</p>
+      <p><strong>Status colors.</strong> Red identifies off, stopped, overdue, denied, or failed states.
+        Amber identifies pending, paused, unknown, or partially complete states. Green identifies current successful evidence.
+        Report freshness and power are separate: an off GPU can still have a recent last report.</p>
       <p><strong>Regional policy.</strong> The policy represents an example customer agreement, not a general GDPR requirement.
         This local simulation does not keep real data in the named regions.</p>
       <p>After a connection interruption, displayed information may remain out of date until a fresh snapshot arrives.</p>
@@ -190,7 +196,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
       </div>
     </header>
     {demoPanel}
-    {(connection.error || views.some(v => v.error || v.stale)) && <section className="error" role="alert">
+    {(connection.error || views.some(v => v.error || v.stale)) && <section className={`status-alert ${failedUpdates ? 'error' : 'warning'}`} role="alert">
       <strong>Updates are unavailable or out of date. Previously received data does not confirm current policy permission.</strong>
       <p>{connection.error?.message ?? views.find(v => v.error)?.error?.message ?? 'Waiting for the latest data.'}</p>
       <button onClick={connection.retry}>Reconnect updates</button>
@@ -249,7 +255,9 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
                       ...(!boolean(g, 'scheduling_enabled') ? ['Excluded from plans'] : []),
                     ];
                     const description = `${text(g, 'name')}: ${label('health', health)}${settings.length ? ` · ${settings.join(' · ')}` : ''}${stale ? ' · last received inventory' : ''}`;
-                    return <span key={text(g, 'gpu_id')} className={`mini-gpu report-${health}`} role="img" aria-label={description} title={description}
+                    const tone = stale ? 'warning' : !boolean(g, 'powered_on') || health === 'unreachable' ? 'danger'
+                      : !boolean(g, 'reporting_enabled') || !boolean(g, 'scheduling_enabled') ? 'warning' : reportTone(health);
+                    return <span key={text(g, 'gpu_id')} className={`mini-gpu report-${health} ${tone}`} role="img" aria-label={description} title={description}
                       data-hierarchy-kind="gpu" data-hierarchy-id={text(g, 'gpu_id')}>
                       <HierarchyIcon kind="gpu"/>GPU {number(g, 'slot')}{settings.length > 0 && <span className="mini-gpu-setting"> · {settings[0]}</span>}
                     </span>;
@@ -325,9 +333,10 @@ function Panel({ title, queryId, query, feeds, headerAction, children, onDecisio
     }
   };
   const unavailable = query.stale || query.error || query.loading || !query.data;
+  const failed = !!query.error && !queryRetrying(query.status);
   return <section className={`panel${title ? '' : ' inset-panel'}`}>{(title || unavailable || headerAction) && <div className="section-title">{title && <h3>{title}</h3>}{unavailable &&
-    <span className={query.stale ? 'warning' : 'muted'}>{query.stale ? 'Out of date' : query.error ? 'Unavailable' : query.loading ? 'Loading' : 'Waiting for data'}</span>}{headerAction}</div>}
-    {query.error && <div role="alert" className="error">{query.error.message}<button onClick={query.retry}>Retry updates</button></div>}
+    <span className={failed ? 'danger' : 'warning'}>{query.error ? queryRetrying(query.status) ? 'Retrying' : 'Unavailable' : query.stale ? 'Out of date' : query.loading ? 'Loading' : 'Waiting for data'}</span>}{headerAction}</div>}
+    {query.error && <div role="alert" className={failed ? 'error' : 'warning'}>{query.error.message}<button onClick={query.retry}>Retry updates</button></div>}
     <div className="panel-content">{query.data?.length ? query.data.map(row => <div key={rowKey(queryId, row)}>{render(row)}
       <details className="technical-details"><summary>Technical details</summary><p className="muted">{queryId} · {query.status}</p><pre>{JSON.stringify(row, null, 2)}</pre></details></div>) : <Empty loading={query.loading}/>}</div>
     {children}
@@ -362,10 +371,10 @@ function systemSummary(query: View): { kind: string; note: string; detail: strin
   const working = ['pending', 'policy-pending', 'awaiting-policy', 'awaiting-source-bootstrap', 'awaiting-policy-bootstrap'];
   const current = ['ready', 'running', 'current', 'policy-current', 'plan-current', 'resilience-current', 'candidate-produced'];
   if (query.stale || query.error || query.loading || !components.length) return { kind: 'unknown', note: 'Unknown', detail: 'Current component status is unavailable.' };
-  if (components.some(c => c.error || ['failed', 'stopped', 'unavailable'].includes(text(c, 'status')))) {
+  if (components.some(c => componentTone(text(c, 'status'), !!c.error) === 'danger')) {
     return { kind: 'issue', note: 'Issue', detail: 'A reported component needs attention. Open system status for details.' };
   }
-  if (components.some(c => ![...current, ...working, 'starting'].includes(text(c, 'status')))) {
+  if (components.some(c => componentTone(text(c, 'status'), false) !== 'good' && ![...current, ...working, 'starting'].includes(text(c, 'status')))) {
     return { kind: 'unknown', note: 'Unknown', detail: 'Some components have not reported a ready or running state.' };
   }
   if (components.some(c => c.status === 'starting')) return { kind: 'starting', note: 'Starting', detail: 'Some reported components are starting.' };

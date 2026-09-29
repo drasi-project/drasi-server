@@ -1,7 +1,7 @@
 import type { ResultRow } from '@drasi/react/client';
 import type { Views } from './App';
 import { nullableNumber, nullableText, number, records, strings, text } from './rows';
-import { label, reasonText } from './labels';
+import { componentTone, label, reasonText } from './labels';
 
 export function correlated(row: ResultRow | undefined, status: ResultRow | undefined): boolean {
   return !!row && !!status && ['observation_epoch', 'scheduling_signature', 'policy_signature']
@@ -88,8 +88,15 @@ export function confirmed(views: Views): boolean {
 export function PlacementEvidence({ row, views, onDecision }: { row: ResultRow; views: Views; onDecision?: (id: string) => void }) {
   const synced = correlated(row, views['ui-status'].data?.[0]) && currentFeeds(views);
   const complete = confirmed(views);
+  const infeasible = synced && views['ui-decisions'].data?.some(decision =>
+    correlated(decision, views['ui-status'].data?.[0]) && decision.outcome === 'infeasible');
+  const denied = synced && views['ui-policy'].data?.some(policy =>
+    policy.current === true && policy.authorization === 'deny'
+    && policy.observation_epoch === row.observation_epoch && policy.policy_signature === row.policy_signature
+    && records(row, 'desired').some(assignment => assignment.workload_id === policy.workload_id
+      && views['ui-gpus'].data?.some(gpu => gpu.gpu_id === assignment.gpu_id && gpu.cluster_id === policy.cluster_id)));
   return <div className="evidence">
-    <span className={`badge ${complete ? 'good' : 'warning'}`}>{complete ? 'Confirmed by GPU reports' : !synced ? 'Data is out of date or does not match' : row.status === 'confirmed' ? 'Waiting for matching reports' : label('placement', text(row, 'status'))}</span>
+    <span className={`badge ${complete ? 'good' : infeasible || denied ? 'danger' : 'warning'}`}>{complete ? 'Confirmed by GPU reports' : !synced ? 'Data is out of date or does not match' : infeasible ? 'No complete plan fits' : denied ? 'Blocked by policy' : row.status === 'confirmed' ? 'Waiting for matching reports' : label('placement', text(row, 'status'))}</span>
     <dl className="facts">
       <dt>Saved to database</dt><dd>{version(row, 'desired_plan_version')}</dd>
       <dt>Applied by simulator</dt><dd>{version(row, 'applied_plan_version')}</dd>
@@ -110,8 +117,8 @@ function Assessment({ title, scenarios, current }: { title: string; scenarios: R
   const unknown = scenarios.some(s => s.feasible === null);
   const failed = scenarios.filter(s => s.feasible === false).length;
   const result = !current ? 'Not current' : !scenarios.length ? 'Nothing to assess' : failed ? 'Some cases cannot recover' : unknown ? 'Unknown' : 'Every tested case can recover';
-  return <div className="assessment"><h4>{title} <span className={`badge ${current && scenarios.length && !failed && !unknown ? 'good' : 'warning'}`}>{result}</span></h4>
-    {scenarios.map(s => <details key={text(s, 'excluded')}><summary>{label('region', text(s, 'excluded'))} · {s.feasible === null ? 'Unknown' : s.feasible ? 'Can recover all replicas' : 'Cannot recover all replicas'}{!current && ' (previous result)'}</summary><p>{text(s, 'detail')}</p></details>)}
+  return <div className="assessment"><h4>{title} <span className={`badge ${!current ? 'warning' : failed ? 'danger' : scenarios.length && !unknown ? 'good' : 'warning'}`}>{result}</span></h4>
+    {scenarios.map(s => <details key={text(s, 'excluded')}><summary className={`status-text ${!current || s.feasible === null ? 'warning' : s.feasible ? 'good' : 'danger'}`}>{label('region', text(s, 'excluded'))} · {s.feasible === null ? 'Unknown' : s.feasible ? 'Can recover all replicas' : 'Cannot recover all replicas'}{!current && ' (previous result)'}</summary><p>{text(s, 'detail')}</p></details>)}
   </div>;
 }
 export function ResilienceEvidence({ row, views }: { row: ResultRow; views: Views }) {
@@ -160,7 +167,7 @@ export function DecisionEvidence({ row, views }: { row: ResultRow; views: Views 
       : row.stage === 'diagnostic' ? 'Placement assessment · no new saved plan' : 'Separate placement attempt · not saved';
   return <div className="evidence decision-evidence" id={`decision-${text(row, 'decision_id')}`} tabIndex={-1}>
     <p className="decision-context">{context}</p>
-    <p><strong>{label('outcome', text(row, 'outcome'))} · {label('stage', text(row, 'stage'))}</strong>{!current && ' · previous result'}</p>
+    <p><strong className={`status-text ${!current ? 'warning' : row.outcome === 'infeasible' || row.stage === 'rejected' ? 'danger' : row.outcome === 'unknown' || row.stage === 'candidate' ? 'warning' : 'good'}`}>{label('outcome', text(row, 'outcome'))} · {label('stage', text(row, 'stage'))}</strong>{!current && ' · previous result'}</p>
     <p>{text(row, 'summary')}</p>
     <p>{strings(row, 'reason_codes').map(reasonText).join(' · ')}</p>
     <dl className="facts"><dt>Existing replicas moved</dt><dd>{count(row.moved_replicas)}</dd>
@@ -187,8 +194,9 @@ export function TimelineEvidence({ row, onDecision, previous = false }: { row: R
 export function StatusEvidence({ row, stale = false }: { row: ResultRow; stale?: boolean }) {
   return <div className="evidence"><p>{text(row, 'detail')}</p>
     {stale && <p className="warning">Last received component statuses; current state is unknown.</p>}
-    {records(row, 'components').map(c => <div className="component" key={text(c, 'component_id')}><span>{label('component', text(c, 'component_id'))}</span><b>{label('componentStatus', text(c, 'status'))}{stale && ' (last reported)'}</b>
-      {!!c.error && <p className="warning">{text(c, 'error')}</p>}</div>)}
+    {records(row, 'components').map(c => <div className="component" key={text(c, 'component_id')}><span>{label('component', text(c, 'component_id'))}</span>
+      <b className={`status-text ${componentTone(text(c, 'status'), !!c.error, stale)}`}>{label('componentStatus', text(c, 'status'))}{stale && ' (last reported)'}</b>
+      {!!c.error && <p className={stale ? 'warning' : 'danger'}>{text(c, 'error')}</p>}</div>)}
   </div>;
 }
 function gpuName(id: string | null, views: Views): string {

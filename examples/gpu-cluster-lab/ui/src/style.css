@@ -316,14 +316,14 @@ dialog.modal{color:inherit}dialog.modal::backdrop{background:#020811cc}
   border-style:solid;
   border-color:var(--border-emphasis);
 }
-.lab-app .good,.lab-app .badge.good,.lab-app .mini-gpu.report-healthy,.lab-app .allocation.running{
+.lab-app .good,.lab-app .badge.good,.lab-app .mini-gpu.good,.lab-app .allocation.running{
   color:var(--positive);background:var(--positive-surface);border-color:var(--positive-border);
 }
-.lab-app .warning,.lab-app p.warning,.lab-app .badge.warning,.lab-app .mini-gpu.report-unreachable,.lab-app .mini-gpu.report-unknown,
+.lab-app .warning,.lab-app p.warning,.lab-app .badge.warning,.lab-app .mini-gpu.warning,
 .lab-app .allocation.suspended,.lab-app .allocation.fencing-pending{
   color:var(--caution);background:var(--caution-surface);border-color:var(--caution-border);
 }
-.lab-app .danger,.lab-app p.danger,.lab-app .error,.lab-app p.error,.lab-app .allocation.fenced{
+.lab-app .danger,.lab-app p.danger,.lab-app .badge.danger,.lab-app .mini-gpu.danger,.lab-app .error,.lab-app p.error,.lab-app .allocation.fenced{
   color:var(--negative);background:var(--negative-surface);border-color:var(--negative-border);
 }
 .lab-app .notice{color:var(--positive);background:var(--positive-surface);border-radius:var(--control-radius);padding:12px}
@@ -457,3 +457,20 @@ dialog.modal{color:inherit}dialog.modal::backdrop{background:#020811cc}
 .lab-app .workload-replica-tree p{font-size:var(--font-label);color:var(--text-secondary)}
 .replica-motion-setting{display:flex;align-items:center;gap:7px;font-size:var(--font-label);margin-bottom:14px;color:var(--text-secondary)}
 .replica-motion-setting input{accent-color:var(--presenter-outline)}
+
+.lab-app .gpu-card.power-off{border-color:var(--negative-border)}
+.lab-app .gpu-card .icon-button.failure{color:var(--negative)}
+.lab-app .mini-gpu.danger{border-style:solid}
+.lab-app .mini-gpu .mini-gpu-setting{color:inherit}
+.lab-app .status-text{padding:0;background:none;border:0;border-radius:0;font-size:inherit}
+.lab-app .status-text.good{color:var(--positive)}
+.lab-app .status-text.warning{color:var(--caution)}
+.lab-app .status-text.danger{color:var(--negative)}
+.lab-app .allocation.status-good{color:var(--positive);background-color:var(--positive-surface);border-color:var(--positive-border)}
+.lab-app .allocation.status-warning{color:var(--caution);background-color:var(--caution-surface);border-color:var(--caution-border)}
+.lab-app .allocation.status-danger{color:var(--negative);background-color:var(--negative-surface);border-color:var(--negative-border)}
+.lab-app .workload-chip.workload-blocked{border-color:var(--negative-border);background-color:var(--negative-surface)}
+.workload-policy-state{grid-column:1/-1;color:var(--negative)}
+.lab-app .workload-blocked .workload-progress{background:var(--negative-border)}
+.lab-app .status-alert{padding:12px;border-width:1px;border-style:solid;border-radius:var(--control-radius);margin:14px 0;font-size:var(--font-label)}
+.status-alert button{display:block;margin-top:10px}

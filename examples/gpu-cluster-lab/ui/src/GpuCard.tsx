@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import type { ResultRow } from '@drasi/react/client';
 import { count, gib } from './Evidence';
 import { boolean, nullableNumber, number, text } from './rows';
-import { label } from './labels';
+import { label, reportTone } from './labels';
 import { HierarchyIcon } from './Hierarchy';
 import { ReplicaPlacements } from './ReplicaPlacements';
 import type { ReplicaView } from './replicas';
@@ -21,11 +21,11 @@ const icons = {
   remove: <><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></>,
 } satisfies Record<string, ReactNode>;
 
-function IconButton({ icon, title, onClick, disabled = false, attention = false, expanded, controls }: {
-  icon: keyof typeof icons; title: string; onClick: () => void; disabled?: boolean; attention?: boolean;
+function IconButton({ icon, title, onClick, disabled = false, attention = false, failure = false, expanded, controls }: {
+  icon: keyof typeof icons; title: string; onClick: () => void; disabled?: boolean; attention?: boolean; failure?: boolean;
   expanded?: boolean; controls?: string;
 }) {
-  return <button type="button" className={`icon-button${attention ? ' attention' : ''}${icon === 'remove' ? ' destructive' : ''}`}
+  return <button type="button" className={`icon-button${attention ? ' attention' : ''}${failure ? ' failure' : ''}${icon === 'remove' ? ' destructive' : ''}`}
     aria-label={title} title={title} aria-expanded={expanded} aria-controls={controls} disabled={disabled} onClick={onClick}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{icons[icon]}</svg>
@@ -47,7 +47,7 @@ export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled
   const reportAge = g.sample_age_ms === null ? 'No report available' : `${number(g, 'sample_age_ms') / 1000}s ago`;
   const reportPlan = g.sample_plan_version === null ? 'No plan applied' : `Reported plan v${g.sample_plan_version}`;
   const reportSummary = g.sample_age_ms === null ? 'Awaiting first report' : `${reportAge} · ${reportPlan}`;
-  return <article aria-labelledby={headingId} className={`gpu gpu-card ${expanded ? 'gpu-expanded' : 'gpu-condensed'}${permission ? ` destination-${permission.authorization}` : ''}`}
+  return <article aria-labelledby={headingId} className={`gpu gpu-card ${expanded ? 'gpu-expanded' : 'gpu-condensed'}${permission ? ` destination-${permission.authorization}` : ''}${!stale && !powered ? ' power-off' : ''}`}
     data-hierarchy-kind="gpu" data-hierarchy-id={text(g, 'gpu_id')}>
     <div className="gpu-title">
       <HierarchyIcon kind="gpu"/>
@@ -66,11 +66,15 @@ export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled
         expanded={expanded} controls={detailsId} onClick={() => setExpanded(value => !value)}/>
     </div>
     <div className="gpu-status-line">
-      <span className={`badge ${!stale && g.health === 'healthy' ? 'good' : 'warning'}`}>{stale && 'Previously: '}{label('health', text(g, 'health'))}</span>
+      <span className={`badge ${reportTone(text(g, 'health'), stale)}`}>{stale && 'Previously: '}{label('health', text(g, 'health'))}</span>
       <span className="muted gpu-report-summary" title={`Latest GPU report: ${reportSummary}`}>{reportSummary}</span>
     </div>
     {(!powered || !reporting || !scheduling) && <p className="gpu-setting-state">
-      {[!powered && 'Power setting: off', !reporting && 'Reports paused', !scheduling && 'Excluded from plans'].filter(Boolean).join(' · ')}
+      {!powered && <span className={`status-text ${stale ? 'warning' : 'danger'}`}>Power setting: off</span>}
+      {!powered && (!reporting || !scheduling) && ' · '}
+      {!reporting && <span className="status-text warning">Reports paused</span>}
+      {!reporting && !scheduling && ' · '}
+      {!scheduling && <span className="status-text warning">Excluded from plans</span>}
     </p>}
     <div className="gpu-meters">
       <Gauge label="Memory" value={memory === null ? null : memory / 1024} max={number(g, 'memory_mib') / 1024} unit="GiB"
@@ -100,7 +104,7 @@ export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled
       <IconButton icon={reporting ? 'pause' : 'resume'} title={reporting ? 'Pause reports' : 'Resume reports'}
         disabled={disabled} attention={!reporting} onClick={actions.reports}/>
       <IconButton icon={powered ? 'power' : 'restore'} title={powered ? 'Simulate GPU failure' : 'Restore GPU'}
-        disabled={disabled} attention={!powered} onClick={actions.power}/>
+        disabled={disabled} attention={!powered} failure={!stale && !powered} onClick={actions.power}/>
       <IconButton icon="edit" title="Edit background load" disabled={disabled} onClick={actions.edit}/>
       <IconButton icon={scheduling ? 'exclude' : 'include'} title={scheduling ? 'Exclude GPU from plans' : 'Include GPU in plans'}
         disabled={disabled} attention={!scheduling} onClick={actions.scheduling}/>

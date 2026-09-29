@@ -1,7 +1,7 @@
 import type { ResultRow } from '@drasi/react/client';
 import type { Views } from './App';
 import { correlated, currentFeeds, executionObserved, replicaInputs, replicaReady } from './Evidence';
-import { label, reasonText } from './labels';
+import { label, reasonText, type StatusTone } from './labels';
 import { number, records, text } from './rows';
 
 export type ReplicaSection = 'planned' | 'running' | 'paused' | 'stopping' | 'stopped';
@@ -25,6 +25,11 @@ export function gpuLocation(gpus: readonly ResultRow[], id: string | undefined):
 }
 export function replicaCaption(replica: Replica): string {
   return `${replica.name} · replica ${replica.index + 1}`;
+}
+export function replicaTone(replica: Replica, current: boolean): StatusTone {
+  if (!current) return 'warning';
+  if (replica.actual?.state === 'fenced' || replica.status === 'Blocked by policy') return 'danger';
+  return replica.confirmed ? 'good' : 'warning';
 }
 export function executionSection(actual: ResultRow): Exclude<ReplicaSection, 'planned'> {
   switch (actual.state) {
