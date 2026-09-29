@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+export CARGO_TARGET_DIR="$PWD/target"
+export CARGO_BUILD_JOBS=1
+export CARGO_PROFILE_DEV_DEBUG=0
+export CARGO_PROFILE_DEV_STRIP=none
+revision=2a36f857526baa08304a698131854f222b40b108
+case "$(uname -s)" in
+  Darwin) extension=dylib ;;
+  Linux) extension=so ;;
+  *) echo "This launcher supports macOS and Linux." >&2; exit 1 ;;
+esac
+case "${1:-help}" in
+  setup)
+    mkdir -p .build/react-source .build/plugins ui/vendor
+    if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
+      git -C ../.. cat-file -e "$revision^{commit}" ||
+        { echo "Pinned @drasi/react commit $revision is absent. Fetch it into the existing drasi-server checkout first." >&2; exit 1; }
+      git -C ../.. archive "$revision" dev-tools/react | tar -x -C .build/react-source
+    fi
+    (
+      cd .build/react-source/dev-tools/react
+      npm ci --ignore-scripts --no-audit --no-fund
+      npm run build
+      npm pack --ignore-scripts --pack-destination ../../../../ui/vendor
+    )
+    mv ui/vendor/drasi-react-0.1.0.tgz ui/vendor/drasi-react.tgz
+    (cd ui && if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi && npm run build)
+    cargo build --locked --features dynamic-plugin --lib --bin wall-config
+    cargo build --locked --manifest-path ../../../drasi-core/Cargo.toml -p drasi-reaction-sse --features dynamic-plugin
+    cargo build --locked --manifest-path ../../Cargo.toml --bin drasi-server
+    cp "target/debug/libmove_a_wall.$extension" ".build/plugins/libdrasi_move_a_wall.$extension"
+    cp "target/debug/libdrasi_reaction_sse.$extension" ".build/plugins/libdrasi_reaction_sse.$extension"
+    target/debug/wall-config "$PWD/.build/plugins/libdrasi_move_a_wall.$extension" > .build/server.next.yaml
+    target/debug/drasi-server --config .build/server.next.yaml --plugins-dir .build/plugins validate
+    mv .build/server.next.yaml .build/server.yaml
+    echo "Ready: ./demo start"
+    ;;
+  start)
+    test -f .build/server.yaml || { echo "Run ./demo setup first." >&2; exit 1; }
+    exec node ops/run.mjs
+    ;;
+  test)
+    cargo test --locked
+    cargo fmt -- --check
+    cargo clippy --locked --all-targets --features dynamic-plugin -- -D warnings
+    (cd ui && npm test && npm run build)
+    ;;
+  check)
+    exec node ops/check-live.mjs
+    ;;
+  browser)
+    exec node ops/check-browser.mjs
+    ;;
+  *)
+    echo "Usage: ./demo setup | start | test | check | browser"
+    echo "start runs stock drasi-server and Vite in the foreground. Ctrl-C stops only its children."
+    ;;
+esac

@@ -1,0 +1,28 @@
+{
+  "name": "move-a-wall-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5421 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "check:live": "node ../ops/check-live.mjs",
+    "check:browser": "node ../ops/check-browser.mjs"
+  },
+  "dependencies": {
+    "@drasi/react": "file:vendor/drasi-react.tgz",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "3.2.7",
+    "playwright": "^1.55.0"
+  },
+  "engines": { "node": "22.x || 24.x" }
+}
