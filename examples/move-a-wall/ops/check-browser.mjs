@@ -31,10 +31,57 @@ try {
   await settled();
   await page.getByRole('button',{name:'Reset floor',exact:true}).click();
   await settled();
+  assert.equal(await page.title(),'Obstacle Impact | Drasi');
+  assert.equal(await page.getByRole('heading',{level:1,name:'Obstacle Impact',exact:true}).count(),1);
+  const footer = page.locator('footer');
+  assert.deepEqual(await footer.getByRole('link').allTextContents(),['Actual graph API ↗','Drasi Server Web UI ↗']);
+  assert.equal(await footer.locator('span').count(),0);
+  assert.equal(await footer.getByRole('link',{name:'Actual graph API ↗',exact:true}).getAttribute('href'),'/api/v1/instances/move-a-wall/computation');
+  const [admin] = await Promise.all([
+    context.waitForEvent('page'),
+    footer.getByRole('link',{name:'Drasi Server Web UI ↗',exact:true}).click(),
+  ]);
+  admin.on('pageerror',error => errors.push(error.message));
+  await admin.waitForLoadState('domcontentloaded');
+  assert.equal(admin.url(),'http://127.0.0.1:8421/ui/');
+  assert.equal(await admin.title(),'Drasi Server');
+  await admin.getByText('move-a-wall',{exact:true}).first().waitFor({timeout:30000});
+  await admin.locator('.react-flow__node').filter({hasText:/geometry/}).first().waitFor({timeout:30000});
+  await admin.close();
+  await page.bringToFront();
+  await page.evaluate(() => window.scrollTo(0,0));
+  assert.equal(await page.locator('.brand,.topbar,.intro').count(),0);
+  const inspector = page.getByRole('region',{name:'Follow the change',exact:true});
+  const flow = inspector.getByRole('navigation',{name:'Computation graph',exact:true});
+  assert.equal(await flow.count(),1);
+  assert.equal(await page.locator('main > .pipeline,.query-tabs').count(),0);
+  assert.equal(await page.getByLabel('Floor',{exact:true}).count(),0);
+  await page.getByText('Drag an obstacle across a planned path.',{exact:true}).waitFor();
+  const editor = page.getByRole('region',{name:'Edit scene',exact:true});
+  const selection = editor.getByRole('combobox',{name:'Selected object',exact:true});
+  await selection.selectOption('wall');
   const wall = page.locator('[data-entity="wall"]');
   const position = await wall.boundingBox();
   const scene = await page.locator('svg.scene').boundingBox();
   assert.ok(position && scene);
+  assert.ok(scene.y < 240,`The scene should start near the top, not below tall headers (y=${scene.y})`);
+  const legend = await page.getByRole('group',{name:'Floor plan legend',exact:true}).boundingBox();
+  assert.ok(legend && legend.y + legend.height <= scene.y && legend.x > scene.x + scene.width/2,'The legend must be at the top right, above the floorplan');
+  assert.equal(await page.locator('.scene-note,.journeys,.journey-card').count(),0);
+  assert.deepEqual((await page.locator('svg.scene .cart-name').allTextContents()).sort(),['Ada','Grace']);
+  const inspectorPosition = await inspector.boundingBox();
+  assert.ok(inspectorPosition && inspectorPosition.y < 850,`Removing the duplicate floor content should bring the inspector up (y=${inspectorPosition?.y})`);
+  const floorPosition = await page.locator('.floor-panel').boundingBox();
+  const initialImpact = await page.locator('.impact-panel').boundingBox();
+  assert.ok(floorPosition && initialImpact);
+  assert.equal(inspectorPosition.x,floorPosition.x);
+  assert.equal(inspectorPosition.width,floorPosition.width,'The inspector must match the floor panel width');
+  assert.ok(Math.abs(inspectorPosition.y - (floorPosition.y + floorPosition.height + 20)) < 1,'The inspector must sit directly below the floor panel');
+  const editorPosition = await editor.boundingBox();
+  assert.ok(editorPosition && editorPosition.y < scene.y + scene.height/2,'Object editing must be beside the scene, not beneath it');
+  await page.locator('svg.scene .path').filter({hasText:'Deliver packaging'}).click();
+  assert.equal(await selection.inputValue(),'journey-ada','Journeys remain selectable on the floorplan without separate cards');
+  await selection.selectOption('wall');
   const x = position.x + position.width / 2, y = position.y + position.height / 2;
   await page.mouse.move(x,y);
   await page.mouse.down();
@@ -42,6 +89,33 @@ try {
   await page.mouse.up();
   await page.getByRole('heading',{name:'1 affected journey',exact:true}).waitFor();
   await settled();
+  const expandedImpact = await page.locator('.impact-panel').boundingBox();
+  const stableInspector = await inspector.boundingBox();
+  assert.ok(expandedImpact && stableInspector);
+  assert.ok(expandedImpact.height > initialImpact.height,'The impact panel must actually expand during this check');
+  assert.equal(stableInspector.y,inspectorPosition.y,'An expanding impact panel must not push the inspector down');
+  for (const [label,id] of [
+    ['Source','scene-inputs'],['Context query','geometry-context'],['Geometry transformer','obstructions'],
+    ['Impact query','affected-journeys'],['SSE / UI','geometry-status'],
+  ]) {
+    const stage = flow.getByRole('button',{name:`${label} ${id}`,exact:true});
+    await stage.click();
+    assert.equal(await stage.getAttribute('aria-pressed'),'true');
+    assert.equal(await flow.locator('button[aria-pressed="true"]').count(),1);
+    assert.equal(await stage.getAttribute('aria-controls'),'query-records');
+    const response = await page.request.get(`http://127.0.0.1:5421/api/v1/instances/move-a-wall/queries/${id}/results`);
+    assert.equal(response.ok(),true);
+    const body = await response.json();
+    assert.equal(body.success,true);
+    const expected = id === 'scene-inputs' || id === 'geometry-context'
+      ? body.data.flatMap(row => row.objects.map(payload => JSON.parse(payload))) : body.data;
+    assert.deepEqual(JSON.parse(await inspector.getByTestId('query-records').textContent()),expected,`${label} must display its actual query records`);
+  }
+  await flow.getByRole('button',{name:'Source scene-inputs',exact:true}).focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  assert.equal(await flow.getByRole('button',{name:'Context query geometry-context',exact:true}).getAttribute('aria-pressed'),'true');
+  await flow.getByRole('button',{name:'Impact query affected-journeys',exact:true}).click();
   await page.screenshot({path:`${artifacts}/obstructed.png`,fullPage:true});
   await page.reload();
   await page.getByRole('heading',{name:'1 affected journey',exact:true}).waitFor();
@@ -66,7 +140,7 @@ try {
   await page.getByRole('alert').filter({hasText:'only simple convex polygons'}).waitFor();
   await page.getByRole('button',{name:'Reset floor',exact:true}).click();
   await settled();
-  await page.locator('.entity-list').getByRole('button',{name:/Deliver packaging/}).click();
+  await selection.selectOption('journey-ada');
   await page.getByLabel('Coordinates',{exact:true}).fill('[[2,6.5],[21,6.5]]');
   await page.getByRole('button',{name:'Apply input change',exact:true}).click();
   await page.getByRole('heading',{name:'1 affected journey',exact:true}).waitFor();
@@ -79,7 +153,6 @@ try {
   for (const kind of ['cart','journey','obstacle','destination']) {
     await page.getByRole('button',{name:`+ ${kind}`,exact:true}).click();
     await page.getByLabel('Name',{exact:true}).fill(`Temporary ${kind}`);
-    await page.getByLabel('Floor',{exact:true}).last().fill('upper');
     await page.getByRole('button',{name:'Add object',exact:true}).click();
     await settled();
     await page.getByRole('heading',{name:`Temporary ${kind}`,exact:true}).waitFor();
@@ -89,11 +162,31 @@ try {
     await page.getByRole('heading',{name:`Renamed ${kind}`,exact:true}).waitFor();
     await page.getByRole('button',{name:'Remove object',exact:true}).click();
     await settled();
-    assert.equal(await page.locator('.entity-list').getByRole('button',{name:new RegExp(`Renamed ${kind}`)}).count(),0);
+    assert.equal(await selection.getByRole('option',{name:new RegExp(`Renamed ${kind}`)}).count(),0);
   }
+  const revision = await page.locator('.revision').textContent();
+  await page.getByRole('button',{name:'+ obstacle',exact:true}).click();
+  await page.getByLabel('Name',{exact:true}).fill('Invalid draft');
+  await page.getByLabel('Coordinates',{exact:true}).fill('[[0,0],[2,2],[2,0],[0,2]]');
+  await page.getByRole('button',{name:'Add object',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'only simple convex polygons'}).waitFor();
+  assert.equal(await page.getByLabel('Name',{exact:true}).inputValue(),'Invalid draft');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  assert.equal(await page.locator('.revision').textContent(),revision,'A rejected/cancelled draft must not change the source');
+  assert.equal(await page.locator('footer').getByRole('status').count(),0);
+  await page.getByRole('button',{name:'Dismiss',exact:true}).click();
   await page.locator('[data-entity="wall"]').click();
   await page.screenshot({path:`${artifacts}/clear.png`,fullPage:true});
-  console.log('PASS: real drag/retraction and path-only query impacts, reload, offline/reconnect, keyboard command, visible validation error, CRUD for all four entity kinds, reset. Screenshots in artifacts/.');
+  for (const width of [768,390]) {
+    await page.setViewportSize({width,height:1000});
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),true,`No horizontal overflow at ${width}px`);
+    await selection.selectOption('journey-ada');
+    await editor.getByRole('heading',{name:'Deliver packaging',exact:true}).waitFor();
+    await flow.getByRole('button',{name:'SSE / UI geometry-status',exact:true}).click();
+    assert.equal(await flow.getByRole('button',{name:'SSE / UI geometry-status',exact:true}).getAttribute('aria-pressed'),'true');
+  }
+  await page.screenshot({path:`${artifacts}/mobile.png`,fullPage:true});
+  console.log('PASS: independently sized floor/inspector column, integrated flow inspector with real query records and keyboard selection, compact single-floor UI, adjacent object editor, responsive layout, real drag/retraction and path-only query impacts, reload, offline/reconnect, keyboard command, visible validation errors, CRUD for all four entity kinds, cancel/rejected draft preservation, reset. Screenshots in artifacts/.');
   }
   assert.deepEqual(errors,[]);
 } finally { await browser.close(); }

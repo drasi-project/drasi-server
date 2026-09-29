@@ -2,6 +2,15 @@ import { useEffect, useRef, useState, type PointerEvent, type FormEvent } from '
 import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/react/react';
 import { entity, inputs, key, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
 
+const DEMO_FLOOR = 'ground';
+const inspectionStages: Record<QueryId,{label:string;description:string}> = {
+  'scene-inputs': {label:'Source',description:'Current scene inputs before filtering.'},
+  'geometry-context': {label:'Context query',description:'Active inputs passed to the geometry transformer.'},
+  obstructions: {label:'Geometry transformer',description:'Obstruction records emitted by the geometry transformer.'},
+  'affected-journeys': {label:'Impact query',description:'Affected journeys enriched with cart, destination and obstacle names.'},
+  'geometry-status': {label:'SSE / UI',description:'Geometry revision and counts delivered to the UI. This is a query result, not an SSE event log.'},
+};
+
 function useView(id: QueryId) {
   return useDrasiQuery(id, { getKey: row => key(id,row), transform: row => validate(id,row) });
 }
@@ -19,12 +28,12 @@ export function App() {
   const records = (source.data ?? []).flatMap(inputs);
   const clock = records.find(r => r.type === 'clock');
   const revision = clock?.revision ?? 0;
-  const entities = records.flatMap(r => r.type === 'entity' ? [r.entity] : []);
-  const [selected,setSelected] = useState('wall'), [floor,setFloor] = useState('ground');
+  const entities = records.flatMap(r => r.type === 'entity' ? [r.entity] : []).filter(e => e.floor === DEMO_FLOOR);
+  const [selected,setSelected] = useState('wall');
   const [inspect,setInspect] = useState<QueryId>('affected-journeys');
   const [draft,setDraft] = useState<Entity | null>(null), [adding,setAdding] = useState(false);
   const [sending,setSending] = useState(false), [accepted,setAccepted] = useState<number | null>(null);
-  const [notice,setNotice] = useState(''), [error,setError] = useState<string | null>(null);
+  const [error,setError] = useState<string | null>(null);
   const busyRef = useRef(false);
   const current = entities.find(e => e.id === selected);
   const observed = geometry.data?.[0] ? number(geometry.data[0].revision) : 0;
@@ -34,8 +43,7 @@ export function App() {
   const disabled = stale || pending || unsettled;
   useEffect(() => {
     if (accepted !== null && observed >= accepted && revision >= accepted) {
-      setAccepted(null); setDraft(null);
-      setNotice(`Input revision ${accepted} processed by the geometry transformer. Views are delivered independently over SSE.`);
+      setAccepted(null); setDraft(null); setAdding(false);
     }
   },[accepted,observed,revision]);
   useEffect(() => {
@@ -46,23 +54,23 @@ export function App() {
   async function send(command: unknown) {
     if (busyRef.current) return;
     busyRef.current = true; setSending(true); setError(null);
-    setNotice('Submitting input change; no geometric result is predicted in the browser.');
     try {
       const response = await fetch('/commands',{ method:'POST',headers:{'Content-Type':'application/json','X-Wall-Command':'1'},body:JSON.stringify({expected_revision:revision,command}),signal:AbortSignal.timeout(10000) });
       const body = object(await response.json());
       if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Command failed (${response.status})`);
       setAccepted(number(body.accepted_revision));
-      setNotice(`Source accepted revision ${String(body.accepted_revision)}. Waiting for query confirmation...`);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure)); setDraft(null);
+      setError(failure instanceof Error ? failure.message : String(failure));
+      if (!adding) setDraft(null);
     } finally { setSending(false); busyRef.current = false; }
   }
-  const active = entities.filter(e => e.active && e.floor === floor);
-  const causes = impacts.data ?? [], blocks = obstructions.data ?? [];
+  const active = entities.filter(e => e.active);
+  const entityIds = new Set(entities.map(e => e.id));
+  const causes = (impacts.data ?? []).filter(row => entityIds.has(text(row.journey_id)));
+  const blocks = (obstructions.data ?? []).filter(row => row.floor === DEMO_FLOOR);
   const obstructed = new Set(blocks.map(row => text(row.journey_id)));
   const affectedDestinations = new Set(causes.map(row => text(row.destination_id)));
   const selectedCauses = causes.filter(row => [row.cart_id,row.journey_id,row.destination_id,row.obstacle_id].includes(selected));
-  const floors = [...new Set(['ground',floor,...entities.map(e => e.floor)])];
   function select(id: string) {
     setSelected(id); setDraft(null); setAdding(false);
   }
@@ -73,88 +81,84 @@ export function App() {
       : kind === 'destination' ? {kind,point:[21,7]}
       : {kind,cart_id:entities.find(e => e.shape.kind === 'cart')?.id ?? 'cart-ada',
         destination_id:entities.find(e => e.shape.kind === 'destination')?.id ?? 'packing',points:[[2,7],[21,7]]};
-    setDraft({id,name:`New ${kind}`,floor,active:true,shape}); setAdding(true); setSelected(id);
+    setDraft({id,name:`New ${kind}`,floor:DEMO_FLOOR,active:true,shape}); setAdding(true); setSelected(id);
   }
   return <main>
-    <header className="topbar"><a className="brand" href="https://drasi.io">drasi<span>/ examples</span></a>
-      <span className={`connection ${stale ? 'bad' : unsettled ? 'waiting' : 'live'}`} role="status">
-        {stale ? 'Disconnected / stale' : unsettled ? 'Processing input changes' : 'Live query results'}
-      </span>
-      <button onClick={() => {
-        setAccepted(null); setDraft(null); client.retry();
-        setNotice('Reconnecting to authoritative query snapshots. Pending previews are discarded; commands are not resubmitted.');
-      }}>Reconnect</button>
+    <header className="demo-header">
+      <div><h1>Obstacle Impact</h1><p>How obstacles affect planned journeys.</p></div>
+      <div className="demo-actions">
+        <span className={`connection ${stale ? 'bad' : pending || unsettled ? 'waiting' : 'live'}`} role="status">
+          {stale ? 'Disconnected / stale' : pending || unsettled ? 'Processing input changes' : 'Live query results'}
+        </span>
+        <button onClick={() => {
+          setAccepted(null); setDraft(null); setAdding(false); client.retry();
+        }}>Reconnect</button>
+        <button className="reset" disabled={disabled} onClick={() => void send({action:'reset'})}>Reset floor</button>
+      </div>
     </header>
-    <section className="intro"><div><p className="eyebrow">CHANGE PROCESSING, MEET GEOMETRY</p><h1>Move a Wall</h1>
-      <p>One changed obstacle. A different computation. The right journeys light up.</p></div>
-      <button className="reset" disabled={disabled} onClick={() => void send({action:'reset'})}>Reset floor</button>
-    </section>
-    <nav className="pipeline" aria-label="Computation graph">
-      {['Source','Context query','Geometry transformer','Impact query','SSE / UI'].map((name,i) =>
-        <button key={name} className={i === 2 ? 'native' : ''} onClick={() => setInspect((['scene-inputs','geometry-context','obstructions','affected-journeys','geometry-status'] as const)[i])}>
-          <span>0{i+1}</span>{name}{i < 4 && <b aria-hidden="true">→</b>}
-        </button>)}
-    </nav>
     {(error || stale) && <div className="alert" role="alert">
       {error ?? (!online ? 'Browser is offline. Retained results are not current.' : client.error?.message ?? transport.error?.message ?? 'Query connection is not ready. No local fallback is used.')}
       {error && <button onClick={() => setError(null)}>Dismiss</button>}
     </div>}
     <div className="workspace">
-      <section className="floor-panel">
-        <div className="panel-heading"><div><h2>Planned journeys</h2><p>Drag the movable wall onto Ada's blue path.</p></div>
-          <label className="floor-select">Floor <select value={floor} onChange={e => setFloor(e.target.value)}>{floors.map(f => <option key={f}>{f}</option>)}</select></label></div>
-        <Scene entities={active} selected={selected} select={select}
-          obstructed={obstructed} affectedDestinations={affectedDestinations} disabled={disabled}
-          pending={pending} draft={draft} preview={setDraft} commit={e => void send({action:'put',entity:e})}/>
-        <div className="legend"><span className="blue-dot"/> Planned path <span className="swatch"/> Radius + clearance <span className="red-dot"/> Query-confirmed obstruction</div>
-        <p className="scene-note">24 × 16 metres · Static plans, not moving robots · Touching the clearance boundary counts as blocked</p>
-        <div className="journeys">{active.filter(e => e.shape.kind === 'journey').map(j => {
-          if (j.shape.kind !== 'journey') return null;
-          const cartId = j.shape.cart_id;
-          const cart = entities.find(e => e.id === cartId);
-          const affected = causes.filter(row => row.journey_id === j.id);
-          const blocked = obstructed.has(j.id);
-          return <button key={j.id} className={`journey-card ${blocked ? 'blocked' : ''} ${selected === j.id ? 'selected' : ''}`} onClick={() => select(j.id)}>
-            <span className="journey-cart">{cart?.name ?? 'Missing cart'}</span><strong>{j.name}</strong>
-            <span>{stale || unsettled ? 'Awaiting current queries' : !cart?.active || cart.shape.kind !== 'cart' || cart.floor !== j.floor ? 'No active same-floor cart' : blocked ? `Obstructed by ${affected.map(r => text(r.obstacle)).join(', ') || 'an obstacle (missing or pending metadata)'}` : 'Path unobstructed'}</span>
-          </button>;
-        })}</div>
-      </section>
+      <div className="scene-column">
+        <section className="floor-panel">
+          <div className="panel-heading floor-heading">
+            <div><h2>Planned journeys</h2><p>Drag an obstacle across a planned path.</p></div>
+            <div className="legend" role="group" aria-label="Floor plan legend">
+              <span><i className="blue-dot" aria-hidden="true"/>Planned path</span>
+              <span><i className="swatch" aria-hidden="true"/>Radius + clearance</span>
+              <span><i className="red-dot" aria-hidden="true"/>Query-confirmed obstruction</span>
+            </div>
+          </div>
+          <Scene entities={active} selected={selected} select={select}
+            obstructed={obstructed} affectedDestinations={affectedDestinations} disabled={disabled}
+            pending={pending} draft={draft} preview={setDraft} commit={e => void send({action:'put',entity:e})}/>
+        </section>
+        <section className="inspector" aria-labelledby="inspector-heading"><div className="panel-heading"><h2 id="inspector-heading">Follow the change</h2><span className="revision">Input r{revision} / geometry r{observed}</span></div>
+          <p className="muted">Choose a stage to inspect its query results below.</p>
+          <nav className="pipeline" aria-label="Computation graph">
+            {queryIds.map((id,i) => <button key={id} aria-pressed={inspect === id} aria-controls="query-records" onClick={() => setInspect(id)}>
+              <span>{inspectionStages[id].label}</span><code>{id}</code>{i < queryIds.length - 1 && <b aria-hidden="true">→</b>}
+            </button>)}
+          </nav>
+          <p className="muted" id="record-description">{inspectionStages[inspect].description}</p>
+          {clock?.type === 'clock' && <p className="changed">Last command: <b>{clock.command}</b> · Changed: {clock.changed.join(', ') || '(empty bootstrap)'}</p>}
+          <p className="query-state">{views[inspect].status}{views[inspect].stale ? ' · stale' : ''} · {views[inspect].data?.length ?? 0} rows <button onClick={() => views[inspect].retry()}>Retry query</button></p>
+          {Object.entries(views).filter(([,v]) => v.error).map(([id,v]) => <p role="alert" className="error" key={id}>{id}: {v.error?.message}</p>)}
+          <pre id="query-records" data-testid="query-records" aria-describedby="record-description">{JSON.stringify(inspect === 'scene-inputs' || inspect === 'geometry-context' ? (views[inspect].data ?? []).flatMap(inputs) : views[inspect].data, null,2)}</pre>
+        </section>
+      </div>
       <aside>
         <section className="impact-panel"><p className="eyebrow">QUERY: AFFECTED JOURNEYS</p><h2>{stale || unsettled ? 'Awaiting current queries' : causes.length ? `${new Set(causes.map(r => r.journey_id)).size} affected journey${new Set(causes.map(r => r.journey_id)).size === 1 ? '' : 's'}` : blocks.length ? 'Obstruction without task metadata' : 'Nothing in the way'}</h2>
           {stale || unsettled ? <p className="muted">Results are pending or stale; do not interpret this as a clear floor.</p> : null}
           {causes.length ? causes.map(row => <article className="impact" key={text(row.id)}>
             <strong>{text(row.cart)} · {text(row.task)}</strong><p><b>{text(row.obstacle)}</b> obstructs the planned path to <b>{text(row.destination)}</b>.</p>
             <small>Path distance {number(row.distance_m).toFixed(2)} m · Required {number(row.required_m).toFixed(2)} m</small>
-          </article>) : <p className="muted">{blocks.length ? 'A geometric cause exists, but its active same-floor cart, destination or cause metadata is missing or has not arrived. Inspect obstructions; this is not a clear path.' : 'Move the wall across a path. The geometry transformer emits an Obstruction; this query joins the cart, task and destination.'}</p>}
+          </article>) : <p className="muted">{blocks.length ? 'A geometric cause exists, but its active same-floor cart, destination or cause metadata is missing or has not arrived. Inspect obstructions; this is not a clear path.' : 'Move an obstacle across a path to see the affected cart, task and destination here.'}</p>}
         </section>
-        <section className="entity-panel"><div className="panel-heading"><h2>Scene objects</h2><span>{entities.length}/64</span></div>
-          <div className="entity-list">{entities.map(e => <button className={selected === e.id ? 'selected' : ''} key={e.id} onClick={() => select(e.id)}>
-            <span className={`entity-icon ${e.shape.kind}`}/><span>{e.name}<small>{e.shape.kind} · {e.floor}{!e.active && ' · inactive'}</small></span>
-          </button>)}</div>
-          <div className="add-buttons">{(['obstacle','journey','cart','destination'] as const).map(kind => <button key={kind} disabled={disabled} onClick={() => add(kind)}>+ {kind}</button>)}</div>
+        <section className="editor-panel" aria-labelledby="edit-scene-heading">
+          <h2 id="edit-scene-heading">Edit scene</h2>
+          <p className="muted">Select an object on the floor or choose one below, then edit its properties here.</p>
+          <label>Selected object<select value={adding ? '' : current?.id ?? ''} onChange={e => select(e.target.value)}>
+            <option value="" disabled>{adding ? 'New object draft' : 'Choose an object'}</option>
+            {entities.map(e => <option key={e.id} value={e.id}>{e.name} ({e.shape.kind}){!e.active && ' · inactive'}</option>)}
+          </select></label>
+          <div className="add-buttons" role="group" aria-label="Add an object"><span>Add</span>
+            {(['obstacle','journey','cart','destination'] as const).map(kind => <button key={kind} disabled={disabled} onClick={() => add(kind)}>+ {kind}</button>)}
+          </div>
+          {(adding && draft) || current ? <Editor key={`${selected}/${revision}/${adding}`} value={adding && draft ? draft : current!} adding={adding} disabled={disabled}
+            save={e => { setDraft(e); void send({action:'put',entity:e}); }}
+            remove={() => void send({action:'delete',id:selected})}
+            cancel={() => select(entities.find(e => e.id === 'wall')?.id ?? entities[0]?.id ?? '')}/>
+            : <p className="muted">Choose an object to edit, or use Add to create one.</p>}
+          {selectedCauses.length > 0 && <p className="selection-cause">This object participates in {selectedCauses.length} affected-journey result(s).</p>}
         </section>
       </aside>
     </div>
-    <div className="details">
-      <section className="editor-panel"><p className="eyebrow">{adding ? 'ADD AN INPUT' : 'EDIT AN INPUT'}</p>
-        {(adding && draft) || current ? <Editor key={`${selected}/${revision}/${adding}`} value={adding && draft ? draft : current!} adding={adding} disabled={disabled}
-          save={e => { setAdding(false); setDraft(e); void send({action:'put',entity:e}); }}
-          remove={() => void send({action:'delete',id:selected})}/>
-          : <p className="muted">Select an object, or add one. Deleting objects retracts their obstruction records.</p>}
-        {selectedCauses.length > 0 && <p className="selection-cause">This object participates in {selectedCauses.length} actual affected-journey row(s).</p>}
-      </section>
-      <section className="inspector"><div className="panel-heading"><div><p className="eyebrow">REAL RECORDS, NOT A SIMULATION</p><h2>Follow the change</h2></div><span className="revision">Input r{revision} / geometry r{observed}</span></div>
-        {clock?.type === 'clock' && <p className="changed">Last command: <b>{clock.command}</b> · Changed: {clock.changed.join(', ') || '(empty bootstrap)'}</p>}
-        <div className="query-tabs">{queryIds.map(id => <button key={id} className={inspect === id ? 'selected' : ''} onClick={() => setInspect(id)}>{id}</button>)}</div>
-        <p className="query-state">{views[inspect].status}{views[inspect].stale ? ' · stale' : ''} · {views[inspect].data?.length ?? 0} rows <button onClick={() => views[inspect].retry()}>Retry query</button></p>
-        {Object.entries(views).filter(([,v]) => v.error).map(([id,v]) => <p role="alert" className="error" key={id}>{id}: {v.error?.message}</p>)}
-        <pre data-testid="query-records">{JSON.stringify(inspect === 'scene-inputs' || inspect === 'geometry-context' ? (views[inspect].data ?? []).flatMap(inputs) : views[inspect].data, null,2)}</pre>
-      </section>
-    </div>
-    <footer><span role="status">{notice || 'The source bootstraps a deterministic, unobstructed floor.'}</span>
-      <span>Geometry runs inside drasi-server. This is not a robot safety system.</span>
+    <footer>
       <a href="/api/v1/instances/move-a-wall/computation" target="_blank" rel="noreferrer">Actual graph API ↗</a>
+      <a href="http://127.0.0.1:8421/ui/" target="_blank" rel="noreferrer">Drasi Server Web UI ↗</a>
     </footer>
   </main>;
 }
@@ -189,7 +193,7 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
     if (JSON.stringify(original) !== JSON.stringify(next)) commit(next); else preview(null);
   }
   const pointText = (points: Point[]) => points.map(p => p.join(',')).join(' ');
-  return <svg className="scene" ref={svg} viewBox="-1 -1 26 18" role="img" aria-label="Warehouse floor with static planned cart paths. Select an obstacle and use arrow keys or edit coordinates below."
+  return <svg className="scene" ref={svg} viewBox="-1 -1 26 18" role="img" aria-label="Warehouse floor with static planned cart paths. Drag an obstacle, use arrow keys, or select an object to edit its properties."
     onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; preview(null); }}>
     <defs><pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" fill="none" stroke="#dce5e5" strokeWidth=".018"/></pattern></defs>
     <rect x="0" y="0" width="24" height="16" rx=".2" fill="#f4f8f6" stroke="#c5d4d4" strokeWidth=".06"/>
@@ -222,7 +226,7 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
         {e.shape.kind === 'obstacle' ? <>
           <polygon points={pointText(e.shape.vertices)}/>
           <text x={e.shape.vertices[0][0]+.15} y={e.shape.vertices[0][1]+.55}>{e.name}</text>
-          {e.id === 'wall' && <text className="drag-hint" x={e.shape.vertices[0][0]} y={e.shape.vertices[0][1]+1.6}>↕ drag me</text>}
+          {selected === e.id && <text className="drag-hint" x={e.shape.vertices[0][0]} y={e.shape.vertices[0][1]+1.6}>↕ drag to move</text>}
         </> : e.shape.kind === 'destination' ? <>
           <rect x={e.shape.point[0]-.55} y={e.shape.point[1]-.55} width="1.1" height="1.1" rx=".15"/>
           <text x={e.shape.point[0]+.85} y={e.shape.point[1]-.1}>{e.name.split(' ')[0]}</text>
@@ -233,12 +237,12 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
       {draft.shape.kind === 'obstacle' && <polygon points={pointText(draft.shape.vertices)}/>}
       {draft.shape.kind === 'journey' && <polyline points={pointText(draft.shape.points)}/>}
       {draft.shape.kind === 'destination' && <circle cx={draft.shape.point[0]} cy={draft.shape.point[1]} r=".55"/>}
-      <text x="12" y="15.5" textAnchor="middle">{pending ? 'PENDING QUERY CONFIRMATION' : 'TENTATIVE DRAG PREVIEW'}</text>
+      <text x="12" y="15.5" textAnchor="middle">{pending ? 'PENDING QUERY CONFIRMATION' : 'TENTATIVE INPUT PREVIEW'}</text>
     </g>}
   </svg>;
 }
 
-function Editor({value,adding,disabled,save,remove}: {value:Entity;adding:boolean;disabled:boolean;save:(e:Entity)=>void;remove:()=>void}) {
+function Editor({value,adding,disabled,save,remove,cancel}: {value:Entity;adding:boolean;disabled:boolean;save:(e:Entity)=>void;remove:()=>void;cancel:()=>void}) {
   const [draft,setDraft] = useState(value), [coordinates,setCoordinates] = useState(JSON.stringify(
     value.shape.kind === 'journey' ? value.shape.points : value.shape.kind === 'obstacle' ? value.shape.vertices : value.shape.kind === 'destination' ? value.shape.point : []));
   const [error,setError] = useState<string|null>(null);
@@ -253,11 +257,9 @@ function Editor({value,adding,disabled,save,remove}: {value:Entity;adding:boolea
       save({...draft,shape});
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
   }
-  return <form onSubmit={submit}><h2>{adding ? `New ${value.shape.kind}` : value.name}</h2><p className="identity">{value.id}</p>
-    <fieldset disabled={disabled}><div className="fields">
+  return <form onSubmit={submit}><h3>{adding ? `New ${value.shape.kind}` : value.name}</h3><p className="identity">{value.id}</p>
+    <fieldset disabled={disabled}>
       <label>Name<input value={draft.name} onChange={e => setDraft({...draft,name:e.target.value})} required maxLength={100}/></label>
-      <label>Floor<input value={draft.floor} onChange={e => setDraft({...draft,floor:e.target.value})} required pattern="[A-Za-z0-9_-]+"/></label>
-    </div>
     <label className="checkbox"><input type="checkbox" checked={draft.active} onChange={e => setDraft({...draft,active:e.target.checked})}/> Active (context query filter)</label>
     {draft.shape.kind === 'cart' ? <div className="fields">
       <label>Radius (m)<input type="number" min=".05" max="2" step=".05" value={draft.shape.radius} onChange={e => {
@@ -278,8 +280,8 @@ function Editor({value,adding,disabled,save,remove}: {value:Entity;adding:boolea
       }}/></label>
     </div>}
     <div className="form-actions"><button type="submit" className="primary">{adding ? 'Add object' : 'Apply input change'}</button>
-      {!adding && <button type="button" className="danger" onClick={remove}>Remove object</button>}</div>
+      {adding ? <button type="button" onClick={cancel}>Cancel</button> : <button type="button" className="danger" onClick={remove}>Remove object</button>}</div>
     </fieldset>{error && <p className="error" role="alert">{error}</p>}
-    <p className="muted">No geometry runs here. Invalid or unsupported shapes are rejected by the source. Arrow keys move obstacles or destinations by 0.25 m.</p>
+    <p className="muted">Edits go through the source. Arrow keys move obstacles or destinations by 0.25 m.</p>
   </form>;
 }

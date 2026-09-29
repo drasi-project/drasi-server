@@ -13,6 +13,8 @@ case "$(uname -s)" in
 esac
 case "${1:-help}" in
   setup)
+    test -f ../../ui/dist/index.html ||
+      { echo "Build the stock Server Web UI first: run make build-ui in drasi-server." >&2; exit 1; }
     mkdir -p .build/react-source .build/plugins ui/vendor
     if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
       git -C ../.. cat-file -e "$revision^{commit}" ||

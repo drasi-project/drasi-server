@@ -1,10 +1,13 @@
-# Move a Wall
+# Obstacle Impact
 
 A small **geometry computation graph running inside the stock `drasi-server`
 executable**. Drag a maintenance barrier across a planned cart
 path; a native geometry transformer creates an `Obstruction`; a continuous
 query joins the affected cart, task and destination. Move it away and the
 results retract.
+
+The display name is **Obstacle Impact**; the example directory and graph instance
+ID remain `move-a-wall`.
 
 This is a change-processing example, not a scheduler, autonomous robot demo,
 route planner or safety system. The carts never move. There is no prediction
@@ -19,6 +22,9 @@ Prerequisites:
 
 - macOS or Linux; Rust/rustup (the example pins 1.97.1 for both host and plugins).
 - Node.js 22 or 24 and npm.
+- A built stock Server Web UI in `drasi-server/ui/dist`. Run `make build-ui`
+  from `drasi-server` if it is missing; coordinate with the UI owner before
+  rebuilding shared assets in this workspace.
 - Stock Server support for the `queryCatalog` computation resource recipe.
   Use the current workspace's Server integration changes, not an older binary;
   see [compatibility](#compatibility-and-verified-evidence).
@@ -52,14 +58,20 @@ continuous-query factory contracts; it does not run an embedded runtime.
 
 `start` checks that its ports are free, launches the **actual**
 `target/debug/drasi-server --config .build/server.yaml --plugins-dir
-.build/plugins --skip-verification --disable-ui`, then launches the thin Vite
+.build/plugins --skip-verification --enable-ui`, then launches the thin Vite
 UI/proxy. It waits for a real `geometry-status` query result before opening the
 UI service. Server logs are in `.build/server.log`.
+
+The launcher copies the existing stock Server UI bundle into its own ignored
+`.build/ui/dist` directory; it does not rebuild or modify the shared UI.
+`--enable-ui` overrides the generated configuration's API-only default.
+The footer's **Drasi Server Web UI** link opens **http://127.0.0.1:8421/ui/**,
+served by the same stock Server instance that runs this geometry graph.
 
 | Loopback port | Owner |
 | --- | --- |
 | 5421 | Vite: React assets and same-origin proxy only |
-| 8421 | Stock Drasi Server REST API |
+| 8421 | Stock Drasi Server REST API and Server Web UI |
 | 8422 | Standard `drasi-reaction-sse`, inside Server |
 | 8423 | Example native scene source's input command endpoint, inside Server |
 
@@ -77,28 +89,40 @@ management ports to a network.
 
 1. **Start clear.** Point to Ada's path to Packing and Grace's bent path to
    Assembly. The shaded path is each cart's circular footprint plus clearance,
-   not just a zero-width line. The cards describe planned work, not motion.
-2. **Move one input.** Drag **Movable wall** upward across Ada's path. A dashed
+   not just a zero-width line. These are static plans, not moving carts.
+2. **Move one input.** Drag an obstacle across a path; try **Movable wall**
+   upward across Ada's path. A dashed
    ghost is explicitly tentative. On release the command goes to the source.
    The path/cart turn orange and the impact panel names **Ada / Deliver
    packaging / Packing station / Movable wall** from the real impact query.
-3. **Explain the computation.** Click the strip's **Source**, **Context query**,
-   **Geometry transformer**, and **Impact query** stages. The inspector shows
-   actual input revisions, the filtered context, the stable
+3. **Explain the computation.** In **Follow the change**, directly below the
+   floorplan, click the flow's
+   **Source**, **Context query**, **Geometry transformer**, and **Impact query**
+   stages. The selected stage is highlighted and its query ID is shown.
+   The records directly below show actual input revisions, the filtered context, the stable
    `journey-ada/wall` obstruction, and the enriched result. This transformer is
    geometry; the same event/query plumbing is not inherently about scheduling.
+   **SSE / UI** shows the geometry-status query result, not a transport event log.
 4. **Retract.** Drag the wall back to its original area, or remove it. The
    obstruction and impact disappear without a cart event. Grace is unaffected.
-5. **Show flexibility.** Reset. Select Ada's journey and edit its polyline to
+5. **Show flexibility.** Reset. Choose **Deliver
+   packaging** in **Edit scene → Selected object**, then edit its polyline to
    `[[2,6.5],[21,6.5]]`; the path-only edit also creates an obstruction. Toggle
    the wall inactive to show upstream query filtering. Reset again.
 
 Pointer dragging is available for obstacles, paths and destinations. Select an
 obstacle/destination and use arrow keys to move it 0.25 m. Every shape has a
 keyboard-accessible coordinate editor; carts have radius/clearance controls.
-Add/remove/edit carts, journeys, convex polygon obstacles and destinations.
-Names, floor membership and active state are editable. Stable IDs do not change
-on update. Unsupported polygons or out-of-range values produce visible errors.
+The **Edit scene** panel keeps the selected object's properties beside the floor:
+click an object or path on the floor, or use **Selected object** (including inactive
+objects and carts without a journey). Use **Apply input change** to save or
+**Remove object** to delete it. The **Add** buttons create a draft cart, journey,
+convex polygon obstacle or destination; **Add object** submits it and **Cancel**
+discards it. Names and active state are editable. The UI presents one floor;
+new objects always use the internal `ground` floor ID. There is no floor picker
+or floor-creation control. Same-floor checks remain in the native geometry.
+Stable IDs do not change on update. Unsupported polygons or out-of-range values
+produce visible errors.
 
 ## What actually runs
 

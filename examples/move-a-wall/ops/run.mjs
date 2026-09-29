@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdir, open } from 'node:fs/promises';
+import { access, cp, mkdir, open } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,7 +12,12 @@ for (const port of [8421,8422,8423,5421]) {
     socket.listen(port,'127.0.0.1',() => socket.close(accept));
   });
 }
-await mkdir('.build',{recursive:true});
+const serverUi = resolve('../../ui/dist');
+await access(resolve(serverUi,'index.html')).catch(error => {
+  throw new Error('Stock Server Web UI assets are unavailable. Run make build-ui in drasi-server before ./demo start.',{cause:error});
+});
+await mkdir('.build/ui',{recursive:true});
+await cp(serverUi,resolve('.build/ui/dist'),{recursive:true});
 const log = await open('.build/server.log','a');
 const children = [];
 let stopping = false;
@@ -46,7 +51,7 @@ function run(binary,args,options) {
   return child;
 }
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal,() => void stop(0));
-run(resolve('target/debug/drasi-server'),['--config',resolve('.build/server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification','--disable-ui'],
+run(resolve('target/debug/drasi-server'),['--config',resolve('.build/server.yaml'),'--plugins-dir',resolve('.build/plugins'),'--skip-verification','--enable-ui'],
   {cwd:resolve('.build'),stdio:['ignore',log.fd,log.fd],env:{...process.env,RUST_LOG:process.env.RUST_LOG ?? 'info'}});
 try {
   let ready = false;
@@ -63,6 +68,8 @@ try {
     await new Promise(resolve => setTimeout(resolve,500));
   }
   if (!ready) throw new Error('Stock drasi-server did not produce the initial geometry-status query result. See .build/server.log.');
+  const uiResponse = await fetch('http://127.0.0.1:8421/ui/',{signal:AbortSignal.timeout(1500)});
+  if (!uiResponse.ok || !uiResponse.headers.get('content-type')?.includes('text/html')) throw new Error('Stock Server Web UI is unavailable. See .build/server.log.');
   run(process.execPath,['ui/node_modules/vite/bin/vite.js','--config','ui/vite.config.ts','--host','127.0.0.1','--port','5421','--strictPort','ui'],{stdio:'inherit'});
-  console.log('\nMove a Wall: http://127.0.0.1:5421\nStock drasi-server API 8421 · SSE 8422 · scene commands 8423\nCtrl-C stops only this launcher’s processes.');
+  console.log('\nObstacle Impact: http://127.0.0.1:5421\nServer Web UI: http://127.0.0.1:8421/ui/\nStock drasi-server API 8421 · SSE 8422 · scene commands 8423\nCtrl-C stops only this launcher’s processes.');
 } catch (error) { console.error(error); await stop(1); }
