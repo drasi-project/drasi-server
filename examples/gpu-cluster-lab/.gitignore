@@ -2,9 +2,9 @@
 .env.new
 .build/
 target/
-ui/node_modules/
-ui/dist/
-ui/vendor/
+shared/ui/node_modules/
+shared/ui/dist/
+shared/ui/vendor/
 test-results/
 playwright-report/
 __pycache__/

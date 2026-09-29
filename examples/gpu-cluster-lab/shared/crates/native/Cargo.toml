@@ -1,0 +1,67 @@
+[workspace]
+
+[package]
+name = "gpu-native"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+default = []
+dynamic-plugin = []
+query-isolation = ["dep:drasi-source-application"]
+runtime = [
+    "dep:axum", "dep:drasi-server", "dep:drasi-host-sdk",
+    "dep:drasi-source-postgres", "dep:drasi-bootstrap-postgres", "dep:drasi-reaction-sse",
+    "dep:drasi-reaction-log",
+    "dep:sqlx", "dep:tracing", "dep:tracing-subscriber", "dep:futures-util",
+]
+
+[[bin]]
+name = "gpu-runtime"
+path = "../../../embedded/src/main.rs"
+required-features = ["runtime"]
+
+[[bin]]
+name = "query-isolation"
+path = "src/bin/query-isolation.rs"
+required-features = ["query-isolation"]
+
+[dependencies]
+gpu-contracts = { path = "../contracts" }
+gpu-policy = { path = "../policy" }
+gpu-placement = { path = "../placement" }
+gpu-simulator = { path = "../simulator" }
+gpu-control = { path = "../control" }
+drasi-lib = { path = "../../../../../../drasi-core/lib" }
+drasi-core = { path = "../../../../../../drasi-core/core" }
+drasi-middleware = { path = "../../../../../../drasi-core/middleware", default-features = false, features = ["parse_json"] }
+drasi-computation-plugin-sdk = { path = "../../../../../../drasi-core/components/computation-plugin-sdk" }
+anyhow = "1"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs", "io-util"] }
+axum = { version = "0.7", optional = true }
+drasi-server = { path = "../../../../..", optional = true }
+drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false, optional = true }
+drasi-source-postgres = { path = "../../../../../../drasi-core/components/sources/postgres", optional = true }
+drasi-bootstrap-postgres = { path = "../../../../../../drasi-core/components/bootstrappers/postgres", optional = true }
+drasi-reaction-sse = { path = "../../../../../../drasi-core/components/reactions/sse", optional = true }
+drasi-reaction-log = { path = "../../../../../../drasi-core/components/reactions/log", optional = true }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+futures-util = { version = "0.3", optional = true }
+drasi-source-application = { path = "../../../../../../drasi-core/components/sources/application", optional = true }
+
+[dev-dependencies]
+drasi-source-application = { path = "../../../../../../drasi-core/components/sources/application" }
+drasi-host-sdk = { path = "../../../../../../drasi-core/components/host-sdk", default-features = false }
+axum = "0.7"

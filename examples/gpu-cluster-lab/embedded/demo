@@ -1,0 +1,253 @@
+#!/bin/sh
+set -eu
+cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+lab="$(CDPATH= cd -- .. && pwd)"
+# Retain the original project identity and database volume after relocation.
+project="gpu-cluster-lab-$(printf '%s' "$lab" | cksum | cut -d ' ' -f 1)"
+compose() { docker compose --project-name "$project" --env-file .env -f compose.yaml "$@"; }
+configure() {
+    if [ ! -f .env ]; then
+        umask 077
+        docker run --rm alpine:3.21 sh -eu -c '
+            for name in OWNER_PASSWORD CONFIG_PASSWORD PLAN_PASSWORD REPLICATION_PASSWORD INTERNAL_TOKEN RESET_PASSWORD; do
+                printf "%s=" "$name"; od -An -N32 -tx1 /dev/urandom | tr -d " \n"; printf "\n"
+            done
+            printf "DEMO_PORT=5400\n"
+        ' > .env.new
+        test "$(wc -l < .env.new | tr -d ' ')" = 7
+        mv .env.new .env
+    fi
+    if ! grep -q '^RESET_PASSWORD=' .env; then
+        docker run --rm alpine:3.21 sh -eu -c \
+            'printf "RESET_PASSWORD="; od -An -N32 -tx1 /dev/urandom | tr -d " \n"; printf "\n"' >> .env
+    fi
+}
+react_source() {
+    revision=2a36f857526baa08304a698131854f222b40b108
+    if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
+        git -C ../../.. cat-file -e "$revision^{commit}" 2>/dev/null ||
+            git -C ../../.. fetch --no-tags origin "$revision"
+        mkdir -p .build/react-source
+        git -C ../../.. archive --output="$PWD/.build/react-source.tar" "$revision" dev-tools/react
+        tar -x -f .build/react-source.tar -C .build/react-source
+        rm .build/react-source.tar
+    fi
+}
+runtime_source() {
+    python3 ops/export-runtime.py
+}
+npm_cache() {
+    mkdir -p .build/npm-cache
+    if command -v node >/dev/null && command -v npm >/dev/null; then
+        NPM_REGISTRY="${NPM_REGISTRY:-$(npm config get registry)}"
+        export NPM_REGISTRY
+        node ops/export-npm-cache.mjs
+    fi
+}
+wait_ready() {
+    timeout="${1:-120}"
+    case "$timeout" in ''|*[!0-9]*) printf '%s\n' 'Timeout must be an integer number of seconds.' >&2; return 2;; esac
+    deadline=$(($(date +%s) + timeout))
+    mkdir -p .build
+    while :; do
+        if compose exec -T control curl --silent --show-error --fail-with-body --max-time 10 \
+            http://127.0.0.1:5400/health/ready > .build/readiness-last.json 2>&1; then
+            cat .build/readiness-last.json
+            printf '\n'
+            return 0
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            printf '%s\n' 'Live query-backed readiness was not reached:' >&2
+            cat .build/readiness-last.json >&2
+            return 1
+        fi
+        sleep 1
+    done
+}
+check_stopped() {
+    stopped_container=$(compose ps --all --quiet "$1")
+    if [ -z "$stopped_container" ]; then
+        printf 'Missing stopped container for %s.\n' "$1" >&2
+        return 1
+    fi
+    docker inspect --format '{{json .State}}' "$stopped_container" > "$2"
+    python3 ops/check-stopped.py "$1" < "$2"
+}
+acceptance() (
+    mode="${1:---acceptance}"
+    if [ "$mode" = "--query-drain" ]; then export GPU_LAB_DIAGNOSTICS=1; fi
+    GPU_LAB_TEST_CONTROL_IMAGE=$(docker image inspect "$project-control" --format '{{.Id}}')
+    GPU_LAB_TEST_RUNTIME_IMAGE=$(docker image inspect "$project-drasi" --format '{{.Id}}')
+    export GPU_LAB_TEST_CONTROL_IMAGE GPU_LAB_TEST_RUNTIME_IMAGE
+    if [ "$mode" = "--writer-recovery" ]; then
+        export GPU_LAB_TEST_PLAN_ENDPOINT=http://writer-faults:8082/plans
+    fi
+    project="$project-acceptance-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+    compose() {
+        docker compose --project-name "$project" --env-file .env \
+            -f compose.yaml -f ops/acceptance.compose.yaml "$@"
+    }
+    cleanup() {
+        if [ "$1" -ne 0 ] || [ "$mode" = "--query-drain" ]; then
+            evidence=".build/$project"
+            if mkdir -p "$evidence"; then
+                printf '{"control":"%s","runtime":"%s"}\n' \
+                    "$GPU_LAB_TEST_CONTROL_IMAGE" "$GPU_LAB_TEST_RUNTIME_IMAGE" > "$evidence/images.json"
+                compose cp drasi:/app/source-manifest.json "$evidence/source-manifest.json" ||
+                    printf '%s\n' 'Failed to capture the runtime source manifest.' >&2
+                compose logs --no-color --tail=200 > "$evidence/services.log" 2>&1 ||
+                    printf '%s\n' 'Failed to capture acceptance service logs.' >&2
+                diagnostic_queries=""
+                if [ "${GPU_LAB_DIAGNOSTICS:-0}" = "1" ]; then
+                    diagnostic_queries="diagnostic-contexts diagnostic-workload-predicates diagnostic-placement-predicates"
+                fi
+                for query in ui-gpus ui-workloads ui-placements ui-policy ui-resilience ui-decisions ui-status ui-timeline ui-clusters scheduling-inputs simulation-inputs runtime-context $diagnostic_queries; do
+                    compose exec -T control curl --silent --show-error --max-time 10 \
+                        "http://drasi:8080/api/v1/instances/gpu-demo/queries/$query/results" \
+                        > "$evidence/$query.json" 2> "$evidence/$query.stderr" ||
+                        printf 'Failed to capture acceptance query %s.\n' "$query" >&2
+                done
+                if [ "${GPU_LAB_DIAGNOSTICS:-0}" = "1" ]; then
+                    compose exec -T control sh -eu -c \
+                        'curl --silent --show-error --fail-with-body --max-time 10 \
+                         -H "Authorization: Bearer $INTERNAL_TOKEN" http://drasi:8080/internal/diagnostics/metrics' \
+                        > "$evidence/query-metrics.json" 2> "$evidence/query-metrics.stderr" ||
+                        printf '%s\n' 'Failed to capture query metrics.' >&2
+                    compose stop --timeout 90 drasi ||
+                        printf '%s\n' 'Failed to stop the diagnostic recorder cleanly.' >&2
+                    check_stopped drasi "$evidence/recorder-stop.json" ||
+                        printf '%s\n' 'Diagnostic runtime did not exit gracefully; see recorder-stop.json.' >&2
+                    compose cp drasi:/tmp/gpu-lab-trace "$evidence/envelopes" ||
+                        printf '%s\n' 'Failed to capture bounded diagnostic envelopes.' >&2
+                fi
+                printf 'Acceptance/diagnostic evidence: %s\n' "$evidence" >&2
+            else
+                printf 'Failed to create acceptance evidence directory %s.\n' "$evidence" >&2
+            fi
+        fi
+        compose --profile writer-recovery down --volumes
+    }
+    trap 'cleanup "$?"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
+    printf 'Isolated acceptance project: %s\n' "$project"
+    if [ "$mode" = "--writer-recovery" ]; then compose up --no-build -d writer-faults; fi
+    compose up --no-build -d control
+    wait_ready 120
+    if [ "$mode" = "--restart" ] || [ "$mode" = "--acceptance" ]; then
+        snapshot=$(compose run --rm --no-deps checks --restart-snapshot)
+        receipts_sql="SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY operation_kind,request_key),'[]') FROM command_receipts r"
+        receipts=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$receipts_sql")
+        test "$receipts" != "[]"
+        compose stop
+        mkdir -p ".build/$project"
+        for service in control drasi postgres; do
+            check_stopped "$service" ".build/$project/restart-stop-$service.json"
+        done
+        compose down
+        compose up --no-build -d control
+        wait_ready 120
+        compose run --rm --no-deps -e RESTART_SNAPSHOT="$snapshot" checks --restart-verify
+        restored_receipts=$(compose exec -T postgres psql -U gpu_owner -d gpu_demo -Atc "$receipts_sql")
+        if [ "$restored_receipts" != "$receipts" ]; then
+            printf '%s\n' 'Full stack restart changed durable command/plan receipts.' >&2
+            exit 1
+        fi
+    fi
+    if [ "$mode" = "--writer-recovery" ]; then
+        compose run --rm --no-deps --entrypoint node checks --experimental-strip-types ops/check-writer-recovery.mjs
+    elif [ "$mode" = "--query-drain" ]; then
+        compose run --rm --no-deps --entrypoint node checks --experimental-strip-types ops/check-query-drain.mjs
+    elif [ "$mode" != "--restart" ]; then
+        compose run --rm --no-deps checks --acceptance
+    fi
+)
+case "${1:-help}" in
+    configure) configure; react_source ;;
+    up)
+        configure
+        react_source
+        npm_cache
+        runtime_source
+        compose up --build -d control
+        wait_ready 120
+        published=$(compose port control 5400)
+        admin=$(compose port drasi 8080)
+        printf 'GPU Cluster Lab: http://localhost:%s\nDrasi Server UI: http://localhost:%s/ui/?instance=gpu-demo\nCompose project: %s\n' \
+            "${published##*:}" "${admin##*:}" "$project"
+        ;;
+    down)
+        if [ -f .env ]; then compose down; fi
+        ;;
+    build) configure; react_source; npm_cache; runtime_source; shift; compose build "$@" ;;
+    status)
+        if [ ! -f .env ]; then
+            printf '%s\n' 'Demo is not configured. Run ./demo up.' >&2
+            exit 1
+        fi
+        compose ps --all
+        printf '\nQuery-backed readiness (including scenario and component failures):\n'
+        if compose exec -T control curl --silent --show-error --fail-with-body --max-time 10 \
+            http://127.0.0.1:5400/health/ready; then
+            printf '\n'
+        else
+            result=$?
+            printf '\nThe demo is not ready; the response above is not a successful startup.\n' >&2
+            exit "$result"
+        fi
+        ;;
+    logs) configure; shift; compose logs --tail=100 -f "$@" ;;
+    sql) configure; compose exec postgres psql -U gpu_config -d gpu_demo ;;
+    wait)
+        configure
+        if [ "${2:-}" = "--timeout" ]; then wait_ready "${3:?Missing timeout}"; else wait_ready 120; fi
+        ;;
+    reset)
+        configure
+        case "${2:-baseline}" in baseline|fragmentation) scenario="${2:-baseline}";;
+            regional|regional-boundary) scenario=regional-boundary;;
+            *) printf '%s\n' 'Unknown scenario.' >&2; exit 2;; esac
+        compose exec -T -e RESET_SCENARIO="$scenario" control sh -eu -c \
+            'curl --silent --show-error --fail-with-body --max-time 300 -X POST \
+             -H "Authorization: Bearer $INTERNAL_TOKEN" \
+             "http://127.0.0.1:5400/api/demo/presets/$RESET_SCENARIO"'
+        printf '\n'
+        ;;
+    destroy)
+        if [ "${2:-}" != "--confirm" ] || [ "${3:-}" != "gpu-demo" ]; then
+            printf '%s\n' 'Destructive: use ./demo destroy --confirm gpu-demo to delete only this demo database.' >&2
+            exit 1
+        fi
+        if [ -f .env ]; then compose down --volumes; fi
+        ;;
+    check)
+        configure
+        compose config --quiet
+        case "${2:-unit}" in
+            --acceptance) acceptance --writer-recovery; acceptance --acceptance ;;
+            --writer-recovery) acceptance --writer-recovery ;;
+            --restart) acceptance --restart ;;
+            --query-drain) acceptance --query-drain ;;
+            --postgres-mutations) shift 2; python3 ops/check-postgres-mutations.py "$@" ;;
+            --admin-ui) compose run --rm --no-deps --entrypoint node checks ops/check-admin-ui.mjs ;;
+            --smoke|--errors|--concurrency|--commands|--runbook) compose run --rm --no-deps checks "${2}" ;;
+            unit)
+                architecture=$(docker info --format '{{.Architecture}}')
+                docker run --rm -v "$lab:/app" -w /app/shared \
+                    -e CARGO_TARGET_DIR="/app/embedded/.build/check-target-linux-$architecture" \
+                    -e CARGO_BUILD_JOBS=1 rust:1.95-bookworm cargo test --locked --workspace
+                ;;
+            *) printf '%s\n' 'Unknown check mode; use check, check --admin-ui, check --smoke, check --errors, check --concurrency, check --commands, check --runbook, check --restart, check --writer-recovery, check --query-drain, check --postgres-mutations, or check --acceptance.' >&2; exit 2 ;;
+        esac
+        ;;
+    *) printf '%s\n' 'GPU Cluster Lab' \
+        '  ./demo up       Build/start the live runtime and wait for observed readiness' \
+        '  ./demo down     Stop only this demo; preserve its database' \
+        '  ./demo wait --timeout 120 | reset baseline | reset fragmentation | reset regional' \
+        '  ./demo status | logs | sql | build | check | check --smoke | check --errors | check --concurrency | check --commands | check --runbook | check --restart | check --writer-recovery | check --acceptance' \
+        '  ./demo check --query-drain  Isolated diagnostic report pause; never acceptance evidence' \
+        '  ./demo check --postgres-mutations  Isolated SQL mutation checks with real query logging' \
+        '  ./demo check --admin-ui  Read-only checks of the Drasi admin UI, assets and component APIs' \
+        '  ./demo destroy --confirm gpu-demo  Delete this demo database'
+        ;;
+esac

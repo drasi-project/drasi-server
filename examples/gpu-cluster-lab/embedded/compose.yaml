@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4"]
+    environment:
+      POSTGRES_USER: gpu_owner
+      POSTGRES_DB: gpu_demo
+      POSTGRES_PASSWORD: ${OWNER_PASSWORD:?Run ./demo configure}
+      CONFIG_PASSWORD: ${CONFIG_PASSWORD:?Run ./demo configure}
+      PLAN_PASSWORD: ${PLAN_PASSWORD:?Run ./demo configure}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?Run ./demo configure}
+      RESET_PASSWORD: ${RESET_PASSWORD:?Run ./demo configure}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./ops/roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpu_owner -d gpu_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  migrate:
+    build:
+      context: ..
+      dockerfile: embedded/ops/control.Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    command: ["./target/release/gpu-control", "init"]
+    environment:
+      DEMO_OWNER_URL: postgres://gpu_owner:${OWNER_PASSWORD}@postgres/gpu_demo
+      RESET_PASSWORD: ${RESET_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  drasi:
+    stop_grace_period: 90s
+    build:
+      context: ..
+      dockerfile: embedded/ops/runtime.Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    environment:
+      PGHOST: postgres
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      PLAN_ENDPOINT: http://control:5400/internal/placement-plans
+      RUST_LOG: gpu_runtime=info,drasi_lib=info,drasi_reaction_sse=warn
+      GPU_LAB_LOG_QUERIES:
+    ports:
+      - "127.0.0.1:${DRASI_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  control:
+    stop_grace_period: 90s
+    build:
+      context: ..
+      dockerfile: embedded/ops/control.Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    environment:
+      DATABASE_URL: postgres://gpu_config:${CONFIG_PASSWORD}@postgres/gpu_demo
+      PLAN_DATABASE_URL: postgres://gpu_plan:${PLAN_PASSWORD}@postgres/gpu_demo
+      RESET_DATABASE_URL: postgres://gpu_reset:${RESET_PASSWORD}@postgres/gpu_demo
+      DRASI_API_URL: http://drasi:8080
+      DRASI_SSE_URL: http://drasi:8081/events
+      PUBLIC_ORIGIN: http://localhost:${DEMO_PORT:-5400}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Run ./demo configure}
+      LISTEN_ADDRESS: 0.0.0.0:5400
+      RUST_LOG: gpu_control=info
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-5400}:5400"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      drasi:
+        condition: service_started
+    restart: unless-stopped
+  checks:
+    image: node:24-bookworm-slim
+    profiles: ["checks"]
+    working_dir: /app/embedded
+    entrypoint: ["node", "--experimental-strip-types", "ops/live-check.mjs"]
+    environment:
+      DEMO_URL: http://control:5400
+      DRASI_URL: http://drasi:8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    volumes:
+      - ./ops:/app/embedded/ops:ro
+      - ../shared/ui/src/rows.ts:/app/shared/ui/src/rows.ts:ro
+volumes:
+  postgres-data:
