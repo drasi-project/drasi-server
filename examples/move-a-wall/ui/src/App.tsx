@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type FormEvent } from 'react';
 import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/react/react';
 import { entity, inputs, key, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
+import { ArchitectureOverlay } from './Architecture';
 
 const DEMO_FLOOR = 'ground';
 const inspectionStages: Record<QueryId,{label:string;description:string}> = {
@@ -20,6 +21,7 @@ export function App() {
   const views = { 'scene-inputs':source, 'geometry-context':context, obstructions, 'affected-journeys':impacts, 'geometry-status':geometry };
   const client = useDrasiClient(), transport = useDrasiConnectionStatus();
   const [online,setOnline] = useState(navigator.onLine);
+  const [infoOpen,setInfoOpen] = useState(false);
   useEffect(() => {
     const offline = () => setOnline(false), reconnect = () => { setOnline(true); client.retry(); };
     window.addEventListener('offline',offline); window.addEventListener('online',reconnect);
@@ -83,9 +85,12 @@ export function App() {
         destination_id:entities.find(e => e.shape.kind === 'destination')?.id ?? 'packing',points:[[2,7],[21,7]]};
     setDraft({id,name:`New ${kind}`,floor:DEMO_FLOOR,active:true,shape}); setAdding(true); setSelected(id);
   }
-  return <main>
+  return <><main>
     <header className="demo-header">
-      <div><h1>Obstacle Impact</h1><p>How obstacles affect planned journeys.</p></div>
+      <div><div className="demo-title"><h1>Obstacle Impact</h1>
+        <button type="button" className="info-button" aria-label="Information about this demo" title="Architecture Overview"
+          aria-haspopup="dialog" aria-expanded={infoOpen} aria-controls={infoOpen ? 'architecture-overlay' : undefined} onClick={() => setInfoOpen(true)}><span aria-hidden="true">i</span></button>
+      </div><p>How obstacles affect planned journeys.</p></div>
       <div className="demo-actions">
         <span className={`connection ${stale ? 'bad' : pending || unsettled ? 'waiting' : 'live'}`} role="status">
           {stale ? 'Disconnected / stale' : pending || unsettled ? 'Processing input changes' : 'Live query results'}
@@ -134,7 +139,7 @@ export function App() {
           {stale || unsettled ? <p className="muted">Results are pending or stale; do not interpret this as a clear floor.</p> : null}
           {causes.length ? causes.map(row => <article className="impact" key={text(row.id)}>
             <strong>{text(row.cart)} · {text(row.task)}</strong><p><b>{text(row.obstacle)}</b> obstructs the planned path to <b>{text(row.destination)}</b>.</p>
-            <small>Path distance {number(row.distance_m).toFixed(2)} m · Required {number(row.required_m).toFixed(2)} m</small>
+            <small>Path distance {number(row.distance_m).toFixed(2)} · Required {number(row.required_m).toFixed(2)}</small>
           </article>) : <p className="muted">{blocks.length ? 'A geometric cause exists, but its active same-floor cart, destination or cause metadata is missing or has not arrived. Inspect obstructions; this is not a clear path.' : 'Move an obstacle across a path to see the affected cart, task and destination here.'}</p>}
         </section>
         <section className="editor-panel" aria-labelledby="edit-scene-heading">
@@ -160,7 +165,7 @@ export function App() {
       <a href="/api/v1/instances/move-a-wall/computation" target="_blank" rel="noreferrer">Actual graph API ↗</a>
       <a href="http://127.0.0.1:8421/ui/" target="_blank" rel="noreferrer">Drasi Server Web UI ↗</a>
     </footer>
-  </main>;
+  </main>{infoOpen && <ArchitectureOverlay onClose={() => setInfoOpen(false)}/>}</>;
 }
 
 function Scene({entities,selected,select,obstructed,affectedDestinations,disabled,pending,draft,preview,commit}: {
@@ -198,7 +203,7 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
     <defs><pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" fill="none" stroke="#dce5e5" strokeWidth=".018"/></pattern></defs>
     <rect x="0" y="0" width="24" height="16" rx=".2" fill="#f4f8f6" stroke="#c5d4d4" strokeWidth=".06"/>
     <rect x="0" y="0" width="24" height="16" fill="url(#grid)"/>
-    <text x=".5" y=".8" className="floor-label">FLOOR PLAN / METRES</text>
+    <text x=".5" y=".8" className="floor-label">FLOOR PLAN</text>
     {entities.filter(e => e.shape.kind === 'journey').map(e => {
       if (e.shape.kind !== 'journey') return null;
       const cartId = e.shape.cart_id;
@@ -217,7 +222,7 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
     })}
     {entities.filter(e => e.shape.kind === 'destination' || e.shape.kind === 'obstacle').map(e =>
       <g key={e.id} data-entity={e.id} className={`scene-object ${e.shape.kind} ${selected === e.id ? 'selected' : ''} ${affectedDestinations.has(e.id) ? 'affected' : ''}`}
-        tabIndex={0} role="button" aria-label={`${e.name}; arrow keys move by 0.25 metres`} onPointerDown={event => down(event,e)}
+        tabIndex={0} role="button" aria-label={`${e.name}; arrow keys move in 0.25 steps`} onPointerDown={event => down(event,e)}
         onKeyDown={event => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(e.id); return; }
           const offset: Record<string,Point> = {ArrowLeft:[-.25,0],ArrowRight:[.25,0],ArrowUp:[0,-.25],ArrowDown:[0,.25]};
@@ -262,13 +267,13 @@ function Editor({value,adding,disabled,save,remove,cancel}: {value:Entity;adding
       <label>Name<input value={draft.name} onChange={e => setDraft({...draft,name:e.target.value})} required maxLength={100}/></label>
     <label className="checkbox"><input type="checkbox" checked={draft.active} onChange={e => setDraft({...draft,active:e.target.checked})}/> Active (context query filter)</label>
     {draft.shape.kind === 'cart' ? <div className="fields">
-      <label>Radius (m)<input type="number" min=".05" max="2" step=".05" value={draft.shape.radius} onChange={e => {
+      <label>Radius<input type="number" min=".05" max="2" step=".05" value={draft.shape.radius} onChange={e => {
         if (draft.shape.kind === 'cart') setDraft({...draft,shape:{...draft.shape,radius:e.target.valueAsNumber}});
       }}/></label>
-      <label>Clearance (m)<input type="number" min="0" max="2" step=".05" value={draft.shape.clearance} onChange={e => {
+      <label>Clearance<input type="number" min="0" max="2" step=".05" value={draft.shape.clearance} onChange={e => {
         if (draft.shape.kind === 'cart') setDraft({...draft,shape:{...draft.shape,clearance:e.target.valueAsNumber}});
       }}/></label>
-    </div> : <label>{draft.shape.kind === 'obstacle' ? 'Convex polygon vertices' : draft.shape.kind === 'journey' ? 'Planned polyline points' : 'Destination point'} (metres)
+    </div> : <label>{draft.shape.kind === 'obstacle' ? 'Convex polygon vertices' : draft.shape.kind === 'journey' ? 'Planned polyline points' : 'Destination point'}
       <textarea aria-label="Coordinates" value={coordinates} onChange={e => setCoordinates(e.target.value)} rows={3} spellCheck={false}/>
     </label>}
     {draft.shape.kind === 'journey' && <div className="fields">
@@ -282,6 +287,6 @@ function Editor({value,adding,disabled,save,remove,cancel}: {value:Entity;adding
     <div className="form-actions"><button type="submit" className="primary">{adding ? 'Add object' : 'Apply input change'}</button>
       {adding ? <button type="button" onClick={cancel}>Cancel</button> : <button type="button" className="danger" onClick={remove}>Remove object</button>}</div>
     </fieldset>{error && <p className="error" role="alert">{error}</p>}
-    <p className="muted">Edits go through the source. Arrow keys move obstacles or destinations by 0.25 m.</p>
+    <p className="muted">Edits go through the source. Arrow keys nudge obstacles or destinations.</p>
   </form>;
 }

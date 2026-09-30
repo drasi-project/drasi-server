@@ -54,7 +54,7 @@ fn point(p: Point) -> Result<()> {
         p.iter().all(|n| n.is_finite())
             && (0.0..=WIDTH).contains(&p[0])
             && (0.0..=HEIGHT).contains(&p[1]),
-        "coordinates must be finite metres within the 24 x 16 m floor"
+        "coordinates must be finite and within the 24 x 16 floor"
     );
     Ok(())
 }
@@ -72,11 +72,11 @@ impl Entity {
             Shape::Cart { radius, clearance } => {
                 ensure!(
                     radius.is_finite() && (0.05..=2.0).contains(radius),
-                    "radius must be 0.05-2 m"
+                    "radius must be 0.05-2"
                 );
                 ensure!(
                     clearance.is_finite() && (0.0..=2.0).contains(clearance),
-                    "clearance must be 0-2 m"
+                    "clearance must be 0-2"
                 );
             }
             Shape::Journey {
@@ -216,7 +216,33 @@ pub fn fixture() -> Scene {
         Shape::Journey {
             cart_id: "cart-grace".into(),
             destination_id: "assembly".into(),
-            points: vec![[2.0, 11.0], [14.0, 11.0], [14.0, 14.0], [21.0, 14.0]],
+            points: vec![
+                [2.0, 14.0],
+                [2.599, 13.321],
+                [3.246, 12.689],
+                [3.938, 12.105],
+                [4.671, 11.575],
+                [5.441, 11.099],
+                [6.244, 10.682],
+                [7.076, 10.325],
+                [7.931, 10.03],
+                [8.806, 9.799],
+                [9.696, 9.633],
+                [10.596, 9.533],
+                [11.5, 9.5],
+                [12.404, 9.533],
+                [13.304, 9.633],
+                [14.194, 9.799],
+                [15.069, 10.03],
+                [15.924, 10.325],
+                [16.756, 10.682],
+                [17.559, 11.099],
+                [18.329, 11.575],
+                [19.062, 12.105],
+                [19.754, 12.689],
+                [20.401, 13.321],
+                [21.0, 14.0],
+            ],
         },
     );
     add(

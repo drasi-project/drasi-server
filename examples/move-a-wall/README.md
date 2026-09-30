@@ -87,9 +87,36 @@ management ports to a network.
 
 ## A 90-second presentation
 
-1. **Start clear.** Point to Ada's path to Packing and Grace's bent path to
+Click the circled **i** beside **Obstacle Impact** for a full-page architecture
+overlay. It fades in with the title in the same position as the demo; reduced
+motion preferences disable the fade. The demo stays mounted underneath: opening and closing the overlay
+does not navigate, reconnect the queries or discard unsaved editor changes.
+Hover or keyboard-focus a component to see its responsibility, implementation,
+inputs and outputs. Tap/click to pin its details; tap again, click elsewhere or
+press Escape to dismiss the details. Close the overlay with the **X** at the top
+right (or Escape when no details are open); focus returns to the info button.
+The overview distinguishes browser commands, graph changes, query rows and
+result delivery. The three inspection queries are grouped for readability.
+The configured `query-results` sink, host REST API and configured `wall-ui`
+SSE reaction have separate cards; the catalog is explained as a shared resource,
+not an extra component. This is not live graph inspection. On small screens
+it becomes a component list with input connections.
+
+The overview itself has no Drasi provider, API calls, SSE connection or backend
+requirement. It is also available directly at
+[http://127.0.0.1:5421/about.html](http://127.0.0.1:5421/about.html) for standalone
+presentations; its X returns to the demo when opened that way. `npm run build`
+includes the demo and standalone overview in `ui/dist`.
+From `ui/`, run `npm run check:about` to build and check the overview, hover,
+keyboard/touch interactions, responsive layouts and navigation in Playwright.
+It serves only the built assets on an ephemeral loopback port, requires no
+running backend, and does not change the live scene.
+
+1. **Start clear.** Point to Ada's path to Packing and Grace's upward-bowing arc to
    Assembly. The shaded path is each cart's circular footprint plus clearance,
    not just a zero-width line. These are static plans, not moving carts.
+   Grace starts near the bottom of the floor. Her arc is 25 fixed points in the
+   existing polyline format, not a new curve type or a browser-side calculation.
 2. **Move one input.** Drag an obstacle across a path; try **Movable wall**
    upward across Ada's path. A dashed
    ghost is explicitly tentative. On release the command goes to the source.
@@ -111,7 +138,7 @@ management ports to a network.
    the wall inactive to show upstream query filtering. Reset again.
 
 Pointer dragging is available for obstacles, paths and destinations. Select an
-obstacle/destination and use arrow keys to move it 0.25 m. Every shape has a
+obstacle/destination and use arrow keys to move it in 0.25 steps. Every shape has a
 keyboard-accessible coordinate editor; carts have radius/clearance controls.
 The **Edit scene** panel keeps the selected object's properties beside the floor:
 click an object or path on the floor, or use **Selected object** (including inactive
@@ -208,9 +235,11 @@ work. Source lifecycle owns and closes its command listener.
 
 ### Geometry contract
 
-- Coordinates, cart radii, clearances and distances are **metres**.
-- The floor is a 24 by 16 m rectangle. Inputs must be finite and within it.
-- Carts are circular, with radius 0.05-2 m and clearance 0-2 m. A journey sweeps
+- Coordinates, cart radii, clearances and distances are **abstract scene values**,
+  not real-world measurements. The existing `distance_m` and `required_m`
+  property names are retained for query/API compatibility.
+- The floor is a 24 by 16 rectangle. Inputs must be finite and within it.
+- Carts are circular, with radius 0.05-2 and clearance 0-2. A journey sweeps
   that circle along every segment of its polyline (2-32 points).
 - Obstacles are **simple, strictly convex polygons**, 3-16 vertices, without a
   repeated closing vertex. Rectangles and convex angled shapes are supported.
@@ -219,8 +248,8 @@ work. Source lifecycle owns and closes its command listener.
 - `geo` computes the Euclidean distance between the whole polyline and the
   closed polygon. A crossing or segment inside the polygon has distance zero.
   An obstruction exists when the distance is at most radius + clearance +
-  **1e-7 m**. Tangency/contact therefore counts as obstruction. Polygon validity
-  also rejects edge lengths at/below 1e-7 m and cross products at/below 1e-7 m².
+  **1e-7**. Tangency/contact therefore counts as obstruction. Polygon validity
+  also rejects edge lengths and cross products at/below 1e-7.
 - Only active carts, journeys and obstacles on the **same floor** interact.
   Deleting a cart or journey removes its obstructions. Orphaned journeys can be
   edited or repaired; they do not fabricate a cart. Deleting destination

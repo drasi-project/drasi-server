@@ -76,6 +76,25 @@ p {
   flex-wrap: wrap;
   gap: 10px;
 }
+.demo-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.info-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1.5px solid #64877b;
+  border-radius: 50%;
+  color: #345f50;
+  background: transparent;
+  font: 700 17px/1 Georgia,serif;
+}
 .connection {
   border-radius: 20px;
   font-size: 12px;

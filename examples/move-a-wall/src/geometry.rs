@@ -94,8 +94,32 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn grace_fixture_is_a_clear_sampled_arc() -> Result<()> {
+        let scene = fixture();
+        let Shape::Journey { points, .. } = &scene["journey-grace"].shape else {
+            panic!("Grace must have a planned journey");
+        };
+        assert_eq!(points.len(), 25);
+        assert_eq!(points[0], [2.0, 14.0]);
+        assert_eq!(points[12], [11.5, 9.5]);
+        assert_eq!(
+            scene["assembly"].shape,
+            Shape::Destination {
+                point: *points.last().unwrap()
+            }
+        );
+        assert!(points.windows(2).all(|p| p[0][0] < p[1][0]));
+        assert!(points[..=12].windows(2).all(|p| p[0][1] > p[1][1]));
+        assert!(points[12..].windows(2).all(|p| p[0][1] < p[1][1]));
+        assert!(calculate(&scene)?.is_empty());
+        let blocked = calculate(&wall(9.0))?;
+        assert_eq!(blocked.len(), 1);
+        assert!(blocked.contains_key("journey-grace/wall"));
+        Ok(())
+    }
+    #[test]
     fn turns_overlaps_and_separate_floors() -> Result<()> {
-        let mut s = wall(11.5);
+        let mut s = wall(9.0);
         assert!(calculate(&s)?.contains_key("journey-grace/wall"));
         let mut other = s["wall"].clone();
         other.id = "second".into();
@@ -104,6 +128,9 @@ mod tests {
         s.get_mut("wall").unwrap().floor = "upstairs".into();
         assert_eq!(calculate(&s)?.len(), 1);
         let mut corner = fixture();
+        if let Shape::Journey { points, .. } = &mut corner.get_mut("journey-grace").unwrap().shape {
+            *points = vec![[2.0, 11.0], [14.0, 11.0], [14.0, 14.0], [21.0, 14.0]];
+        }
         corner.get_mut("wall").unwrap().shape = Shape::Obstacle {
             vertices: vec![[14.3, 10.2], [15.0, 10.2], [15.0, 10.7], [14.3, 10.7]],
         };
@@ -130,6 +157,19 @@ mod tests {
             clearance: 0.0,
         };
         assert!(calculate(&s).is_err());
+        assert_eq!(
+            s["cart-ada"].validate().unwrap_err().to_string(),
+            "radius must be 0.05-2"
+        );
+        s.get_mut("cart-ada").unwrap().shape = Shape::Cart {
+            radius: 0.5,
+            clearance: 3.0,
+        };
+        assert!(calculate(&s).is_err());
+        assert_eq!(
+            s["cart-ada"].validate().unwrap_err().to_string(),
+            "clearance must be 0-2"
+        );
         s = fixture();
         s.get_mut("journey-ada").unwrap().shape = Shape::Journey {
             cart_id: "cart-ada".into(),
@@ -140,6 +180,10 @@ mod tests {
         s = fixture();
         s.get_mut("packing").unwrap().shape = Shape::Destination { point: [-1., 0.] };
         assert!(calculate(&s).is_err());
+        assert_eq!(
+            s["packing"].validate().unwrap_err().to_string(),
+            "coordinates must be finite and within the 24 x 16 floor"
+        );
         assert!(serde_json::from_str::<Shape>(r#"{"kind":"circle","radius":1}"#).is_err());
     }
 }

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "check:live": "node ../ops/check-live.mjs",
-    "check:browser": "node ../ops/check-browser.mjs"
+    "check:browser": "node ../ops/check-browser.mjs",
+    "check:about": "npm run build && node ../ops/check-about.mjs"
   },
   "dependencies": {
     "@drasi/react": "file:vendor/drasi-react.tgz",
