@@ -21,7 +21,7 @@ try {
   if (process.argv.includes('--disconnected')) {
     await page.getByText('Disconnected / stale',{exact:true}).waitFor();
     await page.getByRole('heading',{name:'Awaiting current queries',exact:true}).waitFor();
-    assert.equal(await page.getByRole('button',{name:'Reset floor',exact:true}).isDisabled(),true);
+    assert.equal(await page.getByRole('button',{name:'Reset scene',exact:true}).isDisabled(),true);
     assert.equal(await page.locator('[data-entity]').count(),0);
     assert.equal(await page.getByRole('heading',{name:'Nothing in the way',exact:true}).count(),0);
     await page.getByRole('alert').filter({hasText:'The Drasi server is unavailable'}).waitFor();
@@ -29,12 +29,12 @@ try {
     console.log('PASS: absent backend is visibly stale, server unavailability is shown, editing is disabled, and no scene/results are fabricated. This is NOT an end-to-end integration check.');
   } else {
   await settled();
-  await page.getByRole('button',{name:'Reset floor',exact:true}).click();
+  await page.getByRole('button',{name:'Reset scene',exact:true}).click();
   await settled();
   assert.equal(await page.title(),'Obstacle Impact | Drasi');
   assert.equal(await page.getByRole('heading',{level:1,name:'Obstacle Impact',exact:true}).count(),1);
   assert.doesNotMatch(await page.locator('body').innerText(), /\bmetres?\b|\bmeters?\b|\(m\)|\b\d+(?:\.\d+)? m\b/i);
-  assert.equal(await page.locator('svg.scene .floor-label').textContent(),'FLOOR PLAN');
+  assert.equal(await page.locator('svg.scene .scene-label').textContent(),'SCENE');
   assert.equal(await page.getByRole('button',{name:'Information about this demo',exact:true}).getAttribute('aria-haspopup'),'dialog');
   const nameInput = page.getByLabel('Name',{exact:true});
   const originalName = await nameInput.inputValue();
@@ -70,7 +70,7 @@ try {
   const flow = inspector.getByRole('navigation',{name:'Computation graph',exact:true});
   assert.equal(await flow.count(),1);
   assert.equal(await page.locator('main > .pipeline,.query-tabs').count(),0);
-  assert.equal(await page.getByLabel('Floor',{exact:true}).count(),0);
+  assert.doesNotMatch(await page.locator('body').innerText(), /\bfloor\b/i);
   await page.getByText('Drag an obstacle across a planned path.',{exact:true}).waitFor();
   const editor = page.getByRole('region',{name:'Edit scene',exact:true});
   const selection = editor.getByRole('combobox',{name:'Selected object',exact:true});
@@ -80,8 +80,8 @@ try {
   const scene = await page.locator('svg.scene').boundingBox();
   assert.ok(position && scene);
   assert.ok(scene.y < 240,`The scene should start near the top, not below tall headers (y=${scene.y})`);
-  const legend = await page.getByRole('group',{name:'Floor plan legend',exact:true}).boundingBox();
-  assert.ok(legend && legend.y + legend.height <= scene.y && legend.x > scene.x + scene.width/2,'The legend must be at the top right, above the floorplan');
+  const legend = await page.getByRole('group',{name:'Scene legend',exact:true}).boundingBox();
+  assert.ok(legend && legend.y + legend.height <= scene.y && legend.x > scene.x + scene.width/2,'The legend must be at the top right, above the scene');
   assert.equal(await page.locator('.scene-note,.journeys,.journey-card').count(),0);
   assert.deepEqual((await page.locator('svg.scene .cart-name').allTextContents()).sort(),['Ada','Grace']);
   const gracePath = page.locator('svg.scene .path').filter({hasText:'Bring assembly parts'});
@@ -91,17 +91,17 @@ try {
   assert.deepEqual(gracePoints[12],[11.5,9.5]);
   assert.deepEqual(gracePoints.at(-1),[21,14]);
   const inspectorPosition = await inspector.boundingBox();
-  assert.ok(inspectorPosition && inspectorPosition.y < 850,`Removing the duplicate floor content should bring the inspector up (y=${inspectorPosition?.y})`);
-  const floorPosition = await page.locator('.floor-panel').boundingBox();
+  assert.ok(inspectorPosition && inspectorPosition.y < 850,`Removing the duplicate scene content should bring the inspector up (y=${inspectorPosition?.y})`);
+  const scenePosition = await page.locator('.scene-panel').boundingBox();
   const initialImpact = await page.locator('.impact-panel').boundingBox();
-  assert.ok(floorPosition && initialImpact);
-  assert.equal(inspectorPosition.x,floorPosition.x);
-  assert.equal(inspectorPosition.width,floorPosition.width,'The inspector must match the floor panel width');
-  assert.ok(Math.abs(inspectorPosition.y - (floorPosition.y + floorPosition.height + 20)) < 1,'The inspector must sit directly below the floor panel');
+  assert.ok(scenePosition && initialImpact);
+  assert.equal(inspectorPosition.x,scenePosition.x);
+  assert.equal(inspectorPosition.width,scenePosition.width,'The inspector must match the scene panel width');
+  assert.ok(Math.abs(inspectorPosition.y - (scenePosition.y + scenePosition.height + 20)) < 1,'The inspector must sit directly below the scene panel');
   const editorPosition = await editor.boundingBox();
   assert.ok(editorPosition && editorPosition.y < scene.y + scene.height/2,'Object editing must be beside the scene, not beneath it');
   await page.locator('svg.scene .path').filter({hasText:'Deliver packaging'}).click();
-  assert.equal(await selection.inputValue(),'journey-ada','Journeys remain selectable on the floorplan without separate cards');
+  assert.equal(await selection.inputValue(),'journey-ada','Journeys remain selectable in the scene without separate cards');
   await selection.selectOption('wall');
   const x = position.x + position.width / 2, y = position.y + position.height / 2;
   await page.mouse.move(x,y);
@@ -130,6 +130,10 @@ try {
     assert.equal(body.success,true);
     const expected = id === 'scene-inputs' || id === 'geometry-context'
       ? body.data.flatMap(row => row.objects.map(payload => JSON.parse(payload))) : body.data;
+    for (const row of expected) {
+      assert.equal(Object.hasOwn(row,'floor'),false,`${id} must not return the removed field`);
+      if (row.type === 'entity') assert.equal(Object.hasOwn(row.entity,'floor'),false);
+    }
     assert.deepEqual(JSON.parse(await inspector.getByTestId('query-records').textContent()),expected,`${label} must display its actual query records`);
   }
   await flow.getByRole('button',{name:'Source scene-inputs',exact:true}).focus();
@@ -159,7 +163,7 @@ try {
   await page.getByLabel('Coordinates',{exact:true}).fill('[[0,0],[2,2],[2,0],[0,2]]');
   await page.getByRole('button',{name:'Apply input change',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'only simple convex polygons'}).waitFor();
-  await page.getByRole('button',{name:'Reset floor',exact:true}).click();
+  await page.getByRole('button',{name:'Reset scene',exact:true}).click();
   await settled();
   await selection.selectOption('journey-ada');
   await page.getByLabel('Coordinates',{exact:true}).fill('[[2,6.5],[21,6.5]]');
@@ -169,7 +173,7 @@ try {
   await page.getByRole('button',{name:'Remove object',exact:true}).click();
   await page.getByRole('heading',{name:'Nothing in the way',exact:true}).waitFor();
   await settled();
-  await page.getByRole('button',{name:'Reset floor',exact:true}).click();
+  await page.getByRole('button',{name:'Reset scene',exact:true}).click();
   await settled();
   for (const kind of ['cart','journey','obstacle','destination']) {
     await page.getByRole('button',{name:`+ ${kind}`,exact:true}).click();
@@ -207,7 +211,7 @@ try {
     assert.equal(await flow.getByRole('button',{name:'SSE / UI geometry-status',exact:true}).getAttribute('aria-pressed'),'true');
   }
   await page.screenshot({path:`${artifacts}/mobile.png`,fullPage:true});
-  console.log('PASS: independently sized floor/inspector column, integrated flow inspector with real query records and keyboard selection, compact single-floor UI, adjacent object editor, responsive layout, real drag/retraction and path-only query impacts, reload, offline/reconnect, keyboard command, visible validation errors, CRUD for all four entity kinds, cancel/rejected draft preservation, reset. Screenshots in artifacts/.');
+  console.log('PASS: independently sized scene/inspector column, integrated flow inspector with real query records and keyboard selection, compact scene UI, adjacent object editor, responsive layout, real drag/retraction and path-only query impacts, reload, offline/reconnect, keyboard command, visible validation errors, CRUD for all four entity kinds, cancel/rejected draft preservation, reset. Screenshots in artifacts/.');
   }
   assert.deepEqual(errors,[]);
 } finally { await browser.close(); }

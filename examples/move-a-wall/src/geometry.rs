@@ -10,7 +10,6 @@ pub struct Obstruction {
     pub journey_id: String,
     pub cart_id: String,
     pub obstacle_id: String,
-    pub floor: String,
     pub distance_m: f64,
     pub required_m: f64,
 }
@@ -25,20 +24,14 @@ pub fn calculate(scene: &Scene) -> Result<BTreeMap<String, Obstruction>> {
         else {
             continue;
         };
-        let Some(cart) = scene
-            .get(cart_id)
-            .filter(|c| c.active && c.floor == journey.floor)
-        else {
+        let Some(cart) = scene.get(cart_id).filter(|c| c.active) else {
             continue;
         };
         let Shape::Cart { radius, clearance } = cart.shape else {
             continue;
         };
         let line = LineString::from(points.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
-        for obstacle in scene
-            .values()
-            .filter(|e| e.active && e.floor == journey.floor)
-        {
+        for obstacle in scene.values().filter(|e| e.active) {
             let Shape::Obstacle { vertices } = &obstacle.shape else {
                 continue;
             };
@@ -56,7 +49,6 @@ pub fn calculate(scene: &Scene) -> Result<BTreeMap<String, Obstruction>> {
                         journey_id: journey.id.clone(),
                         cart_id: cart.id.clone(),
                         obstacle_id: obstacle.id.clone(),
-                        floor: journey.floor.clone(),
                         distance_m: distance,
                         required_m: radius + clearance,
                     },
@@ -118,14 +110,14 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn turns_overlaps_and_separate_floors() -> Result<()> {
+    fn turns_overlaps_and_inactive_objects() -> Result<()> {
         let mut s = wall(9.0);
         assert!(calculate(&s)?.contains_key("journey-grace/wall"));
         let mut other = s["wall"].clone();
         other.id = "second".into();
         s.insert(other.id.clone(), other);
         assert_eq!(calculate(&s)?.len(), 2);
-        s.get_mut("wall").unwrap().floor = "upstairs".into();
+        s.get_mut("wall").unwrap().active = false;
         assert_eq!(calculate(&s)?.len(), 1);
         let mut corner = fixture();
         if let Shape::Journey { points, .. } = &mut corner.get_mut("journey-grace").unwrap().shape {
@@ -182,7 +174,7 @@ mod tests {
         assert!(calculate(&s).is_err());
         assert_eq!(
             s["packing"].validate().unwrap_err().to_string(),
-            "coordinates must be finite and within the 24 x 16 floor"
+            "coordinates must be finite and within the 24 x 16 scene"
         );
         assert!(serde_json::from_str::<Shape>(r#"{"kind":"circle","radius":1}"#).is_err());
     }

@@ -1,2 +1,2 @@
-MATCH (n:FloorObject)
+MATCH (n:SceneObject)
 RETURN collect(n.payload) AS objects

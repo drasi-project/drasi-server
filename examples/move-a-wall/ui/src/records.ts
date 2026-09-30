@@ -7,7 +7,7 @@ export type Shape =
   | { kind: 'journey'; cart_id: string; destination_id: string; points: Point[] }
   | { kind: 'destination'; point: Point }
   | { kind: 'obstacle'; vertices: Point[] };
-export type Entity = { id: string; name: string; floor: string; active: boolean; shape: Shape };
+export type Entity = { id: string; name: string; active: boolean; shape: Shape };
 export type Clock = { type: 'clock'; revision: number; members: Record<string,number>; changed: string[]; command: string };
 export type Input = Clock | { type: 'entity'; revision: number; entity: Entity };
 export function object(value: unknown): Record<string, unknown> {
@@ -44,7 +44,7 @@ export function entity(value: unknown): Entity {
     case 'obstacle': shape = { kind:s.kind, vertices:points(s.vertices) }; break;
     default: throw new Error(`Unsupported entity kind ${String(s.kind)}`);
   }
-  return { id:text(v.id), name:text(v.name), floor:text(v.floor), active:bool(v.active), shape };
+  return { id:text(v.id), name:text(v.name), active:bool(v.active), shape };
 }
 export function inputs(row: ResultRow): Input[] {
   if (!Array.isArray(row.objects)) throw new Error('Query returned no objects array');

@@ -91,12 +91,22 @@ Click the circled **i** beside **Obstacle Impact** for a full-page architecture
 overlay. It fades in with the title in the same position as the demo; reduced
 motion preferences disable the fade. The demo stays mounted underneath: opening and closing the overlay
 does not navigate, reconnect the queries or discard unsaved editor changes.
-Hover or keyboard-focus a component to see its responsibility, implementation,
-inputs and outputs. Tap/click to pin its details; tap again, click elsewhere or
-press Escape to dismiss the details. Close the overlay with the **X** at the top
+Hovering or keyboard-focusing a component or arrow only highlights it; it never
+opens details. Click a component to see its responsibility, implementation,
+inputs and outputs. The details stay open while the pointer moves; the next
+click anywhere (including the popup or another item) or Escape dismisses them.
+Keyboard users can open details with Enter or Space. Click an arrow for a
+readable schema of its payload, including native graph/query changes, source
+commands, HTTP snapshots and SSE result differences. Arrow details support the
+same click/dismiss interactions. These are documented contracts, not live data;
+catalog-access arrows are explicitly identified as resource access rather than
+graph pipes. On small screens, expand **Connection schemas** for the same details.
+Close the overlay with the **X** at the top
 right (or Escape when no details are open); focus returns to the info button.
 The overview distinguishes browser commands, graph changes, query rows and
-result delivery. The three inspection queries are grouped for readability.
+result delivery. Its expanded introduction explains the Euclidean-distance
+calculation and why cart radius plus clearance matters even when a path misses
+an obstacle. The three inspection queries are grouped for readability.
 The configured `query-results` sink, host REST API and configured `wall-ui`
 SSE reaction have separate cards; the catalog is explained as a shared resource,
 not an extra component. This is not live graph inspection. On small screens
@@ -107,7 +117,7 @@ requirement. It is also available directly at
 [http://127.0.0.1:5421/about.html](http://127.0.0.1:5421/about.html) for standalone
 presentations; its X returns to the demo when opened that way. `npm run build`
 includes the demo and standalone overview in `ui/dist`.
-From `ui/`, run `npm run check:about` to build and check the overview, hover,
+From `ui/`, run `npm run check:about` to build and check the overview, arrow schemas, hover,
 keyboard/touch interactions, responsive layouts and navigation in Playwright.
 It serves only the built assets on an ephemeral loopback port, requires no
 running backend, and does not change the live scene.
@@ -115,7 +125,7 @@ running backend, and does not change the live scene.
 1. **Start clear.** Point to Ada's path to Packing and Grace's upward-bowing arc to
    Assembly. The shaded path is each cart's circular footprint plus clearance,
    not just a zero-width line. These are static plans, not moving carts.
-   Grace starts near the bottom of the floor. Her arc is 25 fixed points in the
+   Grace starts near the bottom of the scene. Her arc is 25 fixed points in the
    existing polyline format, not a new curve type or a browser-side calculation.
 2. **Move one input.** Drag an obstacle across a path; try **Movable wall**
    upward across Ada's path. A dashed
@@ -123,7 +133,7 @@ running backend, and does not change the live scene.
    The path/cart turn orange and the impact panel names **Ada / Deliver
    packaging / Packing station / Movable wall** from the real impact query.
 3. **Explain the computation.** In **Follow the change**, directly below the
-   floorplan, click the flow's
+   scene, click the flow's
    **Source**, **Context query**, **Geometry transformer**, and **Impact query**
    stages. The selected stage is highlighted and its query ID is shown.
    The records directly below show actual input revisions, the filtered context, the stable
@@ -140,14 +150,12 @@ running backend, and does not change the live scene.
 Pointer dragging is available for obstacles, paths and destinations. Select an
 obstacle/destination and use arrow keys to move it in 0.25 steps. Every shape has a
 keyboard-accessible coordinate editor; carts have radius/clearance controls.
-The **Edit scene** panel keeps the selected object's properties beside the floor:
-click an object or path on the floor, or use **Selected object** (including inactive
+The **Edit scene** panel keeps the selected object's properties beside the scene:
+click an object or path in the scene, or use **Selected object** (including inactive
 objects and carts without a journey). Use **Apply input change** to save or
 **Remove object** to delete it. The **Add** buttons create a draft cart, journey,
 convex polygon obstacle or destination; **Add object** submits it and **Cancel**
-discards it. Names and active state are editable. The UI presents one floor;
-new objects always use the internal `ground` floor ID. There is no floor picker
-or floor-creation control. Same-floor checks remain in the native geometry.
+discards it. Names and active state are editable. All objects share one scene.
 Stable IDs do not change on update. Unsupported polygons or out-of-range values
 produce visible errors.
 
@@ -158,7 +166,7 @@ React input command (no geometry)
     |
     v
 native scene source / authoritative in-memory store
-    | graph ChangeEnvelope: FloorObject inserts/updates/sparse deletes
+    | graph ChangeEnvelope: SceneObject inserts/updates/sparse deletes
     +------> scene-inputs CQ ------------------------------+
     |                                                     |
     v                                                     |
@@ -238,7 +246,7 @@ work. Source lifecycle owns and closes its command listener.
 - Coordinates, cart radii, clearances and distances are **abstract scene values**,
   not real-world measurements. The existing `distance_m` and `required_m`
   property names are retained for query/API compatibility.
-- The floor is a 24 by 16 rectangle. Inputs must be finite and within it.
+- The scene is a 24 by 16 rectangle. Inputs must be finite and within it.
 - Carts are circular, with radius 0.05-2 and clearance 0-2. A journey sweeps
   that circle along every segment of its polyline (2-32 points).
 - Obstacles are **simple, strictly convex polygons**, 3-16 vertices, without a
@@ -250,7 +258,7 @@ work. Source lifecycle owns and closes its command listener.
   An obstruction exists when the distance is at most radius + clearance +
   **1e-7**. Tangency/contact therefore counts as obstruction. Polygon validity
   also rejects edge lengths and cross products at/below 1e-7.
-- Only active carts, journeys and obstacles on the **same floor** interact.
+- Only active carts, journeys and obstacles interact.
   Deleting a cart or journey removes its obstructions. Orphaned journeys can be
   edited or repaired; they do not fabricate a cart. Deleting destination
   metadata retracts the enriched impact, not a still-existing geometric cause.
@@ -281,7 +289,7 @@ cd ..
 ```
 
 The real query tests cover crossing, finite footprint/clearance, near misses,
-contact, polyline turns, overlapping causes, invalid shapes and separate floors;
+contact, polyline turns, overlapping causes, invalid shapes and inactive objects;
 obstacle-only/path-only changes, stable insert/update/delete diffs, no-op commands,
 cart/path/obstacle deletion, empty/bootstrap/reset, stale commands/envelopes,
 upstream active filtering and downstream destination/task enrichment.
@@ -365,5 +373,5 @@ There is no runnable custom host, query facade, fake SSE or local result mode.
 For a limited **disconnected UI check only**, run `npm run dev` from `ui/`
 without a backend, then from the example root run
 `node ops/check-browser.mjs --disconnected`. It checks that errors/staleness
-remain visible, commands are disabled, and no scene or "clear floor" result is
+remain visible, commands are disabled, and no scene or "clear scene" result is
 fabricated. It does not validate geometry/SSE integration. Stop Vite with Ctrl-C.

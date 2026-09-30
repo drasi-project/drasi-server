@@ -62,12 +62,24 @@ try {
   const subtitle = page.getByText('Architecture Overview', { exact: true });
   const subtitleBounds = await subtitle.boundingBox();
   assert.ok(subtitleBounds && subtitleBounds.y >= titleBounds.y + titleBounds.height && subtitleBounds.x === titleBounds.x, 'Architecture Overview sits below the demo title');
+  const overview = page.locator('.architecture-intro > p');
+  assert.match(await overview.innerText(), /geo library to measure Euclidean distance/);
+  assert.match(await overview.innerText(), /gap is zero if they touch or overlap/);
+  assert.match(await overview.innerText(), /cart's radius plus clearance/);
+  const overviewBounds = await overview.boundingBox();
+  const intro = page.locator('.architecture-intro');
+  const introBounds = await intro.boundingBox();
+  const closeSpace = await intro.evaluate(element => parseFloat(getComputedStyle(element).paddingRight));
+  assert.ok(overviewBounds.width > 800, 'The overview should use the available horizontal space, not a narrow column');
+  assert.ok(Math.abs(overviewBounds.x + overviewBounds.width - (introBounds.x + introBounds.width - closeSpace)) < 1, 'The overview fills the header width while leaving room for the X');
   const boardBounds = await page.locator('.architecture-board').boundingBox();
   assert.ok(titleBounds.y < 45 && boardBounds.y < 120, 'The compact header must bring the architecture close to the top');
   const nodes = page.locator('.architecture-node');
   assert.equal(await nodes.count(), 9);
   assert.equal(await page.getByRole('tooltip').count(), 0, 'Details stay out of the initial overview');
-  assert.equal(await page.locator('.architecture-connections > path').count(), 13);
+  assert.equal(await page.locator('.architecture-edge-line').count(), 13);
+  assert.equal(await page.locator('.architecture-edge-target').count(), 13);
+  assert.equal(await page.getByRole('group', { name: 'Dataflow connection schemas' }).getByRole('button').count(), 13);
   const graph = page.locator('.architecture-server'), client = nodes.filter({ hasText: 'React UI' });
   assert.equal(await graph.textContent(), 'DRASI SERVER', 'No subtitle after the host name');
   assert.equal(await page.locator('footer,.architecture-takeaway').count(), 0, 'No bottom-of-page text');
@@ -87,6 +99,11 @@ try {
       assert.ok(box.x >= hostBounds.x && box.y >= hostBounds.y && box.x + box.width <= hostBounds.x + hostBounds.width && box.y + box.height <= hostBounds.y + hostBounds.height, `${id} must be inside Drasi Server`);
     }
     await node.hover();
+    assert.equal(await page.getByRole('tooltip').count(), 0, `${id} hover must not open details`);
+    assert.equal(await node.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(255, 255, 255)', `${id} highlights on hover`);
+    await node.focus();
+    assert.equal(await page.getByRole('tooltip').count(), 0, `${id} focus must not open details`);
+    await node.click();
     const tooltip = page.getByRole('tooltip');
     await tooltip.waitFor();
     assert.equal(await node.getAttribute('aria-expanded'), 'true');
@@ -95,25 +112,124 @@ try {
     assert.doesNotMatch(await tooltip.innerText(), /\bmetres?\b|\bmeters?\b|\b\d+(?:\.\d+)? m\b/i);
     const box = await tooltip.boundingBox();
     assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440 && box.y + box.height <= 1050, `${id} details fit on screen`);
+    await page.keyboard.press('Escape');
   }
-  const geometry = page.locator('[data-component="geometry"]');
-  await geometry.hover();
+  const flowTarget = (id, root = page) => root.locator(`.architecture-edge[data-flow="${id}"] .architecture-edge-target`);
+  async function clickFlow(id) {
+    await page.keyboard.press('Escape');
+    await page.mouse.move(0, 0);
+    const target = flowTarget(id);
+    const point = await target.evaluate(path => {
+      const local = path.getPointAtLength(path.getTotalLength() / 2);
+      const screen = new DOMPoint(local.x, local.y).matrixTransform(path.getScreenCTM());
+      return { x: screen.x, y: screen.y };
+    });
+    await page.mouse.move(point.x, point.y);
+    assert.equal(await page.getByRole('tooltip').count(), 0, `${id} hover must not open a schema`);
+    assert.equal(await target.evaluate(path => getComputedStyle(path.parentElement.querySelector('.architecture-edge-line')).strokeWidth), '3.5px', `${id} highlights on hover`);
+    await target.focus();
+    assert.equal(await page.getByRole('tooltip').count(), 0, `${id} focus must not open a schema`);
+    await page.mouse.click(point.x, point.y);
+    await page.getByRole('tooltip').getByRole('heading', {
+      name: (await target.getAttribute('aria-label')).replace('Schema: ', ''), exact: true,
+    }).waitFor();
+    return point;
+  }
+  const contracts = {
+    commands: [/expected_revision: u64/, /accepted_revision: u64/, /kind: "journey"/],
+    'scene-context': [/SceneObject node properties/, /JSON-encoded InputRecord/, /members: Map<string, u64>/],
+    'context-geometry': [/objects: string\[\]/, /revision: u64/, /shape: Shape/],
+    'geometry-impact': [/Obstruction \{/, /GeometryStatus \{/, /Cart \{/, /required_m: number/],
+    'scene-inspection': [/SceneObject node properties/, /active: boolean/],
+    'geometry-inspection': [/Obstruction \{/, /GeometryStatus \{/, /Destination \{/],
+    'context-results': [/Query: geometry-context/, /objects: string\[\]/],
+    'impact-results': [/AffectedJourney row/, /task: string/, /destination: string/, /obstacle: string/],
+    'inspection-results': [/scene-inputs row/, /obstructions row/, /geometry-status row/],
+    'catalog-api': [/Row values, selected by query ID/, /affected-journeys:/],
+    'catalog-sse': [/QueryResult \{/, /query_id: string; sequence: u64/, /grouping_keys\?: string\[\]/],
+    'api-browser': [/success: true/, /data: Row\[\]/, /error: null/],
+    'sse-browser': [/queryId: string/, /results: ResultDiff\[\]/, /type: "aggregation"/, /Heartbeat/],
+  };
+  for (const [id, patterns] of Object.entries(contracts)) {
+    const point = await clickFlow(id);
+    const tooltip = page.getByRole('tooltip');
+    const schema = await tooltip.locator('.architecture-schema').innerText();
+    assert.doesNotMatch(schema, /floor/i, `${id} must not document the removed dimension`);
+    for (const pattern of patterns) assert.match(schema, pattern, `${id} shows its actual contract`);
+    assert.equal(await flowTarget(id).getAttribute('aria-expanded'), 'true');
+    await tooltip.getByText('Readable schema · not live data', { exact: true }).waitFor();
+    const box = await tooltip.boundingBox();
+    assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440 && box.y + box.height <= 1050, `${id} schema stays in the viewport`);
+    assert.equal(await tooltip.evaluate(element => element.scrollWidth <= element.clientWidth), true, `${id} schema has no horizontal overflow`);
+    assert.equal(await page.evaluate(({x,y}) => document.elementFromPoint(x,y)?.classList.contains('architecture-edge-target'), point), true, `${id} popup must not cover its clicked arrow`);
+    if (id.startsWith('catalog-')) assert.match(await tooltip.innerText(), /not a graph pipe/);
+    if (id === 'sse-browser') assert.doesNotMatch(schema, /\bsequence\s*:/, 'Default SSE must not promise a query sequence');
+  }
+  await clickFlow('geometry-impact');
   await page.getByRole('tooltip').hover();
   await page.waitForTimeout(200);
-  assert.equal(await page.getByRole('tooltip').count(), 1, 'Hover details remain open while the pointer is over them');
+  await page.getByRole('tooltip').locator('.architecture-schema').waitFor();
+  await page.screenshot({ path: `${artifacts}/architecture-arrow-schema.png`, fullPage: true });
+  const browserNode = page.locator('[data-component="browser"]');
+  await browserNode.hover();
+  await page.getByRole('tooltip').getByRole('heading', { name: 'Geometry → Affected journeys', exact: true }).waitFor();
+  assert.equal(await browserNode.getAttribute('aria-expanded'), 'false', 'Hovering a neighbor must not switch an open popup');
+  await browserNode.click();
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Clicking a different component dismisses without opening another popup');
+  await browserNode.click();
+  await page.getByRole('tooltip').getByRole('heading', { name: 'React UI', exact: true }).click();
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Clicking inside the popup dismisses it');
+  await page.mouse.move(0, 0);
+  await flowTarget('context-geometry').focus();
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Keyboard focus alone leaves the diagram unobscured');
+  await page.keyboard.press('Tab');
+  assert.equal(await flowTarget('geometry-impact').evaluate(element => element === document.activeElement), true, 'Tab moves between arrows');
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Tab must not open details');
+  await page.keyboard.press('Space');
+  await page.getByRole('tooltip').locator('.architecture-schema').waitFor();
+  await flowTarget('geometry-impact').evaluate(element => element.blur());
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip').count(), 1, 'An explicitly opened schema remains open after focus leaves');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('tooltip').count(), 0);
+  const clickedPoint = await clickFlow('impact-results');
+  await flowTarget('impact-results').evaluate(element => element.blur());
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip').count(), 1, 'Moving the pointer away does not dismiss click-opened details');
+  await page.mouse.click(clickedPoint.x, clickedPoint.y);
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Click again dismisses an arrow schema');
+  await clickFlow('commands');
+  await page.getByRole('heading', { level: 1 }).click();
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Click outside dismisses an arrow schema');
+  const geometry = page.locator('[data-component="geometry"]');
+  await geometry.hover();
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Dwelling on a component does not open a delayed popup');
+  await geometry.click();
+  await page.getByRole('tooltip').hover();
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip').count(), 1, 'Click-opened details remain visible until explicitly dismissed');
   await page.screenshot({ path: `${artifacts}/architecture-detail.png`, fullPage: true });
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('tooltip').count(), 0, 'Escape dismisses without moving the pointer');
   await page.mouse.move(0, 0);
   await geometry.focus();
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Focusing a node must not open details');
+  await page.keyboard.press('Enter');
   await page.getByRole('tooltip').waitFor();
   await page.keyboard.press('Tab');
-  assert.equal(await page.locator('[data-component="impact"]').getAttribute('aria-expanded'), 'true', 'Keyboard focus switches details');
+  assert.equal(await page.locator('[data-component="impact"]').getAttribute('aria-expanded'), 'false', 'Moving focus must not switch details');
+  await page.getByRole('tooltip').getByRole('heading', { name: 'Geometry', exact: true }).waitFor();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Activating another node dismisses the existing details');
+  await page.keyboard.press('Enter');
+  await page.getByRole('tooltip').getByRole('heading', { name: 'Affected journeys', exact: true }).waitFor();
   await page.keyboard.press('Escape');
   await geometry.click();
   await page.mouse.move(0, 0);
   await page.waitForTimeout(200);
-  assert.equal(await page.getByRole('tooltip').count(), 1, 'Click pins details');
+  assert.equal(await page.getByRole('tooltip').count(), 1, 'Click opens details until explicitly dismissed');
   await geometry.click();
   assert.equal(await page.getByRole('tooltip').count(), 0, 'Click again dismisses');
   await geometry.click();
@@ -123,22 +239,48 @@ try {
   for (const width of [1100, 1000, 768, 390]) {
     await page.setViewportSize({ width, height: 850 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `No overflow at ${width}px`);
+    assert.equal(await overview.evaluate(element => element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight), true, `Overview text fits without clipping at ${width}px`);
     for (const node of await nodes.all()) {
       const id = await node.getAttribute('data-component');
       assert.equal(await node.evaluate(element => element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth), true, `${id} content fits at ${width}px`);
       await node.focus();
+      assert.equal(await page.getByRole('tooltip').count(), 0, 'Focus only highlights a component');
+      await page.keyboard.press('Enter');
       const tooltip = page.getByRole('tooltip');
       await tooltip.waitFor();
       const box = await tooltip.boundingBox();
       assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= 850, `Details stay visible at ${width}px`);
       await page.keyboard.press('Escape');
     }
+    if (width > 1000) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      for (const id of Object.keys(contracts)) {
+        await clickFlow(id);
+        const box = await page.getByRole('tooltip').boundingBox();
+        assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= 850, `${id} schema fits at ${width}px`);
+      }
+      await page.keyboard.press('Escape');
+    } else {
+      const list = page.locator('.architecture-flow-list');
+      await list.locator('summary').click();
+      assert.equal(await list.getByRole('button').count(), 13);
+      for (const link of await list.getByRole('button').all()) {
+        await link.focus();
+        assert.equal(await page.getByRole('tooltip').count(), 0, 'Focus only highlights a connection link');
+        await page.keyboard.press('Enter');
+        await page.getByRole('tooltip').locator('.architecture-schema').waitFor();
+        const box = await page.getByRole('tooltip').boundingBox();
+        assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= 850, `Connection schema fits at ${width}px`);
+        await page.keyboard.press('Escape');
+      }
+      await list.locator('summary').click();
+    }
   }
   await page.locator('[data-component="scene"]').click();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(200);
   const scrolled = await page.getByRole('tooltip').boundingBox();
-  assert.ok(scrolled.y >= 0 && scrolled.y + scrolled.height <= 850, 'Pinned details stay in the viewport when their card scrolls out of view');
+  assert.ok(scrolled.y >= 0 && scrolled.y + scrolled.height <= 850, 'Open details stay in the viewport when their card scrolls out of view');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: `${artifacts}/architecture-mobile.png`, fullPage: true });
   await page.reload();
@@ -152,6 +294,12 @@ try {
   await mobile.getByRole('tooltip').waitFor();
   await mobile.touchscreen.tap(4, 20);
   assert.equal(await mobile.getByRole('tooltip').count(), 0, 'Touch can open and dismiss component details');
+  await mobile.locator('.architecture-flow-list summary').tap();
+  await mobile.locator('.architecture-flow-link[data-flow="sse-browser"]').tap();
+  await mobile.getByRole('tooltip').locator('.architecture-schema').waitFor();
+  assert.match(await mobile.getByRole('tooltip').innerText(), /queryId: string/);
+  await mobile.touchscreen.tap(4, 20);
+  assert.equal(await mobile.getByRole('tooltip').count(), 0, 'Touch can dismiss a schema');
   await mobile.getByRole('button', { name: 'Close architecture overview' }).tap();
   await mobile.getByRole('button', { name: 'Information about this demo' }).tap();
   await mobile.getByRole('dialog', { name: 'Architecture Overview' }).waitFor();
@@ -171,7 +319,7 @@ try {
   assert.equal(await page.getByRole('link', { name: 'About', exact: true }).count(), 0);
   const stage = page.getByRole('button', { name: 'Context query geometry-context', exact: true });
   await stage.click();
-  const floor = await page.locator('svg.scene').elementHandle();
+  const sceneElement = await page.locator('svg.scene').elementHandle();
   const navigations = [];
   page.on('framenavigated', frame => { if (!frame.parentFrame()) navigations.push(frame.url()); });
   await info.click();
@@ -203,9 +351,18 @@ try {
   assert.equal(fade.end, 1);
   assert.equal(fade.backdrop, 'rgba(0, 0, 0, 0)', 'The backdrop must not abruptly cover the demo');
   await close.focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await flowTarget('commands', overlay).evaluate(element => element === document.activeElement), true, 'Arrow schemas are included in modal keyboard navigation');
+  await page.keyboard.press('Enter');
+  await page.getByRole('tooltip').locator('.architecture-schema').waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await overlay.count(), 1, 'Dismissing an arrow schema keeps the overlay open');
+  await close.focus();
   await page.keyboard.press('Shift+Tab');
   assert.equal(await overlay.evaluate(element => element.contains(document.activeElement)), true, 'Tab focus stays inside the overlay');
   await overlay.locator('[data-component="geometry"]').focus();
+  assert.equal(await overlay.getByRole('tooltip').count(), 0, 'Modal keyboard focus must not open details');
+  await page.keyboard.press('Enter');
   await overlay.getByRole('tooltip').waitFor();
   await page.keyboard.press('Escape');
   assert.equal(await overlay.getByRole('tooltip').count(), 0, 'First Escape dismisses component details');
@@ -215,7 +372,7 @@ try {
   assert.equal(await info.evaluate(element => element === document.activeElement), true, 'Closing returns focus to the info button');
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
   assert.equal(await stage.getAttribute('aria-pressed'), 'true', 'Inspector selection survives the overlay');
-  assert.equal(await floor.evaluate(element => element.isConnected), true, 'The live demo is never unmounted');
+  assert.equal(await sceneElement.evaluate(element => element.isConnected), true, 'The live demo is never unmounted');
   for (const width of [1920, 1440, 1100, 1000, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -246,7 +403,7 @@ try {
   await page.locator('#architecture-overlay').waitFor({ state: 'detached' });
   assert.deepEqual(navigations, [], 'Opening and closing never navigates away from the demo');
   assert.deepEqual(errors, []);
-  console.log('PASS: static architecture, hover/touch/keyboard details, circled title info button, full-page modal, X/Escape dismissal, focus trap/restore, scroll locking, retained demo state, no navigation and responsive layouts.');
+  console.log('PASS: nodes and all 13 arrows highlight without hover/focus popups; click/tap/Enter/Space open details; the next click or Escape dismisses; schemas, responsive layouts and modal behavior remain correct.');
 } finally {
   if (browser) await browser.close();
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

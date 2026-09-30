@@ -8,7 +8,20 @@ async function get(path) {
   assert.ok(response.ok && body.success,JSON.stringify(body));
   return body.data;
 }
-async function rows(query) { return get(`/queries/${query}/results`); }
+function assertSceneFields(value) {
+  if (Array.isArray(value)) { value.forEach(assertSceneFields); return; }
+  if (!value || typeof value !== 'object') return;
+  assert.equal(Object.hasOwn(value,'floor'),false,'Query and SSE records must not retain the removed field');
+  for (const [key,child] of Object.entries(value)) {
+    if (key === 'objects' && Array.isArray(child)) child.forEach(payload => assertSceneFields(JSON.parse(payload)));
+    else assertSceneFields(child);
+  }
+}
+async function rows(query) {
+  const result = await get(`/queries/${query}/results`);
+  assertSceneFields(result);
+  return result;
+}
 async function state() {
   const input = await rows('scene-inputs');
   const records = input.flatMap(row => row.objects.map(JSON.parse));
@@ -53,7 +66,11 @@ const consume = (async () => {
         const frame = pending.slice(0,end);
         pending = pending.slice(end+2);
         const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-        if (data) messages.push(JSON.parse(data));
+        if (data) {
+          const message = JSON.parse(data);
+          assertSceneFields(message);
+          messages.push(message);
+        }
       }
     }
     if (!stop.signal.aborted) throw new Error('The actual SSE stream closed before acceptance completed.');

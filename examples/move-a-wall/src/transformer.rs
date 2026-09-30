@@ -69,7 +69,7 @@ impl Geometry {
         let obstructions = geometry::calculate(&scene)?;
         let mut output = Records::new();
         for entity in scene.values() {
-            let mut properties = json!({"id":entity.id, "name":entity.name, "floor":entity.floor});
+            let mut properties = json!({"id":entity.id, "name":entity.name});
             match &entity.shape {
                 Shape::Cart { .. } => {
                     properties["cart_id"] = json!(entity.id);

@@ -135,6 +135,36 @@ fn changes(outputs: &[OutputEnvelope]) -> Result<Vec<SourceChange>> {
         .collect())
 }
 #[tokio::test]
+async fn scene_inputs_and_outputs_have_no_location_dimension() -> Result<()> {
+    for entity in model::fixture().values() {
+        let value = serde_json::to_value(entity)?;
+        let mut keys: Vec<_> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["active", "id", "name", "shape"]);
+        let mut obsolete = value;
+        obsolete["floor"] = serde_json::json!("ground");
+        assert!(serde_json::from_value::<Entity>(obsolete).is_err());
+    }
+    let mut h = Harness::new().await?;
+    let (_, initial) = h.send(Command::Reset).await?;
+    let (_, blocked) = h.send(Command::Put { entity: wall(4.5) }).await?;
+    for output in initial.iter().chain(&blocked) {
+        for change in GraphChangeCodec::decode_changes(&output.envelope)? {
+            if let SourceChange::Insert { element } | SourceChange::Update { element } = change {
+                assert!(element.get_properties().get("floor").is_none());
+            }
+        }
+    }
+    assert_eq!(h.rows()?.len(), 1);
+    assert!(h.rows()?[0].get("floor").is_none());
+    h.close().await
+}
+#[tokio::test]
 async fn real_queries_enrich_obstacle_only_changes_and_retract() -> Result<()> {
     let mut h = Harness::new().await?;
     h.send(Command::Reset).await?;

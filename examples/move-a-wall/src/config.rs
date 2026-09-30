@@ -82,7 +82,7 @@ fn main() -> Result<()> {
         ("scene-inputs",include_str!("../queries/scene-inputs.cypher")),
         ("geometry-context",include_str!("../queries/geometry-context.cypher")),
         ("affected-journeys",include_str!("../queries/affected-journeys.cypher")),
-        ("obstructions","MATCH (o:Obstruction) RETURN o.id AS id, o.journey_id AS journey_id, o.cart_id AS cart_id, o.obstacle_id AS obstacle_id, o.distance_m AS distance_m, o.required_m AS required_m, o.floor AS floor"),
+        ("obstructions","MATCH (o:Obstruction) RETURN o.id AS id, o.journey_id AS journey_id, o.cart_id AS cart_id, o.obstacle_id AS obstacle_id, o.distance_m AS distance_m, o.required_m AS required_m"),
         ("geometry-status","MATCH (s:GeometryStatus) RETURN s.id AS id, s.revision AS revision, s.objects AS objects, s.obstructions AS obstructions"),
     ] {
         let stream = StreamId::try_new(format!("{id}/out"))?;

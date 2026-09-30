@@ -3,7 +3,6 @@ import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/
 import { entity, inputs, key, number, object, queryIds, text, translate, validate, type Entity, type Point, type QueryId, type Shape } from './records';
 import { ArchitectureOverlay } from './Architecture';
 
-const DEMO_FLOOR = 'ground';
 const inspectionStages: Record<QueryId,{label:string;description:string}> = {
   'scene-inputs': {label:'Source',description:'Current scene inputs before filtering.'},
   'geometry-context': {label:'Context query',description:'Active inputs passed to the geometry transformer.'},
@@ -30,7 +29,7 @@ export function App() {
   const records = (source.data ?? []).flatMap(inputs);
   const clock = records.find(r => r.type === 'clock');
   const revision = clock?.revision ?? 0;
-  const entities = records.flatMap(r => r.type === 'entity' ? [r.entity] : []).filter(e => e.floor === DEMO_FLOOR);
+  const entities = records.flatMap(r => r.type === 'entity' ? [r.entity] : []);
   const [selected,setSelected] = useState('wall');
   const [inspect,setInspect] = useState<QueryId>('affected-journeys');
   const [draft,setDraft] = useState<Entity | null>(null), [adding,setAdding] = useState(false);
@@ -69,7 +68,7 @@ export function App() {
   const active = entities.filter(e => e.active);
   const entityIds = new Set(entities.map(e => e.id));
   const causes = (impacts.data ?? []).filter(row => entityIds.has(text(row.journey_id)));
-  const blocks = (obstructions.data ?? []).filter(row => row.floor === DEMO_FLOOR);
+  const blocks = obstructions.data ?? [];
   const obstructed = new Set(blocks.map(row => text(row.journey_id)));
   const affectedDestinations = new Set(causes.map(row => text(row.destination_id)));
   const selectedCauses = causes.filter(row => [row.cart_id,row.journey_id,row.destination_id,row.obstacle_id].includes(selected));
@@ -83,7 +82,7 @@ export function App() {
       : kind === 'destination' ? {kind,point:[21,7]}
       : {kind,cart_id:entities.find(e => e.shape.kind === 'cart')?.id ?? 'cart-ada',
         destination_id:entities.find(e => e.shape.kind === 'destination')?.id ?? 'packing',points:[[2,7],[21,7]]};
-    setDraft({id,name:`New ${kind}`,floor:DEMO_FLOOR,active:true,shape}); setAdding(true); setSelected(id);
+    setDraft({id,name:`New ${kind}`,active:true,shape}); setAdding(true); setSelected(id);
   }
   return <><main>
     <header className="demo-header">
@@ -98,7 +97,7 @@ export function App() {
         <button onClick={() => {
           setAccepted(null); setDraft(null); setAdding(false); client.retry();
         }}>Reconnect</button>
-        <button className="reset" disabled={disabled} onClick={() => void send({action:'reset'})}>Reset floor</button>
+        <button className="reset" disabled={disabled} onClick={() => void send({action:'reset'})}>Reset scene</button>
       </div>
     </header>
     {(error || stale) && <div className="alert" role="alert">
@@ -107,10 +106,10 @@ export function App() {
     </div>}
     <div className="workspace">
       <div className="scene-column">
-        <section className="floor-panel">
-          <div className="panel-heading floor-heading">
+        <section className="scene-panel">
+          <div className="panel-heading scene-heading">
             <div><h2>Planned journeys</h2><p>Drag an obstacle across a planned path.</p></div>
-            <div className="legend" role="group" aria-label="Floor plan legend">
+            <div className="legend" role="group" aria-label="Scene legend">
               <span><i className="blue-dot" aria-hidden="true"/>Planned path</span>
               <span><i className="swatch" aria-hidden="true"/>Radius + clearance</span>
               <span><i className="red-dot" aria-hidden="true"/>Query-confirmed obstruction</span>
@@ -136,15 +135,15 @@ export function App() {
       </div>
       <aside>
         <section className="impact-panel"><p className="eyebrow">QUERY: AFFECTED JOURNEYS</p><h2>{stale || unsettled ? 'Awaiting current queries' : causes.length ? `${new Set(causes.map(r => r.journey_id)).size} affected journey${new Set(causes.map(r => r.journey_id)).size === 1 ? '' : 's'}` : blocks.length ? 'Obstruction without task metadata' : 'Nothing in the way'}</h2>
-          {stale || unsettled ? <p className="muted">Results are pending or stale; do not interpret this as a clear floor.</p> : null}
+          {stale || unsettled ? <p className="muted">Results are pending or stale; do not interpret this as a clear scene.</p> : null}
           {causes.length ? causes.map(row => <article className="impact" key={text(row.id)}>
             <strong>{text(row.cart)} · {text(row.task)}</strong><p><b>{text(row.obstacle)}</b> obstructs the planned path to <b>{text(row.destination)}</b>.</p>
             <small>Path distance {number(row.distance_m).toFixed(2)} · Required {number(row.required_m).toFixed(2)}</small>
-          </article>) : <p className="muted">{blocks.length ? 'A geometric cause exists, but its active same-floor cart, destination or cause metadata is missing or has not arrived. Inspect obstructions; this is not a clear path.' : 'Move an obstacle across a path to see the affected cart, task and destination here.'}</p>}
+          </article>) : <p className="muted">{blocks.length ? 'A geometric cause exists, but its active cart, destination or cause metadata is missing or has not arrived. Inspect obstructions; this is not a clear path.' : 'Move an obstacle across a path to see the affected cart, task and destination here.'}</p>}
         </section>
         <section className="editor-panel" aria-labelledby="edit-scene-heading">
           <h2 id="edit-scene-heading">Edit scene</h2>
-          <p className="muted">Select an object on the floor or choose one below, then edit its properties here.</p>
+          <p className="muted">Select an object in the scene or choose one below, then edit its properties here.</p>
           <label>Selected object<select value={adding ? '' : current?.id ?? ''} onChange={e => select(e.target.value)}>
             <option value="" disabled>{adding ? 'New object draft' : 'Choose an object'}</option>
             {entities.map(e => <option key={e.id} value={e.id}>{e.name} ({e.shape.kind}){!e.active && ' · inactive'}</option>)}
@@ -176,7 +175,7 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
   const drag = useRef<{entity:Entity;start:Point;next:Entity}|null>(null);
   function coordinate(e: PointerEvent): Point {
     const matrix = svg.current?.getScreenCTM();
-    if (!matrix) throw new Error('Floor coordinates are unavailable');
+    if (!matrix) throw new Error('Scene coordinates are unavailable');
     const p = new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());
     return [p.x,p.y];
   }
@@ -198,12 +197,12 @@ function Scene({entities,selected,select,obstructed,affectedDestinations,disable
     if (JSON.stringify(original) !== JSON.stringify(next)) commit(next); else preview(null);
   }
   const pointText = (points: Point[]) => points.map(p => p.join(',')).join(' ');
-  return <svg className="scene" ref={svg} viewBox="-1 -1 26 18" role="img" aria-label="Warehouse floor with static planned cart paths. Drag an obstacle, use arrow keys, or select an object to edit its properties."
+  return <svg className="scene" ref={svg} viewBox="-1 -1 26 18" role="img" aria-label="Warehouse scene with static planned cart paths. Drag an obstacle, use arrow keys, or select an object to edit its properties."
     onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; preview(null); }}>
     <defs><pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" fill="none" stroke="#dce5e5" strokeWidth=".018"/></pattern></defs>
     <rect x="0" y="0" width="24" height="16" rx=".2" fill="#f4f8f6" stroke="#c5d4d4" strokeWidth=".06"/>
     <rect x="0" y="0" width="24" height="16" fill="url(#grid)"/>
-    <text x=".5" y=".8" className="floor-label">FLOOR PLAN</text>
+    <text x=".5" y=".8" className="scene-label">SCENE</text>
     {entities.filter(e => e.shape.kind === 'journey').map(e => {
       if (e.shape.kind !== 'journey') return null;
       const cartId = e.shape.cart_id;

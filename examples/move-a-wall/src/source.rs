@@ -154,7 +154,7 @@ impl Store {
                 revision: versions[&entity.id],
                 entity: entity.clone(),
             };
-            records.insert(("FloorObject".into(), entity.id.clone()), json!({
+            records.insert(("SceneObject".into(), entity.id.clone()), json!({
                 "id":entity.id, "active":entity.active, "payload":serde_json::to_string(&record)?
             }));
         }
@@ -169,7 +169,7 @@ impl Store {
             command: label.into(),
         };
         records.insert(
-            ("FloorObject".into(), "__clock".into()),
+            ("SceneObject".into(), "__clock".into()),
             json!({
                 "id":"__clock","active":true,"payload":serde_json::to_string(&clock)?
             }),

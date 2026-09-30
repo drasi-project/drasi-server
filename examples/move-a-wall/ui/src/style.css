@@ -189,13 +189,13 @@ p {
   min-width: 0;
   gap: 20px;
 }
-.floor-panel,.impact-panel,.editor-panel,.inspector {
+.scene-panel,.impact-panel,.editor-panel,.inspector {
   background: #fff;
   border: 1px solid #d4e0db;
   border-radius: 12px;
   overflow: hidden;
 }
-.floor-panel {
+.scene-panel {
   padding: 16px;
 }
 .panel-heading {
@@ -209,7 +209,7 @@ p {
   font-size: 12px;
   margin: 3px 0 10px;
 }
-.floor-heading {
+.scene-heading {
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 10px 20px;
@@ -232,7 +232,7 @@ select {
   fill: #4c645a;
   pointer-events: none;
 }
-.scene .floor-label {
+.scene .scene-label {
   font-size: .25px;
   letter-spacing: .05px;
   fill: #93a8a0;

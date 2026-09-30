@@ -33,7 +33,6 @@ pub enum Shape {
 pub struct Entity {
     pub id: String,
     pub name: String,
-    pub floor: String,
     pub active: bool,
     pub shape: Shape,
 }
@@ -45,7 +44,7 @@ fn identifier(value: &str) -> Result<()> {
             && value
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
-        "IDs and floors must be 1-64 ASCII letters, digits, hyphens or underscores"
+        "IDs must be 1-64 ASCII letters, digits, hyphens or underscores"
     );
     Ok(())
 }
@@ -54,7 +53,7 @@ fn point(p: Point) -> Result<()> {
         p.iter().all(|n| n.is_finite())
             && (0.0..=WIDTH).contains(&p[0])
             && (0.0..=HEIGHT).contains(&p[1]),
-        "coordinates must be finite and within the 24 x 16 floor"
+        "coordinates must be finite and within the 24 x 16 scene"
     );
     Ok(())
 }
@@ -63,7 +62,6 @@ impl Entity {
     pub fn validate(&self) -> Result<()> {
         identifier(&self.id)?;
         ensure!(self.id != "__clock", "__clock is reserved by the source");
-        identifier(&self.floor)?;
         ensure!(
             !self.name.trim().is_empty() && self.name.len() <= 100,
             "name must be 1-100 bytes"
@@ -167,7 +165,6 @@ pub fn fixture() -> Scene {
             Entity {
                 id: id.into(),
                 name: name.into(),
-                floor: "ground".into(),
                 active: true,
                 shape,
             },

@@ -66,13 +66,17 @@
   margin: 0 0 14px;
   padding-right: 52px;
 }
+.architecture-intro > div {
+  flex: 0 0 auto;
+}
 .architecture-subtitle {
   margin: 3px 0 0;
   color: #526f67;
   font-size: 15px;
 }
 .architecture-intro > p {
-  max-width: 390px;
+  flex: 1;
+  min-width: 0;
   color: #526f67;
   font-size: 13px;
   margin: 0;
@@ -152,8 +156,21 @@
 .architecture-connections .graph { stroke: #398b70; }
 .architecture-connections .rows { stroke: #6384a5; }
 .architecture-connections .transport { stroke: #837398; }
-.architecture-connections > path.transport { stroke-dasharray: 5 5; }
+.architecture-edge-line.transport { stroke-dasharray: 5 5; }
+.architecture-connections .architecture-edge-target {
+  stroke: transparent;
+  stroke-width: 18px;
+  pointer-events: stroke;
+  cursor: pointer;
+  outline: none;
+}
+.architecture-edge:hover .architecture-edge-line,
+.architecture-edge:focus-within .architecture-edge-line,
+.architecture-edge[data-active="true"] .architecture-edge-line {
+  stroke-width: 3.5px;
+}
 .architecture-connections text {
+  pointer-events: none;
   text-anchor: middle;
   font: 10px system-ui,sans-serif;
   letter-spacing: 1.4px;
@@ -237,6 +254,27 @@
   line-height: 1.6;
 }
 .architecture-popover .eyebrow { color: #b1d5b9; }
+.architecture-popover.schema {
+  width: min(540px,calc(100vw - 24px));
+}
+.architecture-schema-label {
+  color: #b1d5b9;
+  font-size: 10px;
+}
+.architecture-schema {
+  padding: 14px;
+  border: 1px solid #446458;
+  border-radius: 6px;
+  background: #102d25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.architecture-popover .architecture-schema code {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.architecture-flow-list { display: none; }
 .architecture-popover h2 {
   font-size: 23px;
   margin: 0 0 12px;
@@ -279,17 +317,8 @@
   font-size: 10px;
   color: #b2cbbd;
 }
-.architecture-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 @media(max-width:1000px) {
   .architecture-intro { align-items: flex-start; flex-direction: column; gap: 10px; }
-  .architecture-intro > p { max-width: 600px; }
   .architecture-guide { gap: 14px; padding: 20px; }
   .architecture-diagram {
     display: flex;
@@ -300,6 +329,23 @@
     gap: 16px;
   }
   .architecture-connections { display: none; }
+  .architecture-flow-list {
+    display: block;
+    padding: 0 20px 20px;
+    color: #285848;
+    font-size: 13px;
+  }
+  .architecture-flow-list summary { cursor: pointer; }
+  .architecture-flow-list ul { list-style: none; margin: 12px 0 0; padding: 0; }
+  .architecture-flow-list li + li { margin-top: 8px; }
+  .architecture-flow-link {
+    width: 100%;
+    min-height: 44px;
+    text-align: left;
+    font-size: 12px;
+    color: #285848;
+    background: #eff5f0;
+  }
   .architecture-server {
     position: static;
     order: -1;
