@@ -1,31 +1,15 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { useStore, useReactFlow, type Node } from "@xyflow/react";
+import { getNodeDimensions } from "@/utils/graph";
 
 const NODE_MARGIN = 20;
 
-// Fixed target dimensions per node type — used for layout displacement
-// calculations so the final size is known instantly (no measurement needed).
-// Values must match the collapsedWidth/expandedWidth/expandedHeight props
-// passed to NodeShell in each node component.
-const TARGET_DIMS: Record<
-  string,
-  { collapsedW: number; expandedW: number; collapsedH: number; expandedH: number }
-> = {
-  sourceNode:   { collapsedW: 180, expandedW: 320, collapsedH: 92, expandedH: 250 },
-  queryNode:    { collapsedW: 180, expandedW: 420, collapsedH: 92, expandedH: 280 },
-  reactionNode: { collapsedW: 180, expandedW: 300, collapsedH: 92, expandedH: 180 },
-};
-
 function getTargetWidth(node: Node): number {
-  const spec = TARGET_DIMS[node.type ?? ""];
-  if (!spec) return 180;
-  return node.data?.expanded ? spec.expandedW : spec.collapsedW;
+  return getNodeDimensions(node).width;
 }
 
 function getTargetHeight(node: Node): number {
-  const spec = TARGET_DIMS[node.type ?? ""];
-  if (!spec) return 92;
-  return node.data?.expanded ? spec.expandedH : spec.collapsedH;
+  return getNodeDimensions(node).height;
 }
 
 interface Rect {
@@ -78,13 +62,13 @@ function clampAgainstObstacles(
  */
 function dimensionSelector(
   s: {
-    nodes: Array<{ id: string; type?: string; data?: Record<string, unknown> }>;
+    nodes: Array<{ id: string; type?: string; hidden?: boolean; data?: Record<string, unknown> }>;
   },
 ): string {
   const parts: string[] = [];
   for (const node of s.nodes) {
     const exp = node.data?.expanded ? 1 : 0;
-    parts.push(`${node.id}:${exp}`);
+    parts.push(`${node.id}:${node.type}:${node.hidden}:${exp}`);
   }
   return parts.sort().join("|");
 }
@@ -142,6 +126,7 @@ export function useAutoLayout() {
     }> = [];
 
     for (const node of nodes) {
+      if (node.hidden) continue;
       const prev = prevDims.current.get(node.id);
       const curr = currentDims.get(node.id)!;
       if (!prev) continue;
@@ -182,6 +167,7 @@ export function useAutoLayout() {
       //   C fully right of N (a1 >= x2)     → shift right by dx
       //   C below N + horizontal overlap    → shift down by dy
       const displaced = prev.map((n) => {
+        if (n.hidden || n.data?.locked) return n;
         let dx = 0;
         let dy = 0;
 
@@ -242,6 +228,7 @@ export function useAutoLayout() {
 
       for (let i = 0; i < displaced.length; i++) {
         const n = displaced[i];
+        if (n.hidden) continue;
         const dims = currentDims.get(n.id);
         const rect: Rect = {
           x: n.position.x,
@@ -301,7 +288,7 @@ export function useAutoLayout() {
 
       const obstacles: Rect[] = [];
       for (const n of nodes) {
-        if (n.id === draggedId) continue;
+        if (n.id === draggedId || n.hidden) continue;
         obstacles.push({
           x: n.position.x,
           y: n.position.y,

@@ -65,6 +65,7 @@ impl From<ComputationInfo> for ComputationGraphInfo {
 pub struct ComputationComponentInfo {
     pub id: String,
     pub role: String,
+    pub implementation: Option<serde_json::Value>,
     pub auto_start: bool,
     pub ports: serde_json::Value,
     pub realization: Option<String>,
@@ -234,6 +235,12 @@ pub async fn inspect_computation_graph(
             let observed = snapshot.observed.components.get(node.descriptor.id());
             Ok(ComputationComponentInfo {
                 id: node.descriptor.id().to_string(),
+                implementation: snapshot
+                    .desired
+                    .specifications
+                    .get(node.descriptor.id())
+                    .map(|specification| serde_json::to_value(&specification.implementation))
+                    .transpose()?,
                 role: match topology.nodes.get(
                     &drasi_lib::computation::v1::GraphEntityId::Component(
                         node.descriptor.id().clone(),
@@ -280,6 +287,13 @@ pub async fn inspect_computation_graph(
             })),
             _ => {}
         }
+    }
+    for (from, to) in snapshot.desired.control_connections.iter() {
+        relationships.push(serde_json::json!({
+            "representation": "ControlConnection",
+            "from": from,
+            "to": to,
+        }));
     }
     Ok(Json(ApiResponse::success(ComputationGraphInspection {
         graph: core.computation_info().await?.into(),

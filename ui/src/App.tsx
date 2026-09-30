@@ -13,6 +13,7 @@ import type { EventEntry } from "@/components/events/EventPanel";
 import LeftPanel from "@/components/sidebar/LeftPanel";
 import IconRail, { type SidebarTab } from "@/components/sidebar/IconRail";
 import CurrentComponentPanel from "@/components/sidebar/CurrentComponentPanel";
+import ComputationDetails from "@/components/inspector/ComputationDetails";
 import type { InspectorData } from "@/components/sidebar/CurrentComponentPanel";
 import ComponentsPanel from "@/components/sidebar/ComponentsPanel";
 import SolutionTemplatesPanel from "@/components/sidebar/SolutionTemplatesPanel";
@@ -27,12 +28,14 @@ import SolutionDeployDialog from "@/components/solutions/SolutionDeployDialog";
 import SolutionInstanceWizard from "@/components/solutions/SolutionInstanceWizard";
 import CreateSolutionTemplateDialog from "@/components/solutions/CreateSolutionTemplateDialog";
 import { useSources, useQueries, useReactions } from "@/hooks/useApi";
+import { useComputation } from "@/hooks/useComputation";
 import { useInstances } from "@/hooks/useInstances";
 import { useConnectionState } from "@/hooks/useConnectionState";
 import { useComponentEventLog } from "@/hooks/useComponentEventLog";
 import { useDraft } from "@/hooks/useDraft";
 import { useTheme } from "@/hooks/useTheme";
-import type { PipelineData } from "@/utils/graph";
+import { canvasComponentType, type CanvasComponentType, type PipelineData } from "@/utils/graph";
+import { computationStatus, isInternalComponent, relationshipEndpoints } from "@/utils/computation";
 import type { ComponentStatus, ComponentType } from "@/utils/colors";
 import type {
   CreateSourceRequest,
@@ -46,7 +49,7 @@ type CreateStep = "component" | "source-kind" | "reaction-kind" | null;
 
 interface SelectedComponent {
   id: string;
-  type: ComponentType;
+  type: CanvasComponentType;
 }
 
 // Map TypeSelector reaction kinds to API kinds
@@ -99,6 +102,8 @@ export default function App() {
     stop: stopReaction,
     remove: removeReaction,
   } = useReactions(selectedInstanceId);
+  const { data: computation, loading: graphLoading, error: graphError, refresh: refreshGraph } = useComputation(selectedInstanceId);
+  const [showInternal, setShowInternal] = useState(false);
 
   // Draft store — local edits until Save
   const { draft, startDraft, updateField, isValid, setSaving, discard } =
@@ -107,6 +112,7 @@ export default function App() {
   const [selected, setSelected] = useState<SelectedComponent | null>(null);
   const [createStep, setCreateStep] = useState<CreateStep>(null);
   const [events, setEvents] = useState<EventEntry[]>([]);
+  useEffect(() => { setSelected(null); }, [selectedInstanceId]);
 
   // Connection state — reactive via SSE, no polling
   const connectionState = useConnectionState(selectedInstanceId ?? undefined);
@@ -166,6 +172,7 @@ export default function App() {
 
   // Build pipeline data for the canvas (memoized to avoid cascade re-renders)
   const pipelineData: PipelineData = useMemo(() => ({
+    computation,
     sources: sources.map((s) => ({
       id: s.id,
       kind: s.kind,
@@ -193,7 +200,18 @@ export default function App() {
       error: r.error,
       instanceId: selectedInstanceId,
     })),
-  }), [sources, queries, reactions, selectedInstanceId]);
+  }), [computation, sources, queries, reactions, selectedInstanceId]);
+
+  useEffect(() => {
+    if (!computation || !selected) return;
+    const component = computation.components.find((c) => c.id === selected.id);
+    if (!component) {
+      setSelected(null);
+    } else {
+      const type = canvasComponentType(component, pipelineData);
+      if (type !== selected.type) setSelected({ id: selected.id, type });
+    }
+  }, [computation, pipelineData, selected]);
 
   // Generate a unique ID - fallback for browsers without crypto.randomUUID
   const generateId = useCallback(() => {
@@ -219,8 +237,8 @@ export default function App() {
     [generateId],
   );
 
-  const handleNodeClick = useCallback((id: string, type: string) => {
-    setSelected({ id, type: type as ComponentType });
+  const handleNodeClick = useCallback((id: string, type: CanvasComponentType) => {
+    setSelected({ id, type });
   }, []);
 
   const handlePaneClick = useCallback(() => {
@@ -346,6 +364,10 @@ export default function App() {
   // Build inspector props for selected component (memoized to avoid rebuilding every render)
   const inspectorProps = useMemo(() => {
     if (!selected) return null;
+    const observedStatus = (id: string, fallback: ComponentStatus): ComponentStatus => {
+      const component = computation?.components.find((c) => c.id === id);
+      return component ? computationStatus(component) : fallback;
+    };
 
     if (selected.type === "source") {
       const source = sources.find((s) => s.id === selected.id);
@@ -355,14 +377,14 @@ export default function App() {
         .map((q) => ({
           id: q.id,
           type: "query" as ComponentType,
-          status: (q.status ?? "Stopped") as ComponentStatus,
+          status: observedStatus(q.id, (q.status ?? "Stopped") as ComponentStatus),
         }));
 
       return {
         isSource: true as const,
         id: source.id,
         kind: source.kind,
-        status: source.status as ComponentStatus,
+        status: observedStatus(source.id, source.status as ComponentStatus),
         error: source.error,
         autoStart: source.autoStart,
         properties: source.properties,
@@ -400,7 +422,7 @@ export default function App() {
         return {
           id: s.sourceId,
           type: "source" as ComponentType,
-          status: (src?.status ?? "Stopped") as ComponentStatus,
+          status: observedStatus(s.sourceId, (src?.status ?? "Stopped") as ComponentStatus),
           kind: src?.kind,
         };
       });
@@ -409,14 +431,14 @@ export default function App() {
         .map((r) => ({
           id: r.id,
           type: "reaction" as ComponentType,
-          status: r.status as ComponentStatus,
+          status: observedStatus(r.id, r.status as ComponentStatus),
           kind: r.kind,
         }));
 
       return {
         isQuery: true as const,
         id: query.id,
-        status: (query.status ?? "Stopped") as ComponentStatus,
+        status: observedStatus(query.id, (query.status ?? "Stopped") as ComponentStatus),
         error: query.error,
         query: query.query,
         queryLanguage: query.queryLanguage ?? "Cypher",
@@ -455,7 +477,7 @@ export default function App() {
         return {
           id: qId,
           type: "query" as ComponentType,
-          status: (q?.status ?? "Stopped") as ComponentStatus,
+          status: observedStatus(qId, (q?.status ?? "Stopped") as ComponentStatus),
         };
       });
 
@@ -463,7 +485,7 @@ export default function App() {
         isReaction: true as const,
         id: reaction.id,
         kind: reaction.kind,
-        status: reaction.status as ComponentStatus,
+        status: observedStatus(reaction.id, reaction.status as ComponentStatus),
         error: reaction.error,
         autoStart: reaction.autoStart,
         properties: reaction.properties,
@@ -494,7 +516,7 @@ export default function App() {
     }
 
     return null;
-  }, [selected, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]) as InspectorData | null;
+  }, [selected, computation, sources, queries, reactions, startSource, stopSource, removeSource, startQuery, stopQuery, removeQuery, startReaction, stopReaction, removeReaction, pushEvent]) as InspectorData | null;
 
   // Auto-switch to component tab when user selects a NEW component on the canvas
   useEffect(() => {
@@ -503,8 +525,14 @@ export default function App() {
     }
   }, [selected?.id, selected?.type]);
 
-  const isEmpty =
-    sources.length === 0 && queries.length === 0 && reactions.length === 0;
+  const selectedGraphComponent = computation?.components.find((c) => c.id === selected?.id);
+  const visibleComponents = computation?.components.filter((c) => showInternal || !isInternalComponent(c)) ?? [];
+  const isEmpty = visibleComponents.length === 0;
+  const componentIds = new Set(computation?.components.map((c) => c.id));
+  const unresolvedConnections = computation?.relationships.filter((relationship) => {
+    const { from, to } = relationshipEndpoints(relationship);
+    return !componentIds.has(from) || !componentIds.has(to);
+  }).length ?? 0;
 
   // Determine accent color for CreatePanel based on draft type
   const draftAccent =
@@ -597,6 +625,8 @@ export default function App() {
                   onTogglePin={() => setSidebarPinned((p) => !p)}
                 >
                 {sidebarTab === "component" && (
+                  <>
+              {selected?.type !== "computation" && (
               <CurrentComponentPanel
                 data={inspectorProps}
                 onNavigate={(id, type) => setSelected({ id, type })}
@@ -643,6 +673,21 @@ export default function App() {
                   }
                 }}
               />
+              )}
+              {selectedGraphComponent && computation && (
+                <ComputationDetails
+                  component={selectedGraphComponent}
+                  inspection={computation}
+                  standalone={selected?.type === "computation"}
+                  onNavigate={(id) => {
+                    const component = computation.components.find((c) => c.id === id);
+                    if (!component) return;
+                    if (isInternalComponent(component)) setShowInternal(true);
+                    setSelected({ id, type: canvasComponentType(component, pipelineData) });
+                  }}
+                />
+              )}
+                  </>
             )}
             {sidebarTab === "catalog" && (
               <ComponentsPanel
@@ -693,24 +738,60 @@ export default function App() {
         </AnimatePresence>
 
         {/* Main canvas area — fills remaining space */}
-        <div className="flex-1 min-w-0">
-          {isEmpty ? (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="px-4 py-2 border-b border-drasi-border bg-drasi-surface flex flex-wrap items-center gap-4 text-xs text-drasi-text-secondary">
+            <span className="font-semibold text-drasi-text-primary">Computation graph</span>
+            {computation && <>
+              <span>{visibleComponents.length} / {computation.components.length} components</span>
+              <span>{computation.relationships.length} declared connections</span>
+              <span>{computation.resources.length} resources</span>
+              <span>{computation.graph.state}</span>
+            </>}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showInternal}
+                onChange={(event) => {
+                  setShowInternal(event.target.checked);
+                  if (!event.target.checked && selectedGraphComponent && isInternalComponent(selectedGraphComponent)) setSelected(null);
+                }}
+              />
+              Show internal components
+            </label>
+            <button className="action-btn-ghost text-xs" onClick={refreshGraph} disabled={graphLoading || !selectedInstanceId}>Refresh graph</button>
+          </div>
+          {graphError && <div role="alert" className="p-3 text-xs text-drasi-error bg-drasi-error/10">
+            Unable to refresh computation graph: {graphError}. {computation ? "Showing the last successful snapshot." : "No topology is available."}
+          </div>}
+          {computation?.graph.driverFailed && <div role="alert" className="p-3 text-xs text-drasi-error bg-drasi-error/10">The computation runtime driver has failed.</div>}
+          {unresolvedConnections > 0 && <div role="status" className="p-2 text-xs text-drasi-warning">
+            {unresolvedConnections} connection(s) reference components not currently declared. Inspect component connections for unresolved endpoints.
+          </div>}
+          {computation?.components.some((c) => c.implementation === undefined) && <div className="p-2 text-xs text-drasi-warning">
+            This host does not report implementation identities. Unclassified runtime helpers remain visible; update the host for complete internal-node filtering.
+          </div>}
+          {graphLoading ? (
+            <div className="flex-1 flex items-center justify-center text-drasi-text-secondary">Loading computation graph...</div>
+          ) : isEmpty ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-drasi-text-secondary">
               <p className="text-lg font-semibold text-drasi-text-primary">
-                No components yet
+                {graphError ? "Computation graph unavailable" : "No application components"}
               </p>
               <p className="text-sm max-w-md text-center">
-                Open the <strong>Components</strong> tab in the sidebar to
-                create your first Source, Query, or Reaction.
+                {graphError ? "Use Refresh graph to retry." : "Show internal components to inspect runtime helpers, or use the Components tab to add a Source, Query, or Reaction."}
               </p>
             </div>
           ) : (
-            <FlowCanvas
-              data={pipelineData}
-              instanceId={selectedInstanceId}
-              onNodeClick={handleNodeClick}
-              onPaneClick={handlePaneClick}
-            />
+            <div className="flex-1 min-h-0">
+              <FlowCanvas
+                key={selectedInstanceId}
+                data={pipelineData}
+                instanceId={selectedInstanceId}
+                showInternal={showInternal}
+                onNodeClick={handleNodeClick}
+                onPaneClick={handlePaneClick}
+              />
+            </div>
           )}
         </div>
       </div>

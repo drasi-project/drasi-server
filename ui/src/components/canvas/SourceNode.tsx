@@ -30,6 +30,7 @@ interface SourceNodeData {
   properties?: Record<string, unknown>;
   instanceId?: string;
   error?: string;
+  graphHandles?: "source" | "target" | "both";
   [key: string]: unknown;
 }
 
@@ -62,7 +63,7 @@ export default memo(function SourceNode({ data, id: nodeId }: NodeProps) {
       canToggle={canPush}
       toggleTitle={expanded ? "Collapse" : "Push data"}
       locked={!!d.locked}
-      handles="source"
+      handles={d.graphHandles ?? "source"}
       handleClass="!bg-drasi-source"
       onStartStop={handleStartStop}
       header={

@@ -9,7 +9,6 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
-  useStoreApi,
   type Node,
   type NodeChange,
 } from "@xyflow/react";
@@ -19,10 +18,11 @@ import { Trash2, Pin, Lock, LockOpen, LayoutGrid } from "lucide-react";
 import SourceNode from "./SourceNode";
 import QueryNode from "./QueryNode";
 import ReactionNode from "./ReactionNode";
+import ComputationNode from "./ComputationNode";
 import AnimatedEdge from "./AnimatedEdge";
 import { CanvasLockedContext } from "./CanvasLockedContext";
-import { buildFlowGraph, type PipelineData } from "@/utils/graph";
-import { THEME } from "@/utils/colors";
+import { buildFlowGraph, layoutFlowNodes, type PipelineData, type CanvasComponentType } from "@/utils/graph";
+import { computationColor } from "@/utils/computation";
 import { useAutoLayout } from "@/hooks/useAutoLayout";
 import { useCanvasPersistence, loadPersistedState } from "@/hooks/useCanvasPersistence";
 
@@ -30,6 +30,7 @@ const nodeTypes = {
   sourceNode: SourceNode,
   queryNode: QueryNode,
   reactionNode: ReactionNode,
+  computationNode: ComputationNode,
 };
 
 const edgeTypes = {
@@ -39,7 +40,8 @@ const edgeTypes = {
 interface FlowCanvasProps {
   data: PipelineData;
   instanceId?: string;
-  onNodeClick?: (nodeId: string, type: string) => void;
+  showInternal: boolean;
+  onNodeClick?: (nodeId: string, type: CanvasComponentType) => void;
   onPaneClick?: () => void;
   onDeleteNodes?: (nodeIds: Array<{ id: string; type: string }>) => void;
 }
@@ -48,30 +50,12 @@ interface CollisionApi {
   clampDragPosition: (id: string, x: number, y: number) => { x: number; y: number };
 }
 
-interface StoreApi {
-  getState: () => { nodeLookup: Map<string, { measured?: { width?: number; height?: number } }> };
-}
-
 interface CanvasApi {
   collision: CollisionApi | null;
   fitView: () => void;
-  store: StoreApi | null;
 }
 
 const CANVAS_LOCK_KEY = "drasi-canvas-locked";
-
-// Known target widths from framer-motion animate props in each node component.
-const TARGET_WIDTHS: Record<string, { collapsed: number; expanded: number }> = {
-  sourceNode: { collapsed: 180, expanded: 320 },
-  queryNode: { collapsed: 180, expanded: 360 },
-  reactionNode: { collapsed: 180, expanded: 300 },
-};
-
-function getTargetWidth(node: Node): number {
-  const spec = TARGET_WIDTHS[node.type ?? ""];
-  if (!spec) return 180;
-  return node.data?.expanded ? spec.expanded : spec.collapsed;
-}
 
 function AutoLayout({
   onApiRef,
@@ -82,34 +66,33 @@ function AutoLayout({
 }) {
   const layoutApi = useAutoLayout();
   const { fitView } = useReactFlow();
-  const store = useStoreApi();
-  
   onApiRef.current = {
     collision: layoutApi,
     fitView: () => fitView({ padding: 0.2, duration: 300 }),
-    store,
   };
   
   useCanvasPersistence(instanceId);
   return null;
 }
 
-export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick, onDeleteNodes }: FlowCanvasProps) {
+export default function FlowCanvas({ data, instanceId, showInternal, onNodeClick, onPaneClick, onDeleteNodes }: FlowCanvasProps) {
   // Build initial nodes and pre-apply any persisted state (positions, expanded,
   // locked) so that nodes mount at their correct size and position. This avoids
   // a visible shrink/grow animation when Framer Motion transitions from the
   // default collapsed width to the persisted expanded width.
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
-    const graph = buildFlowGraph(data);
+    const graph = buildFlowGraph(data, showInternal);
     if (!instanceId) return graph;
     const persisted = loadPersistedState(instanceId);
     if (!persisted) return graph;
     return {
       edges: graph.edges,
       nodes: graph.nodes.map((n) => {
-        const pos = persisted.positions[n.id];
-        const exp = persisted.expanded[n.id];
-        const lock = persisted.locked?.[n.id];
+        const component = data.computation?.components.find((c) => c.id === n.data.id);
+        const oldId = `${component?.role.toLowerCase()}-${n.data.id}`;
+        const pos = persisted.positions[n.id] ?? persisted.positions[oldId];
+        const exp = persisted.expanded[n.id] ?? persisted.expanded[oldId];
+        const lock = persisted.locked?.[n.id] ?? persisted.locked?.[oldId];
         return {
           ...n,
           position: pos ?? n.position,
@@ -122,10 +105,10 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         };
       }),
     };
-  }, [data, instanceId]);
+  }, [data, instanceId, showInternal]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const canvasApiRef = useRef<CanvasApi | null>(null);
   const [canvasLocked, setCanvasLocked] = useState(() => {
     try { return localStorage.getItem(CANVAS_LOCK_KEY) === "true"; } catch { return false; }
@@ -160,15 +143,18 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
 
   // Sync when pipeline data changes
   useEffect(() => {
-    const { nodes: newNodes, edges: newEdges } = buildFlowGraph(data);
-    setNodes((prev) =>
-      newNodes.map((n) => {
-        const existing = prev.find((p) => p.id === n.id);
+    const { nodes: newNodes, edges: newEdges } = buildFlowGraph(data, showInternal);
+    setNodes((prev) => {
+      const previous = new Map(prev.map((node) => [node.id, node]));
+      const visibilityChanged = newNodes.some((node) => previous.has(node.id) && previous.get(node.id)?.hidden !== node.hidden);
+      const merged = newNodes.map((n) => {
+        const existing = previous.get(n.id);
         if (existing) {
           return {
             ...n,
             position: existing.position,
-            draggable: !existing.data?.locked,
+            draggable: !canvasLocked && !existing.data?.locked,
+            selected: !n.hidden && existing.selected,
             data: {
               ...n.data,
               expanded: existing.data.expanded,
@@ -177,12 +163,13 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
           };
         }
         return n;
-      }),
-    );
-    onEdgesChange(
-      newEdges.map((e) => ({ type: "add" as const, item: e })),
-    );
-  }, [data, setNodes, onEdgesChange]);
+      });
+      if (!visibilityChanged || canvasLocked) return merged;
+      return layoutFlowNodes(merged, newEdges).map((node) =>
+        node.data.locked ? { ...node, position: previous.get(node.id)?.position ?? node.position } : node);
+    });
+    setEdges(newEdges);
+  }, [data, showInternal, canvasLocked, setNodes, setEdges]);
 
   // Update draggable state when canvas lock changes (without mutating node data)
   useEffect(() => {
@@ -198,21 +185,24 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
     (event: React.MouseEvent, node: Node) => {
       // Don't open inspector when shift-clicking (multi-select)
       if (event.shiftKey) return;
-      const [type, ...idParts] = node.id.split("-");
-      onNodeClick?.(idParts.join("-"), type);
+      const type = node.data.componentType;
+      if (typeof node.data.id === "string"
+        && (type === "source" || type === "query" || type === "reaction" || type === "computation")) {
+        onNodeClick?.(node.data.id, type);
+      }
     },
     [onNodeClick],
   );
 
   // Delete selected nodes (respecting locks)
   const deleteSelectedNodes = useCallback(() => {
-    if (canvasLocked) return;
+    if (canvasLocked || !onDeleteNodes) return;
     const selected = nodes.filter(
-      (n) => n.selected && !n.data?.locked,
+      (n) => n.selected && !n.hidden && !n.data?.locked && n.data.componentType !== "computation",
     );
     if (selected.length === 0) return;
     setPendingDelete(selected);
-  }, [nodes, canvasLocked]);
+  }, [nodes, canvasLocked, onDeleteNodes]);
 
   // Toggle lock on all selected nodes
   const toggleSelectedNodesLock = useCallback(() => {
@@ -234,103 +224,28 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
     );
   }, [nodes, canvasLocked, setNodes]);
 
-  // Auto-layout: arrange nodes in columns by type, accounting for actual node sizes
+  // Use actual topology rather than fixed source/query/reaction columns.
   const autoLayoutNodes = useCallback(() => {
-    const NODE_MARGIN = 80;
-    const NODE_START_X = 50;
-    const NODE_START_Y = 60;
-
-    setNodes((prev) => {
-      // Get measured dimensions from React Flow's nodeLookup
-      const nodeLookup = canvasApiRef.current?.store?.getState().nodeLookup;
-      
-      // Helper to get measured width for a node (use actual measured, fallback to target)
-      const getMeasuredWidth = (node: Node): number => {
-        if (!nodeLookup) return getTargetWidth(node);
-        const entry = nodeLookup.get(node.id);
-        const measured = entry?.measured?.width;
-        // Use measured width if available and reasonable, otherwise use target
-        return measured && measured > 50 ? measured : getTargetWidth(node);
-      };
-      
-      // Helper to get measured height for a node
-      const getMeasuredHeight = (node: Node): number => {
-        if (!nodeLookup) return 80;
-        const entry = nodeLookup.get(node.id);
-        return entry?.measured?.height ?? 80;
-      };
-
-      // Group nodes by type (Sources → Queries → Reactions, left to right)
-      const sources = prev.filter((n) => n.type === "sourceNode");
-      const queries = prev.filter((n) => n.type === "queryNode");
-      const reactions = prev.filter((n) => n.type === "reactionNode");
-
-      // Calculate max width for each column based on actual measured widths
-      const maxSourceWidth = sources.length > 0 
-        ? Math.max(...sources.map(getMeasuredWidth)) 
-        : 0;
-      const maxQueryWidth = queries.length > 0 
-        ? Math.max(...queries.map(getMeasuredWidth)) 
-        : 0;
-
-      // Calculate column X positions based on actual widths
-      const sourceColumnX = NODE_START_X;
-      const queryColumnX = sources.length > 0 
-        ? sourceColumnX + maxSourceWidth + NODE_MARGIN 
-        : NODE_START_X;
-      const reactionColumnX = queries.length > 0 
-        ? queryColumnX + maxQueryWidth + NODE_MARGIN 
-        : (sources.length > 0 ? sourceColumnX + maxSourceWidth + NODE_MARGIN : NODE_START_X);
-
-      // Assign positions by column, using actual heights for Y spacing
-      const positioned = new Map<string, { x: number; y: number }>();
-      
-      let yOffset = NODE_START_Y;
-      sources.forEach((n) => {
-        positioned.set(n.id, { x: sourceColumnX, y: yOffset });
-        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
-      });
-
-      yOffset = NODE_START_Y;
-      queries.forEach((n) => {
-        positioned.set(n.id, { x: queryColumnX, y: yOffset });
-        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
-      });
-
-      yOffset = NODE_START_Y;
-      reactions.forEach((n) => {
-        positioned.set(n.id, { x: reactionColumnX, y: yOffset });
-        yOffset += getMeasuredHeight(n) + NODE_MARGIN;
-      });
-
-      return prev.map((n) => {
-        const pos = positioned.get(n.id);
-        return pos ? { ...n, position: pos } : n;
-      });
-    });
+    setNodes((prev) => layoutFlowNodes(prev, edges));
 
     // Fit view after layout with a small delay for React to render new positions
     setTimeout(() => {
       canvasApiRef.current?.fitView();
     }, 50);
-  }, [setNodes]);
+  }, [setNodes, edges]);
 
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return;
-    const deleteIds = new Set(pendingDelete.map((n) => n.id));
-
     if (onDeleteNodes) {
       onDeleteNodes(
         pendingDelete.map((n) => {
-          const [type, ...idParts] = n.id.split("-");
-          return { id: idParts.join("-"), type };
+          return { id: String(n.data.id), type: String(n.data.componentType) };
         }),
       );
     }
 
-    setNodes((prev) => prev.filter((n) => !deleteIds.has(n.id)));
     setPendingDelete(null);
-  }, [pendingDelete, onDeleteNodes, setNodes]);
+  }, [pendingDelete, onDeleteNodes]);
 
   // Keyboard shortcut for delete
   useEffect(() => {
@@ -374,7 +289,7 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
         selectionKeyCode="Shift"
         deleteKeyCode={null}
         fitView
-        minZoom={0.3}
+        minZoom={0.05}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
@@ -414,22 +329,20 @@ export default function FlowCanvas({ data, instanceId, onNodeClick, onPaneClick,
                 <Pin size={16} />
               )}
             </button>
-            <button
+            {onDeleteNodes && <button
               onClick={deleteSelectedNodes}
               className="p-2 rounded-lg border bg-drasi-card border-drasi-border text-drasi-error/70 hover:text-drasi-error hover:bg-drasi-error/10 transition-colors"
               title="Delete selected nodes"
             >
               <Trash2 size={16} />
-            </button>
+            </button>}
           </Panel>
         )}
 
         <MiniMap
           nodeColor={(node) => {
-            if (node.type === "sourceNode") return THEME.source;
-            if (node.type === "queryNode") return THEME.query;
-            if (node.type === "reactionNode") return THEME.reaction;
-            return THEME.stopped;
+            const component = data.computation?.components.find((c) => c.id === node.data.id);
+            return computationColor(component?.role ?? "");
           }}
           maskColor="var(--drasi-minimap-mask)"
           className="!bg-drasi-surface !border-drasi-border !rounded-lg"

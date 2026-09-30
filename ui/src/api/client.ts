@@ -10,6 +10,7 @@ import type {
   InstanceInfo,
   CreateInstanceRequest,
   CloneInstanceResult,
+  ComputationInspection,
 } from "./types";
 import {
   normalizeSource,
@@ -56,6 +57,13 @@ function unwrap<T>(response: { data: any }): T {
 // Instances
 export async function listInstances(): Promise<InstanceInfo[]> {
   return unwrap(await api.get("/instances"));
+}
+
+export async function inspectComputation(
+  instanceId: string,
+  signal?: AbortSignal,
+): Promise<ComputationInspection> {
+  return unwrap(await api.get(`/instances/${encodeURIComponent(instanceId)}/computation`, { signal }));
 }
 
 export async function createInstance(req: CreateInstanceRequest): Promise<void> {

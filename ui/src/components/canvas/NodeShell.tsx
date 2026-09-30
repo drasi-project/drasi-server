@@ -72,7 +72,7 @@ export default function NodeShell({
   const glowClass = getStatusGlowClass(status);
   const isLocked = locked || canvasLocked;
   const isRunning = status === "Running";
-  const isTransitioning = status === "Starting" || status === "Stopping" || status === "Reconfiguring";
+  const canStartStop = status === "Running" || status === "Stopped" || status === "Error";
   const { setNodes } = useReactFlow();
 
   const handleToggle = useCallback(
@@ -127,15 +127,15 @@ export default function NodeShell({
       {onStartStop && (
         <button
           onClick={handleStartStop}
-          disabled={isTransitioning}
+          disabled={!canStartStop}
           className={`nodrag p-1.5 rounded-md transition-all duration-150 ${
-            isTransitioning
+            !canStartStop
               ? "opacity-50 cursor-not-allowed"
               : isRunning
                 ? "hover:bg-drasi-error/10 text-drasi-error/70 hover:text-drasi-error hover:scale-110 active:scale-90"
                 : "hover:bg-drasi-running/10 text-drasi-running/70 hover:text-drasi-running hover:scale-110 active:scale-90"
           }`}
-          title={isRunning ? "Stop" : "Start"}
+          title={!canStartStop ? `Lifecycle control unavailable (${status})` : isRunning ? "Stop" : "Start"}
         >
           {isRunning ? (
             <Square size={14} fill="currentColor" />
@@ -180,7 +180,7 @@ export default function NodeShell({
         />
       </button>
     </>
-  ), [onStartStop, handleStartStop, isTransitioning, isRunning, canToggle, isLocked, handleToggle, canvasLocked, expanded, toggleTitle, accentClass, handleLockToggle, locked]);
+  ), [onStartStop, handleStartStop, canStartStop, status, isRunning, canToggle, isLocked, handleToggle, canvasLocked, expanded, toggleTitle, accentClass, handleLockToggle, locked]);
 
   return (
     <div

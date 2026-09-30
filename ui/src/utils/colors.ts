@@ -39,7 +39,13 @@ export type ComponentStatus =
   | "Stopping"
   | "Stopped"
   | "Error"
-  | "Reconfiguring";
+  | "Reconfiguring"
+  | "Pending"
+  | "Creating"
+  | "Blocked"
+  | "Quiescing"
+  | "Quiesced"
+  | "Unknown";
 
 export function getTypeColor(type: ComponentType): string {
   return THEME[type];
@@ -52,10 +58,16 @@ export function getStatusColor(status: ComponentStatus): string {
     case "Starting":
     case "Stopping":
     case "Reconfiguring":
+    case "Pending":
+    case "Creating":
+    case "Blocked":
+    case "Quiescing":
       return THEME.warning;
     case "Error":
       return THEME.error;
     case "Stopped":
+    case "Quiesced":
+    case "Unknown":
       return THEME.stopped;
   }
 }
@@ -67,10 +79,16 @@ export function getStatusGlowClass(status: ComponentStatus): string {
     case "Starting":
     case "Stopping":
     case "Reconfiguring":
+    case "Pending":
+    case "Creating":
+    case "Blocked":
+    case "Quiescing":
       return "shadow-glow-warning";
     case "Error":
       return "shadow-glow-error";
     case "Stopped":
+    case "Quiesced":
+    case "Unknown":
       return "";
   }
 }

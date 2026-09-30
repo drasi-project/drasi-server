@@ -33,6 +33,7 @@ interface ReactionNodeData {
   queryIds?: string[];
   properties?: Record<string, unknown>;
   error?: string;
+  graphHandles?: "source" | "target" | "both";
   instanceId?: string;
   [key: string]: unknown;
 }
@@ -65,7 +66,7 @@ export default memo(function ReactionNode({ data, id: nodeId }: NodeProps) {
       canToggle={false}
       toggleTitle={expanded ? "Collapse" : "View activity"}
       locked={!!d.locked}
-      handles="target"
+      handles={d.graphHandles ?? "target"}
       handleClass="!bg-drasi-reaction"
       onStartStop={handleStartStop}
       header={

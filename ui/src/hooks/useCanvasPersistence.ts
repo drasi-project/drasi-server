@@ -101,7 +101,7 @@ export function useCanvasPersistence(instanceId: string | undefined) {
       nodes.map((n) => {
         const pos = state.positions[n.id];
         const exp = state.expanded[n.id];
-        const lock = state.locked?.[n.id];
+        const lock = state.locked?.[n.id] ?? !!n.data?.locked;
         return {
           ...n,
           position: pos ?? n.position,

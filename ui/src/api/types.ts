@@ -13,6 +13,58 @@ export type ComponentType = "Source" | "Query" | "Reaction";
 
 export type SourceKind = "mock" | "http" | "grpc" | "postgres" | "platform";
 
+export interface ComputationPort {
+  id: string;
+  direction: "Input" | "Output";
+  schema: { id: string; version: number; encoding: string; definition: number[] };
+  requirements: { required: string[] };
+}
+
+export interface ComputationComponent {
+  id: string;
+  role: string;
+  implementation?: {
+    name: string;
+    version: string;
+    plugin: { id: string; version: string } | null;
+  } | null;
+  autoStart: boolean;
+  ports: ComputationPort[];
+  realization: string | null;
+  lifecycle: string | null;
+  health: string | null;
+  failurePhase: string | null;
+}
+
+export interface ComputationEndpoint {
+  component: string;
+  port: string;
+}
+
+export type ComputationRelationship =
+  | {
+      representation: "NativeProvider";
+      from: ComputationEndpoint;
+      to: ComputationEndpoint;
+      binding: string | null;
+      availability: string | null;
+    }
+  | {
+      representation: "HostSubscription";
+      from: string;
+      to: string;
+      producerStarted: boolean | null;
+      consumerStarted: boolean | null;
+    }
+  | { representation: "ControlConnection"; from: string; to: string };
+
+export interface ComputationInspection {
+  graph: { id: string; state: string; revision: number; driverFailed: boolean };
+  components: ComputationComponent[];
+  relationships: ComputationRelationship[];
+  resources: { id: string; role: string; ownership: string; realization: string | null }[];
+}
+
 // Raw API response shapes (what the server actually returns)
 interface ComponentLinks {
   self: string;

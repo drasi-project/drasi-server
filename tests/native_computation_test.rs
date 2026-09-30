@@ -580,7 +580,11 @@ async fn native_resource_only_configuration_can_be_inspected_and_removed() -> Re
 async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let output = directory.path().join("private-capture-path.jsonl");
-    let config = definition(&output)?;
+    let mut config = definition(&output)?;
+    config
+        .definition
+        .control_connections
+        .push((id("counter"), id("capture")));
     let source = core("first").await?;
     let target = core("second").await?;
     let instances = InstanceRegistry::new();
@@ -655,6 +659,29 @@ async fn native_api_persist_restart_clone_and_empty_lists_roundtrip() -> Result<
         inspection["data"]["components"].as_array().unwrap().len(),
         5
     );
+    for specification in &config.definition.components {
+        let inspected = inspection["data"]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|component| component["id"] == specification.descriptor.id().as_str())
+            .expect("every desired component is inspectable");
+        let implementation = match &specification.construction {
+            drasi_lib::computation::v1::ComponentConstruction::Factory(factory) => {
+                serde_json::to_value(&factory.implementation)?
+            }
+            drasi_lib::computation::v1::ComponentConstruction::External { .. } => Value::Null,
+        };
+        assert_eq!(inspected["implementation"], implementation);
+    }
+    assert!(inspection["data"]["relationships"]
+        .as_array()
+        .unwrap()
+        .contains(&json!({
+            "representation": "ControlConnection",
+            "from": "counter",
+            "to": "capture"
+        })));
     let public = serde_json::to_string(&inspection)?;
     assert!(!public.contains("private-capture-path"));
     assert!(!public.contains("secret-json:COUNT"));

@@ -635,12 +635,38 @@ enableUi: false
 
 ### Flow Canvas
 
-The main canvas displays your data pipeline as an interactive graph:
+The main canvas displays the selected instance's ComputationGraph, using
+`GET /api/v1/instances/{instanceId}/computation` rather than inferring its
+topology from source/query/reaction configuration:
 
 - **Green nodes** = Sources (data inputs)
 - **Blue nodes** = Queries (data processing)
 - **Purple nodes** = Reactions (outputs/actions)
-- **Animated edges** show data flow direction
+- **Amber nodes** = Transformers
+- **Pink nodes** = Sinks
+- **Cyan nodes** = Services; unrecognized future roles remain inspectable
+- **Arrows** show declared native pipes and host subscriptions. Dashed arrows
+  are control connections, not data flow. Native pipes animate only when their
+  observed binding is bound and data availability is available.
+
+Queries and transformers share a processing column in the initial layout and
+**Auto-layout nodes**. Connections between them remain visible within that column.
+Saved manual positions are preserved; use **Auto-layout nodes** to apply the
+arrangement to an existing canvas.
+
+Application components are shown by default. **Show internal components**
+reveals reserved internal nodes and built-in source-subscription, scheduled-query
+and query-result-outlet helpers, classified by their implementation identity.
+The toggle changes presentation only; it never changes the runtime. Older hosts
+without implementation metadata retain unclassified helpers and show a warning
+instead of hiding nodes based on guessed names.
+
+The toolbar reports component, declared-connection and resource counts. Resources
+are not component nodes in this view. Graph inspection refreshes every five
+seconds and on ordinary component events; **Refresh graph** requests an immediate
+snapshot. Inspection errors are displayed explicitly, including when the canvas
+retains a last-known snapshot. Unresolved connection endpoints are reported
+rather than represented as invented components.
 
 **Node Status Colors:**
 | Color | Status |
@@ -649,6 +675,7 @@ The main canvas displays your data pipeline as an interactive graph:
 | Gray border | Stopped |
 | Red border | Failed/Error |
 | Pulsing animation | Starting/Stopping |
+| Amber border | Pending/Creating/Blocked/Quiescing |
 
 **Canvas Interactions:**
 - **Click** a node to open its inspector panel
@@ -669,7 +696,15 @@ The main canvas displays your data pipeline as an interactive graph:
 
 ### Inspector Panels
 
-Click any node to open its inspector panel on the right side. The panel shows:
+Click any node to open its inspector in the sidebar. Every component exposes its
+role, implementation identity (when available), realization, lifecycle, health,
+failure phase, auto-start policy, declared ports/schema identifiers and real
+graph connections. Selecting a connected internal component reveals the internal
+view. Configuration values and secrets are not fetched through graph inspection.
+
+Transformers, sinks, services and internal helpers are **inspection-only** in
+this first graph UI iteration; creation and lifecycle controls remain the existing
+source/query/reaction workflows. Those component inspectors additionally show:
 
 **For Sources:**
 - Status and configuration details
