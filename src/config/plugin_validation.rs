@@ -433,12 +433,14 @@ pub fn validate_with_plugins(
             .flat_map(|instance| &instance.computation),
     ) {
         let validation = crate::computation::validate_definition(graph).and_then(|()| {
+            let mut bindings = drasi_lib::computation::v1::TopologyBindings {
+                factories: registry.computation_factory_registry()?,
+                ..Default::default()
+            };
+            crate::computation::bind_named_pipes(graph, &mut bindings)?;
             graph
                 .definition
-                .build(drasi_lib::computation::v1::TopologyBindings {
-                    factories: registry.computation_factory_registry()?,
-                    ..Default::default()
-                })
+                .build(bindings)
                 .map(|_| ())
                 .map_err(anyhow::Error::from)
         });

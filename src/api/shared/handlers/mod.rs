@@ -67,6 +67,29 @@ pub struct ResourcePath {
     pub id: String,
 }
 
+fn require_non_named_pipe_removal(core: &DrasiLib, id: &str) -> Result<(), ErrorResponse> {
+    let snapshot = core.computation_control()?.desired_snapshot();
+    let connected = snapshot.edges.iter().any(|edge| {
+        (edge.definition.from.component.as_str() == id
+            || edge.definition.to.component.as_str() == id)
+            && edge.resources.keys().any(|resource| {
+                snapshot
+                    .resource_configurations
+                    .get(resource)
+                    .and_then(|recipe| recipe.get("kind"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("namedPipe")
+            })
+    });
+    if connected {
+        return Err(ErrorResponse::new(
+            error_codes::INVALID_REQUEST,
+            "Named pipe endpoints must be removed with their connected components and pipe resources through /computation/components",
+        ));
+    }
+    Ok(())
+}
+
 /// Helper to get an instance from the registry, returning an error response if not found
 pub async fn get_instance_or_error(
     registry: &InstanceRegistry,

@@ -38,6 +38,20 @@ The four-factory pipeline checks values `24, 30, 36, 42`, `Projected` labels, an
 batch counters. Counter reconstruction deliberately starts a new volatile run;
 these roundtrips do not claim durable source recovery or capture-file fsync.
 
+`named_pipes_test.rs` uses the same native standard plugin. It covers named
+bounded/broadcast delivery, real shared QoS multicast, strict recipe/descriptor
+validation, YAML/JSON and policy/subscriber roundtrips, REST persistence/reload,
+independent instance clones and durable subscriber acknowledgement/replay.
+On Unix it also launches the actual stock binary with copied fixture plugins,
+temporary configuration/storage and an allocated loopback port, exercises both
+startup and additive API wiring, then awaits a clean SIGINT exit. It does not
+connect to existing demos or databases. Missing fixture libraries fail the suite.
+
+```bash
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=1 \
+  cargo test --locked --test named_pipes_test
+```
+
 ## Runtime and creation-path coverage
 
 All Server suites use ComputationGraph through the current `drasi-lib`; there

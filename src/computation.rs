@@ -20,12 +20,116 @@ use drasi_host_sdk::management::HostConfigurationResolver;
 use drasi_lib::{computation::v1::*, DrasiLib};
 use serde::{Deserialize, Serialize};
 
+pub mod named;
+
 /// Native components, connections and resource recipes for a DrasiLib instance.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone)]
 pub struct ComputationConfig {
-    #[schema(value_type = serde_json::Value)]
     pub definition: DesiredTopology,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(untagged)]
+#[schema(as = ComputationConfig)]
+#[allow(dead_code)]
+enum ComputationConfigSchema {
+    Legacy { definition: serde_json::Value },
+    Named(named::NamedGraphConfig),
+}
+
+impl<'s> utoipa::ToSchema<'s> for ComputationConfig {
+    fn schema() -> (
+        &'s str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        ComputationConfigSchema::schema()
+    }
+}
+
+impl Serialize for ComputationConfig {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        if let Some(named) = named::export(&self.definition).map_err(serde::ser::Error::custom)? {
+            named.serialize(serializer)
+        } else {
+            use serde::ser::SerializeStruct;
+            let mut value = serializer.serialize_struct("ComputationConfig", 1)?;
+            value.serialize_field("definition", &self.definition)?;
+            value.end()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ComputationConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize, Default)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Wire {
+            definition: Option<DesiredTopology>,
+            #[serde(default, deserialize_with = "named::optional_unique_map")]
+            pipes: Option<BTreeMap<String, named::NamedPipeConfig>>,
+            #[serde(default, deserialize_with = "named::optional_unique_map")]
+            components: Option<BTreeMap<ComponentId, named::NamedComponentConfig>>,
+            resources: Option<Vec<ResourceSpecification>>,
+            resource_configurations: Option<BTreeMap<ResourceId, serde_json::Value>>,
+            relationships: Option<Vec<DesiredRelationship>>,
+            requirements: Option<PipeRequirements>,
+            control_connections: Option<Vec<(ComponentId, ComponentId)>>,
+            subscriptions: Option<Vec<(ComponentId, ComponentId)>>,
+            readiness_required: Option<std::collections::BTreeSet<ComponentId>>,
+            component_resources:
+                Option<BTreeMap<ComponentId, std::collections::BTreeSet<ResourceId>>>,
+            component_plugins: Option<BTreeMap<ComponentId, PluginIdentity>>,
+            allow_incomplete: Option<bool>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if let Some(definition) = wire.definition {
+            if wire.pipes.is_some()
+                || wire.components.is_some()
+                || wire.resources.is_some()
+                || wire.resource_configurations.is_some()
+                || wire.relationships.is_some()
+                || wire.requirements.is_some()
+                || wire.control_connections.is_some()
+                || wire.subscriptions.is_some()
+                || wire.readiness_required.is_some()
+                || wire.component_resources.is_some()
+                || wire.component_plugins.is_some()
+                || wire.allow_incomplete.is_some()
+            {
+                return Err(serde::de::Error::custom(
+                    "use either computation.definition or named pipes/components, not both",
+                ));
+            }
+            return Ok(Self { definition });
+        }
+        let pipes = wire
+            .pipes
+            .ok_or_else(|| serde::de::Error::missing_field("pipes"))?;
+        let components = wire
+            .components
+            .ok_or_else(|| serde::de::Error::missing_field("components"))?;
+        named::NamedGraphConfig {
+            pipes,
+            components,
+            resources: wire.resources.unwrap_or_default(),
+            resource_configurations: wire.resource_configurations.unwrap_or_default(),
+            relationships: wire.relationships.unwrap_or_default(),
+            requirements: wire.requirements.unwrap_or_default(),
+            control_connections: wire.control_connections.unwrap_or_default(),
+            subscriptions: wire.subscriptions.unwrap_or_default(),
+            readiness_required: wire.readiness_required.unwrap_or_default(),
+            component_resources: wire.component_resources.unwrap_or_default(),
+            component_plugins: wire.component_plugins.unwrap_or_default(),
+            allow_incomplete: wire.allow_incomplete.unwrap_or_default(),
+        }
+        .compile()
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 /// Provider recipes stored in DesiredTopology::resource_configurations.
@@ -46,6 +150,11 @@ pub enum ComputationResourceConfig {
         definition: QosChannelDefinition,
         path: Option<PathBuf>,
     },
+    NamedPipe {
+        name: String,
+        #[schema(value_type = serde_json::Value)]
+        transport: named::NamedTransport,
+    },
 }
 
 impl ComputationResourceConfig {
@@ -57,6 +166,7 @@ impl ComputationResourceConfig {
             Self::TransactionalTransformers => ResourceRole::Component,
             Self::Configuration => ResourceRole::SecretStore,
             Self::Qos { .. } => ResourceRole::StateStore,
+            Self::NamedPipe { transport, .. } => transport.role(),
         }
     }
 }
@@ -84,13 +194,10 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
         "server computation components require factory specifications, not external component bindings"
     );
     anyhow::ensure!(
-        definition.boundary_relationships.is_empty()
-            && definition
-                .relationships
-                .iter()
-                .all(|edge| !matches!(edge.pipe, DesiredPipe::External { .. })),
-        "server computation cannot reconstruct external pipe or boundary bindings"
+        definition.boundary_relationships.is_empty(),
+        "server computation cannot reconstruct boundary bindings"
     );
+    named::validate(definition)?;
     let declarations: BTreeMap<_, _> = definition
         .resources
         .iter()
@@ -204,9 +311,7 @@ pub fn validate_definition(config: &ComputationConfig) -> Result<()> {
             DesiredPipe::Qos(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Ranked(pipe) => PipeProvider::resource_dependencies(pipe),
             DesiredPipe::Bounded { .. } | DesiredPipe::Broadcast { .. } => continue,
-            DesiredPipe::External { .. } => {
-                anyhow::bail!("external pipe binding cannot be reconstructed")
-            }
+            DesiredPipe::External { resources, .. } => resources.clone(),
         };
         for (id, role) in requirements {
             anyhow::ensure!(
@@ -242,6 +347,24 @@ pub async fn build_components(
     transactional: Arc<TransactionalTransformerRegistry>,
 ) -> Result<ComponentBatch> {
     validate_definition(config)?;
+    let current = core.computation_control()?.desired_snapshot();
+    for resource in &config.definition.resources {
+        let is_named = |recipe: Option<&serde_json::Value>| {
+            recipe
+                .and_then(|value| value.get("kind"))
+                .and_then(serde_json::Value::as_str)
+                == Some("namedPipe")
+        };
+        if is_named(config.definition.resource_configurations.get(&resource.id))
+            || is_named(current.resource_configurations.get(&resource.id))
+        {
+            anyhow::ensure!(
+                !current.resources.contains_key(&resource.id),
+                "named pipe resource '{}' already exists in this instance",
+                resource.id
+            );
+        }
+    }
     for component in &config.definition.components {
         if let ComponentConstruction::Factory(specification) = &component.construction {
             factories
@@ -259,10 +382,12 @@ pub async fn build_components(
         }
     }
     let services = core.computation_plugin_services()?;
+    let instance_id = core.get_current_config().await?.id;
     let mut bindings = TopologyBindings {
         factories,
         ..Default::default()
     };
+    bind_named_pipes(config, &mut bindings)?;
     for resource in &config.definition.resources {
         let recipe = config
             .definition
@@ -276,6 +401,16 @@ pub async fn build_components(
             "resource {} role differs from its recipe",
             resource.id
         );
+        let recipe = match recipe {
+            ComputationResourceConfig::NamedPipe {
+                name,
+                transport: named::NamedTransport::Qos { definition, path },
+            } => ComputationResourceConfig::Qos {
+                definition,
+                path: path.map(|path| named::storage_path(path, &instance_id, &name)),
+            },
+            recipe => recipe,
+        };
         let handle = match recipe {
             ComputationResourceConfig::MemoryIndexes => ResourceHandle::new(
                 ResourceRole::IndexBackend,
@@ -351,10 +486,21 @@ pub async fn build_components(
                 };
                 channel.resource()
             }
+            ComputationResourceConfig::NamedPipe { transport, .. } => {
+                ResourceHandle::new(ResourceRole::Pipe, Arc::new(transport))
+            }
         };
         bindings.resources.insert(resource.id.clone(), handle);
     }
     Ok(config.definition.build_components(bindings)?)
+}
+
+pub fn bind_named_pipes(config: &ComputationConfig, bindings: &mut TopologyBindings) -> Result<()> {
+    named::bind(&config.definition, bindings)
+}
+
+pub fn validate_named_mutation(definition: &DesiredTopology) -> Result<()> {
+    named::validate_in_instance(definition)
 }
 
 pub fn configuration_from_snapshot(

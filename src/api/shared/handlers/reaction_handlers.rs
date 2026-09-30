@@ -423,6 +423,7 @@ pub async fn delete_reaction(
         ));
     }
 
+    super::require_non_named_pipe_removal(&core, &id)?;
     match core.remove_reaction(&id, true).await {
         Ok(_) => {
             if let Some(p) = &config_persistence {

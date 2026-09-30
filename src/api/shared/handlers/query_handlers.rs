@@ -326,6 +326,7 @@ pub async fn delete_query(
         ));
     }
 
+    super::require_non_named_pipe_removal(&core, &id)?;
     match core.remove_query(&id).await {
         Ok(_) => {
             persist_after_operation(&config_persistence, "deleting query").await?;

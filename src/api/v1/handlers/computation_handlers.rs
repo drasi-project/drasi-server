@@ -425,6 +425,13 @@ pub async fn delete_computation_components(
         .preview(control.desired_snapshot().revision, changes)
         .await
         .map_err(|error| operation_error(&instance_id, "remove components", error))?;
+    crate::computation::validate_named_mutation(preview.desired())
+        .map_err(|error| {
+            ErrorResponse::new(
+                error_codes::INVALID_REQUEST,
+                format!("Invalid named pipe removal: {error:#}"),
+            )
+        })?;
     let report = control
         .reconcile(preview, TopologyBindings::default())
         .await

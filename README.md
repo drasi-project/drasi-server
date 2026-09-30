@@ -422,7 +422,108 @@ has a `lifecycle.auto_start` policy. The definition retains Core's field names,
 including `resource_configurations`; its graph identity defaults to the instance
 graph identity. Root computation configuration cannot be mixed with explicit
 instances. Definitions must contain version-qualified factory specifications and
-reconstructible pipes, not preconstructed Rust objects or external pipe bindings.
+reconstructible pipes, not preconstructed Rust objects or arbitrary external pipe bindings.
+
+##### Named pipes and port bindings
+
+Instead of `computation.definition`, use `computation.pipes` and
+`computation.components`. Pipes are instance-scoped declarations, and components
+bind their actual typed ports to those names. Server derives the connections;
+do not duplicate them in a relationship list. The same object is accepted by
+`POST /api/v1/instances/{instanceId}/computation/components`.
+
+For example, given full factory specifications `producer_spec` and `consumer_spec`
+obtained from the loaded native factories, this constructs a complete named batch:
+
+```rust
+let computation = serde_json::json!({
+    "pipes": {
+        "events": {"type": "bounded", "capacity": 256}
+    },
+    "components": {
+        "producer": {
+            "factory": producer_spec,
+            "ports": {"out": "events"},
+            "streams": {"out": "producer-events"},
+            "lifecycle": {"auto_start": false}
+        },
+        "consumer": {
+            "factory": consumer_spec,
+            "ports": {"in": "events"},
+            "lifecycle": {"auto_start": false}
+        }
+    }
+});
+```
+
+Each map key must equal its factory descriptor's component ID. `factory` is the
+existing full Core `ComponentSpecification`, including version, configuration,
+dependencies and authentic port/plugin descriptors, not a new `kind` shorthand.
+`streams` still names producer streams, **not pipes**; its IDs must also agree
+with the producer factory configuration. Lifecycle defaults to auto-start;
+the example explicitly disables it. An input can use a pipe-name string or
+an object such as `{"pipe":"events","policy":<full Core RelationshipPolicy>}`.
+Policies belong to individual input connections, not the whole pipe.
+
+| Pipe declaration | Cardinality and behavior |
+|---|---|
+| `{"type":"bounded","capacity":256}` | One producer, one consumer; volatile FIFO with backpressure. |
+| `{"type":"broadcast","capacity":256,"lagPolicy":"Report"}` | One producer, one consumer; volatile drop-oldest queue. `SkipWithNotification` explicitly permits skipping lagged events. This native transport is not implicit multicast. |
+| `{"type":"qos","capacity":256}` | One producer, one or more consumers sharing one journal; independent required subscriber cursors. Defaults to volatile storage and `Backpressure` retention. |
+
+A QoS input can specify
+`{"pipe":"events","subscriber":"audit","start":"Earliest"}`.
+Subscriber IDs must be unique within the pipe. If omitted, Server derives a
+stable ID from the component and port. `Latest` and `{"After":42}` are also
+supported start positions (YAML uses `!After 42`). They apply to a **new**
+subscriber; reopening an existing subscriber preserves its acknowledged cursor.
+`gapPolicy` defaults to `Strict`; `SkipWithNotification` requires explicitly
+lossy pipe `retention: PruneOldest`. A disconnected consumer still participates
+in retention/backpressure. Enqueue, acknowledgement, and external effects are
+different boundaries; none of these pipes promises exactly-once effects.
+
+For durable QoS, add `path` as a **storage root**, for example
+`{"type":"qos","capacity":1024,"path":"./data/pipes"}`. Server stores each named
+channel below `<root>/<hex(instance ID)>/<hex(pipe name)>`. Reloading the same
+instance/name reopens that journal and its cursors; cloning to another instance
+creates an independent journal, not a copy of queued data. Keep instance IDs and
+roots stable across restarts and use a producer with compatible recovery/sequence
+semantics. Giving a volatile producer a durable pipe does not make that producer
+recoverable.
+
+Saved configuration retains pipe names, bindings, transport settings and
+per-connection policies, reconstructed from the authoritative graph snapshot.
+Internally, each pipe has a graph-owned `server-pipe/<name>` resource with a
+strictly checked `namedPipe` recipe. Bounded/broadcast resources are exclusive
+to one edge; QoS edges share the real channel, not independent look-alike queues.
+Privileged `/computation/configuration` exports these recipes and compiled edges;
+the saved Server configuration presents the named form. Arbitrary or forged
+external bindings remain unsupported.
+
+Declare a complete batch: every pipe needs exactly one producer and at least
+one compatible consumer in that batch. Unknown names, missing/wrong-direction
+ports, incompatible schemas/delivery requirements, duplicate keys and duplicate
+pipe/resource identities fail validation. Existing pipe names cannot be extended
+or replaced through a later additive batch. Remove a pipe and all its connected
+components together, explicitly including `server-pipe/<name>` in the existing
+DELETE request's `resources`; removing only endpoints is rejected before publication.
+The ordinary source/query/reaction DELETE routes also reject named pipe endpoints
+and direct callers to this coordinated removal operation.
+These are configuration declarations, not new standalone pipe CRUD endpoints.
+
+Named configuration supports `resources`, `resourceConfigurations`,
+`requirements`, `controlConnections`, `subscriptions`, `readinessRequired`,
+`componentResources`, `componentPlugins`, `allowIncomplete`, and explicit
+`relationships` for remaining legacy links. Nested Core objects retain their
+Core field/enum names. Legacy `computation.definition` remains supported;
+do not mix it with the named fields in one object.
+
+Only the three transports above are reconstructible as named pipes in Server.
+This does **not** add ports to ordinary `queries:` declarations or convert them
+to native query nodes. Only native factory components with real declared ports
+can bind named pipes. Existing ordinary source/query/reaction configuration is
+unchanged; cross-instance pipes, new bootstrap/lifecycle bridges, Retained and
+Ranked resource recipes are not added.
 
 For a runnable native counter -> middleware -> arithmetic -> capture pipeline,
 generate the definition from the loaded plugin's actual descriptors rather than
@@ -452,7 +553,7 @@ Host resources are explicit entries in `definition.resources`, paired by resourc
 ID with recipes in `definition.resource_configurations`. Supported recipe `kind`
 values are `memoryIndexes`, `rocksdbIndexes` (requires `path` and graph ownership),
 `queryCatalog`, `middleware`, `queryMiddleware`, `transactionalTransformers`, `configuration`,
-and `qos`.
+`qos`, and the Server-generated `namedPipe` recipes described above.
 Native transaction participants are included in `transactionalTransformers`; durable
 transactions require persistent atomic indexes, not `memoryIndexes`. Configuration
 references use `env:NAME`, `env-json:NAME`, `secret:NAME`, or `secret-json:NAME`;
@@ -513,7 +614,7 @@ explicit lossy retention and durable handoff semantics.
 Persistence reads actual graph snapshots, including resource recipes, rather than
 keeping a second component registry. Removing all native declarations leaves no
 `computation` section; save, restart, and clone preserve each instance's component
-definitions. Clone disables component auto-start. Opaque components, external pipes, or resources
+definitions. Clone disables component auto-start. Opaque components, arbitrary external pipes, or resources
 without recipes are rejected before a partial clone or config-file overwrite.
 This includes every resource referenced by factory dependencies, configuration
 references, component attachments, or retained/ranked pipes. A live resource
