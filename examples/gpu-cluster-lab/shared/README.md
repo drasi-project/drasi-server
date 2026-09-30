@@ -5,7 +5,7 @@ the future [Drasi Server-hosted demo](../server/README.md).
 
 | Path | Contents |
 |---|---|
-| `crates/contracts/` | Domain types, validation, profiles, fingerprints and starting fixtures. |
+| `crates/contracts/` | Domain types, validation, profiles, fingerprints, starting fixtures and host-independent lifecycle messages. |
 | `crates/policy/`, `policies/` | Policy evaluation and the shared Rego bundle. |
 | `crates/placement/` | Placement and resilience solver. |
 | `crates/simulator/` | Simulated execution and telemetry. |
@@ -28,6 +28,13 @@ The existing binary names are retained without duplicating library packages:
 `../embedded/src/main.rs`. Their source code and deployment scripts belong to the
 embedded version; the native plugin remains independently buildable with
 `--features dynamic-plugin --lib`.
+
+`gpu_contracts::runtime` defines the bootstrap watermarks and runtime observations
+shared by both hosting arrangements. Its readiness validators are the same ones
+used by the native status producer. Bootstrap completion describes query state,
+not a PostgreSQL transaction boundary; stronger transaction coherence remains
+unsupported. The native crate re-exports the existing type and constant paths
+for the embedded host.
 
 The [embedded development guide](../embedded/README.md#operations-diagnostics-and-development)
 documents commands for building and exercising these assets.

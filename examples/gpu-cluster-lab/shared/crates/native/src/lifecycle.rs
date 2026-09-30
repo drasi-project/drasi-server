@@ -6,8 +6,7 @@ use drasi_computation_plugin_sdk::{
 };
 use std::sync::{Arc, Mutex};
 
-pub const BOOTSTRAP_COMPLETE: &str = "gpu.lab/database-bootstrap-complete";
-pub const RUNTIME_OBSERVATION: &str = "gpu.lab/runtime-observation";
+pub use gpu_contracts::runtime::{BOOTSTRAP_COMPLETE, RUNTIME_OBSERVATION};
 
 #[derive(Default)]
 pub(crate) struct Signals {

@@ -1,5 +1,6 @@
 **/.env*
 shared/target
+server/target
 shared/ui/node_modules
 shared/ui/dist
 shared/ui/vendor
@@ -9,6 +10,12 @@ embedded/.build/*
 !embedded/.build/npm-cache
 embedded/.build/react-source/**/node_modules
 embedded/.build/react-source/**/dist
+server/.build/*
+!server/.build/react-source
+!server/.build/runtime-src
+!server/.build/npm-cache
+server/.build/react-source/**/node_modules
+server/.build/react-source/**/dist
 .git
 **/__pycache__
 **/*.py[cod]

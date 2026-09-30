@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "gpu-server-lifecycle"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "signal", "fs"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+lab="$(CDPATH= cd -- .. && pwd)"
+project="gpu-cluster-lab-server-$(printf '%s' "$lab" | cksum | cut -d ' ' -f 1)"
+
+stage() {
+    revision=2a36f857526baa08304a698131854f222b40b108
+    if [ ! -f .build/react-source/dev-tools/react/package.json ]; then
+        git -C ../../.. cat-file -e "$revision^{commit}"
+        mkdir -p .build/react-source
+        git -C ../../.. archive --output="$PWD/.build/react-source.tar" "$revision" dev-tools/react
+        tar -x -f .build/react-source.tar -C .build/react-source
+        rm .build/react-source.tar
+    fi
+    mkdir -p .build/npm-cache
+    if command -v node >/dev/null && command -v npm >/dev/null; then
+        NPM_REGISTRY="${NPM_REGISTRY:-$(npm config get registry)}"
+        export NPM_REGISTRY
+        node ../embedded/ops/export-npm-cache.mjs server
+    fi
+    python3 ../embedded/ops/export-runtime.py --hosting server
+}
+
+case "${1:-help}" in
+    stage) stage ;;
+    build)
+        case "${2:-}" in
+            "") stage ;;
+            --staged) test -f .build/runtime-src/source-manifest.json ;;
+            *) printf 'Unknown build option: %s\n' "$2" >&2; exit 2 ;;
+        esac
+        docker build --progress=plain --build-arg "NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmjs.org/}" \
+            -f ops/runtime.Dockerfile -t "$project-drasi" ..
+        docker build --progress=plain --build-arg HOSTING=server \
+            --build-arg SOURCE_ROOT=server/.build/runtime-src/drasi-server/examples/gpu-cluster-lab \
+            --build-arg "NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmjs.org/}" \
+            -f ../embedded/ops/control.Dockerfile -t "$project-control" ..
+        python3 ops/check-package.py "$project-drasi"
+        ;;
+    check-package) python3 ops/check-package.py "$project-drasi" ;;
+    help)
+        printf '%s\n' \
+            'GPU Cluster Lab stock Server packaging' \
+            '  ./demo stage   Export the current sources into server/.build.' \
+            '  ./demo build   Build matching release stock Server/plugins and shared control/UI.' \
+            '  ./demo build --staged   Rebuild the already exported source snapshot.' \
+            '  ./demo check-package   Verify the built stock process and all plugin registrations.' \
+            'Deployment commands will be added with the stock lifecycle integration.'
+        ;;
+    *) printf 'Unknown command: %s\n' "$1" >&2; exit 2 ;;
+esac

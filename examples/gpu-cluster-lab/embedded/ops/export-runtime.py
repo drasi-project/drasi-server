@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Stage current checkout sources, including uncommitted fixes, for the Linux build."""
+import argparse
 import hashlib
 import json
 import os
@@ -36,9 +37,17 @@ def copy_file(source, target, manifest, staging):
     manifest[str(target.relative_to(staging))] = hashlib.sha256(data).hexdigest()
 
 
-def main():
-    EXAMPLE.joinpath(".build").mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="runtime-export-", dir=EXAMPLE / ".build") as temporary:
+def hosting_paths(hosting):
+    if hosting not in ("embedded", "server"):
+        raise ValueError(f"Unknown hosting layout: {hosting}")
+    example = LAB / hosting
+    return example, example / ".build" / "runtime-src"
+
+
+def main(hosting="embedded"):
+    example, destination = hosting_paths(hosting)
+    example.joinpath(".build").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="runtime-export-", dir=example / ".build") as temporary:
         staging = Path(temporary)
         hashes = {}
         revisions = {}
@@ -61,25 +70,42 @@ def main():
                 if not source.exists() or not is_source_file(source):
                     continue
                 copy_file(source, staging / name / relative, hashes, staging)
+            if hosting == "server" and name == "drasi-core":
+                lock = repository / "Cargo.lock"
+                if not lock.is_file():
+                    raise RuntimeError(
+                        "Stock plugin builds require drasi-core/Cargo.lock. "
+                        "Run cargo generate-lockfile --manifest-path drasi-core/Cargo.toml first."
+                    )
+                copy_file(lock, staging / name / "Cargo.lock", hashes, staging)
         example_target = staging / "drasi-server" / "examples" / "gpu-cluster-lab"
-        for directory in ("shared/crates", "shared/queries", "shared/policies",
-                          "shared/migrations", "embedded/src", "embedded/control"):
+        directories = ["shared/crates", "shared/queries", "shared/policies",
+                       "shared/migrations", "embedded/src", "embedded/control"]
+        if hosting == "server":
+            directories.extend(("server/src", "shared/ui"))
+        for directory in directories:
             for source in (LAB / directory).rglob("*"):
                 relative = source.relative_to(LAB)
                 if (source.is_file() and not set(relative.parts) & EXCLUDED
                         and not source.name.startswith(".env") and is_source_file(source)):
                     copy_file(source, example_target / relative, hashes, staging)
-        for name in ("shared/Cargo.toml", "shared/Cargo.lock", "rust-toolchain.toml"):
+        manifests = ["shared/Cargo.toml", "shared/Cargo.lock", "rust-toolchain.toml"]
+        if hosting == "server":
+            manifests.extend(name for name in ("server/Cargo.toml", "server/Cargo.lock")
+                             if (LAB / name).is_file())
+        for name in manifests:
             copy_file(LAB / name, example_target / name, hashes, staging)
         (staging / "source-manifest.json").write_text(
             json.dumps({"heads": revisions, "files": hashes}, sort_keys=True, indent=2) + "\n")
-        if DESTINATION.exists():
-            if not (DESTINATION / "source-manifest.json").is_file():
-                raise RuntimeError(f"Refusing to replace an unrecognized source directory: {DESTINATION}")
-            shutil.rmtree(DESTINATION)
-        shutil.copytree(staging, DESTINATION)
-        print(f"Staged {len(hashes)} current source files in {DESTINATION}")
+        if destination.exists():
+            if not (destination / "source-manifest.json").is_file():
+                raise RuntimeError(f"Refusing to replace an unrecognized source directory: {destination}")
+            shutil.rmtree(destination)
+        shutil.copytree(staging, destination)
+        print(f"Staged {len(hashes)} current source files in {destination}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--hosting", choices=("embedded", "server"), default="embedded")
+    main(parser.parse_args().hosting)

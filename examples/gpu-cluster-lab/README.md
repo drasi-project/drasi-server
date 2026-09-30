@@ -7,7 +7,7 @@ The application assets are shared; the hosting arrangements are kept separate.
 | Directory | Status and purpose |
 |---|---|
 | [embedded/](embedded/README.md) | The existing working demo. Its custom `gpu-runtime` executable embeds `DrasiLib` and Drasi Server API/UI routes. |
-| [server/](server/README.md) | Reserved for the stock `drasi-server`-hosted version. Not implemented or runnable yet. |
+| [server/](server/README.md) | Stock `drasi-server` packaging and lifecycle integration in progress. Not runnable yet. |
 | [shared/](shared/README.md) | Domain libraries, native plugin, database helpers and migrations, policies, queries, React UI, fixtures and common documentation. |
 
 ## Run the existing demo

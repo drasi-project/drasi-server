@@ -43,15 +43,9 @@ pub fn processing_queries() -> Vec<(
     ]
 }
 
-pub const DATABASE_QUERIES: [&str; 7] = [
-    "input-clusters",
-    "input-policies",
-    "input-data",
-    "input-gpus",
-    "input-settings",
-    "input-workloads",
-    "input-plan",
-];
+pub use gpu_contracts::runtime::{
+    BootstrapBoundary, QueryBootstrapRow, QueryBootstrapWatermark, DATABASE_QUERIES,
+};
 
 pub fn database_queries() -> Vec<(&'static str, String)> {
     let tables = [
@@ -88,57 +82,6 @@ pub fn database_queries() -> Vec<(&'static str, String)> {
         "MATCH (n:gpu_placements) RETURN collect({fleet_id:n.fleet_id, plan_version:n.plan_version, decision_id:n.decision_id, config_fingerprint:n.config_fingerprint, policy_signature:n.policy_signature, policy_bundle_hash:n.policy_bundle_hash, assignments:n.assignments, decision_details:n.decision_details}) AS records".into(),
     ));
     queries
-}
-
-/// Query bootstrap watermarks, not PostgreSQL transaction boundaries.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct BootstrapBoundary {
-    pub epoch: Uuid,
-    pub queries: BTreeMap<String, QueryBootstrapWatermark>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct QueryBootstrapWatermark {
-    pub sequence: u64,
-    pub row_count: usize,
-    #[serde(default)]
-    pub rows: Option<Vec<QueryBootstrapRow>>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct QueryBootstrapRow {
-    #[serde(with = "gpu_contracts::decimal")]
-    pub signature: u64,
-    pub records: Vec<Value>,
-}
-
-impl BootstrapBoundary {
-    pub fn validate(&self) -> Result<()> {
-        ensure!(
-            self.queries.len() == DATABASE_QUERIES.len()
-                && DATABASE_QUERIES
-                    .iter()
-                    .all(|id| self.queries.contains_key(*id)),
-            "bootstrap must explicitly observe every database query, including empty results"
-        );
-        ensure!(
-            self.queries
-                .values()
-                .all(|watermark| watermark.row_count <= 1),
-            "database queries must have at most one aggregate result row"
-        );
-        ensure!(
-            self.queries.values().all(|watermark| watermark
-                .rows
-                .as_ref()
-                .is_none_or(|rows| rows.len() == watermark.row_count)),
-            "bootstrap snapshot row count differs from its watermark"
-        );
-        Ok(())
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

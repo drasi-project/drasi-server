@@ -5,7 +5,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const example = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const hosting = process.argv[2] ?? 'embedded';
+assert.ok(['embedded', 'server'].includes(hosting), 'Expected embedded or server hosting layout');
+const example = resolve(dirname(fileURLToPath(import.meta.url)), '../..', hosting);
 const destination = join(example, '.build/npm-cache');
 const cache = execFileSync('npm', ['config', 'get', 'cache'], { encoding: 'utf8' }).trim();
 const registry = new URL(process.env.NPM_REGISTRY ?? 'https://registry.npmjs.org/');

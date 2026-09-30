@@ -4,6 +4,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
+pub mod runtime;
+
 pub const MEMORY_MIB: u32 = 81920;
 pub const PLANNING_UNITS: u32 = 85;
 pub const REGIONS: [&str; 3] = ["westeurope", "northeurope", "eastus"];
