@@ -1,5 +1,5 @@
 import type { ResultRow } from '@drasi/react/client';
-import type { View } from './App';
+import type { View, Views } from './App';
 import { count } from './Evidence';
 import { label } from './labels';
 import { nullableNumber, number, text } from './rows';
@@ -7,10 +7,13 @@ import { HierarchyIcon } from './Hierarchy';
 import { useState } from 'react';
 import { WorkloadReplicas } from './ReplicaPlacements';
 import type { ReplicaView } from './replicas';
+import { WorkloadPolicySummary } from './WorkloadPolicy';
+import { dataProfile } from './DataPolicy';
 
-export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWorkload, onToggleWorkload, onAdd, onEditPolicy, onEdit, onDelete }: {
-  query: View; replicaView: ReplicaView; stale: boolean; disabled: boolean; selectedWorkload: string | null;
-  onToggleWorkload: (id: string) => void; onAdd: () => void; onEditPolicy: () => void; onEdit: (row: ResultRow) => void; onDelete: (row: ResultRow) => void;
+export function WorkloadsPanel({ query, views, replicaView, stale, disabled, selectedWorkload, onToggleWorkload, onAdd, onInspectPolicy, onEdit, onDelete }: {
+  query: View; views: Views; replicaView: ReplicaView; stale: boolean; disabled: boolean; selectedWorkload: string | null;
+  onToggleWorkload: (id: string) => void; onAdd: () => void; onEdit: (row: ResultRow, trigger: HTMLButtonElement) => void; onDelete: (row: ResultRow) => void;
+  onInspectPolicy: (workload: ResultRow, trigger: HTMLButtonElement) => void;
 }) {
   const rows = query.data ?? [];
   const empty = query.error || query.stale ? 'Workload data unavailable' : query.loading || query.data === null ? 'Waiting for workloads' : 'No workloads configured';
@@ -18,7 +21,6 @@ export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWo
     <div className="workload-heading">
       <h3>Workloads</h3>
       <div className="workload-actions">
-        <button type="button" disabled={disabled} onClick={onEditPolicy}>Edit policy</button>
         <button type="button" disabled={disabled} onClick={onAdd}>Add workload</button>
       </div>
     </div>
@@ -28,12 +30,13 @@ export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWo
           {query.data === null ? 'Workloads' : `${rows.length} workload${rows.length === 1 ? '' : 's'}`}
         </summary>
         <div id="workload-details">
-          <p className="muted">Select a workload to highlight its GPU replicas. Resources are planning reservations, not measured model performance. Paused keeps memory; stopped releases it; stop requested is not yet confirmed.</p>
+          <p className="muted">Select a workload to highlight its GPU replicas. Open policy results to see why destinations are allowed or blocked.
+            Policy controls permission; GPU capacity controls whether a permitted allocation fits. Paused keeps memory; stopped releases it; stop requested is not yet confirmed.</p>
           {stale && <p className="warning">Last received workload settings; current execution is unknown.</p>}
-          {rows.length ? <div className="table-scroll"><table><thead><tr><th>Workload / model</th><th>Resources per replica</th><th>Replicas required</th><th>Running</th><th>Confirmed</th><th>Policy: paused / stopped / stop requested</th><th>Data / purpose</th><th>Actions</th></tr></thead>
-            <tbody>{rows.map(w => <WorkloadRows key={text(w, 'workload_id')} workload={w} view={replicaView}
+          {rows.length ? <div className="table-scroll"><table><thead><tr><th>Workload / model</th><th>Resources per replica</th><th>Replicas required</th><th>Running</th><th>Confirmed</th><th>Policy enforcement: paused / stopped / stop requested</th><th>Data Classification</th><th>Purpose</th><th>Policy results</th><th>Actions</th></tr></thead>
+            <tbody>{rows.map(w => <WorkloadRows key={text(w, 'workload_id')} workload={w} views={views} view={replicaView}
               stale={stale} disabled={disabled} selected={selectedWorkload === w.workload_id}
-              onToggleWorkload={onToggleWorkload} onEdit={onEdit} onDelete={onDelete}/>)}</tbody></table></div> : <p className="empty">{empty}</p>}
+              onToggleWorkload={onToggleWorkload} onInspectPolicy={onInspectPolicy} onEdit={onEdit} onDelete={onDelete}/>)}</tbody></table></div> : <p className="empty">{empty}</p>}
         </div>
       </details>
       <div className="workload-summary" aria-label="Workload summary">
@@ -46,7 +49,9 @@ export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWo
             && replicas.every(replica => replica.actual?.state === 'fenced' || replica.status === 'Blocked by policy');
           const stopped = blocked && replicas.every(replica => replica.actual?.state === 'fenced');
           const state = blocked ? 'blocked' : confirmed === null ? 'unknown' : required === 0 ? 'idle' : confirmed === required ? 'confirmed' : 'unconfirmed';
-          return <button type="button" key={id} className={`workload-chip workload-${state}`} aria-label={text(w, 'name')}
+          const profile = dataProfile(views, w);
+          return <div key={id} className="workload-summary-item" data-workload-policy={id}>
+            <button type="button" className={`workload-chip workload-${state}`} aria-label={text(w, 'name')}
             data-hierarchy-kind="workload" data-hierarchy-id={id}
             aria-describedby={`workload-counts-${id}`} aria-pressed={selectedWorkload === id}
             title={`${text(w, 'name')}: ${required} required, ${count(running)} running, ${count(confirmed)} confirmed.${blocked ? stopped ? ' Stopped by policy.' : ' Blocked by policy.' : ''}${stale ? ' Last received settings; current execution is unknown.' : ''} Select to highlight GPU replicas.`}
@@ -54,19 +59,25 @@ export function WorkloadsPanel({ query, replicaView, stale, disabled, selectedWo
             <strong><HierarchyIcon kind="workload"/>{text(w, 'name')}</strong><span id={`workload-counts-${id}`}>{count(confirmed)} / {required} confirmed</span>
             {blocked && <span className="workload-policy-state">{stopped ? 'Stopped by policy' : 'Blocked by policy'}</span>}
             <span className="workload-progress" aria-hidden="true"><span style={{ width: `${confirmed === null || required === 0 ? 0 : Math.min(100, confirmed / required * 100)}%` }}/></span>
-          </button>;
+          </button>
+            <span className="workload-facts">{profile ? label('classification', text(profile, 'classification')) : 'Classification unavailable'}
+              {' · '}{label('purpose', text(w, 'purpose'))}</span>
+            <WorkloadPolicySummary workload={w} views={views} stale={stale} onInspect={trigger => onInspectPolicy(w, trigger)}/>
+          </div>;
         }) : <span className="muted">{empty}</span>}
       </div>
     </div>
   </section>;
 }
 
-function WorkloadRows({ workload: w, view, stale, disabled, selected, onToggleWorkload, onEdit, onDelete }: {
-  workload: ResultRow; view: ReplicaView; stale: boolean; disabled: boolean; selected: boolean;
-  onToggleWorkload: (id: string) => void; onEdit: (row: ResultRow) => void; onDelete: (row: ResultRow) => void;
+function WorkloadRows({ workload: w, views, view, stale, disabled, selected, onToggleWorkload, onInspectPolicy, onEdit, onDelete }: {
+  workload: ResultRow; views: Views; view: ReplicaView; stale: boolean; disabled: boolean; selected: boolean;
+  onToggleWorkload: (id: string) => void;   onEdit: (row: ResultRow, trigger: HTMLButtonElement) => void; onDelete: (row: ResultRow) => void;
+  onInspectPolicy: (workload: ResultRow, trigger: HTMLButtonElement) => void;
 }) {
   const [open, setOpen] = useState(false);
   const id = `replicas-${encodeURIComponent(text(w, 'workload_id'))}`;
+  const profile = dataProfile(views, w);
   return <>
     <tr className={`workload-row${selected ? ' selected-workload' : ''}`}
       data-hierarchy-kind="workload" data-hierarchy-id={text(w, 'workload_id')}>
@@ -80,11 +91,13 @@ function WorkloadRows({ workload: w, view, stale, disabled, selected, onToggleWo
       <td>{number(w, 'memory_mib_per_replica') / 1024} GiB · {number(w, 'compute_units_per_replica')} demand units</td>
       <td>{number(w, 'replicas')}</td><td>{count(stale ? null : w.running_replicas)}</td><td>{count(stale ? null : w.ready_replicas)}</td>
       <td>{count(stale ? null : w.suspended_replicas)} / {count(stale ? null : w.fenced_replicas)} / {count(stale ? null : w.fencing_pending_replicas)}</td>
-      <td>{label('data', text(w, 'data_profile_id'))}<small>{label('purpose', text(w, 'purpose'))}</small></td>
-      <td><button disabled={disabled} onClick={() => onEdit(w)}>Edit workload</button>
+      <td>{profile ? label('classification', text(profile, 'classification')) : 'Classification unavailable'}<small>{label('data', text(w, 'data_profile_id'))}</small></td>
+      <td>{label('purpose', text(w, 'purpose'))}</td>
+      <td><WorkloadPolicySummary workload={w} views={views} stale={stale} onInspect={trigger => onInspectPolicy(w, trigger)}/></td>
+      <td><button disabled={disabled} onClick={event => onEdit(w, event.currentTarget)}>Edit workload</button>
         <button disabled={disabled} onClick={() => onDelete(w)}>Delete</button></td>
     </tr>
-    {open && <tr className="replica-detail-row" id={id}><td colSpan={8}>
+    {open && <tr className="replica-detail-row" id={id}><td colSpan={10}>
       <WorkloadReplicas workloadId={text(w, 'workload_id')} view={view}/>
     </td></tr>}
   </>;

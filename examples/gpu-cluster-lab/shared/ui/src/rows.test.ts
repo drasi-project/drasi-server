@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { rowKey, validateRow } from './rows';
+import { queryIds, rowKey, validateRow } from './rows';
 import { fixture } from './mock/fixtures';
+import { readFileSync } from 'node:fs';
 
 describe('CQ row identity and validation', () => {
   it('accepts sparse deletes without requiring projected fields', () => {
@@ -22,5 +23,23 @@ describe('CQ row identity and validation', () => {
       authorization: 'unknown', current: false, error: 'Policy record missing', allowed_regions: [] };
     expect(validateRow('ui-policy', row)).toEqual(row);
     expect(() => validateRow('ui-policy', { ...row, authorization: 'allow', current: true, error: null })).toThrow('policy metadata');
+  });
+  it.skipIf(!process.env.GPU_LAB_NATIVE_ROWS)('accepts real native-query payloads including complete shared-rule criteria', () => {
+    const batches: unknown = JSON.parse(readFileSync(process.env.GPU_LAB_NATIVE_ROWS!, 'utf8'));
+    if (!Array.isArray(batches)) throw new Error('Expected native row batches');
+    let completeRules = 0;
+    for (const batch of batches) {
+      const query = queryIds.find(id => id === batch.query);
+      if (!query || !Array.isArray(batch.rows)) throw new Error('Invalid native query batch');
+      for (const row of batch.rows) {
+        validateRow(query, row);
+        if (query === 'ui-status' && row.policy_rules !== null) {
+          expect(row.policy_rules['demo-permissive'].allowed_purposes).toEqual(['demo']);
+          expect(row.data_profiles['demo-open'].classification).toBe('synthetic');
+          completeRules++;
+        }
+      }
+    }
+    expect(completeRules).toBeGreaterThan(0);
   });
 });

@@ -3,13 +3,16 @@ import { useDrasiClient, useDrasiConnectionStatus, useDrasiQuery } from '@drasi/
 import type { ResultRow } from '@drasi/react/client';
 import { rowKey, validateRow, text, number, boolean, strings, records, type QueryId } from './rows';
 import { DecisionEvidence, PlacementEvidence, PolicyEvidence, ResilienceEvidence, StatusEvidence,
-  TimelineEvidence, timelineMessage, clusterReplicaCounts, correlated, count, currentFeeds } from './Evidence';
+  TimelineEvidence, timelineMessage, clusterReplicaCounts, correlated, count, currentFeeds, policyCurrent } from './Evidence';
 import { componentTone, label, queryRetrying, reportTone } from './labels';
 import { GpuCard } from './GpuCard';
 import { WorkloadsPanel } from './WorkloadsPanel';
 import { HierarchyIcon, PresenterControls, usePresenterHighlight } from './Hierarchy';
 import { buildReplicaView } from './replicas';
 import { useReplicaMotion } from './replicaMotion';
+import { ArchitectureOverlay } from './Architecture';
+import { WorkloadPolicyBinding, WorkloadPolicyContext, policyMetadata } from './WorkloadPolicy';
+import { DataPolicyPanel, dataPolicyState, editorRules, ruleWorkloads, RuleCriteria } from './DataPolicy';
 
 function useView(id: QueryId) {
   return useDrasiQuery(id, { getKey: row => rowKey(id, row), transform: row => validateRow(id, row) });
@@ -105,11 +108,20 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
   const views = Object.values(feeds);
   const [dialog, setDialog] = useState<'workload' | 'host' | 'policy' | 'gpu' | 'workload-edit' | null>(null);
   const [selectedRow, setSelectedRow] = useState<ResultRow | null>(null);
+  const workloadEditorButton = useRef<HTMLButtonElement | null>(null);
   const [selectedWorkload, selectWorkload] = useState<string | null>(null);
-  const [policyDetails, setPolicyDetails] = useState<{ workloadId: string; clusterId: string } | null>(null);
-  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [policyDetails, setPolicyDetails] = useState<{ workloadId: string; clusterId?: string } | null>(null);
+  const policyButton = useRef<HTMLElement | null>(null);
+  const dataPolicyPanel = useRef<HTMLElement>(null);
+  const [sidePanel, setSidePanel] = useState<'analysis' | 'policy' | null>(null);
+  const analysisOpen = sidePanel === 'analysis', dataPolicyOpen = sidePanel === 'policy';
+  const setAnalysisOpen = useCallback((open: boolean) => setSidePanel(open ? 'analysis' : null), []);
+  const setDataPolicyOpen = useCallback((open: boolean) => setSidePanel(open ? 'policy' : null), []);
+  const dataPolicyButton = useRef<HTMLButtonElement>(null);
   const [decisionRequest, setDecisionRequest] = useState<{ id: string } | null>(null);
   const [systemOpen, setSystemOpen] = useState(false);
+  const [architectureOpen, setArchitectureOpen] = useState(false);
+  const architectureButton = useRef<HTMLButtonElement>(null);
   const appRoot = useRef<HTMLElement>(null);
   const presenter = usePresenterHighlight(appRoot);
   const analysisButton = useRef<HTMLButtonElement>(null);
@@ -140,12 +152,33 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
     `/api/gpus/${encodeURIComponent(text(gpu, 'gpu_id'))}/telemetry`, 'PATCH',
     { expected_revision: text(gpu, 'telemetry_revision'), changes }));
   const activeWorkload = workloads.data?.find(w => w.workload_id === selectedWorkload);
+  const openPolicy = (workloadId: string, trigger: HTMLElement, clusterId?: string) => {
+    policyButton.current = trigger;
+    setPolicyDetails({ workloadId, clusterId });
+  };
+  const editPolicy = (row: ResultRow | null = null) => {
+    if (!policyDetails) policyButton.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPolicyDetails(null); setSelectedRow(row); setDialog('policy');
+  };
+  const showDataPolicy = () => {
+    setPolicyDetails(null);
+    setDataPolicyOpen(true);
+    requestAnimationFrame(() => {
+      dataPolicyPanel.current?.focus({ preventScroll: true });
+      dataPolicyPanel.current?.scrollIntoView({ block: 'start' });
+    });
+  };
   const setRegionPower = (region: string, members: ResultRow[], powered_on: boolean) => run(command.send(
     `/api/regions/${encodeURIComponent(region)}/telemetry`, 'PATCH',
     { gpu_revisions: Object.fromEntries(members.map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on } }));
-  return <main className="lab-app" ref={appRoot} data-presenter-highlight={presenter.target ?? undefined}>
+  return <main className="lab-app lab-page" ref={appRoot} data-presenter-highlight={presenter.target ?? undefined}>
     <header className="lab-header">
-      <h1>GPU Cluster Lab</h1>
+      <div className="lab-title"><h1>GPU Cluster Lab</h1>
+        <button type="button" ref={architectureButton} className="architecture-toggle"
+          aria-label="Information about this demo" title="Architecture Overview" aria-haspopup="dialog"
+          aria-expanded={architectureOpen} aria-controls={architectureOpen ? 'gpu-architecture-overlay' : undefined}
+          onClick={() => setArchitectureOpen(true)}><span aria-hidden="true">i</span></button>
+      </div>
       <div className="scenario-controls" role="group" aria-label="Scenario setup">
         <div className="scenario-picker"><label htmlFor="preset">Starting scenario</label>
           <select id="preset" value={preset} onChange={event => setPreset(event.target.value)}>
@@ -166,7 +199,9 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
         System status{system.note && <span id="system-status-note"> · {system.note}</span>}
       </button>
       <button type="button" ref={analysisButton} className="analysis-toggle" aria-controls="global-analysis" aria-expanded={analysisOpen}
-        title="View fleet-wide placement progress and recovery assessment" onClick={() => { setDecisionRequest(null); setAnalysisOpen(open => !open); }}>Global analysis</button>
+        title="View fleet-wide placement progress and recovery assessment" onClick={() => { setDecisionRequest(null); setAnalysisOpen(!analysisOpen); }}>Global analysis</button>
+      <button type="button" ref={dataPolicyButton} className="analysis-toggle" aria-controls="data-policy" aria-expanded={dataPolicyOpen}
+        title="View and edit the shared data-policy rules" onClick={() => setDataPolicyOpen(!dataPolicyOpen)}>Data policy</button>
       <details className="reading-guide" onToggle={event => { if (!event.currentTarget.open) presenter.clear(); }}><summary>Help</summary><div>
       <PresenterControls presenter={presenter}/>
       <label className="replica-motion-setting"><input type="checkbox" checked={motionEnabled} onChange={event => setMotionEnabled(event.target.checked)}/>
@@ -195,6 +230,7 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
       </div></details>
       </div>
     </header>
+    {architectureOpen && <ArchitectureOverlay onClose={() => setArchitectureOpen(false)} returnFocus={architectureButton}/>}
     {demoPanel}
     {(connection.error || views.some(v => v.error || v.stale)) && <section className={`status-alert ${failedUpdates ? 'error' : 'warning'}`} role="alert">
       <strong>Updates are unavailable or out of date. Previously received data does not confirm current policy permission.</strong>
@@ -205,11 +241,12 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
     </section>}
     {command.error && <div className="error" role="alert">{command.error}</div>}
     {command.notice && <div className="notice" role="status">{command.notice}</div>}
-    <div className={`lab-layout${analysisOpen ? ' analysis-open' : ''}${analysisOpen && decisionRequest ? ' decision-navigation' : ''}`}>
+    <div className={`lab-layout${sidePanel ? ' analysis-open' : ''}${dataPolicyOpen ? ' policy-open' : ''}${analysisOpen && decisionRequest ? ' decision-navigation' : ''}`}>
     <div className="lab-content">
-    <WorkloadsPanel query={workloads} replicaView={replicaView} stale={stale} disabled={disabled} selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null}
-      onToggleWorkload={toggleWorkload} onAdd={() => setDialog('workload')} onEditPolicy={() => setDialog('policy')}
-      onEdit={w => { setSelectedRow(w); setDialog('workload-edit'); }}
+    <WorkloadsPanel query={workloads} views={feeds} replicaView={replicaView} stale={stale} disabled={disabled} selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null}
+      onToggleWorkload={toggleWorkload} onAdd={() => setDialog('workload')}
+      onInspectPolicy={(workload, trigger) => openPolicy(text(workload, 'workload_id'), trigger)}
+      onEdit={(w, trigger) => { workloadEditorButton.current = trigger; setSelectedRow(w); setDialog('workload-edit'); }}
       onDelete={w => {
         if (window.confirm(`Delete ${text(w, 'name')}? Its replicas will stop after the demo processes this change.`)) {
           run(command.send(`/api/workloads/${encodeURIComponent(text(w, 'workload_id'))}`, 'DELETE', undefined, undefined, text(w, 'revision')));
@@ -274,14 +311,13 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
               { gpu_revisions: Object.fromEntries(rows.filter(g => g.host_id === host).map(g => [text(g, 'gpu_id'), text(g, 'telemetry_revision')])), changes: { powered_on: true } }))}>Restore VM</button></div>
             <div className="gpu-grid">{rows.filter(g => g.host_id === host).map(g => {
               const pair = policy.data?.find(p => p.workload_id === activeWorkload?.workload_id && p.cluster_id === g.cluster_id);
-              const authorization = !stale && pair?.current && pair.policy_signature === status.data?.[0]?.policy_signature
-                && pair.observation_epoch === status.data?.[0]?.observation_epoch ? pair.authorization : 'unknown';
+              const authorization = pair && policyCurrent(pair, feeds, stale) ? pair.authorization : 'unknown';
               return <GpuCard key={text(g, 'gpu_id')} gpu={g} replicaView={replicaView} cues={replicaCues}
                 selectedWorkload={activeWorkload ? text(activeWorkload, 'workload_id') : null} onToggleWorkload={toggleWorkload}
                 stale={stale}
                 permission={activeWorkload ? {
                   workloadName: text(activeWorkload, 'name'), authorization: String(authorization),
-                  inspect: () => setPolicyDetails({ workloadId: text(activeWorkload, 'workload_id'), clusterId: text(g, 'cluster_id') }),
+                  inspect: trigger => openPolicy(text(activeWorkload, 'workload_id'), trigger, text(g, 'cluster_id')),
                 } : undefined}
                 disabled={disabled} actions={{
                   reports: () => patchGpu(g, { reporting_enabled: !boolean(g, 'reporting_enabled') }),
@@ -305,11 +341,18 @@ export function Lab({ views: feeds, connection, command, demoPanel }: {
     </div>
     <AnalysisDrawer open={analysisOpen} onOpenChange={setAnalysisOpen} returnFocus={analysisButton} feeds={feeds} stale={stale}
       decisionRequest={decisionRequest} onDecision={openDecision}/>
+    <SideDrawer id="data-policy" title="Data policy" open={dataPolicyOpen} onOpenChange={setDataPolicyOpen}
+      returnFocus={dataPolicyButton} focusRef={dataPolicyPanel}>
+      <DataPolicyPanel views={feeds} stale={stale} disabled={disabled} onEdit={editPolicy}/>
+    </SideDrawer>
     </div>
-    {dialog && <CommandDialog kind={dialog} clusters={clusters.data ?? []} policies={(policy.data ?? []).filter(p => p.policy_revision !== null)}
+    {dialog && <CommandDialog kind={dialog} clusters={clusters.data ?? []} views={feeds}
+      returnFocus={dialog === 'policy' ? policyButton : dialog === 'workload-edit' ? workloadEditorButton : undefined}
       record={selectedRow} disabled={disabled || (dialog === 'host' && !clusters.data?.some(c => c.cluster_id === selectedRow?.cluster_id))}
       pending={command.pending} send={command.send} close={() => { setDialog(null); setSelectedRow(null); }}/>}
-    {policyDetails && <PolicyDetailsDialog selection={policyDetails} feeds={feeds} stale={stale} close={() => setPolicyDetails(null)}/>}
+    {policyDetails && <PolicyDetailsDialog selection={policyDetails} feeds={feeds} stale={stale}
+      returnFocus={policyButton} onShowRules={showDataPolicy} onShowAll={() => setPolicyDetails({ workloadId: policyDetails.workloadId })}
+      close={() => setPolicyDetails(null)}/>}
     {systemOpen && <SystemStatusDialog query={systemView} feeds={feeds} close={() => setSystemOpen(false)}/>}
   </main>;
 }
@@ -384,13 +427,11 @@ function systemSummary(query: View): { kind: string; note: string; detail: strin
   return { kind: 'reported', note: '', detail: `${components.length} reported components are ready, running or up to date. This is not GPU or replica health.` };
 }
 
-function AnalysisDrawer({ open, onOpenChange, returnFocus, feeds, stale, decisionRequest, onDecision }: {
-  open: boolean; onOpenChange: (open: boolean) => void; returnFocus: React.RefObject<HTMLButtonElement>; feeds: Views; stale: boolean;
-  decisionRequest: { id: string } | null; onDecision: (id: string) => void;
+function SideDrawer({ id, title, open, onOpenChange, returnFocus, focusRef, children }: {
+  id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void;
+  returnFocus: React.RefObject<HTMLButtonElement>; focusRef?: React.RefObject<HTMLElement>; children: React.ReactNode;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
-  const decisionDetails = useRef<HTMLDetailsElement>(null);
-  const missingDecision = useRef<HTMLParagraphElement>(null);
   const close = useCallback(() => {
     onOpenChange(false);
     returnFocus.current?.focus();
@@ -406,6 +447,20 @@ function AnalysisDrawer({ open, onOpenChange, returnFocus, feeds, stale, decisio
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [open, close]);
+  return <aside id={id} ref={focusRef} tabIndex={-1} className="analysis-drawer" hidden={!open} aria-labelledby={`${id}-title`}>
+    <div className="analysis-heading"><h2 id={`${id}-title`}>{title}</h2>
+      <button type="button" ref={closeButton} onClick={close} aria-label={`Close ${title.toLowerCase()}`}>×</button>
+    </div>
+    <div className="analysis-content">{children}</div>
+  </aside>;
+}
+
+function AnalysisDrawer({ open, onOpenChange, returnFocus, feeds, stale, decisionRequest, onDecision }: {
+  open: boolean; onOpenChange: (open: boolean) => void; returnFocus: React.RefObject<HTMLButtonElement>; feeds: Views; stale: boolean;
+  decisionRequest: { id: string } | null; onDecision: (id: string) => void;
+}) {
+  const decisionDetails = useRef<HTMLDetailsElement>(null);
+  const missingDecision = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     if (!open || !decisionRequest || !decisionDetails.current) return;
     decisionDetails.current.open = true;
@@ -419,11 +474,7 @@ function AnalysisDrawer({ open, onOpenChange, returnFocus, feeds, stale, decisio
     'ui-resilience': { ...feeds['ui-resilience'], stale: true },
     'ui-decisions': { ...feeds['ui-decisions'], stale: true },
   } : feeds;
-  return <aside id="global-analysis" className="analysis-drawer" hidden={!open} aria-labelledby="global-analysis-title">
-    <div className="analysis-heading"><h2 id="global-analysis-title">Global analysis</h2>
-      <button type="button" ref={closeButton} onClick={close} aria-label="Close global analysis">×</button>
-    </div>
-    <div className="analysis-content">
+  return <SideDrawer id="global-analysis" title="Global analysis" open={open} onOpenChange={onOpenChange} returnFocus={returnFocus}>
       <Panel title="Placement plan" queryId="ui-placements" query={displayed['ui-placements']} feeds={displayed} onDecision={onDecision}>
         <details className="decision-details" ref={decisionDetails}><summary>Decision details</summary>
           {decisionRequest && !displayed['ui-decisions'].data?.some(row => row.decision_id === decisionRequest.id) &&
@@ -432,17 +483,19 @@ function AnalysisDrawer({ open, onOpenChange, returnFocus, feeds, stale, decisio
         </details>
       </Panel>
       <Panel title="Recovery after failures" queryId="ui-resilience" query={displayed['ui-resilience']} feeds={displayed}/>
-    </div>
-  </aside>;
+  </SideDrawer>;
 }
 
-function useModalDialog() {
+function useModalDialog(returnFocus?: React.RefObject<HTMLElement | null>) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
-    return () => element?.close();
-  }, []);
+    return () => {
+      element?.close();
+      if (returnFocus?.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
+    };
+  }, [returnFocus]);
   return dialog;
 }
 
@@ -456,28 +509,57 @@ function SystemStatusDialog({ query, feeds, close }: { query: View; feeds: Views
   </dialog>;
 }
 
-function PolicyDetailsDialog({ selection, feeds, stale, close }: {
-  selection: { workloadId: string; clusterId: string }; feeds: Views; stale: boolean; close: () => void;
+function PolicyDetailsDialog({ selection, feeds, stale, returnFocus, onShowRules, onShowAll, close }: {
+  selection: { workloadId: string; clusterId?: string }; feeds: Views; stale: boolean;
+  returnFocus: React.RefObject<HTMLElement | null>; onShowRules: () => void; onShowAll: () => void; close: () => void;
 }) {
-  const dialog = useModalDialog(), policy = { ...feeds['ui-policy'], stale: stale || feeds['ui-policy'].stale };
-  const query = { ...policy, data: policy.data?.filter(p => p.workload_id === selection.workloadId && p.cluster_id === selection.clusterId) ?? null };
+  const dialog = useModalDialog(returnFocus), policy = { ...feeds['ui-policy'], stale: stale || feeds['ui-policy'].stale };
+  const workload = feeds['ui-workloads'].data?.find(w => w.workload_id === selection.workloadId);
+  const destinationOrder = new Map((feeds['ui-clusters'].data ?? []).map((cluster, index) => [text(cluster, 'cluster_id'), index]));
+  const query = { ...policy, data: policy.data?.filter(p => p.workload_id === selection.workloadId
+    && (selection.clusterId === undefined || p.cluster_id === selection.clusterId)).sort((left, right) =>
+      (destinationOrder.get(text(left, 'cluster_id')) ?? destinationOrder.size) - (destinationOrder.get(text(right, 'cluster_id')) ?? destinationOrder.size)) ?? null };
+  const missing = selection.clusterId === undefined ? (feeds['ui-clusters'].data ?? []).filter(c => !query.data?.some(p => p.cluster_id === c.cluster_id)) : [];
   return <dialog ref={dialog} aria-label="Policy details" className="modal policy-details-dialog"
     onCancel={event => { event.preventDefault(); close(); }}>
-    <Panel title="Policy details" queryId="ui-policy" query={query} feeds={{ ...feeds, 'ui-policy': policy }}
-      headerAction={<button type="button" onClick={close} aria-label="Close policy details">×</button>}/>
+    <div className="section-title"><h3>Policy &amp; allocation{workload && `: ${text(workload, 'name')}`}</h3>
+      <button type="button" onClick={close} aria-label="Close policy details">×</button></div>
+    {workload ? <WorkloadPolicyContext workload={workload} views={feeds} stale={stale} onShowRules={onShowRules}/>
+      : <p className="status-text warning">This workload is no longer in the available configuration.</p>}
+    {selection.clusterId && <button type="button" onClick={onShowAll}>Show all destinations for this workload</button>}
+    <Panel title="Policy decisions by destination" queryId="ui-policy" query={query} feeds={{ ...feeds, 'ui-policy': policy }}/>
+    {missing.map(cluster => <p className="status-text warning" key={text(cluster, 'cluster_id')}>
+      {text(cluster, 'name')} / {label('region', text(cluster, 'region'))}: policy result unavailable.</p>)}
+    <p>The saved plan can lag a policy change. A denial stops affected processing; unknown permission pauses it.
+      Running and confirmed counts show the observed result, separately from permission.</p>
   </dialog>;
 }
 
-function CommandDialog({ kind, clusters, policies, record, disabled, pending, send, close }: {
-  kind: 'workload' | 'host' | 'policy' | 'gpu' | 'workload-edit'; clusters: ResultRow[]; policies: ResultRow[];
+function CommandDialog({ kind, clusters, views, returnFocus, record, disabled, pending, send, close }: {
+  kind: 'workload' | 'host' | 'policy' | 'gpu' | 'workload-edit'; clusters: ResultRow[]; views: Views;
+  returnFocus?: React.RefObject<HTMLElement | null>;
   record: ResultRow | null; disabled: boolean; pending: boolean; send: Command; close: () => void;
 }) {
+  const policies = editorRules(views), catalog = dataPolicyState(views);
+  const policyIds = [...new Set(policies.map(policy => text(policy, 'policy_id')))];
+  const workloads = views['ui-workloads'].data ?? [];
+  const dataIds = catalog.profiles?.map(profile => text(profile, 'data_profile_id'))
+    ?? [...new Set(workloads.map(workload => text(workload, 'data_profile_id')))];
   const [key] = useState(() => crypto.randomUUID());
   const [failure, setFailure] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<{ path: string; body: unknown } | null>(null);
-  const [policyId, setPolicyId] = useState(() => policies[0] ? text(policies[0], 'policy_id') : '');
-  const [allowedRegions, setAllowedRegions] = useState(() => policies[0] ? strings(policies[0], 'allowed_regions') : []);
-  const dialog = useModalDialog();
+  const initialPolicy = record?.policy_id ? policies.find(p => p.policy_id === record.policy_id)
+    : policies.find(p => ruleWorkloads(text(p, 'policy_id'), views).length > 0) ?? policies[0];
+  const [policyId, setPolicyId] = useState(() => record?.policy_id ? text(record, 'policy_id') : initialPolicy ? text(initialPolicy, 'policy_id') : '');
+  const [policyRevision, setPolicyRevision] = useState(() => initialPolicy ? text(initialPolicy, 'policy_revision') : null);
+  const [allowedRegions, setAllowedRegions] = useState(() => initialPolicy ? strings(initialPolicy, 'allowed_regions') : []);
+  const [dataId, setDataId] = useState(() => record?.data_profile_id ? text(record, 'data_profile_id')
+    : workloads[0] ? text(workloads[0], 'data_profile_id') : dataIds.includes('demo-open') ? 'demo-open' : dataIds[0] ?? '');
+  const [purpose, setPurpose] = useState(() => record?.purpose ? text(record, 'purpose')
+    : workloads[0] ? text(workloads[0], 'purpose') : 'demo');
+  const dialog = useModalDialog(returnFocus);
+  const affected = ruleWorkloads(policyId, views);
+  const selectedRule = catalog.rules?.find(rule => rule.policy_id === policyId);
   const hostCluster = kind === 'host' ? clusters.find(c => c.cluster_id === record?.cluster_id) : undefined;
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setFailure(null);
@@ -504,9 +586,10 @@ function CommandDialog({ kind, clusters, policies, record, disabled, pending, se
         replicas: Number(data.get('replicas')), data_profile_id: data.get('data'), purpose: data.get('purpose'),
         spread_across_domains: data.get('spread') === 'on' } };
     } else {
-      const policy = policies.find(p => p.policy_id === data.get('policy'));
+      const policy = policyMetadata(policies.filter(p => p.policy_id === policyId));
       if (!policy || typeof policy.policy_revision !== 'string') { setFailure('Current policy revision is unavailable.'); return; }
-      if (!window.confirm('Changing allowed regions can pause or stop workloads once the demo observes the change. Continue?')) return;
+      if (policy.policy_revision !== policyRevision) { setFailure('This policy changed while the editor was open. Close and reopen it to review the latest rules.'); return; }
+      if (!window.confirm(`Change shared data-policy region rules for ${affected.map(w => text(w, 'name')).join(', ') || 'this data scope'}? This can pause or stop their processing. Continue?`)) return;
       path = `/api/policies/${encodeURIComponent(String(policy.policy_id))}`;
       body = { expected_revision: policy.policy_revision, changes: { allowed_regions: data.getAll('regions') } };
     }
@@ -516,7 +599,7 @@ function CommandDialog({ kind, clusters, policies, record, disabled, pending, se
     catch (error) { setFailure(error instanceof Error ? error.message : String(error)); }
   };
   return <dialog ref={dialog} onCancel={event => { event.preventDefault(); if (!pending) close(); }} aria-labelledby="dialog-title" className="modal">
-    <div className="section-title"><h3 id="dialog-title">{kind === 'host' ? 'Add ready VM' : kind === 'policy' ? 'Edit processing policy' : kind === 'gpu' ? 'Edit background load' : kind === 'workload-edit' ? 'Edit workload' : 'Add workload'}</h3><button disabled={pending} onClick={close} aria-label="Close dialog">×</button></div>
+    <div className="section-title"><h3 id="dialog-title">{kind === 'host' ? 'Add ready VM' : kind === 'policy' ? 'Edit shared data policy' : kind === 'gpu' ? 'Edit background load' : kind === 'workload-edit' ? 'Edit workload' : 'Add workload'}</h3><button disabled={pending} onClick={close} aria-label="Close dialog">×</button></div>
     <form onSubmit={event => { void submit(event); }}><fieldset disabled={disabled || submitted !== null}>
       {kind !== 'policy' && kind !== 'gpu' && <label>Name<input name="name" required maxLength={256} autoFocus defaultValue={kind === 'workload-edit' && record ? text(record, 'name') : ''}/></label>}
       {kind === 'host' && <>{hostCluster
@@ -527,8 +610,14 @@ function CommandDialog({ kind, clusters, policies, record, disabled, pending, se
         <label>Model and resources per replica<select name="profile" defaultValue={kind === 'workload-edit' && record ? text(record, 'profile_id') : 'assistant-v1'}><option value="assistant-v1">Qwen2.5-32B assistant · 76 GiB / 55 demand units</option><option value="chat-v1">Llama3.1-8B chat · 24 GiB / 30 demand units</option><option value="embeddings-v1">BGE embeddings · 4 GiB / 20 demand units</option><option value="reranker-v1">BGE reranker · 4 GiB / 25 demand units</option>{record?.profile_id === 'custom' && <option value="custom">Existing custom resources (edit resources in the database)</option>}</select></label>
         <p>These are illustrative resource requirements, not measured model benchmarks.</p>
         <label>Replicas (copies of this service)<input name="replicas" type="number" min={0} max={32} defaultValue={kind === 'workload-edit' && record ? number(record, 'replicas') : 2} required/></label>
-        <label>Data being processed<select name="data" defaultValue={kind === 'workload-edit' && record ? text(record, 'data_profile_id') : 'demo-open'}><option value="demo-open">Synthetic demo data</option><option value="customer-eu-documents">Example customer EU documents</option></select></label>
-        <label>Purpose<select name="purpose" defaultValue={kind === 'workload-edit' && record ? text(record, 'purpose') : 'demo'}><option value="demo">Demo</option><option value="customer-support">Customer support</option></select></label>
+        <label>Data being processed<select name="data" required value={dataId} onChange={event => setDataId(event.target.value)}>
+          {!dataIds.includes(dataId) && <option value={dataId}>{dataId ? `${label('data', dataId)} (unavailable)` : 'Data profiles unavailable'}</option>}
+          {dataIds.map(id => {
+            const profile = catalog.profiles?.find(profile => profile.data_profile_id === id);
+            return <option value={id} key={id}>{label('data', id)}{profile ? ` · ${label('classification', text(profile, 'classification'))}` : ''}</option>;
+          })}</select></label>
+        <label>Purpose<select name="purpose" value={purpose} onChange={event => setPurpose(event.target.value)}><option value="demo">Demo</option><option value="customer-support">Customer support</option></select></label>
+        <WorkloadPolicyBinding dataId={dataId} purpose={purpose} views={views}/>
         <label className="checkbox"><input name="spread" type="checkbox" defaultChecked={kind === 'workload-edit' && record ? boolean(record, 'spread_across_domains') : true}/>Place replicas on different VMs</label>
       </>}
       {kind === 'gpu' && record && <>
@@ -538,18 +627,33 @@ function CommandDialog({ kind, clusters, policies, record, disabled, pending, se
         <label>Report interval (milliseconds)<input name="interval" type="number" min={250} max={2000} step={1} required defaultValue={number(record, 'interval_ms')}/></label>
         <p>Saving changes updates the simulator settings. A later GPU report confirms their effect; saving alone does not.</p>
       </>}
-      {kind === 'policy' && <><label>Policy<select name="policy" value={policyId} onChange={e => {
+      {kind === 'policy' && <>{policyIds.length > 1 && <label>Shared rule scope<select name="policy" value={policyId} onChange={e => {
         setPolicyId(e.target.value);
         const selected = policies.find(p => p.policy_id === e.target.value);
+        setPolicyRevision(selected ? text(selected, 'policy_revision') : null);
         setAllowedRegions(selected ? strings(selected, 'allowed_regions') : []);
-      }}>{[...new Set(policies.flatMap(p => typeof p.policy_id === 'string' ? [p.policy_id] : []))].map(p => <option key={p} value={p}>{label('policy', p)}</option>)}</select></label>
+      }}>{policyId && !policies.some(p => p.policy_id === policyId) && <option value={policyId}>{label('policy', policyId)} (unavailable)</option>}
+        {policyIds.map(p => <option key={p} value={p}>
+          {catalog.profiles?.filter(profile => profile.policy_id === p).map(profile => label('data', text(profile, 'data_profile_id'))).join(', ') || label('policy', p)}
+        </option>)}</select></label>}
+        <p className="policy-edit-scope"><strong>Shared rules, not a workload override.</strong> These region rules apply to:{' '}
+          {affected.length ? affected.map(w => text(w, 'name')).join(', ') : 'no currently observed workloads'}.
+          {' '}All workloads in this data scope are re-evaluated after saving; other rule scopes are unchanged.</p>
+        {selectedRule ? <><h4>Saved rule conditions</h4><RuleCriteria rule={selectedRule}/></>
+          : <p className="warning">Full customer, classification and purpose criteria are unavailable in this runtime.</p>}
+        <p>This editor changes permitted destinations for the shared rule. Customer, classification and purpose conditions remain unchanged.</p>
+        <p>Allowing a region makes its GPUs eligible for consideration; it does not assign workloads there.
+          Drasi still evaluates data and purpose, and the optimizer checks capacity and replica separation.</p>
         <p>If policy information is unavailable, processing pauses and memory stays reserved. If a region is not allowed, processing stops and releases resources once the stop is confirmed.</p>
         <label className="checkbox"><input type="checkbox" name="regions" value="*" checked={allowedRegions.includes('*')}
+          disabled={policyId !== 'demo-permissive'}
           onChange={e => setAllowedRegions(e.target.checked ? ['*'] : [])}/>Allow all regions</label>
         {['westeurope', 'northeurope', 'eastus'].map(r => <label key={r} className="checkbox"><input type="checkbox" name="regions" value={r}
           disabled={allowedRegions.includes('*')} checked={allowedRegions.includes(r)}
           onChange={e => setAllowedRegions(e.target.checked ? [...allowedRegions, r] : allowedRegions.filter(v => v !== r))}/>{label('region', r)}</label>)}
-        <p>{allowedRegions.length ? 'Current settings are shown. Clear "Allow all regions" to choose individual regions.' : 'No regions selected: processing will not be allowed anywhere.'}</p></>}
+        <p>{allowedRegions.includes('*') ? 'Clear "Allow all regions" to choose individual regions.' : allowedRegions.length
+          ? 'Select the permitted destinations for this rule scope.' : 'No regions selected: processing will not be allowed anywhere.'}</p>
+        <p className="muted">The all-regions wildcard is restricted to the demo-only synthetic-data rule; the backend validates all edits.</p></>}
     </fieldset>{failure && <p className="error" role="alert">{failure}</p>}
       {disabled && !pending && <p role="status">Actions are unavailable until current data is ready. You can close this dialog without changing the fleet.</p>}
       {submitted && <p>Retry sends the same request with the same request ID. Close this dialog to make a different change.</p>}

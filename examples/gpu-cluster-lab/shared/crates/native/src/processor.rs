@@ -153,18 +153,18 @@ impl Processor {
         )?)
     }
     fn observe_inputs(&mut self, changes: &mut Vec<SourceChange>) -> Result<()> {
-        let signals = {
+        let (bootstrap, unavailable) = {
             let mut signals = self
                 .signals
                 .lock()
                 .map_err(|_| anyhow::anyhow!("lifecycle signal lock poisoned"))?;
-            std::mem::take(&mut *signals)
+            signals.take()
         };
-        if let Some(reason) = signals.unavailable {
+        if let Some(reason) = unavailable {
             self.database.unavailable();
             self.invalidate(&reason, changes)?;
         }
-        if let Some(boundary) = signals.bootstrap {
+        if let Some(boundary) = bootstrap {
             self.database.bootstrap(boundary)?;
         }
         let snapshot = match self.database.take() {

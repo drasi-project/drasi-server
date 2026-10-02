@@ -5,6 +5,7 @@ use drasi_computation_plugin_sdk::{
     ControlMessage, ControlNotification, ControlSender, NativeControlHandler,
 };
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 pub const BOOTSTRAP_COMPLETE: &str = "gpu.lab/database-bootstrap-complete";
 pub const RUNTIME_OBSERVATION: &str = "gpu.lab/runtime-observation";
@@ -13,6 +14,22 @@ pub const RUNTIME_OBSERVATION: &str = "gpu.lab/runtime-observation";
 pub(crate) struct Signals {
     pub bootstrap: Option<BootstrapBoundary>,
     pub unavailable: Option<String>,
+    pub transfer: crate::bootstrap::Receiver,
+}
+
+impl Signals {
+    pub fn fail(&mut self, reason: String) {
+        self.bootstrap = None;
+        self.unavailable = Some(reason);
+        self.transfer.abort();
+    }
+
+    pub fn take(&mut self) -> (Option<BootstrapBoundary>, Option<String>) {
+        if self.transfer.expired(Instant::now()) {
+            self.fail("GPU bootstrap transfer timed out; reconstruct the component".into());
+        }
+        (self.bootstrap.take(), self.unavailable.take())
+    }
 }
 
 pub(crate) struct Handler {
@@ -32,17 +49,33 @@ impl NativeControlHandler for Handler {
                 self.hub
                     .observe_runtime(serde_json::from_value::<RuntimeObservation>(payload)?)
             }
-            ControlNotification::Custom { kind, payload } if kind == BOOTSTRAP_COMPLETE => {
-                let boundary: BootstrapBoundary = serde_json::from_value(payload)?;
-                boundary.validate()?;
+            ControlNotification::Custom { kind, payload }
+                if kind == BOOTSTRAP_COMPLETE || kind == crate::bootstrap::TRANSFER =>
+            {
                 let mut signals = self
                     .signals
                     .as_ref()
                     .context("component has no database inputs")?
                     .lock()
                     .map_err(|_| anyhow::anyhow!("lifecycle signal lock poisoned"))?;
-                signals.bootstrap = Some(boundary);
-                Ok(())
+                let result = if message.from.as_str() == "input-plan" {
+                    signals
+                        .transfer
+                        .receive(&kind, payload, message.generation, Instant::now())
+                } else {
+                    Err(anyhow::anyhow!("GPU bootstrap sender must be input-plan"))
+                };
+                match result {
+                    Ok(Some(boundary)) => {
+                        signals.bootstrap = Some(boundary);
+                        Ok(())
+                    }
+                    Ok(None) => Ok(()),
+                    Err(error) => {
+                        signals.fail(format!("GPU bootstrap failed: {error:#}"));
+                        Err(error)
+                    }
+                }
             }
             ControlNotification::Unavailable { reason } => {
                 if let Some(signals) = &self.signals {
@@ -51,6 +84,7 @@ impl NativeControlHandler for Handler {
                         .map_err(|_| anyhow::anyhow!("lifecycle signal lock poisoned"))?;
                     signals.bootstrap = None;
                     signals.unavailable = Some(reason);
+                    signals.transfer.interrupt();
                 }
                 Ok(())
             }

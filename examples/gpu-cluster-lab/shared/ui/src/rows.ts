@@ -47,6 +47,17 @@ export function strings(row: Readonly<ResultRow>, field: string): string[] {
   if (!Array.isArray(value) || !value.every(v => typeof v === 'string')) throw new Error(`Invalid ${field} strings`);
   return value;
 }
+export function recordMap(row: Readonly<ResultRow>, field: string, identity: string): ResultRow[] | null {
+  const value = row[field];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${field} map`);
+  return Object.entries(value).map(([key, item]) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`Invalid ${field} record`);
+    const record = { ...item };
+    if (!(identity in record) || record[identity] !== key) throw new Error(`Invalid ${field} identity`);
+    return record;
+  });
+}
 function choice(row: Readonly<ResultRow>, field: string, options: readonly string[]) {
   if (!options.includes(text(row, field))) throw new Error(`Invalid ${field} value`);
 }
@@ -149,6 +160,22 @@ export function validateRow(query: QueryId, row: Readonly<ResultRow>): ResultRow
       break;
     case 'ui-status':
       signature(row);
+      if ('policy_rules' in row || 'data_profiles' in row || 'policy_rules_current' in row) {
+        boolean(row, 'policy_rules_current');
+        const policies = recordMap(row, 'policy_rules', 'policy_id'), profiles = recordMap(row, 'data_profiles', 'data_profile_id');
+        if ((policies === null) !== (profiles === null) || (row.policy_rules_current && policies === null)) throw new Error('Incomplete shared data-policy configuration');
+        for (const policy of policies ?? []) {
+          for (const field of ['name', 'customer_id', 'authority_ref']) text(policy, field);
+          version(policy, 'revision');
+          for (const field of ['allowed_regions', 'allowed_purposes', 'allowed_classifications']) strings(policy, field);
+        }
+        for (const profile of profiles ?? []) {
+          for (const field of ['customer_id', 'policy_id', 'authority_ref']) text(profile, field);
+          version(profile, 'revision');
+          choice(profile, 'classification', ['synthetic', 'restricted']);
+          if (!policies?.some(policy => policy.policy_id === profile.policy_id)) throw new Error('Data profile references unavailable rules');
+        }
+      }
       boolean(row, 'scenario_ready'); boolean(row, 'inputs_ready'); text(row, 'scenario'); text(row, 'state'); text(row, 'detail');
       for (const component of records(row, 'components')) {
         text(component, 'component_id'); text(component, 'status'); nullableText(component, 'error');

@@ -1,5 +1,5 @@
 import type { ResultRow } from '@drasi/react/client';
-import { number, text, validateRow, type QueryId } from '../rows';
+import { number, recordMap, text, validateRow, type QueryId } from '../rows';
 import { findRow, fixture, gpu, invalidateEvidence, profiles, workload, type MockRows } from './fixtures';
 
 function object(value: unknown): ResultRow {
@@ -65,9 +65,14 @@ export function applyCommand(current: MockRows, path: string, method: string, bo
     for (const row of members) patch(row, 'telemetry_revision', revisions[text(row, 'gpu_id')], changes);
   } else if (kind === 'policies' && id && method === 'PATCH' && parts.length === 3) {
     const policies = rows['ui-policy'].filter(p => p.policy_id === id);
-    if (!policies.length) throw new Error('This policy is not available in the preview');
+    const rules = recordMap(rows['ui-status'][0], 'policy_rules', 'policy_id');
+    const rule = rules?.find(rule => rule.policy_id === id);
+    if (!rule) throw new Error('This policy is not available in the preview');
     const changes = allowed(object(data.changes), ['allowed_regions']);
     if (!Array.isArray(changes.allowed_regions) || !changes.allowed_regions.every(r => ['*', 'westeurope', 'northeurope', 'eastus'].includes(r))) throw new Error('Invalid mock regions');
+    if (changes.allowed_regions.includes('*') && (id !== 'demo-permissive' || changes.allowed_regions.length !== 1)) throw new Error('The wildcard is restricted to the demo-only rule');
+    patch(rule, 'revision', data.expected_revision, changes);
+    rows['ui-status'][0].policy_rules = Object.fromEntries(rules!.map(rule => [text(rule, 'policy_id'), rule]));
     for (const row of policies) patch(row, 'policy_revision', data.expected_revision, changes);
   } else {
     throw new Error(`Mock preview does not implement ${method} ${path}`);

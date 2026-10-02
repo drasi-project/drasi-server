@@ -198,6 +198,13 @@ case "${1:-help}" in
         ;;
     logs) configure; shift; compose logs --tail=100 -f "$@" ;;
     sql) configure; compose exec postgres psql -U gpu_config -d gpu_demo ;;
+    data-choices)
+        if [ ! -f .env ]; then
+            printf '%s\n' 'Demo is not configured. Run ./demo up.' >&2
+            exit 1
+        fi
+        compose run --rm --no-deps control ./target/release/gpu-control add-data-choices
+        ;;
     wait)
         configure
         if [ "${2:-}" = "--timeout" ]; then wait_ready "${3:?Missing timeout}"; else wait_ready 120; fi
@@ -243,6 +250,7 @@ case "${1:-help}" in
     *) printf '%s\n' 'GPU Cluster Lab' \
         '  ./demo up       Build/start the live runtime and wait for observed readiness' \
         '  ./demo down     Stop only this demo; preserve its database' \
+        '  ./demo data-choices  Add missing Synthetic and EU data choices without resetting saved settings' \
         '  ./demo wait --timeout 120 | reset baseline | reset fragmentation | reset regional' \
         '  ./demo status | logs | sql | build | check | check --smoke | check --errors | check --concurrency | check --commands | check --runbook | check --restart | check --writer-recovery | check --acceptance' \
         '  ./demo check --query-drain  Isolated diagnostic report pause; never acceptance evidence' \

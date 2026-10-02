@@ -20,6 +20,120 @@ async fn every_ui_query_constructs_with_its_declared_joins() -> Result<()> {
 }
 
 #[tokio::test]
+async fn shared_data_policy_rules_are_projected_from_configuration_with_currentness() -> Result<()>
+{
+    let mut configuration = fixtures::load("regional-boundary")?.configuration;
+    let baseline = fixtures::load("baseline")?.configuration;
+    configuration.policies.extend(baseline.policies);
+    configuration.data_profiles.extend(baseline.data_profiles);
+    configuration.validate()?;
+    let epoch = Uuid::new_v4();
+    let assessment = Evaluator::new()?.evaluate(&configuration)?;
+    let mut source = Emitter::new(StreamId::try_new("shared-policy-projection")?);
+    let mut query = query("shared-policy-status", views::STATUS).await?;
+    let mut ready = json!({
+        "fleet_id":"demo", "observation_epoch":epoch,
+        "scheduling_signature":"schedule", "policy_signature":assessment.policy_signature,
+        "scenario_ready":true, "inputs_ready":true, "scenario":"regional-boundary",
+        "state":"ready", "detail":"Observed current inputs", "components":[],
+    });
+    let mut changes = Vec::new();
+    changes.extend(source.record("DemoReadiness", "demo", &ready)?);
+    let rows = project(&mut query, &source.emit(changes, None)?).await?;
+    assert!(rows[0]["policy_rules"].is_null());
+    assert_eq!(rows[0]["policy_rules_current"], false);
+
+    let mut changes = Vec::new();
+    changes.extend(source.record(
+        "FleetConfiguration",
+        "demo",
+        &json!({
+            "epoch":epoch, "configuration":configuration,
+            "config_fingerprint":configuration.fingerprint()?,
+        }),
+    )?);
+    changes.extend(source.record(
+        "PolicyAssessment",
+        "demo",
+        &json!({
+            "epoch":epoch, "config_fingerprint":configuration.fingerprint()?,
+            "assessment":assessment,
+        }),
+    )?);
+    let rows = project(&mut query, &source.emit(changes, None)?).await?;
+    assert_eq!(
+        rows[0]["policy_rules"],
+        serde_json::to_value(&configuration.policies)?
+    );
+    assert_eq!(
+        rows[0]["data_profiles"],
+        serde_json::to_value(&configuration.data_profiles)?
+    );
+    assert_eq!(rows[0]["policy_rules_current"], true);
+    assert_eq!(
+        rows[0]["policy_rules"]["demo-permissive"]["allowed_purposes"],
+        json!(["demo"])
+    );
+    assert_eq!(
+        rows[0]["data_profiles"]["customer-eu-documents"]["classification"],
+        "restricted"
+    );
+
+    let rule = configuration
+        .policies
+        .get_mut("customer-eu-processing")
+        .unwrap();
+    rule.allowed_regions = ["northeurope".into()].into_iter().collect();
+    rule.revision += 1;
+    let assessment = Evaluator::new()?.evaluate(&configuration)?;
+    let mut changes = Vec::new();
+    changes.extend(source.record(
+        "FleetConfiguration",
+        "demo",
+        &json!({
+            "epoch":epoch, "configuration":configuration,
+            "config_fingerprint":configuration.fingerprint()?,
+        }),
+    )?);
+    let rows = project(&mut query, &source.emit(changes, None)?).await?;
+    assert_eq!(
+        rows[0]["policy_rules"]["customer-eu-processing"]["allowed_regions"],
+        json!(["northeurope"])
+    );
+    assert_eq!(
+        rows[0]["policy_rules_current"], false,
+        "new settings are not an evaluated decision"
+    );
+    ready["policy_signature"] = json!(assessment.policy_signature);
+    let mut changes = Vec::new();
+    changes.extend(source.record("DemoReadiness", "demo", &ready)?);
+    changes.extend(source.record(
+        "PolicyAssessment",
+        "demo",
+        &json!({
+            "epoch":epoch, "config_fingerprint":configuration.fingerprint()?,
+            "assessment":assessment,
+        }),
+    )?);
+    let rows = project(&mut query, &source.emit(changes, None)?).await?;
+    assert_eq!(rows[0]["policy_rules_current"], true);
+    ready["observation_epoch"] = json!(Uuid::new_v4());
+    let changes = source
+        .record("DemoReadiness", "demo", &ready)?
+        .into_iter()
+        .collect();
+    let rows = project(&mut query, &source.emit(changes, None)?).await?;
+    assert!(
+        rows[0]["policy_rules"].is_null(),
+        "a previous runtime's criteria must not become current"
+    );
+    assert!(rows[0]["data_profiles"].is_null());
+    assert_eq!(rows[0]["policy_rules_current"], false);
+    query.stop().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn timeline_is_bounded_and_preserves_explicit_observation_epochs() -> Result<()> {
     let hub = Arc::new(crate::status::Hub::default());
     let factory = AuxiliaryFactory {
@@ -1565,6 +1679,21 @@ async fn native_evidence_projects_into_real_ui_queries() -> Result<()> {
     )
     .await?;
     let evaluated = poll_until(&mut policy, "PolicyAssessment").await?;
+    let configuration = source.record(
+        "FleetConfiguration",
+        "demo",
+        &json!({
+            "epoch":epoch, "configuration":fixture.configuration,
+            "config_fingerprint":fixture.configuration.fingerprint()?,
+        }),
+    )?;
+    project(
+        &mut status_query,
+        &source.emit(configuration.into_iter().collect(), None)?,
+    )
+    .await?;
+    project(&mut status_query, &pending).await?;
+    project(&mut status_query, &evaluated).await?;
     project(&mut workload_query, &evaluated).await?;
     project(&mut placement_query, &evaluated).await?;
     let rows = project(&mut policy_query, &evaluated).await?;

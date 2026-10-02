@@ -107,6 +107,21 @@ export function fixture(name: string): MockRows {
       detail: 'Prepared example of component status, not activity observed from a running system.',
       components: ['postgres-source', 'telemetry-simulator', 'regorus-policy', 'placement-solver', 'resilience-assessor', 'plan-writer']
         .map(component_id => ({ component_id, status: 'ready', error: null })),
+      policy_rules_current: true,
+      policy_rules: Object.fromEntries([true, false].map(eu => {
+        const id = eu ? 'customer-eu-processing' : 'demo-permissive';
+        return [id, { policy_id: id, name: id, customer_id: eu ? 'customer-eu' : 'demo', revision: '1',
+          allowed_regions: eu ? ['northeurope', 'westeurope'] : ['*'],
+          allowed_purposes: [eu ? 'customer-support' : 'demo'],
+          allowed_classifications: [eu ? 'restricted' : 'synthetic'],
+          authority_ref: eu ? 'customer-eu-contract-v1' : 'demo-fixture' }];
+      })),
+      data_profiles: Object.fromEntries([true, false].map(eu => {
+        const id = eu ? 'customer-eu-documents' : 'demo-open';
+        return [id, { data_profile_id: id, customer_id: eu ? 'customer-eu' : 'demo',
+          classification: eu ? 'restricted' : 'synthetic', policy_id: eu ? 'customer-eu-processing' : 'demo-permissive',
+          revision: '1', authority_ref: eu ? 'customer-eu-contract-v1' : 'demo-fixture' }];
+      })),
     }],
     'ui-timeline': [timelineEvent(1, 'confirmed', 'Recent GPU reports confirm the starting plan.', 'mock-initial-layout', '1')],
     'ui-policy': workloads.flatMap(w => topology.map(c => ({
@@ -129,6 +144,7 @@ export function fixture(name: string): MockRows {
 }
 
 export function invalidateEvidence(rows: MockRows, path: string, method: string): void {
+  rows['ui-status'][0].policy_rules_current = false;
   rows['ui-status'][0].state = 'unevaluated';
   rows['ui-status'][0].scheduling_signature = 'mock-scheduling-unevaluated';
   rows['ui-status'][0].policy_signature = 'mock-policy-unevaluated';

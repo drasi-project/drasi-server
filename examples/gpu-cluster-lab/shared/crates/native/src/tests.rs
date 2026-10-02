@@ -21,6 +21,9 @@ mod projections;
 #[path = "input_tests.rs"]
 mod inputs;
 
+#[path = "bootstrap_tests.rs"]
+mod bootstrap_transport;
+
 fn processor(kind: Kind, workers: Arc<Workers>) -> Result<Processor> {
     let factory = NativeFactory {
         kind,

@@ -1,0 +1,124 @@
+.gpu-architecture-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--text-primary);
+  background: #090f18;
+}
+.gpu-architecture-overlay::backdrop { background: #090f18; }
+.lab-page.gpu-architecture-page { padding-bottom: 40px; }
+.gpu-architecture-overlay .gpu-architecture-close {
+  position: fixed; z-index: 3; top: 8px; right: 12px;
+  display: grid; place-items: center; width: 48px; height: 48px; min-height: 48px; padding: 8px;
+  border: 2px solid var(--accent); border-radius: 10px;
+  background: var(--primary-fill); color: var(--primary-text); box-shadow: 0 4px 16px #0008;
+}
+.gpu-architecture-overlay .gpu-architecture-close:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--text-primary); }
+.gpu-architecture-close:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 3px; }
+.gpu-architecture-close svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.75; stroke-linecap: round; }
+.gpu-architecture-intro { padding-top: 16px; }
+.gpu-architecture-subtitle { color: var(--accent); font-size: 17px; margin: 4px 0 14px; }
+.gpu-architecture-intro > p:not(.eyebrow):not(.gpu-architecture-subtitle) { font-size: 13px; max-width: 1220px; color: var(--text-secondary); }
+.gpu-transformer-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 20px 0; }
+.gpu-transformer-cards h2 { font-size: 14px; letter-spacing: 0; margin: 0 0 8px; color: var(--positive); }
+.gpu-transformer-cards p { font-size: 12px; margin: 0; color: var(--text-secondary); }
+.gpu-architecture-board { border: 1px solid var(--border-panel); border-radius: 12px; background: var(--surface-panel); overflow: hidden; margin-top: 24px; }
+.gpu-architecture-guide { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 18px 22px 0; }
+.gpu-architecture-guide h2 { font-size: 18px; margin: 0 0 6px; letter-spacing: 0; }
+.gpu-architecture-guide p { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.gpu-architecture-legend { display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 11px; }
+.gpu-architecture-legend span::before { content: ""; display: inline-block; width: 20px; border-top: 2px solid; margin-right: 7px; vertical-align: middle; }
+.gpu-architecture-legend .graph { color: var(--positive); }
+.gpu-architecture-legend .rows { color: #91c8ff; }
+.gpu-architecture-legend .transport { color: #d4b5f3; }
+.gpu-architecture-legend .transport::before { border-top-style: dashed; }
+.gpu-architecture-legend .lifecycle { color: var(--caution); }
+.gpu-architecture-legend .lifecycle::before { border-top-style: dotted; }
+.gpu-architecture-scroll-hint { display: none; font-size: 12px; color: var(--text-secondary); padding: 0 22px; }
+.gpu-architecture-scroll { overflow-x: auto; overscroll-behavior-x: contain; padding: 0 5px; }
+.gpu-architecture-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.gpu-architecture-diagram { position: relative; aspect-ratio: 1360 / 850; min-width: 1100px; container-type: inline-size; }
+.gpu-architecture-lane { position: absolute; left: 2%; width: 95.4%; border-top: 1px solid var(--border-panel); pointer-events: none; }
+.gpu-architecture-lane.inputs { top: 2%; }
+.gpu-architecture-lane.processing { top: 29%; }
+.gpu-architecture-lane.observations { top: 76.5%; width: 55%; }
+.gpu-architecture-lane span { display: inline-block; background: var(--surface-panel); padding: 4px 8px 0 0; color: var(--text-muted); font-size: 10px; letter-spacing: 1px; }
+.gpu-architecture-connections { position: absolute; width: 100%; height: 100%; overflow: visible; }
+.gpu-architecture-connections path { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.gpu-architecture-connections .graph { stroke: var(--positive); }
+.gpu-architecture-connections .rows { stroke: #91c8ff; }
+.gpu-architecture-connections .transport { stroke: #d4b5f3; }
+.gpu-architecture-connections .lifecycle { stroke: var(--caution); }
+.gpu-edge-line.transport { stroke-dasharray: 7 5; }
+.gpu-edge-line.lifecycle { stroke-dasharray: 2 5; }
+.gpu-architecture-connections .gpu-edge-target { stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
+.gpu-architecture-edge:focus-within .gpu-edge-line,
+.gpu-architecture-edge:hover .gpu-edge-line,
+.gpu-architecture-edge[data-active="true"] .gpu-edge-line { stroke-width: 3.5; }
+.gpu-edge-target:focus-visible { outline: none; }
+.gpu-edge-labels text { fill: var(--text-secondary); font-size: 10px; letter-spacing: .8px; text-anchor: middle; pointer-events: none; }
+.gpu-architecture-node {
+  --node-accent: var(--accent);
+  position: absolute; transform: translate(-50%, -50%); width: 15.8824%; height: 11.2942%;
+  display: flex; flex-direction: column; justify-content: center; gap: .5cqw;
+  text-align: left; padding: 1cqw; border: 1px solid var(--border-emphasis); border-top: 3px solid var(--node-accent);
+  border-radius: 8px; background: var(--surface-raised);
+}
+.gpu-architecture-node.client { --node-accent: var(--caution); }
+.gpu-architecture-node.service { --node-accent: #d4b5f3; }
+.gpu-architecture-node.query { --node-accent: #91c8ff; }
+.gpu-architecture-node.transformer { --node-accent: var(--positive); }
+.gpu-architecture-node[aria-pressed="true"] { border-color: var(--node-accent); background: var(--surface-hover); }
+.gpu-architecture-node > span { font-size: clamp(8px, .65cqw, 11px); color: var(--node-accent); letter-spacing: .3px; }
+.gpu-architecture-node strong { font-size: clamp(13px, 1.22cqw, 19px); line-height: 1.2; font-weight: 650; }
+.gpu-architecture-node small { font-size: clamp(10px, .82cqw, 13px); font-weight: 400; color: var(--text-secondary); }
+.gpu-architecture-caption { font-size: 12px; color: var(--text-secondary); padding: 0 22px; }
+.gpu-architecture-index { margin: 16px 22px 20px; border-top: 1px solid var(--border-panel); padding-top: 12px; }
+.gpu-architecture-index h3 { margin: 18px 0 10px; font-size: 13px; }
+.gpu-architecture-index > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.gpu-architecture-index button { text-align: left; font-weight: 500; }
+.gpu-architecture-index button[aria-pressed="true"] { border-color: var(--accent); }
+.gpu-architecture-details {
+  position: fixed; z-index: 2; bottom: 20px; right: 20px;
+  width: min(470px, calc(100vw - 32px)); max-height: min(700px, calc(100dvh - 90px)); overflow: auto;
+  overscroll-behavior: contain; padding: 22px; border: 1px solid var(--accent); border-radius: 12px;
+  background: #142131; box-shadow: 0 16px 64px #000c; font-size: 13px;
+}
+.gpu-detail-close { float: right; margin: -10px -10px 0 8px; font-size: 20px; padding: 3px 10px; }
+.gpu-architecture-details h2 { font-size: 20px; line-height: 1.3; letter-spacing: 0; margin: 10px 28px 12px 0; }
+.gpu-architecture-details h2:focus { outline: none; }
+.gpu-detail-implementation { display: block; color: var(--accent); overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; }
+.gpu-architecture-details p { color: var(--text-secondary); }
+.gpu-architecture-details strong { color: var(--text-primary); }
+.gpu-architecture-details dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; line-height: 1.6; font-size: 12px; }
+.gpu-architecture-details dt { color: var(--positive); font-weight: 650; }
+.gpu-architecture-details dd { margin: 0; color: var(--text-secondary); }
+.gpu-architecture-details .gpu-detail-note { border-top: 1px solid var(--border-emphasis); padding-top: 12px; margin-bottom: 0; font-size: 12px; }
+.gpu-query-id { display: inline-block; margin: 3px 6px 0 0; font-size: 11px; }
+.gpu-schema-label { font-size: 11px; }
+.gpu-architecture-details pre { max-height: none; font-size: 11px; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.lab-app .lab-title .architecture-toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px;
+  width: 32px; height: 32px; min-height: 32px; padding: 0;
+  border: 1.5px solid var(--border-emphasis); border-radius: 50%;
+  color: var(--accent); background: transparent; font: 700 17px/1 Georgia, serif;
+}
+.lab-app .lab-title .architecture-toggle:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-hover); }
+@media (max-width: 1200px) {
+  .gpu-architecture-scroll-hint { display: block; }
+  .gpu-transformer-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
+@media (max-width: 700px) {
+  .gpu-architecture-subtitle { font-size: 15px; }
+  .gpu-transformer-cards { grid-template-columns: 1fr; }
+  .gpu-architecture-guide { padding: 16px; }
+  .gpu-architecture-details { bottom: 12px; right: 12px; width: calc(100vw - 24px); max-height: 65dvh; padding: 18px; }
+}

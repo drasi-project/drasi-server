@@ -1,5 +1,5 @@
 import type { ResultRow } from '@drasi/react/client';
-import { number, records, text, validateRow, type QueryId } from '../rows';
+import { number, recordMap, records, text, validateRow, type QueryId } from '../rows';
 import { allocation, bindFixtureAuthorizations, executions, findRow, fixture, gpu, measure, snapshotTime, summarize, timelineEvent, workload, type MockRows } from './fixtures';
 
 export const scenarios = [
@@ -212,6 +212,13 @@ export function snapshot(id: string): MockRows {
       r.regions = rows['ui-clusters'].map(c => ({ excluded: c.region, feasible: false, detail: 'Current policy allows no region.' }));
     }
     status.policy_signature = 'mock-policy-updated';
+    const rules = recordMap(status, 'policy_rules', 'policy_id');
+    if (!rules) throw new Error('Preview scenario requires shared rules');
+    for (const rule of rules) Object.assign(rule, {
+      revision: '2', allowed_regions: unknown ? rule.allowed_regions : [],
+    });
+    status.policy_rules = Object.fromEntries(rules.map(rule => [text(rule, 'policy_id'), rule]));
+    status.policy_rules_current = !unknown;
     status.components = records(status, 'components').map(c => c.component_id === 'regorus-policy'
       ? { ...c, status: unknown ? 'unavailable' : 'current', error: unknown ? 'Policy input unavailable' : null } : c);
     event(rows, id === 'fencing-pending' ? 'fencing-requested' : unknown ? 'suspended' : 'fenced', scene.detail, null, '1');

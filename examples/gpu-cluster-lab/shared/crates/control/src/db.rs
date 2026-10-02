@@ -189,6 +189,43 @@ pub async fn configuration(conn: &mut PgConnection) -> Result<Configuration> {
     })
 }
 
+pub async fn add_data_choices(pool: &PgPool) -> Result<Vec<String>> {
+    let mut tx = pool.begin().await?;
+    lock(&mut tx).await?;
+    ensure!(!reset_pending(&mut tx).await?, "scenario reset is pending");
+    let current = configuration(&mut tx).await?;
+    current.validate()?;
+    let catalog = fixtures::data_catalog();
+    let mut added = Vec::new();
+    for (id, policy) in &catalog.policies {
+        if let Some(existing) = current.policies.get(id) {
+            ensure!(
+                existing.customer_id == policy.customer_id,
+                "existing rule {id} has a different customer; not replacing it"
+            );
+        } else {
+            insert(&mut tx, Table::Policies, policy).await?;
+            added.push(format!("policy/{id}"));
+        }
+    }
+    for (id, profile) in &catalog.data_profiles {
+        if let Some(existing) = current.data_profiles.get(id) {
+            ensure!(
+                existing.classification == profile.classification
+                    && existing.customer_id == profile.customer_id
+                    && existing.policy_id == profile.policy_id,
+                "existing data profile {id} has different facts; not replacing it"
+            );
+        } else {
+            insert(&mut tx, Table::Data, profile).await?;
+            added.push(format!("data/{id}"));
+        }
+    }
+    configuration(&mut tx).await?.validate()?;
+    tx.commit().await?;
+    Ok(added)
+}
+
 pub async fn insert<T: Serialize>(conn: &mut PgConnection, table: Table, row: &T) -> Result<Value> {
     let columns = table.columns().join(",");
     let sql = format!("INSERT INTO {t} ({columns}) SELECT {columns} FROM jsonb_populate_record(NULL::{t},$1) RETURNING to_jsonb({t})-'updated_at'",

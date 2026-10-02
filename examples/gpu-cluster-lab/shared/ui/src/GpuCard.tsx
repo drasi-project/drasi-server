@@ -34,7 +34,7 @@ function IconButton({ icon, title, onClick, disabled = false, attention = false,
 
 export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled, actions, selectedWorkload, onToggleWorkload }: {
   gpu: ResultRow; replicaView: ReplicaView; cues: readonly ReplicaCue[]; stale: boolean;
-  permission?: { workloadName: string; authorization: string; inspect: () => void };
+  permission?: { workloadName: string; authorization: string; inspect: (trigger: HTMLButtonElement) => void };
   disabled: boolean;
   selectedWorkload: string | null; onToggleWorkload: (id: string) => void;
   actions: { reports: () => void; power: () => void; edit: () => void; scheduling: () => void; remove: () => void };
@@ -54,7 +54,7 @@ export function GpuCard({ gpu: g, replicaView, cues, stale, permission, disabled
       <strong id={headingId}><span className="hierarchy-type">GPU {number(g, 'slot')}</span>{' '}<span className="gpu-name">{text(g, 'name')}</span></strong>
       <button type="button" className={`policy-indicator${permission ? ` policy-${permission.authorization}` : ''}`}
         disabled={!permission} aria-hidden={!permission} aria-haspopup="dialog"
-        aria-label={policyTitle ? `Policy details: ${policyTitle}` : undefined} title={policyTitle} onClick={permission?.inspect}>
+        aria-label={policyTitle ? `Policy details: ${policyTitle}` : undefined} title={policyTitle} onClick={event => permission?.inspect(event.currentTarget)}>
         {permission && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
           {permission.authorization === 'allow' ? <path d="m5 12 4 4L19 6"/> :

@@ -118,7 +118,7 @@ describe('mock controls and evidence interactions', () => {
   it('shares text-control styling while keeping compact header and GPU icon controls distinct', async () => {
     loadStyles();
     await act(async () => root.render(<MockApp/>));
-    const actions = [button('Add workload'), button('Edit policy'), button('Add ready VM'), button('Power off VM')];
+    const actions = [button('Add workload'), button('Edit data policy'), button('Add ready VM'), button('Power off VM')];
     for (const property of ['font-size', 'line-height', 'padding', 'border-radius', 'min-height', 'background-color', 'border-top-color']) {
       const values = actions.map(action => visualStyle(action, property));
       expect(values[0]).not.toBe('');
@@ -432,7 +432,7 @@ describe('mock controls and evidence interactions', () => {
     await click('Global analysis');
     await toggleHelp();
     await click('VM');
-    await click('Edit policy');
+    await click('Add workload');
     const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await act(async () => { escape(); });
     expect(element('.lab-app').getAttribute('data-presenter-highlight')).toBe('vm');
@@ -527,7 +527,7 @@ describe('mock controls and evidence interactions', () => {
     expect(getComputedStyle(element('#preset')).padding).toBe('2px 4px');
     expect(getComputedStyle(element('#snapshot')).maxWidth).toBe('300px');
     expect(button('Reset scenario').closest('header')).not.toBeNull();
-    expect(button('Edit policy').closest('.workload-heading')).toBe(button('Add workload').closest('.workload-heading'));
+    expect(button('Edit data policy').closest('#data-policy')).toBe(element('#data-policy'));
     expect(button('Add workload').closest('.workload-panel')).not.toBeNull();
     expect(button('Add workload').classList.contains('primary')).toBe(false);
     for (const action of document.querySelectorAll('button')) expect(action.textContent?.trim()).not.toMatch(/^\+/);
@@ -539,8 +539,10 @@ describe('mock controls and evidence interactions', () => {
     expect(element<HTMLElement>('#global-analysis').hidden).toBe(true);
     expect(button('Global analysis').closest('.header-tools')).toBe(button('System status').closest('.header-tools'));
     expect(element('.header-tools').firstElementChild).toBe(button('System status'));
+    expect(element('.lab-header .lab-title h1').nextElementSibling).toBe(button('Information about this demo'));
     expect(button('System status').nextElementSibling).toBe(button('Global analysis'));
-    expect(button('Global analysis').nextElementSibling).toBe(element('.reading-guide'));
+    expect(button('Global analysis').nextElementSibling).toBe(button('Data policy'));
+    expect(button('Data policy').nextElementSibling).toBe(element('.reading-guide'));
     expect(document.body.textContent).not.toContain('Where policy allows processing');
     const help = element<HTMLDetailsElement>('.reading-guide');
     expect(help.closest('header')).not.toBeNull();
@@ -573,11 +575,12 @@ describe('mock controls and evidence interactions', () => {
     const workloads = element('.workload-panel');
     expect(workloads.parentElement).toBe(content);
     expect(content.firstElementChild).toBe(workloads);
+    expect(workloads.previousElementSibling).toBeNull();
     expect(workloads.nextElementSibling).toBe(fleet);
     expect(element('table').closest('.workload-panel')).toBe(workloads);
     expect(element('.activity').parentElement).toBe(content);
     expect(element('.activity').previousElementSibling).toBe(fleet);
-    expect([...layout.children]).toEqual([content, drawer]);
+    expect([...layout.children]).toEqual([content, drawer, element('#data-policy')]);
     expect(getComputedStyle(content).gridColumn).toBe('1');
     expect(getComputedStyle(content).gridRow).toBe('1');
     expect(getComputedStyle(drawer).gridColumn).toBe('2');
@@ -671,7 +674,7 @@ describe('mock controls and evidence interactions', () => {
     if (kind === 'policy details') {
       await click('assistant');
       await click('Policy details: assistant · policy: Allowed');
-    } else await click(kind === 'system status' ? 'System status' : 'Edit policy');
+    } else await click(kind === 'system status' ? 'System status' : 'Add workload');
     await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
     expect(element<HTMLElement>('#global-analysis').hidden).toBe(false);
     await act(async () => { element('dialog').dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true })); });
@@ -1178,13 +1181,14 @@ describe('mock controls and evidence interactions', () => {
       name: 'new-assistant', profile_id: 'assistant-v1', replicas: 2, data_profile_id: 'demo-open', purpose: 'demo', spread_across_domains: true,
     }, expect.any(String));
   });
-  it('opens policy editing from the collapsed Workloads header without expanding or changing the fleet', async () => {
+  it('opens shared policy editing from its drawer without expanding Workloads or changing the fleet', async () => {
     const send = vi.fn(async () => {});
     await act(async () => root.render(<Lab views={mockViews(snapshot('regional'), 'regional', () => {})}
       command={{ send, pending: false, notice: null, error: null }} connection={{ initialized: true, error: null, retry: () => {} }}/>));
     const summary = element('.workload-summary').textContent;
-    await click('Edit policy');
-    expect(element('#dialog-title').textContent).toBe('Edit processing policy');
+    await click('Data policy');
+    await click('Edit data policy');
+    expect(element('#dialog-title').textContent).toBe('Edit shared data policy');
     expect(element<HTMLDetailsElement>('.workload-body').open).toBe(false);
     expect(element('.workload-summary').textContent).toBe(summary);
     await click('Close dialog');
@@ -1623,7 +1627,8 @@ describe('mock controls and evidence interactions', () => {
   });
   it('prefills current policy parameters and sends only the deliberate edit', async () => {
     await act(async () => root.render(<MockApp initialSnapshot="regional"/>));
-    await click('Edit policy');
+    await click('Data policy');
+    await click('Edit data policy');
     expect(element<HTMLInputElement>('input[value="westeurope"]').checked).toBe(true);
     expect(element<HTMLInputElement>('input[value="northeurope"]').checked).toBe(true);
     expect(element<HTMLInputElement>('input[value="eastus"]').checked).toBe(false);
@@ -1642,7 +1647,8 @@ describe('mock controls and evidence interactions', () => {
   });
   it('preserves permissive wildcard policy on a no-op form submission', async () => {
     await act(async () => root.render(<MockApp/>));
-    await click('Edit policy');
+    await click('Data policy');
+    await click('Edit data policy');
     expect(element<HTMLInputElement>('input[value="*"]').checked).toBe(true);
     expect(element<HTMLInputElement>('input[value="eastus"]').disabled).toBe(true);
     await submit();
@@ -1663,7 +1669,7 @@ describe('mock controls and evidence interactions', () => {
   it('disables commands on stale feeds and supports returning to a valid snapshot', async () => {
     await act(async () => root.render(<MockApp initialSnapshot="feed-stale"/>));
     expect(button('Add ready VM').disabled).toBe(true);
-    expect(button('Edit policy').disabled).toBe(true);
+    expect(button('Edit data policy').disabled).toBe(true);
     expect(element('.regional-replicas').textContent).toContain('Unknown planned · Unknown running · Unknown confirmed');
     expect(document.querySelectorAll('.gpu .badge.good')).toHaveLength(0);
     await click('Reconnect updates');

@@ -816,6 +816,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+    if std::env::args().nth(1).as_deref() == Some("add-data-choices") {
+        let added = db::add_data_choices(&pool("RESET_DATABASE_URL").await?).await?;
+        println!("{}", json!({ "added": added }));
+        return Ok(());
+    }
     if std::env::args().nth(1).as_deref() == Some("init") {
         let owner = pool("DEMO_OWNER_URL").await?;
         db::initialize(&owner).await?;
@@ -937,6 +942,7 @@ mod tests {
         db::initialize(&owner).await?;
         let config_pool = pool("DEMO_TEST_CONFIG_URL").await?;
         let plan_pool = pool("DEMO_TEST_PLAN_URL").await?;
+        let catalog_pool = pool("DEMO_TEST_RESET_URL").await?;
         let (_shutdown, stopped) = watch::channel(false);
         let app = App {
             shutdown: stopped,
@@ -958,6 +964,83 @@ mod tests {
         let mut tx = owner.begin().await?;
         db::load_fixture(&mut tx, "baseline").await?;
         tx.commit().await?;
+        {
+            let mut conn = owner.acquire().await?;
+            assert!(db::add_data_choices(&catalog_pool).await?.is_empty());
+            sqlx::query("DELETE FROM data_profiles WHERE data_profile_id='customer-eu-documents'")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("DELETE FROM placement_policies WHERE policy_id='customer-eu-processing'")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(r#"UPDATE placement_policies SET allowed_regions='["westeurope"]'::jsonb WHERE policy_id='demo-permissive'"#)
+                .execute(&mut *conn).await?;
+            let mut expected = db::configuration(&mut conn).await?;
+            let plan = serde_json::to_value(db::plan(&mut conn).await?)?;
+            let receipts_sql = "SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY operation_kind,request_key),'[]') FROM command_receipts r";
+            let receipts: Value = sqlx::query_scalar(receipts_sql)
+                .fetch_one(&mut *conn)
+                .await?;
+            assert_eq!(
+                db::add_data_choices(&catalog_pool).await?,
+                vec![
+                    "policy/customer-eu-processing",
+                    "data/customer-eu-documents"
+                ]
+            );
+            let catalog = fixtures::data_catalog();
+            expected.policies.insert(
+                "customer-eu-processing".into(),
+                catalog.policies["customer-eu-processing"].clone(),
+            );
+            expected.data_profiles.insert(
+                "customer-eu-documents".into(),
+                catalog.data_profiles["customer-eu-documents"].clone(),
+            );
+            assert_eq!(db::configuration(&mut conn).await?, expected);
+            assert!(db::add_data_choices(&catalog_pool).await?.is_empty());
+            assert_eq!(serde_json::to_value(db::plan(&mut conn).await?)?, plan);
+            assert_eq!(
+                sqlx::query_scalar::<_, Value>(receipts_sql)
+                    .fetch_one(&mut *conn)
+                    .await?,
+                receipts
+            );
+            let mut tx = owner.begin().await?;
+            db::set_reset_pending(&mut tx, true).await?;
+            tx.commit().await?;
+            assert!(db::add_data_choices(&catalog_pool)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("reset is pending"));
+            let mut tx = owner.begin().await?;
+            db::set_reset_pending(&mut tx, false).await?;
+            tx.commit().await?;
+            sqlx::query("DELETE FROM data_profiles WHERE data_profile_id='customer-eu-documents'")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("DELETE FROM placement_policies WHERE policy_id='customer-eu-processing'")
+                .execute(&mut *conn)
+                .await?;
+            let mut conflicting = catalog.data_profiles["demo-open"].clone();
+            conflicting.data_profile_id = "customer-eu-documents".into();
+            db::insert(&mut conn, Table::Data, &conflicting).await?;
+            let before_conflict = db::configuration(&mut conn).await?;
+            assert!(db::add_data_choices(&catalog_pool)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("different facts"));
+            assert_eq!(
+                db::configuration(&mut conn).await?,
+                before_conflict,
+                "failed additions roll back together"
+            );
+            let mut tx = owner.begin().await?;
+            db::load_fixture(&mut tx, "baseline").await?;
+            tx.commit().await?;
+        }
         assert!(*restored_gate(&owner).await?.read().await);
         let mut tx = owner.begin().await?;
         db::set_reset_pending(&mut tx, true).await?;

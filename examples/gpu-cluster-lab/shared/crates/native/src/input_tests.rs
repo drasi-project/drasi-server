@@ -43,7 +43,10 @@ fn aggregate(query: &str, signature: u64, records: Value) -> Result<ChangeOperat
     })
 }
 
-fn fixture_rows(fixture: &fixtures::Fixture, epoch: Uuid) -> Result<BTreeMap<&'static str, Value>> {
+pub(super) fn fixture_rows(
+    fixture: &fixtures::Fixture,
+    epoch: Uuid,
+) -> Result<BTreeMap<&'static str, Value>> {
     let configuration = serde_json::to_value(&fixture.configuration)?;
     let mut rows = BTreeMap::new();
     for (query, field) in [

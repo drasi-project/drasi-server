@@ -1,3 +1,4 @@
+pub mod bootstrap;
 mod evidence;
 pub mod inputs;
 pub mod lifecycle;

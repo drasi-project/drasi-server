@@ -10,11 +10,9 @@ pub struct Fixture {
     pub assignments: Vec<Assignment>,
 }
 
-pub fn load(name: &str) -> Result<Fixture> {
-    ensure!(NAMES.contains(&name), "unknown fixture {name}");
-    let regional = name == "regional-boundary";
+pub fn data_catalog() -> Configuration {
     let mut config = Configuration::default();
-    let (customer, data, policy, purpose, class, regions, authority) = if regional {
+    for (customer, data, policy, purpose, class, regions, authority) in [
         (
             "customer-eu",
             "customer-eu-documents",
@@ -23,8 +21,7 @@ pub fn load(name: &str) -> Result<Fixture> {
             "restricted",
             vec!["westeurope", "northeurope"],
             "customer-eu-contract-v1",
-        )
-    } else {
+        ),
         (
             "demo",
             "demo-open",
@@ -33,32 +30,45 @@ pub fn load(name: &str) -> Result<Fixture> {
             "synthetic",
             vec!["*"],
             "demo-fixture",
-        )
+        ),
+    ] {
+        config.policies.insert(
+            policy.into(),
+            Policy {
+                policy_id: policy.into(),
+                name: policy.into(),
+                customer_id: customer.into(),
+                allowed_regions: regions.into_iter().map(str::to_owned).collect(),
+                allowed_purposes: BTreeSet::from([purpose.into()]),
+                allowed_classifications: BTreeSet::from([class.into()]),
+                authority_ref: authority.into(),
+                revision: 1,
+            },
+        );
+        config.data_profiles.insert(
+            data.into(),
+            DataProfile {
+                data_profile_id: data.into(),
+                customer_id: customer.into(),
+                classification: class.into(),
+                policy_id: policy.into(),
+                authority_ref: authority.into(),
+                revision: 1,
+            },
+        );
+    }
+    config
+}
+
+pub fn load(name: &str) -> Result<Fixture> {
+    ensure!(NAMES.contains(&name), "unknown fixture {name}");
+    let regional = name == "regional-boundary";
+    let mut config = data_catalog();
+    let (data, purpose) = if regional {
+        ("customer-eu-documents", "customer-support")
+    } else {
+        ("demo-open", "demo")
     };
-    config.policies.insert(
-        policy.into(),
-        Policy {
-            policy_id: policy.into(),
-            name: policy.into(),
-            customer_id: customer.into(),
-            allowed_regions: regions.into_iter().map(str::to_owned).collect(),
-            allowed_purposes: BTreeSet::from([purpose.into()]),
-            allowed_classifications: BTreeSet::from([class.into()]),
-            authority_ref: authority.into(),
-            revision: 1,
-        },
-    );
-    config.data_profiles.insert(
-        data.into(),
-        DataProfile {
-            data_profile_id: data.into(),
-            customer_id: customer.into(),
-            classification: class.into(),
-            policy_id: policy.into(),
-            authority_ref: authority.into(),
-            revision: 1,
-        },
-    );
     let mut topology = vec![(
         "eu-primary",
         "westeurope",
@@ -165,6 +175,25 @@ pub fn baseline_capacities(config: &Configuration) -> BTreeMap<Uuid, Capacity> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_preset_offers_both_data_choices_without_changing_workload_defaults() -> Result<()> {
+        for name in NAMES {
+            let config = load(name)?.configuration;
+            assert_eq!(config.policies, data_catalog().policies);
+            assert_eq!(config.data_profiles, data_catalog().data_profiles);
+            let (data, purpose) = if name == "regional-boundary" {
+                ("customer-eu-documents", "customer-support")
+            } else {
+                ("demo-open", "demo")
+            };
+            assert!(config
+                .workloads
+                .values()
+                .all(|w| w.data_profile_id == data && w.purpose == purpose));
+        }
+        Ok(())
+    }
+
     #[test]
     fn fixtures_have_expected_resources_and_new_identities() -> Result<()> {
         let a = load("baseline")?;

@@ -87,6 +87,20 @@ workspace/
 The runtime builds against that sibling Core checkout, including its local
 changes. This example is not self-contained in a Server-only checkout, and
 arbitrary released Core/plugin versions are not interchangeable with it.
+The embedded host and native plugin must be built together. Bootstrap retains
+every keyed query row, sequence watermark and explicit empty-query completion.
+Small snapshots use the original single control notification; larger snapshots
+use an ordered begin/chunk/commit transfer, with a SHA-256 digest and matching
+transfer, runtime-epoch and sender-generation identities. Each notification is
+measured including its serialized SDK wrapper and stays within Core's unchanged
+16-KiB limit. Individual rows can span chunks; no rows or receipts are truncated.
+The complete snapshot is bounded to 1 MiB and 513 chunks, with a 10-second sender
+deadline (retrying only rejected full queues) and a 15-second receiver deadline.
+Malformed, duplicate, stale, interrupted, incomplete or oversized transfers fail
+closed with a diagnostic; policy/solver initialization never uses partial input.
+Recovery requires a freshly constructed matched host/plugin, not a partial retry
+or a scenario reset. An older runtime without this transport is not a safe
+cold-start rollback for saved snapshots above its single-message limit.
 This development workspace uses `agentofreality-parallel-computation-graph` in
 both repositories; keep the two source trees aligned.
 Host Rust, Node.js, npm, and PostgreSQL installations are **not required** for
@@ -1314,7 +1328,9 @@ is not a fallback in a production/live build.
 
 The control crate also has ignored PostgreSQL integration tests. Those require
 a dedicated database named `gpu_demo_test`, separately configured roles, and
-`DEMO_TEST_OWNER_URL`, `DEMO_TEST_CONFIG_URL`, and `DEMO_TEST_PLAN_URL`.
+`DEMO_TEST_OWNER_URL`, `DEMO_TEST_CONFIG_URL`, `DEMO_TEST_PLAN_URL`, and
+`DEMO_TEST_RESET_URL` (the existing reset role, also used by `./demo data-choices`
+to inspect reset state and transactionally add missing catalog records).
 Do not point them at the presenter database. Native projection tests and
 [check-native-ui.mjs](ops/check-native-ui.mjs) exercise the real query outputs
 against the production UI row validators; they are separate from live acceptance.

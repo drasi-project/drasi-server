@@ -18,7 +18,7 @@ use gpu_native::{
     inputs::{
         self, BootstrapBoundary, QueryBootstrapRow, QueryBootstrapWatermark, DATABASE_QUERIES,
     },
-    lifecycle::{BOOTSTRAP_COMPLETE, RUNTIME_OBSERVATION},
+    lifecycle::RUNTIME_OBSERVATION,
     projections, RuntimeComponent, RuntimeObservation,
 };
 use serde::Deserialize;
@@ -529,13 +529,39 @@ impl Runtime {
             "saved and requested starting scenarios differ"
         );
         let control = core.computation_component("input-plan")?.control()?;
-        control.notify_neighbor(
-            &id("policy")?,
-            ControlNotification::Custom {
-                kind: BOOTSTRAP_COMPLETE.into(),
-                payload: json!(BootstrapBoundary { epoch, queries }),
-            },
-        )?;
+        let notifications =
+            gpu_native::bootstrap::notifications(&BootstrapBoundary { epoch, queries })?;
+        let max_wire_bytes = notifications
+            .iter()
+            .map(|(kind, payload)| gpu_native::bootstrap::notification_bytes(kind, payload))
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .into_iter()
+            .max()
+            .context("GPU bootstrap produced no notifications")?;
+        tracing::info!(
+            messages = notifications.len(),
+            max_wire_bytes,
+            "GPU database bootstrap transport prepared"
+        );
+        let target = id("policy")?;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            for (kind, payload) in notifications {
+                loop {
+                    ensure!(!*stop.borrow(), "GPU bootstrap cancelled");
+                    match control.notify_neighbor(&target, ControlNotification::Custom {
+                        kind: kind.clone(), payload: payload.clone(),
+                    }) {
+                        Ok(()) => break,
+                        Err(ControlError::QueueFull { .. }) => tokio::select! {
+                            changed = stop.changed() => { changed?; anyhow::bail!("GPU bootstrap cancelled"); }
+                            _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+                        },
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        }).await.context("GPU bootstrap delivery timed out")??;
         let required: BTreeSet<String> = core
             .computation_control()?
             .observed()

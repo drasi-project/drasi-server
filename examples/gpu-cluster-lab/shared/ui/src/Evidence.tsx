@@ -51,7 +51,7 @@ export function executionObserved(placement: ResultRow): boolean {
   return placement.applied_plan_version !== null || placement.status === 'blocked' || placement.status === 'awaiting-application';
 }
 
-export function clusterReplicaCounts(views: Views, clusterId: string): { planned: number | null; running: number | null; ready: number | null } {
+export function clusterReplicaCounts(views: Views, clusterId: string, workloadId?: string): { planned: number | null; running: number | null; ready: number | null } {
   const p = views['ui-placements'].data?.[0], status = views['ui-status'].data?.[0];
   const unknown = { planned: null, running: null, ready: null };
   if (!currentFeeds(views) || !p || !correlated(p, status) || !status?.inputs_ready) return unknown;
@@ -62,7 +62,8 @@ export function clusterReplicaCounts(views: Views, clusterId: string): { planned
     return !!g && clusters.some(c => c.cluster_id === g.cluster_id);
   };
   const inCluster = (a: ResultRow) => gpus.some(g => g.gpu_id === a.gpu_id && g.cluster_id === clusterId);
-  const desired = records(p, 'desired'), actual = records(p, 'actual');
+  const desired = records(p, 'desired').filter(a => workloadId === undefined || a.workload_id === workloadId);
+  const actual = records(p, 'actual').filter(a => workloadId === undefined || a.workload_id === workloadId);
   const planned = p.desired_plan_version !== null && desired.every(located) ? desired.filter(inCluster).length : null;
   if (!executionObserved(p) || !actual.every(located)) return { ...unknown, planned };
   const local = actual.filter(inCluster);
@@ -137,16 +138,32 @@ export function ResilienceEvidence({ row, views }: { row: ResultRow; views: View
     <p className="muted">{text(row, 'capacity_only_detail')} This comparison never places workloads or bypasses policy.</p>
   </div>;
 }
-export function PolicyEvidence({ row, views }: { row: ResultRow; views: Views }) {
+export function policyCurrent(row: ResultRow, views: Views, stale = false): boolean {
   const status = views['ui-status'].data?.[0];
-  const current = currentFeeds(views) && row.current && row.policy_signature === status?.policy_signature
-    && row.observation_epoch === status?.observation_epoch;
   const workload = views['ui-workloads'].data?.find(w => w.workload_id === row.workload_id);
   const cluster = views['ui-clusters'].data?.find(c => c.cluster_id === row.cluster_id);
+  return !stale && currentFeeds(views) && row.current === true && row.error === null
+    && (status?.policy_rules_current === undefined || status.policy_rules_current === true)
+    && row.policy_revision !== null && !!row.input_fingerprint
+    && row.policy_signature === status?.policy_signature && row.observation_epoch === status?.observation_epoch
+    && !!workload && row.data_profile_id === workload.data_profile_id && row.purpose === workload.purpose
+    && !!cluster && row.region === cluster.region;
+}
+export function PolicyEvidence({ row, views }: { row: ResultRow; views: Views }) {
+  const current = policyCurrent(row, views);
+  const workload = views['ui-workloads'].data?.find(w => w.workload_id === row.workload_id);
+  const cluster = views['ui-clusters'].data?.find(c => c.cluster_id === row.cluster_id);
+  const allocation = clusterReplicaCounts(views, text(row, 'cluster_id'), text(row, 'workload_id'));
   return <div className="eligibility evidence">
     <strong>{String(workload?.name ?? row.workload_id)} → {String(cluster?.name ?? row.cluster_id)}</strong>
     <p><span className={`badge ${current && row.authorization === 'allow' ? 'good' : current && row.authorization === 'deny' ? 'danger' : 'warning'}`}>{current ? label('authorization', text(row, 'authorization')) : 'Unknown / not current'}</span> {strings(row, 'reasons').map(reasonText).join('; ')}</p>
-    <p>{label('data', text(row, 'data_profile_id'))} / {label('purpose', text(row, 'purpose'))}</p>
+    <p>{label('region', text(row, 'region'))}: {current && row.authorization === 'allow'
+      ? 'This data and purpose are permitted here. GPUs here may be considered if the workload fits.'
+      : current && row.authorization === 'deny' ? 'Excluded from new allocations for this workload, regardless of spare GPU capacity.'
+        : 'Current permission has not been established for this workload and destination.'}</p>
+    <p>Data: {label('data', text(row, 'data_profile_id'))} · Purpose: {label('purpose', text(row, 'purpose'))}</p>
+    <p className="policy-allocation-counts">This workload here: <strong>{count(allocation.planned)}</strong> in saved plan ·{' '}
+      <strong>{count(allocation.running)}</strong> running · <strong>{count(allocation.ready)}</strong> confirmed</p>
     <details><summary>Policy settings · {row.policy_revision === null ? 'unavailable' : `revision ${text(row, 'policy_revision')}`}</summary>
       <p>{label('policy', text(row, 'policy_id'))}</p>
       <p>Allowed regions: {row.policy_revision === null ? 'Unknown' : strings(row, 'allowed_regions').map(r => label('region', r)).join(', ') || 'None'}</p>

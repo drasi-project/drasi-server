@@ -262,6 +262,42 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn synthetic_and_eu_data_coexist_with_distinct_region_and_purpose_decisions() -> Result<()> {
+        let mut config = fixtures::load("regional-boundary")?.configuration;
+        let synthetic = *config.workloads.keys().next().unwrap();
+        let workload = config.workloads.get_mut(&synthetic).unwrap();
+        workload.data_profile_id = "demo-open".into();
+        workload.purpose = "demo".into();
+        config.validate()?;
+        let rules = config.policies.clone();
+        let engine = Evaluator::new()?;
+        let assessment = engine.evaluate(&config)?;
+        assessment.validate_current(&config)?;
+        for id in config.workloads.keys() {
+            assert!(assessment.allows(*id, "eu-primary"));
+            assert!(assessment.allows(*id, "eu-recovery"));
+            assert_eq!(assessment.allows(*id, "us-spare"), *id == synthetic);
+        }
+        config.workloads.get_mut(&synthetic).unwrap().purpose = "customer-support".into();
+        assert!(assessment.validate_current(&config).is_err());
+        let changed = engine.evaluate(&config)?;
+        for pair in changed
+            .pairs
+            .values()
+            .filter(|pair| pair.workload_id == synthetic)
+        {
+            assert_eq!(pair.authorization, Authorization::Deny);
+            assert_eq!(pair.reasons, vec!["purpose-not-permitted"]);
+        }
+        assert_eq!(
+            config.data_profiles["demo-open"].classification,
+            "synthetic"
+        );
+        assert_eq!(config.policies, rules);
+        Ok(())
+    }
     #[test]
     fn missing_context_is_unknown_and_never_allow() -> Result<()> {
         let mut config = fixtures::load("baseline")?.configuration;
@@ -289,6 +325,78 @@ mod tests {
             .pairs
             .values()
             .all(|p| p.authorization == Authorization::Deny));
+        Ok(())
+    }
+
+    #[test]
+    fn shared_rules_check_workload_facts_and_region_edits_recompute_every_workload() -> Result<()> {
+        let mut config = fixtures::load("regional-boundary")?.configuration;
+        let engine = Evaluator::new()?;
+        let original_rules = config.policies.clone();
+        let first = *config.workloads.keys().next().unwrap();
+        config.workloads.get_mut(&first).unwrap().purpose = "demo".into();
+        let assessment = engine.evaluate(&config)?;
+        assessment.validate_current(&config)?;
+        for pair in assessment.pairs.values() {
+            if pair.workload_id == first {
+                assert_eq!(pair.authorization, Authorization::Deny);
+                assert!(pair.reasons.contains(&"purpose-not-permitted".into()));
+            } else if pair.cluster_id == "eu-primary" {
+                assert_eq!(pair.authorization, Authorization::Allow);
+            }
+        }
+        assert_eq!(
+            config.policies, original_rules,
+            "facts do not edit shared rules"
+        );
+        config.workloads.get_mut(&first).unwrap().purpose = "customer-support".into();
+        config
+            .data_profiles
+            .get_mut("customer-eu-documents")
+            .unwrap()
+            .classification = "synthetic".into();
+        let assessment = engine.evaluate(&config)?;
+        assert!(assessment
+            .pairs
+            .values()
+            .all(|pair| pair.authorization == Authorization::Deny
+                && pair
+                    .reasons
+                    .contains(&"classification-not-permitted".into())));
+        config
+            .data_profiles
+            .get_mut("customer-eu-documents")
+            .unwrap()
+            .classification = "restricted".into();
+        config
+            .data_profiles
+            .get_mut("customer-eu-documents")
+            .unwrap()
+            .customer_id = "different-customer".into();
+        let mismatched = engine.evaluate(&config)?;
+        assert!(mismatched
+            .pairs
+            .values()
+            .all(|pair| pair.authorization == Authorization::Deny
+                && pair.reasons.contains(&"customer-mismatch".into())));
+        config
+            .data_profiles
+            .get_mut("customer-eu-documents")
+            .unwrap()
+            .customer_id = "customer-eu".into();
+        let previous = engine.evaluate(&config)?;
+        let rule = config.policies.get_mut("customer-eu-processing").unwrap();
+        rule.allowed_regions = ["northeurope".into()].into_iter().collect();
+        rule.revision += 1;
+        assert!(previous.validate_current(&config).is_err());
+        let current = engine.evaluate(&config)?;
+        current.validate_current(&config)?;
+        for workload in config.workloads.keys() {
+            assert!(previous.allows(*workload, "eu-primary"));
+            assert!(!current.allows(*workload, "eu-primary"));
+            assert!(current.allows(*workload, "eu-recovery"));
+            assert!(!current.allows(*workload, "us-spare"));
+        }
         Ok(())
     }
 }
