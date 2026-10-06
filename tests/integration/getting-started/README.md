@@ -23,7 +23,8 @@ the server. Their immutable digests, binary hashes, and trusted publisher
 identity come from the [shared plugin pins](../../plugin-pins/README.md).
 Signature verification stays enabled; automatic latest-version installation
 is disabled. A missing, conflicting, or unverified artifact stops the runner
-before any server is launched. No sibling core checkout is needed.
+before any server is launched. All default dependencies are released registry
+packages; no sibling core checkout or source preparation is required.
 
 ### Quick Start with Docker
 

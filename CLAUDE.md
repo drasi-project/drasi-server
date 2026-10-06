@@ -9,6 +9,7 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ## Development Commands
 
 ### Build and Run
+- Default builds use the reviewed released registry dependencies and need no sibling checkout. `make prepare-build` checks the locked release identities or explicitly selected matching local SDKs without fetching source.
 - Build: `cargo build`
 - Build release: `cargo build --release`
 - Cross-compile: `make build-cross TARGET=x86_64-pc-windows-gnu`
@@ -24,12 +25,18 @@ This is the Drasi Server repository - a standalone server wrapper around DrasiLi
 ### Plugin Loading
 Plugins (sources, reactions, bootstrap providers) are loaded at runtime as cdylib shared libraries (`.so`/`.dylib`/`.dll`) from a `plugins/` directory next to the binary. Each plugin is self-contained with its own tokio runtime, communicating via a stable C ABI. Plugin building is managed by drasi-core, not this repository.
 
-**Important: `[patch.crates-io]` does NOT affect plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime — they must be built separately. When developing with local drasi-core changes, always use `make build-local-plugins` to rebuild plugins from local source. Registry-downloaded plugins (`autoInstallPlugins: true`) will NOT be ABI-compatible with local drasi-core changes.
+**Important: `[patch.crates-io]` does NOT rebuild plugins.** Cargo patches only affect compile-time dependency resolution for the server binary. Plugins are separate shared libraries loaded at runtime. The default has no source patches. `scripts/plugin_origin.py` checks the actual locked Cargo graph against reviewed released versions and checksums; the presence of `../drasi-core` does not select local plugins. The `build-local-plugins*` targets require that the server's local SDK, host, FFI and library identities match the plugin-build workspace. Use these targets for deliberately selected local SDK development, not merely because a checkout exists or its version numbers match.
 
 - Build all plugins from local drasi-core (release): `make build-local-plugins`
 - Build all plugins from local drasi-core (debug): `make build-local-plugins-debug`
 - Build test-only plugins (mock, log, scriptfile): `make build-local-test-plugins`
 - Download test plugins from OCI registry (no drasi-core needed): `make download-test-plugins`
+- Check plugin origin without building: `python3 scripts/plugin_origin.py mode`
+- Test the plugin origin/setup policy: `make test-tooling`
+
+Trading's `./start-demo.sh` and devcontainer share `scripts/prepare-trading.sh`: verify dependency origins, build the checked-out server and real UI, and install all five reviewed registry plugins including the SSE reaction created later by the app. `scripts/install_plugins.py` reuses the locked installer with independent binary-hash checks for Trading, test-only plugins and Getting Started. The released runtime uses core/functions 0.5.10, library 0.9.3, host/plugin/FFI SDK 0.11.3, index 0.6.4 and middleware 0.5.11 from release `22125bf1`. All eight plugin kinds use that release and native ABI 0.14.0; the Darwin SSE signature was repaired under the same trusted publisher without changing its binary. No older-plugin fallback or temporary source checkout is used. Explicit matching local-SDK development remains separate. Python 3.11 or later is required for preparation. See `docs/main-runtime-integration.md` for current provenance, validation and upgrade warnings; older source-pin evidence is labeled historical.
+
+**Persistent-state upgrade:** all affected numeric groups, including ordinary integer and nested compound keys, need complete authoritative reconstruction of grouping/default state, lazy min/max sets, indexes and output together. The one-time source-rank configuration-hash rebootstrap and named MessagePack writer do not repair malformed old positional records. Strict errors remain visible. Do not delete user state, clear only output rows, or claim an automatic migration.
 
 **Local directory plugin sources:** The `pluginRegistry` config field (and `--registry` CLI flag) accepts local filesystem paths in addition to OCI registry URLs. When a path is detected (e.g., `/path/to/plugins`, `./plugins`, `../drasi-core/target/debug/plugins`, `file:///opt/plugins`), the system scans the directory for plugin binaries instead of contacting an OCI registry. This is useful for development workflows where plugins are built locally. Detection is cross-platform: Unix absolute paths, relative paths (`./`, `../`), home-relative (`~/`), `file://` URIs, Windows drive letters, and UNC paths are all recognized as local directories.
 

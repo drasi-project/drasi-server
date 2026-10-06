@@ -18,10 +18,12 @@ host: 0.0.0.0
 port: 8280
 logLevel: info
 persistConfig: false
-verifyPlugins: false
-# Plugins (source/http, source/postgres, bootstrap/scriptfile, bootstrap/postgres)
-# are downloaded from the OCI registry (ghcr.io/drasi-project) on first server
-# startup. No manual `cargo install` or `make build-local-plugins` required.
+verifyPlugins: true
+# start-demo.sh installs the reviewed HTTP/Postgres sources, scriptfile/Postgres
+# bootstrappers and SSE reaction from signed, digest-pinned registry artifacts.
+# The app still creates its queries/reaction; installing SSE does not create it.
+# An engine-only local patch keeps registry SDK plugins. Only matching local SDK
+# development builds local plugins and opts out of registry signature verification.
 autoInstallPlugins: true
 sources:
 - kind: http
