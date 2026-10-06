@@ -515,9 +515,21 @@ print(os.environ["SELECTED_SDK"] if sys.argv[-1] == "local-workspace" else os.en
                     self.assertIn(str(selected_plugins), result.stdout)
                 self.assertNotIn(str(unrelated), result.stdout)
 
-    def test_release_build_requires_real_ui_build_and_locked_cargo(self):
+    def test_playground_provides_python_with_tomllib_for_build_preflight(self):
+        config = json.loads((ROOT / ".devcontainer/playground/devcontainer.json").read_text())
+        python = config["features"]["ghcr.io/devcontainers/features/python:1"]["version"]
+        self.assertGreaterEqual(tuple(map(int, python.split("."))), (3, 11))
+
+    def test_release_build_entry_points_require_ui_before_locked_cargo(self):
         (self.root / "ui").mkdir()
         self.prepare_stub()
+        shutil.copyfile(ROOT / "Makefile", self.root / "Makefile")
+        executable(self.bin / "sudo", "pass\n")
+        executable(self.bin / "dpkg-architecture", "print('x86_64-linux-gnu')\n")
+        # Exercise the post-create build without installing packages or starting services.
+        playground_build = (
+            ROOT / ".devcontainer/playground/post-create.sh"
+        ).read_text().split("# Make scripts executable", 1)[0]
         for tool in ("npm", "cargo"):
             executable(self.bin / tool, f"""
 import json, os, sys
@@ -526,24 +538,27 @@ with open(os.environ["POLICY_LOG"], "a") as log:
 if {tool!r} == "npm" and sys.argv[1:] == ["run", "build"] and os.environ.get("FAIL_UI") == "1":
     sys.exit(21)
 """)
-        for fail in ("0", "1"):
-            with self.subTest(fail=fail):
-                self.log.write_text("")
-                result = subprocess.run(
-                    ["make", "-f", str(ROOT / "Makefile"), "build-release"],
-                    cwd=self.root, env={**self.environment, "FAIL_UI": fail},
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                )
-                events = self.commands()
-                self.assertEqual(events[:3], [
-                    ["prepare-build"], ["npm", "ci"], ["npm", "run", "build"],
-                ])
-                if fail == "0":
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn(["cargo", "build", "--locked", "--release"], events)
-                else:
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertFalse(any(event[0] == "cargo" for event in events))
+        for command in (
+            ["make", "build-release"],
+            ["bash", "-c", playground_build],
+        ):
+            for fail in ("0", "1"):
+                with self.subTest(entry_point=command[0], fail=fail):
+                    self.log.write_text("")
+                    result = subprocess.run(
+                        command, cwd=self.root, env={**self.environment, "FAIL_UI": fail},
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    )
+                    events = self.commands()
+                    self.assertEqual(events[:3], [
+                        ["prepare-build"], ["npm", "ci"], ["npm", "run", "build"],
+                    ])
+                    if fail == "0":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(events[3:], [["cargo", "build", "--locked", "--release"]])
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertFalse(any(event[0] == "cargo" for event in events))
 
     def test_test_plugin_download_dispatches_to_the_same_locked_installer(self):
         self.prepare_stub()
