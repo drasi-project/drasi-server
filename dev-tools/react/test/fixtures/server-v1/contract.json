@@ -15,6 +15,15 @@
     "capture": "examples/trading/app/test/live/trading.live.spec.ts; live-eCvq2z; server-rest.json",
     "note": "Unmodified response bodies from owned disposable seed data. The frontend had P3 changes; frozen backend sources/lock were unchanged from serverRevision. Port is the actual ephemeral reaction listener."
   },
+  "sseRecording": {
+    "file": "sse-0.3.4.ndjson",
+    "copiedVerbatimFrom": "examples/trading/app/test/fixtures/recorded/a2b6480-core-0.5.8/server-sse.ndjson",
+    "sourceTag": "drasi-reaction-sse-v0.3.4",
+    "sourceRevision": "ff2fde26d0f33adcec17b19db7d2533f80b0baab",
+    "serializer": "lib/src/channels/events.rs::ResultDiff",
+    "envelope": "components/reactions/sse/src/sse.rs",
+    "note": "Original P1 owned seed recording, not the later REST capture above. QueryResult.sequence is internal and is not included in the default SSE envelope. Custom plugin templates are not the supported default wire format."
+  },
   "query": {
     "path": "/api/v1/instances/trading-server/queries/watchlist-query?view=full",
     "recordedAt": "2026-09-19T08:34:20.080Z",

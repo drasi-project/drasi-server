@@ -26,6 +26,7 @@ import clsx from 'clsx';
 // Code snippet for presentation display - React component only
 const CODE_SNIPPET = `<QueryTable<LimitOrderResult>
   queryId="active-orders-query"
+  queryOptions={tradingQueryOptions('active-orders-query')}
   title="Limit Orders"
   columns={[
     { key: 'symbol', label: 'Symbol' },

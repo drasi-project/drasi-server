@@ -27,7 +27,10 @@ const endpoints = [
 
 function Probe({ observe }: { observe: (context: DrasiContextValue) => void }) {
   const context = useDrasiClient();
-  const query = useDrasiQuery('stocks');
+  const query = useDrasiQuery('stocks', {
+    getKey: row => typeof row.id === 'string' ? row.id : '',
+    transform: row => row,
+  });
   observe(context);
   return <>
     <output data-testid="ready">{String(context.initialized)}</output>
