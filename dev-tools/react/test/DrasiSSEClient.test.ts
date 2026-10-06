@@ -14,6 +14,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiSSEClient } from '../src/client/DrasiSSEClient';
+import { DrasiError } from '../src/client/errors';
 import { fakeEventSourceFactory } from './FakeEventSource';
 
 afterEach(() => {
@@ -21,6 +22,45 @@ afterEach(() => {
 });
 
 describe('DrasiSSEClient', () => {
+  it.each([null, [], {}, { queryId: 3 }, { queryId: 'q' }, { addedResults: 'bad' }])(
+    'terminates malformed live payload %j with an actionable typed error', async payload => {
+      const factory = fakeEventSourceFactory();
+      const client = new DrasiSSEClient({ eventSourceFactory: factory.create });
+      const connected = client.connect(['q'], 'https://events.invalid');
+      factory.instances[0].open();
+      await connected;
+      factory.instances[0].message(payload);
+      expect(client.getConnectionStatus().error).toBeInstanceOf(DrasiError);
+      expect(client.getConnectionStatus().error?.code).toBe('INVALID_PAYLOAD');
+      expect(client.getConnectionStatus().reconnecting).toBe(false);
+      expect(factory.instances[0].closed).toBe(true);
+      await client.disconnect();
+    },
+  );
+
+  it('cancels a pending connection via AbortSignal and ignores obsolete open/events', async () => {
+    const factory = fakeEventSourceFactory(), controller = new AbortController();
+    const client = new DrasiSSEClient({ eventSourceFactory: factory.create });
+    const connected = client.connect(['q'], 'https://events.invalid', controller.signal);
+    controller.abort();
+    await expect(connected).rejects.toMatchObject({ name: 'AbortError' });
+    factory.instances[0].open();
+    factory.instances[0].message({ queryId: 'q', data: [] });
+    factory.instances[0].fail();
+    expect(client.isConnected()).toBe(false);
+    await client.disconnect();
+  });
+
+  it('bounds constructor/factory failures without claiming absent resources', async () => {
+    expect(() => new DrasiSSEClient({ connectionTimeoutMs: 0 })).toThrow(DrasiError);
+    const client = new DrasiSSEClient({
+      maxReconnectAttempts: 0, eventSourceFactory: () => { throw new Error('private failure'); },
+    });
+    await expect(client.connect(['q'], 'https://events.invalid')).rejects.toMatchObject({ code: 'STREAM_UNAVAILABLE' });
+    expect(client.getConnectionStatus().error?.message).not.toContain('private');
+    await client.disconnect();
+  });
+
   it('multiplexes query batches after the connection opens', async () => {
     const factory = fakeEventSourceFactory();
     const client = new DrasiSSEClient({

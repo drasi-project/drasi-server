@@ -25,91 +25,95 @@ import {
   DrasiClient,
   DrasiClientOptions,
 } from '../client/DrasiClient';
-import type { EventSourceFactory } from '../client/DrasiSSEClient';
+import { DrasiError, asDrasiError, isAbortError } from '../client/errors';
 import {
   ConnectionStatus,
-  QueryDefinition,
+  QueryConfig,
   QueryResult,
-  ReactionDefinition,
-  RouteUnidentified,
   UseDrasiQueryOptions,
 } from '../types';
 
 export interface DrasiContextValue {
   client: DrasiClient | null;
   initialized: boolean;
-  error: string | null;
+  error: DrasiError | null;
   retry: () => void;
 }
 
 const DrasiContext = createContext<DrasiContextValue | undefined>(undefined);
 
-/** Props for {@link DrasiProvider}. */
-export interface DrasiProviderProps {
-  /** Base URL of the Drasi Server REST API. Defaults to `http://localhost:8280`. */
-  serverUrl?: string;
-  /** Continuous queries multiplexed over the shared connection. */
-  queries: QueryDefinition[];
-  /** The SSE reaction that multiplexes the queries. */
-  reaction: ReactionDefinition;
-  /** Routes content for change payloads that arrive without a query id. */
-  routeUnidentified?: RouteUnidentified;
-  /** Fetch implementation for authenticated clients, polyfills, and tests. */
-  fetch?: typeof globalThis.fetch;
-  /** EventSource implementation for polyfills and tests. */
-  eventSourceFactory?: EventSourceFactory;
-  /** Reconnect behavior overrides. */
-  reconnect?: DrasiClientOptions['reconnect'];
+/** Props for the connect-only {@link DrasiProvider}. */
+export interface DrasiProviderProps extends DrasiClientOptions {
   children: React.ReactNode;
 }
 
 /**
+ * Bind hooks to an app-owned client lifecycle without opening a second stream.
+ * The owner supplies state/retry and must disconnect its client on cleanup.
+ * This binding performs no initialization, retries or resource management.
+ */
+export const DrasiClientProvider = DrasiContext.Provider;
+
+/**
  * DrasiProvider establishes a single shared connection to a Drasi Server and
- * makes it available to descendant components. All queries are created/started
- * and streamed over one multiplexed SSE connection.
+ * makes it available to descendant components. Resources must already exist
+ * and be running. Initialization and explicit retry are read-only.
  *
  * Wrap your application once near the root:
  * ```tsx
- * <DrasiProvider serverUrl="http://localhost:8280" queries={QUERIES} reaction={REACTION}>
+ * <DrasiProvider serverUrl="https://drasi.example" instanceId="analytics"
+ *   queryIds={['readings']} reaction={{ id: 'events', endpoint: 'https://events.example/sse' }}>
  *   <App />
  * </DrasiProvider>
  * ```
  */
 export const DrasiProvider: React.FC<DrasiProviderProps> = ({
   serverUrl,
-  queries,
+  instanceId,
+  queryIds,
   reaction,
   routeUnidentified,
   fetch: fetcher,
   eventSourceFactory,
   reconnect,
+  requestTimeoutMs,
   children,
 }) => {
   const [initialized, setInitialized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DrasiError | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  const client = useMemo(
-    () =>
-      new DrasiClient({
-      serverUrl,
-      queries,
-      reaction,
-      routeUnidentified,
-        fetch: fetcher,
-        eventSourceFactory,
-        reconnect,
-      }),
+  const creation = useMemo(
+    () => {
+      try {
+        return { client: new DrasiClient({
+          serverUrl,
+          instanceId,
+          queryIds,
+          reaction,
+          routeUnidentified,
+          fetch: fetcher,
+          eventSourceFactory,
+          reconnect,
+          requestTimeoutMs,
+        }), error: null };
+      } catch (failure) {
+        return { client: null, error: asDrasiError(failure, { instanceId }, 'INVALID_CONFIGURATION') };
+      }
+    },
     [
       serverUrl,
-      queries,
+      instanceId,
+      queryIds,
       reaction,
       routeUnidentified,
       fetcher,
       eventSourceFactory,
       reconnect,
+      requestTimeoutMs,
     ],
   );
+  const client = creation.client;
 
   const retry = useCallback(() => {
     setAttempt((current) => current + 1);
@@ -118,7 +122,17 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
   useEffect(() => {
     let cancelled = false;
     setInitialized(false);
+    if (!client) {
+      setError(creation.error);
+      return;
+    }
     setError(null);
+    const unsubscribe = client.onConnectionStatusChange(status => {
+      if (!cancelled && status.error && !status.reconnecting) {
+        setError(status.error);
+        setInitialized(false);
+      }
+    });
 
     client
       .initialize()
@@ -129,20 +143,18 @@ export const DrasiProvider: React.FC<DrasiProviderProps> = ({
         }
       })
       .catch((err) => {
-        const aborted =
-          err instanceof DOMException && err.name === 'AbortError';
-        if (!cancelled && !aborted) {
-          setError(String(err));
+        if (!cancelled && !isAbortError(err)) {
+          setError(asDrasiError(err, { instanceId }));
           setInitialized(false);
-          console.error('Failed to initialize Drasi client:', err);
         }
       });
 
     return () => {
       cancelled = true;
+      unsubscribe();
       void client.disconnect();
     };
-  }, [client, attempt]);
+  }, [client, attempt, instanceId, creation.error]);
 
   const value = useMemo<DrasiContextValue>(
     () => ({ client, initialized, error, retry }),
@@ -185,7 +197,7 @@ export function useDrasiQuery<T = any>(
 ): {
   data: T[] | null;
   loading: boolean;
-  error: string | null;
+  error: DrasiError | null;
   lastUpdate: Date | null;
 } {
   const {
@@ -195,7 +207,7 @@ export function useDrasiQuery<T = any>(
   } = useDrasiClient();
   const [data, setData] = useState<T[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DrasiError | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const dataMapRef = useRef<Map<string, T>>(new Map());
@@ -209,6 +221,9 @@ export function useDrasiQuery<T = any>(
       if (providerError) {
         setError(providerError);
         setLoading(false);
+      } else {
+        setError(null);
+        setLoading(true);
       }
       return;
     }
@@ -256,13 +271,15 @@ export function useDrasiQuery<T = any>(
         setLoading(false);
         setError(null);
       } catch (resultError) {
-        setError(String(resultError));
+        setError(asDrasiError(resultError, {
+          instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
+        }));
         setLoading(false);
       }
     };
 
     const unsubscribe = client.subscribe(queryId, handleResult, (queryError) => {
-      setError(queryError.message);
+      setError(queryError);
       setLoading(false);
     });
 
@@ -285,16 +302,14 @@ export function useDrasiConnectionStatus(): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>({ connected: false });
 
   useEffect(() => {
-    if (!initialized || !client) {
-      if (providerError) {
-        setStatus({ connected: false, error: providerError });
-      }
+    if (!client) {
+      setStatus({ connected: false, error: providerError ?? undefined });
       return;
     }
     return client.onConnectionStatusChange(setStatus);
   }, [client, initialized, providerError]);
 
-  return status;
+  return providerError ? { connected: false, error: providerError } : status;
 }
 
 /** Get the Drasi Server UI URL for the connected instance, if available. */
@@ -306,24 +321,27 @@ export function useDrasiServerUiUrl(): string | null {
 
 /** Fetch a query's full configuration from the Drasi Server. */
 export function useDrasiQueryDefinition(queryId: string): {
-  config: Record<string, any> | null;
+  config: QueryConfig | null;
   loading: boolean;
-  error: string | null;
+  error: DrasiError | null;
 } {
   const {
     client,
     initialized,
     error: providerError,
   } = useDrasiClient();
-  const [config, setConfig] = useState<Record<string, any> | null>(null);
+  const [config, setConfig] = useState<QueryConfig | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DrasiError | null>(null);
 
   useEffect(() => {
     if (!initialized || !client) {
       if (providerError) {
         setError(providerError);
         setLoading(false);
+      } else {
+        setError(null);
+        setLoading(true);
       }
       return;
     }
@@ -341,11 +359,10 @@ export function useDrasiQueryDefinition(queryId: string): {
         }
       })
       .catch((queryError) => {
-        const aborted =
-          queryError instanceof DOMException &&
-          queryError.name === 'AbortError';
-        if (!cancelled && !aborted) {
-          setError(String(queryError));
+        if (!cancelled && !isAbortError(queryError)) {
+          setError(asDrasiError(queryError, {
+            instanceId: client.instanceId, resourceKind: 'query', resourceId: queryId,
+          }));
           setLoading(false);
         }
       });

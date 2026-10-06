@@ -1,184 +1,136 @@
-// Copyright 2025 The Drasi Authors.
-//
+// Copyright 2026 The Drasi Authors.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  DrasiProvider,
-  useDrasiQuery,
+  DrasiProvider, DrasiClientProvider, useDrasiClient, useDrasiConnectionStatus,
+  useDrasiQuery, useDrasiQueryDefinition, useDrasiServerUiUrl,
 } from '../src/react/DrasiContext';
+import { DrasiError } from '../src/client/errors';
 import { fakeEventSourceFactory } from './FakeEventSource';
+import { ReadServer, failure, refs } from './server';
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
+function Probe({ observe = () => {} }: { observe?: (errors: (DrasiError | null | undefined)[]) => void }) {
+  const context = useDrasiClient();
+  const connection = useDrasiConnectionStatus();
+  const definition = useDrasiQueryDefinition('stocks');
+  const ui = useDrasiServerUiUrl();
+  const query = useDrasiQuery<{ id: string; value: number }>('stocks', {
+    getKey: row => row.id,
+    transform: row => ({ id: row.id, value: Number(row.value) }),
   });
+  observe([context.error, connection.error, query.error, definition.error]);
+  return <div>
+    <span data-testid="loading">{String(query.loading)}</span>
+    <span data-testid="error">{query.error?.message ?? ''}</span>
+    <span data-testid="data">{JSON.stringify(query.data)}</span>
+    <span data-testid="ui">{ui}</span>
+    <button onClick={context.retry}>Retry</button>
+  </div>;
 }
 
-function QueryProbe(): React.ReactElement {
-  const { data, loading, error } = useDrasiQuery<{
-    id: string;
-    value: number;
-  }>('stocks', {
-    getKey: (row) => row.id,
-    transform: (row) => ({
-      id: row.id,
-      value: Number(row.value),
-    }),
-  });
-
-  return (
-    <div>
-      <span data-testid="loading">{String(loading)}</span>
-      <span data-testid="error">{error ?? ''}</span>
-      <span data-testid="data">{JSON.stringify(data)}</span>
-    </div>
-  );
-}
-
-describe('DrasiProvider and useDrasiQuery', () => {
-  it('propagates initialization failures instead of loading forever', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const fetcher = vi.fn(async () =>
-      jsonResponse({ message: 'unhealthy' }, 503),
-    );
-
-    render(
-      <DrasiProvider
-        queries={[]}
-        reaction={{ port: 8281 }}
-        fetch={fetcher as typeof fetch}
-      >
-        <QueryProbe />
-      </DrasiProvider>,
-    );
-
-    await waitFor(() =>
-      expect(screen.getByTestId('loading').textContent).toBe('false'),
-    );
-    expect(screen.getByTestId('error').textContent).toContain(
-      'health check failed (503)',
-    );
-    expect(consoleError).toHaveBeenCalledWith(
-      'Failed to initialize Drasi client:',
-      expect.any(Error),
-    );
-  });
-
-  it('preserves delete markers through transforms', async () => {
-    const factory = fakeEventSourceFactory();
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        return jsonResponse([{ id: 'A', value: '10' }]);
-      }
-      throw new Error(`Unexpected request: ${url}`);
+describe('typed failures through all React bindings', () => {
+  it.each([
+    'QUERY_NOT_FOUND', 'REACTION_NOT_FOUND', 'INSTANCE_NOT_FOUND', 'RESOURCE_STOPPED',
+    'RESOURCE_STARTING', 'SERVER_UNAVAILABLE', 'UNAUTHENTICATED', 'FORBIDDEN', 'INVALID_PAYLOAD',
+    'INVALID_CONFIGURATION', 'INCOMPATIBLE_RESOURCE', 'RESOURCE_UNAVAILABLE',
+  ] as const)('preserves the exact %s object through context/status/query/definition hooks', async code => {
+    const server = new ReadServer();
+    if (code === 'QUERY_NOT_FOUND') server.missing = 'query';
+    if (code === 'REACTION_NOT_FOUND') server.missing = 'reaction';
+    if (code === 'INSTANCE_NOT_FOUND') server.missing = 'instance';
+    if (code === 'RESOURCE_STOPPED') server.queryStatus = 'Stopped';
+    if (code === 'RESOURCE_STARTING') server.queryStatus = 'Starting';
+    if (code === 'RESOURCE_UNAVAILABLE') server.queryStatus = 'Error';
+    if (code === 'SERVER_UNAVAILABLE') server.fetch.mockRejectedValue(new TypeError('secret network details'));
+    if (code === 'UNAUTHENTICATED') server.fetch.mockResolvedValue(failure(401));
+    if (code === 'FORBIDDEN') server.fetch.mockResolvedValue(failure(403));
+    if (code === 'INVALID_PAYLOAD') server.fetch.mockResolvedValue(new Response('broken'));
+    if (code === 'INCOMPATIBLE_RESOURCE') server.reaction.kind = 'log';
+    const options = code === 'INVALID_CONFIGURATION' ? { ...refs, instanceId: '' } : refs;
+    const observe = vi.fn();
+    const rendered = render(<DrasiProvider {...options} fetch={server.fetch}><Probe observe={observe} /></DrasiProvider>);
+    await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
+    await waitFor(() => {
+      const errors = observe.mock.calls[observe.mock.calls.length - 1][0];
+      expect(errors[0]).toBeInstanceOf(DrasiError);
+      expect(errors[0].code).toBe(code);
+      expect(errors.every((error: unknown) => error === errors[0])).toBe(true);
     });
-
-    render(
-      <DrasiProvider
-        queries={[
-          {
-            id: 'stocks',
-            query: 'MATCH (n) RETURN n',
-            sources: [],
-          },
-        ]}
-        reaction={{
-          id: 'stream',
-          port: 8281,
-          endpoint: 'http://localhost:8281/events',
-        }}
-        fetch={fetcher as typeof fetch}
-        eventSourceFactory={factory.create}
-      >
-        <QueryProbe />
-      </DrasiProvider>,
-    );
-
-    await waitFor(() => expect(factory.instances).toHaveLength(1));
-    factory.instances[0].open();
-    await waitFor(() =>
-      expect(screen.getByTestId('data').textContent).toBe(
-        '[{"id":"A","value":10}]',
-      ),
-    );
-
-    factory.instances[0].message({
-      queryId: 'stocks',
-      data: { id: 'A', value: '10', _deleted: true },
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId('data').textContent).toBe('[]'),
-    );
-  });
-
-  it('closes the EventSource when StrictMode effects are cleaned up', async () => {
-    const factory = fakeEventSourceFactory();
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/health')) return jsonResponse({});
-      if (url.endsWith('/api/v1/instances')) return jsonResponse([]);
-      if (url.includes('/api/v1/queries/stocks?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.includes('/api/v1/reactions/stream?view=full')) {
-        return jsonResponse({ status: 'running', config: {} });
-      }
-      if (url.endsWith('/api/v1/queries/stocks/results')) {
-        return jsonResponse([]);
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-
-    const rendered = render(
-      <React.StrictMode>
-        <DrasiProvider
-          queries={[
-            {
-              id: 'stocks',
-              query: 'MATCH (n) RETURN n',
-              sources: [],
-            },
-          ]}
-          reaction={{
-            id: 'stream',
-            port: 8281,
-            endpoint: 'http://localhost:8281/events',
-          }}
-          fetch={fetcher as typeof fetch}
-          eventSourceFactory={factory.create}
-        >
-          <QueryProbe />
-        </DrasiProvider>
-      </React.StrictMode>,
-    );
-
-    await waitFor(() => expect(factory.instances.length).toBeGreaterThan(0));
-    factory.instances[factory.instances.length - 1]?.open();
+    expect(screen.getByTestId('error').textContent).not.toContain('secret');
+    expect(server.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
     rendered.unmount();
+  });
 
-    expect(factory.instances.every((source) => source.closed)).toBe(true);
+  it('preserves a terminal stream error and performs only reads on explicit retry', async () => {
+    const server = new ReadServer(), factory = fakeEventSourceFactory(), observe = vi.fn();
+    const rendered = render(
+      <DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={factory.create}>
+        <Probe observe={observe} />
+      </DrasiProvider>,
+    );
+    await waitFor(() => expect(factory.instances).toHaveLength(1));
+    act(() => factory.instances[0].fail());
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('SSE endpoint'));
+    const errors = observe.mock.calls[observe.mock.calls.length - 1][0];
+    expect(errors[0]).toBeInstanceOf(DrasiError);
+    expect(errors[0].code).toBe('STREAM_UNAVAILABLE');
+    expect(errors.every((error: unknown) => error === errors[0])).toBe(true);
+    fireEvent.click(screen.getByText('Retry'));
+    await waitFor(() => expect(factory.instances).toHaveLength(2));
+    act(() => factory.instances[1].open());
+    await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[{"id":"A","value":10}]'));
+    expect(screen.getByTestId('error').textContent).toBe('');
+    expect(errors[0].code).toBe('STREAM_UNAVAILABLE');
+    expect(server.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+    rendered.unmount();
+    expect(factory.instances.every(source => source.closed)).toBe(true);
+  });
+
+  it('preserves delete markers through transforms and surfaces malformed live payloads', async () => {
+    const server = new ReadServer(), factory = fakeEventSourceFactory(), observe = vi.fn();
+    render(<DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={factory.create}>
+      <Probe observe={observe} />
+    </DrasiProvider>);
+    await waitFor(() => expect(factory.instances).toHaveLength(1));
+    act(() => factory.instances[0].open());
+    await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[{"id":"A","value":10}]'));
+    expect(screen.getByTestId('ui').textContent).toContain(encodeURIComponent(refs.instanceId));
+    act(() => factory.instances[0].message({
+      queryId: 'stocks', data: { id: 'A', value: '10', _deleted: true },
+    }));
+    await waitFor(() => expect(screen.getByTestId('data').textContent).toBe('[]'));
+    act(() => factory.instances[0].onmessage?.(new MessageEvent('message', { data: 'broken json' })));
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('malformed'));
+    const errors = observe.mock.calls[observe.mock.calls.length - 1][0];
+    expect(errors.every((error: unknown) => error === errors[0])).toBe(true);
+    expect(factory.instances[0].closed).toBe(true);
+  });
+
+  it('closes the sole EventSource under StrictMode/unmount and ignores obsolete effects', async () => {
+    const server = new ReadServer(), factory = fakeEventSourceFactory();
+    const rendered = render(<React.StrictMode>
+      <DrasiProvider {...refs} fetch={server.fetch} eventSourceFactory={factory.create}><Probe /></DrasiProvider>
+    </React.StrictMode>);
+    await waitFor(() => expect(factory.instances).toHaveLength(1));
+    act(() => factory.instances[0].open());
+    await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
+    rendered.unmount();
+    expect(factory.instances.every(source => source.closed)).toBe(true);
+  });
+
+  it('binds an app-owned lifecycle without starting another client or converting its error', async () => {
+    const error = new DrasiError('FORBIDDEN', { instanceId: refs.instanceId });
+    const observe = vi.fn(), retry = vi.fn();
+    render(<DrasiClientProvider value={{ client: null, initialized: false, error, retry }}>
+      <Probe observe={observe} />
+    </DrasiClientProvider>);
+    await waitFor(() => expect(observe.mock.calls[observe.mock.calls.length - 1][0]).toEqual([error, error, error, error]));
+    fireEvent.click(screen.getByText('Retry'));
+    expect(retry).toHaveBeenCalledOnce();
   });
 });

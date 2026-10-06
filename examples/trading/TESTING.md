@@ -17,6 +17,18 @@ never new golden expectations. Readiness for another development layer requires
 the actual current-branch product gates. It is not a claim that all external
 checks or the entire unused core workspace are green, nor merge authorization.
 
+P2 ([#162](https://github.com/drasi-project/drasi-server/issues/162)) originally
+built on P1 `a8dd2f68dab9fb7ccbd982dfb6a3f309e36f0059`. Its normal parent update
+now incorporates exact P1 `76661b0ed81633dde1dbfec862db0090c45a979c`, with
+the published registry runtime and coherent signed plugin family below.
+There is no mandatory sibling or temporary source selection. Original P2
+`3e9833ccb2a4c5fb00a4cf2a2bf1ab9e8c14ae97` and the prior normal-update
+`55ca37f1d8a93639d8ae0cdbdd410fc869f774eb` ancestry are retained.
+The package still
+connects to explicit existing references with GETs only; Trading owns automatic
+setup in `src/drasi/ensureTradingResources.ts` and lifecycle orchestration in
+`TradingProvider.tsx`. This does not change the business/visual baseline below.
+
 ## Behavior inventory, version 1
 
 Paths in the assertion column are relative to `app/test`. A synthetic test
@@ -26,7 +38,7 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
 | ID | Preserved behavior | Executable assertions / baseline limitation |
 | --- | --- | --- |
 | T01 | Existing `./start-demo.sh`, manual setup and URLs: app 5273, REST 8280, SSE 8281, price source 9100, Trading API 9200, PostgreSQL 5632 | `integration/tradingOptions.test.ts` locks app REST/reaction defaults; browser requests still use production URLs, redirected only by the test runner. B1's approved source-backed preparation is shared with startup/devcontainer routes; P1 retains those helpers without changing the app's automatic setup or URLs. |
-| T02 | Fresh startup automatically creates all **11** queries and `sse-stream`; reload reuses resources | `integration/Trading.test.ts` and `browser/trading.spec.ts`, “fresh automatic setup” / “automatically provisions”; exact query definitions, joins, source IDs, reaction membership, single connection and no second mutation on reload. Live gate is required separately. |
+| T02 | Fresh startup automatically creates all **11** queries and `sse-stream`; reload reuses resources | `integration/Trading.test.ts` and `browser/trading.spec.ts`, “fresh automatic setup” / “automatically provisions”; exact query definitions, joins, source IDs, reaction membership, single connection and no second mutation on reload. P2 also exercises partial missing/stopped resources and concurrent tabs, one stream per tab. Live gate is required separately. |
 | T03 | Query IDs, `HAS_PRICE`, `ON_WATCHLIST`, `OWNS_STOCK`, `ORDER_HAS_PRICE`, numeric thresholds and P/L meaning | `integration/tradingOptions.test.ts`; known-value row and summary assertions in `Trading.test.ts`. Synthetic projections are illustrative and do not replace real query execution. |
 | T04 | Watchlist add/remove, alphabetical rows, duplicate/write errors | Both app and browser CRUD assertions; the app suite also checks failed writes leave existing rows intact and show an error. |
 | T05 | Portfolio add/edit/delete, validation and Total Value / Cost / P/L / Return | Both CRUD suites assert quantities, dates, request bodies, rendered prices and exact summaries after every operation. Duplicate-symbol identity remains a known limitation (KB-02), not an endorsed contract. |
@@ -71,6 +83,53 @@ Drasi evaluates a query or emits that contract. The live-server gate is separate
   prerequisite addresses this engine identity defect. The same live assertions
   remain mandatory, and historical records remain unchanged. No client-side
   selection heuristic or replacement financial computation was added.
+
+## P2 ownership and negative cases
+
+Package tests spy on every REST request across initialize, snapshots, reconnect
+and explicit retry: all must be GETs under the same encoded instance path.
+They cover query/reaction/instance absence, stopped/starting/error states,
+reaction kind/membership, auth/network/opaque-404/bad-payload failures, finite
+retry budgets, hung requests/streams, response-body network/timeouts versus
+malformed JSON, abort and stale generations. Hook tests
+assert the **same `DrasiError` object** reaches context, connection, query and
+definition consumers, including invalid configuration and Retry controls.
+`referenceTypes.ts` checks required references and rejects old deployment props.
+
+Trading's `integration/provisioning.test.tsx` imports the **built package**, not
+a source alias or mocked hook. It covers all 11 allowlisted definitions,
+description-free Cypher POST bodies, ordered source/join semantics, no-op
+existing resources, partial/stopped/starting states, shared concurrency,
+409/read convergence and conflicts, Web Locks, individual/last-consumer abort,
+partial success, the 60-second deadline, wrong-instance isolation and
+non-provisionable failures. The existing business integration assertions remain.
+
+The three browser engines additionally cover partial setup and native
+concurrent first-run tabs. A separate existing-resource tab case deliberately
+fails one SSE opening and requires recovery with no provisioning. These
+lifecycle cases run their clocks so startup backoff can progress, retaining
+the five-second connected assertions, exact 12 creations and one stream per tab.
+Both cases also pass 12 consecutive WebKit repetitions (24 checks), keeping
+fresh provisioning separate from the additional existing-stream retry scenario.
+Independent package validation GETs overlap, and an app waiting on another tab's
+setup returns after one fully-ready preflight instead of rereading the bundle.
+Validation batches drain before reporting a missing resource, so an app retry
+does not race a burst of aborted reads. Explicit cancellation still aborts all
+requests. The partial-startup case also passes 12 WebKit repetitions.
+Query creation remains serial; source/join order is unchanged.
+The original five PNG files are unchanged. The frozen-clock
+reconnect test now advances the retry clock while the new asynchronous REST
+classification completes, under the same five-second assertion bound. Its
+connected/fresh-row/delete/no-navigation assertions are not relaxed.
+
+The real-server gate retains all business actions and now asserts singleton
+aggregate snapshots explicitly at 2000 / cost 1800 / count 2, reload 2050,
+and offline/reconnect 2150, rejecting historical candidates. In native runs,
+the harness still translates only the owned reaction's bind host/port to
+ephemeral loopback values. P2 reverses that same translation in its full-view
+response so the app can validate its desired definition. Status, membership,
+query definitions and financial rows are untouched; raw diagnostic REST reads
+still record the actual isolated bind values.
 
 ## Fast checks
 
@@ -121,6 +180,11 @@ pinned container's effective user. Actions otherwise supplies a
 `/github/home` owned by `pwuser`, which Firefox refuses to use as root.
 The override is scoped to the browser step; it does not change shared
 directory ownership, disable browser safeguards or skip Firefox coverage.
+
+The container job records its actual `$RUNNER_TEMP` for artifact upload. The
+host-side `runner.temp` context is not translated inside action inputs; using it
+there previously dropped Trading traces/logs even though workspace coverage was
+uploaded. Failed browser cases now retain their real diagnostics.
 
 The disposable consumer first substitutes the tarball using
 `npm install --package-lock-only --ignore-scripts`. This is intentional:
@@ -187,15 +251,20 @@ branches (339/714 package, 389/522 Trading), so these percentages are **not
 comparable** to the original legacy-V8 measurements. No product code or tests
 were removed, no source was excluded, and no runtime/tool version was changed.
 
-The artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
+The corrected P1 artifact baseline is 110,691 bytes packed, 66,865 bytes package ESM, 68,860
 bytes CJS, 37,492 bytes declarations and 10,043 bytes package CSS. Clean Trading
 JS is 223,574 bytes (65,775 gzip), CSS 21,034 bytes (5,163 gzip).
 Schema version 3 counts every emitted package JS/CJS entry and nested chunk,
 both declaration formats, every packaged stylesheet, and recursive Trading
 JS/CSS assets. The unchanged tarball contains 18,746-byte `index.d.ts` and
 18,746-byte `index.d.cts` files; version 2 counted only the former. Its exact
-measurements are retained in `baseline-metrics-v2.json`. This is a measurement
-correction, not artifact growth or a relaxed budget. Source maps and other
+measurements are retained in `baseline-metrics-v2.json`. P2's original version-2
+record is separately retained in `baseline-metrics-p2-v2.json`: its two
+21,140-byte declaration files total 42,280 bytes, not 21,140. Neither correction
+changes the shipped tarballs: P1 SHA-256
+`f85eae9c85c50b1af98474d1b0524dc12b5ed9e780cf1c5500b4ef7fbad733f0` and P2
+SHA-256 `ee28948165c33c762d3d7fb3ff6e086bda553fe60fd5c12b0499bc7918745140`.
+This is a measurement correction, not artifact growth or a relaxed budget. Source maps and other
 non-runtime files remain covered by the complete tarball byte metric.
 `check-baseline.mjs` rejects any coverage drop or artifact growth above 2%;
 explain and review baseline updates instead of silently accepting them.
@@ -205,6 +274,134 @@ versions, so compare the pinned environment rather than mixing host coverage.
 
 Browser coverage is scenario-based; these percentages are Vitest/V8 only and
 must not be presented as browser or real-server coverage.
+
+### Measured P2 contract cost
+
+The same pinned Linux gate measured P2 after all 26 browser scenarios and the
+five unchanged, zero-differing-pixel PNG files passed. Only the **artifact size
+baseline** was advanced. `artifactChange.p1Sizes` compares the corrected P1
+accounting against P2; the two historical version-2 records remain unchanged.
+The 2% growth policy, every P1 coverage floor, all included source files and
+visual expectations are unchanged. Frontend dependencies are unchanged; the
+approved backend runtime update is recorded separately below.
+
+| Artifact | P1 bytes | P2 bytes | Reason for growth |
+| --- | ---: | ---: | --- |
+| Packed tarball | 110,691 | 125,325 | Runtime, declarations, source maps and the reference/error/ownership documentation |
+| Package ESM / CJS | 66,865 / 68,860 | 72,992 / 75,038 | Resource DTO guards, instance paths, typed errors, bounded transport/snapshot handling and controlled binding |
+| Declarations (both formats) | 37,492 | 42,280 | Explicit references, read DTOs, error codes/identity, timeouts and lifecycle binding; the former single-format counts were 18,746 / 21,140 |
+| Trading JS / gzip | 223,574 / 65,775 | 233,695 / 69,038 | App-owned idempotent setup, conflict checking, cancellation, Web Locks and retry UI |
+| Package CSS / Trading CSS | 10,043 / 21,034 | 10,043 / 21,034 | Unchanged |
+
+The app's net runtime addition is 10,121 bytes (3,263 gzip), not a new dependency
+or duplicated React/SSE implementation. Setup contains the single app mutation
+boundary; the package has no POST/PUT/PATCH/DELETE path. Do not update screenshots
+or lower coverage to accommodate future drift.
+
+P2's measured whole-package coverage is 77.09% statements / 78.80% lines /
+64.65% branches / 78.06% functions; Trading is 87.31% / 87.96% / 78.06% /
+85.59%, respectively. The new Trading provisioner is 98.81% statements /
+99.28% lines / 92.98% branches / 100% functions. These improve every P1 floor;
+they are not a claim that #163's final transport/result-contract coverage targets
+are finished.
+
+### P2 published-runtime update
+
+The normal merge of P1 `76661b0ed81633dde1dbfec862db0090c45a979c` preserves
+P2's reference-only, GET-only client and app-owned bounded/shared provisioner.
+Package and Trading production TypeScript/CSS, query text, source/join/create
+order, row transforms, business actions, negative ownership tests, clock and
+readiness bounds, complete artifact budgets and all five original images are
+unchanged. The inherited guards now verify the 17 published package identities
+and effective archive contents, including the narrowly verified middleware
+documentation case collision; no sibling-clean or `engineGit` fields are
+invented for registry builds.
+
+This layer must run its own released-backend proof: build the real UI/default
+binary before Rust tests, verify the final used binary after test relinks,
+consume the package from a clean tarball, and require fresh setup, no-write
+existing-resource reload and the unchanged financial/CRUD/reconnect assertions.
+Current exact-head results and raw provenance are recorded on #205. Earlier
+`211d`/`1284` executions below remain history, not substitutes for this run.
+
+Two local full browser runs remain failed evidence: the first passed 25/26
+scenarios but exceeded the existing WebKit two-tab 5-second Connected deadline;
+one authorized identical confirmation passed 24/26, with the same deadline
+failure and a 454-pixel desktop difference confined to the moving ticker.
+The confirmation recorded exactly 11 ordered query creations and one reaction,
+without duplicate starts, but SSE opened after the first tab's deadline.
+Both tarballs and all built frontend assets match the prior passing artifact.
+This establishes neither a host cause nor a resolved intermittent failure.
+No clock, worker, deadline, query, screenshot or budget was changed. Both traces
+and image comparisons are retained; independent live/budget and fresh same-tree
+CI evidence must be reported separately, not as an all-local-green claim.
+
+The released numeric fixes require authoritative reconstruction of all affected
+grouping/default state, lazy min/max sets, indexes and output together, including
+ordinary integer and nested compound keys. The source-rank configuration-hash
+rebootstrap and named MessagePack writer are not repairs for malformed old
+positional records. This fresh-data test does not delete user state, clear only
+output rows or claim automatic migration; see the persistent-state boundary
+below.
+
+### Historical P2 temporary development-source update
+
+The earlier normal merge of P1 `74bebe2e585946ac52fce9b37473790b7c377bea` retained
+P2's reference-only, GET-only package and app-owned bounded/shared setup.
+Package and Trading runtime sources, query definitions, negative ownership
+cases, financial assertions, original images and complete artifact budgets
+were unchanged. Its source/runtime guards required core 0.5.9,
+index 0.6.3 and registry SDK 0.11.2, rejecting the earlier versions.
+
+That selection used its own rebuilt server/UI, signed ABI 0.14 plugins and
+actual browser/Trading evidence. The `211d0f2a` pin was temporary development
+source, not a released fix; it and the older `1284e9f` reports are historical.
+Those commands, exact-head provenance and CI results remain recorded on #205.
+Neither unchanged frontend bytes nor earlier lower-layer passes substitute
+for the newly released graph's live proof.
+
+That local verification passed 83 package tests, 66 Trading tests (57 existing
+plus nine runtime-version guards), nine artifact-policy tests and 54 tooling
+tests. The complete source-free Linux gate passed all 26 browser scenarios and
+five original exact PNG files with unchanged artifact bytes and coverage.
+The own rebuilt UI/default server passed 809 locked Rust tests / 32 existing
+ignores; full plugin-dependent testing passed 840 / one ignored doctest, with
+the separate legacy smoke still eight passes / 28 unconfigured skips.
+Formatting, strict Clippy and the selected host audit passed with 15 existing
+warnings, without suppressions or dependency changes beyond the inherited graph.
+
+That actual runtime's Trading gate passed fresh setup, no-write reload and
+all CRUD/live/delete/reconnect assertions, including the unfiltered singleton
+2000/cost 1800/count 2 -> 2050 live/reload -> 2150 after reconnect. Its 17 raw
+SSE 0.3.7 events retain the observed `queryId`/`results`/`timestamp` envelope
+and `ADD`/`DELETE`/`UPDATE`/`aggregation` shapes; aggregation has `before`/`after`
+without `data`. This is observed compatibility, not a stronger protocol claim.
+
+An initial local gate run concurrent with native builds failed the WebKit
+two-tab readiness assertion and differed by 454 pixels in the animated desktop
+ticker. Both diagnostics are retained. The full unchanged gate then passed
+without concurrent Rust work; no clock, readiness, timeout, assertion, image,
+query or artifact-budget adjustment was made. Fresh final-head CI remains
+separate evidence on #205.
+
+### Historical P2 ABI 0.13 main-runtime update
+
+The earlier normal merge of P1 `e361d1c3369e83213f0bb164ab2be66569ea7e18`
+changed no P2 package or Trading runtime source. Its own rebuilt server/UI and
+signed ABI 0.13 plugins passed the real Trading scenario with the singleton totals
+above; that raw capture has 17 SSE events with the observed envelope/result
+shapes documented below. Earlier raw captures remain historical, not a substitute
+for this runtime proof.
+
+That layer passed 83 package tests, 64 Trading tests (57 existing plus
+seven runtime-version guards), nine artifact-policy tests and 53 tooling tests.
+The source-free Linux gate passed all 26 browser scenarios and the original five
+exact PNG files. Locked Rust tests reported 809 passes / 32 existing ignores;
+`make test-all` reported 840 passes / one existing ignored doctest, with the
+separate limited plugin smoke reporting eight passes / 28 unconfigured skips.
+Strict Clippy/fmt and the selected host audit passed, retaining its 15 existing
+warnings. Its CI, binary/lock hashes and independent packed live proof remain
+in #205's historical evidence, not relabeled as proof for the newer runtime.
 
 ## Mandatory real-server gate
 

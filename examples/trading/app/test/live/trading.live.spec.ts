@@ -38,6 +38,7 @@ function readEndpoints(): Endpoints {
 }
 
 const endpoints = readEndpoints();
+const instancePath = '/api/v1/instances/trading-server';
 
 test('real Trading services: fresh provisioning, CRUD/live/delete, existing reload and reconnect', async ({ page, request, baseURL }, testInfo) => {
   const wire: Array<{ eventName: string; data: string }> = [];
@@ -69,10 +70,22 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
       const target = `${targets[url.port]}${url.pathname}${url.search}`;
       // A native host cannot bind the normal demo's SSE port. Only the test bind
       // address changes; query definitions, resource creation and rows stay real.
-      if (endpoints.reactionPort && method === 'POST' && url.pathname === '/api/v1/reactions' && postData) {
+      if (endpoints.reactionPort && method === 'POST' && url.pathname === `${instancePath}/reactions` && postData) {
         await route.continue({ url: target, postData: JSON.stringify({
           ...JSON.parse(postData), host: '127.0.0.1', port: endpoints.reactionPort,
         }) });
+      } else if (endpoints.reactionPort && method === 'GET' &&
+          url.pathname === `${instancePath}/reactions/sse-stream` && url.search === '?view=full') {
+        // Reverse the isolated bind translation for the app's desired-definition
+        // check. All runtime status, membership, query configs and rows stay real.
+        const response = await route.fetch({ url: target });
+        const body = await response.json();
+        if (response.ok() && body.data?.config?.port === endpoints.reactionPort &&
+            body.data.config.host === '127.0.0.1') {
+          body.data.config.port = 8281;
+          body.data.config.host = '0.0.0.0';
+        }
+        await route.fulfill({ response, json: body });
       } else {
         await route.continue({ url: target });
       }
@@ -113,23 +126,25 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     await expect(page.getByRole('table')).toHaveCount(7);
     await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);
     await expect.poll(() => get('/api/v1/queries/portfolio-summary-query/results')).toEqual(
-      expect.arrayContaining([expect.objectContaining({ totalValue: 2000, positionCount: 2 })]),
+      [expect.objectContaining({ totalValue: 2000, totalCost: 1800, positionCount: 2 })],
     );
     observations.initialSummary = await panel(page, 'Portfolio').locator('.drasi-query-table__header-slot').innerText();
     // Soft assertions still fail the gate, but retain later reconnect evidence
     // when the baseline already has an incorrect initial aggregate snapshot.
     await expect.soft(panel(page, 'Portfolio').getByText('$2,000.00')).toBeVisible();
-    const createdQueries = mutations.filter(item => item.url === '/api/v1/queries');
+    const createdQueries = mutations.filter(item => item.url === `${instancePath}/queries`);
     expect(createdQueries).toHaveLength(11);
     expect(createdQueries.map(item => item.body)).toEqual(ALL_QUERIES.map(query => ({
       id: query.id, query: query.query, sources: query.sources, joins: query.joins,
       autoStart: true, queryLanguage: 'Cypher',
     })));
-    expect(mutations.filter(item => item.url === '/api/v1/reactions')).toHaveLength(1);
+    expect(mutations.filter(item => item.url === `${instancePath}/reactions`)).toHaveLength(1);
     await get('/api/v1/reactions/sse-stream?view=full');
     await get('/api/v1/queries/watchlist-query/results');
     await get('/api/v1/queries/portfolio-query/results');
-    await get('/api/v1/queries/portfolio-summary-query/results');
+    expect(await get('/api/v1/queries/portfolio-summary-query/results')).toEqual([
+      expect.objectContaining({ totalValue: 2000, totalCost: 1800, positionCount: 2 }),
+    ]);
 
     await page.getByTitle('Add to watchlist', { exact: true }).click();
     const watchlist = tradingDialog(page, 'Add to Watchlist');
@@ -180,7 +195,9 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     await expect(row(page, 'Watchlist', 'AAPL')).toContainText('$115.00');
     await expect(panel(page, 'Portfolio').getByText('Total Value', { exact: true })).toBeVisible();
     observations.reloadedSummary = await panel(page, 'Portfolio').locator('.drasi-query-table__header-slot').innerText();
-    await get('/api/v1/queries/portfolio-summary-query/results');
+    expect(await get('/api/v1/queries/portfolio-summary-query/results')).toEqual([
+      expect.objectContaining({ totalValue: 2050, totalCost: 1800, positionCount: 2 }),
+    ]);
     await expect.soft(panel(page, 'Portfolio').getByText('$2,050.00')).toBeVisible();
     expect(mutations.filter(item => item.url.startsWith('/api/v1/'))).toHaveLength(creationCount);
 
@@ -194,7 +211,7 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
     expect((await request.delete(`${endpoints.api}/api/watchlist/MSFT`)).ok()).toBe(true);
     // Wait for server-side processing, not an assumed fixed sleep or browser refresh.
     await expect.poll(() => get('/api/v1/queries/portfolio-summary-query/results')).toEqual(
-      expect.arrayContaining([expect.objectContaining({ totalValue: 2150 })]),
+      [expect.objectContaining({ totalValue: 2150, totalCost: 1800, positionCount: 2 })],
     );
     const settledSummary = await get('/api/v1/queries/portfolio-summary-query/results');
     await expectSymbols(page, 'Watchlist', ['AAPL', 'MSFT']);

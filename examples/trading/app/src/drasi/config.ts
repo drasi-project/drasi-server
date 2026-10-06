@@ -19,26 +19,35 @@
  * continuous queries, the SSE reaction that multiplexes them, and the
  * content-based routing used for aggregation change events that arrive without
  * an explicit query id. The reusable components themselves contain none of this
- * — they receive it through `<DrasiProvider>`.
+ * — the package receives only references; setup stays in this application.
  */
 
-import type { QueryDefinition, ReactionDefinition, RouteUnidentified } from '@drasi/react';
+import type { QueryConfig, RouteUnidentified } from '@drasi/react';
 import { ALL_QUERIES } from '@/services/queries';
 
 /** Base URL of the Drasi Server REST API used by the Trading example. */
 export const DRASI_SERVER_URL = 'http://localhost:8280';
 
 /** All continuous queries the Trading example multiplexes over one connection. */
-export const TRADING_QUERIES: QueryDefinition[] = ALL_QUERIES as QueryDefinition[];
+export const TRADING_QUERIES: QueryConfig[] = ALL_QUERIES.map(({ id, query, sources, joins }) => ({
+  id, query, sources, joins, queryLanguage: 'Cypher',
+}));
+export const TRADING_QUERY_IDS = TRADING_QUERIES.map(query => query.id);
 
 /** The SSE reaction that streams every query over a single connection. */
-export const TRADING_REACTION: ReactionDefinition = {
+export const TRADING_REACTION = {
   id: 'sse-stream',
   kind: 'sse',
   host: '0.0.0.0',
   port: 8281,
   ssePath: '/events',
   heartbeatIntervalMs: 15000,
+};
+
+/** The browser URL is not the reaction's server bind address. */
+export const TRADING_STREAM = {
+  id: TRADING_REACTION.id,
+  endpoint: 'http://localhost:8281/events',
 };
 
 /**
