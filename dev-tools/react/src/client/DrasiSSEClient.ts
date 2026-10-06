@@ -281,7 +281,15 @@ export class DrasiSSEClient {
       const results = readAdaptedResults(this.resultAdapter(data, context), context);
       for (const result of results) this.handleQueryResult(result);
     } catch (error) {
-      const failure = asDrasiError(error, details);
+      let failure = asDrasiError(error, details);
+      if (details.resourceKind === 'query' && details.resourceId &&
+          (failure.resourceKind !== 'query' || !failure.resourceId)) {
+        failure = new DrasiError(failure.code, {
+          ...details,
+          status: failure.status,
+          resourceStatus: failure.resourceStatus,
+        });
+      }
       if (failure.resourceKind === 'query' && failure.resourceId) {
         this.queryErrors.set(failure.resourceId, failure);
         this.subscribers.get(failure.resourceId)?.forEach(subscriber => this.reportSubscriberError(subscriber, failure));
