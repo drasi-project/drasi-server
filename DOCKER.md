@@ -109,6 +109,13 @@ Configure your database connection in `.env` or `config/server.yaml`.
 
 ## Building
 
+Source builds use the exact compatible engine revision in `.drasi-core-revision`.
+The Docker builder obtains that sibling checkout inside the image using the
+same verification helper as local/CI builds; it does not depend on an
+unavailable host sibling outside the build context. This unpublished source
+pin is not automatically present in an existing published Docker image. See
+[the engine prerequisite](docs/engine-prerequisite.md) for provenance and limits.
+
 ### Build from Source
 
 ```bash

@@ -4,13 +4,10 @@
 [alias]
 xtask = "run --package xtask --"
 
-# To use local path-based dependencies for development:
-# 1. Uncomment the [patch.crates-io] section
-# 2. Run: cargo build
-#
-# To use published crates from crates.io:
-# 1. Keep the [patch.crates-io] section commented
-# 2. Run: cargo build
+# The root Cargo.toml uses reviewed registry releases; no sibling is required.
+# Run `make prepare-build` to verify the locked dependency origin.
+# The commented overrides below are for deliberate broader local development,
+# which requires matching local SDKs and plugins. See docs/main-runtime-integration.md.
 
 # Cross-compilation target flags (used by `cross` tool)
 [target.x86_64-unknown-linux-musl]

@@ -108,7 +108,7 @@ jobs:
             echo "========================================="
 
             rustup target add "${TARGET}"
-            cross build --release --target "${TARGET}" --bin drasi-server
+            cross build --locked --release --target "${TARGET}" --bin drasi-server
 
             SRC="target/${TARGET}/release/drasi-server"
             if [[ -f "$SRC" ]]; then
@@ -230,7 +230,7 @@ jobs:
             export ONIG_LIB_DIR="$(brew --prefix oniguruma)/lib"
           fi
 
-          cargo build --release --target ${{ matrix.target }} --bin drasi-server
+          cargo build --locked --release --target ${{ matrix.target }} --bin drasi-server
 
           SRC_BINARY="target/${{ matrix.target }}/release/drasi-server"
           ARTIFACT_NAME="drasi-server-${{ matrix.artifact_suffix }}"
@@ -271,7 +271,7 @@ jobs:
       - name: Build binary
         shell: bash
         run: |
-          cargo build --release --target x86_64-pc-windows-msvc --bin drasi-server
+          cargo build --locked --release --target x86_64-pc-windows-msvc --bin drasi-server
 
           SRC_BINARY="target/x86_64-pc-windows-msvc/release/drasi-server.exe"
           ARTIFACT_NAME="drasi-server-x86_64-windows-msvc.exe"

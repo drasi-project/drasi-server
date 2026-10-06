@@ -118,7 +118,8 @@ serial_test = "3.0"
 pretty_assertions = "1.4"
 semver = "1.0"
 test-case = "3.3"
-wiremock = "0.6"
+# Use the Hyper 1 test client, avoiding the obsolete h2 0.3 dependency line.
+wiremock = "=0.6.5"
 
 # Additional testing dependencies
 futures = "0.3"
@@ -150,9 +151,12 @@ type_complexity = "allow"
 large_enum_variant = "allow"
 
 
-# Local development: use path-based dependencies
+# Optional local SDK development: uncomment a coherent matching workspace.
+# Normal builds use the reviewed registry releases and need no sibling checkout.
 # [patch.crates-io]
 # drasi-core = { path = "../drasi-core/core" }
+# drasi-query-ast = { path = "../drasi-core/query-ast" }
+# drasi-query-cypher = { path = "../drasi-core/query-cypher" }
 # drasi-lib = { path = "../drasi-core/lib" }
 # drasi-bootstrap-noop = { path = "../drasi-core/components/bootstrappers/noop" }
 # drasi-bootstrap-application = { path = "../drasi-core/components/bootstrappers/application" }

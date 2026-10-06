@@ -32,10 +32,8 @@
 #   RESULT_TIMEOUT    seconds to wait for CDC result  (default: 30)
 #   SKIP_BUILD        if set, skip cargo build --release
 #   CLEANUP           if set, run cleanup.sh on exit (tears down Postgres)
-#   LOCAL_PLUGINS_DIR if set, override pluginRegistry to this local dir
-#                     (useful when the OCI registry has no compatible
-#                      build for your platform — e.g. recent darwin-arm64).
-#                     Typical value: ../drasi-core/target/release/plugins
+#   LOCAL_PLUGINS_DIR optional plugin directory for matching local SDK development;
+#                     use skip to leave pluginRegistry unchanged.
 #
 # Exit code: 0 on success, 1 on any failure.
 
@@ -223,7 +221,7 @@ if [ "${SKIP_BUILD:-}" = "1" ]; then
   fi
 else
   log_step "Step 2: Build Drasi Server (release)"
-  (cd "$SERVER_ROOT" && cargo build --release)
+  (cd "$SERVER_ROOT" && bash scripts/prepare-build.sh && cargo build --locked --release)
 fi
 
 # --- Step 3: Start server -----------------------------------------------------
@@ -243,11 +241,8 @@ fi
 : "${POSTGRES_PASSWORD:=drasi_password}"
 export POSTGRES_PASSWORD
 
-# If the user did not explicitly set LOCAL_PLUGINS_DIR, try to
-# auto-detect a sibling drasi-core build. The OCI registry currently
-# does not publish darwin-arm64 builds for source/postgres,
-# reaction/log, or reaction/sse with the SDK version this branch
-# requires, so on Apple Silicon the registry path will fail.
+PLUGIN_MODE="$(bash "$SERVER_ROOT/scripts/prepare-build.sh")"
+# A sibling directory alone never authorizes using unsigned local plugins.
 REQUIRED_PLUGINS=(libdrasi_source_postgres libdrasi_bootstrap_postgres
                   libdrasi_reaction_log libdrasi_reaction_sse)
 plugin_ext="dylib"
@@ -267,21 +262,20 @@ local_plugins_have_all() {
   return 0
 }
 
-if [ -z "$LOCAL_PLUGINS_DIR" ]; then
-  CANDIDATE="$SERVER_ROOT/../drasi-core/target/release/plugins"
-  if local_plugins_have_all "$CANDIDATE"; then
-    LOCAL_PLUGINS_DIR="$CANDIDATE"
-    log_info "Auto-detected sibling drasi-core build with required plugins."
-    log_info "Using LOCAL_PLUGINS_DIR='$LOCAL_PLUGINS_DIR'"
-    log_info "(Set LOCAL_PLUGINS_DIR=skip to force the OCI registry path.)"
-  elif [ -d "$SERVER_ROOT/../drasi-core" ] && [ "${BUILD_LOCAL_PLUGINS:-}" = "1" ]; then
+if [ -z "$LOCAL_PLUGINS_DIR" ] && [ "$PLUGIN_MODE" = local ]; then
+  LOCAL_WORKSPACE="$(python3 "$SERVER_ROOT/scripts/plugin_origin.py" local-workspace)"
+  CANDIDATE="$LOCAL_WORKSPACE/target/release/plugins"
+  if ! local_plugins_have_all "$CANDIDATE" && [ "${BUILD_LOCAL_PLUGINS:-}" = "1" ]; then
     log_info "BUILD_LOCAL_PLUGINS=1 — running 'make build-local-plugins'..."
     (cd "$SERVER_ROOT" && make build-local-plugins)
-    if local_plugins_have_all "$CANDIDATE"; then
-      LOCAL_PLUGINS_DIR="$CANDIDATE"
-      log_info "Built and using LOCAL_PLUGINS_DIR='$LOCAL_PLUGINS_DIR'"
-    fi
   fi
+  LOCAL_PLUGINS_DIR="$CANDIDATE"
+  log_info "Using the Cargo-selected local SDK workspace's plugins: $LOCAL_PLUGINS_DIR"
+fi
+
+if [ "${BUILD_LOCAL_PLUGINS:-}" = "1" ] && [ "$PLUGIN_MODE" != local ]; then
+  log_error "BUILD_LOCAL_PLUGINS requires Cargo-selected matching local SDKs."
+  exit 1
 fi
 
 # Allow explicit opt-out: LOCAL_PLUGINS_DIR=skip means "do not use local".
@@ -294,6 +288,10 @@ fi
 EFFECTIVE_CONFIG="$CONFIG_FILE"
 SERVER_EXTRA_ARGS=()
 if [ -n "$LOCAL_PLUGINS_DIR" ]; then
+  if [ "$PLUGIN_MODE" != local ]; then
+    log_error "Unsigned local plugins require Cargo-selected matching local SDKs."
+    exit 1
+  fi
   if [ ! -d "$LOCAL_PLUGINS_DIR" ]; then
     log_error "LOCAL_PLUGINS_DIR='$LOCAL_PLUGINS_DIR' is not a directory"
     log_error "Hint: build it with 'make build-local-plugins' from the drasi-server repo root,"

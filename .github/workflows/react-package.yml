@@ -5,6 +5,9 @@ on:
     branches:
       - main
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/**"
       - "dev-tools/react/**"
       - "examples/trading/app/**"
       - ".github/workflows/react-package.yml"
@@ -12,6 +15,9 @@ on:
     branches:
       - main
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/**"
       - "dev-tools/react/**"
       - "examples/trading/app/**"
       - ".github/workflows/react-package.yml"

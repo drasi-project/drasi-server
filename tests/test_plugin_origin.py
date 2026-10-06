@@ -34,9 +34,7 @@ def fixture():
     server = package("drasi-server", "0.2.3", None, "/fixture/server")
     packages = [
         server,
-        *(package(name, "0.11.3") for name in plugin_origin.SDK_PACKAGES),
-        package("drasi-lib", "0.9.3"),
-        package("drasi-core", "0.5.10"),
+        *(package(name, version) for name, (version, _) in plugin_origin.REGISTRY_PACKAGES.items()),
     ]
     return {
         "workspace_members": [server["id"]],
@@ -78,15 +76,29 @@ class PluginOriginTests(unittest.TestCase):
         self.assertEqual(selected["drasi-plugin-sdk"]["version"], "0.11.3")
         self.assertEqual(selected["drasi-lib"]["version"], "0.9.3")
 
-    def test_engine_only_local_patch_keeps_registry_plugins(self):
+    def test_released_runtime_rejects_local_git_or_older_core_and_parsers(self):
+        for name in ("drasi-core", "drasi-query-ast", "drasi-query-cypher"):
+            for source in (None, "git+https://example.invalid/core"):
+                with self.subTest(name=name, source=source):
+                    metadata = fixture()
+                    version = plugin_origin.REGISTRY_PACKAGES[name][0]
+                    replace_package(metadata, package(name, version, source))
+                    with self.assertRaisesRegex(plugin_origin.PluginOriginError, f"registry {name}"):
+                        plugin_origin.classify(metadata)
         metadata = fixture()
-        replace_package(metadata, package("drasi-core", "0.5.10", None))
-        self.assertEqual(plugin_origin.classify(metadata)[0], "registry")
+        replace_package(metadata, package("drasi-core", "0.5.9"))
+        with self.assertRaisesRegex(plugin_origin.PluginOriginError, "registry drasi-core 0.5.10"):
+            plugin_origin.classify(metadata)
 
     def test_unselected_local_sdk_does_not_change_selection(self):
-        metadata = fixture()
-        metadata["packages"].append(package("drasi-plugin-sdk", "0.9.0", None))
-        self.assertEqual(plugin_origin.classify(metadata)[0], "registry")
+        for version in ("0.9.0", "0.11.3"):
+            with self.subTest(version=version):
+                metadata = fixture()
+                metadata["packages"].extend(
+                    package(name, version, None) for name in plugin_origin.SDK_PACKAGES
+                )
+                metadata["packages"].append(package("drasi-lib", "0.9.3", None))
+                self.assertEqual(plugin_origin.classify(metadata)[0], "registry")
 
     def test_mixed_sdk_sources_fail_instead_of_building_unused_siblings(self):
         metadata = fixture()
@@ -132,6 +144,26 @@ class PluginOriginTests(unittest.TestCase):
         metadata["resolve"]["nodes"].append({"id": duplicate["id"], "deps": []})
         with self.assertRaisesRegex(plugin_origin.PluginOriginError, "found 2"):
             plugin_origin.classify(metadata)
+
+    def test_release_checksums_and_full_graph_are_not_inferred_from_versions(self):
+        lock = {"package": [
+            {"name": name, "version": version, "source": plugin_origin.REGISTRY, "checksum": checksum}
+            for name, (version, checksum) in plugin_origin.REGISTRY_PACKAGES.items()
+        ]}
+        plugin_origin.validate_registry_lock(lock)
+        for name in plugin_origin.REGISTRY_PACKAGES:
+            with self.subTest(name=name):
+                changed = copy.deepcopy(lock)
+                next(p for p in changed["package"] if p["name"] == name)["checksum"] = "0" * 64
+                with self.assertRaisesRegex(plugin_origin.PluginOriginError, name):
+                    plugin_origin.validate_registry_lock(changed)
+        for changed in (
+            {"package": lock["package"][1:]},
+            {"package": lock["package"] + [lock["package"][0]]},
+            {**lock, "patch": {"unused": [{"name": "drasi-core", "version": "0.5.9"}]}},
+        ):
+            with self.assertRaises(plugin_origin.PluginOriginError):
+                plugin_origin.validate_registry_lock(changed)
 
     def test_local_mode_requires_the_actual_matching_build_workspace(self):
         metadata = fixture()

@@ -19,9 +19,9 @@ sudo apt-get update && sudo apt-get install -y \
 # Set JQ_LIB_DIR for the jq-sys crate (architecture-aware)
 export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
-# Build Drasi Server
+# Build the Web UI before embedding it in Drasi Server
 echo "🔨 Building Drasi Server (this may take a few minutes)..."
-cargo build --release
+make build-release
 
 # Make scripts executable
 chmod +x examples/playground/start.sh examples/playground/stop.sh
