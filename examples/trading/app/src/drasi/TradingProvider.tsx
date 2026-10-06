@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { DrasiClient, DrasiError, type DrasiClientOptions } from '@drasi/react/client';
 import { DrasiClientProvider, type DrasiContextValue } from '@drasi/react/react';
 import { DRASI_SERVER_URL, TRADING_QUERY_IDS, TRADING_STREAM, tradingResultAdapter } from './config';
-import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from './ensureTradingResources';
+import { ensureTradingResources, resolveTradingInstance } from './ensureTradingResources';
 
 type TradingProviderProps = Partial<Pick<DrasiClientOptions,
   'serverUrl' | 'instanceId' | 'fetch' | 'eventSourceFactory' | 'reconnect'>> & { children: ReactNode };
@@ -49,15 +49,12 @@ export function TradingProvider({
           setState({ client, initialized: false, error: status.error });
         }
       });
-      try {
-        await client.initialize({ maxInitialReconnectAttempts: 1 });
-      } catch (error) {
-        controller.signal.throwIfAborted();
-        if (!canPrepareTrading(error, resolvedId)) throw error;
-        await ensureTradingResources({ client, serverUrl: baseUrl, fetch: fetcher }, error, controller.signal);
-        controller.signal.throwIfAborted();
-        await client.initialize({ maxInitialReconnectAttempts: 1 }); // One setup pass, one retry.
-      }
+      await ensureTradingResources(
+        { client, serverUrl: baseUrl, fetch: fetcher },
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      await client.initialize({ maxInitialReconnectAttempts: 1 });
       controller.signal.throwIfAborted();
       ready = true;
       setState({ client, initialized: true, error: null });

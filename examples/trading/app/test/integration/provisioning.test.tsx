@@ -7,7 +7,7 @@ import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DrasiClient, DrasiError, useDrasiClient, useDrasiQuery, type EventSourceLike } from '@drasi/react';
-import { canPrepareTrading, ensureTradingResources, resolveTradingInstance } from '../../src/drasi/ensureTradingResources';
+import { ensureTradingResources, resolveTradingInstance } from '../../src/drasi/ensureTradingResources';
 import { TradingProvider } from '../../src/drasi/TradingProvider';
 import { tradingQueryOptions } from '../../src/drasi/queryOptions';
 import { DRASI_SERVER_URL, TRADING_QUERIES, TRADING_QUERY_IDS, TRADING_REACTION, TRADING_STREAM } from '../../src/drasi/config';
@@ -16,9 +16,6 @@ import { SyntheticTrading } from '../fixtures/synthetic/trading';
 const base = '/api/v1/instances/trading-server';
 const reconnect = { maxReconnectAttempts: 0 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const missing = () => new DrasiError('QUERY_NOT_FOUND', {
-  instanceId: 'trading-server', resourceKind: 'query', resourceId: TRADING_QUERY_IDS[0],
-});
 
 function setup(present = false, backend = new SyntheticTrading()) {
   if (present) {
@@ -38,8 +35,7 @@ function setup(present = false, backend = new SyntheticTrading()) {
     reaction: TRADING_STREAM, fetch: fetcher, reconnect,
   });
   const options = { client, serverUrl: DRASI_SERVER_URL, fetch: fetcher };
-  const run = (signal = new AbortController().signal, error = missing()) =>
-    ensureTradingResources(options, error, signal);
+  const run = (signal = new AbortController().signal) => ensureTradingResources(options, signal);
   const writes = () => backend.requests.filter(request => request.method !== 'GET');
   return { backend, fetcher, client, run, writes };
 }
@@ -89,9 +85,7 @@ describe('app-owned setup using the built package', () => {
       if (url.includes('/reactions/sse-stream?') && ++reactionReads === 3) backend.reactionStatus = 'Running';
       return original(input, init);
     });
-    await run(new AbortController().signal, new DrasiError('RESOURCE_STARTING', {
-      instanceId: 'trading-server', resourceKind: 'query', resourceId: 'watchlist-query',
-    }));
+    await run();
     expect(writes()).toEqual([]);
     expect(queryReads).toBe(3);
   });
@@ -179,25 +173,12 @@ describe('app-owned setup using the built package', () => {
     },
   );
 
-  it('rejects unrelated/unauthorized/unknown-instance errors without even a setup read', async () => {
-    const { run, fetcher } = setup();
-    for (const error of [
-      new Error('QUERY_NOT_FOUND'), new DrasiError('STREAM_UNAVAILABLE'),
-      new DrasiError('INSTANCE_NOT_FOUND', { instanceId: 'trading-server', resourceKind: 'instance' }),
-      new DrasiError('QUERY_NOT_FOUND', { instanceId: 'other', resourceKind: 'query', resourceId: 'watchlist-query' }),
-      new DrasiError('QUERY_NOT_FOUND', { instanceId: 'trading-server', resourceKind: 'query', resourceId: 'not-owned' }),
-    ]) expect(canPrepareTrading(error, 'trading-server')).toBe(false);
-    const error = new DrasiError('FORBIDDEN');
-    await expect(run(new AbortController().signal, error)).rejects.toBe(error);
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
   it('does not select or mutate an identically named query in the wrong instance', async () => {
-    const { client, backend, run, writes } = setup(true);
+    const { backend, run, writes } = setup(true);
     backend.instanceId = 'another-instance';
-    const error = await client.initialize().catch(error => error);
-    expect(error).toMatchObject({ code: 'INSTANCE_NOT_FOUND', instanceId: 'trading-server' });
-    await expect(run(new AbortController().signal, error)).rejects.toBe(error);
+    await expect(run()).rejects.toMatchObject({
+      code: 'INSTANCE_NOT_FOUND', instanceId: 'trading-server',
+    });
     expect(writes()).toEqual([]);
   });
 
@@ -485,6 +466,19 @@ describe('Trading instance and provider lifecycle', () => {
       } finally {
         rendered.unmount();
       }
+    },
+  );
+
+  it.each(['query', 'reaction'] as const)(
+    'rejects an all-running but incompatible %s before opening the stream', async kind => {
+      const { backend, fetcher, writes } = setup(true);
+      if (kind === 'query') backend.queries.get('watchlist-query')!.query = 'MATCH (x) RETURN x';
+      else backend.reaction!.port = 9999;
+      const factory = vi.fn();
+      render(<TradingProvider fetch={fetcher} eventSourceFactory={factory}><Probe /></TradingProvider>);
+      await screen.findByText('true:INCOMPATIBLE_RESOURCE');
+      expect(writes()).toEqual([]);
+      expect(factory).not.toHaveBeenCalled();
     },
   );
 
