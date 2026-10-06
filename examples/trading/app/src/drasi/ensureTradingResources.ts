@@ -11,14 +11,6 @@ const POLL_MS = 200;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-/** Only positively identified, known Trading resources are eligible for setup. */
-export function canPrepareTrading(error: unknown, instanceId: string): error is DrasiError {
-  return error instanceof DrasiError && error.instanceId === instanceId &&
-    ['QUERY_NOT_FOUND', 'REACTION_NOT_FOUND', 'RESOURCE_STOPPED', 'RESOURCE_STARTING'].includes(error.code) &&
-    ((error.resourceKind === 'query' && TRADING_QUERY_IDS.includes(error.resourceId ?? '')) ||
-      (error.resourceKind === 'reaction' && error.resourceId === TRADING_REACTION.id));
-}
-
 async function request(
   fetcher: typeof fetch, url: string, signal: AbortSignal, init: RequestInit = {}, resource: DrasiErrorDetails = {},
 ): Promise<{ status: number; data: unknown }> {
@@ -210,15 +202,14 @@ interface Flight {
 const flights = new WeakMap<typeof fetch, Map<string, Flight>>();
 
 /**
- * Bounded, app-owned recovery after a typed eligible failure. Concurrent
+ * Validate/setup the exact Trading bundle before connecting. Concurrent
  * consumers share work; Web Locks serialize tabs where available. 409/read
  * handles independent clients otherwise. The last cancellation aborts work.
  */
 export function ensureTradingResources(
-  options: SetupOptions, error: DrasiError, signal: AbortSignal,
+  options: SetupOptions, signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted();
-  if (!canPrepareTrading(error, options.client.instanceId)) return Promise.reject(error);
   let scopes = flights.get(options.fetch);
   if (!scopes) { scopes = new Map(); flights.set(options.fetch, scopes); }
   const key = JSON.stringify([options.serverUrl, options.client.instanceId]);
