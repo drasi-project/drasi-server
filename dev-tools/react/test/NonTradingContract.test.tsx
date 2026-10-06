@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { DrasiProvider, useDrasiQuery } from '../src/react/DrasiContext';
 import { fakeEventSourceFactory } from './FakeEventSource';
 import { pressureDelete, readings, temperatureUpdate } from './fixtures/synthetic/telemetry';
+import { component, queryConfig } from './server';
 
 interface Reading {
   device: string;
@@ -18,7 +19,12 @@ interface Reading {
 function Readings({ queryId }: { queryId: string }) {
   const { data, error } = useDrasiQuery<Reading>(queryId, {
     getKey: row => `${row.device}/${row.metric}`,
-    transform: row => ({ device: row.device, metric: row.metric, value: Number(row.value) }),
+    transform: row => {
+      if (typeof row.device !== 'string' || typeof row.metric !== 'string') {
+        throw new TypeError('Invalid synthetic reading identity');
+      }
+      return { device: row.device, metric: row.metric, value: Number(row.value) };
+    },
   });
   return <output aria-label={queryId}>{error?.message ?? JSON.stringify(data)}</output>;
 }
@@ -31,9 +37,14 @@ describe('non-Trading synthetic contracts', () => {
       const json = (body: unknown) => new Response(JSON.stringify({ success: true, data: body }));
       if (url.includes('?view=full')) {
         const id = new URL(url).pathname.split('/').pop()!;
-        return json({ id, status: 'Running', config: id === 'building-events'
-          ? { id, kind: 'sse', queries: ['building-readings', 'archive-readings'] }
-          : { id, query: 'MATCH (r:Reading) RETURN r', queryLanguage: 'Cypher', sources: [] } });
+        return json(id === 'building-events'
+          ? component('reactions', id, {
+            id, kind: 'sse', queries: ['building-readings', 'archive-readings'],
+            host: '0.0.0.0', port: 9999, ssePath: '/events', heartbeatIntervalMs: 15000,
+          }, 'Running', 'building-a')
+          : component('queries', id, queryConfig(id, {
+            query: 'MATCH (r:Reading) RETURN r',
+          }), 'Running', 'building-a'));
       }
       if (url.endsWith('/building-readings/results')) return json(readings);
       if (url.endsWith('/archive-readings/results')) return json(readings);

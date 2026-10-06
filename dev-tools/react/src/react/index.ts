@@ -28,6 +28,7 @@ export {
 } from './DrasiContext';
 export type { DrasiProviderProps } from './DrasiContext';
 export type { DrasiContextValue } from './DrasiContext';
+export type * from './types';
 export { useRowAnimation } from './useRowAnimation';
 export type {
   AnimationDirection,

@@ -139,6 +139,8 @@ test('real Trading services: fresh provisioning, CRUD/live/delete, existing relo
       autoStart: true, queryLanguage: 'Cypher',
     })));
     expect(mutations.filter(item => item.url === `${instancePath}/reactions`)).toHaveLength(1);
+    await get(`${instancePath}/queries/portfolio-summary-query?view=full`);
+    await get(`${instancePath}/queries/watchlist-query?view=full`);
     await get('/api/v1/reactions/sse-stream?view=full');
     await get('/api/v1/queries/watchlist-query/results');
     await get('/api/v1/queries/portfolio-query/results');

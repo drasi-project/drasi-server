@@ -15,7 +15,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: {
+    index: 'src/index.ts',
+    'client/index': 'src/client/index.ts',
+    'react/index': 'src/react/index.ts',
+    'components/index': 'src/components/index.ts',
+  },
   // Ship both modern ESM and CommonJS so the package works in any toolchain.
   format: ['esm', 'cjs'],
   // Emit TypeScript declarations (.d.ts / .d.cts) alongside the JS.
@@ -23,6 +28,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
+  splitting: true,
   target: 'es2020',
   // React and clsx must come from the consumer's app, never bundled in, so a
   // single copy of React is shared across the tree.

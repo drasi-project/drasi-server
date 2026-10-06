@@ -13,18 +13,18 @@
 // limitations under the License.
 
 import React, { useState, useEffect } from 'react';
-import { QueryTable, ColumnDef, RowAction } from '@drasi/react';
+import { QueryTable, type ColumnDef, type RowAction } from '@drasi/react/components';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { PortfolioSummary } from './PortfolioSummary';
-import { ChangeIndicator, EditIcon, DeleteIcon, AddIcon, ConfirmDialog, DetailItem } from './shared';
-import { PortfolioPosition } from '@/types';
+import { ChangeIndicator, EditIcon, DeleteIcon, AddIcon, ConfirmDialog } from './shared';
+import type { PortfolioRow } from '@/types';
 import { tradingApi, Stock as ApiStock } from '@/services/TradingApi';
 import { PositionDialog, PositionFormData } from './PositionDialog';
 import { formatCurrency } from '@/utils/formatters';
 import clsx from 'clsx';
 
 // Code snippet for presentation display
-const CODE_SNIPPET = `<QueryTable<PortfolioPosition>
+const CODE_SNIPPET = `<QueryTable<PortfolioRow>
   queryId="portfolio-query"
   title="Portfolio"
   columns={[
@@ -32,17 +32,17 @@ const CODE_SNIPPET = `<QueryTable<PortfolioPosition>
     { key: 'name', label: 'Name' },
     { key: 'quantity', label: 'Qty', align: 'right' },
     { key: 'purchasePrice', label: 'Avg Cost', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => formatCurrency(Number(row.purchasePrice || 0)) },
     { key: 'currentPrice', label: 'Current', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => row.currentPrice ? formatCurrency(row.currentPrice) : '-' },
     { key: 'currentValue', label: 'Value', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => row.currentValue ? formatCurrency(row.currentValue) : '-' },
     { key: 'profitLoss', label: 'P/L', align: 'right',
-      format: (value) => formatCurrency(value) },
+      format: (_, row) => row.profitLoss != null ? formatCurrency(Number(row.profitLoss)) : '-' },
     { key: 'profitLossPercent', label: 'P/L %', align: 'right',
-      format: (value) => <ChangeIndicator value={value} /> },
+      format: (_, row) => row.profitLossPercent != null ? <ChangeIndicator value={Number(row.profitLossPercent)} /> : '-' },
   ]}
-  rowKey={(row) => row.symbol}
+  rowKey={(row) => row.symbol ?? ''}
   animateOnChange="currentPrice"
   headerSlot={<PortfolioSummary />}
 />`;
@@ -51,12 +51,12 @@ interface DeletingPosition {
   id: number;
   symbol: string;
   name: string;
-  quantity: number;
+  quantity: PortfolioRow['quantity'];
   purchasePrice: number;
   purchaseDate: string;
-  currentPrice?: number;
-  currentValue?: number;
-  profitLoss?: number;
+  currentPrice?: PortfolioRow['currentPrice'];
+  currentValue?: PortfolioRow['currentValue'];
+  profitLoss?: PortfolioRow['profitLoss'];
 }
 
 export const Portfolio: React.FC = () => {
@@ -116,16 +116,18 @@ export const Portfolio: React.FC = () => {
     }
   };
 
-  const openEditDialog = (position: PortfolioPosition) => {
+  const openEditDialog = (position: PortfolioRow) => {
+    const { symbol, name, quantity } = position;
+    if (symbol === undefined || name === undefined || typeof quantity !== 'number') return;
     tradingApi.getPortfolio().then(portfolio => {
-      const found = portfolio.find(p => p.symbol === position.symbol);
+      const found = portfolio.find(p => p.symbol === symbol);
       if (found) {
         setEditingPosition({
           id: found.id,
-          symbol: position.symbol,
-          name: position.name,
-          quantity: position.quantity,
-          purchasePrice: position.purchasePrice || 0,
+          symbol,
+          name,
+          quantity,
+          purchasePrice: Number(position.purchasePrice || 0),
           purchaseDate: found.purchase_date ? found.purchase_date.split('T')[0] : new Date().toISOString().split('T')[0]
         });
         setDialogMode('edit');
@@ -135,16 +137,18 @@ export const Portfolio: React.FC = () => {
     });
   };
 
-  const openDeleteConfirm = (position: PortfolioPosition) => {
+  const openDeleteConfirm = (position: PortfolioRow) => {
+    const { symbol, name } = position;
+    if (symbol === undefined || name === undefined) return;
     tradingApi.getPortfolio().then(portfolio => {
-      const found = portfolio.find(p => p.symbol === position.symbol);
+      const found = portfolio.find(p => p.symbol === symbol);
       if (found) {
         setDeletingPosition({
           id: found.id,
-          symbol: position.symbol,
-          name: position.name,
+          symbol,
+          name,
           quantity: position.quantity,
-          purchasePrice: position.purchasePrice || 0,
+          purchasePrice: Number(position.purchasePrice || 0),
           purchaseDate: found.purchase_date ? found.purchase_date.split('T')[0] : '',
           currentPrice: position.currentPrice,
           currentValue: position.currentValue,
@@ -156,7 +160,7 @@ export const Portfolio: React.FC = () => {
     });
   };
 
-  const columns: ColumnDef<PortfolioPosition>[] = [
+  const columns: ColumnDef<PortfolioRow>[] = [
     {
       key: 'symbol',
       label: 'Symbol',
@@ -176,46 +180,46 @@ export const Portfolio: React.FC = () => {
       key: 'purchasePrice',
       label: 'Avg Cost',
       align: 'right',
-      format: (value) => formatCurrency(value || 0),
+      format: (_value, row) => formatCurrency(Number(row.purchasePrice || 0)),
       className: 'font-mono text-sm',
     },
     {
       key: 'currentPrice',
       label: 'Current',
       align: 'right',
-      format: (value) => value ? formatCurrency(value) : '-',
+      format: (_value, row) => row.currentPrice ? formatCurrency(row.currentPrice) : '-',
       className: 'font-mono text-sm',
     },
     {
       key: 'currentValue',
       label: 'Value',
       align: 'right',
-      format: (value) => value ? formatCurrency(value) : '-',
+      format: (_value, row) => row.currentValue ? formatCurrency(row.currentValue) : '-',
       className: 'font-mono',
     },
     {
       key: 'profitLoss',
       label: 'P/L',
       align: 'right',
-      format: (value) => value != null ? formatCurrency(value) : '-',
-      className: (value) => clsx(
+      format: (_value, row) => row.profitLoss != null ? formatCurrency(Number(row.profitLoss)) : '-',
+      className: (_value, row) => clsx(
         'font-mono text-sm',
-        value == null ? '' : value >= 0 ? 'text-trading-green' : 'text-trading-red'
+        row.profitLoss == null ? '' : Number(row.profitLoss) >= 0 ? 'text-trading-green' : 'text-trading-red'
       ),
     },
     {
       key: 'profitLossPercent',
       label: 'P/L %',
       align: 'right',
-      format: (value) => value != null ? <ChangeIndicator value={value} /> : '-',
-      className: (value) => clsx(
+      format: (_value, row) => row.profitLossPercent != null ? <ChangeIndicator value={Number(row.profitLossPercent)} /> : '-',
+      className: (_value, row) => clsx(
         'font-mono text-sm',
-        value == null ? '' : value >= 0 ? 'text-trading-green' : 'text-trading-red'
+        row.profitLossPercent == null ? '' : Number(row.profitLossPercent) >= 0 ? 'text-trading-green' : 'text-trading-red'
       ),
     },
   ];
 
-  const actions: RowAction<PortfolioPosition>[] = [
+  const actions: RowAction<PortfolioRow>[] = [
     {
       icon: <EditIcon />,
       label: 'Edit position',
@@ -244,12 +248,12 @@ export const Portfolio: React.FC = () => {
 
   return (
     <>
-      <QueryTable<PortfolioPosition>
+      <QueryTable<PortfolioRow>
         queryId="portfolio-query"
-        queryOptions={tradingQueryOptions<PortfolioPosition>('portfolio-query')}
+        queryOptions={tradingQueryOptions('portfolio-query')}
         title="Portfolio"
         columns={columns}
-        rowKey={(row) => row.symbol}
+        rowKey={(row) => row.symbol ?? ''}
         animateOnChange="currentPrice"
         defaultSort={{ column: 'symbol', direction: 'asc' }}
         actions={actions}
@@ -288,10 +292,10 @@ export const Portfolio: React.FC = () => {
           ...(deletingPosition.currentValue ? [{ label: 'Current Value', value: formatCurrency(deletingPosition.currentValue), valueClassName: 'font-bold' }] : []),
           ...(deletingPosition.profitLoss != null ? [{
             label: 'P/L',
-            value: formatCurrency(deletingPosition.profitLoss),
-            valueClassName: clsx('font-bold', deletingPosition.profitLoss >= 0 ? 'text-trading-green' : 'text-trading-red')
+            value: formatCurrency(Number(deletingPosition.profitLoss)),
+            valueClassName: clsx('font-bold', Number(deletingPosition.profitLoss) >= 0 ? 'text-trading-green' : 'text-trading-red')
           }] : []),
-        ] as DetailItem[] : []}
+        ] : []}
         message="This action cannot be undone."
         confirmText="Delete"
         isLoading={isDeleting !== null}

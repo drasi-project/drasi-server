@@ -13,8 +13,9 @@
 // limitations under the License.
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useDrasiQuery } from '@drasi/react';
+import { useDrasiQuery } from '@drasi/react/react';
 import { tradingQueryOptions } from '@/drasi/queryOptions';
+import type { PriceTickerRow } from '@/types';
 import './StockTicker.css';
 
 interface TickerItem {
@@ -27,9 +28,9 @@ interface TickerItem {
 }
 
 const StockTicker: React.FC = () => {
-  const { data: priceData } = useDrasiQuery<any>(
+  const { data: priceData } = useDrasiQuery<PriceTickerRow>(
     'price-ticker-query',
-    tradingQueryOptions<any>('price-ticker-query'),
+    tradingQueryOptions('price-ticker-query'),
   );
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,7 +52,7 @@ const StockTicker: React.FC = () => {
 
     const newItems: TickerItem[] = [];
     
-    priceData.forEach((item: any) => {
+    priceData.forEach((item) => {
       const price = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
       const changePercent = typeof item.changePercent === 'number' ? item.changePercent : parseFloat(item.changePercent) || 0;
       

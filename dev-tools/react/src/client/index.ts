@@ -27,3 +27,4 @@ export type {
   EventSourceFactory,
   EventSourceLike,
 } from './DrasiSSEClient';
+export type * from './types';
