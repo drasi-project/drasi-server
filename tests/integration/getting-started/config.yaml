@@ -6,17 +6,16 @@ host: 0.0.0.0
 port: 8080
 logLevel: info
 persistConfig: true
-autoInstallPlugins: true
-# Signature verification is disabled to keep the integration test self-contained
-# and avoid a hard dependency on Sigstore/Rekor availability in CI.
-verifyPlugins: false
+# run-integration-test.sh installs the reviewed digest-pinned ABI-compatible set.
+autoInstallPlugins: false
+verifyPlugins: true
 
 id: integration-test-server
 
 plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: reaction/log
+  - ref: source/postgres:0.2.12
+  - ref: bootstrap/postgres:0.2.15
+  - ref: reaction/log:0.2.9
 
 sources:
   - kind: postgres

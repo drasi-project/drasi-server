@@ -1,0 +1,520 @@
+/*
+ * Copyright 2025 The Drasi Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Complete component styles for @drasi/react. Consumers may theme components
+ * with the --drasi-* custom properties without configuring Tailwind or scanning
+ * package source.
+ */
+:root {
+  --drasi-color-surface: #131825;
+  --drasi-color-dialog: #1e2433;
+  --drasi-color-code: #0d1117;
+  --drasi-color-border: #1f2937;
+  --drasi-color-primary: #3b82f6;
+  --drasi-color-success: #10b981;
+  --drasi-color-danger: #ef4444;
+  --drasi-color-text: #e5e7eb;
+  --drasi-color-muted: #9ca3af;
+  --drasi-color-subtle: #6b7280;
+  --drasi-table-height: 400px;
+  --drasi-radius: 0.5rem;
+}
+
+.drasi-query-table {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: var(--drasi-table-height);
+  color: var(--drasi-color-text);
+  background: var(--drasi-color-surface);
+  border: 1px solid var(--drasi-color-border);
+  border-radius: var(--drasi-radius);
+}
+
+.drasi-query-table *,
+.drasi-code-dialog * {
+  box-sizing: border-box;
+}
+
+.drasi-query-table--state {
+  padding: 1.5rem;
+}
+
+.drasi-query-table--hidden {
+  visibility: hidden;
+}
+
+.drasi-query-table--expanded {
+  height: auto;
+}
+
+.drasi-query-table__state-title {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.drasi-query-table__error {
+  color: var(--drasi-color-danger);
+}
+
+.drasi-query-table__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem 1.5rem 1rem;
+}
+
+.drasi-query-table__header-main,
+.drasi-query-table__header-controls,
+.drasi-query-table__actions,
+.drasi-query-table__heading-content,
+.drasi-code-dialog__title-group,
+.drasi-code-dialog__external-link,
+.drasi-code-dialog__copy-button {
+  display: flex;
+  align-items: center;
+}
+
+.drasi-query-table__header-main,
+.drasi-code-dialog__title-group {
+  gap: 0.75rem;
+}
+
+.drasi-query-table__header-controls,
+.drasi-query-table__actions {
+  gap: 0.25rem;
+}
+
+.drasi-query-table__actions {
+  justify-content: flex-end;
+}
+
+.drasi-query-table__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  transition: font-size 0.3s ease;
+}
+
+.drasi-query-table__title--expanded {
+  font-size: 3rem;
+}
+
+.drasi-query-table__header-slot {
+  flex: 0 0 auto;
+  padding: 0 1.5rem 1rem;
+}
+
+.drasi-query-table__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 1.5rem 1.5rem;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.drasi-query-table__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.drasi-query-table__thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--drasi-color-surface);
+}
+
+.drasi-query-table__header-row {
+  border-bottom: 1px solid var(--drasi-color-border);
+}
+
+.drasi-query-table__heading {
+  padding: 0.5rem;
+  color: var(--drasi-color-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline-offset: -2px;
+}
+
+.drasi-query-table__heading--expanded {
+  font-size: 1.5rem;
+}
+
+.drasi-query-table__heading--sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.drasi-query-table__heading--sortable:hover,
+.drasi-query-table__heading--sortable:focus-visible {
+  color: var(--drasi-color-text);
+}
+
+.drasi-query-table__heading-content {
+  display: inline-flex;
+}
+
+.drasi-query-table__heading-content--right {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.drasi-query-table__actions-heading {
+  width: 5rem;
+}
+
+.drasi-query-table__row {
+  border-bottom: 1px solid rgb(31 41 55 / 50%);
+  transition: background-color 0.15s ease;
+}
+
+.drasi-query-table__row:hover {
+  background: rgb(31 41 55 / 20%);
+}
+
+.drasi-query-table__cell {
+  padding: 0.75rem 0.5rem;
+}
+
+.drasi-query-table__empty {
+  padding: 2rem;
+  color: var(--drasi-color-subtle);
+  text-align: center;
+}
+
+.drasi-align--left {
+  text-align: left;
+}
+
+.drasi-align--center {
+  text-align: center;
+}
+
+.drasi-align--right {
+  text-align: right;
+}
+
+.drasi-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.drasi-icon--medium {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.drasi-icon-button,
+.drasi-action-button {
+  padding: 0.375rem;
+  color: var(--drasi-color-subtle);
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-action-button {
+  padding: 0.25rem;
+}
+
+.drasi-icon-button:hover,
+.drasi-icon-button:focus-visible,
+.drasi-action-button:hover,
+.drasi-action-button:focus-visible {
+  color: var(--drasi-color-primary);
+  background: rgb(31 41 55 / 50%);
+}
+
+.drasi-action-button--disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.drasi-loading {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.drasi-spinner {
+  border: 2px solid var(--drasi-color-subtle);
+  border-top-color: transparent;
+  border-radius: 9999px;
+  animation: drasi-spin 0.75s linear infinite;
+}
+
+.drasi-spinner--small {
+  width: 1rem;
+  height: 1rem;
+}
+
+.drasi-spinner--large {
+  width: 2rem;
+  height: 2rem;
+  border-color: var(--drasi-color-primary);
+  border-top-color: transparent;
+}
+
+.drasi-sort-indicator {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-left: 0.25rem;
+}
+
+.drasi-sort-indicator--inactive {
+  opacity: 0.3;
+}
+
+.drasi-sort-indicator--active {
+  color: var(--drasi-color-primary);
+}
+
+.drasi-query-table__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.drasi-expanded-text {
+  font-size: 1.875rem;
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drasi-expanded-text * {
+  font-size: inherit !important;
+  transition: font-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drasi-row--up {
+  animation: drasi-flash-green 0.5s ease-in-out;
+}
+
+.drasi-row--down {
+  animation: drasi-flash-red 0.5s ease-in-out;
+}
+
+.drasi-row--change {
+  animation: drasi-flash-blue 0.5s ease-in-out;
+}
+
+.drasi-code-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 70%);
+  animation: drasi-fade-in 0.2s ease-out;
+}
+
+.drasi-code-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  max-width: 72rem;
+  height: 85vh;
+  color: var(--drasi-color-text);
+  background: var(--drasi-color-dialog);
+  border: 1px solid rgb(31 41 55 / 50%);
+  border-radius: var(--drasi-radius);
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 50%);
+  animation: drasi-slide-up 0.25s ease-out;
+}
+
+.drasi-code-dialog__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.drasi-code-dialog__external-link {
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--drasi-color-primary);
+  font-size: 0.875rem;
+  text-decoration: none;
+  background: rgb(31 41 55 / 30%);
+  border-radius: 0.25rem;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__external-link:hover {
+  color: #93c5fd;
+  background: rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--drasi-color-border);
+}
+
+.drasi-code-dialog__tab {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__tab--active {
+  color: var(--drasi-color-primary);
+  background: rgb(31 41 55 / 20%);
+  border-bottom-color: var(--drasi-color-primary);
+}
+
+.drasi-code-dialog__tab--inactive {
+  color: var(--drasi-color-muted);
+}
+
+.drasi-code-dialog__tab--inactive:hover {
+  color: var(--drasi-color-text);
+  background: rgb(31 41 55 / 10%);
+}
+
+.drasi-code-dialog__copy-container {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding-right: 1rem;
+}
+
+.drasi-code-dialog__copy-button {
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.drasi-code-dialog__copy-button--copied {
+  color: var(--drasi-color-success);
+  background: rgb(16 185 129 / 20%);
+}
+
+.drasi-code-dialog__copy-button--idle {
+  color: #d1d5db;
+  background: rgb(31 41 55 / 30%);
+}
+
+.drasi-code-dialog__copy-button--idle:hover {
+  background: rgb(31 41 55 / 50%);
+}
+
+.drasi-code-dialog__content {
+  flex: 1 1 auto;
+  padding: 1.5rem;
+  overflow: auto;
+  background: var(--drasi-color-code);
+}
+
+.drasi-code-dialog__code {
+  margin: 0;
+  color: var(--drasi-color-text);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.5rem;
+  line-height: 1.625;
+  white-space: pre-wrap;
+}
+
+@keyframes drasi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes drasi-flash-green {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgb(16 185 129 / 20%);
+  }
+}
+
+@keyframes drasi-flash-red {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgb(239 68 68 / 20%);
+  }
+}
+
+@keyframes drasi-flash-blue {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgb(59 130 246 / 25%);
+  }
+}
+
+@keyframes drasi-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drasi-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

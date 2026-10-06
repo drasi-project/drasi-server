@@ -52,13 +52,16 @@ jobs:
       - name: Install Rust toolchain
         run: rustup show
 
+      - name: Test pinned plugin setup
+        run: python3 -m unittest discover -s tests -p 'test_plugin_*.py'
+
       - name: Setup PostgreSQL database
         run: |
           export RESTART_CONTAINER=true
           ./tests/integration/getting-started/setup-postgres.sh
 
       - name: Build Drasi Server
-        run: cargo build --release
+        run: cargo build --locked --release
 
       - name: Run integration tests
         run: ./tests/integration/getting-started/run-integration-test.sh

@@ -1,0 +1,67 @@
+name: React Package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "dev-tools/react/**"
+      - "examples/trading/app/**"
+      - ".github/workflows/react-package.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "dev-tools/react/**"
+      - "examples/trading/app/**"
+      - ".github/workflows/react-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test package and consumer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dev-tools/react/package-lock.json
+            examples/trading/app/package-lock.json
+
+      - name: Install package dependencies
+        working-directory: dev-tools/react
+        run: npm ci
+
+      - name: Type-check package
+        working-directory: dev-tools/react
+        run: npm run typecheck
+
+      - name: Test package
+        working-directory: dev-tools/react
+        run: npm test
+
+      - name: Build and pack package
+        working-directory: dev-tools/react
+        run: |
+          npm run build
+          npm pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Install Trading app dependencies
+        working-directory: examples/trading/app
+        run: npm ci
+
+      - name: Replace local dependency with packed artifact
+        working-directory: examples/trading/app
+        run: npm install --no-save "$RUNNER_TEMP"/drasi-react-*.tgz
+
+      - name: Build Trading app against packed artifact
+        working-directory: examples/trading/app
+        run: npm run --ignore-scripts build

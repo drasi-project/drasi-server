@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useDrasiQuery } from '@drasi/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import { PortfolioSummary as PortfolioSummaryType } from '@/types';
 import { formatCurrency, formatPercent } from '@/utils/formatters';
 import clsx from 'clsx';
@@ -27,7 +28,10 @@ interface PortfolioSummaryProps {
  * Shows total value, total cost, total P/L, and total return percentage.
  */
 export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ className }) => {
-  const { data, loading } = useQuery<PortfolioSummaryType>('portfolio-summary-query');
+  const { data, loading } = useDrasiQuery<PortfolioSummaryType>(
+    'portfolio-summary-query',
+    tradingQueryOptions<PortfolioSummaryType>('portfolio-summary-query'),
+  );
   
   // Get the first (and only) result from the aggregation query
   const summary = data?.[0];

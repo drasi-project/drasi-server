@@ -29,6 +29,7 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct MockSource {
     inner: Arc<MockSourceInner>,
+    auto_start: bool,
 }
 
 struct MockSourceInner {
@@ -47,7 +48,13 @@ impl MockSource {
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
             }),
+            auto_start: true,
         }
+    }
+
+    pub fn with_auto_start(mut self, auto_start: bool) -> Self {
+        self.auto_start = auto_start;
+        self
     }
 
     pub async fn emit_log(&self, message: &str) {
@@ -85,6 +92,10 @@ impl SourceTrait for MockSource {
 
     fn properties(&self) -> HashMap<String, serde_json::Value> {
         HashMap::new()
+    }
+
+    fn auto_start(&self) -> bool {
+        self.auto_start
     }
 
     async fn start(&self) -> anyhow::Result<()> {
@@ -135,6 +146,7 @@ impl SourceTrait for MockSource {
 #[derive(Clone)]
 pub struct MockReaction {
     inner: Arc<MockReactionInner>,
+    auto_start: bool,
 }
 
 struct MockReactionInner {
@@ -155,7 +167,13 @@ impl MockReaction {
                 instance_id: RwLock::new(String::new()),
                 update_tx: RwLock::new(None),
             }),
+            auto_start: true,
         }
+    }
+
+    pub fn with_auto_start(mut self, auto_start: bool) -> Self {
+        self.auto_start = auto_start;
+        self
     }
 
     pub async fn emit_log(&self, message: &str) {
@@ -197,6 +215,10 @@ impl ReactionTrait for MockReaction {
 
     fn query_ids(&self) -> Vec<String> {
         self.inner.queries.clone()
+    }
+
+    fn auto_start(&self) -> bool {
+        self.auto_start
     }
 
     async fn initialize(&self, context: ReactionRuntimeContext) {

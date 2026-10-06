@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useQuery } from '@/hooks/useDrasi';
+import { useDrasiQuery } from '@drasi/react';
+import { tradingQueryOptions } from '@/drasi/queryOptions';
 import './StockTicker.css';
 
 interface TickerItem {
@@ -26,7 +27,10 @@ interface TickerItem {
 }
 
 const StockTicker: React.FC = () => {
-  const { data: priceData } = useQuery<any>('price-ticker-query');
+  const { data: priceData } = useDrasiQuery<any>(
+    'price-ticker-query',
+    tradingQueryOptions<any>('price-ticker-query'),
+  );
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
