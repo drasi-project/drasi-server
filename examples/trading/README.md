@@ -41,7 +41,7 @@ Drasi continuously evaluates this query against your data sources and notifies y
 | Concept | Description | In This Example |
 |---------|-------------|-----------------|
 | **Source** | A data repository that Drasi monitors for changes | PostgreSQL (stocks, portfolio tables) + HTTP (real-time prices) |
-| **Continuous Query** | A graph query that maintains a live result set | 6 queries: watchlist, portfolio, gainers, losers, volume, ticker |
+| **Continuous Query** | A graph query that maintains a live result set | 11 queries: watchlist, portfolio, summary, sectors, gainers, losers, volume, ticker, orders, stale orders, expiring orders |
 | **Reaction** | An action triggered when query results change | SSE reaction pushes changes to the React app |
 | **Synthetic Join** | A relationship defined in queries, not in the database | `HAS_PRICE` links stocks to prices across sources |
 
@@ -187,7 +187,7 @@ npm run dev
 ```
 
 At startup the app automatically:
-1. Creates all 6 continuous queries via the REST API
+1. Creates all 11 continuous queries via the REST API
 2. Creates an SSE reaction to receive live updates
 3. Connects to the SSE stream for real-time data
 
@@ -200,6 +200,13 @@ python3 simple_price_generator.py
 ```
 
 Watch the React app update in real-time as prices change!
+
+### Regression checks
+
+See [Testing and behavior baseline](TESTING.md) for executable app integration
+tests, deterministic browser/visual fixtures, clean tarball consumption and
+real-server smoke prerequisites. These test-only ports and fixtures do not
+change the startup commands or URLs above.
 
 ## How It Works
 

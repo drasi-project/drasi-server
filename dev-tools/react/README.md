@@ -382,6 +382,7 @@ Other scripts:
 | `npm run dev` | Rebuild on change (`tsup --watch`). |
 | `npm run typecheck` | Type-check without emitting. |
 | `npm test` | Run client, hook, lifecycle, and component regression tests. |
+| `npm run test:coverage` | Measure V8 coverage across all package source files. |
 | `npm run clean` | Remove `dist/`. |
 
 The build (via [`tsup`](https://tsup.egoist.dev/)) emits ES modules
@@ -406,6 +407,13 @@ The Trading dashboard (`examples/trading/app`) consumes this package as
 package stylesheet. There are no Vite or TypeScript source aliases and no
 consumer Tailwind scanning, so broken exports, declarations, or styles cannot be
 hidden by monorepo-only configuration.
+
+The [Trading behavior baseline](../../examples/trading/TESTING.md) documents
+app integration tests, deterministic three-engine browser checks, fixed-viewport
+visual comparisons, and the separate real-server gate. CI also tests Trading
+from a clean tarball consumer with lifecycle rebuilding disabled; synthetic
+transport fixtures are not evidence of a supported server/plugin wire contract.
+Package tests include non-Trading telemetry fixtures without adding another demo.
 
 All trading‑specific behaviour (the query list, the SSE Reaction, the
 content‑router for aggregation result changes, and per‑query key/transform/sort
