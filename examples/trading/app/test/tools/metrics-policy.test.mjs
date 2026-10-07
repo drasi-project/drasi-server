@@ -174,7 +174,7 @@ test('retains P5 feature bytes separately from counting its already-shipped Comm
 
 test('retains P6 feature bytes while counting both already-shipped declaration formats', async () => {
   const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-v2.json', import.meta.url), 'utf8'));
-  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-pre-review.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p7-pre-release-review.json', import.meta.url), 'utf8'));
   assert.equal(historical.schemaVersion, 2);
   assert.equal(current.previousP6Measurement, 'baseline-metrics-p6-v2.json');
   assert.equal(historical.sizes.packageTypes, 41244);
@@ -187,10 +187,28 @@ test('retains P6 feature bytes while counting both already-shipped declaration f
   ]);
   assert.equal(sizes.packageTypes, 82505);
   assert.deepEqual(current.coverage, historical.coverage);
-  assert.deepEqual(current.sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
+  assert.deepEqual(current.artifactChange.p6Sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
 });
 
-test('keeps all six original schema-2 records byte-identical', async () => {
+test('retains the P7 feature budget and exact history with both declaration formats accounted for', async () => {
+  const historical = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p7-v2.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  assert.equal(historical.schemaVersion, 2);
+  assert.equal(current.previousP7Measurement, 'baseline-metrics-p7-v2.json');
+  assert.equal(historical.sizes.packageTarball, 217782);
+  assert.equal(current.p7MeasurementChange.esmDeclarations, historical.sizes.packageTypes);
+  assert.equal(current.p7MeasurementChange.commonJsDeclarations, 41261);
+  const sizes = measurePackageFiles([
+    ...packageFiles.filter(file => !file.path.endsWith('.d.ts')),
+    { path: 'dist/types.d.ts', bytes: current.p7MeasurementChange.esmDeclarations },
+    { path: 'dist/types.d.cts', bytes: current.p7MeasurementChange.commonJsDeclarations },
+  ]);
+  assert.equal(sizes.packageTypes, 82505);
+  assert.deepEqual(current.coverage, historical.coverage);
+  assert.deepEqual(current.artifactChange.p7Sizes, { ...historical.sizes, packageTypes: sizes.packageTypes });
+});
+
+test('keeps all seven original schema-2 records byte-identical', async () => {
   const hashes = {
     'baseline-metrics-v2.json': '11770739c8a262ebe3890be470f54dede21a0780675188e77aa4019429203bb3',
     'baseline-metrics-p2-v2.json': '48a764c44412023de17241b366364e753b696781ecbe094e5c72dbc97e8abc38',
@@ -198,12 +216,43 @@ test('keeps all six original schema-2 records byte-identical', async () => {
     'baseline-metrics-p4-v2.json': '4cd852a8dce5700130b73db15b94b0e41ef884e6231b004f509c8e768e8eeb73',
     'baseline-metrics-p5-v2.json': 'e48ad1d7d1fdd2b6410ac4b54e7bc841dd43c371a4558c3c64dc1fcd235337b2',
     'baseline-metrics-p6-v2.json': '8ff7a240f83d55c926517afcd9865c9181eb40451e3fb476e211aab086834389',
+    'baseline-metrics-p7-v2.json': '11ed156b053d2c37fa0805a29201249c42d65a040310018d0d88c603fc4f5171',
   };
   for (const [name, expected] of Object.entries(hashes)) {
     const bytes = await readFile(new URL(`../fixtures/${name}`, import.meta.url));
     assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, name);
     assert.equal(JSON.parse(bytes.toString('utf8')).schemaVersion, 2);
   }
+});
+
+test('advances only the explicitly approved documentation archive baseline and retains its exact prior record', async () => {
+  const priorBytes = await readFile(new URL('../fixtures/baseline-metrics-p7-pre-guides-v3.json', import.meta.url));
+  assert.equal(createHash('sha256').update(priorBytes).digest('hex'),
+    '3a9db73a1a0dacc2614858f2bb0df9f73657fc45c109407e1d890a4f8b239b24');
+  const prior = JSON.parse(priorBytes);
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p7-pre-release-review.json', import.meta.url), 'utf8'));
+  const approval = JSON.parse(await readFile(new URL('../fixtures/p7-consumer-baseline-approval.json', import.meta.url), 'utf8'));
+  assert.deepEqual(current.consumerDocumentationChange, {
+    approval: 'p7-consumer-baseline-approval.json',
+    previousBaseline: 'baseline-metrics-p7-pre-guides-v3.json',
+  });
+  const restored = structuredClone(current);
+  delete restored.consumerDocumentationChange;
+  restored.sizes.packageTarball = prior.sizes.packageTarball;
+  assert.deepEqual(restored, prior, 'No other baseline, coverage, metric scope or historical field may advance');
+  assert.equal(current.sizes.packageTarball, 225320);
+  assert.equal(approval.authorization.decision, 'Approve these scoped documentation/example baselines (Recommended)');
+  assert.equal(approval.packageArchive.previousArtifactBytes, 222072);
+  assert.equal(approval.packageArchive.previousCapBytes, 222137.64);
+  assert.equal(approval.packageArchive.baselineBytes, current.sizes.packageTarball);
+  assert.equal(approval.packageArchive.archiveEntries, 65);
+  assert.equal(approval.packageArchive.futureGrowthPercent, 2);
+  assert.equal(approval.packageArchive.addedFiles.length, 5);
+  assert.throws(() => assertBaseline({ coverage: prior.coverage, sizes: current.sizes }, prior), /packageTarball grew more than 2%/);
+  assertBaseline({ coverage: current.coverage, sizes: { ...current.sizes, packageTarball: 229826 } }, current);
+  assert.throws(() => assertBaseline({
+    coverage: current.coverage, sizes: { ...current.sizes, packageTarball: 229827 },
+  }, current), /packageTarball grew more than 2%/);
 });
 
 test('rejects missing formats, duplicate files and invalid packed measurements', () => {
@@ -249,11 +298,11 @@ test('preserves the reviewed P5 quality approval as byte-identical historical ev
     '5f87e41b72410779d0af2ef7564af95108ee1e0b90972d63b9425ebaa472102d');
 });
 
-test('keeps the distinct P6 baseline at 2% and rejects carrying over the P5 allowance', async () => {
+test('keeps the distinct active P7 baseline at 2% and rejects carrying over the historical P5 allowance', async () => {
   const expected = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
-  assert.equal(expected.artifactChange.part, 'B / P6');
+  assert.equal(expected.artifactChange.part, 'P7');
   assert.equal(expected.approvedP5TradingJsGzipAllowance, undefined);
-  assert.match(expected.reviewBudgetChange.scope, /^#209 \/ #164 Part B/);
+  assert.equal(expected.reviewBudgetChange, undefined);
   for (const [metric, bytes] of Object.entries(expected.sizes)) {
     const sizes = { ...expected.sizes, [metric]: Math.floor(bytes * 1.02) };
     assertBaseline({ coverage: expected.coverage, sizes }, expected);
@@ -270,6 +319,8 @@ test('preserves the complete P6 policy and accepted P5 review record without tra
   for (const [name, digest] of [
     ['baseline-metrics-p6-pre-review.json', '58fa504b7e24cdf40fa39e5e09573146aed4756f715d63e5cefaf38e9f01f45e'],
     ['baseline-metrics-p5-review.json', 'af310e14562e9d0ff52a47965aadb0cdce3e0a6716d96878322057ed70e1e416'],
+    ['baseline-metrics-p6-review.json', '49d7ca4e8e83831431ef4cb8b2cf8c28e8763732a587cb11d93a81c390ee100a'],
+    ['baseline-metrics-p7-pre-release-review.json', '47e8dd79d8d00636a6aaad72038bd0933d75d1fe3ec568d0fd36441744829a7e'],
   ]) {
     const bytes = await readFile(new URL(`../fixtures/${name}`, import.meta.url));
     assert.equal(createHash('sha256').update(bytes).digest('hex'), digest, name);
@@ -279,7 +330,7 @@ test('preserves the complete P6 policy and accepted P5 review record without tra
 test('limits the P6 approval to its first archive and dual-declaration measurements', async () => {
   const originalBytes = await readFile(new URL('../fixtures/baseline-metrics-p6-pre-review.json', import.meta.url));
   const historical = JSON.parse(originalBytes);
-  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-review.json', import.meta.url), 'utf8'));
   const approved = { packageTarball: 208944, packageTypes: 84985 };
   assert.equal(current.reviewBudgetChange.previousBaselineSha256,
     createHash('sha256').update(originalBytes).digest('hex'));
@@ -301,7 +352,7 @@ test('limits the P6 approval to its first archive and dual-declaration measureme
 });
 
 test('keeps exact P6 integer limits without compounding successful measurements', async () => {
-  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-review.json', import.meta.url), 'utf8'));
   const original = structuredClone(current);
   const observed = { ...current, sizes: { ...current.sizes, packageTarball: 213122, packageTypes: 86684 } };
   assertBaseline(observed, current);
@@ -327,7 +378,7 @@ test('keeps exact P6 integer limits without compounding successful measurements'
 });
 
 test('keeps earlier review approvals separate from the P6-only receipt', async () => {
-  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics-p6-review.json', import.meta.url), 'utf8'));
   assert.equal(current.artifactChange.part, 'B / P6');
   assert.match(current.reviewBudgetChange.scope, /^#209 \/ #164 Part B/);
   assert.match(current.reviewBudgetChange.reason, /does not apply to P7/);
@@ -340,6 +391,68 @@ test('keeps earlier review approvals separate from the P6-only receipt', async (
     assert.throws(() => assertBaseline({
       ...earlier, sizes: { ...earlier.sizes, packageTarball: current.sizes.packageTarball },
     }, earlier), /packageTarball grew more than 2%/);
+  }
+});
+
+test('does not transfer reviewed predecessor archive or declaration limits into P7', async () => {
+  const current = await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url));
+  const original = await readFile(new URL('../fixtures/baseline-metrics-p7-pre-release-review.json', import.meta.url));
+  const p7 = JSON.parse(current);
+  const prior = JSON.parse(original);
+  assert.deepEqual(p7, { ...prior, sizes: { ...prior.sizes, packageTypes: 84985 } });
+  assert.equal(p7.artifactChange.part, 'P7');
+  assert.equal(p7.sizes.packageTarball, 225320);
+  assert.equal(p7.sizes.packageTypes, 84985);
+  assert.equal(p7.reviewBudgetChange, undefined);
+  for (const layer of ['p3', 'p4', 'p5', 'p6']) {
+    const historical = JSON.parse(await readFile(new URL(`../fixtures/baseline-metrics-${layer}-review.json`, import.meta.url), 'utf8'));
+    assert.notEqual(historical.artifactChange.part, p7.artifactChange.part);
+    assert.notEqual(historical.sizes.packageTarball, p7.sizes.packageTarball);
+  }
+});
+
+test('applies only the actual P7 declaration approval with unchanged archive and coverage limits', async () => {
+  const originalBytes = await readFile(new URL('../fixtures/baseline-metrics-p7-pre-release-review.json', import.meta.url));
+  const original = JSON.parse(originalBytes);
+  const current = JSON.parse(await readFile(new URL('../fixtures/baseline-metrics.json', import.meta.url), 'utf8'));
+  const receipt = JSON.parse(await readFile(new URL('../fixtures/p7-released-declarations-approval.json', import.meta.url), 'utf8'));
+  assert.equal(createHash('sha256').update(originalBytes).digest('hex'),
+    '47e8dd79d8d00636a6aaad72038bd0933d75d1fe3ec568d0fd36441744829a7e');
+  assert.equal(receipt.previousBaselineSha256, createHash('sha256').update(originalBytes).digest('hex'));
+  assert.equal(receipt.actualUserDecision, 'Approve only #210’s declaration baseline and continue (Recommended)');
+  assert.equal(receipt.approvedDeclarationBaseline, 84985);
+  assert.deepEqual(receipt.firstDeclarationMeasurement, { esm: 42484, commonJs: 42501, total: 84985 });
+  assert.equal(receipt.firstArtifactSha256, '897c1853d22bda0a56578be3bdf0acb5681b956068c1c51ee6f8d0124338f39c');
+  assert.equal(receipt.firstArtifactBytes, 229361);
+  assert.equal(receipt.firstArtifactEntries, 65);
+  assert.equal(receipt.previousDeclarationCap, 84155.1);
+  assert.equal(receipt.firstDeclarationOverage, 829.9);
+  assert.deepEqual(current, { ...original, sizes: { ...original.sizes, packageTypes: 84985 } });
+  assert.throws(() => assertBaseline({
+    ...original, sizes: { ...original.sizes, packageTypes: 84985 },
+  }, original), /packageTypes grew more than 2%/);
+  const unchanged = structuredClone(current);
+  const limit = { ...current, sizes: { ...current.sizes, packageTypes: 86684, packageTarball: 229826 } };
+  assertBaseline(limit, current);
+  assertBaseline(limit, current);
+  assert.deepEqual(current, unchanged);
+  for (const [metric, bytes] of Object.entries({ packageTypes: 86685, packageTarball: 229827 })) {
+    assert.throws(() => assertBaseline({
+      ...limit, sizes: { ...limit.sizes, [metric]: bytes },
+    }, current), new RegExp(`${metric} grew more than 2%`));
+  }
+  for (const [metric, bytes] of Object.entries(original.sizes)) {
+    if (metric === 'packageTypes') continue;
+    assert.throws(() => assertBaseline({
+      ...current, sizes: { ...current.sizes, [metric]: Math.floor(bytes * 1.02) + 1 },
+    }, current), new RegExp(`${metric} grew more than 2%`));
+  }
+  for (const project of ['package', 'trading']) {
+    for (const counter of Object.keys(original.coverage[project])) {
+      const lower = structuredClone(current);
+      lower.coverage[project][counter] -= 0.01;
+      assert.throws(() => assertBaseline(lower, current), new RegExp(`${project} ${counter} coverage regressed`));
+    }
   }
 });
 
